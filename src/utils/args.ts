@@ -127,6 +127,7 @@ Commands:
   click <@ref>
   get text <@ref>
   get attrs <@ref>
+  replay <path>
   press <x> <y>
   long-press <x> <y> [durationMs]
   focus <x> <y>

@@ -28,12 +28,28 @@ type SessionState = {
   createdAt: number;
   appBundleId?: string;
   snapshot?: SnapshotState;
+  actions: SessionAction[];
+};
+
+type SessionAction = {
+  ts: number;
+  command: string;
+  positionals: string[];
+  flags: Partial<CommandFlags> & {
+    snapshotInteractiveOnly?: boolean;
+    snapshotCompact?: boolean;
+    snapshotDepth?: number;
+    snapshotScope?: string;
+    snapshotRaw?: boolean;
+  };
+  result?: Record<string, unknown>;
 };
 
 const sessions = new Map<string, SessionState>();
 const baseDir = path.join(os.homedir(), '.agent-device');
 const infoPath = path.join(baseDir, 'daemon.json');
 const logPath = path.join(baseDir, 'daemon.log');
+const sessionsDir = path.join(baseDir, 'sessions');
 const version = readVersion();
 const token = crypto.randomBytes(24).toString('hex');
 
@@ -96,13 +112,50 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
     await dispatchCommand(device, 'open', req.positionals ?? [], req.flags?.out, {
       ...contextFromFlags(req.flags, appBundleId),
     });
-    sessions.set(sessionName, {
+    const session: SessionState = {
       name: sessionName,
       device,
       createdAt: Date.now(),
       appBundleId,
+      actions: [],
+    };
+    recordAction(session, {
+      command,
+      positionals: req.positionals ?? [],
+      flags: req.flags ?? {},
+      result: { session: sessionName },
     });
+    sessions.set(sessionName, session);
     return { ok: true, data: { session: sessionName } };
+  }
+
+  if (command === 'replay') {
+    const filePath = req.positionals?.[0];
+    if (!filePath) {
+      return { ok: false, error: { code: 'INVALID_ARGS', message: 'replay requires a path' } };
+    }
+    try {
+      const resolved = expandHome(filePath);
+      const payload = JSON.parse(fs.readFileSync(resolved, 'utf8')) as {
+        actions?: SessionAction[];
+        optimizedActions?: SessionAction[];
+      };
+      const actions = payload.optimizedActions ?? payload.actions ?? [];
+      for (const action of actions) {
+        if (!action || action.command === 'replay') continue;
+        await handleRequest({
+          token,
+          session: sessionName,
+          command: action.command,
+          positionals: action.positionals ?? [],
+          flags: action.flags ?? {},
+        });
+      }
+      return { ok: true, data: { replayed: actions.length, session: sessionName } };
+    } catch (err) {
+      const appErr = asAppError(err);
+      return { ok: false, error: { code: appErr.code, message: appErr.message } };
+    }
   }
 
   if (command === 'close') {
@@ -118,6 +171,13 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
     if (session.device.platform === 'ios' && session.device.kind === 'simulator') {
       await stopIosRunnerSession(session.device.id);
     }
+    recordAction(session, {
+      command,
+      positionals: req.positionals ?? [],
+      flags: req.flags ?? {},
+      result: { session: sessionName },
+    });
+    writeSessionLog(session);
     sessions.delete(sessionName);
     return { ok: true, data: { session: sessionName } };
   }
@@ -135,13 +195,21 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       truncated: data?.truncated,
       createdAt: Date.now(),
     };
-    sessions.set(sessionName, {
+    const nextSession: SessionState = {
       name: sessionName,
       device,
       createdAt: session?.createdAt ?? Date.now(),
       appBundleId,
       snapshot,
+      actions: session?.actions ?? [],
+    };
+    recordAction(nextSession, {
+      command,
+      positionals: req.positionals ?? [],
+      flags: req.flags ?? {},
+      result: { nodes: nodes.length, truncated: data?.truncated ?? false },
     });
+    sessions.set(sessionName, nextSession);
     return { ok: true, data: { nodes, truncated: data?.truncated ?? false } };
   }
 
@@ -159,9 +227,18 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
     if (!node?.rect) {
       return { ok: false, error: { code: 'COMMAND_FAILED', message: `Ref ${refInput} not found or has no bounds` } };
     }
+    const refLabel = [node.label, node.value, node.identifier]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .find((value) => value && value.length > 0);
     const { x, y } = centerOfRect(node.rect);
     await dispatchCommand(session.device, 'press', [String(x), String(y)], req.flags?.out, {
       ...contextFromFlags(req.flags, session.appBundleId),
+    });
+    recordAction(session, {
+      command,
+      positionals: req.positionals ?? [],
+      flags: req.flags ?? {},
+      result: { ref, x, y, refLabel },
     });
     return { ok: true, data: { ref, x, y } };
   }
@@ -194,6 +271,12 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
           ...contextFromFlags(req.flags, session.appBundleId),
         },
       );
+      recordAction(session, {
+        command,
+        positionals: req.positionals ?? [],
+        flags: req.flags ?? {},
+        result: data ?? { ref, x, y },
+      });
       return { ok: true, data: data ?? { ref, x, y } };
     }
   }
@@ -217,12 +300,24 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       return { ok: false, error: { code: 'COMMAND_FAILED', message: `Ref ${refInput} not found` } };
     }
     if (sub === 'attrs') {
+      recordAction(session, {
+        command,
+        positionals: req.positionals ?? [],
+        flags: req.flags ?? {},
+        result: { ref },
+      });
       return { ok: true, data: { ref, node } };
     }
     const candidates = [node.label, node.value, node.identifier]
       .map((value) => (typeof value === 'string' ? value.trim() : ''))
       .filter((value) => value.length > 0);
     const text = candidates[0] ?? '';
+    recordAction(session, {
+      command,
+      positionals: req.positionals ?? [],
+      flags: req.flags ?? {},
+      result: { ref, text, refLabel: text || undefined },
+    });
     return { ok: true, data: { ref, text, node } };
   }
 
@@ -236,6 +331,12 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
 
   const data = await dispatchCommand(session.device, command, req.positionals ?? [], req.flags?.out, {
     ...contextFromFlags(req.flags, session.appBundleId),
+  });
+  recordAction(session, {
+    command,
+    positionals: req.positionals ?? [],
+    flags: req.flags ?? {},
+    result: data ?? {},
   });
   return { ok: true, data: data ?? {} };
 }
@@ -298,6 +399,7 @@ function start(): void {
       if (session.device.platform === 'ios' && session.device.kind === 'simulator') {
         await stopIosRunnerSession(session.device.id);
       }
+      writeSessionLog(session);
     }
     server.close(() => {
       removeInfo();
@@ -322,6 +424,110 @@ function start(): void {
 }
 
 start();
+
+function recordAction(
+  session: SessionState,
+  entry: {
+    command: string;
+    positionals: string[];
+    flags: CommandFlags;
+    result?: Record<string, unknown>;
+  },
+): void {
+  session.actions.push({
+    ts: Date.now(),
+    command: entry.command,
+    positionals: entry.positionals,
+    flags: sanitizeFlags(entry.flags),
+    result: entry.result,
+  });
+}
+
+function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] {
+  if (!flags) return {};
+  const {
+    platform,
+    device,
+    udid,
+    serial,
+    out,
+    verbose,
+    snapshotInteractiveOnly,
+    snapshotCompact,
+    snapshotDepth,
+    snapshotScope,
+    snapshotRaw,
+  } = flags as any;
+  return {
+    platform,
+    device,
+    udid,
+    serial,
+    out,
+    verbose,
+    snapshotInteractiveOnly,
+    snapshotCompact,
+    snapshotDepth,
+    snapshotScope,
+    snapshotRaw,
+  };
+}
+
+function writeSessionLog(session: SessionState): void {
+  try {
+    if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+    const safeName = session.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const timestamp = new Date(session.createdAt).toISOString().replace(/[:.]/g, '-');
+    const filePath = path.join(sessionsDir, `${safeName}-${timestamp}.json`);
+    const payload = {
+      name: session.name,
+      device: session.device,
+      createdAt: session.createdAt,
+      appBundleId: session.appBundleId,
+      actions: session.actions,
+      optimizedActions: buildOptimizedActions(session),
+    };
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
+  } catch {
+    // ignore
+  }
+}
+
+function expandHome(filePath: string): string {
+  if (filePath.startsWith('~/')) {
+    return path.join(os.homedir(), filePath.slice(2));
+  }
+  return path.resolve(filePath);
+}
+
+function buildOptimizedActions(session: SessionState): SessionAction[] {
+  const optimized: SessionAction[] = [];
+  for (const action of session.actions) {
+    if (action.command === 'snapshot') {
+      continue;
+    }
+    if (action.command === 'click' || action.command === 'fill' || action.command === 'get') {
+      const refLabel = action.result?.refLabel;
+      if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
+        optimized.push({
+          ts: action.ts,
+          command: 'snapshot',
+          positionals: [],
+          flags: {
+            platform: session.device.platform,
+            snapshotInteractiveOnly: true,
+            snapshotCompact: true,
+            snapshotDepth: 8,
+            snapshotScope: refLabel.trim(),
+          },
+          result: { scope: refLabel.trim() },
+        });
+      }
+    }
+    optimized.push(action);
+  }
+  return optimized;
+}
 
 function readVersion(): string {
   try {

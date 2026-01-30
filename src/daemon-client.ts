@@ -24,6 +24,7 @@ type DaemonInfo = { port: number; token: string; pid: number; version?: string }
 const baseDir = path.join(os.homedir(), '.agent-device');
 const infoPath = path.join(baseDir, 'daemon.json');
 const REQUEST_TIMEOUT_MS = resolveRequestTimeoutMs();
+const DAEMON_STARTUP_TIMEOUT_MS = 5000;
 
 export async function sendToDaemon(req: Omit<DaemonRequest, 'token'>): Promise<DaemonResponse> {
   const info = await ensureDaemon();
@@ -42,7 +43,7 @@ async function ensureDaemon(): Promise<DaemonInfo> {
   await startDaemon();
 
   const start = Date.now();
-  while (Date.now() - start < 5000) {
+  while (Date.now() - start < DAEMON_STARTUP_TIMEOUT_MS) {
     const info = readDaemonInfo();
     if (info && (await canConnect(info))) return info;
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -147,9 +148,9 @@ function readVersion(): string {
 
 function resolveRequestTimeoutMs(): number {
   const raw = process.env.AGENT_DEVICE_DAEMON_TIMEOUT_MS;
-  if (!raw) return 5000;
+  if (!raw) return 60000;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return 5000;
+  if (!Number.isFinite(parsed)) return 60000;
   return Math.max(1000, Math.floor(parsed));
 }
 
