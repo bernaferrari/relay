@@ -1,10 +1,11 @@
 import { AppError } from '../utils/errors.ts';
 import { selectDevice, type DeviceInfo } from '../utils/device.ts';
 import { listAndroidDevices } from '../platforms/android/devices.ts';
-import { ensureAdb } from '../platforms/android/index.ts';
+import { ensureAdb, snapshotAndroid } from '../platforms/android/index.ts';
 import { listIosDevices } from '../platforms/ios/devices.ts';
 import { getInteractor } from '../utils/interactors.ts';
 import { runIosRunnerCommand } from '../platforms/ios/runner-client.ts';
+import type { RawSnapshotNode } from '../utils/snapshot.ts';
 import { simctlSupportsInput } from '../platforms/ios/index.ts';
 
 export type CommandFlags = {
@@ -14,6 +15,11 @@ export type CommandFlags = {
   serial?: string;
   out?: string;
   verbose?: boolean;
+  snapshotInteractiveOnly?: boolean;
+  snapshotCompact?: boolean;
+  snapshotDepth?: number;
+  snapshotScope?: string;
+  snapshotRaw?: boolean;
 };
 
 export async function resolveTargetDevice(flags: CommandFlags): Promise<DeviceInfo> {
@@ -54,7 +60,16 @@ export async function dispatchCommand(
   command: string,
   positionals: string[],
   outPath?: string,
-  context?: { appBundleId?: string; verbose?: boolean; logPath?: string },
+  context?: {
+    appBundleId?: string;
+    verbose?: boolean;
+    logPath?: string;
+    snapshotInteractiveOnly?: boolean;
+    snapshotCompact?: boolean;
+    snapshotDepth?: number;
+    snapshotScope?: string;
+    snapshotRaw?: boolean;
+  },
 ): Promise<Record<string, unknown> | void> {
   const interactor = getInteractor(device);
   switch (command) {
@@ -218,6 +233,38 @@ export async function dispatchCommand(
       const path = outPath ?? `./screenshot-${Date.now()}.png`;
       await interactor.screenshot(path);
       return { path };
+    }
+    case 'snapshot': {
+      if (device.platform === 'ios') {
+        if (device.kind !== 'simulator') {
+          throw new AppError(
+            'UNSUPPORTED_OPERATION',
+            'snapshot is only supported on iOS simulators in v1',
+          );
+        }
+        const result = (await runIosRunnerCommand(
+          device,
+          {
+            command: 'snapshot',
+            appBundleId: context?.appBundleId,
+            interactiveOnly: context?.snapshotInteractiveOnly,
+            compact: context?.snapshotCompact,
+            depth: context?.snapshotDepth,
+            scope: context?.snapshotScope,
+            raw: context?.snapshotRaw,
+          },
+          { verbose: context?.verbose, logPath: context?.logPath },
+        )) as { nodes?: RawSnapshotNode[]; truncated?: boolean };
+        return { nodes: result.nodes ?? [], truncated: result.truncated ?? false };
+      }
+      const androidResult = await snapshotAndroid(device, {
+        interactiveOnly: context?.snapshotInteractiveOnly,
+        compact: context?.snapshotCompact,
+        depth: context?.snapshotDepth,
+        scope: context?.snapshotScope,
+        raw: context?.snapshotRaw,
+      });
+      return { nodes: androidResult.nodes ?? [], truncated: androidResult.truncated ?? false };
     }
     default:
       throw new AppError('INVALID_ARGS', `Unknown command: ${command}`);

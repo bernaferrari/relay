@@ -12,6 +12,11 @@ export type ParsedArgs = {
     out?: string;
     session?: string;
     verbose?: boolean;
+    snapshotInteractiveOnly?: boolean;
+    snapshotCompact?: boolean;
+    snapshotDepth?: number;
+    snapshotScope?: string;
+    snapshotRaw?: boolean;
     help: boolean;
   };
 };
@@ -34,6 +39,18 @@ export function parseArgs(argv: string[]): ParsedArgs {
       flags.verbose = true;
       continue;
     }
+    if (arg === '-i') {
+      flags.snapshotInteractiveOnly = true;
+      continue;
+    }
+    if (arg === '-c') {
+      flags.snapshotCompact = true;
+      continue;
+    }
+    if (arg === '--raw') {
+      flags.snapshotRaw = true;
+      continue;
+    }
     if (arg.startsWith('--')) {
       const [key, valueInline] = arg.split('=');
       const value = valueInline ?? argv[i + 1];
@@ -45,6 +62,17 @@ export function parseArgs(argv: string[]): ParsedArgs {
             throw new AppError('INVALID_ARGS', `Invalid platform: ${value}`);
           }
           flags.platform = value;
+          break;
+        case '--depth': {
+          const parsed = Number(value);
+          if (!Number.isFinite(parsed) || parsed < 0) {
+            throw new AppError('INVALID_ARGS', `Invalid depth: ${value}`);
+          }
+          flags.snapshotDepth = Math.floor(parsed);
+          break;
+        }
+        case '--scope':
+          flags.snapshotScope = value;
           break;
         case '--device':
           flags.device = value;
@@ -66,6 +94,22 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       continue;
     }
+    if (arg === '-d') {
+      const value = argv[i + 1];
+      i += 1;
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new AppError('INVALID_ARGS', `Invalid depth: ${value}`);
+      }
+      flags.snapshotDepth = Math.floor(parsed);
+      continue;
+    }
+    if (arg === '-s') {
+      const value = argv[i + 1];
+      i += 1;
+      flags.snapshotScope = value;
+      continue;
+    }
     positionals.push(arg);
   }
 
@@ -79,11 +123,15 @@ export function usage(): string {
 Commands:
   open <app>
   close [app]
+  snapshot [-i] [-c] [-d <depth>] [-s <scope>] [--raw]
+  click <@ref>
+  get text <@ref>
+  get attrs <@ref>
   press <x> <y>
   long-press <x> <y> [durationMs]
   focus <x> <y>
   type <text>
-  fill <x> <y> <text>
+  fill <x> <y> <text> | fill <@ref> <text>
   scroll <direction> [amount]
   scrollintoview <text>
   screenshot [--out path]

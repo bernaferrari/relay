@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import { runCmd, whichCmd } from '../../utils/exec.ts';
 import { AppError } from '../../utils/errors.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
+import type { RawSnapshotNode, Rect, SnapshotOptions } from '../../utils/snapshot.ts';
 
 const ALIASES: Record<string, { type: 'intent' | 'package'; value: string }> = {
   settings: { type: 'intent', value: 'android.settings.SETTINGS' },
@@ -201,6 +202,17 @@ export async function screenshotAndroid(device: DeviceInfo, outPath: string): Pr
   await fs.writeFile(outPath, result.stdoutBuffer);
 }
 
+export async function snapshotAndroid(
+  device: DeviceInfo,
+  options: SnapshotOptions = {},
+): Promise<{
+  nodes: RawSnapshotNode[];
+  truncated?: boolean;
+}> {
+  const xml = await dumpUiHierarchy(device);
+  return parseUiHierarchy(xml, 800, options);
+}
+
 export async function ensureAdb(): Promise<void> {
   const adbAvailable = await whichCmd('adb');
   if (!adbAvailable) throw new AppError('TOOL_MISSING', 'adb not found in PATH');
@@ -246,6 +258,181 @@ function findBounds(xml: string, query: string): { x: number; y: number } | null
       return { x: 0, y: 0 };
     }
     match = nodeRegex.exec(xml);
+  }
+  return null;
+}
+
+function parseUiHierarchy(
+  xml: string,
+  maxNodes: number,
+  options: SnapshotOptions,
+): { nodes: RawSnapshotNode[]; truncated?: boolean } {
+  const tree = parseUiHierarchyTree(xml);
+  const nodes: RawSnapshotNode[] = [];
+  let truncated = false;
+  const maxDepth = options.depth ?? Number.POSITIVE_INFINITY;
+  const scopedRoot = options.scope ? findScopeNode(tree, options.scope) : null;
+  const roots = scopedRoot ? [scopedRoot] : tree.children;
+
+  const walk = (node: AndroidNode, depth: number) => {
+    if (nodes.length >= maxNodes) {
+      truncated = true;
+      return;
+    }
+    if (depth > maxDepth) return;
+
+    const include = options.raw ? true : shouldIncludeAndroidNode(node, options);
+    if (include) {
+      nodes.push({
+        index: nodes.length,
+        type: node.type ?? undefined,
+        label: node.label ?? undefined,
+        value: node.value ?? undefined,
+        identifier: node.identifier ?? undefined,
+        rect: node.rect,
+        enabled: node.enabled,
+        hittable: node.hittable,
+        depth,
+        parentIndex: node.parentIndex,
+      });
+    }
+    for (const child of node.children) {
+      walk(child, depth + 1);
+      if (truncated) return;
+    }
+  };
+
+  for (const root of roots) {
+    walk(root, 0);
+    if (truncated) break;
+  }
+
+  return truncated ? { nodes, truncated } : { nodes };
+}
+
+function readNodeAttributes(node: string): {
+  text: string | null;
+  desc: string | null;
+  resourceId: string | null;
+  className: string | null;
+  bounds: string | null;
+  clickable?: boolean;
+  enabled?: boolean;
+  focusable?: boolean;
+} {
+  const getAttr = (name: string): string | null => {
+    const regex = new RegExp(`${name}="([^"]*)"`);
+    const match = regex.exec(node);
+    return match ? match[1] : null;
+  };
+  const boolAttr = (name: string): boolean | undefined => {
+    const raw = getAttr(name);
+    if (raw === null) return undefined;
+    return raw === 'true';
+  };
+  return {
+    text: getAttr('text'),
+    desc: getAttr('content-desc'),
+    resourceId: getAttr('resource-id'),
+    className: getAttr('class'),
+    bounds: getAttr('bounds'),
+    clickable: boolAttr('clickable'),
+    enabled: boolAttr('enabled'),
+    focusable: boolAttr('focusable'),
+  };
+}
+
+function parseBounds(bounds: string | null): Rect | undefined {
+  if (!bounds) return undefined;
+  const match = /\[(\d+),(\d+)\]\[(\d+),(\d+)\]/.exec(bounds);
+  if (!match) return undefined;
+  const x1 = Number(match[1]);
+  const y1 = Number(match[2]);
+  const x2 = Number(match[3]);
+  const y2 = Number(match[4]);
+  return { x: x1, y: y1, width: Math.max(0, x2 - x1), height: Math.max(0, y2 - y1) };
+}
+
+type AndroidNode = {
+  type: string | null;
+  label: string | null;
+  value: string | null;
+  identifier: string | null;
+  rect?: Rect;
+  enabled?: boolean;
+  hittable?: boolean;
+  depth: number;
+  parentIndex?: number;
+  children: AndroidNode[];
+};
+
+function parseUiHierarchyTree(xml: string): AndroidNode {
+  const root: AndroidNode = {
+    type: null,
+    label: null,
+    value: null,
+    identifier: null,
+    depth: -1,
+    children: [],
+  };
+  const stack: AndroidNode[] = [root];
+  const tokenRegex = /<node\b[^>]*>|<\/node>/g;
+  let match = tokenRegex.exec(xml);
+  while (match) {
+    const token = match[0];
+    if (token.startsWith('</node')) {
+      if (stack.length > 1) stack.pop();
+      match = tokenRegex.exec(xml);
+      continue;
+    }
+    const attrs = readNodeAttributes(token);
+    const rect = parseBounds(attrs.bounds);
+    const parent = stack[stack.length - 1];
+    const node: AndroidNode = {
+      type: attrs.className,
+      label: attrs.text || attrs.desc,
+      value: attrs.text,
+      identifier: attrs.resourceId,
+      rect,
+      enabled: attrs.enabled,
+      hittable: attrs.clickable ?? attrs.focusable,
+      depth: parent.depth + 1,
+      parentIndex: undefined,
+      children: [],
+    };
+    parent.children.push(node);
+    if (!token.endsWith('/>')) {
+      stack.push(node);
+    }
+    match = tokenRegex.exec(xml);
+  }
+  return root;
+}
+
+function shouldIncludeAndroidNode(node: AndroidNode, options: SnapshotOptions): boolean {
+  if (options.interactiveOnly) {
+    return Boolean(node.hittable);
+  }
+  if (options.compact) {
+    const hasText = Boolean(node.label && node.label.trim().length > 0);
+    const hasId = Boolean(node.identifier && node.identifier.trim().length > 0);
+    return hasText || hasId || Boolean(node.hittable);
+  }
+  return true;
+}
+
+function findScopeNode(root: AndroidNode, scope: string): AndroidNode | null {
+  const query = scope.toLowerCase();
+  const stack: AndroidNode[] = [...root.children];
+  while (stack.length > 0) {
+    const node = stack.shift() as AndroidNode;
+    const label = node.label?.toLowerCase() ?? '';
+    const value = node.value?.toLowerCase() ?? '';
+    const identifier = node.identifier?.toLowerCase() ?? '';
+    if (label.includes(query) || value.includes(query) || identifier.includes(query)) {
+      return node;
+    }
+    stack.push(...node.children);
   }
   return null;
 }

@@ -3,17 +3,45 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError } from '../../utils/errors.ts';
-import { runCmd, runCmdStreaming } from '../../utils/exec.ts';
+import { runCmd, runCmdStreaming, type ExecResult } from '../../utils/exec.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import net from 'node:net';
 
 export type RunnerCommand = {
-  command: 'tap' | 'type' | 'swipe' | 'findText' | 'listTappables';
+  command: 'tap' | 'type' | 'swipe' | 'findText' | 'listTappables' | 'snapshot' | 'shutdown';
   appBundleId?: string;
   text?: string;
   x?: number;
   y?: number;
   direction?: 'up' | 'down' | 'left' | 'right';
+  interactiveOnly?: boolean;
+  compact?: boolean;
+  depth?: number;
+  scope?: string;
+  raw?: boolean;
+};
+
+export type RunnerSession = {
+  device: DeviceInfo;
+  deviceId: string;
+  port: number;
+  xctestrunPath: string;
+  jsonPath: string;
+  testPromise: Promise<ExecResult>;
+};
+
+const runnerSessions = new Map<string, RunnerSession>();
+
+export type RunnerSnapshotNode = {
+  index: number;
+  type?: string;
+  label?: string;
+  value?: string;
+  identifier?: string;
+  rect?: { x: number; y: number; width: number; height: number };
+  enabled?: boolean;
+  hittable?: boolean;
+  depth?: number;
 };
 
 export async function runIosRunnerCommand(
@@ -25,14 +53,71 @@ export async function runIosRunnerCommand(
     throw new AppError('UNSUPPORTED_OPERATION', 'iOS runner only supports simulators in v1');
   }
 
+  const session = await ensureRunnerSession(device, options);
+  const response = await waitForRunner(device, session.port, command, options.logPath);
+  const text = await response.text();
+
+  let json: any = {};
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new AppError('COMMAND_FAILED', 'Invalid runner response', { text });
+  }
+
+  if (!json.ok) {
+    throw new AppError('COMMAND_FAILED', json.error?.message ?? 'Runner error', {
+      runner: json,
+      xcodebuild: {
+        exitCode: 1,
+        stdout: '',
+        stderr: '',
+      },
+      logPath: options.logPath,
+    });
+  }
+
+  return json.data ?? {};
+}
+
+export async function stopIosRunnerSession(deviceId: string): Promise<void> {
+  const session = runnerSessions.get(deviceId);
+  if (!session) return;
+  try {
+    await waitForRunner(session.device, session.port, {
+      command: 'shutdown',
+    } as RunnerCommand);
+  } catch {
+    // ignore
+  }
+  try {
+    await session.testPromise;
+  } catch {
+    // ignore
+  }
+  cleanupTempFile(session.xctestrunPath);
+  cleanupTempFile(session.jsonPath);
+  runnerSessions.delete(deviceId);
+}
+
+async function ensureBooted(udid: string): Promise<void> {
+  await runCmd('xcrun', ['simctl', 'bootstatus', udid, '-b'], { allowFailure: true });
+}
+
+async function ensureRunnerSession(
+  device: DeviceInfo,
+  options: { verbose?: boolean; logPath?: string },
+): Promise<RunnerSession> {
+  const existing = runnerSessions.get(device.id);
+  if (existing) return existing;
+
   await ensureBooted(device.id);
   const xctestrun = await ensureXctestrun(device.id, options);
-
   const port = await getFreePort();
+  const runnerTimeout = process.env.AGENT_DEVICE_RUNNER_TIMEOUT ?? '300';
   const { xctestrunPath, jsonPath } = await prepareXctestrunWithEnv(
     xctestrun,
-    { AGENT_DEVICE_RUNNER_PORT: String(port) },
-    `port-${port}`,
+    { AGENT_DEVICE_RUNNER_PORT: String(port), AGENT_DEVICE_RUNNER_TIMEOUT: runnerTimeout },
+    `session-${device.id}-${port}`,
   );
   const testPromise = runCmdStreaming(
     'xcodebuild',
@@ -57,49 +142,22 @@ export async function runIosRunnerCommand(
         logChunk(chunk, options.logPath, options.verbose);
       },
       allowFailure: true,
-      env: { ...process.env, AGENT_DEVICE_RUNNER_PORT: String(port) },
+      env: { ...process.env, AGENT_DEVICE_RUNNER_PORT: String(port), AGENT_DEVICE_RUNNER_TIMEOUT: runnerTimeout },
     },
   );
 
-  let response: Response | null = null;
-  let text = '';
-  let testResult: Awaited<typeof testPromise> | null = null;
-  try {
-    response = await waitForRunner(device, port, command, options.logPath);
-    text = await response.text();
-    testResult = await testPromise;
-  } finally {
-    cleanupTempFile(xctestrunPath);
-    cleanupTempFile(jsonPath);
-  }
-
-  let json: any = {};
-  try {
-    json = JSON.parse(text);
-  } catch {
-    throw new AppError('COMMAND_FAILED', 'Invalid runner response', { text });
-  }
-
-  if (!json.ok) {
-    throw new AppError('COMMAND_FAILED', json.error?.message ?? 'Runner error', {
-      runner: json,
-      xcodebuild: testResult
-        ? {
-            exitCode: testResult.exitCode,
-            stdout: testResult.stdout,
-            stderr: testResult.stderr,
-          }
-        : { exitCode: 1, stdout: '', stderr: '' },
-      logPath: options.logPath,
-    });
-  }
-
-  return json.data ?? {};
+  const session: RunnerSession = {
+    device,
+    deviceId: device.id,
+    port,
+    xctestrunPath,
+    jsonPath,
+    testPromise,
+  };
+  runnerSessions.set(device.id, session);
+  return session;
 }
 
-async function ensureBooted(udid: string): Promise<void> {
-  await runCmd('xcrun', ['simctl', 'bootstatus', udid, '-b'], { allowFailure: true });
-}
 
 async function ensureXctestrun(
   udid: string,

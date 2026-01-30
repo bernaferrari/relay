@@ -16,6 +16,25 @@ final class RunnerTests: XCTestCase {
   private var currentApp: XCUIApplication?
   private var currentBundleId: String?
   private let maxRequestBytes = 2 * 1024 * 1024
+  private let maxSnapshotElements = 600
+  private let fastSnapshotLimit = 300
+  private let interactiveTypes: Set<XCUIElement.ElementType> = [
+    .button,
+    .cell,
+    .checkBox,
+    .collectionView,
+    .link,
+    .menuItem,
+    .picker,
+    .searchField,
+    .segmentedControl,
+    .slider,
+    .stepper,
+    .switch,
+    .tabBar,
+    .textField,
+    .textView,
+  ]
 
   override func setUp() {
     continueAfterFailure = false
@@ -61,7 +80,7 @@ final class RunnerTests: XCTestCase {
       return
     }
     NSLog("AGENT_DEVICE_RUNNER_WAITING")
-    let result = XCTWaiter.wait(for: [expectation], timeout: 10)
+    let result = XCTWaiter.wait(for: [expectation], timeout: resolveRunnerTimeout())
     NSLog("AGENT_DEVICE_RUNNER_WAIT_RESULT=%@", String(describing: result))
     if result != .completed {
       XCTFail("runner wait ended with \(result)")
@@ -91,10 +110,12 @@ final class RunnerTests: XCTestCase {
       }
       let combined = buffer + data
       if let body = self.parseRequest(data: combined) {
-        let response = self.handleRequestBody(body)
-        connection.send(content: response, completion: .contentProcessed { _ in
+        let result = self.handleRequestBody(body)
+        connection.send(content: result.data, completion: .contentProcessed { _ in
           connection.cancel()
-          self.finish()
+          if result.shouldFinish {
+            self.finish()
+          }
         })
       } else {
         self.receiveRequest(connection: connection, buffer: combined)
@@ -130,20 +151,29 @@ final class RunnerTests: XCTestCase {
     return nil
   }
 
-  private func handleRequestBody(_ body: Data) -> Data {
+  private func handleRequestBody(_ body: Data) -> (data: Data, shouldFinish: Bool) {
     guard let json = String(data: body, encoding: .utf8) else {
-      return jsonResponse(status: 400, response: Response(ok: false, error: ErrorPayload(message: "invalid json")))
+      return (
+        jsonResponse(status: 400, response: Response(ok: false, error: ErrorPayload(message: "invalid json"))),
+        false
+      )
     }
     guard let data = json.data(using: .utf8) else {
-      return jsonResponse(status: 400, response: Response(ok: false, error: ErrorPayload(message: "invalid json")))
+      return (
+        jsonResponse(status: 400, response: Response(ok: false, error: ErrorPayload(message: "invalid json"))),
+        false
+      )
     }
 
     do {
       let command = try JSONDecoder().decode(Command.self, from: data)
       let response = try execute(command: command)
-      return jsonResponse(status: 200, response: response)
+      return (jsonResponse(status: 200, response: response), command.command == .shutdown)
     } catch {
-      return jsonResponse(status: 500, response: Response(ok: false, error: ErrorPayload(message: "\(error)")))
+      return (
+        jsonResponse(status: 500, response: Response(ok: false, error: ErrorPayload(message: "\(error)"))),
+        false
+      )
     }
   }
 
@@ -184,6 +214,8 @@ final class RunnerTests: XCTestCase {
     _ = activeApp.waitForExistence(timeout: 5)
 
     switch command.command {
+    case .shutdown:
+      return Response(ok: true, data: DataPayload(message: "shutdown"))
     case .tap:
       if let text = command.text {
         if let element = findElement(app: activeApp, text: text) {
@@ -226,11 +258,33 @@ final class RunnerTests: XCTestCase {
       }
       let unique = Array(Set(labels)).sorted()
       return Response(ok: true, data: DataPayload(items: unique))
+    case .snapshot:
+      let options = SnapshotOptions(
+        interactiveOnly: command.interactiveOnly ?? false,
+        compact: command.compact ?? false,
+        depth: command.depth,
+        scope: command.scope,
+        raw: command.raw ?? false,
+      )
+      if options.raw {
+        return Response(ok: true, data: snapshotRaw(app: activeApp, options: options))
+      }
+      return Response(ok: true, data: snapshotFast(app: activeApp, options: options))
     }
   }
 
   private func findElement(app: XCUIApplication, text: String) -> XCUIElement? {
     let predicate = NSPredicate(format: "label CONTAINS[c] %@ OR identifier CONTAINS[c] %@ OR value CONTAINS[c] %@", text, text, text)
+    let element = app.descendants(matching: .any).matching(predicate).firstMatch
+    return element.exists ? element : nil
+  }
+
+  private func findScopeElement(app: XCUIApplication, scope: String) -> XCUIElement? {
+    let predicate = NSPredicate(
+      format: "label CONTAINS[c] %@ OR identifier CONTAINS[c] %@",
+      scope,
+      scope
+    )
     let element = app.descendants(matching: .any).matching(predicate).firstMatch
     return element.exists ? element : nil
   }
@@ -258,6 +312,211 @@ final class RunnerTests: XCTestCase {
     case .right:
       left.press(forDuration: 0.1, thenDragTo: right)
     }
+  }
+
+  private func aggregatedLabel(for element: XCUIElement, depth: Int = 0) -> String? {
+    if depth > 2 { return nil }
+    let text = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !text.isEmpty { return text }
+    if let value = element.value {
+      let valueText = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+      if !valueText.isEmpty { return valueText }
+    }
+    let children = element.children(matching: .any).allElementsBoundByIndex
+    for child in children {
+      if let childLabel = aggregatedLabel(for: child, depth: depth + 1) {
+        return childLabel
+      }
+    }
+    return nil
+  }
+
+  private func elementTypeName(_ type: XCUIElement.ElementType) -> String {
+    switch type {
+    case .application: return "Application"
+    case .window: return "Window"
+    case .button: return "Button"
+    case .cell: return "Cell"
+    case .staticText: return "StaticText"
+    case .textField: return "TextField"
+    case .textView: return "TextView"
+    case .secureTextField: return "SecureTextField"
+    case .switch: return "Switch"
+    case .slider: return "Slider"
+    case .link: return "Link"
+    case .image: return "Image"
+    case .navigationBar: return "NavigationBar"
+    case .tabBar: return "TabBar"
+    case .collectionView: return "CollectionView"
+    case .table: return "Table"
+    case .scrollView: return "ScrollView"
+    case .searchField: return "SearchField"
+    case .segmentedControl: return "SegmentedControl"
+    case .stepper: return "Stepper"
+    case .picker: return "Picker"
+    case .checkBox: return "CheckBox"
+    case .menuItem: return "MenuItem"
+    case .other: return "Other"
+    default: return "Element(\(type.rawValue))"
+    }
+  }
+
+  private func snapshotFast(app: XCUIApplication, options: SnapshotOptions) -> DataPayload {
+    var nodes: [SnapshotNode] = []
+    var truncated = false
+    let maxDepth = options.depth ?? 2
+    let rootLabel = aggregatedLabel(for: app) ?? app.label.trimmingCharacters(in: .whitespacesAndNewlines)
+    let rootNode = SnapshotNode(
+      index: 0,
+      type: "Application",
+      label: rootLabel.isEmpty ? nil : rootLabel,
+      identifier: app.identifier.isEmpty ? nil : app.identifier,
+      value: nil,
+      rect: SnapshotRect(
+        x: Double(app.frame.origin.x),
+        y: Double(app.frame.origin.y),
+        width: Double(app.frame.size.width),
+        height: Double(app.frame.size.height),
+      ),
+      enabled: app.isEnabled,
+      hittable: app.isHittable,
+      depth: 0,
+    )
+    nodes.append(rootNode)
+
+    let queryRoot = options.scope.flatMap { findScopeElement(app: app, scope: $0) } ?? app
+    let elements = collectFastElements(root: queryRoot)
+    var seen = Set<String>()
+
+    for element in elements {
+      if nodes.count >= fastSnapshotLimit {
+        truncated = true
+        break
+      }
+      let label = aggregatedLabel(for: element) ?? element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+      let identifier = element.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+      let valueText: String? = {
+        guard let value = element.value else { return nil }
+        let text = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+      }()
+      if !shouldInclude(element: element, label: label, identifier: identifier, valueText: valueText, options: options) {
+        continue
+      }
+      let key = "\(element.elementType)-\(label)-\(identifier)-\(element.frame.origin.x)-\(element.frame.origin.y)"
+      if seen.contains(key) { continue }
+      seen.insert(key)
+      nodes.append(
+        SnapshotNode(
+          index: nodes.count,
+          type: elementTypeName(element.elementType),
+          label: label.isEmpty ? nil : label,
+          identifier: identifier.isEmpty ? nil : identifier,
+          value: valueText,
+          rect: SnapshotRect(
+            x: Double(element.frame.origin.x),
+            y: Double(element.frame.origin.y),
+            width: Double(element.frame.size.width),
+            height: Double(element.frame.size.height),
+          ),
+          enabled: element.isEnabled,
+          hittable: element.isHittable,
+          depth: min(maxDepth, 1),
+        )
+      )
+    }
+
+    return DataPayload(nodes: nodes, truncated: truncated)
+  }
+
+  private func snapshotRaw(app: XCUIApplication, options: SnapshotOptions) -> DataPayload {
+    let root = options.scope.flatMap { findScopeElement(app: app, scope: $0) } ?? app
+    var nodes: [SnapshotNode] = []
+    var truncated = false
+
+    func walk(_ element: XCUIElement, depth: Int) {
+      if nodes.count >= maxSnapshotElements {
+        truncated = true
+        return
+      }
+      if let limit = options.depth, depth > limit { return }
+
+      let label = aggregatedLabel(for: element) ?? element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+      let identifier = element.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+      let valueText: String? = {
+        guard let value = element.value else { return nil }
+        let text = String(describing: value).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+      }()
+      if shouldInclude(element: element, label: label, identifier: identifier, valueText: valueText, options: options) {
+        nodes.append(
+          SnapshotNode(
+            index: nodes.count,
+            type: elementTypeName(element.elementType),
+            label: label.isEmpty ? nil : label,
+            identifier: identifier.isEmpty ? nil : identifier,
+            value: valueText,
+            rect: SnapshotRect(
+              x: Double(element.frame.origin.x),
+              y: Double(element.frame.origin.y),
+              width: Double(element.frame.size.width),
+              height: Double(element.frame.size.height),
+            ),
+            enabled: element.isEnabled,
+            hittable: element.isHittable,
+            depth: depth,
+          )
+        )
+      }
+
+      let children = element.children(matching: .any).allElementsBoundByIndex
+      for child in children {
+        walk(child, depth: depth + 1)
+        if truncated { return }
+      }
+    }
+
+    walk(root, depth: 0)
+    return DataPayload(nodes: nodes, truncated: truncated)
+  }
+
+  private func shouldInclude(
+    element: XCUIElement,
+    label: String,
+    identifier: String,
+    valueText: String?,
+    options: SnapshotOptions
+  ) -> Bool {
+    let type = element.elementType
+    let hasContent = !label.isEmpty || !identifier.isEmpty || (valueText != nil)
+    if options.interactiveOnly {
+      if interactiveTypes.contains(type) { return true }
+      if element.isHittable && type != .other { return true }
+      if hasContent && type != .other { return true }
+      return false
+    }
+    if options.compact {
+      return hasContent || element.isHittable
+    }
+    return true
+  }
+
+  private func collectFastElements(root: XCUIElement) -> [XCUIElement] {
+    var elements: [XCUIElement] = []
+    elements.append(contentsOf: root.buttons.allElementsBoundByIndex)
+    elements.append(contentsOf: root.links.allElementsBoundByIndex)
+    elements.append(contentsOf: root.cells.allElementsBoundByIndex)
+    elements.append(contentsOf: root.staticTexts.allElementsBoundByIndex)
+    elements.append(contentsOf: root.switches.allElementsBoundByIndex)
+    elements.append(contentsOf: root.textFields.allElementsBoundByIndex)
+    elements.append(contentsOf: root.textViews.allElementsBoundByIndex)
+    elements.append(contentsOf: root.navigationBars.allElementsBoundByIndex)
+    elements.append(contentsOf: root.tabBars.allElementsBoundByIndex)
+    elements.append(contentsOf: root.searchFields.allElementsBoundByIndex)
+    elements.append(contentsOf: root.segmentedControls.allElementsBoundByIndex)
+    elements.append(contentsOf: root.collectionViews.allElementsBoundByIndex)
+    elements.append(contentsOf: root.tables.allElementsBoundByIndex)
+    return elements
   }
 
   private func jsonResponse(status: Int, response: Response) -> Data {
@@ -298,12 +557,22 @@ private func resolveRunnerPort() -> UInt16 {
   return 0
 }
 
+private func resolveRunnerTimeout() -> TimeInterval {
+  if let env = ProcessInfo.processInfo.environment["AGENT_DEVICE_RUNNER_TIMEOUT"],
+     let parsed = Double(env) {
+    return parsed
+  }
+  return 300
+}
+
 enum CommandType: String, Codable {
   case tap
   case type
   case swipe
   case findText
   case listTappables
+  case snapshot
+  case shutdown
 }
 
 enum SwipeDirection: String, Codable {
@@ -320,6 +589,11 @@ struct Command: Codable {
   let x: Double?
   let y: Double?
   let direction: SwipeDirection?
+  let interactiveOnly: Bool?
+  let compact: Bool?
+  let depth: Int?
+  let scope: String?
+  let raw: Bool?
 }
 
 struct Response: Codable {
@@ -338,14 +612,51 @@ struct DataPayload: Codable {
   let message: String?
   let found: Bool?
   let items: [String]?
+  let nodes: [SnapshotNode]?
+  let truncated: Bool?
 
-  init(message: String? = nil, found: Bool? = nil, items: [String]? = nil) {
+  init(
+    message: String? = nil,
+    found: Bool? = nil,
+    items: [String]? = nil,
+    nodes: [SnapshotNode]? = nil,
+    truncated: Bool? = nil
+  ) {
     self.message = message
     self.found = found
     self.items = items
+    self.nodes = nodes
+    self.truncated = truncated
   }
 }
 
 struct ErrorPayload: Codable {
   let message: String
+}
+
+struct SnapshotRect: Codable {
+  let x: Double
+  let y: Double
+  let width: Double
+  let height: Double
+}
+
+struct SnapshotNode: Codable {
+  let index: Int
+  let type: String
+  let label: String?
+  let identifier: String?
+  let value: String?
+  let rect: SnapshotRect
+  let enabled: Bool
+  let hittable: Bool
+  let depth: Int
+}
+
+struct SnapshotOptions {
+  let interactiveOnly: Bool
+  let compact: Bool
+  let depth: Int?
+  let scope: String?
+  let raw: Bool
 }

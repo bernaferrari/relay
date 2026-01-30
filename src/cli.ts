@@ -1,6 +1,6 @@
 import { parseArgs, usage } from './utils/args.ts';
 import { asAppError, AppError } from './utils/errors.ts';
-import { printHumanError, printJson } from './utils/output.ts';
+import { formatSnapshotText, printHumanError, printJson } from './utils/output.ts';
 import { pathToFileURL } from 'node:url';
 import { sendToDaemon } from './daemon-client.ts';
 import fs from 'node:fs';
@@ -45,7 +45,45 @@ export async function runCli(argv: string[]): Promise<void> {
     });
 
     if (response.ok) {
-      if (flags.json) printJson({ success: true, data: response.data ?? {} });
+      if (flags.json) {
+        printJson({ success: true, data: response.data ?? {} });
+        if (logTailStopper) logTailStopper();
+        return;
+      }
+      if (command === 'snapshot') {
+        process.stdout.write(
+          formatSnapshotText((response.data ?? {}) as Record<string, unknown>, {
+            raw: flags.snapshotRaw,
+          }),
+        );
+        if (logTailStopper) logTailStopper();
+        return;
+      }
+      if (command === 'get') {
+        const sub = positionals[0];
+        if (sub === 'text') {
+          const text = (response.data as any)?.text ?? '';
+          process.stdout.write(`${text}\n`);
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+        if (sub === 'attrs') {
+          const node = (response.data as any)?.node ?? {};
+          process.stdout.write(`${JSON.stringify(node, null, 2)}\n`);
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+      }
+      if (command === 'click') {
+        const ref = (response.data as any)?.ref ?? '';
+        const x = (response.data as any)?.x;
+        const y = (response.data as any)?.y;
+        if (ref && typeof x === 'number' && typeof y === 'number') {
+          process.stdout.write(`Clicked @${ref} (${x}, ${y})\n`);
+        }
+        if (logTailStopper) logTailStopper();
+        return;
+      }
       if (logTailStopper) logTailStopper();
       return;
     }
