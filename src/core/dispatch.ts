@@ -205,14 +205,8 @@ export async function dispatchCommand(
           );
         }
         if (backend === 'ax') {
-          try {
-            const ax = await snapshotAx(device);
-            return { nodes: ax.nodes ?? [], truncated: false, backend: 'ax', rootRect: ax.rootRect };
-          } catch (err) {
-            if (context?.snapshotBackend === 'ax') {
-              throw err;
-            }
-          }
+          const ax = await snapshotAx(device);
+          return { nodes: ax.nodes ?? [], truncated: false, backend: 'ax', rootRect: ax.rootRect };
         }
         const result = (await runIosRunnerCommand(
           device,
