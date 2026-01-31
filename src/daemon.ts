@@ -76,6 +76,7 @@ function contextFromFlags(
   snapshotDepth?: number;
   snapshotScope?: string;
   snapshotBackend?: 'ax' | 'xctest';
+  snapshotRaw?: boolean;
 } {
   return {
     appBundleId,
@@ -207,7 +208,6 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       nodes?: RawSnapshotNode[];
       truncated?: boolean;
       backend?: 'ax' | 'xctest' | 'android';
-      rootRect?: { width: number; height: number };
     };
     const pruned = pruneGroupNodes(data?.nodes ?? []);
     const nodes = attachRefs(pruned);

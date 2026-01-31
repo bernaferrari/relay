@@ -18,7 +18,7 @@ type AXNode = {
 
 export async function snapshotAx(
   device: DeviceInfo,
-): Promise<{ nodes: RawSnapshotNode[]; rootRect?: AXFrame }> {
+): Promise<{ nodes: RawSnapshotNode[] }> {
   if (device.platform !== 'ios' || device.kind !== 'simulator') {
     throw new AppError('UNSUPPORTED_OPERATION', 'AX snapshot is only supported on iOS simulators');
   }
@@ -90,7 +90,7 @@ export async function snapshotAx(
       : undefined,
     depth: node.depth,
   }));
-  return { nodes: mapped, rootRect: rootFrame };
+  return { nodes: mapped };
 }
 
 function normalizeFrames(
