@@ -79,7 +79,10 @@ export async function dispatchCommand(
   switch (command) {
     case 'open': {
       const app = positionals[0];
-      if (!app) throw new AppError('INVALID_ARGS', 'open requires an app name or bundle/package id');
+      if (!app) {
+        await interactor.openDevice();
+        return { app: null };
+      }
       await interactor.open(app);
       return { app };
     }
