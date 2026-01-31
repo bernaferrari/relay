@@ -113,7 +113,28 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
   }
 
   if (command === 'open') {
+    if (sessions.has(sessionName)) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGS',
+          message: 'Session already active. Close it first or pass a new --session name.',
+        },
+      };
+    }
     const device = await resolveTargetDevice(req.flags ?? {});
+    await ensureDeviceReady(device);
+    const inUse = Array.from(sessions.values()).find((s) => s.device.id === device.id);
+    if (inUse) {
+      return {
+        ok: false,
+        error: {
+          code: 'DEVICE_IN_USE',
+          message: `Device is already in use by session "${inUse.name}".`,
+          details: { session: inUse.name, deviceId: device.id, deviceName: device.name },
+        },
+      };
+    }
     let appBundleId: string | undefined;
     const appName = req.positionals?.[0];
     if (device.platform === 'ios') {
@@ -201,6 +222,9 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
   if (command === 'snapshot') {
     const session = sessions.get(sessionName);
     const device = session?.device ?? (await resolveTargetDevice(req.flags ?? {}));
+    if (!session) {
+      await ensureDeviceReady(device);
+    }
     const appBundleId = session?.appBundleId;
     const data = (await dispatchCommand(device, 'snapshot', [], req.flags?.out, {
       ...contextFromFlags(req.flags, appBundleId),
@@ -776,6 +800,18 @@ function findNearestMeaningfulLabel(
     }
   }
   return best?.label;
+}
+
+async function ensureDeviceReady(device: DeviceInfo): Promise<void> {
+  if (device.platform === 'ios' && device.kind === 'simulator') {
+    const { ensureBootedSimulator } = await import('./platforms/ios/index.ts');
+    await ensureBootedSimulator(device);
+    return;
+  }
+  if (device.platform === 'android') {
+    const { waitForAndroidBoot } = await import('./platforms/android/devices.ts');
+    await waitForAndroidBoot(device.id);
+  }
 }
 
 function isLabelUnique(nodes: SnapshotState['nodes'], label: string): boolean {

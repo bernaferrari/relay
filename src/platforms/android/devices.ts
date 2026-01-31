@@ -47,7 +47,7 @@ export async function listAndroidDevices(): Promise<DeviceInfo[]> {
   return devices;
 }
 
-async function isAndroidBooted(serial: string): Promise<boolean> {
+export async function isAndroidBooted(serial: string): Promise<boolean> {
   try {
     const result = await runCmd('adb', ['-s', serial, 'shell', 'getprop', 'sys.boot_completed'], {
       allowFailure: true,
@@ -56,4 +56,16 @@ async function isAndroidBooted(serial: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function waitForAndroidBoot(serial: string, timeoutMs = 60000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await isAndroidBooted(serial)) return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new AppError('COMMAND_FAILED', 'Android device did not finish booting in time', {
+    serial,
+    timeoutMs,
+  });
 }

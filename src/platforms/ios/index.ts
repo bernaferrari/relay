@@ -29,6 +29,7 @@ export async function openIosApp(device: DeviceInfo, app: string): Promise<void>
   const bundleId = await resolveIosApp(device, app);
   if (device.kind === 'simulator') {
     await ensureBootedSimulator(device);
+    await runCmd('open', ['-a', 'Simulator'], { allowFailure: true });
     await runCmd('xcrun', ['simctl', 'launch', device.id, bundleId]);
     return;
   }
@@ -41,6 +42,14 @@ export async function openIosApp(device: DeviceInfo, app: string): Promise<void>
     device.id,
     bundleId,
   ]);
+}
+
+export async function openIosDevice(device: DeviceInfo): Promise<void> {
+  if (device.kind !== 'simulator') return;
+  const state = await getSimulatorState(device.id);
+  if (state === 'Booted') return;
+  await ensureBootedSimulator(device);
+  await runCmd('open', ['-a', 'Simulator'], { allowFailure: true });
 }
 
 export async function closeIosApp(device: DeviceInfo, app: string): Promise<void> {
@@ -174,7 +183,7 @@ async function listSimulatorApps(
   }
 }
 
-async function ensureBootedSimulator(device: DeviceInfo): Promise<void> {
+export async function ensureBootedSimulator(device: DeviceInfo): Promise<void> {
   if (device.kind !== 'simulator') return;
   const state = await getSimulatorState(device.id);
   if (state === 'Booted') return;

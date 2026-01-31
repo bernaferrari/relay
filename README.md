@@ -1,6 +1,6 @@
 # agent-device
 
-Unified control CLI for physical and virtual devices (iOS + Android) for AI agents.
+CLI to control iOS and Android devices for AI agents.
 
 This project mirrors the spirit of `agent-browser`, but targets iOS simulators/devices and Android emulators/devices.
 
@@ -57,6 +57,7 @@ Flags:
 - `--verbose` for daemon and runner logs
 - `--json` for structured output
 - `--backend ax|xctest` (snapshot only; defaults to `ax` on iOS)
+- `open` without args boots/activates the target device/simulator without launching an app.
 
 Sessions:
 - `open` starts a session.

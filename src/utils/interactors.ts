@@ -6,6 +6,7 @@ import {
   focusAndroid,
   longPressAndroid,
   openAndroidApp,
+  openAndroidDevice,
   pressAndroid,
   scrollAndroid,
   scrollIntoViewAndroid,
@@ -18,6 +19,7 @@ import {
   focusIos,
   longPressIos,
   openIosApp,
+  openIosDevice,
   pressIos,
   scrollIos,
   scrollIntoViewIos,
@@ -27,6 +29,7 @@ import {
 
 export type Interactor = {
   open(app: string): Promise<void>;
+  openDevice(): Promise<void>;
   close(app: string): Promise<void>;
   tap(x: number, y: number): Promise<void>;
   longPress(x: number, y: number, durationMs?: number): Promise<void>;
@@ -43,6 +46,7 @@ export function getInteractor(device: DeviceInfo): Interactor {
     case 'android':
       return {
         open: (app) => openAndroidApp(device, app),
+        openDevice: () => openAndroidDevice(device),
         close: (app) => closeAndroidApp(device, app),
         tap: (x, y) => pressAndroid(device, x, y),
         longPress: (x, y, durationMs) => longPressAndroid(device, x, y, durationMs),
@@ -56,6 +60,7 @@ export function getInteractor(device: DeviceInfo): Interactor {
     case 'ios':
       return {
         open: (app) => openIosApp(device, app),
+        openDevice: () => openIosDevice(device),
         close: (app) => closeIosApp(device, app),
         tap: (x, y) => pressIos(device, x, y),
         longPress: (x, y, durationMs) => longPressIos(device, x, y, durationMs),

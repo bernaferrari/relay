@@ -142,35 +142,45 @@ export function parseArgs(argv: string[]): ParsedArgs {
 export function usage(): string {
   return `agent-device <command> [args] [--json]
 
+CLI to control iOS and Android devices for AI agents.
+
 Commands:
-  open <app>
-  close [app]
+  open [app]                                 Boot device/simulator; optionally launch app
+  close [app]                                Close app or just end session
   snapshot [-i] [-c] [-d <depth>] [-s <scope>] [--raw] [--backend ax|xctest]
-  click <@ref>
-  rect <label|@ref>
-  get text <@ref>
-  get attrs <@ref>
-  replay <path>
-  press <x> <y>
-  long-press <x> <y> [durationMs]
-  focus <x> <y>
-  type <text>
-  fill <x> <y> <text> | fill <@ref> <text>
-  scroll <direction> [amount]
-  scrollintoview <text>
-  screenshot [--out path]
-  session list
+                                             Capture accessibility tree
+    -i                                       Interactive elements only
+    -c                                       Compact output (drop empty structure)
+    -d <depth>                               Limit snapshot depth
+    -s <scope>                               Scope snapshot to label/identifier
+    --raw                                    Raw node output
+    --backend ax|xctest                       ax: macOS Accessibility tree (fast, recommended, needs permissions)
+                                             xctest: XCTest snapshot (slower, no permissions)
+  click <@ref>                               Click element by snapshot ref
+  rect <label|@ref>                          Fetch element frame by label or ref (iOS sim)
+  get text <@ref>                            Return element text by ref
+  get attrs <@ref>                           Return element attributes by ref
+  replay <path>                              Replay a recorded session
+  press <x> <y>                              Tap at coordinates
+  long-press <x> <y> [durationMs]            Long press (where supported)
+  focus <x> <y>                              Focus input at coordinates
+  type <text>                                Type text in focused field
+  fill <x> <y> <text> | fill <@ref> <text>   Tap then type
+  scroll <direction> [amount]                Scroll in direction (0-1 amount)
+  scrollintoview <text>                      Scroll until text appears (Android only)
+  screenshot [--out path]                    Capture screenshot
+  session list                               List active sessions
 
 Flags:
-  --platform ios|android
-  --device <name>
-  --udid <udid>
-  --serial <serial>
-  --out <path>
-  --session <name>
-  --verbose
-  --json
-  --no-record
-  --record-json
+  --platform ios|android                     Platform to target
+  --device <name>                            Device name to target
+  --udid <udid>                              iOS device UDID
+  --serial <serial>                          Android device serial
+  --out <path>                               Output path for screenshots
+  --session <name>                           Named session
+  --verbose                                  Stream daemon/runner logs
+  --json                                     JSON output
+  --no-record                                Do not record this action
+  --record-json                              Record JSON session log
 `;
 }

@@ -3,6 +3,7 @@ import { runCmd, whichCmd } from '../../utils/exec.ts';
 import { AppError } from '../../utils/errors.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import type { RawSnapshotNode, Rect, SnapshotOptions } from '../../utils/snapshot.ts';
+import { waitForAndroidBoot } from './devices.ts';
 
 const ALIASES: Record<string, { type: 'intent' | 'package'; value: string }> = {
   settings: { type: 'intent', value: 'android.settings.SETTINGS' },
@@ -43,6 +44,9 @@ export async function resolveAndroidApp(
 }
 
 export async function openAndroidApp(device: DeviceInfo, app: string): Promise<void> {
+  if (!device.booted) {
+    await waitForAndroidBoot(device.id);
+  }
   const resolved = await resolveAndroidApp(device, app);
   if (resolved.type === 'intent') {
     await runCmd('adb', adbArgs(device, ['shell', 'am', 'start', '-a', resolved.value]));
@@ -60,6 +64,12 @@ export async function openAndroidApp(device: DeviceInfo, app: string): Promise<v
       '1',
     ]),
   );
+}
+
+export async function openAndroidDevice(device: DeviceInfo): Promise<void> {
+  if (!device.booted) {
+    await waitForAndroidBoot(device.id);
+  }
 }
 
 export async function closeAndroidApp(device: DeviceInfo, app: string): Promise<void> {
