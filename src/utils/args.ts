@@ -147,6 +147,7 @@ Commands:
   close [app]
   snapshot [-i] [-c] [-d <depth>] [-s <scope>] [--raw] [--backend ax|xctest]
   click <@ref>
+  rect <label|@ref>
   get text <@ref>
   get attrs <@ref>
   replay <path>

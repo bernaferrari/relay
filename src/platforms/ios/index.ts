@@ -76,7 +76,6 @@ export async function closeIosApp(device: DeviceInfo, app: string): Promise<void
 
 export async function pressIos(device: DeviceInfo, x: number, y: number): Promise<void> {
   ensureSimulator(device, 'press');
-  await ensureBootedSimulator(device);
   throw new AppError(
     'UNSUPPORTED_OPERATION',
     'simctl io tap is not available; use the XCTest runner for input',
@@ -90,7 +89,6 @@ export async function longPressIos(
   durationMs = 800,
 ): Promise<void> {
   ensureSimulator(device, 'long-press');
-  await ensureBootedSimulator(device);
   throw new AppError(
     'UNSUPPORTED_OPERATION',
     'long-press is not supported on iOS simulators without XCTest runner support',
@@ -103,7 +101,6 @@ export async function focusIos(device: DeviceInfo, x: number, y: number): Promis
 
 export async function typeIos(device: DeviceInfo, text: string): Promise<void> {
   ensureSimulator(device, 'type');
-  await ensureBootedSimulator(device);
   throw new AppError(
     'UNSUPPORTED_OPERATION',
     'simctl io keyboard is not available; use the XCTest runner for input',
@@ -126,7 +123,6 @@ export async function scrollIos(
   amount = 0.6,
 ): Promise<void> {
   ensureSimulator(device, 'scroll');
-  await ensureBootedSimulator(device);
   throw new AppError(
     'UNSUPPORTED_OPERATION',
     'simctl io swipe is not available; use the XCTest runner for input',
@@ -176,18 +172,6 @@ async function listSimulatorApps(
   } catch {
     return [];
   }
-}
-
-export async function getSimulatorScreenSize(
-  device: DeviceInfo,
-): Promise<{ width: number; height: number }> {
-  await ensureBootedSimulator(device);
-  const result = await runCmd('xcrun', ['simctl', 'io', device.id, 'status-bar', '--list'], {
-    allowFailure: true,
-  });
-  const match = (result.stdout as string).match(/(\d+)x(\d+)/);
-  if (match) return { width: Number(match[1]), height: Number(match[2]) };
-  return { width: 1170, height: 2532 };
 }
 
 async function ensureBootedSimulator(device: DeviceInfo): Promise<void> {

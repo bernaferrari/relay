@@ -72,6 +72,7 @@ export async function dispatchCommand(
     snapshotDepth?: number;
     snapshotScope?: string;
     snapshotRaw?: boolean;
+    snapshotBackend?: 'ax' | 'xctest';
   },
 ): Promise<Record<string, unknown> | void> {
   const interactor = getInteractor(device);
@@ -206,7 +207,7 @@ export async function dispatchCommand(
         }
         if (backend === 'ax') {
           const ax = await snapshotAx(device);
-          return { nodes: ax.nodes ?? [], truncated: false, backend: 'ax', rootRect: ax.rootRect };
+          return { nodes: ax.nodes ?? [], truncated: false, backend: 'ax' };
         }
         const result = (await runIosRunnerCommand(
           device,
