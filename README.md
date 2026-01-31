@@ -20,7 +20,7 @@ npm install -g agent-device
 Or use it without installing:
 
 ```bash
-npx agent-device open Settings
+npx agent-device open SampleApp
 ```
 
 ## Usage
@@ -32,15 +32,20 @@ agent-device <command> [args] [--json]
 Examples:
 
 ```bash
-agent-device open Settings
-agent-device press 120 320
+agent-device open SampleApp
+agent-device snapshot
+agent-device click @e7
 agent-device type "hello"
 agent-device screenshot --out ./screenshot.png
-agent-device snapshot -i -c -d 6
-agent-device close Settings
+agent-device close SampleApp
 ```
 
 Best practice: run `snapshot` immediately before interactions to avoid stale coordinates if the Simulator window moves or UI changes.
+When interacting with UI elements from a snapshot, prefer refs (e.g. `click @e7`) over raw coordinates. Refs are stable across runs and avoid coordinate drift.
+
+iOS snapshots:
+- Default backend is `ax` (fast). It requires enabling Accessibility for the terminal app in System Settings.
+- If AX is not available, use `--backend xctest` explicitly.
 
 Flags:
 - `--platform ios|android`

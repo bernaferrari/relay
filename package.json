@@ -20,6 +20,7 @@
     "build:clis": "pnpm build:node && pnpm build:axsnapshot",
     "format": "prettier --write .",
     "prepublishOnly": "pnpm build:node && pnpm build:axsnapshot",
+    "prepack": "pnpm build:node && pnpm build:axsnapshot",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test",
     "test:smoke": "node --test test/smoke/*.test.ts",

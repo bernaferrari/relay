@@ -25,8 +25,15 @@ export async function snapshotAx(
   const binary = await ensureAxSnapshotBinary();
   const result = await runCmd(binary, [], { allowFailure: true });
   if (result.exitCode !== 0) {
+    const stderrText = (result.stderr ?? '').toString();
+    let hint = '';
+    if (stderrText.toLowerCase().includes('accessibility permission')) {
+      hint =
+        ' Enable Accessibility for your terminal in System Settings > Privacy & Security > Accessibility, ' +
+        'or use --backend xctest (slower snapshots via XCTest).';
+    }
     throw new AppError('COMMAND_FAILED', 'AX snapshot failed', {
-      stderr: result.stderr,
+      stderr: `${stderrText}${hint}`,
       stdout: result.stdout,
     });
   }
