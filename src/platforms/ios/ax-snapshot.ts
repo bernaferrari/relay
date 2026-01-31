@@ -118,6 +118,16 @@ function normalizeFrames(
 async function ensureAxSnapshotBinary(): Promise<string> {
   const projectRoot = findProjectRoot();
   const packageDir = path.join(projectRoot, 'ios-runner', 'AXSnapshot');
+  const envPath = process.env.AGENT_DEVICE_AX_BINARY;
+  if (envPath && fs.existsSync(envPath)) return envPath;
+  const packagedCandidates = [
+    path.join(projectRoot, 'bin', 'axsnapshot'),
+    path.join(projectRoot, 'dist', 'bin', 'axsnapshot'),
+    path.join(projectRoot, 'dist', 'axsnapshot'),
+  ];
+  for (const candidate of packagedCandidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
   const binaryPath = path.join(packageDir, '.build', 'release', 'axsnapshot');
   if (fs.existsSync(binaryPath)) return binaryPath;
   const result = await runCmd('swift', ['build', '-c', 'release'], {
