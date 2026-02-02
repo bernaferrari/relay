@@ -16,6 +16,7 @@ import {
   type RawSnapshotNode,
 } from './utils/snapshot.ts';
 import { runIosRunnerCommand, stopIosRunnerSession } from './platforms/ios/runner-client.ts';
+import { snapshotAndroid } from './platforms/android/index.ts';
 
 type DaemonRequest = {
   token: string;
@@ -291,8 +292,24 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       await ensureDeviceReady(device);
     }
     const appBundleId = session?.appBundleId;
+    let snapshotScope = req.flags?.snapshotScope;
+    if (snapshotScope && snapshotScope.trim().startsWith('@')) {
+      if (!session?.snapshot) {
+        return { ok: false, error: { code: 'INVALID_ARGS', message: 'Ref scope requires an existing snapshot in session.' } };
+      }
+      const ref = normalizeRef(snapshotScope.trim());
+      if (!ref) {
+        return { ok: false, error: { code: 'INVALID_ARGS', message: `Invalid ref scope: ${snapshotScope}` } };
+      }
+      const node = findNodeByRef(session.snapshot.nodes, ref);
+      const resolved = node ? resolveRefLabel(node, session.snapshot.nodes) : undefined;
+      if (!resolved) {
+        return { ok: false, error: { code: 'COMMAND_FAILED', message: `Ref ${snapshotScope} not found or has no label` } };
+      }
+      snapshotScope = resolved;
+    }
     const data = (await dispatchCommand(device, 'snapshot', [], req.flags?.out, {
-      ...contextFromFlags(req.flags, appBundleId),
+      ...contextFromFlags({ ...req.flags, snapshotScope }, appBundleId),
     })) as {
       nodes?: RawSnapshotNode[];
       truncated?: boolean;
@@ -330,6 +347,149 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
         appBundleId: appBundleId,
       },
     };
+  }
+
+  if (command === 'wait') {
+    const session = sessions.get(sessionName);
+    const device = session?.device ?? (await resolveTargetDevice(req.flags ?? {}));
+    if (!session) {
+      await ensureDeviceReady(device);
+    }
+    const args = req.positionals ?? [];
+    if (args.length === 0) {
+      return { ok: false, error: { code: 'INVALID_ARGS', message: 'wait requires a duration or text' } };
+    }
+    const parseTimeout = (value: string | undefined): number | null => {
+      if (!value) return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const sleepMs = parseTimeout(args[0]);
+    if (sleepMs !== null) {
+      await new Promise((resolve) => setTimeout(resolve, sleepMs));
+      if (session) {
+        recordAction(session, { command, positionals: req.positionals ?? [], flags: req.flags ?? {}, result: { waitedMs: sleepMs } });
+      }
+      return { ok: true, data: { waitedMs: sleepMs } };
+    }
+    let text = '';
+    let timeoutMs: number | null = null;
+    if (args[0] === 'text') {
+      timeoutMs = parseTimeout(args[args.length - 1]);
+      text = timeoutMs !== null ? args.slice(1, -1).join(' ') : args.slice(1).join(' ');
+    } else if (args[0].startsWith('@')) {
+      if (!session?.snapshot) {
+        return { ok: false, error: { code: 'INVALID_ARGS', message: 'Ref wait requires an existing snapshot in session.' } };
+      }
+      const ref = normalizeRef(args[0]);
+      if (!ref) {
+        return { ok: false, error: { code: 'INVALID_ARGS', message: `Invalid ref: ${args[0]}` } };
+      }
+      const node = findNodeByRef(session.snapshot.nodes, ref);
+      const resolved = node ? resolveRefLabel(node, session.snapshot.nodes) : undefined;
+      if (!resolved) {
+        return { ok: false, error: { code: 'COMMAND_FAILED', message: `Ref ${args[0]} not found or has no label` } };
+      }
+      timeoutMs = parseTimeout(args[args.length - 1]);
+      text = resolved;
+    } else {
+      timeoutMs = parseTimeout(args[args.length - 1]);
+      text = timeoutMs !== null ? args.slice(0, -1).join(' ') : args.join(' ');
+    }
+    text = text.trim();
+    if (!text) {
+      return { ok: false, error: { code: 'INVALID_ARGS', message: 'wait requires text' } };
+    }
+    const timeout = timeoutMs ?? 10000;
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (device.platform === 'ios' && device.kind === 'simulator') {
+        const result = (await runIosRunnerCommand(
+          device,
+          { command: 'findText', text, appBundleId: session?.appBundleId },
+          { verbose: req.flags?.verbose, logPath },
+        )) as { found?: boolean };
+        if (result?.found) {
+          if (session) {
+            recordAction(session, { command, positionals: req.positionals ?? [], flags: req.flags ?? {}, result: { text, waitedMs: Date.now() - start } });
+          }
+          return { ok: true, data: { text, waitedMs: Date.now() - start } };
+        }
+      } else if (device.platform === 'android') {
+        const androidResult = await snapshotAndroid(device, { scope: text });
+        if (findNodeByLabel(attachRefs(androidResult.nodes ?? []), text)) {
+          if (session) {
+            recordAction(session, { command, positionals: req.positionals ?? [], flags: req.flags ?? {}, result: { text, waitedMs: Date.now() - start } });
+          }
+          return { ok: true, data: { text, waitedMs: Date.now() - start } };
+        }
+      } else {
+        return { ok: false, error: { code: 'UNSUPPORTED_OPERATION', message: 'wait is not supported on this device' } };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    return { ok: false, error: { code: 'COMMAND_FAILED', message: `wait timed out for text: ${text}` } };
+  }
+
+  if (command === 'alert') {
+    const session = sessions.get(sessionName);
+    const device = session?.device ?? (await resolveTargetDevice(req.flags ?? {}));
+    if (!session) {
+      await ensureDeviceReady(device);
+    }
+    const action = (req.positionals?.[0] ?? 'get').toLowerCase();
+    const parseTimeout = (value: string | undefined): number | null => {
+      if (!value) return null;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    if (device.platform !== 'ios' || device.kind !== 'simulator') {
+      return { ok: false, error: { code: 'UNSUPPORTED_OPERATION', message: 'alert is only supported on iOS simulators in v1' } };
+    }
+    if (action === 'wait') {
+      const timeout = parseTimeout(req.positionals?.[1]) ?? 10000;
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        try {
+          const data = await runIosRunnerCommand(
+            device,
+            { command: 'alert', action: 'get', appBundleId: session?.appBundleId },
+            { verbose: req.flags?.verbose, logPath },
+          );
+          if (session) {
+            recordAction(session, {
+              command,
+              positionals: req.positionals ?? [],
+              flags: req.flags ?? {},
+              result: data,
+            });
+          }
+          return { ok: true, data };
+        } catch {
+          // keep waiting
+        }
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      return { ok: false, error: { code: 'COMMAND_FAILED', message: 'alert wait timed out' } };
+    }
+    const data = await runIosRunnerCommand(
+      device,
+      {
+        command: 'alert',
+        action: action === 'accept' || action === 'dismiss' ? (action as 'accept' | 'dismiss') : 'get',
+        appBundleId: session?.appBundleId,
+      },
+      { verbose: req.flags?.verbose, logPath },
+    );
+    if (session) {
+      recordAction(session, {
+        command,
+        positionals: req.positionals ?? [],
+        flags: req.flags ?? {},
+        result: data,
+      });
+    }
+    return { ok: true, data };
   }
 
   if (command === 'click') {

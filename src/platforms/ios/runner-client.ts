@@ -8,9 +8,21 @@ import type { DeviceInfo } from '../../utils/device.ts';
 import net from 'node:net';
 
 export type RunnerCommand = {
-  command: 'tap' | 'type' | 'swipe' | 'findText' | 'listTappables' | 'snapshot' | 'shutdown';
+  command:
+    | 'tap'
+    | 'type'
+    | 'swipe'
+    | 'findText'
+    | 'listTappables'
+    | 'snapshot'
+    | 'back'
+    | 'home'
+    | 'appSwitcher'
+    | 'alert'
+    | 'shutdown';
   appBundleId?: string;
   text?: string;
+  action?: 'get' | 'accept' | 'dismiss';
   x?: number;
   y?: number;
   direction?: 'up' | 'down' | 'left' | 'right';
