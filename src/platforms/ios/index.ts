@@ -163,24 +163,45 @@ function ensureSimulator(device: DeviceInfo, command: string): void {
   }
 }
 
-async function listSimulatorApps(
+export async function listSimulatorApps(
   device: DeviceInfo,
 ): Promise<{ bundleId: string; name: string }[]> {
   const result = await runCmd('xcrun', ['simctl', 'listapps', device.id], { allowFailure: true });
   const stdout = result.stdout as string;
-  if (!stdout.trim().startsWith('{')) return [];
-  try {
-    const payload = JSON.parse(stdout) as Record<
-      string,
-      { CFBundleDisplayName?: string; CFBundleName?: string }
-    >;
-    return Object.entries(payload).map(([bundleId, info]) => ({
-      bundleId,
-      name: info.CFBundleDisplayName ?? info.CFBundleName ?? bundleId,
-    }));
-  } catch {
-    return [];
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+  let parsed: Record<string, { CFBundleDisplayName?: string; CFBundleName?: string }> | null = null;
+  if (trimmed.startsWith('{')) {
+    try {
+      parsed = JSON.parse(trimmed) as Record<
+        string,
+        { CFBundleDisplayName?: string; CFBundleName?: string }
+      >;
+    } catch {
+      parsed = null;
+    }
   }
+  if (!parsed && trimmed.startsWith('{')) {
+    try {
+      const converted = await runCmd('plutil', ['-convert', 'json', '-o', '-', '-'], {
+        allowFailure: true,
+        stdin: trimmed,
+      });
+      if (converted.exitCode === 0 && converted.stdout.trim().startsWith('{')) {
+        parsed = JSON.parse(converted.stdout) as Record<
+          string,
+          { CFBundleDisplayName?: string; CFBundleName?: string }
+        >;
+      }
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!parsed) return [];
+  return Object.entries(parsed).map(([bundleId, info]) => ({
+    bundleId,
+    name: info.CFBundleDisplayName ?? info.CFBundleName ?? bundleId,
+  }));
 }
 
 export async function ensureBootedSimulator(device: DeviceInfo): Promise<void> {

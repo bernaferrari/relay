@@ -43,6 +43,53 @@ export async function resolveAndroidApp(
   throw new AppError('APP_NOT_INSTALLED', `No package found matching "${app}"`);
 }
 
+export async function listAndroidApps(
+  device: DeviceInfo,
+  filter: 'launchable' | 'user-installed' | 'all' = 'launchable',
+): Promise<string[]> {
+  if (filter === 'launchable') {
+    const result = await runCmd(
+      'adb',
+      adbArgs(device, [
+        'shell',
+        'cmd',
+        'package',
+        'query-activities',
+        '--brief',
+        '-a',
+        'android.intent.action.MAIN',
+        '-c',
+        'android.intent.category.LAUNCHER',
+      ]),
+      { allowFailure: true },
+    );
+    if (result.exitCode === 0 && result.stdout.trim().length > 0) {
+      const packages = new Set<string>();
+      for (const line of result.stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const firstToken = trimmed.split(/\s+/)[0];
+        const pkg = firstToken.includes('/') ? firstToken.split('/')[0] : firstToken;
+        if (pkg) packages.add(pkg);
+      }
+      if (packages.size > 0) {
+        return Array.from(packages);
+      }
+    }
+    // fallback: list all if query-activities not available
+  }
+
+  const args =
+    filter === 'user-installed'
+      ? ['shell', 'pm', 'list', 'packages', '-3']
+      : ['shell', 'pm', 'list', 'packages'];
+  const result = await runCmd('adb', adbArgs(device, args));
+  return result.stdout
+    .split('\n')
+    .map((line: string) => line.replace('package:', '').trim())
+    .filter(Boolean);
+}
+
 export async function openAndroidApp(device: DeviceInfo, app: string): Promise<void> {
   if (!device.booted) {
     await waitForAndroidBoot(device.id);

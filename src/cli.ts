@@ -84,6 +84,28 @@ export async function runCli(argv: string[]): Promise<void> {
         if (logTailStopper) logTailStopper();
         return;
       }
+      if (response.data && typeof response.data === 'object') {
+        const data = response.data as Record<string, unknown>;
+        if (command === 'devices') {
+          const devices = Array.isArray((data as any).devices) ? (data as any).devices : [];
+          const lines = devices.map((d: any) => {
+            const name = d?.name ?? d?.id ?? 'unknown';
+            const platform = d?.platform ?? 'unknown';
+            const kind = d?.kind ? ` ${d.kind}` : '';
+            const booted = typeof d?.booted === 'boolean' ? ` booted=${d.booted}` : '';
+            return `${name} (${platform}${kind})${booted}`;
+          });
+          process.stdout.write(`${lines.join('\n')}\n`);
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+        if (command === 'apps') {
+          const apps = Array.isArray((data as any).apps) ? (data as any).apps : [];
+          process.stdout.write(`${apps.join('\n')}\n`);
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+      }
       if (logTailStopper) logTailStopper();
       return;
     }

@@ -112,6 +112,71 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
     return { ok: true, data };
   }
 
+  if (command === 'devices') {
+    try {
+      const devices: DeviceInfo[] = [];
+      if (req.flags?.platform === 'android') {
+        const { listAndroidDevices } = await import('./platforms/android/devices.ts');
+        devices.push(...(await listAndroidDevices()));
+      } else if (req.flags?.platform === 'ios') {
+        const { listIosDevices } = await import('./platforms/ios/devices.ts');
+        devices.push(...(await listIosDevices()));
+      } else {
+        const { listAndroidDevices } = await import('./platforms/android/devices.ts');
+        const { listIosDevices } = await import('./platforms/ios/devices.ts');
+        try {
+          devices.push(...(await listAndroidDevices()));
+        } catch {
+          // ignore
+        }
+        try {
+          devices.push(...(await listIosDevices()));
+        } catch {
+          // ignore
+        }
+      }
+      return { ok: true, data: { devices } };
+    } catch (err) {
+      const appErr = asAppError(err);
+      return { ok: false, error: { code: appErr.code, message: appErr.message, details: appErr.details } };
+    }
+  }
+
+  if (command === 'apps') {
+    const session = sessions.get(sessionName);
+    const flags = req.flags ?? {};
+    if (
+      !session &&
+      !flags.platform &&
+      !flags.device &&
+      !flags.udid &&
+      !flags.serial
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGS',
+          message: 'apps requires an active session or an explicit device selector (e.g. --platform ios).',
+        },
+      };
+    }
+    const device = session?.device ?? (await resolveTargetDevice(flags));
+    await ensureDeviceReady(device);
+    if (device.platform === 'ios') {
+      if (device.kind !== 'simulator') {
+        return { ok: false, error: { code: 'UNSUPPORTED_OPERATION', message: 'apps list is only supported on iOS simulators' } };
+      }
+      const { listSimulatorApps } = await import('./platforms/ios/index.ts');
+      const apps = (await listSimulatorApps(device)).map((app) =>
+        app.name && app.name !== app.bundleId ? `${app.name} (${app.bundleId})` : app.bundleId,
+      );
+      return { ok: true, data: { apps } };
+    }
+    const { listAndroidApps } = await import('./platforms/android/index.ts');
+    const apps = await listAndroidApps(device, req.flags?.appsFilter);
+    return { ok: true, data: { apps } };
+  }
+
   if (command === 'open') {
     if (sessions.has(sessionName)) {
       return {

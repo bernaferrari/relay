@@ -23,6 +23,7 @@ export type CommandFlags = {
   snapshotBackend?: 'ax' | 'xctest';
   noRecord?: boolean;
   recordJson?: boolean;
+  appsFilter?: 'launchable' | 'user-installed' | 'all';
 };
 
 export async function resolveTargetDevice(flags: CommandFlags): Promise<DeviceInfo> {
