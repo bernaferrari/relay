@@ -7,6 +7,7 @@ Instructions for AI coding agents working with this codebase.
 - Do not use emojis in code, output, or documentation. Unicode symbols (✓, ✗, →, ⚠) are acceptable.
 - Use `runCmd`/`runCmdSync` from `src/utils/exec.ts` for process execution; avoid direct `spawn`/`spawnSync`.
 - Commands should use the daemon session model; open a session before interactions and close it after.
+- When removing a command (e.g., `rect`), ensure shared model types remain intact (e.g., snapshot structs used by other code paths) and verify with `pnpm typecheck` + a runner build if Swift files changed.
 
 ## Overview
 

@@ -233,8 +233,8 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       truncated?: boolean;
       backend?: 'ax' | 'xctest' | 'android';
     };
-    const pruned = pruneGroupNodes(data?.nodes ?? []);
-    const nodes = attachRefs(pruned);
+    const rawNodes = data?.nodes ?? [];
+    const nodes = attachRefs(req.flags?.snapshotRaw ? rawNodes : pruneGroupNodes(rawNodes));
     const snapshot: SnapshotState = {
       nodes,
       truncated: data?.truncated,
@@ -410,39 +410,6 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
     return { ok: true, data: { ref, text, node } };
   }
 
-  if (command === 'rect') {
-    const session = sessions.get(sessionName);
-    if (!session?.snapshot) {
-      return { ok: false, error: { code: 'INVALID_ARGS', message: 'No snapshot in session. Run snapshot first.' } };
-    }
-    const target = req.positionals?.[0] ?? '';
-    const ref = normalizeRef(target);
-    let label = '';
-    if (ref) {
-      const node = findNodeByRef(session.snapshot.nodes, ref);
-      label = node?.label?.trim() ?? '';
-    } else {
-      label = req.positionals.join(' ').trim();
-    }
-    if (!label) {
-      return { ok: false, error: { code: 'INVALID_ARGS', message: 'rect requires a label or ref with label' } };
-    }
-    if (session.device.platform !== 'ios' || session.device.kind !== 'simulator') {
-      return { ok: false, error: { code: 'UNSUPPORTED_OPERATION', message: 'rect is only supported on iOS simulators' } };
-    }
-    const data = await runIosRunnerCommand(
-      session.device,
-      { command: 'rect', text: label, appBundleId: session.appBundleId },
-      { verbose: req.flags?.verbose, logPath },
-    );
-    recordAction(session, {
-      command,
-      positionals: req.positionals ?? [],
-      flags: req.flags ?? {},
-      result: { label, rect: data?.rect },
-    });
-    return { ok: true, data: { label, rect: data?.rect } };
-  }
 
   const session = sessions.get(sessionName);
   if (!session) {

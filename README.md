@@ -43,6 +43,10 @@ agent-device close SampleApp
 Best practice: run `snapshot` immediately before interactions to avoid stale coordinates if the Simulator window moves or UI changes.
 When interacting with UI elements from a snapshot, prefer refs (e.g. `click @e7`) over raw coordinates. Refs are stable across runs and avoid coordinate drift.
 
+Coordinates:
+- All coordinate-based commands (`press`, `long-press`, `focus`, `fill`) use device coordinates with origin at top-left.
+- X increases to the right, Y increases downward.
+
 iOS snapshots:
 - Default backend is `ax` (fast). It requires enabling Accessibility for the terminal app in System Settings.
 - If AX is not available, use `--backend xctest` explicitly.

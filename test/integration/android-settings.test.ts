@@ -32,9 +32,21 @@ function runCliJson(args: string[]): {
   return { status: result.status, json, stdout: result.stdout, stderr: result.stderr };
 }
 
+const selector = getAndroidSelectorArgs();
+const session = ['--session', 'android-test'];
+
+test.after(() => {
+  runCliJson([
+    'close',
+    '--platform',
+    'android',
+    '--json',
+    ...selector,
+    ...session,
+  ]);
+});
+
 test('android settings commands', { skip: shouldSkipAndroid() }, () => {
-  const selector = getAndroidSelectorArgs();
-  const session = ['--session', 'android-test'];
   const open = runCliJson([
     'open',
     'Settings',

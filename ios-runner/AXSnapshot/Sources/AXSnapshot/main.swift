@@ -51,7 +51,19 @@ func getAttribute<T>(_ element: AXUIElement, _ attribute: CFString) -> T? {
 }
 
 func getChildren(_ element: AXUIElement) -> [AXUIElement] {
-    getAttribute(element, kAXChildrenAttribute as CFString) ?? []
+    if let children: [AXUIElement] = getAttribute(element, kAXChildrenAttribute as CFString),
+       !children.isEmpty {
+        return children
+    }
+    if let children: [AXUIElement] = getAttribute(element, kAXVisibleChildrenAttribute as CFString),
+       !children.isEmpty {
+        return children
+    }
+    if let children: [AXUIElement] = getAttribute(element, kAXContentsAttribute as CFString),
+       !children.isEmpty {
+        return children
+    }
+    return []
 }
 
 func getRole(_ element: AXUIElement) -> String? {
@@ -127,14 +139,98 @@ func buildTree(_ element: AXUIElement, depth: Int = 0, maxDepth: Int = 40) -> AX
 func findIOSAppRoot(in simulator: NSRunningApplication) -> (AXUIElement, AXNode.Frame?)? {
     let appElement = axElement(for: simulator)
     let windows = getChildren(appElement).filter { getRole($0) == "AXWindow" }
-    for window in windows {
-        for child in getChildren(window) {
-            if getRole(child) == "AXGroup" {
-                return (child, getFrame(window))
-            }
+    if windows.isEmpty { return nil }
+
+    if let focused: AXUIElement = getAttribute(appElement, kAXFocusedWindowAttribute as CFString) {
+        if let root = chooseRoot(in: focused) {
+            return (root, getFrame(focused))
+        }
+    }
+
+    let sorted = windows.sorted { lhs, rhs in
+        let l = getFrame(lhs)
+        let r = getFrame(rhs)
+        let la = (l?.width ?? 0) * (l?.height ?? 0)
+        let ra = (r?.width ?? 0) * (r?.height ?? 0)
+        return la > ra
+    }
+    for window in sorted {
+        if let root = chooseRoot(in: window) {
+            return (root, getFrame(window))
         }
     }
     return nil
+}
+
+func chooseRoot(in window: AXUIElement) -> AXUIElement? {
+    let windowFrame = getFrame(window)
+    let candidates = findGroupCandidates(in: window, windowFrame: windowFrame)
+    if let best = candidates.first?.element {
+        return best
+    }
+    return nil
+}
+
+private struct GroupCandidate {
+    let element: AXUIElement
+    let area: Double
+    let descendantCount: Int
+}
+
+private func findGroupCandidates(in root: AXUIElement, windowFrame: AXNode.Frame?) -> [GroupCandidate] {
+    var candidates: [GroupCandidate] = []
+    func walk(_ element: AXUIElement) {
+        if (getRole(element) ?? "") == "AXGroup" {
+            let children = getChildren(element)
+            let hasNonToolbarChild = children.contains { (getRole($0) ?? "") != "AXToolbar" }
+            if hasNonToolbarChild {
+                let frame = getFrame(element)
+                let area = frameArea(frame, windowFrame: windowFrame)
+                if area > 0 {
+                    let descendantCount = countDescendants(element)
+                    candidates.append(
+                        GroupCandidate(
+                            element: element,
+                            area: area,
+                            descendantCount: descendantCount
+                        )
+                    )
+                }
+            }
+        }
+        for child in getChildren(element) {
+            walk(child)
+        }
+    }
+    walk(root)
+    candidates.sort { lhs, rhs in
+        if lhs.area == rhs.area { return lhs.descendantCount > rhs.descendantCount }
+        return lhs.area > rhs.area
+    }
+    return candidates
+}
+
+private func frameArea(_ frame: AXNode.Frame?, windowFrame: AXNode.Frame?) -> Double {
+    guard let frame = frame else { return 0 }
+    if let windowFrame = windowFrame {
+        let windowArea = max(1.0, windowFrame.width * windowFrame.height)
+        let area = frame.width * frame.height
+        if area > windowArea { return 0 }
+        if area < windowArea * 0.2 { return 0 }
+        return area
+    }
+    return frame.width * frame.height
+}
+
+private func countDescendants(_ element: AXUIElement, limit: Int = 2000) -> Int {
+    var count = 0
+    var stack = getChildren(element)
+    while !stack.isEmpty && count < limit {
+        let current = stack.removeLast()
+        count += 1
+        stack.append(contentsOf: getChildren(current))
+    }
+    return count
 }
 
 func main() throws {

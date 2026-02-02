@@ -32,6 +32,10 @@ export async function snapshotAx(
         ' Enable Accessibility for your terminal in System Settings > Privacy & Security > Accessibility, ' +
         'or use --backend xctest (slower snapshots via XCTest).';
     }
+    if (stderrText.toLowerCase().includes('could not find ios app content')) {
+      hint =
+        ' AX snapshot sometimes caches empty content. Try restarting the Simulator app.';
+    }
     throw new AppError('COMMAND_FAILED', 'AX snapshot failed', {
       stderr: `${stderrText}${hint}`,
       stdout: result.stdout,
