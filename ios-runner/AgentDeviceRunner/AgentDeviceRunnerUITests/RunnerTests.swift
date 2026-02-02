@@ -249,21 +249,6 @@ final class RunnerTests: XCTestCase {
       }
       let found = findElement(app: activeApp, text: text) != nil
       return Response(ok: true, data: DataPayload(found: found))
-    case .rect:
-      guard let text = command.text else {
-        return Response(ok: false, error: ErrorPayload(message: "rect requires text"))
-      }
-      guard let element = findElement(app: activeApp, text: text) else {
-        return Response(ok: false, error: ErrorPayload(message: "element not found"))
-      }
-      let frame = element.frame
-      let rect = SnapshotRect(
-        x: Double(frame.origin.x),
-        y: Double(frame.origin.y),
-        width: Double(frame.size.width),
-        height: Double(frame.size.height)
-      )
-      return Response(ok: true, data: DataPayload(rect: rect))
     case .listTappables:
       let elements = activeApp.descendants(matching: .any).allElementsBoundByIndex
       let labels = elements.compactMap { element -> String? in
@@ -602,7 +587,6 @@ enum CommandType: String, Codable {
   case findText
   case listTappables
   case snapshot
-  case rect
   case shutdown
 }
 
@@ -645,22 +629,19 @@ struct DataPayload: Codable {
   let items: [String]?
   let nodes: [SnapshotNode]?
   let truncated: Bool?
-  let rect: SnapshotRect?
 
   init(
     message: String? = nil,
     found: Bool? = nil,
     items: [String]? = nil,
     nodes: [SnapshotNode]? = nil,
-    truncated: Bool? = nil,
-    rect: SnapshotRect? = nil
+    truncated: Bool? = nil
   ) {
     self.message = message
     self.found = found
     self.items = items
     self.nodes = nodes
     self.truncated = truncated
-    self.rect = rect
   }
 }
 

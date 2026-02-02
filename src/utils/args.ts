@@ -157,7 +157,6 @@ Commands:
     --backend ax|xctest                       ax: macOS Accessibility tree (fast, recommended, needs permissions)
                                              xctest: XCTest snapshot (slower, no permissions)
   click <@ref>                               Click element by snapshot ref
-  rect <label|@ref>                          Fetch element frame by label or ref (iOS sim)
   get text <@ref>                            Return element text by ref
   get attrs <@ref>                           Return element attributes by ref
   replay <path>                              Replay a recorded session

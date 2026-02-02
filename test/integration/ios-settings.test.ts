@@ -32,9 +32,47 @@ function runCliJson(args: string[]): {
   return { status: result.status, json, stdout: result.stdout, stderr: result.stderr };
 }
 
-test('ios settings commands', { skip: shouldSkipIos() }, () => {
-  const selector = getIosSelectorArgs();
-  const session = ['--session', 'ios-test'];
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runCliJsonRetry(args: string[], retries = 1): Promise<{
+  status: number;
+  json?: any;
+  stdout: string;
+  stderr: string;
+}> {
+  let last = runCliJson(args);
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    if (
+      last.json?.error?.code === 'COMMAND_FAILED' &&
+      typeof last.json?.error?.message === 'string' &&
+      last.json.error.message.includes('Runner did not accept connection')
+    ) {
+      await sleep(1000);
+      last = runCliJson(args);
+      continue;
+    }
+    break;
+  }
+  return last;
+}
+
+const selector = getIosSelectorArgs();
+const session = ['--session', 'ios-test'];
+
+test.after(() => {
+  runCliJson([
+    'close',
+    '--platform',
+    'ios',
+    '--json',
+    ...selector,
+    ...session,
+  ]);
+});
+
+test('ios settings commands', { skip: shouldSkipIos() }, async () => {
   const open = runCliJson([
     'open',
     'com.apple.Preferences',
@@ -60,7 +98,7 @@ test('ios settings commands', { skip: shouldSkipIos() }, () => {
   assert.equal(shot.status, 0, `${shot.stderr}\n${shot.stdout}`);
   assert.equal(existsSync(outPath), true);
 
-  const snapshot = runCliJson([
+  const snapshot = await runCliJsonRetry([
     'snapshot',
     '--json',
     ...selector,
@@ -69,7 +107,7 @@ test('ios settings commands', { skip: shouldSkipIos() }, () => {
   assert.equal(snapshot.status, 0, `${snapshot.stderr}\n${snapshot.stdout}`);
   assert.equal(Array.isArray(snapshot.json?.data?.nodes), true);
 
-  const click = runCliJson([
+  const click = await runCliJsonRetry([
     'click',
     '@e3',
     '--json',
@@ -78,7 +116,7 @@ test('ios settings commands', { skip: shouldSkipIos() }, () => {
   ]);
   assert.equal(click.status, 0, `${click.stderr}\n${click.stdout}`);
 
-  const snapshotGeneral = runCliJson([
+  const snapshotGeneral = await runCliJsonRetry([
     'snapshot',
     '--json',
     ...selector,
@@ -88,7 +126,7 @@ test('ios settings commands', { skip: shouldSkipIos() }, () => {
   assert.equal(snapshotGeneral.json?.data?.nodes[1].type, 'AXHeading');
   assert.equal(snapshotGeneral.json?.data?.nodes[1].label, 'General');
 
-  const close = runCliJson([
+  const close = await runCliJsonRetry([
     'close',
     'com.apple.Preferences',
     '--platform',
