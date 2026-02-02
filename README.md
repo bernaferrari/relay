@@ -54,6 +54,8 @@ Coordinates:
 iOS snapshots:
 - Default backend is `ax` (fast). It requires enabling Accessibility for the terminal app in System Settings.
 - If AX is not available, use `--backend xctest` explicitly.
+- If AX shows a container like `group` or `tab bar` without children, re-snapshot with XCTest and scope to the container label:
+  `snapshot --backend xctest -s "<label>"`
 - Use `-s @ref` to scope the snapshot to the label of a prior ref in the current session.
 
 Flags:

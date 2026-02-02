@@ -72,6 +72,10 @@ func getLabel(_ element: AXUIElement) -> String? {
     return nil
 }
 
+func getDescription(_ element: AXUIElement) -> String? {
+    getAttribute(element, kAXDescriptionAttribute as CFString)
+}
+
 func getValue(_ element: AXUIElement) -> String? {
     if let value: String = getAttribute(element, kAXValueAttribute as CFString) {
         return value
@@ -126,17 +130,18 @@ func buildTree(_ element: AXUIElement, depth: Int = 0, maxDepth: Int = defaultMa
     )
 }
 
-func findIOSAppSnapshot(in simulator: NSRunningApplication) -> (AXUIElement, AXNode.Frame?, AXUIElement, [AXUIElement])? {
+func findIOSAppSnapshot(in simulator: NSRunningApplication) -> (AXUIElement, AXNode.Frame?, AXUIElement, [AXUIElement], [AXUIElement])? {
     let appElement = axElement(for: simulator)
     let windows = getChildren(appElement).filter {
-        (getAttribute($0, kAXRoleAttribute as CFString) as String?) == "AXWindow"
+        (getAttribute($0, kAXRoleAttribute as CFString) as String?) == (kAXWindowRole as String)
     }
     if windows.isEmpty { return nil }
 
     if let focused: AXUIElement = getAttribute(appElement, kAXFocusedWindowAttribute as CFString),
        let root = chooseRoot(in: focused) {
-        let extras = findToolbarExtras(in: focused, root: root)
-        return (root, getFrame(focused), focused, extras)
+        let extras = dedupeElements(findToolbarExtras(in: focused, root: root) + findTabBarExtras(in: focused, root: root))
+        let modalRoots = findAdditionalWindowRoots(windows: windows, excluding: focused, windowFrame: getFrame(focused))
+        return (root, getFrame(focused), focused, extras, modalRoots)
     }
 
     let sorted = windows.sorted { lhs, rhs in
@@ -148,34 +153,64 @@ func findIOSAppSnapshot(in simulator: NSRunningApplication) -> (AXUIElement, AXN
     }
     for window in sorted {
         if let root = chooseRoot(in: window) {
-            let extras = findToolbarExtras(in: window, root: root)
-            return (root, getFrame(window), window, extras)
+            let extras = dedupeElements(findToolbarExtras(in: window, root: root) + findTabBarExtras(in: window, root: root))
+            let modalRoots = findAdditionalWindowRoots(windows: windows, excluding: window, windowFrame: getFrame(window))
+            return (root, getFrame(window), window, extras, modalRoots)
         }
     }
     return nil
 }
 
+private func findAdditionalWindowRoots(
+    windows: [AXUIElement],
+    excluding mainWindow: AXUIElement,
+    windowFrame: AXNode.Frame?
+) -> [AXUIElement] {
+    var roots: [AXUIElement] = []
+    for window in windows {
+        if CFEqual(window, mainWindow) { continue }
+        let frame = getFrame(window)
+        if let windowFrame = windowFrame, !frameIntersects(frame, windowFrame) {
+            continue
+        }
+        if let root = chooseRoot(in: window) {
+            roots.append(root)
+        }
+    }
+    return dedupeElements(roots)
+}
+
+private func dedupeElements(_ elements: [AXUIElement]) -> [AXUIElement] {
+    var seen: Set<AXWrapper> = []
+    var result: [AXUIElement] = []
+    for element in elements {
+        let wrapper = AXWrapper(element)
+        if seen.contains(wrapper) { continue }
+        seen.insert(wrapper)
+        result.append(element)
+    }
+    return result
+}
+
 func chooseRoot(in window: AXUIElement) -> AXUIElement? {
     let windowFrame = getFrame(window)
     let candidates = findGroupCandidates(in: window, windowFrame: windowFrame)
-    return candidates.first?.element
+    if let best = candidates.first?.element { return best }
+    return findLargestChildCandidate(in: window, windowFrame: windowFrame)
 }
 
-private func elementId(_ element: AXUIElement) -> UInt {
-    return UInt(bitPattern: Unmanaged.passUnretained(element).toOpaque())
-}
-
-private func collectDescendantIds(from root: AXUIElement) -> Set<UInt> {
-    var seen: Set<UInt> = []
-    var stack = [root]
-    while !stack.isEmpty {
-        let current = stack.removeLast()
-        let id = elementId(current)
-        if seen.contains(id) { continue }
-        seen.insert(id)
-        stack.append(contentsOf: getChildren(current))
+private func findLargestChildCandidate(in window: AXUIElement, windowFrame: AXNode.Frame?) -> AXUIElement? {
+    var best: (element: AXUIElement, area: Double)? = nil
+    for child in getChildren(window) {
+        let children = getChildren(child)
+        if children.isEmpty { continue }
+        let area = frameArea(getFrame(child), windowFrame: windowFrame)
+        if area <= 0 { continue }
+        if best == nil || area > best!.area {
+            best = (child, area)
+        }
     }
-    return seen
+    return best?.element
 }
 
 private func frameIntersects(_ frame: AXNode.Frame?, _ target: AXNode.Frame?) -> Bool {
@@ -194,7 +229,9 @@ private func frameIntersects(_ frame: AXNode.Frame?, _ target: AXNode.Frame?) ->
 private func isToolbarLike(_ element: AXUIElement) -> Bool {
     let role = (getAttribute(element, kAXRoleAttribute as CFString) as String?) ?? ""
     let subrole = (getAttribute(element, kAXSubroleAttribute as CFString) as String?) ?? ""
-    if role == "AXToolbar" || role == "AXTabGroup" || role == "AXTabBar" {
+    if role == (kAXToolbarRole as String) ||
+        role == (kAXTabGroupRole as String) ||
+        role == "AXTabBar" {
         return true
     }
     if subrole == "AXTabBar" {
@@ -203,14 +240,44 @@ private func isToolbarLike(_ element: AXUIElement) -> Bool {
     return false
 }
 
+private func isTabBarLike(_ element: AXUIElement) -> Bool {
+    let role = (getAttribute(element, kAXRoleAttribute as CFString) as String?) ?? ""
+    let subrole = (getAttribute(element, kAXSubroleAttribute as CFString) as String?) ?? ""
+    if role == (kAXTabGroupRole as String) || role == "AXTabBar" { return true }
+    if subrole == "AXTabBar" { return true }
+    let desc = (getDescription(element) ?? "").lowercased()
+    if desc.contains("tab bar") { return true }
+    let label = (getLabel(element) ?? "").lowercased()
+    if label.contains("tab bar") { return true }
+    return false
+}
+
 private func findToolbarExtras(in window: AXUIElement, root: AXUIElement) -> [AXUIElement] {
     let rootFrame = getFrame(root)
-    let rootIds = collectDescendantIds(from: root)
+    let rootIds = collectDescendantWrappers(from: root)
     var extras: [AXUIElement] = []
     var stack = getChildren(window)
     while !stack.isEmpty {
         let current = stack.removeLast()
-        if isToolbarLike(current) && !rootIds.contains(elementId(current)) {
+        if isToolbarLike(current) && !rootIds.contains(AXWrapper(current)) {
+            let frame = getFrame(current)
+            if frameIntersects(frame, rootFrame) {
+                extras.append(current)
+            }
+        }
+        stack.append(contentsOf: getChildren(current))
+    }
+    return extras
+}
+
+private func findTabBarExtras(in window: AXUIElement, root: AXUIElement) -> [AXUIElement] {
+    let rootFrame = getFrame(root)
+    let rootIds = collectDescendantWrappers(from: root)
+    var extras: [AXUIElement] = []
+    var stack = getChildren(window)
+    while !stack.isEmpty {
+        let current = stack.removeLast()
+        if isTabBarLike(current) && !rootIds.contains(AXWrapper(current)) {
             let frame = getFrame(current)
             if frameIntersects(frame, rootFrame) {
                 extras.append(current)
@@ -224,28 +291,35 @@ private func findToolbarExtras(in window: AXUIElement, root: AXUIElement) -> [AX
 private struct GroupCandidate {
     let element: AXUIElement
     let area: Double
-    let descendantCount: Int
+    let childCount: Int
 }
 
 private func findGroupCandidates(in root: AXUIElement, windowFrame: AXNode.Frame?) -> [GroupCandidate] {
     var candidates: [GroupCandidate] = []
+    var visited: Set<AXWrapper> = []
     func walk(_ element: AXUIElement) {
+        let wrapper = AXWrapper(element)
+        if visited.contains(wrapper) { return }
+        visited.insert(wrapper)
         let children = getChildren(element)
         let role = (getAttribute(element, kAXRoleAttribute as CFString) as String?) ?? ""
-        if role == "AXGroup" {
+        let isContainer = role == (kAXGroupRole as String) ||
+            role == (kAXScrollAreaRole as String) ||
+            role == (kAXUnknownRole as String)
+        if isContainer {
             let hasNonToolbarChild = children.contains {
-                ((getAttribute($0, kAXRoleAttribute as CFString) as String?) ?? "") != "AXToolbar"
+                ((getAttribute($0, kAXRoleAttribute as CFString) as String?) ?? "") != (kAXToolbarRole as String)
             }
             if hasNonToolbarChild {
                 let frame = getFrame(element)
                 let area = frameArea(frame, windowFrame: windowFrame)
                 if area > 0 {
-                    let descendantCount = countDescendants(element)
+                    let childCount = children.count
                     candidates.append(
                         GroupCandidate(
                             element: element,
                             area: area,
-                            descendantCount: descendantCount
+                            childCount: childCount
                         )
                     )
                 }
@@ -257,7 +331,7 @@ private func findGroupCandidates(in root: AXUIElement, windowFrame: AXNode.Frame
     }
     walk(root)
     candidates.sort { lhs, rhs in
-        if lhs.area == rhs.area { return lhs.descendantCount > rhs.descendantCount }
+        if lhs.area == rhs.area { return lhs.childCount > rhs.childCount }
         return lhs.area > rhs.area
     }
     return candidates
@@ -269,22 +343,33 @@ private func frameArea(_ frame: AXNode.Frame?, windowFrame: AXNode.Frame?) -> Do
         let windowArea = max(1.0, windowFrame.width * windowFrame.height)
         let area = frame.width * frame.height
         if area > windowArea { return 0 }
-        if area < windowArea * 0.2 { return 0 }
         return area
     }
     return frame.width * frame.height
 }
 
-private func countDescendants(_ element: AXUIElement, limit: Int = 2000) -> Int {
-    var count = 0
-    var stack = getChildren(element)
-    while !stack.isEmpty && count < limit {
+private final class AXWrapper: Hashable {
+    let element: AXUIElement
+    init(_ element: AXUIElement) { self.element = element }
+    func hash(into hasher: inout Hasher) { hasher.combine(CFHash(element)) }
+    static func == (lhs: AXWrapper, rhs: AXWrapper) -> Bool {
+        return CFEqual(lhs.element, rhs.element)
+    }
+}
+
+private func collectDescendantWrappers(from root: AXUIElement) -> Set<AXWrapper> {
+    var seen: Set<AXWrapper> = []
+    var stack = [root]
+    while !stack.isEmpty {
         let current = stack.removeLast()
-        count += 1
+        let wrapper = AXWrapper(current)
+        if seen.contains(wrapper) { continue }
+        seen.insert(wrapper)
         stack.append(contentsOf: getChildren(current))
     }
-    return count
+    return seen
 }
+
 
 private struct SnapshotPayload: Codable {
     let windowFrame: AXNode.Frame?
@@ -298,7 +383,21 @@ func main() throws {
     guard let simulator = findSimulatorApp() else {
         throw AXSnapshotError(message: "iOS Simulator is not running.")
     }
-    guard let (root, windowFrame, _, extras) = findIOSAppSnapshot(in: simulator) else {
+    let maxAttempts = 5
+    var snapshot: (AXUIElement, AXNode.Frame?, AXUIElement, [AXUIElement], [AXUIElement])? = nil
+    for attempt in 0..<maxAttempts {
+        if let candidate = findIOSAppSnapshot(in: simulator) {
+            let (root, _, _, _, modalRoots) = candidate
+            if !getChildren(root).isEmpty || !modalRoots.isEmpty {
+                snapshot = candidate
+                break
+            }
+        }
+        if attempt < maxAttempts - 1 {
+            usleep(300_000)
+        }
+    }
+    guard let (root, windowFrame, _, extras, modalRoots) = snapshot else {
         throw AXSnapshotError(message: "Could not find iOS app content in Simulator.")
     }
     var tree = buildTree(root)
@@ -314,10 +413,22 @@ func main() throws {
             children: tree.children + extraNodes
         )
     }
-    let snapshot = SnapshotPayload(windowFrame: windowFrame, root: tree)
+    if !modalRoots.isEmpty {
+        let modalNodes = modalRoots.map { buildTree($0) }
+        tree = AXNode(
+            role: tree.role,
+            subrole: tree.subrole,
+            label: tree.label,
+            value: tree.value,
+            identifier: tree.identifier,
+            frame: tree.frame,
+            children: tree.children + modalNodes
+        )
+    }
+    let payload = SnapshotPayload(windowFrame: windowFrame, root: tree)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let data = try encoder.encode(snapshot)
+    let data = try encoder.encode(payload)
     if let json = String(data: data, encoding: .utf8) {
         print(json)
     } else {
