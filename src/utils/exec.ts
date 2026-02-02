@@ -21,6 +21,11 @@ export type ExecStreamOptions = ExecOptions & {
   onStderrChunk?: (chunk: string) => void;
 };
 
+export type ExecBackgroundResult = {
+  child: ReturnType<typeof spawn>;
+  wait: Promise<ExecResult>;
+};
+
 export async function runCmd(
   cmd: string,
   args: string[],
@@ -221,6 +226,60 @@ export async function runCmdStreaming(
       resolve({ stdout, stderr, exitCode, stdoutBuffer });
     });
   });
+}
+
+export function runCmdBackground(
+  cmd: string,
+  args: string[],
+  options: ExecOptions = {},
+): ExecBackgroundResult {
+  const child = spawn(cmd, args, {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  const wait = new Promise<ExecResult>((resolve, reject) => {
+    child.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        reject(new AppError('TOOL_MISSING', `${cmd} not found in PATH`, { cmd }, err));
+        return;
+      }
+      reject(new AppError('COMMAND_FAILED', `Failed to run ${cmd}`, { cmd, args }, err));
+    });
+    child.on('close', (code) => {
+      const exitCode = code ?? 1;
+      if (exitCode !== 0 && !options.allowFailure) {
+        reject(
+          new AppError('COMMAND_FAILED', `${cmd} exited with code ${exitCode}`, {
+            cmd,
+            args,
+            stdout,
+            stderr,
+            exitCode,
+          }),
+        );
+        return;
+      }
+      resolve({ stdout, stderr, exitCode });
+    });
+  });
+
+  return { child, wait };
 }
 
 export function whichCmdSync(cmd: string): boolean {

@@ -16,6 +16,7 @@ import {
   type RawSnapshotNode,
 } from './utils/snapshot.ts';
 import { runIosRunnerCommand, stopIosRunnerSession } from './platforms/ios/runner-client.ts';
+import { runCmd, runCmdBackground } from './utils/exec.ts';
 import { snapshotAndroid } from './platforms/android/index.ts';
 
 type DaemonRequest = {
@@ -38,6 +39,13 @@ type SessionState = {
   appName?: string;
   snapshot?: SnapshotState;
   actions: SessionAction[];
+  recording?: {
+    platform: 'ios' | 'android';
+    outPath: string;
+    remotePath?: string;
+    child: ReturnType<typeof import('node:child_process').spawn>;
+    wait: Promise<import('./utils/exec.ts').ExecResult>;
+  };
 };
 
 type SessionAction = {
@@ -490,6 +498,86 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       });
     }
     return { ok: true, data };
+  }
+
+  if (command === 'record') {
+    const action = (req.positionals?.[0] ?? '').toLowerCase();
+    if (!['start', 'stop'].includes(action)) {
+      return { ok: false, error: { code: 'INVALID_ARGS', message: 'record requires start|stop' } };
+    }
+    const session = sessions.get(sessionName);
+    const device = session?.device ?? (await resolveTargetDevice(req.flags ?? {}));
+    if (!session) {
+      await ensureDeviceReady(device);
+    }
+    const activeSession = session ?? {
+      name: sessionName,
+      device,
+      createdAt: Date.now(),
+      actions: [],
+    };
+
+    if (action === 'start') {
+      if (activeSession.recording) {
+        return { ok: false, error: { code: 'INVALID_ARGS', message: 'recording already in progress' } };
+      }
+      const outPath = req.positionals?.[1] ?? `./recording-${Date.now()}.mp4`;
+      const resolvedOut = path.resolve(outPath);
+      const outDir = path.dirname(resolvedOut);
+      if (!fs.existsSync(outDir)) {
+        fs.mkdirSync(outDir, { recursive: true });
+      }
+      if (device.platform === 'ios') {
+        if (device.kind !== 'simulator') {
+          return { ok: false, error: { code: 'UNSUPPORTED_OPERATION', message: 'record is only supported on iOS simulators in v1' } };
+        }
+        const { child, wait } = runCmdBackground('xcrun', ['simctl', 'io', device.id, 'recordVideo', resolvedOut], {
+          allowFailure: true,
+        });
+        activeSession.recording = { platform: 'ios', outPath: resolvedOut, child, wait };
+      } else {
+        const remotePath = `/sdcard/agent-device-recording-${Date.now()}.mp4`;
+        const { child, wait } = runCmdBackground('adb', ['-s', device.id, 'shell', 'screenrecord', remotePath], {
+          allowFailure: true,
+        });
+        activeSession.recording = { platform: 'android', outPath: resolvedOut, remotePath, child, wait };
+      }
+      sessions.set(sessionName, activeSession);
+      recordAction(activeSession, {
+        command,
+        positionals: req.positionals ?? [],
+        flags: req.flags ?? {},
+        result: { action: 'start' },
+      });
+      return { ok: true, data: { recording: 'started', outPath } };
+    }
+
+    if (!activeSession.recording) {
+      return { ok: false, error: { code: 'INVALID_ARGS', message: 'no active recording' } };
+    }
+    const recording = activeSession.recording;
+    recording.child.kill('SIGINT');
+    try {
+      await recording.wait;
+    } catch {
+      // ignore
+    }
+    if (recording.platform === 'android' && recording.remotePath) {
+      try {
+        await runCmd('adb', ['-s', device.id, 'pull', recording.remotePath, recording.outPath], { allowFailure: true });
+        await runCmd('adb', ['-s', device.id, 'shell', 'rm', '-f', recording.remotePath], { allowFailure: true });
+      } catch {
+        // ignore
+      }
+    }
+    activeSession.recording = undefined;
+    recordAction(activeSession, {
+      command,
+      positionals: req.positionals ?? [],
+      flags: req.flags ?? {},
+      result: { action: 'stop', outPath: recording.outPath },
+    });
+    return { ok: true, data: { recording: 'stopped', outPath: recording.outPath } };
   }
 
   if (command === 'click') {

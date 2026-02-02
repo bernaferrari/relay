@@ -184,6 +184,8 @@ Commands:
   scroll <direction> [amount]                Scroll in direction (0-1 amount)
   scrollintoview <text>                      Scroll until text appears (Android only)
   screenshot [--out path]                    Capture screenshot
+  record start [path]                        Start screen recording
+  record stop                                Stop screen recording
   session list                               List active sessions
 
 Flags:
