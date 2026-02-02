@@ -34,8 +34,10 @@ Examples:
 ```bash
 agent-device open SampleApp
 agent-device snapshot
+agent-device snapshot -s @e7
 agent-device click @e7
 agent-device wait text "Camera"
+agent-device alert wait 10000
 agent-device back
 agent-device type "hello"
 agent-device screenshot --out ./screenshot.png
@@ -52,6 +54,7 @@ Coordinates:
 iOS snapshots:
 - Default backend is `ax` (fast). It requires enabling Accessibility for the terminal app in System Settings.
 - If AX is not available, use `--backend xctest` explicitly.
+- Use `-s @ref` to scope the snapshot to the label of a prior ref in the current session.
 
 Flags:
 - `--platform ios|android`
@@ -63,10 +66,9 @@ Flags:
 - `--verbose` for daemon and runner logs
 - `--json` for structured output
 - `--backend ax|xctest` (snapshot only; defaults to `ax` on iOS)
-- `open` without args boots/activates the target device/simulator without launching an app.
 
 Sessions:
-- `open` starts a session.
+- `open` starts a session. Without args boots/activates the target device/simulator without launching an app.
 - All interaction commands require an open session.
 - `close` stops the session and releases device resources. Pass an app to close it explicitly, or omit to just close the session.
 - Use `--session <name>` to manage multiple sessions.

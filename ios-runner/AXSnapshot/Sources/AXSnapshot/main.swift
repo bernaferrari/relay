@@ -19,17 +19,13 @@ struct AXNode: Codable {
     let children: [AXNode]
 }
 
-struct AXSnapshot: Codable {
-    let windowFrame: AXNode.Frame?
-    let root: AXNode
-}
-
 struct AXSnapshotError: Error, CustomStringConvertible {
     let message: String
     var description: String { message }
 }
 
 let simulatorBundleId = "com.apple.iphonesimulator"
+let defaultMaxDepth = 40
 
 func hasAccessibilityPermission() -> Bool {
     AXIsProcessTrusted()
@@ -64,14 +60,6 @@ func getChildren(_ element: AXUIElement) -> [AXUIElement] {
         return children
     }
     return []
-}
-
-func getRole(_ element: AXUIElement) -> String? {
-    getAttribute(element, kAXRoleAttribute as CFString)
-}
-
-func getSubrole(_ element: AXUIElement) -> String? {
-    getAttribute(element, kAXSubroleAttribute as CFString)
 }
 
 func getLabel(_ element: AXUIElement) -> String? {
@@ -123,11 +111,13 @@ func getFrame(_ element: AXUIElement) -> AXNode.Frame? {
     )
 }
 
-func buildTree(_ element: AXUIElement, depth: Int = 0, maxDepth: Int = 40) -> AXNode {
-    let children = depth < maxDepth ? getChildren(element).map { buildTree($0, depth: depth + 1, maxDepth: maxDepth) } : []
+func buildTree(_ element: AXUIElement, depth: Int = 0, maxDepth: Int = defaultMaxDepth) -> AXNode {
+    let children = depth < maxDepth
+        ? getChildren(element).map { buildTree($0, depth: depth + 1, maxDepth: maxDepth) }
+        : []
     return AXNode(
-        role: getRole(element),
-        subrole: getSubrole(element),
+        role: getAttribute(element, kAXRoleAttribute as CFString),
+        subrole: getAttribute(element, kAXSubroleAttribute as CFString),
         label: getLabel(element),
         value: getValue(element),
         identifier: getIdentifier(element),
@@ -136,15 +126,17 @@ func buildTree(_ element: AXUIElement, depth: Int = 0, maxDepth: Int = 40) -> AX
     )
 }
 
-func findIOSAppRoot(in simulator: NSRunningApplication) -> (AXUIElement, AXNode.Frame?)? {
+func findIOSAppSnapshot(in simulator: NSRunningApplication) -> (AXUIElement, AXNode.Frame?, AXUIElement, [AXUIElement])? {
     let appElement = axElement(for: simulator)
-    let windows = getChildren(appElement).filter { getRole($0) == "AXWindow" }
+    let windows = getChildren(appElement).filter {
+        (getAttribute($0, kAXRoleAttribute as CFString) as String?) == "AXWindow"
+    }
     if windows.isEmpty { return nil }
 
-    if let focused: AXUIElement = getAttribute(appElement, kAXFocusedWindowAttribute as CFString) {
-        if let root = chooseRoot(in: focused) {
-            return (root, getFrame(focused))
-        }
+    if let focused: AXUIElement = getAttribute(appElement, kAXFocusedWindowAttribute as CFString),
+       let root = chooseRoot(in: focused) {
+        let extras = findToolbarExtras(in: focused, root: root)
+        return (root, getFrame(focused), focused, extras)
     }
 
     let sorted = windows.sorted { lhs, rhs in
@@ -156,7 +148,8 @@ func findIOSAppRoot(in simulator: NSRunningApplication) -> (AXUIElement, AXNode.
     }
     for window in sorted {
         if let root = chooseRoot(in: window) {
-            return (root, getFrame(window))
+            let extras = findToolbarExtras(in: window, root: root)
+            return (root, getFrame(window), window, extras)
         }
     }
     return nil
@@ -165,10 +158,67 @@ func findIOSAppRoot(in simulator: NSRunningApplication) -> (AXUIElement, AXNode.
 func chooseRoot(in window: AXUIElement) -> AXUIElement? {
     let windowFrame = getFrame(window)
     let candidates = findGroupCandidates(in: window, windowFrame: windowFrame)
-    if let best = candidates.first?.element {
-        return best
+    return candidates.first?.element
+}
+
+private func elementId(_ element: AXUIElement) -> UInt {
+    return UInt(bitPattern: Unmanaged.passUnretained(element).toOpaque())
+}
+
+private func collectDescendantIds(from root: AXUIElement) -> Set<UInt> {
+    var seen: Set<UInt> = []
+    var stack = [root]
+    while !stack.isEmpty {
+        let current = stack.removeLast()
+        let id = elementId(current)
+        if seen.contains(id) { continue }
+        seen.insert(id)
+        stack.append(contentsOf: getChildren(current))
     }
-    return nil
+    return seen
+}
+
+private func frameIntersects(_ frame: AXNode.Frame?, _ target: AXNode.Frame?) -> Bool {
+    guard let frame = frame, let target = target else { return false }
+    let fx1 = frame.x
+    let fy1 = frame.y
+    let fx2 = frame.x + frame.width
+    let fy2 = frame.y + frame.height
+    let tx1 = target.x
+    let ty1 = target.y
+    let tx2 = target.x + target.width
+    let ty2 = target.y + target.height
+    return fx1 < tx2 && fx2 > tx1 && fy1 < ty2 && fy2 > ty1
+}
+
+private func isToolbarLike(_ element: AXUIElement) -> Bool {
+    let role = (getAttribute(element, kAXRoleAttribute as CFString) as String?) ?? ""
+    let subrole = (getAttribute(element, kAXSubroleAttribute as CFString) as String?) ?? ""
+    if role == "AXToolbar" || role == "AXTabGroup" || role == "AXTabBar" {
+        return true
+    }
+    if subrole == "AXTabBar" {
+        return true
+    }
+    return false
+}
+
+private func findToolbarExtras(in window: AXUIElement, root: AXUIElement) -> [AXUIElement] {
+    let rootFrame = getFrame(root)
+    let rootIds = collectDescendantIds(from: root)
+    var extras: [AXUIElement] = []
+    var stack = getChildren(window)
+    while !stack.isEmpty {
+        let current = stack.removeLast()
+        if isToolbarLike(current) && !rootIds.contains(elementId(current)) {
+            let frame = getFrame(current)
+            if frameIntersects(frame, rootFrame) {
+                extras.append(current)
+            }
+        }
+        stack.append(contentsOf: getChildren(current))
+    }
+    return extras
 }
 
 private struct GroupCandidate {
@@ -180,9 +230,12 @@ private struct GroupCandidate {
 private func findGroupCandidates(in root: AXUIElement, windowFrame: AXNode.Frame?) -> [GroupCandidate] {
     var candidates: [GroupCandidate] = []
     func walk(_ element: AXUIElement) {
-        if (getRole(element) ?? "") == "AXGroup" {
-            let children = getChildren(element)
-            let hasNonToolbarChild = children.contains { (getRole($0) ?? "") != "AXToolbar" }
+        let children = getChildren(element)
+        let role = (getAttribute(element, kAXRoleAttribute as CFString) as String?) ?? ""
+        if role == "AXGroup" {
+            let hasNonToolbarChild = children.contains {
+                ((getAttribute($0, kAXRoleAttribute as CFString) as String?) ?? "") != "AXToolbar"
+            }
             if hasNonToolbarChild {
                 let frame = getFrame(element)
                 let area = frameArea(frame, windowFrame: windowFrame)
@@ -198,7 +251,7 @@ private func findGroupCandidates(in root: AXUIElement, windowFrame: AXNode.Frame
                 }
             }
         }
-        for child in getChildren(element) {
+        for child in children {
             walk(child)
         }
     }
@@ -233,6 +286,11 @@ private func countDescendants(_ element: AXUIElement, limit: Int = 2000) -> Int 
     return count
 }
 
+private struct SnapshotPayload: Codable {
+    let windowFrame: AXNode.Frame?
+    let root: AXNode
+}
+
 func main() throws {
     guard hasAccessibilityPermission() else {
         throw AXSnapshotError(message: "Accessibility permission not granted. Enable it in System Settings > Privacy & Security > Accessibility.")
@@ -240,11 +298,23 @@ func main() throws {
     guard let simulator = findSimulatorApp() else {
         throw AXSnapshotError(message: "iOS Simulator is not running.")
     }
-    guard let (root, windowFrame) = findIOSAppRoot(in: simulator) else {
+    guard let (root, windowFrame, _, extras) = findIOSAppSnapshot(in: simulator) else {
         throw AXSnapshotError(message: "Could not find iOS app content in Simulator.")
     }
-    let tree = buildTree(root)
-    let snapshot = AXSnapshot(windowFrame: windowFrame, root: tree)
+    var tree = buildTree(root)
+    if !extras.isEmpty {
+        let extraNodes = extras.map { buildTree($0) }
+        tree = AXNode(
+            role: tree.role,
+            subrole: tree.subrole,
+            label: tree.label,
+            value: tree.value,
+            identifier: tree.identifier,
+            frame: tree.frame,
+            children: tree.children + extraNodes
+        )
+    }
+    let snapshot = SnapshotPayload(windowFrame: windowFrame, root: tree)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     let data = try encoder.encode(snapshot)
