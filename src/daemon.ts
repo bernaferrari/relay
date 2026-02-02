@@ -1028,7 +1028,11 @@ function pruneGroupNodes(nodes: RawSnapshotNode[]): RawSnapshotNode[] {
       skippedDepths.pop();
     }
     const type = normalizeType(node.type ?? '');
-    if (type === 'group' || type === 'ioscontentgroup') {
+    const labelCandidate = [node.label, node.value, node.identifier]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .find((value) => value && value.length > 0);
+    const hasMeaningfulLabel = labelCandidate ? isMeaningfulLabel(labelCandidate) : false;
+    if ((type === 'group' || type === 'ioscontentgroup') && !hasMeaningfulLabel) {
       skippedDepths.push(depth);
       continue;
     }
