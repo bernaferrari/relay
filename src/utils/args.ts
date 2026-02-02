@@ -62,6 +62,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       flags.recordJson = true;
       continue;
     }
+    if (arg === '--user-installed') {
+      flags.appsFilter = 'user-installed';
+      continue;
+    }
+    if (arg === '--all') {
+      flags.appsFilter = 'all';
+      continue;
+    }
     if (arg.startsWith('--backend')) {
       const value = arg.includes('=')
         ? arg.split('=')[1]
@@ -156,6 +164,8 @@ Commands:
     --raw                                    Raw node output
     --backend ax|xctest                       ax: macOS Accessibility tree (fast, recommended, needs permissions)
                                              xctest: XCTest snapshot (slower, no permissions)
+  devices                                   List available devices
+  apps [--user-installed|--all]             List installed apps (Android launchable by default, iOS simulator)
   click <@ref>                               Click element by snapshot ref
   get text <@ref>                            Return element text by ref
   get attrs <@ref>                           Return element attributes by ref
@@ -181,5 +191,7 @@ Flags:
   --json                                     JSON output
   --no-record                                Do not record this action
   --record-json                              Record JSON session log
+  --user-installed                           Apps: list user-installed packages (Android only)
+  --all                                      Apps: list all packages (Android only)
 `;
 }

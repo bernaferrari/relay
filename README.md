@@ -70,7 +70,7 @@ Sessions:
 - Use `--session <name>` to manage multiple sessions.
 - Session logs are written to `~/.agent-device/sessions/<session>-<timestamp>.ad`.
 
-Snapshot defaults to the AX backend on iOS simulators and falls back to XCTest if AX is unavailable.
+Snapshot defaults to the AX backend on iOS simulators. Use `--backend xctest` if AX is unavailable.
 
 ## App resolution
 - Bundle/package identifiers are accepted directly (e.g., `com.apple.Preferences`).
@@ -78,8 +78,7 @@ Snapshot defaults to the AX backend on iOS simulators and falls back to XCTest i
 - Built-in aliases include `Settings` for both platforms.
 
 ## iOS notes
-- Input commands (`press`, `type`, `scroll`, etc.) are supported only on simulators in v1.
-- Support depends on your Xcode version; the CLI reports `UNSUPPORTED_OPERATION` if `simctl io` lacks input operations.
+- Input commands (`press`, `type`, `scroll`, etc.) are supported only on simulators in v1 and use the XCTest runner.
 
 ## Testing
 

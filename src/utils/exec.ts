@@ -13,6 +13,7 @@ export type ExecOptions = {
   env?: NodeJS.ProcessEnv;
   allowFailure?: boolean;
   binaryStdout?: boolean;
+  stdin?: string | Buffer;
 };
 
 export type ExecStreamOptions = ExecOptions & {
@@ -29,7 +30,7 @@ export async function runCmd(
     const child = spawn(cmd, args, {
       cwd: options.cwd,
       env: options.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     let stdout = '';
@@ -38,6 +39,11 @@ export async function runCmd(
 
     if (!options.binaryStdout) child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
+
+    if (options.stdin !== undefined) {
+      child.stdin.write(options.stdin);
+    }
+    child.stdin.end();
 
     child.stdout.on('data', (chunk) => {
       if (options.binaryStdout) {
@@ -96,8 +102,9 @@ export function runCmdSync(cmd: string, args: string[], options: ExecOptions = {
   const result = spawnSync(cmd, args, {
     cwd: options.cwd,
     env: options.env,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     encoding: options.binaryStdout ? undefined : 'utf8',
+    input: options.stdin,
   });
 
   if (result.error) {
@@ -154,7 +161,7 @@ export async function runCmdStreaming(
     const child = spawn(cmd, args, {
       cwd: options.cwd,
       env: options.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     let stdout = '';
@@ -163,6 +170,11 @@ export async function runCmdStreaming(
 
     if (!options.binaryStdout) child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
+
+    if (options.stdin !== undefined) {
+      child.stdin.write(options.stdin);
+    }
+    child.stdin.end();
 
     child.stdout.on('data', (chunk) => {
       if (options.binaryStdout) {
