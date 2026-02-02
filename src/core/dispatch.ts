@@ -1,7 +1,7 @@
 import { AppError } from '../utils/errors.ts';
 import { selectDevice, type DeviceInfo } from '../utils/device.ts';
 import { listAndroidDevices } from '../platforms/android/devices.ts';
-import { ensureAdb, snapshotAndroid } from '../platforms/android/index.ts';
+import { appSwitcherAndroid, backAndroid, ensureAdb, homeAndroid, snapshotAndroid } from '../platforms/android/index.ts';
 import { listIosDevices } from '../platforms/ios/devices.ts';
 import { getInteractor } from '../utils/interactors.ts';
 import { runIosRunnerCommand } from '../platforms/ios/runner-client.ts';
@@ -190,8 +190,26 @@ export async function dispatchCommand(
       return { direction, amount };
     }
     case 'scrollintoview': {
-      const text = positionals.join(' ');
+      const text = positionals.join(' ').trim();
       if (!text) throw new AppError('INVALID_ARGS', 'scrollintoview requires text');
+      if (device.platform === 'ios' && device.kind === 'simulator') {
+        const maxAttempts = 8;
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+          const found = (await runIosRunnerCommand(
+            device,
+            { command: 'findText', text, appBundleId: context?.appBundleId },
+            { verbose: context?.verbose, logPath: context?.logPath },
+          )) as { found?: boolean };
+          if (found?.found) return { text, attempts: attempt + 1 };
+          await runIosRunnerCommand(
+            device,
+            { command: 'swipe', direction: 'up', appBundleId: context?.appBundleId },
+            { verbose: context?.verbose, logPath: context?.logPath },
+          );
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        throw new AppError('COMMAND_FAILED', `scrollintoview could not find text: ${text}`);
+      }
       await interactor.scrollIntoView(text);
       return { text };
     }
@@ -199,6 +217,51 @@ export async function dispatchCommand(
       const path = outPath ?? `./screenshot-${Date.now()}.png`;
       await interactor.screenshot(path);
       return { path };
+    }
+    case 'back': {
+      if (device.platform === 'ios') {
+        if (device.kind !== 'simulator') {
+          throw new AppError('UNSUPPORTED_OPERATION', 'back is only supported on iOS simulators in v1');
+        }
+        await runIosRunnerCommand(
+          device,
+          { command: 'back', appBundleId: context?.appBundleId },
+          { verbose: context?.verbose, logPath: context?.logPath },
+        );
+        return { action: 'back' };
+      }
+      await backAndroid(device);
+      return { action: 'back' };
+    }
+    case 'home': {
+      if (device.platform === 'ios') {
+        if (device.kind !== 'simulator') {
+          throw new AppError('UNSUPPORTED_OPERATION', 'home is only supported on iOS simulators in v1');
+        }
+        await runIosRunnerCommand(
+          device,
+          { command: 'home', appBundleId: context?.appBundleId },
+          { verbose: context?.verbose, logPath: context?.logPath },
+        );
+        return { action: 'home' };
+      }
+      await homeAndroid(device);
+      return { action: 'home' };
+    }
+    case 'app-switcher': {
+      if (device.platform === 'ios') {
+        if (device.kind !== 'simulator') {
+          throw new AppError('UNSUPPORTED_OPERATION', 'app-switcher is only supported on iOS simulators in v1');
+        }
+        await runIosRunnerCommand(
+          device,
+          { command: 'appSwitcher', appBundleId: context?.appBundleId },
+          { verbose: context?.verbose, logPath: context?.logPath },
+        );
+        return { action: 'app-switcher' };
+      }
+      await appSwitcherAndroid(device);
+      return { action: 'app-switcher' };
     }
     case 'snapshot': {
       const backend = context?.snapshotBackend ?? 'ax';

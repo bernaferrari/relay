@@ -272,7 +272,60 @@ final class RunnerTests: XCTestCase {
         return Response(ok: true, data: snapshotRaw(app: activeApp, options: options))
       }
       return Response(ok: true, data: snapshotFast(app: activeApp, options: options))
+    case .back:
+      if tapNavigationBack(app: activeApp) {
+        return Response(ok: true, data: DataPayload(message: "back"))
+      }
+      performBackGesture(app: activeApp)
+      return Response(ok: true, data: DataPayload(message: "back"))
+    case .home:
+      XCUIDevice.shared.press(.home)
+      return Response(ok: true, data: DataPayload(message: "home"))
+    case .appSwitcher:
+      performAppSwitcherGesture(app: activeApp)
+      return Response(ok: true, data: DataPayload(message: "appSwitcher"))
+    case .alert:
+      let action = (command.action ?? "get").lowercased()
+      let alert = activeApp.alerts.firstMatch
+      if !alert.exists {
+        return Response(ok: false, error: ErrorPayload(message: "alert not found"))
+      }
+      if action == "accept" {
+        let button = alert.buttons.allElementsBoundByIndex.first
+        button?.tap()
+        return Response(ok: true, data: DataPayload(message: "accepted"))
+      }
+      if action == "dismiss" {
+        let button = alert.buttons.allElementsBoundByIndex.last
+        button?.tap()
+        return Response(ok: true, data: DataPayload(message: "dismissed"))
+      }
+      let buttonLabels = alert.buttons.allElementsBoundByIndex.map { $0.label }
+      return Response(ok: true, data: DataPayload(message: alert.label, items: buttonLabels))
     }
+  }
+
+  private func tapNavigationBack(app: XCUIApplication) -> Bool {
+    let buttons = app.navigationBars.buttons.allElementsBoundByIndex
+    if let back = buttons.first(where: { $0.isHittable }) {
+      back.tap()
+      return true
+    }
+    return false
+  }
+
+  private func performBackGesture(app: XCUIApplication) {
+    let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
+    let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
+    let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+    start.press(forDuration: 0.05, thenDragTo: end)
+  }
+
+  private func performAppSwitcherGesture(app: XCUIApplication) {
+    let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
+    let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99))
+    let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+    start.press(forDuration: 0.6, thenDragTo: end)
   }
 
   private func findElement(app: XCUIApplication, text: String) -> XCUIElement? {
@@ -587,6 +640,10 @@ enum CommandType: String, Codable {
   case findText
   case listTappables
   case snapshot
+  case back
+  case home
+  case appSwitcher
+  case alert
   case shutdown
 }
 
@@ -601,6 +658,7 @@ struct Command: Codable {
   let command: CommandType
   let appBundleId: String?
   let text: String?
+  let action: String?
   let x: Double?
   let y: Double?
   let direction: SwipeDirection?

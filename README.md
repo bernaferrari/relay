@@ -6,7 +6,7 @@ This project mirrors the spirit of `agent-browser`, but targets iOS simulators/d
 
 ## Current scope (v1)
 - Platforms: iOS (simulator + limited device support) and Android (emulator + device).
-- Core commands: `open`, `press`, `long-press`, `focus`, `type`, `fill`, `scroll`, `scrollintoview`, `screenshot`, `close`.
+- Core commands: `open`, `back`, `home`, `app-switcher`, `press`, `long-press`, `focus`, `type`, `fill`, `scroll`, `scrollintoview`, `wait`, `alert`, `screenshot`, `close`.
 - Inspection commands: `snapshot` (accessibility tree).
 - Device tooling: `adb` (Android), `simctl`/`devicectl` (iOS via Xcode).
 - Minimal dependencies; TypeScript executed directly on Node 22+ (no build step).
@@ -35,6 +35,8 @@ Examples:
 agent-device open SampleApp
 agent-device snapshot
 agent-device click @e7
+agent-device wait text "Camera"
+agent-device back
 agent-device type "hello"
 agent-device screenshot --out ./screenshot.png
 agent-device close SampleApp
@@ -79,6 +81,7 @@ Snapshot defaults to the AX backend on iOS simulators. Use `--backend xctest` if
 
 ## iOS notes
 - Input commands (`press`, `type`, `scroll`, etc.) are supported only on simulators in v1 and use the XCTest runner.
+- `alert` and `scrollintoview` use the XCTest runner and are simulator-only in v1.
 
 ## Testing
 

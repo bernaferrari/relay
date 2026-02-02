@@ -18,6 +18,7 @@ export type ParsedArgs = {
     snapshotScope?: string;
     snapshotRaw?: boolean;
     snapshotBackend?: 'ax' | 'xctest';
+    appsFilter?: 'launchable' | 'user-installed' | 'all';
     noRecord?: boolean;
     recordJson?: boolean;
     help: boolean;
@@ -166,6 +167,11 @@ Commands:
                                              xctest: XCTest snapshot (slower, no permissions)
   devices                                   List available devices
   apps [--user-installed|--all]             List installed apps (Android launchable by default, iOS simulator)
+  back                                      Navigate back (where supported)
+  home                                      Go to home screen (where supported)
+  app-switcher                              Open app switcher (where supported)
+  wait <ms>|text <text>|@ref [timeoutMs]     Wait for duration or text to appear
+  alert [get|accept|dismiss|wait] [timeout] Inspect or handle alert (iOS simulator)
   click <@ref>                               Click element by snapshot ref
   get text <@ref>                            Return element text by ref
   get attrs <@ref>                           Return element attributes by ref

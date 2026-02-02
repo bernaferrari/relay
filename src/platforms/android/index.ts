@@ -136,6 +136,18 @@ export async function pressAndroid(device: DeviceInfo, x: number, y: number): Pr
   await runCmd('adb', adbArgs(device, ['shell', 'input', 'tap', String(x), String(y)]));
 }
 
+export async function backAndroid(device: DeviceInfo): Promise<void> {
+  await runCmd('adb', adbArgs(device, ['shell', 'input', 'keyevent', '4']));
+}
+
+export async function homeAndroid(device: DeviceInfo): Promise<void> {
+  await runCmd('adb', adbArgs(device, ['shell', 'input', 'keyevent', '3']));
+}
+
+export async function appSwitcherAndroid(device: DeviceInfo): Promise<void> {
+  await runCmd('adb', adbArgs(device, ['shell', 'input', 'keyevent', '187']));
+}
+
 export async function longPressAndroid(
   device: DeviceInfo,
   x: number,
