@@ -37,6 +37,7 @@
     "!ios-runner/**/.swiftpm",
     "!ios-runner/**/xcuserdata",
     "!ios-runner/**/*.xcuserstate",
+    "skills",
     "src",
     "README.md",
     "LICENSE"
