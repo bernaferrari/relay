@@ -1021,6 +1021,47 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
         return { ok: false, error: { code: 'COMMAND_FAILED', message: `Ref ${req.positionals[0]} not found or has no bounds` } };
       }
       const refLabel = resolveRefLabel(node, session.snapshot.nodes);
+      const label = node.label?.trim();
+      if (session.device.platform === 'ios' && session.device.kind === 'simulator') {
+        if (refLabel && isTextInputType(node.type)) {
+          await runIosRunnerCommand(
+            session.device,
+            { command: 'tap', text: refLabel, appBundleId: session.appBundleId },
+            { verbose: req.flags?.verbose, logPath, traceLogPath: session?.trace?.outPath },
+          );
+          await runIosRunnerCommand(
+            session.device,
+            { command: 'type', text, appBundleId: session.appBundleId },
+            { verbose: req.flags?.verbose, logPath, traceLogPath: session?.trace?.outPath },
+          );
+          recordAction(session, {
+            command,
+            positionals: req.positionals ?? [],
+            flags: req.flags ?? {},
+            result: { ref, refLabel, mode: 'text' },
+          });
+          return { ok: true, data: { ref, mode: 'text' } };
+        }
+        if (label && isLabelUnique(session.snapshot.nodes, label)) {
+          await runIosRunnerCommand(
+            session.device,
+            { command: 'tap', text: label, appBundleId: session.appBundleId },
+            { verbose: req.flags?.verbose, logPath, traceLogPath: session?.trace?.outPath },
+          );
+          await runIosRunnerCommand(
+            session.device,
+            { command: 'type', text, appBundleId: session.appBundleId },
+            { verbose: req.flags?.verbose, logPath, traceLogPath: session?.trace?.outPath },
+          );
+          recordAction(session, {
+            command,
+            positionals: req.positionals ?? [],
+            flags: req.flags ?? {},
+            result: { ref, refLabel: label, mode: 'text' },
+          });
+          return { ok: true, data: { ref, mode: 'text' } };
+        }
+      }
       const { x, y } = centerOfRect(node.rect);
       const data = await dispatchCommand(
         session.device,
@@ -1606,6 +1647,16 @@ function isLabelUnique(nodes: SnapshotState['nodes'], label: string): boolean {
     }
   }
   return count === 1;
+}
+
+function isTextInputType(type: string | undefined): boolean {
+  const normalized = normalizeType(type ?? '');
+  return (
+    normalized === 'textfield' ||
+    normalized === 'textview' ||
+    normalized === 'searchfield' ||
+    normalized === 'textarea'
+  );
 }
 
 function pruneGroupNodes(nodes: RawSnapshotNode[]): RawSnapshotNode[] {
