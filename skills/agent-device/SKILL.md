@@ -82,6 +82,14 @@ agent-device settings location off
 Note: iOS wifi/airplane toggles status bar indicators, not actual network state.
 Airplane off clears status bar overrides.
 
+### App state
+
+```bash
+agent-device appstate
+agent-device apps --metadata --platform ios
+agent-device apps --metadata --platform android
+```
+
 ### Interactions (use @refs from snapshot)
 
 ```bash

@@ -20,6 +20,7 @@
     "build:xcuitest": "AGENT_DEVICE_IOS_CLEAN_DERIVED=1 xcodebuild build-for-testing -project ios-runner/AgentDeviceRunner/AgentDeviceRunner.xcodeproj -scheme AgentDeviceRunner -destination \"generic/platform=iOS Simulator\" -derivedDataPath ~/.agent-device/ios-runner/derived",
     "build:clis": "pnpm build:node && pnpm build:axsnapshot",
     "build:all": "pnpm build:node && pnpm build:axsnapshot && pnpm build:xcuitest",
+    "ad": "node bin/agent-device.mjs",
     "format": "prettier --write .",
     "prepublishOnly": "pnpm build:node && pnpm build:axsnapshot",
     "prepack": "pnpm build:node && pnpm build:axsnapshot",
