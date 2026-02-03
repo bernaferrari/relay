@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { runCmd, whichCmd } from '../../utils/exec.ts';
+import { withRetry } from '../../utils/retry.ts';
 import { AppError } from '../../utils/errors.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import type { RawSnapshotNode, Rect, SnapshotOptions } from '../../utils/snapshot.ts';
@@ -301,12 +302,31 @@ async function getAndroidScreenSize(
 }
 
 async function dumpUiHierarchy(device: DeviceInfo): Promise<string> {
+  return withRetry(() => dumpUiHierarchyOnce(device), {
+    shouldRetry: isRetryableAdbError,
+  });
+}
+
+async function dumpUiHierarchyOnce(device: DeviceInfo): Promise<string> {
   await runCmd(
     'adb',
     adbArgs(device, ['shell', 'uiautomator', 'dump', '/sdcard/window_dump.xml']),
   );
   const result = await runCmd('adb', adbArgs(device, ['shell', 'cat', '/sdcard/window_dump.xml']));
   return result.stdout;
+}
+
+function isRetryableAdbError(err: unknown): boolean {
+  if (!(err instanceof AppError)) return false;
+  if (err.code !== 'COMMAND_FAILED') return false;
+  const stderr = `${(err.details as any)?.stderr ?? ''}`.toLowerCase();
+  if (stderr.includes('device offline')) return true;
+  if (stderr.includes('device not found')) return true;
+  if (stderr.includes('transport error')) return true;
+  if (stderr.includes('connection reset')) return true;
+  if (stderr.includes('broken pipe')) return true;
+  if (stderr.includes('timed out')) return true;
+  return false;
 }
 
 function findBounds(xml: string, query: string): { x: number; y: number } | null {

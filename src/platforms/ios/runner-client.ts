@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError } from '../../utils/errors.ts';
 import { runCmd, runCmdStreaming, type ExecResult } from '../../utils/exec.ts';
+import { withRetry } from '../../utils/retry.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import net from 'node:net';
 
@@ -57,6 +58,20 @@ export type RunnerSnapshotNode = {
 };
 
 export async function runIosRunnerCommand(
+  device: DeviceInfo,
+  command: RunnerCommand,
+  options: { verbose?: boolean; logPath?: string; traceLogPath?: string } = {},
+): Promise<Record<string, unknown>> {
+  if (isReadOnlyRunnerCommand(command.command)) {
+    return withRetry(
+      () => executeRunnerCommand(device, command, options),
+      { shouldRetry: isRetryableRunnerError },
+    );
+  }
+  return executeRunnerCommand(device, command, options);
+}
+
+async function executeRunnerCommand(
   device: DeviceInfo,
   command: RunnerCommand,
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string } = {},
@@ -315,6 +330,21 @@ function logChunk(chunk: string, logPath?: string, traceLogPath?: string, verbos
   if (verbose) {
     process.stderr.write(chunk);
   }
+}
+
+function isRetryableRunnerError(err: unknown): boolean {
+  if (!(err instanceof AppError)) return false;
+  if (err.code !== 'COMMAND_FAILED') return false;
+  const message = `${err.message ?? ''}`.toLowerCase();
+  if (message.includes('runner did not accept connection')) return true;
+  if (message.includes('fetch failed')) return true;
+  if (message.includes('econnrefused')) return true;
+  if (message.includes('socket hang up')) return true;
+  return false;
+}
+
+function isReadOnlyRunnerCommand(command: RunnerCommand['command']): boolean {
+  return command === 'snapshot' || command === 'findText' || command === 'listTappables' || command === 'alert';
 }
 
 function shouldCleanDerived(): boolean {

@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { AppError } from '../../utils/errors.ts';
 import { runCmd } from '../../utils/exec.ts';
+import { withRetry } from '../../utils/retry.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import type { RawSnapshotNode } from '../../utils/snapshot.ts';
 
@@ -24,38 +25,29 @@ export async function snapshotAx(
     throw new AppError('UNSUPPORTED_OPERATION', 'AX snapshot is only supported on iOS simulators');
   }
   const binary = await ensureAxSnapshotBinary();
-  const result = await runCmd(binary, [], { allowFailure: true });
-  if (options.traceLogPath) {
-    const stdoutText = (result.stdout ?? '').toString();
-    const stderrText = (result.stderr ?? '').toString();
-    const header = `\n[axsnapshot] exit=${result.exitCode} stdoutBytes=${stdoutText.length} stderrBytes=${stderrText.length}\n`;
-    fs.appendFileSync(options.traceLogPath, header);
-    if (result.exitCode !== 0 || stderrText.length > 0) {
-      if (stderrText.length > 0) {
-        fs.appendFileSync(options.traceLogPath, `${stderrText}\n`);
+  const result = await withRetry(
+    async () => {
+      const attemptResult = await runCmd(binary, [], { allowFailure: true });
+      if (options.traceLogPath) {
+        appendAxTrace(options.traceLogPath, attemptResult);
       }
-      if (result.exitCode !== 0 && stdoutText.length > 0) {
-        fs.appendFileSync(options.traceLogPath, `${stdoutText}\n`);
+      if (attemptResult.exitCode !== 0) {
+        const stderrText = (attemptResult.stderr ?? '').toString();
+        const hint = axHintFromStderr(stderrText);
+        const retryable = isRetryableAxError(stderrText);
+        const error = new AppError('COMMAND_FAILED', 'AX snapshot failed', {
+          stderr: `${stderrText}${hint}`,
+          stdout: attemptResult.stdout,
+          retryable,
+        });
+        throw error;
       }
-    }
-  }
-  if (result.exitCode !== 0) {
-    const stderrText = (result.stderr ?? '').toString();
-    let hint = '';
-    if (stderrText.toLowerCase().includes('accessibility permission')) {
-      hint =
-        ' Enable Accessibility for your terminal in System Settings > Privacy & Security > Accessibility, ' +
-        'or use --backend xctest (slower snapshots via XCTest).';
-    }
-    if (stderrText.toLowerCase().includes('could not find ios app content')) {
-      hint =
-        ' AX snapshot sometimes caches empty content. Try restarting the Simulator app.';
-    }
-    throw new AppError('COMMAND_FAILED', 'AX snapshot failed', {
-      stderr: `${stderrText}${hint}`,
-      stdout: result.stdout,
-    });
-  }
+      return attemptResult;
+    },
+    {
+      shouldRetry: (err) => isRetryableError(err),
+    },
+  );
   let tree: AXNode;
   let originFrame: AXFrame | undefined;
   try {
@@ -110,6 +102,46 @@ export async function snapshotAx(
     depth: node.depth,
   }));
   return { nodes: mapped };
+}
+
+function axHintFromStderr(stderrText: string): string {
+  const lower = stderrText.toLowerCase();
+  if (lower.includes('accessibility permission')) {
+    return (
+      ' Enable Accessibility for your terminal in System Settings > Privacy & Security > Accessibility, ' +
+      'or use --backend xctest (slower snapshots via XCTest).'
+    );
+  }
+  if (lower.includes('could not find ios app content')) {
+    return ' AX snapshot sometimes caches empty content. Try restarting the Simulator app.';
+  }
+  return '';
+}
+
+function appendAxTrace(traceLogPath: string, result: { stdout?: string; stderr?: string; exitCode: number }): void {
+  const stdoutText = (result.stdout ?? '').toString();
+  const stderrText = (result.stderr ?? '').toString();
+  const header = `\n[axsnapshot] exit=${result.exitCode} stdoutBytes=${stdoutText.length} stderrBytes=${stderrText.length}\n`;
+  fs.appendFileSync(traceLogPath, header);
+  if (result.exitCode !== 0 || stderrText.length > 0) {
+    if (stderrText.length > 0) {
+      fs.appendFileSync(traceLogPath, `${stderrText}\n`);
+    }
+    if (result.exitCode !== 0 && stdoutText.length > 0) {
+      fs.appendFileSync(traceLogPath, `${stdoutText}\n`);
+    }
+  }
+}
+
+function isRetryableAxError(stderrText: string): boolean {
+  const lower = stderrText.toLowerCase();
+  if (lower.includes('could not find ios app content')) return true;
+  if (lower.includes('timeout')) return true;
+  return false;
+}
+
+function isRetryableError(err: unknown): boolean {
+  return err instanceof AppError && err.code === 'COMMAND_FAILED' && err.details?.retryable === true;
 }
 
 function normalizeFrames(
