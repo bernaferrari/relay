@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { AppError } from '../../utils/errors.ts';
 import { runCmd } from '../../utils/exec.ts';
 import { withRetry } from '../../utils/retry.ts';
@@ -196,7 +197,7 @@ async function ensureAxSnapshotBinary(): Promise<string> {
 }
 
 function findProjectRoot(): string {
-  let current = process.cwd();
+  let current = path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 6; i += 1) {
     const pkgPath = path.join(current, 'package.json');
     if (fs.existsSync(pkgPath)) return current;

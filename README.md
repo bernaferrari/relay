@@ -114,6 +114,7 @@ App state:
 ## iOS notes
 - Input commands (`press`, `type`, `scroll`, etc.) are supported only on simulators in v1 and use the XCTest runner.
 - `alert` and `scrollintoview` use the XCTest runner and are simulator-only in v1.
+- Real device support (including snapshots) is on the roadmap for iOS.
 
 ## Testing
 

@@ -54,6 +54,7 @@ Instructions for AI coding agents working with this codebase.
 - Port injection uses `.xctestrun` env vars and `AGENT_DEVICE_RUNNER_PORT`.
 - Logs of readiness: `AGENT_DEVICE_RUNNER_LISTENER_READY` and `AGENT_DEVICE_RUNNER_PORT=...`.
 - Main-thread UI actions are mandatory (XCUIApplication).
+- Real device support (including snapshots) is on the roadmap for iOS.
 
 ## Daemon details
 
