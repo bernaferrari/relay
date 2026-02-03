@@ -184,14 +184,62 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
         return { ok: false, error: { code: 'UNSUPPORTED_OPERATION', message: 'apps list is only supported on iOS simulators' } };
       }
       const { listSimulatorApps } = await import('./platforms/ios/index.ts');
-      const apps = (await listSimulatorApps(device)).map((app) =>
+      const apps = await listSimulatorApps(device);
+      if (req.flags?.appsMetadata) {
+        return { ok: true, data: { apps } };
+      }
+      const formatted = apps.map((app) =>
         app.name && app.name !== app.bundleId ? `${app.name} (${app.bundleId})` : app.bundleId,
       );
+      return { ok: true, data: { apps: formatted } };
+    }
+    const { listAndroidApps, listAndroidAppsMetadata } = await import('./platforms/android/index.ts');
+    if (req.flags?.appsMetadata) {
+      const apps = await listAndroidAppsMetadata(device, req.flags?.appsFilter);
       return { ok: true, data: { apps } };
     }
-    const { listAndroidApps } = await import('./platforms/android/index.ts');
     const apps = await listAndroidApps(device, req.flags?.appsFilter);
     return { ok: true, data: { apps } };
+  }
+
+  if (command === 'appstate') {
+    const session = sessions.get(sessionName);
+    const flags = req.flags ?? {};
+    const device = session?.device ?? (await resolveTargetDevice(flags));
+    await ensureDeviceReady(device);
+    if (device.platform === 'ios') {
+      if (session?.appBundleId) {
+        return {
+          ok: true,
+          data: {
+            platform: 'ios',
+            appBundleId: session.appBundleId,
+            appName: session.appName ?? session.appBundleId,
+            source: 'session',
+          },
+        };
+      }
+      const snapshotResult = await resolveIosAppStateFromSnapshots(device, session?.trace?.outPath, req.flags);
+      return {
+        ok: true,
+        data: {
+          platform: 'ios',
+          appName: snapshotResult.appName,
+          appBundleId: snapshotResult.appBundleId,
+          source: snapshotResult.source,
+        },
+      };
+    }
+    const { getAndroidAppState } = await import('./platforms/android/index.ts');
+    const state = await getAndroidAppState(device);
+    return {
+      ok: true,
+      data: {
+        platform: 'android',
+        package: state.package,
+        activity: state.activity,
+      },
+    };
   }
 
   if (command === 'open') {
@@ -343,9 +391,10 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       name: sessionName,
       device,
       createdAt: session?.createdAt ?? Date.now(),
-      appBundleId,
+      appBundleId: session?.appBundleId ?? appBundleId,
       snapshot,
       actions: session?.actions ?? [],
+      appName: session?.appName,
     };
     recordAction(nextSession, {
       command,
@@ -359,8 +408,8 @@ async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
       data: {
         nodes,
         truncated: data?.truncated ?? false,
-        appName: session?.appName ?? appBundleId ?? device.name,
-        appBundleId: appBundleId,
+        appName: nextSession.appBundleId ? (nextSession.appName ?? nextSession.appBundleId) : undefined,
+        appBundleId: nextSession.appBundleId,
       },
     };
   }
@@ -1180,6 +1229,7 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     snapshotScope,
     snapshotRaw,
     snapshotBackend,
+    appsMetadata,
     noRecord,
     recordJson,
   } = flags as any;
@@ -1196,6 +1246,7 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     snapshotScope,
     snapshotRaw,
     snapshotBackend,
+    appsMetadata,
     noRecord,
     recordJson,
   };
@@ -1270,6 +1321,64 @@ function extractNodeText(node: SnapshotState['nodes'][number]): string {
     .map((value) => (typeof value === 'string' ? value.trim() : ''))
     .filter((value) => value.length > 0);
   return candidates[0] ?? '';
+}
+
+async function resolveIosAppStateFromSnapshots(
+  device: DeviceInfo,
+  traceLogPath: string | undefined,
+  flags: CommandFlags | undefined,
+): Promise<{ appName: string; appBundleId?: string; source: 'snapshot-ax' | 'snapshot-xctest' }> {
+  const axResult = await dispatchCommand(device, 'snapshot', [], flags?.out, {
+    ...contextFromFlags(
+      {
+        ...flags,
+        snapshotDepth: 1,
+        snapshotCompact: true,
+        snapshotBackend: 'ax',
+      },
+      undefined,
+      traceLogPath,
+    ),
+  });
+  const axNode = extractAppNodeFromSnapshot(axResult as { nodes?: RawSnapshotNode[] });
+  if (axNode?.appName || axNode?.appBundleId) {
+    return {
+      appName: axNode.appName ?? axNode.appBundleId ?? 'unknown',
+      appBundleId: axNode.appBundleId,
+      source: 'snapshot-ax',
+    };
+  }
+  const xctestResult = await dispatchCommand(device, 'snapshot', [], flags?.out, {
+    ...contextFromFlags(
+      {
+        ...flags,
+        snapshotDepth: 1,
+        snapshotCompact: true,
+        snapshotBackend: 'xctest',
+      },
+      undefined,
+      traceLogPath,
+    ),
+  });
+  const xcNode = extractAppNodeFromSnapshot(xctestResult as { nodes?: RawSnapshotNode[] });
+  return {
+    appName: xcNode?.appName ?? xcNode?.appBundleId ?? 'unknown',
+    appBundleId: xcNode?.appBundleId,
+    source: 'snapshot-xctest',
+  };
+}
+
+function extractAppNodeFromSnapshot(
+  data: { nodes?: RawSnapshotNode[] } | undefined,
+): { appName?: string; appBundleId?: string } | null {
+  const rawNodes = data?.nodes ?? [];
+  const nodes = attachRefs(rawNodes);
+  const appNode = nodes.find((node) => normalizeType(node.type ?? '') === 'application') ?? nodes[0];
+  if (!appNode) return null;
+  const appName = appNode.label?.trim();
+  const appBundleId = appNode.identifier?.trim();
+  if (!appName && !appBundleId) return null;
+  return { appName: appName || undefined, appBundleId: appBundleId || undefined };
 }
 
 function writeSessionLog(session: SessionState): void {

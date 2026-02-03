@@ -119,9 +119,44 @@ export async function runCli(argv: string[]): Promise<void> {
         }
         if (command === 'apps') {
           const apps = Array.isArray((data as any).apps) ? (data as any).apps : [];
-          process.stdout.write(`${apps.join('\n')}\n`);
+          const lines = apps.map((app: any) => {
+            if (typeof app === 'string') return app;
+            if (app && typeof app === 'object') {
+              const bundleId = app.bundleId ?? app.package;
+              const name = app.name ?? app.label;
+              if (name && bundleId) return `${name} (${bundleId})`;
+              if (bundleId && typeof app.launchable === 'boolean') {
+                return `${bundleId} (launchable=${app.launchable})`;
+              }
+              if (bundleId) return String(bundleId);
+              return JSON.stringify(app);
+            }
+            return String(app);
+          });
+          process.stdout.write(`${lines.join('\n')}\n`);
           if (logTailStopper) logTailStopper();
           return;
+        }
+        if (command === 'appstate') {
+          const platform = (data as any)?.platform;
+          const appBundleId = (data as any)?.appBundleId;
+          const appName = (data as any)?.appName;
+          const source = (data as any)?.source;
+          const pkg = (data as any)?.package;
+          const activity = (data as any)?.activity;
+          if (platform === 'ios') {
+            process.stdout.write(`Foreground app: ${appName ?? appBundleId}\n`);
+            if (appBundleId) process.stdout.write(`Bundle: ${appBundleId}\n`);
+            if (source) process.stdout.write(`Source: ${source}\n`);
+            if (logTailStopper) logTailStopper();
+            return;
+          }
+          if (platform === 'android') {
+            process.stdout.write(`Foreground app: ${pkg ?? 'unknown'}\n`);
+            if (activity) process.stdout.write(`Activity: ${activity}\n`);
+            if (logTailStopper) logTailStopper();
+            return;
+          }
         }
       }
       if (logTailStopper) logTailStopper();

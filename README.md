@@ -93,6 +93,10 @@ Settings helpers (simulators):
 - `settings location on|off` (iOS uses per‑app permission for the current session app)
   - Note: iOS wifi/airplane toggles status bar indicators, not actual network state. Airplane off clears status bar overrides.
 
+App state:
+- `appstate` shows the foreground app/activity (Android). On iOS it uses the current session app when available, otherwise it falls back to a snapshot-based guess (AX first, XCTest if AX can’t identify).
+- `apps --metadata` returns app list with minimal metadata.
+
 ## Debug
 
 - Start trace capture before a flaky sequence:

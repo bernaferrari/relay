@@ -40,6 +40,13 @@ Instructions for AI coding agents working with this codebase.
 - Run command: `node bin/agent-device.mjs --platform ios --udid <UDID> open settings --verbose`
 - Scroll: `node bin/agent-device.mjs --platform ios --udid <UDID> scroll down 0.5 --verbose`
 
+## Run and Test
+
+- Run CLI (preferred): `pnpm ad <command>`
+- Build JS + Swift artifacts: `pnpm build:all`
+- Typecheck: `pnpm typecheck`
+- Tests: `pnpm test` (all), `pnpm test:smoke`, `pnpm test:integration`
+
 ## iOS runner details
 
 - Test method name used by CLI: `RunnerTests.testCommand`.

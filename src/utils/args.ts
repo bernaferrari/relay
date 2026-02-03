@@ -19,6 +19,7 @@ export type ParsedArgs = {
     snapshotRaw?: boolean;
     snapshotBackend?: 'ax' | 'xctest' | 'hybrid';
     appsFilter?: 'launchable' | 'user-installed' | 'all';
+    appsMetadata?: boolean;
     noRecord?: boolean;
     recordJson?: boolean;
     help: boolean;
@@ -69,6 +70,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     if (arg === '--all') {
       flags.appsFilter = 'all';
+      continue;
+    }
+    if (arg === '--metadata') {
+      flags.appsMetadata = true;
       continue;
     }
     if (arg.startsWith('--backend')) {
@@ -167,7 +172,8 @@ Commands:
                                              ax: macOS Accessibility tree (fast, needs permissions)
                                              xctest: XCTest snapshot (slower, no permissions)
   devices                                   List available devices
-  apps [--user-installed|--all]             List installed apps (Android launchable by default, iOS simulator)
+  apps [--user-installed|--all|--metadata]  List installed apps (Android launchable by default, iOS simulator)
+  appstate                                  Show foreground app/activity
   back                                      Navigate back (where supported)
   home                                      Go to home screen (where supported)
   app-switcher                              Open app switcher (where supported)

@@ -91,6 +91,63 @@ export async function listAndroidApps(
     .filter(Boolean);
 }
 
+export async function listAndroidAppsMetadata(
+  device: DeviceInfo,
+  filter: 'launchable' | 'user-installed' | 'all' = 'launchable',
+): Promise<Array<{ package: string; launchable: boolean }>> {
+  const apps = await listAndroidApps(device, filter);
+  const launchable = filter === 'launchable'
+    ? new Set(apps)
+    : new Set(await listAndroidApps(device, 'launchable'));
+  return apps.map((pkg) => ({ package: pkg, launchable: launchable.has(pkg) }));
+}
+
+export async function getAndroidAppState(
+  device: DeviceInfo,
+): Promise<{ package?: string; activity?: string }> {
+  const windowFocus = await readAndroidFocus(device, [
+    ['shell', 'dumpsys', 'window', 'windows'],
+    ['shell', 'dumpsys', 'window'],
+  ]);
+  if (windowFocus) return windowFocus;
+
+  const activityFocus = await readAndroidFocus(device, [
+    ['shell', 'dumpsys', 'activity', 'activities'],
+    ['shell', 'dumpsys', 'activity'],
+  ]);
+  if (activityFocus) return activityFocus;
+  return {};
+}
+
+async function readAndroidFocus(
+  device: DeviceInfo,
+  commands: string[][],
+): Promise<{ package?: string; activity?: string } | null> {
+  for (const args of commands) {
+    const result = await runCmd('adb', adbArgs(device, args), { allowFailure: true });
+    const text = result.stdout ?? '';
+    const parsed = parseAndroidFocus(text);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function parseAndroidFocus(text: string): { package?: string; activity?: string } | null {
+  const patterns = [
+    /mCurrentFocus=Window\{[^}]*\s([\w.]+)\/([\w.$]+)/,
+    /mFocusedApp=AppWindowToken\{[^}]*\s([\w.]+)\/([\w.$]+)/,
+    /mResumedActivity:.*?\s([\w.]+)\/([\w.$]+)/,
+    /ResumedActivity:.*?\s([\w.]+)\/([\w.$]+)/,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match) {
+      return { package: match[1], activity: match[2] };
+    }
+  }
+  return null;
+}
+
 export async function openAndroidApp(device: DeviceInfo, app: string): Promise<void> {
   if (!device.booted) {
     await waitForAndroidBoot(device.id);
