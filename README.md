@@ -88,6 +88,7 @@ Snapshot defaults to the hybrid backend on iOS simulators. Use `--backend ax` fo
   - `agent-device trace start`
   - `agent-device trace stop ./trace.log`
 - The trace log includes AX snapshot stderr and XCTest runner logs for the session.
+- Built-in retries cover transient runner connection failures, AX snapshot hiccups, and Android UI dumps.
 - For snapshot issues, compare `--backend ax` vs `--backend xctest` and scope with `-s "<label>"`.
 
 ## App resolution
