@@ -55,6 +55,19 @@ It is recommended because AX is fast but can miss UI details, while XCTest is sl
 If you want explicit control or AX is unavailable, use `--backend xctest`.
 In practice, if AX returns a `Tab Bar` group with no children, hybrid will run a scoped XCTest snapshot for `Tab Bar` and insert those nodes under the group.
 
+### Find (semantic)
+
+```bash
+agent-device find "Sign In" click
+agent-device find text "Sign In" click
+agent-device find label "Email" fill "user@example.com"
+agent-device find value "Search" type "query"
+agent-device find role button click
+agent-device find id "com.example:id/login" click
+agent-device find "Settings" wait 10000
+agent-device find "Settings" exists
+```
+
 ### Interactions (use @refs from snapshot)
 
 ```bash

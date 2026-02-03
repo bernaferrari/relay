@@ -189,6 +189,12 @@ Commands:
   record stop                                Stop screen recording
   trace start [path]                         Start trace log capture
   trace stop [path]                          Stop trace log capture
+  find <text> <action> [value]               Find by any text (label/value/id)
+  find text <text> <action> [value]          Find by text content
+  find label <label> <action> [value]        Find by label
+  find value <value> <action> [value]        Find by value
+  find role <role> <action> [value]          Find by role/type
+  find id <id> <action> [value]              Find by identifier/resource-id
   session list                               List active sessions
 
 Flags:

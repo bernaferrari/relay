@@ -82,6 +82,11 @@ Sessions:
 
 Snapshot defaults to the hybrid backend on iOS simulators. Use `--backend ax` for AX-only or `--backend xctest` for XCTest-only.
 
+Find (semantic):
+- `find <text> <action> [value]` finds by any text (label/value/identifier) using a scoped snapshot.
+- `find text|label|value|role|id <value> <action> [value]` for specific locators.
+- Actions: `click` (default), `fill`, `type`, `focus`, `get text`, `get attrs`, `wait [timeout]`, `exists`.
+
 ## Debug
 
 - Start trace capture before a flaky sequence:

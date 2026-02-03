@@ -74,6 +74,24 @@ export async function runCli(argv: string[]): Promise<void> {
           return;
         }
       }
+      if (command === 'find') {
+        const data = response.data as any;
+        if (typeof data?.text === 'string') {
+          process.stdout.write(`${data.text}\n`);
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+        if (typeof data?.found === 'boolean') {
+          process.stdout.write(`Found: ${data.found}\n`);
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+        if (data?.node) {
+          process.stdout.write(`${JSON.stringify(data.node, null, 2)}\n`);
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+      }
       if (command === 'click') {
         const ref = (response.data as any)?.ref ?? '';
         const x = (response.data as any)?.x;
