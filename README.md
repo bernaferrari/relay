@@ -79,11 +79,11 @@ Coordinates:
 | --- | --- | --- | --- |
 | `ax` | Fast | Medium | Accessibility permission for the terminal app |
 | `xctest` | Slow | High | No Accessibility permission required |
-| `hybrid` | Fast | High | Uses AX first, fills empty containers with scoped XCTest |
 
 Notes:
-- Default backend is `hybrid` on iOS.
+- Default backend is `xctest` on iOS.
 - Scope snapshots with `-s "<label>"` or `-s @ref`.
+- If XCTest returns 0 nodes (e.g., foreground app changed), agent-device will fall back to an AX snapshot when available.
 
 Flags:
 - `--platform ios|android`
@@ -94,7 +94,7 @@ Flags:
 - `--session <name>`
 - `--verbose` for daemon and runner logs
 - `--json` for structured output
-- `--backend ax|xctest|hybrid` (snapshot only; defaults to `hybrid` on iOS)
+- `--backend ax|xctest` (snapshot only; defaults to `xctest` on iOS)
 
 ## Skills
 Install the automation skills listed in [SKILL.md](skills/agent-device/SKILL.md).
@@ -102,6 +102,7 @@ Install the automation skills listed in [SKILL.md](skills/agent-device/SKILL.md)
 Sessions:
 - `open` starts a session. Without args boots/activates the target device/simulator without launching an app.
 - All interaction commands require an open session.
+- If a session is already open, `open <app>` switches the active app and updates the session app bundle.
 - `close` stops the session and releases device resources. Pass an app to close it explicitly, or omit to just close the session.
 - Use `--session <name>` to manage multiple sessions.
 - Session logs are written to `~/.agent-device/sessions/<session>-<timestamp>.ad`.
