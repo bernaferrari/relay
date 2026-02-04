@@ -45,7 +45,7 @@ agent-device snapshot -c              # Compact output
 agent-device snapshot -d 3            # Limit depth
 agent-device snapshot -s "Camera"      # Scope to label/identifier
 agent-device snapshot --raw           # Raw node output
-agent-device snapshot --backend hybrid # Default: best speed vs correctness trade-off (AX fast, XCTest complete)
+agent-device snapshot --backend xctest # Default: full XCTest snapshot (most complete)
 agent-device snapshot --backend ax    # macOS Accessibility tree (fast, needs permissions)
 agent-device snapshot --backend xctest # XCTest snapshot (slow, no permissions)
 ```
@@ -53,7 +53,7 @@ agent-device snapshot --backend xctest # XCTest snapshot (slow, no permissions)
 Hybrid will automatically fill empty containers (e.g. `group`, `tab bar`) by scoping XCTest to the container label.
 It is recommended because AX is fast but can miss UI details, while XCTest is slower but more complete.
 If you want explicit control or AX is unavailable, use `--backend xctest`.
-In practice, if AX returns a `Tab Bar` group with no children, hybrid will run a scoped XCTest snapshot for `Tab Bar` and insert those nodes under the group.
+Use `--backend ax` when you need faster snapshots and can tolerate missing details.
 
 ### Find (semantic)
 
@@ -139,7 +139,9 @@ agent-device apps --platform android --user-installed
 
 - Always snapshot right before interactions; refs invalidate on UI changes.
 - Prefer `snapshot -i` to reduce output size.
-- On iOS, hybrid is the default and uses AX first, so Accessibility permission is still required.
+- On iOS, `xctest` is the default and does not require Accessibility permission.
+- If XCTest returns 0 nodes (foreground app changed), agent-device falls back to AX when available.
+- `open <app>` can be used within an existing session to switch apps and update the session bundle id.
 - If AX returns the Simulator window or empty tree, restart Simulator or use `--backend xctest`.
 - Use `--session <name>` for parallel sessions; avoid device contention.
 
