@@ -45,7 +45,7 @@ Basic flow:
 
 ```bash
 agent-device open SampleApp
-agent-device snapshot -i -c
+agent-device snapshot
 agent-device click @e7
 agent-device fill @e8 "hello"
 agent-device close SampleApp
@@ -78,12 +78,12 @@ Coordinates:
 | Backend | Speed | Accuracy | Requirements |
 | --- | --- | --- | --- |
 | `ax` | Fast | Medium | Accessibility permission for the terminal app |
-| `xctest` | Slow | High | No Accessibility permission required |
+| `xctest` | Fast | High | No Accessibility permission required |
 
 Notes:
 - Default backend is `xctest` on iOS.
 - Scope snapshots with `-s "<label>"` or `-s @ref`.
-- If XCTest returns 0 nodes (e.g., foreground app changed), agent-device will fall back to an AX snapshot when available.
+- If XCTest returns 0 nodes (e.g., foreground app changed), agent-device falls back to AX when available.
 
 Flags:
 - `--platform ios|android`

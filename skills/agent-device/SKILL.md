@@ -39,21 +39,17 @@ agent-device session list         # List active sessions
 ### Snapshot (page analysis)
 
 ```bash
-agent-device snapshot                 # Full accessibility tree
-agent-device snapshot -i              # Interactive elements only (recommended)
-agent-device snapshot -c              # Compact output
-agent-device snapshot -d 3            # Limit depth
+agent-device snapshot                  # Full XCTest accessibility tree snapshot
+agent-device snapshot -i               # Interactive elements only (recommended)
+agent-device snapshot -c               # Compact output
+agent-device snapshot -d 3             # Limit depth
 agent-device snapshot -s "Camera"      # Scope to label/identifier
-agent-device snapshot --raw           # Raw node output
-agent-device snapshot --backend xctest # Default: full XCTest snapshot (most complete)
-agent-device snapshot --backend ax    # macOS Accessibility tree (fast, needs permissions)
-agent-device snapshot --backend xctest # XCTest snapshot (slow, no permissions)
+agent-device snapshot --raw            # Raw node output
+agent-device snapshot --backend xctest # XCTest snapshot (fast, complete, no permissions)
+agent-device snapshot --backend ax     # macOS Accessibility tree (fast, needs permissions, less fidelity, optional)
 ```
 
-Hybrid will automatically fill empty containers (e.g. `group`, `tab bar`) by scoping XCTest to the container label.
-It is recommended because AX is fast but can miss UI details, while XCTest is slower but more complete.
-If you want explicit control or AX is unavailable, use `--backend xctest`.
-Use `--backend ax` when you need faster snapshots and can tolerate missing details.
+XCTest is the default: fast and complete and does not require permissions. Use it in most cases and only fall back to AX when something breaks.
 
 ### Find (semantic)
 

@@ -65,6 +65,7 @@ final class RunnerTests: XCTestCase {
         }
       case .failed(let error):
         NSLog("AGENT_DEVICE_RUNNER_LISTENER_FAILED=%@", String(describing: error))
+        self?.doneExpectation?.fulfill()
       default:
         break
       }
@@ -80,7 +81,9 @@ final class RunnerTests: XCTestCase {
       return
     }
     NSLog("AGENT_DEVICE_RUNNER_WAITING")
-    let result = XCTWaiter.wait(for: [expectation], timeout: resolveRunnerTimeout())
+    let timeout = resolveRunnerTimeout()
+    let effectiveTimeout = timeout > 0 ? timeout : 24 * 60 * 60
+    let result = XCTWaiter.wait(for: [expectation], timeout: effectiveTimeout)
     NSLog("AGENT_DEVICE_RUNNER_WAIT_RESULT=%@", String(describing: result))
     if result != .completed {
       XCTFail("runner wait ended with \(result)")
@@ -471,11 +474,14 @@ final class RunnerTests: XCTestCase {
         break
       }
       if let limit = options.depth, depth > limit { continue }
-      if !isVisibleInViewport(snapshot.frame, viewport) { continue }
 
       let label = aggregatedLabel(for: snapshot) ?? snapshot.label.trimmingCharacters(in: .whitespacesAndNewlines)
       let identifier = snapshot.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
       let valueText = snapshotValueText(snapshot)
+      let hasContent = !label.isEmpty || !identifier.isEmpty || (valueText != nil)
+      if !isVisibleInViewport(snapshot.frame, viewport) && !hasContent {
+        continue
+      }
 
       let include = shouldInclude(
         snapshot: snapshot,
@@ -638,7 +644,7 @@ final class RunnerTests: XCTestCase {
   }
 
   private func aggregatedLabel(for snapshot: XCUIElementSnapshot, depth: Int = 0) -> String? {
-    if depth > 2 { return nil }
+    if depth > 4 { return nil }
     let text = snapshot.label.trimmingCharacters(in: .whitespacesAndNewlines)
     if !text.isEmpty { return text }
     if let valueText = snapshotValueText(snapshot) { return valueText }
@@ -698,7 +704,7 @@ private func resolveRunnerTimeout() -> TimeInterval {
      let parsed = Double(env) {
     return parsed
   }
-  return 300
+  return 0
 }
 
 enum CommandType: String, Codable {
