@@ -173,7 +173,7 @@ async function ensureRunnerSession(
   await ensureBooted(device.id);
   const xctestrun = await ensureXctestrun(device.id, options);
   const port = await getFreePort();
-  const runnerTimeout = process.env.AGENT_DEVICE_RUNNER_TIMEOUT ?? '300';
+  const runnerTimeout = process.env.AGENT_DEVICE_RUNNER_TIMEOUT ?? '0';
   const { xctestrunPath, jsonPath } = await prepareXctestrunWithEnv(
     xctestrun,
     { AGENT_DEVICE_RUNNER_PORT: String(port), AGENT_DEVICE_RUNNER_TIMEOUT: runnerTimeout },
