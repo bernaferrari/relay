@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs';
+import pathModule from 'node:path';
 import { AppError } from '../utils/errors.ts';
 import { selectDevice, type DeviceInfo } from '../utils/device.ts';
 import { listAndroidDevices } from '../platforms/android/devices.ts';
@@ -17,6 +19,7 @@ import { setIosSetting } from '../platforms/ios/index.ts';
 import type { RawSnapshotNode } from '../utils/snapshot.ts';
 
 export type CommandFlags = {
+  session?: string;
   platform?: 'ios' | 'android';
   device?: string;
   udid?: string;
@@ -232,28 +235,22 @@ export async function dispatchCommand(
       if (Number.isNaN(scale) || scale <= 0) {
         throw new AppError('INVALID_ARGS', 'pinch requires scale > 0');
       }
-      if (device.platform === 'ios' && device.kind === 'simulator') {
-        await runIosRunnerCommand(
-          device,
-          { command: 'pinch', scale, x, y, appBundleId: context?.appBundleId },
-          { verbose: context?.verbose, logPath: context?.logPath, traceLogPath: context?.traceLogPath },
-        );
-      } else {
-        throw new AppError('UNSUPPORTED_OPERATION', 'pinch is only supported on iOS simulators');
-      }
+      await runIosRunnerCommand(
+        device,
+        { command: 'pinch', scale, x, y, appBundleId: context?.appBundleId },
+        { verbose: context?.verbose, logPath: context?.logPath, traceLogPath: context?.traceLogPath },
+      );
       return { scale, x, y };
     }
     case 'screenshot': {
       const positionalPath = positionals[0];
-      const path = positionalPath ?? outPath ?? `./screenshot-${Date.now()}.png`;
-      await interactor.screenshot(path);
-      return { path };
+      const screenshotPath = positionalPath ?? outPath ?? `./screenshot-${Date.now()}.png`;
+      await fs.mkdir(pathModule.dirname(screenshotPath), { recursive: true });
+      await interactor.screenshot(screenshotPath);
+      return { path: screenshotPath };
     }
     case 'back': {
       if (device.platform === 'ios') {
-        if (device.kind !== 'simulator') {
-          throw new AppError('UNSUPPORTED_OPERATION', 'back is only supported on iOS simulators in v1');
-        }
         await runIosRunnerCommand(
           device,
           { command: 'back', appBundleId: context?.appBundleId },
@@ -266,9 +263,6 @@ export async function dispatchCommand(
     }
     case 'home': {
       if (device.platform === 'ios') {
-        if (device.kind !== 'simulator') {
-          throw new AppError('UNSUPPORTED_OPERATION', 'home is only supported on iOS simulators in v1');
-        }
         await runIosRunnerCommand(
           device,
           { command: 'home', appBundleId: context?.appBundleId },
@@ -281,9 +275,6 @@ export async function dispatchCommand(
     }
     case 'app-switcher': {
       if (device.platform === 'ios') {
-        if (device.kind !== 'simulator') {
-          throw new AppError('UNSUPPORTED_OPERATION', 'app-switcher is only supported on iOS simulators in v1');
-        }
         await runIosRunnerCommand(
           device,
           { command: 'appSwitcher', appBundleId: context?.appBundleId },
@@ -306,12 +297,6 @@ export async function dispatchCommand(
     case 'snapshot': {
       const backend = context?.snapshotBackend ?? 'xctest';
       if (device.platform === 'ios') {
-        if (device.kind !== 'simulator') {
-          throw new AppError(
-            'UNSUPPORTED_OPERATION',
-            'snapshot is only supported on iOS simulators in v1',
-          );
-        }
         if (backend === 'ax') {
           const ax = await snapshotAx(device, { traceLogPath: context?.traceLogPath });
           return { nodes: ax.nodes ?? [], truncated: false, backend: 'ax' };
