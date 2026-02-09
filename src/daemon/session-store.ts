@@ -1,8 +1,9 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
 import type { CommandFlags } from '../core/dispatch.ts';
 import type { SessionAction, SessionState } from './types.ts';
+import { inferFillText } from './action-utils.ts';
 
 export class SessionStore {
   private readonly sessions = new Map<string, SessionState>();
@@ -46,6 +47,9 @@ export class SessionStore {
     },
   ): void {
     if (entry.flags?.noRecord) return;
+    if (entry.flags?.saveScript) {
+      session.recordSession = true;
+    }
     session.actions.push({
       ts: Date.now(),
       command: entry.command,
@@ -57,25 +61,13 @@ export class SessionStore {
 
   writeSessionLog(session: SessionState): void {
     try {
+      if (!session.recordSession) return;
       if (!fs.existsSync(this.sessionsDir)) fs.mkdirSync(this.sessionsDir, { recursive: true });
       const safeName = session.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const timestamp = new Date(session.createdAt).toISOString().replace(/[:.]/g, '-');
       const scriptPath = path.join(this.sessionsDir, `${safeName}-${timestamp}.ad`);
-      const filePath = this.resolveSessionJsonPath(session, safeName, timestamp);
-      const payload = {
-        name: session.name,
-        device: session.device,
-        createdAt: session.createdAt,
-        appBundleId: session.appBundleId,
-        actions: session.actions,
-        optimizedActions: this.buildOptimizedActions(session),
-      };
-      const script = formatScript(session, payload.optimizedActions);
+      const script = formatScript(session, this.buildOptimizedActions(session));
       fs.writeFileSync(scriptPath, script);
-      if (session.actions.some((action) => action.flags?.recordJson)) {
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
-      }
     } catch {
       // ignore
     }
@@ -94,41 +86,46 @@ export class SessionStore {
     return path.resolve(filePath);
   }
 
-  private resolveSessionJsonPath(session: SessionState, safeName: string, timestamp: string): string {
-    const defaultFile = path.join(this.sessionsDir, `${safeName}-${timestamp}.json`);
-    const actionWithOut = [...session.actions].reverse().find(
-      (action) =>
-        action.flags?.recordJson &&
-        typeof action.flags?.out === 'string' &&
-        action.flags.out.trim().length > 0,
-    );
-    if (!actionWithOut || !actionWithOut.flags?.out) {
-      return defaultFile;
-    }
-
-    const rawOut = actionWithOut.flags.out.trim();
-    const resolvedOut = SessionStore.expandHome(rawOut);
-    const wantsDirectory = rawOut.endsWith('/') || rawOut.endsWith('\\');
-    if (wantsDirectory) {
-      return path.join(resolvedOut, `${safeName}-${timestamp}.json`);
-    }
-
-    try {
-      if (fs.existsSync(resolvedOut) && fs.statSync(resolvedOut).isDirectory()) {
-        return path.join(resolvedOut, `${safeName}-${timestamp}.json`);
-      }
-    } catch {
-      return defaultFile;
-    }
-
-    return resolvedOut;
-  }
-
   private buildOptimizedActions(session: SessionState): SessionAction[] {
     const optimized: SessionAction[] = [];
     for (const action of session.actions) {
       if (action.command === 'snapshot') {
         continue;
+      }
+      const selectorChain =
+        Array.isArray(action.result?.selectorChain) &&
+        action.result?.selectorChain.every((entry) => typeof entry === 'string')
+          ? (action.result.selectorChain as string[])
+          : [];
+      if (selectorChain.length > 0 && (action.command === 'click' || action.command === 'fill' || action.command === 'get')) {
+        const selectorExpr = selectorChain.join(' || ');
+        if (action.command === 'click') {
+          optimized.push({
+            ...action,
+            positionals: [selectorExpr],
+          });
+          continue;
+        }
+        if (action.command === 'fill') {
+          const text = inferFillText(action);
+          if (text.length > 0) {
+            optimized.push({
+              ...action,
+              positionals: [selectorExpr, text],
+            });
+            continue;
+          }
+        }
+        if (action.command === 'get') {
+          const sub = action.positionals?.[0];
+          if (sub === 'text' || sub === 'attrs') {
+            optimized.push({
+              ...action,
+              positionals: [sub, selectorExpr],
+            });
+            continue;
+          }
+        }
       }
       if (action.command === 'click' || action.command === 'fill' || action.command === 'get') {
         const refLabel = action.result?.refLabel;
@@ -169,9 +166,9 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     snapshotRaw,
     snapshotBackend,
     appsMetadata,
+    saveScript,
     noRecord,
-    recordJson,
-  } = flags as any;
+  } = flags;
   return {
     platform,
     device,
@@ -186,8 +183,8 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     snapshotRaw,
     snapshotBackend,
     appsMetadata,
+    saveScript,
     noRecord,
-    recordJson,
   };
 }
 
@@ -210,9 +207,11 @@ function formatActionLine(action: SessionAction): string {
     const ref = action.positionals?.[0];
     if (ref) {
       parts.push(formatArg(ref));
-      const refLabel = action.result?.refLabel;
-      if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
-        parts.push(formatArg(refLabel));
+      if (ref.startsWith('@')) {
+        const refLabel = action.result?.refLabel;
+        if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
+          parts.push(formatArg(refLabel));
+        }
       }
       return parts.join(' ');
     }
@@ -238,9 +237,11 @@ function formatActionLine(action: SessionAction): string {
     if (sub && ref) {
       parts.push(formatArg(sub));
       parts.push(formatArg(ref));
-      const refLabel = action.result?.refLabel;
-      if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
-        parts.push(formatArg(refLabel));
+      if (ref.startsWith('@')) {
+        const refLabel = action.result?.refLabel;
+        if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
+          parts.push(formatArg(refLabel));
+        }
       }
       return parts.join(' ');
     }
