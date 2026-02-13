@@ -42,6 +42,7 @@ agent-device boot                 # Ensure target is booted/ready without openin
 agent-device boot --platform ios  # Boot iOS simulator
 agent-device boot --platform android # Boot Android emulator/device target
 agent-device open [app|url]       # Boot device/simulator; optionally launch app or deep link URL
+agent-device open [app] --relaunch # Terminate app process first, then launch (fresh runtime)
 agent-device open [app] --activity com.example/.MainActivity # Android: open specific activity (app targets only)
 agent-device open "myapp://home" --platform android          # Android deep link
 agent-device open "https://example.com" --platform ios       # iOS simulator deep link
@@ -136,12 +137,14 @@ agent-device screenshot out.png
 ### Deterministic replay and updating
 
 ```bash
+agent-device open App --relaunch      # Fresh app process restart in the current session
 agent-device open App --save-script   # Save session script (.ad) on close
 agent-device replay ./session.ad      # Run deterministic replay from .ad script
 agent-device replay -u ./session.ad   # Update selector drift and rewrite .ad script in place
 ```
 
 `replay` reads `.ad` recordings.
+`--relaunch` controls launch semantics; `--save-script` controls recording. Combine only when both are needed.
 
 ### Trace logs (AX/XCTest)
 
@@ -172,6 +175,7 @@ agent-device apps --platform android --user-installed
 - If XCTest returns 0 nodes (foreground app changed), agent-device falls back to AX when available.
 - `open <app|url>` can be used within an existing session to switch apps or open deep links.
 - `open <app>` updates session app bundle context; URL opens do not set an app bundle id.
+- Use `open <app> --relaunch` during React Native/Fast Refresh debugging when you need a fresh app process without ending the session.
 - If AX returns the Simulator window or empty tree, restart Simulator or use `--backend xctest`.
 - Use `--session <name>` for parallel sessions; avoid device contention.
 - Use `--activity <component>` on Android to launch a specific activity (e.g. TV apps with LEANBACK); do not combine with URL opens.
