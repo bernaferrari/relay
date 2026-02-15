@@ -283,6 +283,13 @@ export async function dispatchCommand(
     case 'snapshot': {
       const backend = context?.snapshotBackend ?? 'xctest';
       if (device.platform === 'ios') {
+        // Keep this guard for non-daemon callers that invoke dispatch directly.
+        if (backend === 'ax' && device.kind !== 'simulator') {
+          throw new AppError(
+            'UNSUPPORTED_OPERATION',
+            'AX snapshot backend is not supported on iOS physical devices; use --backend xctest',
+          );
+        }
         if (backend === 'ax') {
           const ax = await snapshotAx(device, { traceLogPath: context?.traceLogPath });
           return { nodes: ax.nodes ?? [], truncated: false, backend: 'ax' };
@@ -301,13 +308,11 @@ export async function dispatchCommand(
           { verbose: context?.verbose, logPath: context?.logPath, traceLogPath: context?.traceLogPath },
         )) as { nodes?: RawSnapshotNode[]; truncated?: boolean };
         const nodes = result.nodes ?? [];
-        if (nodes.length === 0) {
-          try {
-            const ax = await snapshotAx(device, { traceLogPath: context?.traceLogPath });
-            return { nodes: ax.nodes ?? [], truncated: false, backend: 'ax' };
-          } catch {
-            // keep the empty XCTest snapshot if AX is unavailable
-          }
+        if (nodes.length === 0 && device.kind === 'simulator') {
+          throw new AppError(
+            'COMMAND_FAILED',
+            'XCTest snapshot returned 0 nodes on iOS simulator. You can try --backend ax for diagnostics, but AX snapshots are not recommended.',
+          );
         }
         return { nodes, truncated: result.truncated ?? false, backend: 'xctest' };
       }
