@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError } from '../../utils/errors.ts';
 import { runCmd, runCmdStreaming, runCmdBackground, type ExecResult, type ExecBackgroundResult } from '../../utils/exec.ts';
-import { withRetry } from '../../utils/retry.ts';
+import { Deadline, isEnvTruthy, retryWithPolicy, withRetry } from '../../utils/retry.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import net from 'node:net';
 import { bootFailureHint, classifyBootFailure } from '../boot-diagnostics.ts';
@@ -65,8 +65,34 @@ const RUNNER_COMMAND_TIMEOUT_MS = resolveTimeoutMs(
   15_000,
   1_000,
 );
+const RUNNER_CONNECT_ATTEMPT_INTERVAL_MS = resolveTimeoutMs(
+  process.env.AGENT_DEVICE_RUNNER_CONNECT_ATTEMPT_INTERVAL_MS,
+  250,
+  50,
+);
+const RUNNER_CONNECT_RETRY_BASE_DELAY_MS = resolveTimeoutMs(
+  process.env.AGENT_DEVICE_RUNNER_CONNECT_RETRY_BASE_DELAY_MS,
+  100,
+  10,
+);
+const RUNNER_CONNECT_RETRY_MAX_DELAY_MS = resolveTimeoutMs(
+  process.env.AGENT_DEVICE_RUNNER_CONNECT_RETRY_MAX_DELAY_MS,
+  500,
+  10,
+);
+const RUNNER_CONNECT_REQUEST_TIMEOUT_MS = resolveTimeoutMs(
+  process.env.AGENT_DEVICE_RUNNER_CONNECT_REQUEST_TIMEOUT_MS,
+  1_000,
+  50,
+);
+const RUNNER_DEVICE_INFO_TIMEOUT_MS = resolveTimeoutMs(
+  process.env.AGENT_DEVICE_IOS_DEVICE_INFO_TIMEOUT_MS,
+  10_000,
+  500,
+);
 const RUNNER_STOP_WAIT_TIMEOUT_MS = 10_000;
 const RUNNER_SHUTDOWN_TIMEOUT_MS = 15_000;
+const RUNNER_DERIVED_ROOT = path.join(os.homedir(), '.agent-device', 'ios-runner');
 
 function resolveTimeoutMs(raw: string | undefined, fallback: number, min: number): number {
   if (!raw) return fallback;
@@ -92,6 +118,7 @@ export async function runIosRunnerCommand(
   command: RunnerCommand,
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string } = {},
 ): Promise<Record<string, unknown>> {
+  validateRunnerDevice(device);
   if (isReadOnlyRunnerCommand(command.command)) {
     return withRetry(
       () => executeRunnerCommand(device, command, options),
@@ -106,10 +133,6 @@ async function executeRunnerCommand(
   command: RunnerCommand,
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string } = {},
 ): Promise<Record<string, unknown>> {
-  if (device.kind !== 'simulator') {
-    throw new AppError('UNSUPPORTED_OPERATION', 'iOS runner only supports simulators in v1');
-  }
-
   try {
     const session = await ensureRunnerSession(device, options);
     const timeoutMs = session.ready ? RUNNER_COMMAND_TIMEOUT_MS : RUNNER_STARTUP_TIMEOUT_MS;
@@ -221,8 +244,8 @@ async function ensureRunnerSession(
   const existing = runnerSessions.get(device.id);
   if (existing) return existing;
 
-  await ensureBooted(device.id);
-  const xctestrun = await ensureXctestrun(device.id, options);
+  await ensureBootedIfNeeded(device);
+  const xctestrun = await ensureXctestrun(device, options);
   const port = await getFreePort();
   const { xctestrunPath, jsonPath } = await prepareXctestrunWithEnv(
     xctestrun,
@@ -239,12 +262,12 @@ async function ensureRunnerSession(
       'NO',
       '-test-timeouts-enabled',
       'NO',
-      '-maximum-concurrent-test-simulator-destinations',
+      resolveRunnerMaxConcurrentDestinationsFlag(device),
       '1',
       '-xctestrun',
       xctestrunPath,
       '-destination',
-      `platform=iOS Simulator,id=${device.id}`,
+      resolveRunnerDestination(device),
     ],
     {
       allowFailure: true,
@@ -292,11 +315,12 @@ async function killRunnerProcessTree(
 
 
 async function ensureXctestrun(
-  udid: string,
+  device: DeviceInfo,
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string },
 ): Promise<string> {
-  const derived = resolveRunnerDerivedPath();
+  const derived = resolveRunnerDerivedPath(device.kind);
   if (shouldCleanDerived()) {
+    assertSafeDerivedCleanup(derived);
     try {
       fs.rmSync(derived, { recursive: true, force: true });
     } catch {
@@ -313,6 +337,8 @@ async function ensureXctestrun(
     throw new AppError('COMMAND_FAILED', 'iOS runner project not found', { projectPath });
   }
 
+  const signingBuildSettings = resolveRunnerSigningBuildSettings(process.env, device.kind === 'device');
+  const provisioningArgs = device.kind === 'device' ? ['-allowProvisioningUpdates'] : [];
   try {
     await runCmdStreaming(
       'xcodebuild',
@@ -324,12 +350,14 @@ async function ensureXctestrun(
         'AgentDeviceRunner',
         '-parallel-testing-enabled',
         'NO',
-        '-maximum-concurrent-test-simulator-destinations',
+        resolveRunnerMaxConcurrentDestinationsFlag(device),
         '1',
         '-destination',
-        `platform=iOS Simulator,id=${udid}`,
+        resolveRunnerBuildDestination(device),
         '-derivedDataPath',
         derived,
+        ...provisioningArgs,
+        ...signingBuildSettings,
       ],
       {
         onStdoutChunk: (chunk) => {
@@ -342,10 +370,12 @@ async function ensureXctestrun(
     );
   } catch (err) {
     const appErr = err instanceof AppError ? err : new AppError('COMMAND_FAILED', String(err));
+    const hint = resolveSigningFailureHint(appErr);
     throw new AppError('COMMAND_FAILED', 'xcodebuild build-for-testing failed', {
       error: appErr.message,
       details: appErr.details,
       logPath: options.logPath,
+      hint,
     });
   }
 
@@ -356,13 +386,90 @@ async function ensureXctestrun(
   return built;
 }
 
-function resolveRunnerDerivedPath(): string {
+function resolveRunnerDerivedPath(kind: DeviceInfo['kind']): string {
   const override = process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH?.trim();
   if (override) {
     return path.resolve(override);
   }
-  const base = path.join(os.homedir(), '.agent-device', 'ios-runner');
-  return path.join(base, 'derived');
+  return path.join(RUNNER_DERIVED_ROOT, 'derived', kind);
+}
+
+export function resolveRunnerDestination(device: DeviceInfo): string {
+  if (device.platform !== 'ios') {
+    throw new AppError('UNSUPPORTED_PLATFORM', `Unsupported platform for iOS runner: ${device.platform}`);
+  }
+  if (device.kind === 'simulator') {
+    return `platform=iOS Simulator,id=${device.id}`;
+  }
+  return `platform=iOS,id=${device.id}`;
+}
+
+export function resolveRunnerBuildDestination(device: DeviceInfo): string {
+  if (device.platform !== 'ios') {
+    throw new AppError('UNSUPPORTED_PLATFORM', `Unsupported platform for iOS runner: ${device.platform}`);
+  }
+  if (device.kind === 'simulator') {
+    return `platform=iOS Simulator,id=${device.id}`;
+  }
+  return 'generic/platform=iOS';
+}
+
+function ensureBootedIfNeeded(device: DeviceInfo): Promise<void> {
+  if (device.kind !== 'simulator') {
+    return Promise.resolve();
+  }
+  return ensureBooted(device.id);
+}
+
+function validateRunnerDevice(device: DeviceInfo): void {
+  if (device.platform !== 'ios') {
+    throw new AppError('UNSUPPORTED_PLATFORM', `Unsupported platform for iOS runner: ${device.platform}`);
+  }
+  if (device.kind !== 'simulator' && device.kind !== 'device') {
+    throw new AppError('UNSUPPORTED_OPERATION', `Unsupported iOS device kind for runner: ${device.kind}`);
+  }
+}
+
+export function resolveRunnerMaxConcurrentDestinationsFlag(device: DeviceInfo): string {
+  return device.kind === 'device'
+    ? '-maximum-concurrent-test-device-destinations'
+    : '-maximum-concurrent-test-simulator-destinations';
+}
+
+export function resolveRunnerSigningBuildSettings(
+  env: NodeJS.ProcessEnv = process.env,
+  forDevice = false,
+): string[] {
+  if (!forDevice) {
+    return [];
+  }
+  const teamId = env.AGENT_DEVICE_IOS_TEAM_ID?.trim() || '';
+  const configuredIdentity = env.AGENT_DEVICE_IOS_SIGNING_IDENTITY?.trim() || '';
+  const profile = env.AGENT_DEVICE_IOS_PROVISIONING_PROFILE?.trim() || '';
+  const args = ['CODE_SIGN_STYLE=Automatic'];
+  if (teamId) {
+    args.push(`DEVELOPMENT_TEAM=${teamId}`);
+  }
+  if (configuredIdentity) {
+    args.push(`CODE_SIGN_IDENTITY=${configuredIdentity}`);
+  }
+  if (profile) args.push(`PROVISIONING_PROFILE_SPECIFIER=${profile}`);
+  return args;
+}
+
+function resolveSigningFailureHint(error: AppError): string | undefined {
+  const details = error.details ? JSON.stringify(error.details) : '';
+  const combined = `${error.message}\n${details}`.toLowerCase();
+  if (combined.includes('requires a development team')) {
+    return 'Configure signing in Xcode or set AGENT_DEVICE_IOS_TEAM_ID for physical-device runs.';
+  }
+  if (combined.includes('no profiles for') || combined.includes('provisioning profile')) {
+    return 'Install/select a valid iOS provisioning profile, or set AGENT_DEVICE_IOS_PROVISIONING_PROFILE.';
+  }
+  if (combined.includes('code signing')) {
+    return 'Enable Automatic Signing in Xcode or provide AGENT_DEVICE_IOS_TEAM_ID and optional AGENT_DEVICE_IOS_SIGNING_IDENTITY.';
+  }
+  return undefined;
 }
 
 function findXctestrun(root: string): string | null {
@@ -428,9 +535,54 @@ function isReadOnlyRunnerCommand(command: RunnerCommand['command']): boolean {
 }
 
 function shouldCleanDerived(): boolean {
-  const value = process.env.AGENT_DEVICE_IOS_CLEAN_DERIVED;
-  if (!value) return false;
-  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+  return isEnvTruthy(process.env.AGENT_DEVICE_IOS_CLEAN_DERIVED);
+}
+
+export function assertSafeDerivedCleanup(
+  derivedPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const override = env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH?.trim();
+  if (!override) {
+    return;
+  }
+  if (isCleanupOverrideAllowed(env)) {
+    return;
+  }
+  throw new AppError(
+    'COMMAND_FAILED',
+    'Refusing to clean AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH automatically',
+    {
+      derivedPath,
+      hint: 'Unset AGENT_DEVICE_IOS_CLEAN_DERIVED, or set AGENT_DEVICE_IOS_ALLOW_OVERRIDE_DERIVED_CLEAN=1 if you trust this path.',
+    },
+  );
+}
+
+function isCleanupOverrideAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isEnvTruthy(env.AGENT_DEVICE_IOS_ALLOW_OVERRIDE_DERIVED_CLEAN);
+}
+
+function buildRunnerConnectError(params: {
+  port: number;
+  endpoints: string[];
+  logPath?: string;
+  lastError: unknown;
+}): AppError {
+  const { port, endpoints, logPath, lastError } = params;
+  const message = 'Runner did not accept connection';
+  return new AppError('COMMAND_FAILED', message, {
+    port,
+    endpoints,
+    logPath,
+    lastError: lastError ? String(lastError) : undefined,
+    reason: classifyBootFailure({
+      error: lastError,
+      message,
+      context: { platform: 'ios', phase: 'connect' },
+    }),
+    hint: bootFailureHint('IOS_RUNNER_CONNECT_TIMEOUT'),
+  });
 }
 
 async function waitForRunner(
@@ -440,43 +592,167 @@ async function waitForRunner(
   logPath?: string,
   timeoutMs: number = RUNNER_STARTUP_TIMEOUT_MS,
 ): Promise<Response> {
-  const start = Date.now();
+  const deadline = Deadline.fromTimeoutMs(timeoutMs);
+  let endpoints = await resolveRunnerCommandEndpoints(device, port, deadline.remainingMs());
   let lastError: unknown = null;
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(command),
-      });
-      return response;
-    } catch (err) {
-      lastError = err;
-      await new Promise((resolve) => setTimeout(resolve, 100));
+  const maxAttempts = Math.max(1, Math.ceil(timeoutMs / RUNNER_CONNECT_ATTEMPT_INTERVAL_MS));
+  try {
+    return await retryWithPolicy(
+      async ({ deadline: attemptDeadline }) => {
+        if (attemptDeadline?.isExpired()) {
+          throw new AppError('COMMAND_FAILED', 'Runner connection deadline exceeded', {
+            port,
+            timeoutMs,
+          });
+        }
+        if (device.kind === 'device') {
+          endpoints = await resolveRunnerCommandEndpoints(device, port, attemptDeadline?.remainingMs());
+        }
+        for (const endpoint of endpoints) {
+          try {
+            const remainingMs = attemptDeadline?.remainingMs() ?? timeoutMs;
+            if (remainingMs <= 0) {
+              throw new AppError('COMMAND_FAILED', 'Runner connection deadline exceeded', {
+                port,
+                timeoutMs,
+              });
+            }
+            const response = await fetchWithTimeout(
+              endpoint,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(command),
+              },
+              Math.min(RUNNER_CONNECT_REQUEST_TIMEOUT_MS, remainingMs),
+            );
+            return response;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        throw new AppError('COMMAND_FAILED', 'Runner endpoint probe failed', {
+          port,
+          endpoints,
+          lastError: lastError ? String(lastError) : undefined,
+        });
+      },
+      {
+        maxAttempts,
+        baseDelayMs: RUNNER_CONNECT_RETRY_BASE_DELAY_MS,
+        maxDelayMs: RUNNER_CONNECT_RETRY_MAX_DELAY_MS,
+        jitter: 0.2,
+        shouldRetry: () => true,
+      },
+      { deadline, phase: 'ios_runner_connect' },
+    );
+  } catch (error) {
+    if (!lastError) {
+      lastError = error;
     }
   }
+
   if (device.kind === 'simulator') {
-    const simResponse = await postCommandViaSimulator(device.id, port, command);
+    const remainingMs = deadline.remainingMs();
+    if (remainingMs <= 0) {
+      throw buildRunnerConnectError({ port, endpoints, logPath, lastError });
+    }
+    const simResponse = await postCommandViaSimulator(device.id, port, command, remainingMs);
     return new Response(simResponse.body, { status: simResponse.status });
   }
 
-  throw new AppError('COMMAND_FAILED', 'Runner did not accept connection', {
-    port,
-    logPath,
-    lastError: lastError ? String(lastError) : undefined,
-    reason: classifyBootFailure({
-      error: lastError,
-      message: 'Runner did not accept connection',
-      context: { platform: 'ios', phase: 'connect' },
-    }),
-    hint: bootFailureHint('IOS_RUNNER_CONNECT_TIMEOUT'),
-  });
+  throw buildRunnerConnectError({ port, endpoints, logPath, lastError });
+}
+
+async function resolveRunnerCommandEndpoints(
+  device: DeviceInfo,
+  port: number,
+  timeoutBudgetMs?: number,
+): Promise<string[]> {
+  const endpoints = [`http://127.0.0.1:${port}/command`];
+  if (device.kind !== 'device') {
+    return endpoints;
+  }
+  const tunnelIp = await resolveDeviceTunnelIp(device.id, timeoutBudgetMs);
+  if (tunnelIp) {
+    endpoints.unshift(`http://[${tunnelIp}]:${port}/command`);
+  }
+  return endpoints;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveDeviceTunnelIp(deviceId: string, timeoutBudgetMs?: number): Promise<string | null> {
+  if (typeof timeoutBudgetMs === 'number' && timeoutBudgetMs <= 0) {
+    return null;
+  }
+  const timeoutMs = typeof timeoutBudgetMs === 'number'
+    ? Math.max(1, Math.min(RUNNER_DEVICE_INFO_TIMEOUT_MS, timeoutBudgetMs))
+    : RUNNER_DEVICE_INFO_TIMEOUT_MS;
+  const jsonPath = path.join(
+    os.tmpdir(),
+    `agent-device-devicectl-info-${process.pid}-${Date.now()}.json`,
+  );
+  try {
+    const devicectlTimeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+    const result = await runCmd(
+      'xcrun',
+      [
+        'devicectl',
+        'device',
+        'info',
+        'details',
+        '--device',
+        deviceId,
+        '--json-output',
+        jsonPath,
+        '--timeout',
+        String(devicectlTimeoutSeconds),
+      ],
+      { allowFailure: true, timeoutMs },
+    );
+    if (result.exitCode !== 0 || !fs.existsSync(jsonPath)) {
+      return null;
+    }
+    const payload = JSON.parse(fs.readFileSync(jsonPath, 'utf8')) as {
+      info?: { outcome?: string };
+      result?: {
+        connectionProperties?: { tunnelIPAddress?: string };
+        device?: { connectionProperties?: { tunnelIPAddress?: string } };
+      };
+    };
+    if (payload.info?.outcome && payload.info.outcome !== 'success') {
+      return null;
+    }
+    const ip = (
+      payload.result?.connectionProperties?.tunnelIPAddress
+      ?? payload.result?.device?.connectionProperties?.tunnelIPAddress
+    )?.trim();
+    return ip && ip.length > 0 ? ip : null;
+  } catch {
+    return null;
+  } finally {
+    cleanupTempFile(jsonPath);
+  }
 }
 
 async function postCommandViaSimulator(
   udid: string,
   port: number,
   command: RunnerCommand,
+  timeoutMs: number,
 ): Promise<{ status: number; body: string }> {
   const payload = JSON.stringify(command);
   const result = await runCmd(
@@ -495,7 +771,7 @@ async function postCommandViaSimulator(
       payload,
       `http://127.0.0.1:${port}/command`,
     ],
-    { allowFailure: true },
+    { allowFailure: true, timeoutMs },
   );
   const body = result.stdout as string;
   if (result.exitCode !== 0) {

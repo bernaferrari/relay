@@ -5,9 +5,15 @@ import { createIntegrationTestContext, runCliJson } from './test-helpers.ts';
 
 const session = ['--session', 'ios-test'];
 const iosTarget = ['--platform', 'ios'];
+const iosPhysicalUdid = process.env.IOS_UDID?.trim();
+const runIosIntegrationOnCi = isEnvTruthy(process.env.AGENT_DEVICE_RUN_IOS_INTEGRATION_ON_CI);
+let didRunIosPhysicalSession = false;
 
 test.after(() => {
   runCliJson(['close', ...iosTarget, '--json', ...session]);
+  if (iosPhysicalUdid && didRunIosPhysicalSession) {
+    runCliJson(['close', '--platform', 'ios', '--udid', iosPhysicalUdid, '--json', '--session', 'ios-device-test']);
+  }
 });
 
 test('ios settings commands', { skip: shouldSkipIos() }, async () => {
@@ -79,6 +85,47 @@ test('ios settings commands', { skip: shouldSkipIos() }, async () => {
   integration.runStep('back', backArgs);
 });
 
+test('ios physical device core lifecycle', { skip: shouldSkipIosPhysicalDevice() }, async () => {
+  const integration = createIntegrationTestContext({
+    platform: 'ios',
+    testName: 'ios physical device core lifecycle',
+  });
+  const deviceSession = ['--session', 'ios-device-test'];
+  const target = ['--platform', 'ios', '--udid', iosPhysicalUdid as string];
+  didRunIosPhysicalSession = true;
+
+  const openArgs = ['open', 'com.apple.Preferences', ...target, '--json', ...deviceSession];
+  integration.runStep('open settings (device)', openArgs);
+
+  const snapshotArgs = ['snapshot', '--backend', 'xctest', '--json', ...deviceSession];
+  const snapshot = integration.runStep('snapshot (device)', snapshotArgs);
+  integration.assertResult(
+    Array.isArray(snapshot.json?.data?.nodes),
+    'snapshot nodes (device)',
+    snapshotArgs,
+    snapshot,
+    { detail: 'expected snapshot to include a nodes array' },
+  );
+
+  const clickArgs = ['click', 'role=cell', 'label=General', '--json', ...deviceSession];
+  integration.runStep('click general (device)', clickArgs);
+
+  const backArgs = ['back', '--json', ...deviceSession];
+  integration.runStep('back (device)', backArgs);
+});
+
 function shouldSkipIos(): boolean {
-  return process.platform !== 'darwin';
+  return process.platform !== 'darwin' || (isCi() && !runIosIntegrationOnCi);
+}
+
+function shouldSkipIosPhysicalDevice(): boolean {
+  return process.platform !== 'darwin' || !iosPhysicalUdid || isCi();
+}
+
+function isCi(): boolean {
+  return isEnvTruthy(process.env.CI);
+}
+
+function isEnvTruthy(value: string | undefined): boolean {
+  return ['1', 'true', 'yes', 'on'].includes((value ?? '').toLowerCase());
 }
