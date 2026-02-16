@@ -6,6 +6,8 @@ import { AppError } from '../../utils/errors.ts';
 import { runCmd, runCmdStreaming, runCmdBackground, type ExecResult, type ExecBackgroundResult } from '../../utils/exec.ts';
 import { Deadline, isEnvTruthy, retryWithPolicy, withRetry } from '../../utils/retry.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
+import { withKeyedLock } from '../../utils/keyed-lock.ts';
+import { isProcessAlive } from '../../utils/process-identity.ts';
 import net from 'node:net';
 import { bootFailureHint, classifyBootFailure } from '../boot-diagnostics.ts';
 
@@ -55,6 +57,7 @@ export type RunnerSession = {
 };
 
 const runnerSessions = new Map<string, RunnerSession>();
+const runnerSessionLocks = new Map<string, Promise<unknown>>();
 const RUNNER_STARTUP_TIMEOUT_MS = resolveTimeoutMs(
   process.env.AGENT_DEVICE_RUNNER_STARTUP_TIMEOUT_MS,
   120_000,
@@ -128,13 +131,18 @@ export async function runIosRunnerCommand(
   return executeRunnerCommand(device, command, options);
 }
 
+function withRunnerSessionLock<T>(deviceId: string, task: () => Promise<T>): Promise<T> {
+  return withKeyedLock(runnerSessionLocks, deviceId, task);
+}
+
 async function executeRunnerCommand(
   device: DeviceInfo,
   command: RunnerCommand,
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string } = {},
 ): Promise<Record<string, unknown>> {
+  let session: RunnerSession | undefined;
   try {
-    const session = await ensureRunnerSession(device, options);
+    session = await ensureRunnerSession(device, options);
     const timeoutMs = session.ready ? RUNNER_COMMAND_TIMEOUT_MS : RUNNER_STARTUP_TIMEOUT_MS;
     return await executeRunnerCommandWithSession(
       device,
@@ -150,8 +158,12 @@ async function executeRunnerCommand(
       typeof appErr.message === 'string' &&
       appErr.message.includes('Runner did not accept connection')
     ) {
-      await stopIosRunnerSession(device.id);
-      const session = await ensureRunnerSession(device, options);
+      if (session) {
+        await stopRunnerSession(session);
+      } else {
+        await stopIosRunnerSession(device.id);
+      }
+      session = await ensureRunnerSession(device, options);
       const response = await waitForRunner(
         session.device,
         session.port,
@@ -204,7 +216,27 @@ async function parseRunnerResponse(
 }
 
 export async function stopIosRunnerSession(deviceId: string): Promise<void> {
-  const session = runnerSessions.get(deviceId);
+  await withRunnerSessionLock(deviceId, async () => {
+    await stopRunnerSessionInternal(deviceId);
+  });
+}
+
+export async function stopAllIosRunnerSessions(): Promise<void> {
+  // Shutdown cleanup drains the sessions known at invocation time; daemon shutdown closes intake.
+  const pending = Array.from(runnerSessions.keys());
+  await Promise.allSettled(pending.map(async (deviceId) => {
+    await stopIosRunnerSession(deviceId);
+  }));
+}
+
+async function stopRunnerSession(session: RunnerSession): Promise<void> {
+  await withRunnerSessionLock(session.deviceId, async () => {
+    await stopRunnerSessionInternal(session.deviceId, session);
+  });
+}
+
+async function stopRunnerSessionInternal(deviceId: string, sessionOverride?: RunnerSession): Promise<void> {
+  const session = sessionOverride ?? runnerSessions.get(deviceId);
   if (!session) return;
   try {
     await waitForRunner(session.device, session.port, {
@@ -227,7 +259,9 @@ export async function stopIosRunnerSession(deviceId: string): Promise<void> {
   await killRunnerProcessTree(session.child.pid, 'SIGKILL');
   cleanupTempFile(session.xctestrunPath);
   cleanupTempFile(session.jsonPath);
-  runnerSessions.delete(deviceId);
+  if (runnerSessions.get(deviceId) === session) {
+    runnerSessions.delete(deviceId);
+  }
 }
 
 async function ensureBooted(udid: string): Promise<void> {
@@ -241,58 +275,70 @@ async function ensureRunnerSession(
   device: DeviceInfo,
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string },
 ): Promise<RunnerSession> {
-  const existing = runnerSessions.get(device.id);
-  if (existing) return existing;
+  return await withRunnerSessionLock(device.id, async () => {
+    const existing = runnerSessions.get(device.id);
+    if (existing) {
+      if (isRunnerProcessAlive(existing.child.pid)) {
+        return existing;
+      }
+      await stopRunnerSessionInternal(device.id, existing);
+    }
 
-  await ensureBootedIfNeeded(device);
-  const xctestrun = await ensureXctestrun(device, options);
-  const port = await getFreePort();
-  const { xctestrunPath, jsonPath } = await prepareXctestrunWithEnv(
-    xctestrun,
-    { AGENT_DEVICE_RUNNER_PORT: String(port) },
-    `session-${device.id}-${port}`,
-  );
-  const { child, wait: testPromise } = runCmdBackground(
-    'xcodebuild',
-    [
-      'test-without-building',
-      '-only-testing',
-      'AgentDeviceRunnerUITests/RunnerTests/testCommand',
-      '-parallel-testing-enabled',
-      'NO',
-      '-test-timeouts-enabled',
-      'NO',
-      resolveRunnerMaxConcurrentDestinationsFlag(device),
-      '1',
-      '-xctestrun',
+    await ensureBootedIfNeeded(device);
+    const xctestrun = await ensureXctestrun(device, options);
+    const port = await getFreePort();
+    const { xctestrunPath, jsonPath } = await prepareXctestrunWithEnv(
+      xctestrun,
+      { AGENT_DEVICE_RUNNER_PORT: String(port) },
+      `session-${device.id}-${port}`,
+    );
+    const { child, wait: testPromise } = runCmdBackground(
+      'xcodebuild',
+      [
+        'test-without-building',
+        '-only-testing',
+        'AgentDeviceRunnerUITests/RunnerTests/testCommand',
+        '-parallel-testing-enabled',
+        'NO',
+        '-test-timeouts-enabled',
+        'NO',
+        resolveRunnerMaxConcurrentDestinationsFlag(device),
+        '1',
+        '-xctestrun',
+        xctestrunPath,
+        '-destination',
+        resolveRunnerDestination(device),
+      ],
+      {
+        allowFailure: true,
+        env: { ...process.env, AGENT_DEVICE_RUNNER_PORT: String(port) },
+      },
+    );
+    child.stdout?.on('data', (chunk: string) => {
+      logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
+    });
+    child.stderr?.on('data', (chunk: string) => {
+      logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
+    });
+
+    const session: RunnerSession = {
+      device,
+      deviceId: device.id,
+      port,
       xctestrunPath,
-      '-destination',
-      resolveRunnerDestination(device),
-    ],
-    {
-      allowFailure: true,
-      env: { ...process.env, AGENT_DEVICE_RUNNER_PORT: String(port) },
-    },
-  );
-  child.stdout?.on('data', (chunk: string) => {
-    logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
+      jsonPath,
+      testPromise,
+      child,
+      ready: false,
+    };
+    runnerSessions.set(device.id, session);
+    return session;
   });
-  child.stderr?.on('data', (chunk: string) => {
-    logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
-  });
+}
 
-  const session: RunnerSession = {
-    device,
-    deviceId: device.id,
-    port,
-    xctestrunPath,
-    jsonPath,
-    testPromise,
-    child,
-    ready: false,
-  };
-  runnerSessions.set(device.id, session);
-  return session;
+function isRunnerProcessAlive(pid: number | undefined): boolean {
+  if (!pid) return false;
+  return isProcessAlive(pid);
 }
 
 async function killRunnerProcessTree(
