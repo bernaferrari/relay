@@ -5,7 +5,7 @@ export default defineConfig({
   lib: [
     {
       format: 'esm',
-      syntax: 'es2021',
+      syntax: 'esnext',
       dts: false,
       shims: {
         esm: {
