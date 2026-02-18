@@ -86,6 +86,31 @@ test('parseArgs recognizes press series flags', () => {
   assert.equal(parsed.flags.jitterPx, 3);
 });
 
+test('parseArgs recognizes press selector + snapshot flags', () => {
+  const parsed = parseArgs(['press', '@e2', '--depth', '3', '--scope', 'Sign In', '--raw'], { strictFlags: true });
+  assert.equal(parsed.command, 'press');
+  assert.deepEqual(parsed.positionals, ['@e2']);
+  assert.equal(parsed.flags.snapshotDepth, 3);
+  assert.equal(parsed.flags.snapshotScope, 'Sign In');
+  assert.equal(parsed.flags.snapshotRaw, true);
+});
+
+test('parseArgs recognizes click series flags', () => {
+  const parsed = parseArgs(['click', '@e5', '--count', '4', '--interval-ms', '10'], { strictFlags: true });
+  assert.equal(parsed.command, 'click');
+  assert.deepEqual(parsed.positionals, ['@e5']);
+  assert.equal(parsed.flags.count, 4);
+  assert.equal(parsed.flags.intervalMs, 10);
+});
+
+test('parseArgs recognizes double-tap flag for repeated press', () => {
+  const parsed = parseArgs(['press', '201', '545', '--count', '5', '--double-tap'], { strictFlags: true });
+  assert.equal(parsed.command, 'press');
+  assert.deepEqual(parsed.positionals, ['201', '545']);
+  assert.equal(parsed.flags.count, 5);
+  assert.equal(parsed.flags.doubleTap, true);
+});
+
 test('parseArgs recognizes swipe positional + pattern flags', () => {
   const parsed = parseArgs([
     'swipe',
@@ -143,17 +168,17 @@ test('schema capability mappings match capability source-of-truth', () => {
   assert.deepEqual(getSchemaCapabilityKeys(), listCapabilityCommands());
 });
 
-test('compat mode warns and strips unsupported pilot-command flags', () => {
-  const parsed = parseArgs(['press', '10', '20', '--depth', '2'], { strictFlags: false });
+test('compat mode warns and strips unsupported command flags', () => {
+  const parsed = parseArgs(['press', '10', '20', '--pause-ms', '2'], { strictFlags: false });
   assert.equal(parsed.command, 'press');
-  assert.equal(parsed.flags.snapshotDepth, undefined);
+  assert.equal(parsed.flags.pauseMs, undefined);
   assert.equal(parsed.warnings.length, 1);
   assert.match(parsed.warnings[0], /not supported for command press/);
 });
 
 test('strict mode rejects unsupported pilot-command flags', () => {
   assert.throws(
-    () => parseArgs(['press', '10', '20', '--depth', '2'], { strictFlags: true }),
+    () => parseArgs(['press', '10', '20', '--pause-ms', '2'], { strictFlags: true }),
     (error) =>
       error instanceof AppError &&
       error.code === 'INVALID_ARGS' &&
