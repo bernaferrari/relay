@@ -34,14 +34,15 @@ npx agent-device open SampleApp
 ## Quick Start
 
 Use refs for agent-driven exploration and normal automation flows.
+Use `press` as the canonical tap command; `click` is an equivalent alias.
 
 ```bash
 agent-device open Contacts --platform ios # creates session on iOS Simulator
 agent-device snapshot
-agent-device click @e5
+agent-device press @e5
 agent-device fill @e6 "John"
 agent-device fill @e7 "Doe"
-agent-device click @e3
+agent-device press @e3
 agent-device close
 ```
 
@@ -102,7 +103,7 @@ Basic flow:
 ```bash
 agent-device open SampleApp
 agent-device snapshot
-agent-device click @e7
+agent-device press @e7
 agent-device fill @e8 "hello"
 agent-device close SampleApp
 ```
@@ -119,12 +120,15 @@ agent-device trace stop ./trace.log
 Coordinates:
 - All coordinate-based commands (`press`, `long-press`, `swipe`, `focus`, `fill`) use device coordinates with origin at top-left.
 - X increases to the right, Y increases downward.
+- `press` is the canonical tap command.
+- `click` is an equivalent alias and accepts the same targets (`x y`, `@ref`, selector) and flags.
 
 Gesture series examples:
 
 ```bash
 agent-device press 300 500 --count 12 --interval-ms 45
 agent-device press 300 500 --count 6 --hold-ms 120 --interval-ms 30 --jitter-px 2
+agent-device press @e5 --count 5 --double-tap
 agent-device swipe 540 1500 540 500 120 --count 8 --pause-ms 30 --pattern ping-pong
 ```
 
@@ -132,7 +136,7 @@ agent-device swipe 540 1500 540 500 120 --count 8 --pause-ms 30 --pattern ping-p
 - `boot`, `open`, `close`, `reinstall`, `home`, `back`, `app-switcher`
 - `batch`
 - `snapshot`, `find`, `get`
-- `click`, `focus`, `type`, `fill`, `press`, `long-press`, `swipe`, `scroll`, `scrollintoview`, `pinch`, `is`
+- `press` (alias: `click`), `focus`, `type`, `fill`, `long-press`, `swipe`, `scroll`, `scrollintoview`, `pinch`, `is`
 - `alert`, `wait`, `screenshot`
 - `trace start`, `trace stop`
 - `settings wifi|airplane|location on|off`
@@ -157,6 +161,7 @@ Flags:
 - `--interval-ms <ms>` delay between `press` iterations
 - `--hold-ms <ms>` hold duration per `press` iteration
 - `--jitter-px <n>` deterministic coordinate jitter for `press`
+- `--double-tap` use a double-tap gesture per `press`/`click` iteration (cannot be combined with `--hold-ms` or `--jitter-px`)
 - `--pause-ms <ms>` delay between `swipe` iterations
 - `--pattern one-way|ping-pong` repeat pattern for `swipe`
 - `--verbose` for daemon and runner logs

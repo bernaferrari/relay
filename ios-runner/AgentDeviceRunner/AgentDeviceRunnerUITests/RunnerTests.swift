@@ -219,6 +219,7 @@ final class RunnerTests: XCTestCase {
     let normalizedBundleId = command.appBundleId?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let requestedBundleId = (normalizedBundleId?.isEmpty == true) ? nil : normalizedBundleId
+    let switchedApp: Bool
     if let bundleId = requestedBundleId, currentBundleId != bundleId {
       let target = XCUIApplication(bundleIdentifier: bundleId)
       NSLog("AGENT_DEVICE_RUNNER_ACTIVATE bundle=%@ state=%d", bundleId, target.state.rawValue)
@@ -226,13 +227,19 @@ final class RunnerTests: XCTestCase {
       target.activate()
       currentApp = target
       currentBundleId = bundleId
+      switchedApp = true
     } else if requestedBundleId == nil {
       // Do not reuse stale bundle targets when the caller does not explicitly request one.
       currentApp = nil
       currentBundleId = nil
+      switchedApp = false
+    } else {
+      switchedApp = false
     }
     let activeApp = currentApp ?? app
-    _ = activeApp.waitForExistence(timeout: 5)
+    if switchedApp {
+      _ = activeApp.waitForExistence(timeout: 5)
+    }
 
     switch command.command {
     case .shutdown:
@@ -250,6 +257,23 @@ final class RunnerTests: XCTestCase {
         return Response(ok: true, data: DataPayload(message: "tapped"))
       }
       return Response(ok: false, error: ErrorPayload(message: "tap requires text or x/y"))
+    case .tapSeries:
+      guard let x = command.x, let y = command.y else {
+        return Response(ok: false, error: ErrorPayload(message: "tapSeries requires x and y"))
+      }
+      let count = max(Int(command.count ?? 1), 1)
+      let intervalMs = max(command.intervalMs ?? 0, 0)
+      let doubleTap = command.doubleTap ?? false
+      if doubleTap {
+        runSeries(count: count, pauseMs: intervalMs) { _ in
+          doubleTapAt(app: activeApp, x: x, y: y)
+        }
+        return Response(ok: true, data: DataPayload(message: "tap series"))
+      }
+      runSeries(count: count, pauseMs: intervalMs) { _ in
+        tapAt(app: activeApp, x: x, y: y)
+      }
+      return Response(ok: true, data: DataPayload(message: "tap series"))
     case .longPress:
       guard let x = command.x, let y = command.y else {
         return Response(ok: false, error: ErrorPayload(message: "longPress requires x and y"))
@@ -264,6 +288,26 @@ final class RunnerTests: XCTestCase {
       let holdDuration = min(max((command.durationMs ?? 60) / 1000.0, 0.016), 10.0)
       dragAt(app: activeApp, x: x, y: y, x2: x2, y2: y2, holdDuration: holdDuration)
       return Response(ok: true, data: DataPayload(message: "dragged"))
+    case .dragSeries:
+      guard let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2 else {
+        return Response(ok: false, error: ErrorPayload(message: "dragSeries requires x, y, x2, and y2"))
+      }
+      let count = max(Int(command.count ?? 1), 1)
+      let pauseMs = max(command.pauseMs ?? 0, 0)
+      let pattern = command.pattern ?? "one-way"
+      if pattern != "one-way" && pattern != "ping-pong" {
+        return Response(ok: false, error: ErrorPayload(message: "dragSeries pattern must be one-way or ping-pong"))
+      }
+      let holdDuration = min(max((command.durationMs ?? 60) / 1000.0, 0.016), 10.0)
+      runSeries(count: count, pauseMs: pauseMs) { idx in
+        let reverse = pattern == "ping-pong" && (idx % 2 == 1)
+        if reverse {
+          dragAt(app: activeApp, x: x2, y: y2, x2: x, y2: y, holdDuration: holdDuration)
+        } else {
+          dragAt(app: activeApp, x: x, y: y, x2: x2, y2: y2, holdDuration: holdDuration)
+        }
+      }
+      return Response(ok: true, data: DataPayload(message: "drag series"))
     case .type:
       guard let text = command.text else {
         return Response(ok: false, error: ErrorPayload(message: "type requires text"))
@@ -443,6 +487,12 @@ final class RunnerTests: XCTestCase {
     coordinate.tap()
   }
 
+  private func doubleTapAt(app: XCUIApplication, x: Double, y: Double) {
+    let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+    let coordinate = origin.withOffset(CGVector(dx: x, dy: y))
+    coordinate.doubleTap()
+  }
+
   private func longPressAt(app: XCUIApplication, x: Double, y: Double, duration: TimeInterval) {
     let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
     let coordinate = origin.withOffset(CGVector(dx: x, dy: y))
@@ -461,6 +511,17 @@ final class RunnerTests: XCTestCase {
     let start = origin.withOffset(CGVector(dx: x, dy: y))
     let end = origin.withOffset(CGVector(dx: x2, dy: y2))
     start.press(forDuration: holdDuration, thenDragTo: end)
+  }
+
+  private func runSeries(count: Int, pauseMs: Double, operation: (Int) -> Void) {
+    let total = max(count, 1)
+    let pause = max(pauseMs, 0)
+    for idx in 0..<total {
+      operation(idx)
+      if idx < total - 1 && pause > 0 {
+        Thread.sleep(forTimeInterval: pause / 1000.0)
+      }
+    }
   }
 
   private func swipe(app: XCUIApplication, direction: SwipeDirection) {
@@ -982,8 +1043,10 @@ private func resolveRunnerPort() -> UInt16 {
 
 enum CommandType: String, Codable {
   case tap
+  case tapSeries
   case longPress
   case drag
+  case dragSeries
   case type
   case swipe
   case findText
@@ -1012,6 +1075,11 @@ struct Command: Codable {
   let action: String?
   let x: Double?
   let y: Double?
+  let count: Double?
+  let intervalMs: Double?
+  let doubleTap: Bool?
+  let pauseMs: Double?
+  let pattern: String?
   let x2: Double?
   let y2: Double?
   let durationMs: Double?

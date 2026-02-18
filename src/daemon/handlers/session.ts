@@ -25,6 +25,13 @@ import {
   tryParseSelectorChain,
 } from '../selectors.ts';
 import { inferFillText, uniqueStrings } from '../action-utils.ts';
+import {
+  appendScriptSeriesFlags,
+  formatScriptActionSummary,
+  formatScriptArg,
+  isClickLikeCommand,
+  parseReplaySeriesFlags,
+} from '../script-utils.ts';
 
 type ReinstallOps = {
   ios: (device: DeviceInfo, app: string, appPath: string) => Promise<{ bundleId: string }>;
@@ -783,13 +790,7 @@ function withReplayFailureContext(
 }
 
 function formatReplayActionSummary(action: SessionAction): string {
-  const values = (action.positionals ?? []).map((value) => {
-    const trimmed = value.trim();
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
-    if (trimmed.startsWith('@')) return trimmed;
-    return JSON.stringify(trimmed);
-  });
-  return [action.command, ...values].join(' ');
+  return formatScriptActionSummary(action);
 }
 
 async function healReplayAction(params: {
@@ -800,12 +801,12 @@ async function healReplayAction(params: {
   dispatch: typeof dispatchCommand;
 }): Promise<SessionAction | null> {
   const { action, sessionName, logPath, sessionStore, dispatch } = params;
-  if (!['click', 'fill', 'get', 'is', 'wait'].includes(action.command)) return null;
+  if (!(isClickLikeCommand(action.command) || ['fill', 'get', 'is', 'wait'].includes(action.command))) return null;
   const session = sessionStore.get(sessionName);
   if (!session) return null;
-  const requiresRect = action.command === 'click' || action.command === 'fill';
+  const requiresRect = isClickLikeCommand(action.command) || action.command === 'fill';
   const allowDisambiguation =
-    action.command === 'click' ||
+    isClickLikeCommand(action.command) ||
     action.command === 'fill' ||
     (action.command === 'get' && action.positionals?.[0] === 'text');
   const snapshot = await captureSnapshotForReplay(session, action, logPath, requiresRect, dispatch, sessionStore);
@@ -821,10 +822,10 @@ async function healReplayAction(params: {
     });
     if (!resolved) continue;
     const selectorChain = buildSelectorChainForNode(resolved.node, session.device.platform, {
-      action: action.command === 'click' ? 'click' : action.command === 'fill' ? 'fill' : 'get',
+      action: isClickLikeCommand(action.command) ? 'click' : action.command === 'fill' ? 'fill' : 'get',
     });
     const selectorExpression = selectorChain.join(' || ');
-    if (action.command === 'click') {
+    if (isClickLikeCommand(action.command)) {
       return {
         ...action,
         positionals: [selectorExpression],
@@ -924,7 +925,7 @@ function collectReplaySelectorCandidates(action: SessionAction): string[] {
       : [];
   result.push(...explicitChain);
 
-  if (action.command === 'click') {
+  if (isClickLikeCommand(action.command)) {
     const first = action.positionals?.[0] ?? '';
     if (first && !first.startsWith('@')) {
       result.push(action.positionals.join(' '));
@@ -1120,17 +1121,25 @@ function parseReplayScriptLine(line: string): SessionAction | null {
     return action;
   }
 
-  if (command === 'click') {
-    if (args.length === 0) return action;
-    const target = args[0];
+  if (isClickLikeCommand(command)) {
+    const parsed = parseReplaySeriesFlags(command, args);
+    Object.assign(action.flags, parsed.flags);
+    if (parsed.positionals.length === 0) return action;
+    const target = parsed.positionals[0];
     if (target.startsWith('@')) {
       action.positionals = [target];
-      if (args[1]) {
-        action.result = { refLabel: args[1] };
+      if (parsed.positionals[1]) {
+        action.result = { refLabel: parsed.positionals[1] };
       }
       return action;
     }
-    action.positionals = [args.join(' ')];
+    const maybeX = parsed.positionals[0];
+    const maybeY = parsed.positionals[1];
+    if (isNumericToken(maybeX) && isNumericToken(maybeY) && parsed.positionals.length >= 2) {
+      action.positionals = [maybeX, maybeY];
+      return action;
+    }
+    action.positionals = [parsed.positionals.join(' ')];
     return action;
   }
 
@@ -1171,8 +1180,20 @@ function parseReplayScriptLine(line: string): SessionAction | null {
     return action;
   }
 
+  if (command === 'swipe') {
+    const parsed = parseReplaySeriesFlags(command, args);
+    Object.assign(action.flags, parsed.flags);
+    action.positionals = parsed.positionals;
+    return action;
+  }
+
   action.positionals = args;
   return action;
+}
+
+function isNumericToken(token: string | undefined): token is string {
+  if (!token) return false;
+  return !Number.isNaN(Number(token));
 }
 
 function tokenizeReplayLine(line: string): string[] {
@@ -1238,14 +1259,14 @@ function formatReplayActionLine(action: SessionAction): string {
       parts.push('-d', String(action.flags.snapshotDepth));
     }
     if (action.flags?.snapshotScope) {
-      parts.push('-s', formatReplayArg(action.flags.snapshotScope));
+      parts.push('-s', formatScriptArg(action.flags.snapshotScope));
     }
     if (action.flags?.snapshotRaw) parts.push('--raw');
     return parts.join(' ');
   }
   if (action.command === 'open') {
     for (const positional of action.positionals ?? []) {
-      parts.push(formatReplayArg(positional));
+      parts.push(formatScriptArg(positional));
     }
     if (action.flags?.relaunch) {
       parts.push('--relaunch');
@@ -1253,14 +1274,8 @@ function formatReplayActionLine(action: SessionAction): string {
     return parts.join(' ');
   }
   for (const positional of action.positionals ?? []) {
-    parts.push(formatReplayArg(positional));
+    parts.push(formatScriptArg(positional));
   }
+  appendScriptSeriesFlags(parts, action);
   return parts.join(' ');
-}
-
-function formatReplayArg(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.startsWith('@')) return trimmed;
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
-  return JSON.stringify(trimmed);
 }

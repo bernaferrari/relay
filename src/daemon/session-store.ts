@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { CommandFlags } from '../core/dispatch.ts';
 import type { SessionAction, SessionState } from './types.ts';
 import { inferFillText } from './action-utils.ts';
+import { appendScriptSeriesFlags, formatScriptArg, isClickLikeCommand } from './script-utils.ts';
 
 export class SessionStore {
   private readonly sessions = new Map<string, SessionState>();
@@ -109,9 +110,12 @@ export class SessionStore {
         action.result?.selectorChain.every((entry) => typeof entry === 'string')
           ? (action.result.selectorChain as string[])
           : [];
-      if (selectorChain.length > 0 && (action.command === 'click' || action.command === 'fill' || action.command === 'get')) {
+      if (
+        selectorChain.length > 0 &&
+        (isClickLikeCommand(action.command) || action.command === 'fill' || action.command === 'get')
+      ) {
         const selectorExpr = selectorChain.join(' || ');
-        if (action.command === 'click') {
+        if (isClickLikeCommand(action.command)) {
           optimized.push({
             ...action,
             positionals: [selectorExpr],
@@ -139,7 +143,7 @@ export class SessionStore {
           }
         }
       }
-      if (action.command === 'click' || action.command === 'fill' || action.command === 'get') {
+      if (isClickLikeCommand(action.command) || action.command === 'fill' || action.command === 'get') {
         const refLabel = action.result?.refLabel;
         if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
           optimized.push({
@@ -179,6 +183,13 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     relaunch,
     saveScript,
     noRecord,
+    count,
+    intervalMs,
+    holdMs,
+    jitterPx,
+    doubleTap,
+    pauseMs,
+    pattern,
   } = flags;
   return {
     platform,
@@ -195,6 +206,13 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     relaunch,
     saveScript,
     noRecord,
+    count,
+    intervalMs,
+    holdMs,
+    jitterPx,
+    doubleTap,
+    pauseMs,
+    pattern,
   };
 }
 
@@ -213,30 +231,36 @@ function formatScript(session: SessionState, actions: SessionAction[]): string {
 
 function formatActionLine(action: SessionAction): string {
   const parts: string[] = [action.command];
-  if (action.command === 'click') {
-    const ref = action.positionals?.[0];
-    if (ref) {
-      parts.push(formatArg(ref));
-      if (ref.startsWith('@')) {
+  if (isClickLikeCommand(action.command)) {
+    const first = action.positionals?.[0];
+    if (first) {
+      if (first.startsWith('@')) {
+        parts.push(formatScriptArg(first));
         const refLabel = action.result?.refLabel;
         if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
-          parts.push(formatArg(refLabel));
+          parts.push(formatScriptArg(refLabel));
         }
+        appendScriptSeriesFlags(parts, action);
+        return parts.join(' ');
       }
-      return parts.join(' ');
+      if (action.positionals.length === 1) {
+        parts.push(formatScriptArg(first));
+        appendScriptSeriesFlags(parts, action);
+        return parts.join(' ');
+      }
     }
   }
   if (action.command === 'fill') {
     const ref = action.positionals?.[0];
     if (ref && ref.startsWith('@')) {
-      parts.push(formatArg(ref));
+      parts.push(formatScriptArg(ref));
       const refLabel = action.result?.refLabel;
       const text = action.positionals.slice(1).join(' ');
       if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
-        parts.push(formatArg(refLabel));
+        parts.push(formatScriptArg(refLabel));
       }
       if (text) {
-        parts.push(formatArg(text));
+        parts.push(formatScriptArg(text));
       }
       return parts.join(' ');
     }
@@ -245,12 +269,12 @@ function formatActionLine(action: SessionAction): string {
     const sub = action.positionals?.[0];
     const ref = action.positionals?.[1];
     if (sub && ref) {
-      parts.push(formatArg(sub));
-      parts.push(formatArg(ref));
+      parts.push(formatScriptArg(sub));
+      parts.push(formatScriptArg(ref));
       if (ref.startsWith('@')) {
         const refLabel = action.result?.refLabel;
         if (typeof refLabel === 'string' && refLabel.trim().length > 0) {
-          parts.push(formatArg(refLabel));
+          parts.push(formatScriptArg(refLabel));
         }
       }
       return parts.join(' ');
@@ -263,14 +287,14 @@ function formatActionLine(action: SessionAction): string {
       parts.push('-d', String(action.flags.snapshotDepth));
     }
     if (action.flags?.snapshotScope) {
-      parts.push('-s', formatArg(action.flags.snapshotScope));
+      parts.push('-s', formatScriptArg(action.flags.snapshotScope));
     }
     if (action.flags?.snapshotRaw) parts.push('--raw');
     return parts.join(' ');
   }
   if (action.command === 'open') {
     for (const positional of action.positionals ?? []) {
-      parts.push(formatArg(positional));
+      parts.push(formatScriptArg(positional));
     }
     if (action.flags?.relaunch) {
       parts.push('--relaunch');
@@ -278,14 +302,8 @@ function formatActionLine(action: SessionAction): string {
     return parts.join(' ');
   }
   for (const positional of action.positionals ?? []) {
-    parts.push(formatArg(positional));
+    parts.push(formatScriptArg(positional));
   }
+  appendScriptSeriesFlags(parts, action);
   return parts.join(' ');
-}
-
-function formatArg(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.startsWith('@')) return trimmed;
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
-  return JSON.stringify(trimmed);
 }
