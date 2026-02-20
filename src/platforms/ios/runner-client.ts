@@ -30,6 +30,8 @@ export type RunnerCommand = {
     | 'appSwitcher'
     | 'alert'
     | 'pinch'
+    | 'recordStart'
+    | 'recordStop'
     | 'shutdown';
   appBundleId?: string;
   text?: string;
@@ -46,6 +48,8 @@ export type RunnerCommand = {
   durationMs?: number;
   direction?: 'up' | 'down' | 'left' | 'right';
   scale?: number;
+  outPath?: string;
+  fps?: number;
   interactiveOnly?: boolean;
   compact?: boolean;
   depth?: number;
@@ -349,6 +353,8 @@ async function ensureRunnerSession(
         'NO',
         '-test-timeouts-enabled',
         'NO',
+        '-collect-test-diagnostics',
+        'never',
         resolveRunnerMaxConcurrentDestinationsFlag(device),
         '1',
         '-destination-timeout',
