@@ -7,6 +7,9 @@
 
 import XCTest
 import Network
+import AVFoundation
+import CoreVideo
+import UIKit
 
 final class RunnerTests: XCTestCase {
   private enum RunnerErrorDomain {
@@ -37,8 +40,11 @@ final class RunnerTests: XCTestCase {
   private let retryCooldown: TimeInterval = 0.2
   private let postSnapshotInteractionDelay: TimeInterval = 0.2
   private let firstInteractionAfterActivateDelay: TimeInterval = 0.25
+  private let minRecordingFps = 1
+  private let maxRecordingFps = 120
   private var needsPostSnapshotInteractionDelay = false
   private var needsFirstInteractionDelay = false
+  private var activeRecording: ScreenRecorder?
   private let interactiveTypes: Set<XCUIElement.ElementType> = [
     .button,
     .cell,
@@ -66,6 +72,262 @@ final class RunnerTests: XCTestCase {
     .checkBox,
     .switch,
   ]
+
+  private final class ScreenRecorder {
+    private let outputPath: String
+    private let fps: Int32?
+    private let uncappedFrameInterval: TimeInterval = 0.001
+    private var uncappedTimestampTimescale: Int32 {
+      Int32(max(1, Int((1.0 / uncappedFrameInterval).rounded())))
+    }
+    private var frameInterval: TimeInterval {
+      guard let fps else { return uncappedFrameInterval }
+      return 1.0 / Double(fps)
+    }
+    private let queue = DispatchQueue(label: "agent-device.runner.recorder")
+    private let lock = NSLock()
+    private var assetWriter: AVAssetWriter?
+    private var writerInput: AVAssetWriterInput?
+    private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    private var timer: DispatchSourceTimer?
+    private var recordingStartUptime: TimeInterval?
+    private var lastTimestampValue: Int64 = -1
+    private var isStopping = false
+    private var startedSession = false
+    private var startError: Error?
+
+    init(outputPath: String, fps: Int32?) {
+      self.outputPath = outputPath
+      self.fps = fps
+    }
+
+    func start(captureFrame: @escaping () -> UIImage?) throws {
+      let url = URL(fileURLWithPath: outputPath)
+      let directory = url.deletingLastPathComponent()
+      try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true,
+        attributes: nil
+      )
+      if FileManager.default.fileExists(atPath: outputPath) {
+        try FileManager.default.removeItem(atPath: outputPath)
+      }
+
+      var dimensions: CGSize = .zero
+      var bootstrapImage: UIImage?
+      let bootstrapDeadline = Date().addingTimeInterval(2.0)
+      while Date() < bootstrapDeadline {
+        if let image = captureFrame(), let cgImage = image.cgImage {
+          bootstrapImage = image
+          dimensions = CGSize(width: cgImage.width, height: cgImage.height)
+          break
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+      }
+      guard dimensions.width > 0, dimensions.height > 0 else {
+        throw NSError(
+          domain: "AgentDeviceRunner.Record",
+          code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "failed to capture initial frame"]
+        )
+      }
+
+      let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+      let outputSettings: [String: Any] = [
+        AVVideoCodecKey: AVVideoCodecType.h264,
+        AVVideoWidthKey: Int(dimensions.width),
+        AVVideoHeightKey: Int(dimensions.height),
+      ]
+      let input = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
+      input.expectsMediaDataInRealTime = true
+      let attributes: [String: Any] = [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
+        kCVPixelBufferWidthKey as String: Int(dimensions.width),
+        kCVPixelBufferHeightKey as String: Int(dimensions.height),
+      ]
+      let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+        assetWriterInput: input,
+        sourcePixelBufferAttributes: attributes
+      )
+      guard writer.canAdd(input) else {
+        throw NSError(
+          domain: "AgentDeviceRunner.Record",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "failed to add video input"]
+        )
+      }
+      writer.add(input)
+      guard writer.startWriting() else {
+        throw writer.error ?? NSError(
+          domain: "AgentDeviceRunner.Record",
+          code: 3,
+          userInfo: [NSLocalizedDescriptionKey: "failed to start writing"]
+        )
+      }
+
+      lock.lock()
+      assetWriter = writer
+      writerInput = input
+      pixelBufferAdaptor = adaptor
+      recordingStartUptime = nil
+      lastTimestampValue = -1
+      isStopping = false
+      startedSession = false
+      startError = nil
+      lock.unlock()
+
+      if let firstImage = bootstrapImage {
+        append(image: firstImage)
+      }
+
+      let timer = DispatchSource.makeTimerSource(queue: queue)
+      timer.schedule(deadline: .now() + frameInterval, repeating: frameInterval)
+      timer.setEventHandler { [weak self] in
+        guard let self else { return }
+        if self.shouldStop() { return }
+        guard let image = captureFrame() else { return }
+        self.append(image: image)
+      }
+      self.timer = timer
+      timer.resume()
+    }
+
+    func stop() throws {
+      var writer: AVAssetWriter?
+      var input: AVAssetWriterInput?
+      var appendError: Error?
+      lock.lock()
+      if isStopping {
+        lock.unlock()
+        return
+      }
+      isStopping = true
+      let activeTimer = timer
+      timer = nil
+      writer = assetWriter
+      input = writerInput
+      appendError = startError
+      lock.unlock()
+
+      activeTimer?.cancel()
+      input?.markAsFinished()
+      guard let writer else { return }
+
+      let semaphore = DispatchSemaphore(value: 0)
+      writer.finishWriting {
+        semaphore.signal()
+      }
+      var stopFailure: Error?
+      let waitResult = semaphore.wait(timeout: .now() + 10)
+      if waitResult == .timedOut {
+        writer.cancelWriting()
+        stopFailure = NSError(
+          domain: "AgentDeviceRunner.Record",
+          code: 6,
+          userInfo: [NSLocalizedDescriptionKey: "recording finalization timed out"]
+        )
+      } else if let appendError {
+        stopFailure = appendError
+      } else if writer.status == .failed {
+        stopFailure = writer.error ?? NSError(
+          domain: "AgentDeviceRunner.Record",
+          code: 4,
+          userInfo: [NSLocalizedDescriptionKey: "failed to finalize recording"]
+        )
+      }
+
+      lock.lock()
+      assetWriter = nil
+      writerInput = nil
+      pixelBufferAdaptor = nil
+      recordingStartUptime = nil
+      lastTimestampValue = -1
+      startedSession = false
+      startError = nil
+      lock.unlock()
+
+      if let stopFailure {
+        throw stopFailure
+      }
+    }
+
+    private func append(image: UIImage) {
+      guard let cgImage = image.cgImage else { return }
+      lock.lock()
+      defer { lock.unlock() }
+      if isStopping { return }
+      if let startError { return }
+      guard
+        let writer = assetWriter,
+        let input = writerInput,
+        let adaptor = pixelBufferAdaptor
+      else {
+        return
+      }
+      if !startedSession {
+        writer.startSession(atSourceTime: .zero)
+        startedSession = true
+      }
+      guard input.isReadyForMoreMediaData else { return }
+      guard let pixelBuffer = makePixelBuffer(from: cgImage) else { return }
+      let nowUptime = ProcessInfo.processInfo.systemUptime
+      if recordingStartUptime == nil {
+        recordingStartUptime = nowUptime
+      }
+      let elapsed = max(0, nowUptime - (recordingStartUptime ?? nowUptime))
+      let timescale = fps ?? uncappedTimestampTimescale
+      var timestampValue = Int64((elapsed * Double(timescale)).rounded(.down))
+      if timestampValue <= lastTimestampValue {
+        timestampValue = lastTimestampValue + 1
+      }
+      let timestamp = CMTime(value: timestampValue, timescale: timescale)
+      if !adaptor.append(pixelBuffer, withPresentationTime: timestamp) {
+        startError = writer.error ?? NSError(
+          domain: "AgentDeviceRunner.Record",
+          code: 5,
+          userInfo: [NSLocalizedDescriptionKey: "failed to append frame"]
+        )
+        return
+      }
+      lastTimestampValue = timestampValue
+    }
+
+    private func shouldStop() -> Bool {
+      lock.lock()
+      defer { lock.unlock() }
+      return isStopping
+    }
+
+    private func makePixelBuffer(from image: CGImage) -> CVPixelBuffer? {
+      guard let adaptor = pixelBufferAdaptor else { return nil }
+      var pixelBuffer: CVPixelBuffer?
+      guard let pool = adaptor.pixelBufferPool else { return nil }
+      let status = CVPixelBufferPoolCreatePixelBuffer(
+        nil,
+        pool,
+        &pixelBuffer
+      )
+      guard status == kCVReturnSuccess, let pixelBuffer else { return nil }
+
+      CVPixelBufferLockBaseAddress(pixelBuffer, [])
+      defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
+      guard
+        let context = CGContext(
+          data: CVPixelBufferGetBaseAddress(pixelBuffer),
+          width: image.width,
+          height: image.height,
+          bitsPerComponent: 8,
+          bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
+          space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+        )
+      else {
+        return nil
+      }
+      context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+      return pixelBuffer
+    }
+  }
 
   override func setUp() {
     continueAfterFailure = true
@@ -303,61 +565,111 @@ final class RunnerTests: XCTestCase {
   }
 
   private func executeOnMain(command: Command) throws -> Response {
-    if command.command == .shutdown {
-      return Response(ok: true, data: DataPayload(message: "shutdown"))
-    }
-
-    let normalizedBundleId = command.appBundleId?
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let requestedBundleId = (normalizedBundleId?.isEmpty == true) ? nil : normalizedBundleId
-    if let bundleId = requestedBundleId {
-      if currentBundleId != bundleId || currentApp == nil {
-        _ = activateTarget(bundleId: bundleId, reason: "bundle_changed")
-      }
-    } else {
-      // Do not reuse stale bundle targets when the caller does not explicitly request one.
-      currentApp = nil
-      currentBundleId = nil
-    }
-
     var activeApp = currentApp ?? app
-    if let bundleId = requestedBundleId, targetNeedsActivation(activeApp) {
-      activeApp = activateTarget(bundleId: bundleId, reason: "stale_target")
-    } else if requestedBundleId == nil, targetNeedsActivation(activeApp) {
-      app.activate()
-      activeApp = app
-    }
-
-    if !activeApp.waitForExistence(timeout: appExistenceTimeout) {
+    if !isRunnerLifecycleCommand(command.command) {
+      let normalizedBundleId = command.appBundleId?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      let requestedBundleId = (normalizedBundleId?.isEmpty == true) ? nil : normalizedBundleId
       if let bundleId = requestedBundleId {
-        activeApp = activateTarget(bundleId: bundleId, reason: "missing_after_wait")
-        guard activeApp.waitForExistence(timeout: appExistenceTimeout) else {
-          return Response(ok: false, error: ErrorPayload(message: "app '\(bundleId)' is not available"))
+        if currentBundleId != bundleId || currentApp == nil {
+          _ = activateTarget(bundleId: bundleId, reason: "bundle_changed")
         }
       } else {
-        return Response(ok: false, error: ErrorPayload(message: "runner app is not available"))
+        // Do not reuse stale bundle targets when the caller does not explicitly request one.
+        currentApp = nil
+        currentBundleId = nil
       }
-    }
 
-    if isInteractionCommand(command.command) {
-      if let bundleId = requestedBundleId, activeApp.state != .runningForeground {
-        activeApp = activateTarget(bundleId: bundleId, reason: "interaction_foreground_guard")
-      } else if requestedBundleId == nil, activeApp.state != .runningForeground {
+      activeApp = currentApp ?? app
+      if let bundleId = requestedBundleId, targetNeedsActivation(activeApp) {
+        activeApp = activateTarget(bundleId: bundleId, reason: "stale_target")
+      } else if requestedBundleId == nil, targetNeedsActivation(activeApp) {
         app.activate()
         activeApp = app
       }
-      if !activeApp.waitForExistence(timeout: 2) {
+
+      if !activeApp.waitForExistence(timeout: appExistenceTimeout) {
         if let bundleId = requestedBundleId {
-          return Response(ok: false, error: ErrorPayload(message: "app '\(bundleId)' is not available"))
+          activeApp = activateTarget(bundleId: bundleId, reason: "missing_after_wait")
+          guard activeApp.waitForExistence(timeout: appExistenceTimeout) else {
+            return Response(ok: false, error: ErrorPayload(message: "app '\(bundleId)' is not available"))
+          }
+        } else {
+          return Response(ok: false, error: ErrorPayload(message: "runner app is not available"))
         }
-        return Response(ok: false, error: ErrorPayload(message: "runner app is not available"))
       }
-      applyInteractionStabilizationIfNeeded()
+
+      if isInteractionCommand(command.command) {
+        if let bundleId = requestedBundleId, activeApp.state != .runningForeground {
+          activeApp = activateTarget(bundleId: bundleId, reason: "interaction_foreground_guard")
+        } else if requestedBundleId == nil, activeApp.state != .runningForeground {
+          app.activate()
+          activeApp = app
+        }
+        if !activeApp.waitForExistence(timeout: 2) {
+          if let bundleId = requestedBundleId {
+            return Response(ok: false, error: ErrorPayload(message: "app '\(bundleId)' is not available"))
+          }
+          return Response(ok: false, error: ErrorPayload(message: "runner app is not available"))
+        }
+        applyInteractionStabilizationIfNeeded()
+      }
     }
 
     switch command.command {
     case .shutdown:
+      stopRecordingIfNeeded()
       return Response(ok: true, data: DataPayload(message: "shutdown"))
+    case .recordStart:
+      guard
+        let requestedOutPath = command.outPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !requestedOutPath.isEmpty
+      else {
+        return Response(ok: false, error: ErrorPayload(message: "recordStart requires outPath"))
+      }
+      let hasAppBundleId = !(command.appBundleId?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .isEmpty ?? true)
+      guard hasAppBundleId else {
+        return Response(ok: false, error: ErrorPayload(message: "recordStart requires appBundleId"))
+      }
+      if activeRecording != nil {
+        return Response(ok: false, error: ErrorPayload(message: "recording already in progress"))
+      }
+      if let requestedFps = command.fps, (requestedFps < minRecordingFps || requestedFps > maxRecordingFps) {
+        return Response(ok: false, error: ErrorPayload(message: "recordStart fps must be between \(minRecordingFps) and \(maxRecordingFps)"))
+      }
+      do {
+        let resolvedOutPath = resolveRecordingOutPath(requestedOutPath)
+        let fpsLabel = command.fps.map(String.init) ?? "max"
+        NSLog(
+          "AGENT_DEVICE_RUNNER_RECORD_START requestedOutPath=%@ resolvedOutPath=%@ fps=%@",
+          requestedOutPath,
+          resolvedOutPath,
+          fpsLabel
+        )
+        let recorder = ScreenRecorder(outputPath: resolvedOutPath, fps: command.fps.map { Int32($0) })
+        try recorder.start { [weak self] in
+          return self?.captureRunnerFrame()
+        }
+        activeRecording = recorder
+        return Response(ok: true, data: DataPayload(message: "recording started"))
+      } catch {
+        activeRecording = nil
+        return Response(ok: false, error: ErrorPayload(message: "failed to start recording: \(error.localizedDescription)"))
+      }
+    case .recordStop:
+      guard let recorder = activeRecording else {
+        return Response(ok: false, error: ErrorPayload(message: "no active recording"))
+      }
+      do {
+        try recorder.stop()
+        activeRecording = nil
+        return Response(ok: true, data: DataPayload(message: "recording stopped"))
+      } catch {
+        activeRecording = nil
+        return Response(ok: false, error: ErrorPayload(message: "failed to stop recording: \(error.localizedDescription)"))
+      }
     case .tap:
       if let text = command.text {
         if let element = findElement(app: activeApp, text: text) {
@@ -516,6 +828,37 @@ final class RunnerTests: XCTestCase {
     }
   }
 
+  private func captureRunnerFrame() -> UIImage? {
+    var image: UIImage?
+    let capture = {
+      let screenshot = XCUIScreen.main.screenshot()
+      image = screenshot.image
+    }
+    if Thread.isMainThread {
+      capture()
+    } else {
+      DispatchQueue.main.sync(execute: capture)
+    }
+    return image
+  }
+
+  private func stopRecordingIfNeeded() {
+    guard let recorder = activeRecording else { return }
+    do {
+      try recorder.stop()
+    } catch {
+      NSLog("AGENT_DEVICE_RUNNER_RECORD_STOP_FAILED=%@", String(describing: error))
+    }
+    activeRecording = nil
+  }
+
+  private func resolveRecordingOutPath(_ requestedOutPath: String) -> String {
+    let fileName = URL(fileURLWithPath: requestedOutPath).lastPathComponent
+    let fallbackName = "agent-device-recording-\(Int(Date().timeIntervalSince1970 * 1000)).mp4"
+    let safeFileName = fileName.isEmpty ? fallbackName : fileName
+    return (NSTemporaryDirectory() as NSString).appendingPathComponent(safeFileName)
+  }
+
   private func targetNeedsActivation(_ target: XCUIApplication) -> Bool {
     switch target.state {
     case .unknown, .notRunning, .runningBackground, .runningBackgroundSuspended:
@@ -584,6 +927,15 @@ final class RunnerTests: XCTestCase {
   private func isInteractionCommand(_ command: CommandType) -> Bool {
     switch command {
     case .tap, .longPress, .drag, .type, .swipe, .back, .appSwitcher, .pinch:
+      return true
+    default:
+      return false
+    }
+  }
+
+  private func isRunnerLifecycleCommand(_ command: CommandType) -> Bool {
+    switch command {
+    case .shutdown, .recordStop:
       return true
     default:
       return false
@@ -1369,6 +1721,8 @@ enum CommandType: String, Codable {
   case appSwitcher
   case alert
   case pinch
+  case recordStart
+  case recordStop
   case shutdown
 }
 
@@ -1397,6 +1751,8 @@ struct Command: Codable {
   let durationMs: Double?
   let direction: SwipeDirection?
   let scale: Double?
+  let outPath: String?
+  let fps: Int?
   let interactiveOnly: Bool?
   let compact: Bool?
   let depth: Int?

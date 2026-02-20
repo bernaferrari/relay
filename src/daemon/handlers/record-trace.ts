@@ -3,16 +3,83 @@ import path from 'node:path';
 import { runCmd, runCmdBackground } from '../../utils/exec.ts';
 import { resolveTargetDevice, type CommandFlags } from '../../core/dispatch.ts';
 import { isCommandSupportedOnDevice } from '../../core/capabilities.ts';
+import { runIosRunnerCommand } from '../../platforms/ios/runner-client.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
+import { emitDiagnostic } from '../../utils/diagnostics.ts';
+
+function uniqueNonEmpty(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    if (!value) continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+const IOS_RUNNER_CONTAINER_BUNDLE_IDS = uniqueNonEmpty([
+  process.env.AGENT_DEVICE_IOS_RUNNER_CONTAINER_BUNDLE_ID,
+  process.env.AGENT_DEVICE_IOS_RUNNER_APP_BUNDLE_ID,
+  'com.myapp.AgentDeviceRunnerUITests.xctrunner',
+  'com.myapp.AgentDeviceRunner',
+]);
+const IOS_DEVICE_RECORD_MIN_FPS = 1;
+const IOS_DEVICE_RECORD_MAX_FPS = 120;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRunnerRecordingAlreadyInProgressError(error: unknown): boolean {
+  return errorMessage(error).toLowerCase().includes('recording already in progress');
+}
+
+function normalizeAppBundleId(session: SessionState): string | undefined {
+  const trimmed = session.appBundleId?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function findOtherActiveIosRunnerRecording(
+  sessionStore: SessionStore,
+  deviceId: string,
+  currentSessionName: string,
+): SessionState | undefined {
+  return sessionStore
+    .toArray()
+    .find((session) =>
+      session.name !== currentSessionName &&
+      session.device.platform === 'ios' &&
+      session.device.kind === 'device' &&
+      session.device.id === deviceId &&
+      session.recording?.platform === 'ios-device-runner');
+}
+
+function getRunnerOptions(req: DaemonRequest, logPath: string | undefined, session: SessionState) {
+  return {
+    verbose: req.flags?.verbose,
+    logPath,
+    traceLogPath: session.trace?.outPath,
+  };
+}
 
 export async function handleRecordTraceCommands(params: {
   req: DaemonRequest;
   sessionName: string;
   sessionStore: SessionStore;
+  logPath?: string;
+  deps?: {
+    runCmd: typeof runCmd;
+    runCmdBackground: typeof runCmdBackground;
+    runIosRunnerCommand: typeof runIosRunnerCommand;
+  };
 }): Promise<DaemonResponse | null> {
-  const { req, sessionName, sessionStore } = params;
+  const { req, sessionName, sessionStore, logPath } = params;
+  const deps = params.deps ?? { runCmd, runCmdBackground, runIosRunnerCommand };
   const command = req.command;
 
   if (command === 'record') {
@@ -38,26 +105,111 @@ export async function handleRecordTraceCommands(params: {
       if (activeSession.recording) {
         return { ok: false, error: { code: 'INVALID_ARGS', message: 'recording already in progress' } };
       }
-      const outPath = req.positionals?.[1] ?? `./recording-${Date.now()}.mp4`;
-      const resolvedOut = path.resolve(outPath);
-      const outDir = path.dirname(resolvedOut);
-      if (!fs.existsSync(outDir)) {
-        fs.mkdirSync(outDir, { recursive: true });
+      const fpsFlag = req.flags?.fps;
+      if (
+        fpsFlag !== undefined &&
+        (!Number.isInteger(fpsFlag) || fpsFlag < IOS_DEVICE_RECORD_MIN_FPS || fpsFlag > IOS_DEVICE_RECORD_MAX_FPS)
+      ) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_ARGS',
+            message: `fps must be an integer between ${IOS_DEVICE_RECORD_MIN_FPS} and ${IOS_DEVICE_RECORD_MAX_FPS}`,
+          },
+        };
       }
+      const outPath = req.positionals?.[1] ?? `./recording-${Date.now()}.mp4`;
       if (!isCommandSupportedOnDevice('record', device)) {
         return {
           ok: false,
-          error: { code: 'UNSUPPORTED_OPERATION', message: 'record is only supported on iOS simulators' },
+          error: { code: 'UNSUPPORTED_OPERATION', message: 'record is not supported on this device' },
         };
       }
-      if (device.platform === 'ios') {
-        const { child, wait } = runCmdBackground('xcrun', ['simctl', 'io', device.id, 'recordVideo', resolvedOut], {
+      const iosDeviceAppBundleId =
+        device.platform === 'ios' && device.kind === 'device' ? normalizeAppBundleId(activeSession) : undefined;
+      if (device.platform === 'ios' && device.kind === 'device' && !iosDeviceAppBundleId) {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_ARGS',
+            message: 'record on physical iOS devices requires an active app session; run open <app> first',
+          },
+        };
+      }
+      const resolvedOut = SessionStore.expandHome(outPath, req.meta?.cwd);
+      fs.mkdirSync(path.dirname(resolvedOut), { recursive: true });
+      const runnerOptions = getRunnerOptions(req, logPath, activeSession);
+      if (device.platform === 'ios' && device.kind === 'device') {
+        const appBundleId = iosDeviceAppBundleId;
+        const recordingFileName = `agent-device-recording-${Date.now()}.mp4`;
+        const remotePath = `tmp/${recordingFileName}`;
+        const startRunnerRecording = async () => {
+          await deps.runIosRunnerCommand(
+            device,
+            {
+              command: 'recordStart',
+              outPath: recordingFileName,
+              fps: fpsFlag,
+              appBundleId,
+            },
+            runnerOptions,
+          );
+        };
+        try {
+          await startRunnerRecording();
+        } catch (error) {
+          if (isRunnerRecordingAlreadyInProgressError(error)) {
+            emitDiagnostic({
+              level: 'warn',
+              phase: 'record_start_runner_desynced',
+              data: {
+                platform: device.platform,
+                kind: device.kind,
+                deviceId: device.id,
+                session: activeSession.name,
+                error: errorMessage(error),
+              },
+            });
+            const otherRecordingSession = findOtherActiveIosRunnerRecording(sessionStore, device.id, activeSession.name);
+            if (otherRecordingSession) {
+              return {
+                ok: false,
+                error: {
+                  code: 'COMMAND_FAILED',
+                  message: `failed to start recording: recording already in progress in session '${otherRecordingSession.name}'`,
+                },
+              };
+            }
+            try {
+              await deps.runIosRunnerCommand(
+                device,
+                { command: 'recordStop', appBundleId },
+                runnerOptions,
+              );
+            } catch {
+              // best effort: stop stale runner recording and retry start
+            }
+            try {
+              await startRunnerRecording();
+            } catch (retryError) {
+              return {
+                ok: false,
+                error: { code: 'COMMAND_FAILED', message: `failed to start recording: ${errorMessage(retryError)}` },
+              };
+            }
+          } else {
+            return { ok: false, error: { code: 'COMMAND_FAILED', message: `failed to start recording: ${errorMessage(error)}` } };
+          }
+        }
+        activeSession.recording = { platform: 'ios-device-runner', outPath: resolvedOut, remotePath };
+      } else if (device.platform === 'ios') {
+        const { child, wait } = deps.runCmdBackground('xcrun', ['simctl', 'io', device.id, 'recordVideo', resolvedOut], {
           allowFailure: true,
         });
         activeSession.recording = { platform: 'ios', outPath: resolvedOut, child, wait };
       } else {
         const remotePath = `/sdcard/agent-device-recording-${Date.now()}.mp4`;
-        const { child, wait } = runCmdBackground('adb', ['-s', device.id, 'shell', 'screenrecord', remotePath], {
+        const { child, wait } = deps.runCmdBackground('adb', ['-s', device.id, 'shell', 'screenrecord', remotePath], {
           allowFailure: true,
         });
         activeSession.recording = { platform: 'android', outPath: resolvedOut, remotePath, child, wait };
@@ -76,21 +228,76 @@ export async function handleRecordTraceCommands(params: {
       return { ok: false, error: { code: 'INVALID_ARGS', message: 'no active recording' } };
     }
     const recording = activeSession.recording;
-    recording.child.kill('SIGINT');
-    try {
-      await recording.wait;
-    } catch {
-      // ignore
-    }
-    if (recording.platform === 'android' && recording.remotePath) {
+    if (recording.platform === 'ios-device-runner') {
+      const appBundleId = normalizeAppBundleId(activeSession);
       try {
-        await runCmd('adb', ['-s', device.id, 'pull', recording.remotePath, recording.outPath], { allowFailure: true });
-        await runCmd('adb', ['-s', device.id, 'shell', 'rm', '-f', recording.remotePath], { allowFailure: true });
+        await deps.runIosRunnerCommand(
+          device,
+          { command: 'recordStop', appBundleId },
+          getRunnerOptions(req, logPath, activeSession),
+        );
+      } catch (error) {
+        emitDiagnostic({
+          level: 'warn',
+          phase: 'record_stop_runner_failed',
+          data: {
+            platform: device.platform,
+            kind: device.kind,
+            deviceId: device.id,
+            session: activeSession.name,
+            error: errorMessage(error),
+          },
+        });
+        // best effort: clear runner-backed recording state even if runner stop fails
+      }
+      let copyResult = { stdout: '', stderr: '', exitCode: 1 };
+      for (const bundleId of IOS_RUNNER_CONTAINER_BUNDLE_IDS) {
+        copyResult = await deps.runCmd(
+          'xcrun',
+          [
+            'devicectl',
+            'device',
+            'copy',
+            'from',
+            '--device',
+            device.id,
+            '--source',
+            recording.remotePath,
+            '--destination',
+            recording.outPath,
+            '--domain-type',
+            'appDataContainer',
+            '--domain-identifier',
+            bundleId,
+          ],
+          { allowFailure: true },
+        );
+        if (copyResult.exitCode === 0) {
+          break;
+        }
+      }
+      activeSession.recording = undefined;
+      if (copyResult.exitCode !== 0) {
+        const copyError = copyResult.stderr.trim() || copyResult.stdout.trim() || `devicectl exited with code ${copyResult.exitCode}`;
+        return { ok: false, error: { code: 'COMMAND_FAILED', message: `failed to copy recording from device: ${copyError}` } };
+      }
+    } else {
+      recording.child.kill('SIGINT');
+      try {
+        await recording.wait;
       } catch {
         // ignore
       }
+      if (recording.platform === 'android' && recording.remotePath) {
+        try {
+          await deps.runCmd('adb', ['-s', device.id, 'pull', recording.remotePath, recording.outPath], { allowFailure: true });
+          await deps.runCmd('adb', ['-s', device.id, 'shell', 'rm', '-f', recording.remotePath], { allowFailure: true });
+        } catch {
+          // ignore
+        }
+      }
+      activeSession.recording = undefined;
     }
-    activeSession.recording = undefined;
     sessionStore.recordAction(activeSession, {
       command,
       positionals: req.positionals ?? [],
