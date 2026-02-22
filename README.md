@@ -32,6 +32,8 @@ Or use it without installing:
 npx agent-device open SampleApp
 ```
 
+The skill is also accessible on [ClawHub](https://clawhub.ai/okwasniewski/agent-device).
+
 ## Quick Start
 
 Use refs for agent-driven exploration and normal automation flows.
