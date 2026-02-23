@@ -68,15 +68,45 @@ export function normalizeError(
     ?? context.logPath;
   const hint = detailHint ?? defaultHintForCode(appErr.code);
   const cleanDetails = stripDiagnosticMeta(details);
+  const message = maybeEnrichCommandFailedMessage(appErr.code, appErr.message, details);
 
   return {
     code: appErr.code,
-    message: appErr.message,
+    message,
     hint,
     diagnosticId,
     logPath,
     details: cleanDetails,
   };
+}
+
+function maybeEnrichCommandFailedMessage(
+  code: string,
+  message: string,
+  details: Record<string, unknown> | undefined,
+): string {
+  if (code !== 'COMMAND_FAILED') return message;
+  if (details?.processExitError !== true) return message;
+  const stderr = typeof details?.stderr === 'string' ? details.stderr : '';
+  const excerpt = firstStderrLine(stderr);
+  if (!excerpt) return message;
+  return excerpt;
+}
+
+function firstStderrLine(stderr: string): string | null {
+  const skipPatterns = [
+    /^an error was encountered processing the command/i,
+    /^underlying error\b/i,
+    /^simulator device failed to complete the requested operation/i,
+  ];
+
+  for (const rawLine of stderr.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (skipPatterns.some((pattern) => pattern.test(line))) continue;
+    return line.length > 200 ? `${line.slice(0, 200)}...` : line;
+  }
+  return null;
 }
 
 function stripDiagnosticMeta(details: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
