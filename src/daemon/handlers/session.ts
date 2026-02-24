@@ -32,6 +32,7 @@ import {
   isClickLikeCommand,
   parseReplaySeriesFlags,
 } from '../script-utils.ts';
+import { resolvePayloadInput } from '../../utils/payload-input.ts';
 import {
   appendAppLogMarker,
   clearAppLogFiles,
@@ -463,6 +464,53 @@ export async function handleSessionCommands(params: {
     return { ok: true, data: result };
   }
 
+  if (command === 'push') {
+    const session = sessionStore.get(sessionName);
+    const flags = req.flags ?? {};
+    const guard = requireSessionOrExplicitSelector(command, session, flags);
+    if (guard) return guard;
+    const appId = req.positionals?.[0]?.trim();
+    const payloadArg = req.positionals?.[1]?.trim();
+    if (!appId || !payloadArg) {
+      return {
+        ok: false,
+        error: {
+          code: 'INVALID_ARGS',
+          message: 'push requires <bundle|package> <payload.json|inline-json>',
+        },
+      };
+    }
+    const normalizedPayloadArg = maybeResolvePushPayloadPath(payloadArg, req.meta?.cwd);
+    const device = await resolveCommandDevice({
+      session,
+      flags,
+      ensureReadyFn: ensureReady,
+      resolveTargetDeviceFn: resolveDevice,
+      ensureReady: true,
+    });
+    if (!isCommandSupportedOnDevice('push', device)) {
+      return {
+        ok: false,
+        error: {
+          code: 'UNSUPPORTED_OPERATION',
+          message: 'push is not supported on this device',
+        },
+      };
+    }
+    const result = await dispatch(device, 'push', [appId, normalizedPayloadArg], req.flags?.out, {
+      ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
+    });
+    if (session) {
+      sessionStore.recordAction(session, {
+        command,
+        positionals: [appId, payloadArg],
+        flags: req.flags ?? {},
+        result: result ?? {},
+      });
+    }
+    return { ok: true, data: result ?? {} };
+  }
+
   if (command === 'open') {
     const shouldRelaunch = req.flags?.relaunch === true;
     if (sessionStore.has(sessionName)) {
@@ -852,6 +900,15 @@ export async function handleSessionCommands(params: {
   }
 
   return null;
+}
+
+function maybeResolvePushPayloadPath(payloadArg: string, cwd?: string): string {
+  const resolved = resolvePayloadInput(payloadArg, {
+    subject: 'Push payload',
+    cwd,
+    expandPath: (value, currentCwd) => SessionStore.expandHome(value, currentCwd),
+  });
+  return resolved.kind === 'file' ? resolved.path : resolved.text;
 }
 
 async function runBatchCommands(

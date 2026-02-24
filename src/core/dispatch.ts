@@ -8,17 +8,19 @@ import {
   backAndroid,
   ensureAdb,
   homeAndroid,
+  pushAndroidNotification,
   setAndroidSetting,
   snapshotAndroid,
 } from '../platforms/android/index.ts';
 import { listIosDevices } from '../platforms/ios/devices.ts';
 import { getInteractor, type RunnerContext } from '../utils/interactors.ts';
 import { runIosRunnerCommand } from '../platforms/ios/runner-client.ts';
-import { setIosSetting } from '../platforms/ios/index.ts';
+import { pushIosNotification, setIosSetting } from '../platforms/ios/index.ts';
 import { isDeepLinkTarget } from './open-target.ts';
 import type { RawSnapshotNode } from '../utils/snapshot.ts';
 import type { CliFlags } from '../utils/command-schema.ts';
 import { emitDiagnostic, withDiagnosticTimer } from '../utils/diagnostics.ts';
+import { resolvePayloadInput } from '../utils/payload-input.ts';
 
 export type BatchStep = {
   command: string;
@@ -438,6 +440,28 @@ export async function dispatchCommand(
       await setAndroidSetting(device, setting, state, appBundleId ?? context?.appBundleId, permissionOptions);
       return { setting, state };
     }
+    case 'push': {
+      const target = positionals[0]?.trim();
+      const payloadArg = positionals[1]?.trim();
+      if (!target || !payloadArg) {
+        throw new AppError(
+          'INVALID_ARGS',
+          'push requires <bundle|package> <payload.json|inline-json>',
+        );
+      }
+      const payload = await readNotificationPayload(payloadArg);
+      if (device.platform === 'ios') {
+        await pushIosNotification(device, target, payload);
+        return { platform: 'ios', bundleId: target };
+      }
+      const androidResult = await pushAndroidNotification(device, target, payload);
+      return {
+        platform: 'android',
+        package: target,
+        action: androidResult.action,
+        extrasCount: androidResult.extrasCount,
+      };
+    }
     case 'snapshot': {
       if (device.platform === 'ios') {
         const result = (await withDiagnosticTimer(
@@ -523,6 +547,43 @@ function requireIntInRange(value: number, name: string, min: number, max: number
 function clampIosSwipeDuration(durationMs: number): number {
   // Keep iOS swipes stable while allowing explicit fast durations for scroll-heavy flows.
   return Math.min(60, Math.max(16, Math.round(durationMs)));
+}
+
+async function readNotificationPayload(payloadArg: string): Promise<Record<string, unknown>> {
+  const source = resolvePayloadInput(payloadArg, { subject: 'Push payload' });
+  const payloadText = source.kind === 'inline'
+    ? source.text
+    : await readPushPayloadFile(source.path);
+  try {
+    const parsed = JSON.parse(payloadText) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new AppError('INVALID_ARGS', 'push payload must be a JSON object');
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError('INVALID_ARGS', `Invalid push payload JSON: ${payloadArg}`);
+  }
+}
+
+async function readPushPayloadFile(payloadPath: string): Promise<string> {
+  try {
+    return await fs.readFile(payloadPath, 'utf8');
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      throw new AppError('INVALID_ARGS', `Push payload file not found: ${payloadPath}`);
+    }
+    if (code === 'EISDIR') {
+      throw new AppError('INVALID_ARGS', `Push payload path is not a file: ${payloadPath}`);
+    }
+    if (code === 'EACCES' || code === 'EPERM') {
+      throw new AppError('INVALID_ARGS', `Push payload file is not readable: ${payloadPath}`);
+    }
+    throw new AppError('COMMAND_FAILED', `Unable to read push payload file: ${payloadPath}`, {
+      cause: String(error),
+    });
+  }
 }
 
 export function shouldUseIosTapSeries(
