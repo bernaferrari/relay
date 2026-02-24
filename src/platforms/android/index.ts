@@ -12,6 +12,7 @@ import {
   parsePermissionTarget,
   type PermissionSettingOptions,
 } from '../permission-utils.ts';
+import { parseAppearanceAction } from '../appearance.ts';
 
 const ALIASES: Record<string, { type: 'intent' | 'package'; value: string }> = {
   settings: { type: 'intent', value: 'android.settings.SETTINGS' },
@@ -618,6 +619,11 @@ export async function setAndroidSetting(
       await runCmd('adb', adbArgs(device, ['shell', 'settings', 'put', 'secure', 'location_mode', mode]));
       return;
     }
+    case 'appearance': {
+      const target = await resolveAndroidAppearanceTarget(device, state);
+      await runCmd('adb', adbArgs(device, ['shell', 'cmd', 'uimode', 'night', target === 'dark' ? 'yes' : 'no']));
+      return;
+    }
     case 'permission': {
       if (!appPackage) {
         throw new AppError(
@@ -743,6 +749,44 @@ function parseSettingState(state: string): boolean {
   if (normalized === 'on' || normalized === 'true' || normalized === '1') return true;
   if (normalized === 'off' || normalized === 'false' || normalized === '0') return false;
   throw new AppError('INVALID_ARGS', `Invalid setting state: ${state}`);
+}
+
+async function resolveAndroidAppearanceTarget(
+  device: DeviceInfo,
+  state: string,
+): Promise<'light' | 'dark'> {
+  const action = parseAppearanceAction(state);
+  if (action !== 'toggle') return action;
+
+  const currentResult = await runCmd('adb', adbArgs(device, ['shell', 'cmd', 'uimode', 'night']), {
+    allowFailure: true,
+  });
+  if (currentResult.exitCode !== 0) {
+    throw new AppError('COMMAND_FAILED', 'Failed to read current Android appearance', {
+      stdout: currentResult.stdout,
+      stderr: currentResult.stderr,
+      exitCode: currentResult.exitCode,
+    });
+  }
+  const current = parseAndroidAppearance(currentResult.stdout, currentResult.stderr);
+  if (!current) {
+    throw new AppError('COMMAND_FAILED', 'Unable to determine current Android appearance for toggle', {
+      stdout: currentResult.stdout,
+      stderr: currentResult.stderr,
+    });
+  }
+  if (current === 'auto') return 'dark';
+  return current === 'dark' ? 'light' : 'dark';
+}
+
+function parseAndroidAppearance(stdout: string, stderr: string): 'light' | 'dark' | 'auto' | null {
+  const match = /night mode:\s*(yes|no|auto)\b/i.exec(`${stdout}\n${stderr}`);
+  if (!match) return null;
+  const value = match[1].toLowerCase();
+  if (value === 'yes') return 'dark';
+  if (value === 'no') return 'light';
+  if (value === 'auto') return 'auto';
+  return null;
 }
 
 function parseAndroidPermissionTarget(
