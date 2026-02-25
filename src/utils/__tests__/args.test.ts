@@ -62,6 +62,34 @@ test('parseArgs recognizes --debug alias for verbose mode', () => {
   assert.equal(parsed.flags.verbose, true);
 });
 
+test('parseArgs recognizes daemon transport/state/tenant isolation flags', () => {
+  const parsed = parseArgs([
+    'open',
+    'settings',
+    '--state-dir',
+    './tmp/ad-state',
+    '--daemon-transport',
+    'http',
+    '--daemon-server-mode',
+    'dual',
+    '--tenant',
+    'team_alpha',
+    '--session-isolation',
+    'tenant',
+    '--run-id',
+    'run_42',
+    '--lease-id',
+    'abcd1234ef567890',
+  ], { strictFlags: true });
+  assert.equal(parsed.flags.stateDir, './tmp/ad-state');
+  assert.equal(parsed.flags.daemonTransport, 'http');
+  assert.equal(parsed.flags.daemonServerMode, 'dual');
+  assert.equal(parsed.flags.tenant, 'team_alpha');
+  assert.equal(parsed.flags.sessionIsolation, 'tenant');
+  assert.equal(parsed.flags.runId, 'run_42');
+  assert.equal(parsed.flags.leaseId, 'abcd1234ef567890');
+});
+
 test('batch requires exactly one step source', () => {
   assert.throws(
     () => parseArgs(['batch'], { strictFlags: true }),
@@ -250,6 +278,13 @@ test('usage includes --relaunch flag', () => {
   assert.match(usage(), /--save-script \[path\]/);
   assert.match(usage(), /clipboard read \| clipboard write <text>/);
   assert.match(usage(), /pinch <scale> \[x\] \[y\]/);
+  assert.match(usage(), /--state-dir <path>/);
+  assert.match(usage(), /--daemon-transport auto\|socket\|http/);
+  assert.match(usage(), /--daemon-server-mode socket\|http\|dual/);
+  assert.match(usage(), /--tenant <id>/);
+  assert.match(usage(), /--session-isolation none\|tenant/);
+  assert.match(usage(), /--run-id <id>/);
+  assert.match(usage(), /--lease-id <id>/);
   assert.doesNotMatch(usage(), /--metadata/);
 });
 

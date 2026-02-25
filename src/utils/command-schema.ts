@@ -2,6 +2,13 @@ import { SETTINGS_USAGE_OVERRIDE } from '../core/settings-contract.ts';
 
 export type CliFlags = {
   json: boolean;
+  stateDir?: string;
+  daemonTransport?: 'auto' | 'socket' | 'http';
+  daemonServerMode?: 'socket' | 'http' | 'dual';
+  tenant?: string;
+  sessionIsolation?: 'none' | 'tenant';
+  runId?: string;
+  leaseId?: string;
   platform?: 'ios' | 'android' | 'apple';
   target?: 'mobile' | 'tv';
   device?: string;
@@ -85,6 +92,58 @@ const SELECTOR_SNAPSHOT_FLAGS = [
 const FIND_SNAPSHOT_FLAGS = ['snapshotDepth', 'snapshotRaw'] as const satisfies readonly FlagKey[];
 
 const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
+  {
+    key: 'stateDir',
+    names: ['--state-dir'],
+    type: 'string',
+    usageLabel: '--state-dir <path>',
+    usageDescription: 'Daemon state directory (defaults to ~/.agent-device)',
+  },
+  {
+    key: 'daemonTransport',
+    names: ['--daemon-transport'],
+    type: 'enum',
+    enumValues: ['auto', 'socket', 'http'],
+    usageLabel: '--daemon-transport auto|socket|http',
+    usageDescription: 'Daemon client transport preference',
+  },
+  {
+    key: 'daemonServerMode',
+    names: ['--daemon-server-mode'],
+    type: 'enum',
+    enumValues: ['socket', 'http', 'dual'],
+    usageLabel: '--daemon-server-mode socket|http|dual',
+    usageDescription: 'Daemon server mode used when spawning daemon',
+  },
+  {
+    key: 'tenant',
+    names: ['--tenant'],
+    type: 'string',
+    usageLabel: '--tenant <id>',
+    usageDescription: 'Tenant scope identifier for isolated daemon sessions',
+  },
+  {
+    key: 'sessionIsolation',
+    names: ['--session-isolation'],
+    type: 'enum',
+    enumValues: ['none', 'tenant'],
+    usageLabel: '--session-isolation none|tenant',
+    usageDescription: 'Session isolation strategy (tenant prefixes session namespace)',
+  },
+  {
+    key: 'runId',
+    names: ['--run-id'],
+    type: 'string',
+    usageLabel: '--run-id <id>',
+    usageDescription: 'Run identifier used for tenant lease admission checks',
+  },
+  {
+    key: 'leaseId',
+    names: ['--lease-id'],
+    type: 'string',
+    usageLabel: '--lease-id <id>',
+    usageDescription: 'Lease identifier bound to tenant/run admission scope',
+  },
   {
     key: 'platform',
     names: ['--platform'],
@@ -362,6 +421,13 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
 
 export const GLOBAL_FLAG_KEYS = new Set<FlagKey>([
   'json',
+  'stateDir',
+  'daemonTransport',
+  'daemonServerMode',
+  'tenant',
+  'sessionIsolation',
+  'runId',
+  'leaseId',
   'help',
   'version',
   'verbose',
