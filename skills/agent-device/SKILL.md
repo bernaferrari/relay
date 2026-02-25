@@ -88,6 +88,7 @@ agent-device is visible 'id="anchor"'
 agent-device appstate
 agent-device clipboard read
 agent-device clipboard write "token"
+agent-device perf --json
 agent-device push <bundle|package> <payload.json|inline-json>
 agent-device get text @e1
 agent-device screenshot out.png
@@ -102,6 +103,11 @@ agent-device trace stop ./trace.log
 ```bash
 agent-device batch --steps-file /tmp/batch-steps.json --json
 ```
+
+### Performance Check
+
+- Use `agent-device perf --json` (or `metrics --json`) after `open`.
+- For detailed metric semantics, caveats, and interpretation guidance, see [references/perf-metrics.md](references/perf-metrics.md).
 
 ## Guardrails (High Value Only)
 
@@ -145,3 +151,4 @@ agent-device batch --steps-file /tmp/batch-steps.json --json
 - [references/video-recording.md](references/video-recording.md)
 - [references/coordinate-system.md](references/coordinate-system.md)
 - [references/batching.md](references/batching.md)
+- [references/perf-metrics.md](references/perf-metrics.md)
