@@ -12,7 +12,6 @@ import {
   type PermissionSettingOptions,
 } from '../permission-utils.ts';
 import { parseAppearanceAction } from '../appearance.ts';
-import { runIosRunnerCommand } from './runner-client.ts';
 
 import { IOS_APP_LAUNCH_TIMEOUT_MS, IOS_DEVICECTL_TIMEOUT_MS } from './config.ts';
 import {
@@ -22,6 +21,7 @@ import {
   runIosDevicectl,
   type IosAppInfo,
 } from './devicectl.ts';
+import { runIosRunnerCommand, IOS_RUNNER_CONTAINER_BUNDLE_IDS } from './runner-client.ts';
 import { ensureBootedSimulator, ensureSimulator, getSimulatorState } from './simulator.ts';
 
 const ALIASES: Record<string, string> = {
@@ -215,7 +215,7 @@ export async function reinstallIosApp(
   return { bundleId };
 }
 
-export async function screenshotIos(device: DeviceInfo, outPath: string): Promise<void> {
+export async function screenshotIos(device: DeviceInfo, outPath: string, appBundleId?: string): Promise<void> {
   if (device.kind === 'simulator') {
     await ensureBootedSimulator(device);
     await runCmd('xcrun', ['simctl', 'io', device.id, 'screenshot', outPath]);
@@ -234,7 +234,46 @@ export async function screenshotIos(device: DeviceInfo, outPath: string): Promis
     }
   }
 
-  await runIosRunnerCommand(device, { command: 'screenshot', outPath });
+  // `xcrun devicectl device screenshot` is unavailable (removed in Xcode 26.x).
+  // Fall back to the XCTest runner: capture to the device's temp directory,
+  // then pull the file to the host via `devicectl device copy from`.
+  const result = await runIosRunnerCommand(device, { command: 'screenshot', appBundleId });
+  const remoteFileName = result['message'] as string;
+  if (!remoteFileName) {
+    throw new AppError('COMMAND_FAILED', 'Failed to capture iOS screenshot: runner returned no file path');
+  }
+
+  let copyResult = { exitCode: 1, stdout: '', stderr: '' };
+  for (const bundleId of IOS_RUNNER_CONTAINER_BUNDLE_IDS) {
+    copyResult = await runCmd(
+      'xcrun',
+      [
+        'devicectl',
+        'device',
+        'copy',
+        'from',
+        '--device',
+        device.id,
+        '--source',
+        remoteFileName,
+        '--destination',
+        outPath,
+        '--domain-type',
+        'appDataContainer',
+        '--domain-identifier',
+        bundleId,
+      ],
+      { allowFailure: true },
+    );
+    if (copyResult.exitCode === 0) {
+      break;
+    }
+  }
+
+  if (copyResult.exitCode !== 0) {
+    const copyError = copyResult.stderr.trim() || copyResult.stdout.trim() || `devicectl exited with code ${copyResult.exitCode}`;
+    throw new AppError('COMMAND_FAILED', `Failed to capture iOS screenshot: ${copyError}`);
+  }
 }
 
 export function shouldFallbackToRunnerForIosScreenshot(error: unknown): boolean {
