@@ -1,6 +1,7 @@
 import { AppError } from '../utils/errors.ts';
 import type { CommandFlags } from '../core/dispatch.ts';
 import type { SessionState } from './types.ts';
+import { normalizePlatformSelector } from '../utils/device.ts';
 
 export function assertSessionSelectorMatches(
   session: SessionState,
@@ -11,8 +12,12 @@ export function assertSessionSelectorMatches(
   const mismatches: string[] = [];
   const device = session.device;
 
-  if (flags.platform && flags.platform !== device.platform) {
+  const normalizedPlatform = normalizePlatformSelector(flags.platform);
+  if (normalizedPlatform && normalizedPlatform !== device.platform) {
     mismatches.push(`--platform=${flags.platform}`);
+  }
+  if (flags.target && flags.target !== (device.target ?? 'mobile')) {
+    mismatches.push(`--target=${flags.target}`);
   }
 
   if (flags.udid && (device.platform !== 'ios' || flags.udid !== device.id)) {

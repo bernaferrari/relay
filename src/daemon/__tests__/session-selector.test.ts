@@ -12,6 +12,7 @@ function makeSession(overrides?: Partial<SessionState>): SessionState {
       id: 'emulator-5554',
       name: 'Pixel 9',
       kind: 'emulator',
+      target: 'tv',
       booted: true,
     },
     createdAt: Date.now(),
@@ -25,6 +26,7 @@ test('accepts matching platform and serial selectors', () => {
   assert.doesNotThrow(() =>
     assertSessionSelectorMatches(session, {
       platform: 'android',
+      target: 'tv',
       serial: 'emulator-5554',
     }),
   );
@@ -39,6 +41,20 @@ test('rejects mismatched platform selector', () => {
       err.code === 'INVALID_ARGS' &&
       err.message.includes('--platform=ios'),
   );
+});
+
+test('accepts --platform apple alias for ios sessions', () => {
+  const session = makeSession({
+    device: {
+      platform: 'ios',
+      id: 'tv-sim-1',
+      name: 'Apple TV',
+      kind: 'simulator',
+      target: 'tv',
+      booted: true,
+    },
+  });
+  assert.doesNotThrow(() => assertSessionSelectorMatches(session, { platform: 'apple', target: 'tv' }));
 });
 
 test('rejects mismatched serial selector', () => {
@@ -69,6 +85,17 @@ test('accepts matching device selector (case-insensitive)', () => {
     assertSessionSelectorMatches(session, {
       device: 'pixel 9',
     }),
+  );
+});
+
+test('rejects mismatched target selector', () => {
+  const session = makeSession();
+  assert.throws(
+    () => assertSessionSelectorMatches(session, { target: 'mobile' }),
+    (err: unknown) =>
+      err instanceof AppError &&
+      err.code === 'INVALID_ARGS' &&
+      err.message.includes('--target=mobile'),
   );
 });
 
