@@ -9,7 +9,7 @@ import {
 import { isCommandSupportedOnDevice } from '../../core/capabilities.ts';
 import { isDeepLinkTarget, resolveIosDeviceDeepLinkBundleId } from '../../core/open-target.ts';
 import { AppError, asAppError, normalizeError } from '../../utils/errors.ts';
-import type { DeviceInfo } from '../../utils/device.ts';
+import { normalizePlatformSelector, type DeviceInfo } from '../../utils/device.ts';
 import type { DaemonRequest, DaemonResponse, SessionAction, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { contextFromFlags } from '../context.ts';
@@ -49,8 +49,8 @@ type ReinstallOps = {
 
 const IOS_APPSTATE_SESSION_REQUIRED_MESSAGE =
   'iOS appstate requires an active session on the target device. Run open first (for example: open --session sim --platform ios --device "<name>" <app>).';
-const BATCH_PARENT_FLAG_KEYS: Array<keyof CommandFlags> = ['platform', 'device', 'udid', 'serial', 'verbose', 'out'];
-const REPLAY_PARENT_FLAG_KEYS: Array<keyof CommandFlags> = ['platform', 'device', 'udid', 'serial', 'verbose', 'out'];
+const BATCH_PARENT_FLAG_KEYS: Array<keyof CommandFlags> = ['platform', 'target', 'device', 'udid', 'serial', 'verbose', 'out'];
+const REPLAY_PARENT_FLAG_KEYS: Array<keyof CommandFlags> = ['platform', 'target', 'device', 'udid', 'serial', 'verbose', 'out'];
 const LOG_ACTIONS = ['path', 'start', 'stop', 'doctor', 'mark', 'clear'] as const;
 const LOG_ACTIONS_MESSAGE = `logs requires ${LOG_ACTIONS.slice(0, -1).join(', ')}, or ${LOG_ACTIONS.at(-1)}`;
 const PERF_UNAVAILABLE_REASON = 'Not implemented for this platform in this release.';
@@ -178,7 +178,7 @@ function requireSessionOrExplicitSelector(
 }
 
 function hasExplicitDeviceSelector(flags: DaemonRequest['flags'] | undefined): boolean {
-  return Boolean(flags?.platform || flags?.device || flags?.udid || flags?.serial);
+  return Boolean(flags?.platform || flags?.target || flags?.device || flags?.udid || flags?.serial);
 }
 
 function hasExplicitSessionFlag(flags: DaemonRequest['flags'] | undefined): boolean {
@@ -191,7 +191,9 @@ function selectorTargetsSessionDevice(
 ): boolean {
   if (!session) return false;
   if (!hasExplicitDeviceSelector(flags)) return true;
-  if (flags?.platform && flags.platform !== session.device.platform) return false;
+  const normalizedPlatform = normalizePlatformSelector(flags?.platform);
+  if (normalizedPlatform && normalizedPlatform !== session.device.platform) return false;
+  if (flags?.target && flags.target !== (session.device.target ?? 'mobile')) return false;
   if (flags?.udid && flags.udid !== session.device.id) return false;
   if (flags?.serial && flags.serial !== session.device.id) return false;
   if (flags?.device) {
@@ -284,9 +286,10 @@ async function handleAppStateCommand(params: {
   const { req, sessionName, sessionStore, ensureReady, resolveDevice } = params;
   const session = sessionStore.get(sessionName);
   const flags = req.flags ?? {};
+  const normalizedPlatform = normalizePlatformSelector(flags.platform);
   if (!session && hasExplicitSessionFlag(flags)) {
     const iOSSessionHint =
-      flags.platform === 'ios'
+      normalizedPlatform === 'ios'
         ? `No active session "${sessionName}". Run open with --session ${sessionName} first.`
         : `No active session "${sessionName}". Run open with --session ${sessionName} first, or omit --session to query by device selector.`;
     return {
@@ -301,7 +304,7 @@ async function handleAppStateCommand(params: {
   if (guard) return guard;
 
   const shouldUseSessionStateForIos = session?.device.platform === 'ios' && selectorTargetsSessionDevice(flags, session);
-  const targetsIos = flags.platform === 'ios';
+  const targetsIos = normalizedPlatform === 'ios';
   if (targetsIos && !shouldUseSessionStateForIos) {
     return {
       ok: false,
@@ -466,6 +469,7 @@ export async function handleSessionCommands(params: {
       sessions: sessionStore.toArray().map((s) => ({
         name: s.name,
         platform: s.device.platform,
+        target: s.device.target ?? 'mobile',
         device: s.device.name,
         id: s.device.id,
         createdAt: s.createdAt,
@@ -477,10 +481,11 @@ export async function handleSessionCommands(params: {
   if (command === 'devices') {
     try {
       const devices: DeviceInfo[] = [];
-      if (req.flags?.platform === 'android') {
+      const requestedPlatform = normalizePlatformSelector(req.flags?.platform);
+      if (requestedPlatform === 'android') {
         const { listAndroidDevices } = await import('../../platforms/android/devices.ts');
         devices.push(...(await listAndroidDevices()));
-      } else if (req.flags?.platform === 'ios') {
+      } else if (requestedPlatform === 'ios') {
         const { listIosDevices } = await import('../../platforms/ios/devices.ts');
         devices.push(...(await listIosDevices()));
       } else {
@@ -497,7 +502,10 @@ export async function handleSessionCommands(params: {
           // ignore
         }
       }
-      return { ok: true, data: { devices } };
+      const filtered = req.flags?.target
+        ? devices.filter((device) => (device.target ?? 'mobile') === req.flags?.target)
+        : devices;
+      return { ok: true, data: { devices: filtered } };
     } catch (err) {
       const appErr = asAppError(err);
       return { ok: false, error: { code: appErr.code, message: appErr.message, details: appErr.details } };
@@ -555,6 +563,7 @@ export async function handleSessionCommands(params: {
       ok: true,
       data: {
         platform: device.platform,
+        target: device.target ?? 'mobile',
         device: device.name,
         id: device.id,
         kind: device.kind,
@@ -1752,7 +1761,8 @@ function writeReplayScript(filePath: string, actions: SessionAction[], session?:
   if (session) {
     const deviceLabel = session.device.name.replace(/"/g, '\\"');
     const kind = session.device.kind ? ` kind=${session.device.kind}` : '';
-    lines.push(`context platform=${session.device.platform} device="${deviceLabel}"${kind} theme=unknown`);
+    const target = session.device.target ? ` target=${session.device.target}` : '';
+    lines.push(`context platform=${session.device.platform}${target} device="${deviceLabel}"${kind} theme=unknown`);
   }
   for (const action of actions) {
     lines.push(formatReplayActionLine(action));

@@ -40,6 +40,7 @@ final class RunnerTests: XCTestCase {
   private let postSnapshotInteractionDelay: TimeInterval = 0.2
   private let firstInteractionAfterActivateDelay: TimeInterval = 0.25
   private let scrollInteractionIdleTimeoutDefault: TimeInterval = 1.0
+  private let tvRemoteDoublePressDelayDefault: TimeInterval = 0.0
   private let minRecordingFps = 1
   private let maxRecordingFps = 120
   private var needsPostSnapshotInteractionDelay = false
@@ -790,7 +791,7 @@ final class RunnerTests: XCTestCase {
       performBackGesture(app: activeApp)
       return Response(ok: true, data: DataPayload(message: "back"))
     case .home:
-      XCUIDevice.shared.press(.home)
+      pressHomeButton()
       return Response(ok: true, data: DataPayload(message: "home"))
     case .appSwitcher:
       performAppSwitcherGesture(app: activeApp)
@@ -990,10 +991,13 @@ final class RunnerTests: XCTestCase {
       back.tap()
       return true
     }
-    return false
+    return pressTvRemoteMenuIfAvailable()
   }
 
   private func performBackGesture(app: XCUIApplication) {
+    if pressTvRemoteMenuIfAvailable() {
+      return
+    }
     let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
     let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
     let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
@@ -1001,10 +1005,62 @@ final class RunnerTests: XCTestCase {
   }
 
   private func performAppSwitcherGesture(app: XCUIApplication) {
+    if performTvRemoteAppSwitcherIfAvailable() {
+      return
+    }
     let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
     let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99))
     let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
     start.press(forDuration: 0.6, thenDragTo: end)
+  }
+
+  private func pressHomeButton() {
+    if pressTvRemoteHomeIfAvailable() {
+      return
+    }
+    XCUIDevice.shared.press(.home)
+  }
+
+  private func pressTvRemoteMenuIfAvailable() -> Bool {
+#if os(tvOS)
+    XCUIRemote.shared.press(.menu)
+    return true
+#else
+    return false
+#endif
+  }
+
+  private func pressTvRemoteHomeIfAvailable() -> Bool {
+#if os(tvOS)
+    XCUIRemote.shared.press(.home)
+    return true
+#else
+    return false
+#endif
+  }
+
+  private func performTvRemoteAppSwitcherIfAvailable() -> Bool {
+#if os(tvOS)
+    XCUIRemote.shared.press(.home)
+    sleepFor(resolveTvRemoteDoublePressDelay())
+    XCUIRemote.shared.press(.home)
+    return true
+#else
+    return false
+#endif
+  }
+
+  private func resolveTvRemoteDoublePressDelay() -> TimeInterval {
+    guard
+      let raw = ProcessInfo.processInfo.environment["AGENT_DEVICE_TV_REMOTE_DOUBLE_PRESS_DELAY_MS"],
+      !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      return tvRemoteDoublePressDelayDefault
+    }
+    guard let parsedMs = Double(raw), parsedMs >= 0 else {
+      return tvRemoteDoublePressDelayDefault
+    }
+    return min(parsedMs, 1000) / 1000.0
   }
 
   private func findElement(app: XCUIApplication, text: String) -> XCUIElement? {
@@ -1109,6 +1165,9 @@ final class RunnerTests: XCTestCase {
   }
 
   private func swipe(app: XCUIApplication, direction: SwipeDirection) {
+    if performTvRemoteSwipeIfAvailable(direction: direction) {
+      return
+    }
     let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
     let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
     let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
@@ -1125,6 +1184,24 @@ final class RunnerTests: XCTestCase {
     case .right:
       left.press(forDuration: 0.1, thenDragTo: right)
     }
+  }
+
+  private func performTvRemoteSwipeIfAvailable(direction: SwipeDirection) -> Bool {
+#if os(tvOS)
+    switch direction {
+    case .up:
+      XCUIRemote.shared.press(.up)
+    case .down:
+      XCUIRemote.shared.press(.down)
+    case .left:
+      XCUIRemote.shared.press(.left)
+    case .right:
+      XCUIRemote.shared.press(.right)
+    }
+    return true
+#else
+    return false
+#endif
   }
 
   private func pinch(app: XCUIApplication, scale: Double, x: Double?, y: Double?) {

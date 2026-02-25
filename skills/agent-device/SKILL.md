@@ -68,6 +68,14 @@ agent-device session list
 ```
 
 Use `boot` only as fallback when `open` cannot find/connect to a ready target.
+Use `--target mobile|tv` with `--platform` (required) to pick phone/tablet vs TV targets (AndroidTV/tvOS).
+
+TV quick reference:
+- AndroidTV: `open`/`apps` use TV launcher discovery automatically.
+- TV target selection works on emulators/simulators and connected physical devices (AndroidTV + AppleTV).
+- tvOS: runner-driven interactions and snapshots are supported (`snapshot`, `wait`, `press`, `fill`, `get`, `scroll`, `back`, `home`, `app-switcher`, `record` and related selector flows).
+- tvOS `back`/`home`/`app-switcher` map to Siri Remote actions (`menu`, `home`, double-home) in the runner.
+- tvOS follows iOS simulator-only command semantics for helpers like `pinch`, `settings`, and `push`.
 
 ### Snapshot and targeting
 
@@ -118,6 +126,7 @@ agent-device batch --steps-file /tmp/batch-steps.json --json
 - iOS `appstate` is session-scoped; Android `appstate` is live foreground state.
 - Clipboard helpers: `clipboard read` / `clipboard write <text>` are supported on Android and iOS simulators; iOS physical devices are not supported yet.
 - iOS settings helpers are simulator-only; use `appearance light|dark|toggle` and faceid `match|nonmatch|enroll|unenroll`.
+- For AndroidTV/tvOS selection, always pair `--target` with `--platform` (`ios`, `android`, or `apple` alias); target-only selection is invalid.
 - `push` simulates notification delivery:
   - iOS simulator uses APNs-style payload JSON.
   - Android uses broadcast action + typed extras (string/boolean/number).
