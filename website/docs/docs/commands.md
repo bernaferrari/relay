@@ -172,6 +172,24 @@ agent-device push com.example.app '{"action":"com.example.app.PUSH","extras":{"t
 - Android extras support `string`, `boolean`, and `number` values.
 - `push` works with the active session device, or with explicit selectors (`--platform`, `--device`, `--udid`, `--serial`).
 
+## App event triggers (app hook)
+
+```bash
+agent-device trigger-app-event screenshot_taken '{"source":"qa"}'
+```
+
+- `trigger-app-event <event> [payloadJson]` dispatches app-defined events via deep link.
+- `trigger-app-event` requires either an active session or explicit device selectors (`--platform`, `--device`, `--udid`, `--serial`).
+- On iOS physical devices, custom-scheme deep links require active app context (open app first in the session).
+- Configure one of:
+  - `AGENT_DEVICE_APP_EVENT_URL_TEMPLATE`
+  - `AGENT_DEVICE_IOS_APP_EVENT_URL_TEMPLATE`
+  - `AGENT_DEVICE_ANDROID_APP_EVENT_URL_TEMPLATE`
+- Template placeholders: `{event}`, `{payload}`, `{platform}`.
+- Example template: `myapp://agent-device/event?name={event}&payload={payload}`.
+- `payloadJson` must be a JSON object.
+- This is app-hook-based simulation and does not inject OS-global notifications.
+
 ## Settings helpers
 
 ```bash

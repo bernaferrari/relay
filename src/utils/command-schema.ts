@@ -644,6 +644,12 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
     positionalArgs: ['path?'],
     allowedFlags: ['out'],
   },
+  'trigger-app-event': {
+    usageOverride: 'trigger-app-event <event> [payloadJson]',
+    description: 'Trigger app-defined event hook via deep link template',
+    positionalArgs: ['event', 'payloadJson?'],
+    allowedFlags: [],
+  },
   record: {
     usageOverride: 'record start [path] [--fps <n>] | record stop',
     description: 'Start/stop screen recording',
