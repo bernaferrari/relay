@@ -278,8 +278,10 @@ function finalizeDaemonResponse(response: DaemonResponse): DaemonResponse {
 }
 
 function normalizeAliasedCommands(req: DaemonRequest): DaemonRequest {
-  if (req.command !== 'click') return req;
-  return { ...req, command: 'press' };
+  if (req.command === 'click') {
+    return { ...req, command: 'press' };
+  }
+  return req;
 }
 
 function writeInfo(ports: { socketPort?: number; httpPort?: number }): void {
