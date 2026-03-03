@@ -22,9 +22,13 @@ import {
   runIosDevicectl,
   type IosAppInfo,
 } from './devicectl.ts';
-import { runIosRunnerCommand, IOS_RUNNER_CONTAINER_BUNDLE_IDS } from './runner-client.ts';
-import { ensureBootedSimulator, ensureSimulator, getSimulatorState } from './simulator.ts';
+import { ensureBootedSimulator, ensureSimulator, focusIosSimulatorWindow, getSimulatorState } from './simulator.ts';
 import { buildSimctlArgsForDevice } from './simctl.ts';
+export {
+  screenshotIos,
+  shouldFallbackToRunnerForIosScreenshot,
+  shouldRetryIosSimulatorScreenshot,
+} from './screenshot.ts';
 
 const ALIASES: Record<string, string> = {
   settings: 'com.apple.Preferences',
@@ -194,7 +198,7 @@ export async function openIosApp(
     }
     if (device.kind === 'simulator') {
       await ensureBootedSimulator(device);
-      await runCmd('open', ['-a', 'Simulator'], { allowFailure: true });
+      await focusIosSimulatorWindow();
       await runSimctl(device, ['openurl', device.id, explicitUrl]);
       return;
     }
@@ -214,7 +218,7 @@ export async function openIosApp(
   if (isDeepLinkTarget(deepLinkTarget)) {
     if (device.kind === 'simulator') {
       await ensureBootedSimulator(device);
-      await runCmd('open', ['-a', 'Simulator'], { allowFailure: true });
+      await focusIosSimulatorWindow();
       await runSimctl(device, ['openurl', device.id, deepLinkTarget]);
       return;
     }
@@ -244,7 +248,7 @@ export async function openIosDevice(device: DeviceInfo): Promise<void> {
   if (state === 'Booted') return;
 
   await ensureBootedSimulator(device);
-  await runCmd('open', ['-a', 'Simulator'], { allowFailure: true });
+  await focusIosSimulatorWindow();
 }
 
 export async function closeIosApp(device: DeviceInfo, app: string): Promise<void> {
@@ -351,105 +355,6 @@ export async function reinstallIosApp(
   const { bundleId } = await uninstallIosApp(device, app);
   await installIosApp(device, appPath, { appIdentifierHint: app });
   return { bundleId };
-}
-
-export async function screenshotIos(device: DeviceInfo, outPath: string, appBundleId?: string): Promise<void> {
-  if (device.kind === 'simulator') {
-    await ensureBootedSimulator(device);
-    await retryWithPolicy(
-      async () => {
-        await runSimctl(device, ['io', device.id, 'screenshot', outPath]);
-      },
-      {
-        maxAttempts: 3,
-        baseDelayMs: 700,
-        maxDelayMs: 2_000,
-        shouldRetry: (error) => shouldRetryIosSimulatorScreenshot(error),
-      },
-      { phase: 'ios_simulator_screenshot' },
-    );
-    return;
-  }
-
-  try {
-    await runIosDevicectl(['device', 'screenshot', '--device', device.id, outPath], {
-      action: 'capture iOS screenshot',
-      deviceId: device.id,
-    });
-    return;
-  } catch (error) {
-    if (!shouldFallbackToRunnerForIosScreenshot(error)) {
-      throw error;
-    }
-  }
-
-  // `xcrun devicectl device screenshot` is unavailable (removed in Xcode 26.x).
-  // Fall back to the XCTest runner: capture to the device's temp directory,
-  // then pull the file to the host via `devicectl device copy from`.
-  const result = await runIosRunnerCommand(device, { command: 'screenshot', appBundleId });
-  const remoteFileName = result['message'] as string;
-  if (!remoteFileName) {
-    throw new AppError('COMMAND_FAILED', 'Failed to capture iOS screenshot: runner returned no file path');
-  }
-
-  let copyResult = { exitCode: 1, stdout: '', stderr: '' };
-  for (const bundleId of IOS_RUNNER_CONTAINER_BUNDLE_IDS) {
-    copyResult = await runCmd(
-      'xcrun',
-      [
-        'devicectl',
-        'device',
-        'copy',
-        'from',
-        '--device',
-        device.id,
-        '--source',
-        remoteFileName,
-        '--destination',
-        outPath,
-        '--domain-type',
-        'appDataContainer',
-        '--domain-identifier',
-        bundleId,
-      ],
-      { allowFailure: true },
-    );
-    if (copyResult.exitCode === 0) {
-      break;
-    }
-  }
-
-  if (copyResult.exitCode !== 0) {
-    const copyError = copyResult.stderr.trim() || copyResult.stdout.trim() || `devicectl exited with code ${copyResult.exitCode}`;
-    throw new AppError('COMMAND_FAILED', `Failed to capture iOS screenshot: ${copyError}`);
-  }
-}
-
-export function shouldFallbackToRunnerForIosScreenshot(error: unknown): boolean {
-  if (!(error instanceof AppError)) return false;
-  if (error.code !== 'COMMAND_FAILED') return false;
-  const details = (error.details ?? {}) as { stdout?: unknown; stderr?: unknown };
-  const stdout = typeof details.stdout === 'string' ? details.stdout : '';
-  const stderr = typeof details.stderr === 'string' ? details.stderr : '';
-  const combined = `${error.message}\n${stdout}\n${stderr}`.toLowerCase();
-  return (
-    combined.includes("unknown option '--device'") ||
-    (combined.includes('unknown subcommand') && combined.includes('screenshot')) ||
-    (combined.includes('unrecognized subcommand') && combined.includes('screenshot'))
-  );
-}
-
-export function shouldRetryIosSimulatorScreenshot(error: unknown): boolean {
-  if (!(error instanceof AppError)) return false;
-  if (error.code !== 'COMMAND_FAILED') return false;
-  const details = (error.details ?? {}) as { stdout?: unknown; stderr?: unknown };
-  const stdout = typeof details.stdout === 'string' ? details.stdout : '';
-  const stderr = typeof details.stderr === 'string' ? details.stderr : '';
-  const combined = `${error.message}\n${stdout}\n${stderr}`.toLowerCase();
-  return (
-    combined.includes('timeout waiting for screen surfaces') ||
-    (combined.includes('nsposixerrordomain') && combined.includes('code=60') && combined.includes('screenshot'))
-  );
 }
 
 export async function readIosClipboardText(device: DeviceInfo): Promise<string> {
@@ -967,7 +872,7 @@ function isTransientSimulatorLaunchFailure(error: unknown): boolean {
 
 async function launchIosSimulatorApp(device: DeviceInfo, bundleId: string): Promise<void> {
   await ensureBootedSimulator(device);
-  await runCmd('open', ['-a', 'Simulator'], { allowFailure: true });
+  await focusIosSimulatorWindow();
 
   const launchDeadline = Deadline.fromTimeoutMs(IOS_APP_LAUNCH_TIMEOUT_MS);
   await retryWithPolicy(
