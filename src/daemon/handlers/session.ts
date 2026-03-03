@@ -43,6 +43,7 @@ import {
   parseSelectorWaitPositionals,
 } from './session-replay-heal.ts';
 import { parseReplayScript, writeReplayScript } from './session-replay-script.ts';
+import { ensureSimulatorExists } from '../../platforms/ios/ensure-simulator.ts';
 
 type ReinstallOps = {
   ios: (device: DeviceInfo, app: string, appPath: string) => Promise<{ bundleId: string }>;
@@ -755,6 +756,42 @@ export async function handleSessionCommands(params: {
       })),
     };
     return { ok: true, data };
+  }
+
+  if (command === 'ensure-simulator') {
+    try {
+      const flags = req.flags ?? {};
+      const deviceName = flags.device;
+      const runtime = flags.runtime;
+      const iosSimulatorSetPath = resolveIosSimulatorDeviceSetPath(flags.iosSimulatorDeviceSet);
+      if (!deviceName) {
+        return { ok: false, error: { code: 'INVALID_ARGS', message: 'ensure-simulator requires --device <name>' } };
+      }
+      const shouldBoot = flags.boot === true;
+      const reuseExisting = flags.reuseExisting !== false;
+      const result = await ensureSimulatorExists({
+        deviceName,
+        runtime,
+        simulatorSetPath: iosSimulatorSetPath,
+        reuseExisting,
+        boot: shouldBoot,
+        ensureReady,
+      });
+      return {
+        ok: true,
+        data: {
+          udid: result.udid,
+          device: result.device,
+          runtime: result.runtime,
+          ios_simulator_device_set: iosSimulatorSetPath ?? null,
+          created: result.created,
+          booted: result.booted,
+        },
+      };
+    } catch (err) {
+      const appErr = asAppError(err);
+      return { ok: false, error: { code: appErr.code, message: appErr.message, details: appErr.details } };
+    }
   }
 
   if (command === 'devices') {
