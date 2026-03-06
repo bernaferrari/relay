@@ -1,14 +1,17 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { DeviceInfo } from '../../utils/device.ts';
+import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { AppError } from '../../utils/errors.ts';
 import { runCmd } from '../../utils/exec.ts';
-import { retryWithPolicy } from '../../utils/retry.ts';
+import { Deadline, retryWithPolicy } from '../../utils/retry.ts';
 
 import {
+  IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS,
   IOS_SIMULATOR_SCREENSHOT_RETRY_BASE_DELAY_MS,
   IOS_SIMULATOR_SCREENSHOT_RETRY_MAX_ATTEMPTS,
   IOS_SIMULATOR_SCREENSHOT_RETRY_MAX_DELAY_MS,
+  IOS_SIMULATOR_SCREENSHOT_TIMEOUT_MS,
 } from './config.ts';
 import { runIosDevicectl } from './devicectl.ts';
 import { runIosRunnerCommand, IOS_RUNNER_CONTAINER_BUNDLE_IDS } from './runner-client.ts';
@@ -57,6 +60,7 @@ export async function screenshotIos(device: DeviceInfo, outPath: string, appBund
     if (!shouldFallbackToRunnerForIosScreenshot(error)) {
       throw error;
     }
+    emitScreenshotFallbackDiagnostic(device, 'devicectl_screenshot', 'runner', error);
   }
 
   await captureScreenshotViaRunner(device, outPath, appBundleId);
@@ -80,18 +84,22 @@ export async function captureSimulatorScreenshotWithFallback(
     if (!deps.shouldFallbackToRunner(error)) {
       throw error;
     }
+    emitScreenshotFallbackDiagnostic(device, 'simctl_screenshot', 'runner', error);
   }
   await deps.captureWithRunner(device, outPath, appBundleId);
 }
 
 async function captureSimulatorScreenshotWithRetry(device: DeviceInfo, outPath: string): Promise<void> {
+  const deadline = Deadline.fromTimeoutMs(IOS_SIMULATOR_SCREENSHOT_TIMEOUT_MS);
   await focusIosSimulatorWindow();
   await retryWithPolicy(
-    async ({ attempt }) => {
+    async ({ attempt, deadline: attemptDeadline }) => {
       if (attempt > 1) {
         await focusIosSimulatorWindow();
       }
-      await runSimctl(device, ['io', device.id, 'screenshot', outPath]);
+      await runSimctl(device, ['io', device.id, 'screenshot', outPath], {
+        timeoutMs: Math.max(1_000, attemptDeadline?.remainingMs() ?? IOS_SIMULATOR_SCREENSHOT_TIMEOUT_MS),
+      });
     },
     {
       maxAttempts: IOS_SIMULATOR_SCREENSHOT_RETRY_MAX_ATTEMPTS,
@@ -100,7 +108,7 @@ async function captureSimulatorScreenshotWithRetry(device: DeviceInfo, outPath: 
       jitter: 0.2,
       shouldRetry: (error) => shouldRetryIosSimulatorScreenshot(error),
     },
-    { phase: 'ios_simulator_screenshot' },
+    { deadline, phase: 'ios_simulator_screenshot' },
   );
 }
 
@@ -129,28 +137,28 @@ async function copyRunnerScreenshotFromDevice(
   remoteFileName: string,
   outPath: string,
 ): Promise<void> {
+  const deadline = Deadline.fromTimeoutMs(IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS);
   let copyResult = { exitCode: 1, stdout: '', stderr: '' };
   for (const bundleId of IOS_RUNNER_CONTAINER_BUNDLE_IDS) {
-    copyResult = await runCmd(
-      'xcrun',
-      [
-        'devicectl',
-        'device',
-        'copy',
-        'from',
-        '--device',
-        device.id,
-        '--source',
-        remoteFileName,
-        '--destination',
-        outPath,
-        '--domain-type',
-        'appDataContainer',
-        '--domain-identifier',
-        bundleId,
-      ],
-      { allowFailure: true },
-    );
+    copyResult = await runCmd('xcrun', [
+      'devicectl',
+      'device',
+      'copy',
+      'from',
+      '--device',
+      device.id,
+      '--source',
+      remoteFileName,
+      '--destination',
+      outPath,
+      '--domain-type',
+      'appDataContainer',
+      '--domain-identifier',
+      bundleId,
+    ], {
+      allowFailure: true,
+      timeoutMs: resolveDeadlineTimeoutMs(deadline, IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS, 'runner screenshot copy'),
+    });
     if (copyResult.exitCode === 0) {
       return;
     }
@@ -164,10 +172,16 @@ async function copyRunnerScreenshotFromSimulator(
   remoteFileName: string,
   outPath: string,
 ): Promise<void> {
+  const deadline = Deadline.fromTimeoutMs(IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS);
   let lastError = 'Unable to locate runner container for simulator screenshot';
   for (const bundleId of IOS_RUNNER_CONTAINER_BUNDLE_IDS) {
     const containerResult = await runSimctl(device, ['get_app_container', device.id, bundleId, 'data'], {
       allowFailure: true,
+      timeoutMs: resolveDeadlineTimeoutMs(
+        deadline,
+        IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS,
+        'runner screenshot container lookup',
+      ),
     });
     if (containerResult.exitCode !== 0) {
       const stderr = containerResult.stderr.trim();
@@ -192,6 +206,34 @@ async function copyRunnerScreenshotFromSimulator(
     }
   }
   throw new AppError('COMMAND_FAILED', `Failed to capture iOS screenshot: ${lastError}`);
+}
+
+function resolveDeadlineTimeoutMs(deadline: Deadline, timeoutMs: number, step: string): number {
+  const remainingMs = deadline.remainingMs();
+  if (remainingMs > 0) return remainingMs;
+  throw new AppError('COMMAND_FAILED', `iOS ${step} timed out after ${timeoutMs}ms`, {
+    timeoutMs,
+    step,
+  });
+}
+
+function emitScreenshotFallbackDiagnostic(
+  device: DeviceInfo,
+  from: 'simctl_screenshot' | 'devicectl_screenshot',
+  to: 'runner',
+  error: unknown,
+): void {
+  emitDiagnostic({
+    level: 'warn',
+    phase: 'ios_screenshot_fallback',
+    data: {
+      platform: device.platform,
+      deviceKind: device.kind,
+      from,
+      to,
+      reason: error instanceof Error ? error.message : String(error),
+    },
+  });
 }
 
 export function resolveSimulatorRunnerScreenshotCandidatePaths(containerPath: string, remoteFileName: string): string[] {
@@ -253,12 +295,18 @@ export function shouldFallbackToRunnerForIosScreenshot(error: unknown): boolean 
 export function shouldRetryIosSimulatorScreenshot(error: unknown): boolean {
   if (!(error instanceof AppError)) return false;
   if (error.code !== 'COMMAND_FAILED') return false;
-  const details = (error.details ?? {}) as { stdout?: unknown; stderr?: unknown };
+  const details = (error.details ?? {}) as { stdout?: unknown; stderr?: unknown; args?: unknown };
   const stdout = typeof details.stdout === 'string' ? details.stdout : '';
   const stderr = typeof details.stderr === 'string' ? details.stderr : '';
-  const combined = `${error.message}\n${stdout}\n${stderr}`.toLowerCase();
+  const args = Array.isArray(details.args)
+    ? details.args
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ')
+    : '';
+  const combined = `${error.message}\n${stdout}\n${stderr}\n${args}`.toLowerCase();
   return (
     combined.includes('timeout waiting for screen surfaces') ||
-    (combined.includes('nsposixerrordomain') && combined.includes('code=60') && combined.includes('screenshot'))
+    (combined.includes('nsposixerrordomain') && combined.includes('code=60') && combined.includes('screenshot')) ||
+    (combined.includes('timed out') && combined.includes('screenshot'))
   );
 }
