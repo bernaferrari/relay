@@ -60,7 +60,7 @@ export async function screenshotIos(device: DeviceInfo, outPath: string, appBund
     if (!shouldFallbackToRunnerForIosScreenshot(error)) {
       throw error;
     }
-    emitScreenshotFallbackDiagnostic(device, 'devicectl_screenshot', 'runner', error);
+    emitScreenshotFallbackDiagnostic(device, 'devicectl_screenshot', error);
   }
 
   await captureScreenshotViaRunner(device, outPath, appBundleId);
@@ -84,7 +84,7 @@ export async function captureSimulatorScreenshotWithFallback(
     if (!deps.shouldFallbackToRunner(error)) {
       throw error;
     }
-    emitScreenshotFallbackDiagnostic(device, 'simctl_screenshot', 'runner', error);
+    emitScreenshotFallbackDiagnostic(device, 'simctl_screenshot', error);
   }
   await deps.captureWithRunner(device, outPath, appBundleId);
 }
@@ -220,20 +220,47 @@ function resolveDeadlineTimeoutMs(deadline: Deadline, timeoutMs: number, step: s
 function emitScreenshotFallbackDiagnostic(
   device: DeviceInfo,
   from: 'simctl_screenshot' | 'devicectl_screenshot',
-  to: 'runner',
   error: unknown,
 ): void {
+  const errorMeta = extractScreenshotFallbackErrorMeta(error);
   emitDiagnostic({
     level: 'warn',
     phase: 'ios_screenshot_fallback',
     data: {
       platform: device.platform,
       deviceKind: device.kind,
+      deviceId: device.id,
       from,
-      to,
-      reason: error instanceof Error ? error.message : String(error),
+      to: 'runner',
+      ...errorMeta,
     },
   });
+}
+
+function extractScreenshotFallbackErrorMeta(error: unknown): Record<string, unknown> {
+  if (!(error instanceof AppError)) {
+    return { reason: error instanceof Error ? error.message : String(error) };
+  }
+  const details = (error.details ?? {}) as {
+    args?: unknown;
+    exitCode?: unknown;
+    stderr?: unknown;
+    stdout?: unknown;
+    timeoutMs?: unknown;
+  };
+  const args = Array.isArray(details.args)
+    ? details.args.filter((value): value is string => typeof value === 'string').join(' ')
+    : undefined;
+
+  return {
+    errorCode: error.code,
+    reason: error.message,
+    timeoutMs: typeof details.timeoutMs === 'number' ? details.timeoutMs : undefined,
+    exitCode: typeof details.exitCode === 'number' ? details.exitCode : undefined,
+    stderr: typeof details.stderr === 'string' && details.stderr.trim() ? details.stderr : undefined,
+    stdout: typeof details.stdout === 'string' && details.stdout.trim() ? details.stdout : undefined,
+    commandArgs: args,
+  };
 }
 
 export function resolveSimulatorRunnerScreenshotCandidatePaths(containerPath: string, remoteFileName: string): string[] {

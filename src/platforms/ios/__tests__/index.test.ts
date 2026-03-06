@@ -250,8 +250,11 @@ test('captureSimulatorScreenshotWithFallback emits fallback diagnostic before us
 
     const log = await waitForFileText(logPath);
     assert.match(log, /"phase":"ios_screenshot_fallback"/);
+    assert.match(log, /"deviceId":"sim-1"/);
+    assert.match(log, /"errorCode":"COMMAND_FAILED"/);
     assert.match(log, /"from":"simctl_screenshot"/);
     assert.match(log, /"to":"runner"/);
+    assert.match(log, /"commandArgs":"simctl io sim-1 screenshot \/tmp\/out\.png"/);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
