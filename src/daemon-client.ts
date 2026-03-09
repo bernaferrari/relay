@@ -20,6 +20,7 @@ import {
   type DaemonServerMode,
   type DaemonTransportPreference,
 } from './daemon/config.ts';
+import { uploadArtifact } from './upload-client.ts';
 
 export type DaemonRequest = SharedDaemonRequest;
 export type DaemonResponse = SharedDaemonResponse;
@@ -77,8 +78,11 @@ export async function sendToDaemon(req: Omit<DaemonRequest, 'token'>): Promise<D
     async () => await ensureDaemon(settings),
     { requestId, session: req.session },
   );
+  const preparedRemoteInstall = await prepareRemoteInstallRequest(req, info);
+
   const request = {
     ...req,
+    positionals: preparedRemoteInstall.positionals,
     token: info.token,
     meta: {
       requestId,
@@ -88,6 +92,7 @@ export async function sendToDaemon(req: Omit<DaemonRequest, 'token'>): Promise<D
       runId: req.meta?.runId ?? req.flags?.runId,
       leaseId: req.meta?.leaseId ?? req.flags?.leaseId,
       sessionIsolation: req.meta?.sessionIsolation ?? req.flags?.sessionIsolation,
+      ...(preparedRemoteInstall.uploadedArtifactId ? { uploadedArtifactId: preparedRemoteInstall.uploadedArtifactId } : {}),
     },
   };
   emitDiagnostic({
@@ -104,6 +109,40 @@ export async function sendToDaemon(req: Omit<DaemonRequest, 'token'>): Promise<D
     async () => await sendRequest(info, request, settings.transportPreference),
     { requestId, command: req.command },
   );
+}
+
+async function prepareRemoteInstallRequest(
+  req: Omit<DaemonRequest, 'token'>,
+  info: DaemonInfo,
+): Promise<{ positionals: string[]; uploadedArtifactId?: string }> {
+  const positionals = [...(req.positionals ?? [])];
+  if (
+    !isRemoteDaemon(info)
+    || (req.command !== 'install' && req.command !== 'reinstall')
+    || positionals.length < 2
+  ) {
+    return { positionals };
+  }
+
+  const rawPath = positionals[1]!;
+  if (rawPath.startsWith('remote:')) {
+    positionals[1] = rawPath.slice('remote:'.length);
+    return { positionals };
+  }
+
+  const localPath = path.isAbsolute(rawPath)
+    ? rawPath
+    : path.resolve(req.meta?.cwd ?? process.cwd(), rawPath);
+  if (!fs.existsSync(localPath)) {
+    return { positionals };
+  }
+
+  const uploadedArtifactId = await uploadArtifact({
+    localPath,
+    baseUrl: info.baseUrl!,
+    token: info.token,
+  });
+  return { positionals, uploadedArtifactId };
 }
 
 function resolveClientSettings(req: Omit<DaemonRequest, 'token'>): DaemonClientSettings {

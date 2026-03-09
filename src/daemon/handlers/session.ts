@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { cleanupUploadedArtifact, prepareUploadedArtifact } from '../upload-registry.ts';
 import { dispatchCommand, resolveTargetDevice, type BatchStep, type CommandFlags } from '../../core/dispatch.ts';
 import {
   DEFAULT_BATCH_MAX_STEPS,
@@ -423,54 +424,64 @@ async function handleAppDeployCommand(params: {
       error: { code: 'INVALID_ARGS', message: `${command} requires: ${command} <app> <path-to-app-binary>` },
     };
   }
-  const appPath = SessionStore.expandHome(appPathInput);
-  if (!fs.existsSync(appPath)) {
-    return {
-      ok: false,
-      error: { code: 'INVALID_ARGS', message: `App binary not found: ${appPath}` },
-    };
-  }
-  const device = await resolveCommandDevice({
-    session,
-    flags,
-    ensureReadyFn: ensureReady,
-    resolveTargetDeviceFn: resolveDevice,
-    ensureReady: false,
-  });
-  if (!isCommandSupportedOnDevice(command, device)) {
-    return {
-      ok: false,
-      error: { code: 'UNSUPPORTED_OPERATION', message: `${command} is not supported on this device` },
-    };
-  }
+  const uploadedArtifactId = req.meta?.uploadedArtifactId;
 
-  let result:
-    | { app: string; appPath: string; platform: 'ios'; appId?: string; bundleId?: string }
-    | { app: string; appPath: string; platform: 'android'; appId?: string; package?: string };
-
-  if (device.platform === 'ios') {
-    const iosResult = await deployOps.ios(device, app, appPath);
-    const bundleId = iosResult.bundleId;
-    result = bundleId
-      ? { app, appPath, platform: 'ios', appId: bundleId, bundleId }
-      : { app, appPath, platform: 'ios' };
-  } else {
-    const androidResult = await deployOps.android(device, app, appPath);
-    const pkg = androidResult.package;
-    result = pkg
-      ? { app, appPath, platform: 'android', appId: pkg, package: pkg }
-      : { app, appPath, platform: 'android' };
-  }
-
-  if (session) {
-    sessionStore.recordAction(session, {
-      command,
-      positionals: req.positionals ?? [],
-      flags: req.flags ?? {},
-      result,
+  try {
+    const appPath = uploadedArtifactId
+      ? prepareUploadedArtifact(uploadedArtifactId, req.meta?.tenantId)
+      : SessionStore.expandHome(appPathInput);
+    if (!fs.existsSync(appPath)) {
+      return {
+        ok: false,
+        error: { code: 'INVALID_ARGS', message: `App binary not found: ${appPath}` },
+      };
+    }
+    const device = await resolveCommandDevice({
+      session,
+      flags,
+      ensureReadyFn: ensureReady,
+      resolveTargetDeviceFn: resolveDevice,
+      ensureReady: false,
     });
+    if (!isCommandSupportedOnDevice(command, device)) {
+      return {
+        ok: false,
+        error: { code: 'UNSUPPORTED_OPERATION', message: `${command} is not supported on this device` },
+      };
+    }
+
+    let result:
+      | { app: string; appPath: string; platform: 'ios'; appId?: string; bundleId?: string }
+      | { app: string; appPath: string; platform: 'android'; appId?: string; package?: string };
+
+    if (device.platform === 'ios') {
+      const iosResult = await deployOps.ios(device, app, appPath);
+      const bundleId = iosResult.bundleId;
+      result = bundleId
+        ? { app, appPath, platform: 'ios', appId: bundleId, bundleId }
+        : { app, appPath, platform: 'ios' };
+    } else {
+      const androidResult = await deployOps.android(device, app, appPath);
+      const pkg = androidResult.package;
+      result = pkg
+        ? { app, appPath, platform: 'android', appId: pkg, package: pkg }
+        : { app, appPath, platform: 'android' };
+    }
+
+    if (session) {
+      sessionStore.recordAction(session, {
+        command,
+        positionals: req.positionals ?? [],
+        flags: req.flags ?? {},
+        result,
+      });
+    }
+    return { ok: true, data: result };
+  } finally {
+    if (uploadedArtifactId) {
+      cleanupUploadedArtifact(uploadedArtifactId);
+    }
   }
-  return { ok: true, data: result };
 }
 
 async function resolveIosBundleIdForOpen(
