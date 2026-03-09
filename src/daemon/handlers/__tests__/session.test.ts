@@ -219,6 +219,224 @@ test('batch step flags override parent selector flags', async () => {
   assert.equal(response?.ok, true);
 });
 
+test('runtime set/show/clear manages session-scoped runtime hints before open', async () => {
+  const sessionStore = makeSessionStore();
+  const baseRequest = {
+    token: 't',
+    session: 'remote-runtime',
+  } satisfies Pick<DaemonRequest, 'token' | 'session'>;
+
+  const setResponse = await handleSessionCommands({
+    req: {
+      ...baseRequest,
+      command: 'runtime',
+      positionals: ['set'],
+      flags: {
+        platform: 'android',
+        metroHost: '10.0.0.10',
+        metroPort: 8081,
+        launchUrl: 'myapp://dev-client',
+      },
+    },
+    sessionName: 'remote-runtime',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+  });
+  assert.equal(setResponse?.ok, true);
+
+  const showResponse = await handleSessionCommands({
+    req: {
+      ...baseRequest,
+      command: 'runtime',
+      positionals: ['show'],
+      flags: {},
+    },
+    sessionName: 'remote-runtime',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+  });
+  assert.equal(showResponse?.ok, true);
+  if (showResponse && showResponse.ok) {
+    assert.equal(showResponse.data?.configured, true);
+    assert.deepEqual(showResponse.data?.runtime, {
+      platform: 'android',
+      metroHost: '10.0.0.10',
+      metroPort: 8081,
+      bundleUrl: undefined,
+      launchUrl: 'myapp://dev-client',
+    });
+  }
+
+  const clearResponse = await handleSessionCommands({
+    req: {
+      ...baseRequest,
+      command: 'runtime',
+      positionals: ['clear'],
+      flags: {},
+    },
+    sessionName: 'remote-runtime',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+  });
+  assert.equal(clearResponse?.ok, true);
+  assert.equal(sessionStore.getRuntimeHints('remote-runtime'), undefined);
+});
+
+test('runtime clear removes applied transport hints for the active app', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'runtime-clear-active';
+  sessionStore.setRuntimeHints(sessionName, {
+    platform: 'android',
+    metroHost: '10.0.0.10',
+    metroPort: 8081,
+  });
+  sessionStore.set(sessionName, {
+    ...makeSession(sessionName, {
+      platform: 'android',
+      id: 'emulator-5554',
+      name: 'Pixel',
+      kind: 'emulator',
+      booted: true,
+    }),
+    appBundleId: 'com.example.demo',
+  });
+
+  const clearCalls: Array<{ deviceId: string; appId?: string }> = [];
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'runtime',
+      positionals: ['clear'],
+      flags: {},
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    clearRuntimeHints: async ({ device, appId }) => {
+      clearCalls.push({ deviceId: device.id, appId });
+    },
+  });
+
+  assert.equal(response?.ok, true);
+  assert.deepEqual(clearCalls, [{ deviceId: 'emulator-5554', appId: 'com.example.demo' }]);
+  assert.equal(sessionStore.getRuntimeHints(sessionName), undefined);
+});
+
+test('open applies stored runtime launchUrl and reports runtime hints', async () => {
+  const sessionStore = makeSessionStore();
+  sessionStore.setRuntimeHints('runtime-open', {
+    platform: 'android',
+    metroHost: '10.0.0.10',
+    metroPort: 8081,
+    launchUrl: 'myapp://dev-client',
+  });
+  const dispatchCalls: Array<{ command: string; positionals: string[] }> = [];
+  const runtimeApplyCalls: Array<{ appId?: string; host?: string; port?: number }> = [];
+  const callOrder: string[] = [];
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: 'runtime-open',
+      command: 'open',
+      positionals: ['Demo'],
+      flags: { platform: 'android' },
+    },
+    sessionName: 'runtime-open',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    ensureReady: async () => {},
+    resolveTargetDevice: async () => ({
+      platform: 'android',
+      id: 'emulator-5554',
+      name: 'Pixel',
+      kind: 'emulator',
+      booted: true,
+    }),
+    resolveAndroidPackageForOpen: async () => 'com.example.demo',
+    applyRuntimeHints: async ({ appId, runtime }) => {
+      callOrder.push('runtime');
+      runtimeApplyCalls.push({
+        appId,
+        host: runtime?.metroHost,
+        port: runtime?.metroPort,
+      });
+    },
+    dispatch: async (_device, command, positionals) => {
+      callOrder.push(`dispatch:${command}`);
+      dispatchCalls.push({ command, positionals });
+      return {};
+    },
+  });
+
+  assert.equal(response?.ok, true);
+  assert.deepEqual(callOrder, ['runtime', 'dispatch:open', 'dispatch:open']);
+  assert.deepEqual(runtimeApplyCalls, [
+    { appId: 'com.example.demo', host: '10.0.0.10', port: 8081 },
+  ]);
+  assert.deepEqual(dispatchCalls, [
+    { command: 'open', positionals: ['Demo'] },
+    { command: 'open', positionals: ['myapp://dev-client'] },
+  ]);
+  if (response && response.ok) {
+    assert.deepEqual(response.data?.runtime, {
+      platform: 'android',
+      metroHost: '10.0.0.10',
+      metroPort: 8081,
+      launchUrl: 'myapp://dev-client',
+    });
+  }
+});
+
+test('close clears applied runtime transport hints before deleting the session', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'runtime-close-active';
+  sessionStore.setRuntimeHints(sessionName, {
+    platform: 'ios',
+    metroHost: '127.0.0.1',
+    metroPort: 8081,
+  });
+  sessionStore.set(sessionName, {
+    ...makeSession(sessionName, {
+      platform: 'ios',
+      id: 'sim-1',
+      name: 'iPhone 17 Pro',
+      kind: 'simulator',
+      booted: true,
+    }),
+    appBundleId: 'com.example.demo',
+  });
+
+  const clearCalls: Array<{ deviceId: string; appId?: string }> = [];
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'close',
+      positionals: [],
+      flags: {},
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    clearRuntimeHints: async ({ device, appId }) => {
+      clearCalls.push({ deviceId: device.id, appId });
+    },
+    stopIosRunner: async () => {},
+  });
+
+  assert.equal(response?.ok, true);
+  assert.deepEqual(clearCalls, [{ deviceId: 'sim-1', appId: 'com.example.demo' }]);
+  assert.equal(sessionStore.get(sessionName), undefined);
+  assert.equal(sessionStore.getRuntimeHints(sessionName), undefined);
+});
+
 test('boot requires session or explicit selector', async () => {
   const sessionStore = makeSessionStore();
   const response = await handleSessionCommands({
