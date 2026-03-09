@@ -2,6 +2,12 @@ import http, { type IncomingHttpHeaders } from 'node:http';
 import { AppError, normalizeError } from '../utils/errors.ts';
 import type { DaemonRequest, DaemonResponse } from './types.ts';
 import { normalizeTenantId } from './config.ts';
+import {
+  clearRequestCanceled,
+  markRequestCanceled,
+  registerRequestAbort,
+  resolveRequestTrackingId,
+} from './request-cancel.ts';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { trackUploadedArtifact } from './upload-registry.ts';
@@ -294,6 +300,7 @@ export async function createDaemonHttpServer(options: {
         return;
       }
 
+      let requestIdForCleanup: string | undefined;
       try {
         const params = rpcRequest.params as Record<string, unknown>;
         const daemonRequest = methodToDaemonRequest(rpcRequest.method, params, req.headers);
@@ -304,6 +311,18 @@ export async function createDaemonHttpServer(options: {
           sendJson(res, createRpcError(rpcRequest.id ?? null, -32602, 'Invalid params: command is required'), 400);
           return;
         }
+
+        requestIdForCleanup = resolveRequestTrackingId(daemonRequest.meta?.requestId, rpcRequest.id);
+        daemonRequest.meta = {
+          ...daemonRequest.meta,
+          requestId: requestIdForCleanup,
+        };
+        registerRequestAbort(requestIdForCleanup);
+        req.on('close', () => {
+          if (!res.writableFinished) {
+            markRequestCanceled(requestIdForCleanup);
+          }
+        });
 
         const authResult = await runHttpAuthHook(authHook, {
           headers: req.headers,
@@ -344,6 +363,8 @@ export async function createDaemonHttpServer(options: {
           createRpcError(rpcRequest.id ?? null, -32000, normalized.message, normalized),
           statusCodeForNormalizedError(normalized.code),
         );
+      } finally {
+        clearRequestCanceled(requestIdForCleanup);
       }
     });
   });

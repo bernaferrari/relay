@@ -1,6 +1,6 @@
 import { AppError } from '../../utils/errors.ts';
 import { bootFailureHint, classifyBootFailure } from '../boot-diagnostics.ts';
-import { isRequestCanceled } from '../../daemon/request-cancel.ts';
+import { createRequestCanceledError, isRequestCanceled } from '../../daemon/request-cancel.ts';
 import type { RunnerCommand } from './runner-client.ts';
 import type { RunnerSession } from './runner-session.ts';
 
@@ -109,5 +109,5 @@ export function isReadOnlyRunnerCommand(command: RunnerCommand['command']): bool
 
 export function assertRunnerRequestActive(requestId: string | undefined): void {
   if (!isRequestCanceled(requestId)) return;
-  throw new AppError('COMMAND_FAILED', 'request canceled');
+  throw createRequestCanceledError();
 }

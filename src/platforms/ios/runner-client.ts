@@ -1,6 +1,7 @@
 import { AppError } from '../../utils/errors.ts';
 import { withRetry } from '../../utils/retry.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
+import { getRequestSignal } from '../../daemon/request-cancel.ts';
 import {
   isRetryableRunnerError,
   shouldRetryRunnerConnectError,
@@ -93,6 +94,7 @@ async function executeRunnerCommand(
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string; requestId?: string } = {},
 ): Promise<Record<string, unknown>> {
   assertRunnerRequestActive(options.requestId);
+  const signal = getRequestSignal(options.requestId);
   let session: RunnerSession | undefined;
   try {
     session = await ensureRunnerSession(device, options);
@@ -103,6 +105,7 @@ async function executeRunnerCommand(
       command,
       options.logPath,
       timeoutMs,
+      signal,
     );
   } catch (err) {
     const appErr = err instanceof AppError ? err : new AppError('COMMAND_FAILED', String(err));
@@ -126,6 +129,8 @@ async function executeRunnerCommand(
         command,
         options.logPath,
         RUNNER_STARTUP_TIMEOUT_MS,
+        undefined,
+        signal,
       );
       return await parseRunnerResponse(response, session, options.logPath);
     }
