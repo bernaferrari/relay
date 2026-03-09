@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import { createRequestCanceledError, isRequestCanceledError } from '../../daemon/request-cancel.ts';
 import { AppError } from '../../utils/errors.ts';
 import { runCmd } from '../../utils/exec.ts';
 import { Deadline, retryWithPolicy } from '../../utils/retry.ts';
@@ -65,6 +66,7 @@ export async function waitForRunner(
   logPath?: string,
   timeoutMs: number = RUNNER_STARTUP_TIMEOUT_MS,
   session?: RunnerSession,
+  signal?: AbortSignal,
 ): Promise<Response> {
   const deadline = Deadline.fromTimeoutMs(timeoutMs);
   let endpoints = await resolveRunnerCommandEndpoints(device, port, deadline.remainingMs());
@@ -102,9 +104,13 @@ export async function waitForRunner(
                 body: JSON.stringify(command),
               },
               Math.min(RUNNER_CONNECT_REQUEST_TIMEOUT_MS, remainingMs),
+              signal,
             );
             return response;
           } catch (err) {
+            if (signal?.aborted || isRequestCanceledError(err)) {
+              throw createRequestCanceledError();
+            }
             lastError = err;
           }
         }
@@ -121,12 +127,19 @@ export async function waitForRunner(
         jitter: 0.2,
         shouldRetry: shouldRetryRunnerConnectError,
       },
-      { deadline, phase: 'ios_runner_connect' },
+      { deadline, phase: 'ios_runner_connect', signal },
     );
   } catch (error) {
+    if (signal?.aborted || isRequestCanceledError(error)) {
+      throw createRequestCanceledError();
+    }
     if (!lastError) {
       lastError = error;
     }
+  }
+
+  if (signal?.aborted) {
+    throw createRequestCanceledError();
   }
 
   if (device.kind === 'simulator') {
@@ -161,13 +174,27 @@ async function fetchWithTimeout(
   url: string,
   init: RequestInit,
   timeoutMs: number,
+  requestSignal?: AbortSignal,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let onRequestAbort: (() => void) | undefined;
+  if (requestSignal) {
+    if (requestSignal.aborted) {
+      clearTimeout(timeout);
+      controller.abort();
+    } else {
+      onRequestAbort = () => controller.abort();
+      requestSignal.addEventListener('abort', onRequestAbort, { once: true });
+    }
+  }
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
+    if (onRequestAbort && requestSignal) {
+      requestSignal.removeEventListener('abort', onRequestAbort);
+    }
   }
 }
 
