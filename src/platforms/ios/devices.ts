@@ -112,6 +112,71 @@ export function isSupportedAppleDevicectlDevice(device: DevicectlAppleDevice): b
   return resolveDevicectlAppleLabels(device).some(isAppleTvLabel);
 }
 
+type FindBootableSimulatorOptions = IosDeviceDiscoveryOptions & {
+  target?: DeviceTarget;
+};
+
+/**
+ * Finds an available iOS simulator by querying simctl directly.  This is used
+ * as a fallback when `listIosDevices` returned no simulators (e.g. all filtered
+ * out) or only a physical device.  Only simulators with `isAvailable: true` are
+ * considered so the caller can safely boot the result.
+ *
+ * Returns `null` when no suitable simulator can be found.
+ */
+export async function findBootableIosSimulator(
+  options: FindBootableSimulatorOptions = {},
+): Promise<DeviceInfo | null> {
+  const simulatorSetPath = resolveIosSimulatorDeviceSetPath(options.simulatorSetPath);
+  const targetFilter = options.target;
+
+  let simResult;
+  try {
+    simResult = await runCmd('xcrun', buildSimctlArgs(['list', 'devices', '-j'], { simulatorSetPath }));
+  } catch {
+    return null;
+  }
+
+  let payload: SimctlListDevicesPayload;
+  try {
+    payload = JSON.parse(simResult.stdout as string) as SimctlListDevicesPayload;
+  } catch {
+    return null;
+  }
+
+  let bestBooted: DeviceInfo | null = null;
+  let bestMobile: DeviceInfo | null = null;
+  let bestAny: DeviceInfo | null = null;
+
+  for (const [runtime, runtimes] of Object.entries(payload.devices)) {
+    if (!isSupportedAppleRuntime(runtime)) continue;
+    const target = resolveAppleTargetFromRuntime(runtime);
+    if (targetFilter && target !== targetFilter) continue;
+    for (const device of runtimes) {
+      if (!device.isAvailable) continue;
+      const info: DeviceInfo = {
+        platform: 'ios',
+        id: device.udid,
+        name: device.name,
+        kind: 'simulator',
+        target,
+        booted: device.state === 'Booted',
+        ...(simulatorSetPath ? { simulatorSetPath } : {}),
+      };
+
+      if (info.booted) {
+        bestBooted = bestBooted ?? info;
+      }
+      if (target === 'mobile') {
+        bestMobile = bestMobile ?? info;
+      }
+      bestAny = bestAny ?? info;
+    }
+  }
+
+  return bestBooted ?? bestMobile ?? bestAny;
+}
+
 export async function listIosDevices(options: IosDeviceDiscoveryOptions = {}): Promise<DeviceInfo[]> {
   if (process.platform !== 'darwin') {
     throw new AppError('UNSUPPORTED_PLATFORM', 'iOS tools are only available on macOS');
