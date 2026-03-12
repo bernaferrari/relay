@@ -24,6 +24,15 @@ function makeSession(name: string, device: SessionState['device']): SessionState
 
 const noopInvoke = async (_req: DaemonRequest): Promise<DaemonResponse> => ({ ok: true, data: {} });
 
+function assertInvalidArgsMessage(response: DaemonResponse | null, message: string): void {
+  assert.ok(response);
+  assert.equal(response?.ok, false);
+  if (response && !response.ok) {
+    assert.equal(response.error.code, 'INVALID_ARGS');
+    assert.equal(response.error.message, message);
+  }
+}
+
 test('batch executes steps sequentially and returns structured results', async () => {
   const sessionStore = makeSessionStore();
   const seenCommands: string[] = [];
@@ -2065,12 +2074,112 @@ test('open --relaunch rejects Android app binary paths', async () => {
     }),
   });
 
+  assertInvalidArgsMessage(
+    response,
+    'Android runtime hints require an installed package name, not "/tmp/app-debug.apk". Install or reinstall the app first, then relaunch by package.',
+  );
+});
+
+test('open --relaunch rejects bare Android app binary filenames', async () => {
+  const sessionStore = makeSessionStore();
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: 'default',
+      command: 'open',
+      positionals: ['app-debug.apk'],
+      flags: { relaunch: true, platform: 'android' },
+    },
+    sessionName: 'default',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    resolveTargetDevice: async () => ({
+      platform: 'android',
+      id: 'emulator-5554',
+      name: 'Pixel',
+      kind: 'emulator',
+      booted: true,
+    }),
+  });
+
+  assertInvalidArgsMessage(
+    response,
+    'Android runtime hints require an installed package name, not "app-debug.apk". Install or reinstall the app first, then relaunch by package.',
+  );
+});
+
+test('open --relaunch allows Android package names ending with apk-like suffix', async () => {
+  const sessionStore = makeSessionStore();
+  const dispatchCalls: Array<{ command: string; positionals: string[] }> = [];
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: 'default',
+      command: 'open',
+      positionals: ['com.example.apk'],
+      flags: { relaunch: true, platform: 'android' },
+    },
+    sessionName: 'default',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    resolveTargetDevice: async () => ({
+      platform: 'android',
+      id: 'emulator-5554',
+      name: 'Pixel',
+      kind: 'emulator',
+      booted: true,
+    }),
+    dispatch: async (_device, command, positionals) => {
+      dispatchCalls.push({ command, positionals });
+      return {};
+    },
+    applyRuntimeHints: async () => {},
+  });
+
   assert.ok(response);
-  assert.equal(response?.ok, false);
-  if (response && !response.ok) {
-    assert.equal(response.error.code, 'INVALID_ARGS');
-    assert.match(response.error.message, /requires an installed package name/i);
-  }
+  assert.equal(response?.ok, true);
+  assert.equal(dispatchCalls[0]?.command, 'close');
+  assert.deepEqual(dispatchCalls[0]?.positionals, ['com.example.apk']);
+  assert.equal(dispatchCalls[1]?.command, 'open');
+  assert.deepEqual(dispatchCalls[1]?.positionals, ['com.example.apk']);
+});
+
+test('open --relaunch rejects Android app binary paths for active sessions', async () => {
+  const sessionStore = makeSessionStore();
+  const session = makeSession('default', {
+    platform: 'android',
+    id: 'emulator-5554',
+    name: 'Pixel',
+    kind: 'emulator',
+    booted: true,
+  });
+  session.appName = 'com.example.app';
+  session.appBundleId = 'com.example.app';
+  sessionStore.set(
+    'default',
+    session,
+  );
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: 'default',
+      command: 'open',
+      positionals: ['/tmp/app-debug.apk'],
+      flags: { relaunch: true, platform: 'android' },
+    },
+    sessionName: 'default',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+  });
+
+  assertInvalidArgsMessage(
+    response,
+    'Android runtime hints require an installed package name, not "/tmp/app-debug.apk". Install or reinstall the app first, then relaunch by package.',
+  );
 });
 
 test('open on in-use device returns DEVICE_IN_USE before readiness checks', async () => {

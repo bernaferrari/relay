@@ -25,6 +25,10 @@ import { contextFromFlags } from '../context.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
 import { stopIosRunnerSession } from '../../platforms/ios/runner-client.ts';
 import { shutdownSimulator } from '../../platforms/ios/simulator.ts';
+import {
+  classifyAndroidAppTarget,
+  formatAndroidInstalledPackageRequiredMessage,
+} from '../../platforms/android/open-target.ts';
 import { attachRefs, type RawSnapshotNode, type SnapshotState } from '../../utils/snapshot.ts';
 import { pruneGroupNodes } from '../snapshot-processing.ts';
 import {
@@ -631,11 +635,6 @@ function shouldPreserveAndroidPackageContext(
   openTarget: string | undefined,
 ): boolean {
   return device.platform === 'android' && Boolean(openTarget && isDeepLinkTarget(openTarget));
-}
-
-function isAndroidAppBinaryPath(openTarget: string | undefined): boolean {
-  if (!openTarget) return false;
-  return /\.(?:apk|aab)$/i.test(openTarget.trim());
 }
 
 async function resolveSessionAppBundleIdForTarget(
@@ -1323,6 +1322,15 @@ export async function handleSessionCommands(params: {
           },
         };
       }
+      if (shouldRelaunch && session.device.platform === 'android' && classifyAndroidAppTarget(openTarget) === 'binary') {
+        return {
+          ok: false,
+          error: {
+            code: 'INVALID_ARGS',
+            message: formatAndroidInstalledPackageRequiredMessage(openTarget),
+          },
+        };
+      }
       await ensureReady(session.device);
       const runtime = resolveSessionRuntimeHints(sessionStore, sessionName, session?.device);
       const appBundleId = await resolveSessionAppBundleIdForTarget(
@@ -1411,13 +1419,12 @@ export async function handleSessionCommands(params: {
       };
     }
     const device = await resolveDevice(req.flags ?? {});
-    if (shouldRelaunch && device.platform === 'android' && isAndroidAppBinaryPath(openTarget)) {
+    if (shouldRelaunch && device.platform === 'android' && openTarget && classifyAndroidAppTarget(openTarget) === 'binary') {
       return {
         ok: false,
         error: {
           code: 'INVALID_ARGS',
-          message:
-            'open --relaunch on Android requires an installed package name, not an .apk/.aab path. Install or reinstall the app first, then relaunch by package.',
+          message: formatAndroidInstalledPackageRequiredMessage(openTarget),
         },
       };
     }
