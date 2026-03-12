@@ -175,6 +175,13 @@ function restoreEnv(key: string, value: string | undefined): void {
   process.env[key] = value;
 }
 
+function assertInvalidArgsAppError(error: unknown, message: string): boolean {
+  assert.ok(error instanceof AppError);
+  assert.equal(error.code, 'INVALID_ARGS');
+  assert.equal(error.message, message);
+  return true;
+}
+
 test('resolveRuntimeTransportHints derives host, port, and scheme from bundle URL', () => {
   assert.deepEqual(
     resolveRuntimeTransportHints({
@@ -220,6 +227,52 @@ test('applyRuntimeHintsToApp writes React Native Android dev prefs', async () =>
     assert.match(stdinPayload, /<string name="keep">value<\/string>/);
     assert.match(stdinPayload, /<string name="debug_http_host">10\.0\.0\.10:8082<\/string>/);
     assert.match(stdinPayload, /<boolean name="dev_server_https" value="true" \/>/);
+  });
+});
+
+test('applyRuntimeHintsToApp rejects Android app binary paths before run-as', async () => {
+  await withMockedAdb(async ({ device, argsLogPath }) => {
+    await assert.rejects(
+      applyRuntimeHintsToApp({
+        device,
+        appId: '/tmp/app-debug.apk',
+        runtime: {
+          platform: 'android',
+          metroHost: '10.0.0.10',
+          metroPort: 8081,
+        },
+      }),
+      (error: unknown) => assertInvalidArgsAppError(
+        error,
+        'Android runtime hints require an installed package name, not "/tmp/app-debug.apk". Install or reinstall the app first, then relaunch by package.',
+      ),
+    );
+
+    const loggedArgs = await fs.readFile(argsLogPath, 'utf8').catch(() => '');
+    assert.equal(loggedArgs, '');
+  });
+});
+
+test('applyRuntimeHintsToApp rejects bare Android app binary filenames before run-as', async () => {
+  await withMockedAdb(async ({ device, argsLogPath }) => {
+    await assert.rejects(
+      applyRuntimeHintsToApp({
+        device,
+        appId: 'app-debug.apk',
+        runtime: {
+          platform: 'android',
+          metroHost: '10.0.0.10',
+          metroPort: 8081,
+        },
+      }),
+      (error: unknown) => assertInvalidArgsAppError(
+        error,
+        'Android runtime hints require an installed package name, not "app-debug.apk". Install or reinstall the app first, then relaunch by package.',
+      ),
+    );
+
+    const loggedArgs = await fs.readFile(argsLogPath, 'utf8').catch(() => '');
+    assert.equal(loggedArgs, '');
   });
 });
 

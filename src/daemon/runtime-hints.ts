@@ -4,6 +4,10 @@ import { AppError, asAppError } from '../utils/errors.ts';
 import { runCmd } from '../utils/exec.ts';
 import type { SessionRuntimeHints } from './types.ts';
 import { adbArgs } from '../platforms/android/adb.ts';
+import {
+  classifyAndroidAppTarget,
+  formatAndroidInstalledPackageRequiredMessage,
+} from '../platforms/android/open-target.ts';
 import { buildSimctlArgsForDevice } from '../platforms/ios/simctl.ts';
 
 const ANDROID_DEV_PREFS_PATH = 'shared_prefs/ReactNativeDevPrefs.xml';
@@ -103,6 +107,7 @@ async function applyAndroidRuntimeHints(
   packageName: string,
   transport: ResolvedRuntimeTransport,
 ): Promise<void> {
+  assertAndroidRuntimePackageName(packageName);
   const currentXml = await readAndroidDevPrefs(device, packageName);
   let nextXml = upsertAndroidStringPref(currentXml, ANDROID_DEBUG_HOST_KEY, `${transport.host}:${transport.port}`);
   nextXml = upsertAndroidBooleanPref(nextXml, ANDROID_HTTPS_KEY, transport.scheme === 'https');
@@ -110,6 +115,7 @@ async function applyAndroidRuntimeHints(
 }
 
 async function clearAndroidRuntimeHints(device: DeviceInfo, packageName: string): Promise<void> {
+  assertAndroidRuntimePackageName(packageName);
   const currentXml = await readAndroidDevPrefs(device, packageName);
   const withoutHost = removeAndroidPrefEntry(currentXml, ANDROID_DEBUG_HOST_KEY);
   const withoutHttps = removeAndroidPrefEntry(withoutHost, ANDROID_HTTPS_KEY);
@@ -258,6 +264,15 @@ function removeAndroidPrefEntry(xml: string, key: string): string {
 function trimRuntimeValue(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function assertAndroidRuntimePackageName(packageName: string): void {
+  if (classifyAndroidAppTarget(packageName) !== 'binary') return;
+  const message = formatAndroidInstalledPackageRequiredMessage(packageName);
+  throw new AppError('INVALID_ARGS', message, {
+    package: packageName,
+    hint: message,
+  });
 }
 
 function normalizePort(value: number | undefined): number | undefined {
