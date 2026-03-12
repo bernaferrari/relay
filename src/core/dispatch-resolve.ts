@@ -2,15 +2,71 @@ import { AppError } from '../utils/errors.ts';
 import { normalizePlatformSelector, selectDevice, type DeviceInfo } from '../utils/device.ts';
 import { listAndroidDevices } from '../platforms/android/devices.ts';
 import { ensureAdb } from '../platforms/android/index.ts';
-import { listIosDevices } from '../platforms/ios/devices.ts';
+import { findBootableIosSimulator, listIosDevices } from '../platforms/ios/devices.ts';
 import { withDiagnosticTimer } from '../utils/diagnostics.ts';
 import { resolveAndroidSerialAllowlist, resolveIosSimulatorDeviceSetPath } from '../utils/device-isolation.ts';
 import type { CliFlags } from '../utils/command-schema.ts';
+import type { DeviceTarget } from '../utils/device.ts';
 
 type ResolveDeviceFlags = Pick<
   CliFlags,
   'platform' | 'target' | 'device' | 'udid' | 'serial' | 'iosSimulatorDeviceSet' | 'androidDeviceAllowlist'
 >;
+
+type IosDeviceSelector = {
+  platform?: 'ios';
+  target?: DeviceTarget;
+  deviceName?: string;
+  udid?: string;
+  serial?: string;
+};
+
+type ResolveIosDeviceDeps = {
+  selectDevice: typeof selectDevice;
+  findBootableSimulator: typeof findBootableIosSimulator;
+};
+
+/**
+ * Resolves the best iOS device given pre-fetched candidates.  When no explicit
+ * device selector was used, physical devices are rejected in favour of a
+ * bootable simulator discovered via `findBootableSimulator`.
+ *
+ * Exported for testing; production callers should use `resolveTargetDevice`.
+ */
+export async function resolveIosDevice(
+  devices: DeviceInfo[],
+  selector: IosDeviceSelector,
+  context: { simulatorSetPath?: string },
+  deps: ResolveIosDeviceDeps,
+): Promise<DeviceInfo> {
+  const hasExplicitSelector = !!(selector.udid || selector.serial || selector.deviceName);
+
+  let selected: DeviceInfo | undefined;
+  try {
+    selected = await deps.selectDevice(devices, selector, context);
+  } catch (err) {
+    // When selectDevice throws DEVICE_NOT_FOUND and no explicit device
+    // selector was used, attempt the simulator fallback before giving up.
+    if (hasExplicitSelector || !(err instanceof AppError) || err.code !== 'DEVICE_NOT_FOUND') {
+      throw err;
+    }
+  }
+
+  // When no explicit device selector was used and auto-selection either
+  // picked a physical device or found nothing at all, try to find an
+  // available simulator instead.  Physical devices should only be used
+  // when explicitly targeted.
+  if (!hasExplicitSelector && (!selected || selected.kind === 'device')) {
+    const simulator = await deps.findBootableSimulator({
+      simulatorSetPath: context.simulatorSetPath,
+      target: selector.target,
+    });
+    if (simulator) return simulator;
+  }
+
+  if (selected) return selected;
+  throw new AppError('DEVICE_NOT_FOUND', 'No devices found', { selector });
+}
 
 export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<DeviceInfo> {
   const normalizedPlatform = normalizePlatformSelector(flags.platform);
@@ -41,7 +97,12 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
 
       if (selector.platform === 'ios') {
         const devices = await listIosDevices({ simulatorSetPath: iosSimulatorSetPath });
-        return await selectDevice(devices, selector, { simulatorSetPath: iosSimulatorSetPath });
+        return await resolveIosDevice(
+          devices,
+          selector as IosDeviceSelector,
+          { simulatorSetPath: iosSimulatorSetPath },
+          { selectDevice, findBootableSimulator: findBootableIosSimulator },
+        );
       }
 
       const devices: DeviceInfo[] = [];
