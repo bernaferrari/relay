@@ -52,9 +52,11 @@ async function callRpc(port: number, payload: Record<string, unknown>): Promise<
         port,
         path: '/rpc',
         method: 'POST',
+        agent: false,
         headers: {
           'content-type': 'application/json',
           'content-length': String(Buffer.byteLength(body)),
+          connection: 'close',
         },
       },
       (response) => {
@@ -93,6 +95,7 @@ async function callGet(
         port,
         path: requestPath,
         method: 'GET',
+        agent: false,
         headers,
       },
       (response) => {
@@ -160,6 +163,118 @@ test('HTTP RPC does not cancel active requests after the request body completes'
   assert.equal(response.statusCode, 200);
   assert.equal((response.json as { result?: { ok?: boolean } }).result?.ok, true);
   assert.equal(observedCanceled, false);
+});
+
+test('HTTP install_from_source RPC maps typed params to an install_source daemon request', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  let observedRequest: DaemonRequest | undefined;
+  const server = await createDaemonHttpServer({
+    handleRequest: async (req: DaemonRequest): Promise<DaemonResponse> => {
+      observedRequest = req;
+      return { ok: true, data: { launchTarget: 'com.example.archive' } };
+    },
+    token: 'test-token',
+  });
+  const port = await listen(server);
+  t.after(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+
+  const response = await callRpc(port, {
+    jsonrpc: '2.0',
+    id: 'rpc-install-source',
+    method: 'agent_device.install_from_source',
+    params: {
+      token: 'test-token',
+      session: 'bootstrap',
+      platform: 'android',
+      requestId: 'req-install-source',
+      retainPaths: true,
+      retentionMs: 30000,
+      source: {
+        kind: 'url',
+        url: 'https://example.com/app.zip',
+        headers: {
+          authorization: 'Bearer signed-token',
+        },
+      },
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal((response.json as { result?: { ok?: boolean } }).result?.ok, true);
+  assert.equal(observedRequest?.command, 'install_source');
+  assert.equal(observedRequest?.session, 'bootstrap');
+  assert.equal(observedRequest?.flags?.platform, 'android');
+  assert.equal(observedRequest?.meta?.requestId, 'req-install-source');
+  assert.equal(observedRequest?.meta?.retainMaterializedPaths, true);
+  assert.equal(observedRequest?.meta?.materializedPathRetentionMs, 30000);
+  assert.deepEqual(observedRequest?.meta?.installSource, {
+    kind: 'url',
+    url: 'https://example.com/app.zip',
+    headers: {
+      authorization: 'Bearer signed-token',
+    },
+  });
+});
+
+test('HTTP release_materialized_paths RPC maps typed params to a release_materialized_paths daemon request', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  let observedRequest: DaemonRequest | undefined;
+  const server = await createDaemonHttpServer({
+    handleRequest: async (req: DaemonRequest): Promise<DaemonResponse> => {
+      observedRequest = req;
+      return { ok: true, data: { released: true } };
+    },
+    token: 'test-token',
+  });
+  const port = await listen(server);
+  t.after(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+
+  const response = await callRpc(port, {
+    jsonrpc: '2.0',
+    id: 'rpc-release-materialized',
+    method: 'agent_device.release_materialized_paths',
+    params: {
+      token: 'test-token',
+      session: 'bootstrap',
+      requestId: 'req-release-materialized',
+      materializationId: 'materialized-123',
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal((response.json as { result?: { ok?: boolean } }).result?.ok, true);
+  assert.equal(observedRequest?.command, 'release_materialized_paths');
+  assert.equal(observedRequest?.session, 'bootstrap');
+  assert.equal(observedRequest?.meta?.requestId, 'req-release-materialized');
+  assert.equal(observedRequest?.meta?.materializationId, 'materialized-123');
 });
 
 test('HTTP artifact download streams registered files', async (t) => {

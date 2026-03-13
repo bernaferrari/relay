@@ -1,7 +1,10 @@
+import type { MaterializeInstallSource } from '../platforms/install-source.ts';
 import type { CommandFlags } from '../core/dispatch.ts';
 import type { DeviceInfo } from '../utils/device.ts';
 import type { ExecResult } from '../utils/exec.ts';
 import type { SnapshotState } from '../utils/snapshot.ts';
+
+export type DaemonInstallSource = MaterializeInstallSource;
 
 export type DaemonRequest = {
   token: string;
@@ -22,6 +25,10 @@ export type DaemonRequest = {
     sessionIsolation?: 'none' | 'tenant';
     uploadedArtifactId?: string;
     clientArtifactPaths?: Record<string, string>;
+    installSource?: DaemonInstallSource;
+    retainMaterializedPaths?: boolean;
+    materializedPathRetentionMs?: number;
+    materializationId?: string;
   };
 };
 

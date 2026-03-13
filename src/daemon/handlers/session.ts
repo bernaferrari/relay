@@ -57,6 +57,11 @@ import {
   parseSelectorWaitPositionals,
 } from './session-replay-heal.ts';
 import { parseReplayScript, writeReplayScript } from './session-replay-script.ts';
+import {
+  handleInstallFromSourceCommand,
+  handleReleaseMaterializedPathsCommand,
+} from './install-source.ts';
+import { cleanupRetainedMaterializedPathsForSession } from '../materialized-path-registry.ts';
 import { ensureSimulatorExists } from '../../platforms/ios/ensure-simulator.ts';
 
 type ReinstallOps = {
@@ -65,11 +70,41 @@ type ReinstallOps = {
 };
 
 type AppDeployOps = {
-  ios: (device: DeviceInfo, app: string, appPath: string) => Promise<{ bundleId?: string }>;
-  android: (device: DeviceInfo, app: string, appPath: string) => Promise<{ package?: string }>;
+  ios: (
+    device: DeviceInfo,
+    app: string,
+    appPath: string,
+  ) => Promise<{ bundleId?: string; appName?: string; launchTarget?: string }>;
+  android: (
+    device: DeviceInfo,
+    app: string,
+    appPath: string,
+  ) => Promise<{ package?: string; appName?: string; launchTarget?: string }>;
 };
 
 type InstallOps = AppDeployOps;
+
+type DeployCommandResultBase = {
+  app: string;
+  appPath: string;
+  appName?: string;
+  launchTarget?: string;
+};
+
+type IosDeployCommandResult = DeployCommandResultBase & {
+  platform: 'ios';
+  appId?: string;
+  bundleId?: string;
+};
+
+type AndroidDeployCommandResult = DeployCommandResultBase & {
+  platform: 'android';
+  appId?: string;
+  package?: string;
+  packageName?: string;
+};
+
+type DeployCommandResult = IosDeployCommandResult | AndroidDeployCommandResult;
 
 type EnsureAndroidEmulatorBoot = (params: {
   avdName: string;
@@ -886,15 +921,21 @@ const defaultReinstallOps: ReinstallOps = {
 const defaultInstallOps: InstallOps = {
   ios: async (device, app, appPath) => {
     const { installIosApp } = await import('../../platforms/ios/index.ts');
-    await installIosApp(device, appPath, { appIdentifierHint: app });
-    const { bundleId } = await resolveInstalledAppIdentifier(device, app);
-    return bundleId ? { bundleId } : {};
+    const result = await installIosApp(device, appPath, { appIdentifierHint: app });
+    return {
+      bundleId: result.bundleId,
+      appName: result.appName,
+      launchTarget: result.launchTarget,
+    };
   },
   android: async (device, app, appPath) => {
     const { installAndroidApp } = await import('../../platforms/android/index.ts');
-    await installAndroidApp(device, appPath);
-    const { package: pkg } = await resolveInstalledAppIdentifier(device, app);
-    return pkg ? { package: pkg } : {};
+    const result = await installAndroidApp(device, appPath);
+    return {
+      package: result.packageName,
+      appName: result.appName,
+      launchTarget: result.launchTarget,
+    };
   },
 };
 
@@ -946,22 +987,49 @@ async function handleAppDeployCommand(params: {
       };
     }
 
-    let result:
-      | { app: string; appPath: string; platform: 'ios'; appId?: string; bundleId?: string }
-      | { app: string; appPath: string; platform: 'android'; appId?: string; package?: string };
+    let result: DeployCommandResult;
 
     if (device.platform === 'ios') {
       const iosResult = await deployOps.ios(device, app, appPath);
       const bundleId = iosResult.bundleId;
       result = bundleId
-        ? { app, appPath, platform: 'ios', appId: bundleId, bundleId }
-        : { app, appPath, platform: 'ios' };
+        ? {
+          app,
+          appPath,
+          platform: 'ios',
+          appId: bundleId,
+          bundleId,
+          appName: iosResult.appName,
+          launchTarget: iosResult.launchTarget,
+        }
+        : {
+          app,
+          appPath,
+          platform: 'ios',
+          appName: iosResult.appName,
+          launchTarget: iosResult.launchTarget,
+        };
     } else {
       const androidResult = await deployOps.android(device, app, appPath);
       const pkg = androidResult.package;
       result = pkg
-        ? { app, appPath, platform: 'android', appId: pkg, package: pkg }
-        : { app, appPath, platform: 'android' };
+        ? {
+          app,
+          appPath,
+          platform: 'android',
+          appId: pkg,
+          package: pkg,
+          packageName: pkg,
+          appName: androidResult.appName,
+          launchTarget: androidResult.launchTarget,
+        }
+        : {
+          app,
+          appPath,
+          platform: 'android',
+          appName: androidResult.appName,
+          launchTarget: androidResult.launchTarget,
+        };
     }
 
     if (session) {
@@ -1632,6 +1700,18 @@ export async function handleSessionCommands(params: {
     });
   }
 
+  if (command === 'install_source') {
+    return await handleInstallFromSourceCommand({
+      req,
+      sessionName,
+      sessionStore,
+    });
+  }
+
+  if (command === 'release_materialized_paths') {
+    return await handleReleaseMaterializedPathsCommand({ req });
+  }
+
   if (command === 'push') {
     const appId = req.positionals?.[0]?.trim();
     const payloadArg = req.positionals?.[1]?.trim();
@@ -2167,6 +2247,7 @@ export async function handleSessionCommands(params: {
       session.recordSession = true;
     }
     sessionStore.writeSessionLog(session);
+    await cleanupRetainedMaterializedPathsForSession(sessionName).catch(() => {});
     sessionStore.delete(sessionName);
     const shutdownResult = await maybeShutdownSessionTarget({
       device: session.device,
