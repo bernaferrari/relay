@@ -179,10 +179,12 @@ export type RequestRouterDeps = {
   sessionStore: SessionStore;
   leaseRegistry: LeaseRegistry;
   trackDownloadableArtifact: (opts: { artifactPath: string; tenantId?: string; fileName?: string }) => string;
+  dispatchCommand?: typeof dispatchCommand;
 };
 
 export function createRequestHandler(deps: RequestRouterDeps): (req: DaemonRequest) => Promise<DaemonResponse> {
   const { logPath, token, sessionStore, leaseRegistry, trackDownloadableArtifact } = deps;
+  const dispatch = deps.dispatchCommand ?? dispatchCommand;
 
   async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
     const normalizedReq = normalizeAliasedCommands(req);
@@ -296,13 +298,28 @@ export function createRequestHandler(deps: RequestRouterDeps): (req: DaemonReque
             });
           }
 
-          const data = await dispatchCommand(session.device, command, scopedReq.positionals ?? [], scopedReq.flags?.out, {
+          const positionals = scopedReq.positionals ?? [];
+          const outFlag = scopedReq.flags?.out;
+          const resolvedPositionals =
+            command === 'screenshot' && positionals[0]
+              ? [SessionStore.expandHome(positionals[0], scopedReq.meta?.cwd), ...positionals.slice(1)]
+              : positionals;
+          const resolvedOut =
+            command === 'screenshot' && outFlag
+              ? SessionStore.expandHome(outFlag, scopedReq.meta?.cwd)
+              : outFlag;
+          const recordedPositionals = command === 'screenshot' ? resolvedPositionals : positionals;
+          const recordedFlags =
+            command === 'screenshot' && resolvedOut
+              ? { ...(scopedReq.flags ?? {}), out: resolvedOut }
+              : (scopedReq.flags ?? {});
+          const data = await dispatch(session.device, command, resolvedPositionals, resolvedOut, {
             ...contextFromFlags(logPath, scopedReq.flags, session.appBundleId, session.trace?.outPath),
           });
           sessionStore.recordAction(session, {
             command,
-            positionals: scopedReq.positionals ?? [],
-            flags: scopedReq.flags ?? {},
+            positionals: recordedPositionals,
+            flags: recordedFlags,
             result: data ?? {},
           });
           return finalize({ ok: true, data: data ?? {} });
