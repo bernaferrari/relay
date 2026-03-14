@@ -12,6 +12,7 @@ import { createAgentDeviceClient, type AgentDeviceClientConfig } from './client.
 import { tryRunClientBackedCommand } from './cli-client-commands.ts';
 import { createRequestId, emitDiagnostic, flushDiagnosticsToSessionFile, getDiagnosticsMeta, withDiagnosticsScope } from './utils/diagnostics.ts';
 import { resolveDaemonPaths } from './daemon/config.ts';
+import { applyDefaultPlatformBinding, resolveBindingSettings } from './utils/session-binding.ts';
 
 type CliDeps = {
   sendToDaemon: typeof sendToDaemon;
@@ -97,7 +98,15 @@ export async function runCli(argv: string[], deps: CliDeps = DEFAULT_CLI_DEPS): 
         process.exit(1);
       }
 
-      const { command, positionals, flags } = parsed;
+      const { command, positionals } = parsed;
+      const binding = resolveBindingSettings({
+        policyOverrides: parsed.flags,
+      });
+      const flags = binding.lockPolicy
+        ? { ...parsed.flags }
+        : applyDefaultPlatformBinding(parsed.flags, {
+          policyOverrides: parsed.flags,
+        });
       const daemonFlags = toDaemonFlags(flags);
       const daemonPaths = resolveDaemonPaths(flags.stateDir ?? process.env.AGENT_DEVICE_STATE_DIR);
       const sessionName = flags.session ?? process.env.AGENT_DEVICE_SESSION ?? 'default';
@@ -117,6 +126,8 @@ export async function runCli(argv: string[], deps: CliDeps = DEFAULT_CLI_DEPS): 
         sessionIsolation: flags.sessionIsolation,
         runId: flags.runId,
         leaseId: flags.leaseId,
+        lockPolicy: binding.lockPolicy,
+        lockPlatform: binding.defaultPlatform,
         cwd: process.cwd(),
         debug: Boolean(flags.verbose),
       };
@@ -135,132 +146,145 @@ export async function runCli(argv: string[], deps: CliDeps = DEFAULT_CLI_DEPS): 
             runId: flags.runId,
             leaseId: flags.leaseId,
             sessionIsolation: flags.sessionIsolation,
+            lockPolicy: binding.lockPolicy,
+            lockPlatform: binding.defaultPlatform,
           },
         });
       try {
-    if (command === 'batch') {
-      if (positionals.length > 0) {
-        throw new AppError('INVALID_ARGS', 'batch does not accept positional arguments.');
-      }
-      const batchSteps = readBatchSteps(flags);
-      const batchFlags = { ...daemonFlags, batchSteps };
-      delete (batchFlags as Record<string, unknown>).steps;
-      delete (batchFlags as Record<string, unknown>).stepsFile;
+        if (command === 'batch') {
+          if (positionals.length > 0) {
+            throw new AppError('INVALID_ARGS', 'batch does not accept positional arguments.');
+          }
+          const batchSteps = readBatchSteps(flags).map((step, index) => ({
+            ...step,
+            flags: binding.lockPolicy && flags.platform === undefined
+              ? { ...((step.flags ?? {}) as Partial<typeof daemonFlags>) }
+              : applyDefaultPlatformBinding(
+                (step.flags ?? {}) as Partial<typeof daemonFlags>,
+                {
+                  policyOverrides: flags,
+                  inheritedPlatform: flags.platform,
+                },
+              ),
+          }));
+          const batchFlags = { ...daemonFlags, batchSteps };
+          delete (batchFlags as Record<string, unknown>).steps;
+          delete (batchFlags as Record<string, unknown>).stepsFile;
 
-      const response = await sendDaemonRequest({
-        command: 'batch',
-        positionals,
-        flags: batchFlags,
-      });
-      if (!response.ok) {
-        throw new AppError(response.error.code as any, response.error.message, {
-          ...(response.error.details ?? {}),
-          hint: response.error.hint,
-          diagnosticId: response.error.diagnosticId,
-          logPath: response.error.logPath,
+          const response = await sendDaemonRequest({
+            command: 'batch',
+            positionals,
+            flags: batchFlags,
+          });
+          if (!response.ok) {
+            throw new AppError(response.error.code as any, response.error.message, {
+              ...(response.error.details ?? {}),
+              hint: response.error.hint,
+              diagnosticId: response.error.diagnosticId,
+              logPath: response.error.logPath,
+            });
+          }
+          if (flags.json) {
+            printJson({ success: true, data: response.data ?? {} });
+          } else {
+            renderBatchSummary(response.data ?? {});
+          }
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+
+        if (await tryRunClientBackedCommand({ command, positionals, flags, client })) {
+          if (logTailStopper) logTailStopper();
+          return;
+        }
+
+        const response = await sendDaemonRequest({
+          command: command!,
+          positionals,
+          flags: daemonFlags,
         });
-      }
-      if (flags.json) {
-        printJson({ success: true, data: response.data ?? {} });
-      } else {
-        renderBatchSummary(response.data ?? {});
-      }
-      if (logTailStopper) logTailStopper();
-      return;
-    }
 
-    if (await tryRunClientBackedCommand({ command, positionals, flags, client })) {
-      if (logTailStopper) logTailStopper();
-      return;
-    }
-
-    const response = await sendDaemonRequest({
-      command: command!,
-      positionals,
-      flags: daemonFlags,
-    });
-
-    if (response.ok) {
-      if (flags.json) {
-        printJson({ success: true, data: response.data ?? {} });
-        if (logTailStopper) logTailStopper();
-        return;
-      }
-      if (command === 'snapshot') {
-        process.stdout.write(
-          formatSnapshotText((response.data ?? {}) as Record<string, unknown>, {
-            raw: flags.snapshotRaw,
-            flatten: flags.snapshotInteractiveOnly,
-          }),
-        );
-        if (logTailStopper) logTailStopper();
-        return;
-      }
-      if (command === 'diff' && positionals[0] === 'snapshot') {
-        process.stdout.write(formatSnapshotDiffText((response.data ?? {}) as Record<string, unknown>));
-        if (logTailStopper) logTailStopper();
-        return;
-      }
-      if (command === 'get') {
-        const sub = positionals[0];
-        if (sub === 'text') {
-          const text = (response.data as any)?.text ?? '';
-          process.stdout.write(`${text}\n`);
+        if (response.ok) {
+          if (flags.json) {
+            printJson({ success: true, data: response.data ?? {} });
+            if (logTailStopper) logTailStopper();
+            return;
+          }
+          if (command === 'snapshot') {
+            process.stdout.write(
+              formatSnapshotText((response.data ?? {}) as Record<string, unknown>, {
+                raw: flags.snapshotRaw,
+                flatten: flags.snapshotInteractiveOnly,
+              }),
+            );
+            if (logTailStopper) logTailStopper();
+            return;
+          }
+          if (command === 'diff' && positionals[0] === 'snapshot') {
+            process.stdout.write(formatSnapshotDiffText((response.data ?? {}) as Record<string, unknown>));
+            if (logTailStopper) logTailStopper();
+            return;
+          }
+          if (command === 'get') {
+            const sub = positionals[0];
+            if (sub === 'text') {
+              const text = (response.data as any)?.text ?? '';
+              process.stdout.write(`${text}\n`);
+              if (logTailStopper) logTailStopper();
+              return;
+            }
+            if (sub === 'attrs') {
+              const node = (response.data as any)?.node ?? {};
+              process.stdout.write(`${JSON.stringify(node, null, 2)}\n`);
+              if (logTailStopper) logTailStopper();
+              return;
+            }
+          }
+          if (command === 'find') {
+            const data = response.data as any;
+            if (typeof data?.text === 'string') {
+              process.stdout.write(`${data.text}\n`);
+              if (logTailStopper) logTailStopper();
+              return;
+            }
+            if (typeof data?.found === 'boolean') {
+              process.stdout.write(`Found: ${data.found}\n`);
+              if (logTailStopper) logTailStopper();
+              return;
+            }
+            if (data?.node) {
+              process.stdout.write(`${JSON.stringify(data.node, null, 2)}\n`);
+              if (logTailStopper) logTailStopper();
+              return;
+            }
+          }
+          if (command === 'is') {
+            const predicate = (response.data as any)?.predicate ?? 'assertion';
+            process.stdout.write(`Passed: is ${predicate}\n`);
+            if (logTailStopper) logTailStopper();
+            return;
+          }
+          if (command === 'boot') {
+            const platform = (response.data as any)?.platform ?? 'unknown';
+            const device = (response.data as any)?.device ?? (response.data as any)?.id ?? 'unknown';
+            process.stdout.write(`Boot ready: ${device} (${platform})\n`);
+            if (logTailStopper) logTailStopper();
+            return;
+          }
+          if (command === 'ensure-simulator') {
+            const data = response.data as Record<string, unknown> | undefined;
+            const udid = typeof data?.udid === 'string' ? data.udid : 'unknown';
+            const device = typeof data?.device === 'string' ? data.device : 'unknown';
+            const runtime = typeof data?.runtime === 'string' ? data.runtime : '';
+            const created = data?.created === true;
+            const booted = data?.booted === true;
+            const action = created ? 'Created' : 'Reused';
+            const bootedSuffix = booted ? ' (booted)' : '';
+            process.stdout.write(`${action}: ${device} ${udid}${bootedSuffix}\n`);
+            if (runtime) process.stdout.write(`Runtime: ${runtime}\n`);
           if (logTailStopper) logTailStopper();
-          return;
-        }
-        if (sub === 'attrs') {
-          const node = (response.data as any)?.node ?? {};
-          process.stdout.write(`${JSON.stringify(node, null, 2)}\n`);
-          if (logTailStopper) logTailStopper();
-          return;
-        }
-      }
-      if (command === 'find') {
-        const data = response.data as any;
-        if (typeof data?.text === 'string') {
-          process.stdout.write(`${data.text}\n`);
-          if (logTailStopper) logTailStopper();
-          return;
-        }
-        if (typeof data?.found === 'boolean') {
-          process.stdout.write(`Found: ${data.found}\n`);
-          if (logTailStopper) logTailStopper();
-          return;
-        }
-        if (data?.node) {
-          process.stdout.write(`${JSON.stringify(data.node, null, 2)}\n`);
-          if (logTailStopper) logTailStopper();
-          return;
-        }
-      }
-      if (command === 'is') {
-        const predicate = (response.data as any)?.predicate ?? 'assertion';
-        process.stdout.write(`Passed: is ${predicate}\n`);
-        if (logTailStopper) logTailStopper();
-        return;
-      }
-      if (command === 'boot') {
-        const platform = (response.data as any)?.platform ?? 'unknown';
-        const device = (response.data as any)?.device ?? (response.data as any)?.id ?? 'unknown';
-        process.stdout.write(`Boot ready: ${device} (${platform})\n`);
-        if (logTailStopper) logTailStopper();
-        return;
-      }
-      if (command === 'ensure-simulator') {
-        const data = response.data as Record<string, unknown> | undefined;
-        const udid = typeof data?.udid === 'string' ? data.udid : 'unknown';
-        const device = typeof data?.device === 'string' ? data.device : 'unknown';
-        const runtime = typeof data?.runtime === 'string' ? data.runtime : '';
-        const created = data?.created === true;
-        const booted = data?.booted === true;
-        const action = created ? 'Created' : 'Reused';
-        const bootedSuffix = booted ? ' (booted)' : '';
-        process.stdout.write(`${action}: ${device} ${udid}${bootedSuffix}\n`);
-        if (runtime) process.stdout.write(`Runtime: ${runtime}\n`);
-        if (logTailStopper) logTailStopper();
-        return;
-      }
+            return;
+          }
       if (command === 'runtime') {
         const data = response.data as Record<string, unknown> | undefined;
         const cleared = data?.cleared === true;

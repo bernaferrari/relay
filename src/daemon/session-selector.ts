@@ -4,33 +4,60 @@ import type { SessionState } from './types.ts';
 import { normalizePlatformSelector } from '../utils/device.ts';
 import { parseSerialAllowlist } from '../utils/device-isolation.ts';
 
+export type SessionSelectorConflictKey =
+  | 'platform'
+  | 'target'
+  | 'udid'
+  | 'serial'
+  | 'device'
+  | 'iosSimulatorDeviceSet'
+  | 'androidDeviceAllowlist';
+
+export type SessionSelectorConflict = {
+  key: SessionSelectorConflictKey;
+  value: string;
+};
+
 export function assertSessionSelectorMatches(
   session: SessionState,
   flags?: CommandFlags,
 ): void {
-  if (!flags) return;
+  const mismatches = listSessionSelectorConflicts(session, flags);
+  if (mismatches.length === 0) return;
 
-  const mismatches: string[] = [];
+  throw new AppError(
+    'INVALID_ARGS',
+    `Session "${session.name}" is bound to ${describeDevice(session)} and cannot be used with ${mismatches.map(formatSessionSelectorConflict).join(', ')}. Use a different --session name or close this session first.`,
+  );
+}
+
+export function listSessionSelectorConflicts(
+  session: SessionState,
+  flags?: CommandFlags,
+): SessionSelectorConflict[] {
+  if (!flags) return [];
+
+  const mismatches: SessionSelectorConflict[] = [];
   const device = session.device;
 
   const normalizedPlatform = normalizePlatformSelector(flags.platform);
   if (normalizedPlatform && normalizedPlatform !== device.platform) {
-    mismatches.push(`--platform=${flags.platform}`);
+    mismatches.push({ key: 'platform', value: flags.platform! });
   }
   if (flags.target && flags.target !== (device.target ?? 'mobile')) {
-    mismatches.push(`--target=${flags.target}`);
+    mismatches.push({ key: 'target', value: flags.target });
   }
 
   if (flags.udid && (device.platform !== 'ios' || flags.udid !== device.id)) {
-    mismatches.push(`--udid=${flags.udid}`);
+    mismatches.push({ key: 'udid', value: flags.udid });
   }
 
   if (flags.serial && (device.platform !== 'android' || flags.serial !== device.id)) {
-    mismatches.push(`--serial=${flags.serial}`);
+    mismatches.push({ key: 'serial', value: flags.serial });
   }
 
   if (flags.device && flags.device.trim().toLowerCase() !== device.name.trim().toLowerCase()) {
-    mismatches.push(`--device=${flags.device}`);
+    mismatches.push({ key: 'device', value: flags.device });
   }
 
   if (flags.iosSimulatorDeviceSet) {
@@ -41,23 +68,22 @@ export function assertSessionSelectorMatches(
       || device.kind !== 'simulator'
       || requestedSetPath !== sessionSetPath
     ) {
-      mismatches.push(`--ios-simulator-device-set=${flags.iosSimulatorDeviceSet}`);
+      mismatches.push({ key: 'iosSimulatorDeviceSet', value: flags.iosSimulatorDeviceSet });
     }
   }
 
   if (flags.androidDeviceAllowlist) {
     const allowlist = parseSerialAllowlist(flags.androidDeviceAllowlist);
     if (device.platform !== 'android' || !allowlist.has(device.id)) {
-      mismatches.push(`--android-device-allowlist=${flags.androidDeviceAllowlist}`);
+      mismatches.push({ key: 'androidDeviceAllowlist', value: flags.androidDeviceAllowlist });
     }
   }
 
-  if (mismatches.length === 0) return;
+  return mismatches;
+}
 
-  throw new AppError(
-    'INVALID_ARGS',
-    `Session "${session.name}" is bound to ${describeDevice(session)} and cannot be used with ${mismatches.join(', ')}. Use a different --session name or close this session first.`,
-  );
+export function formatSessionSelectorConflict(conflict: SessionSelectorConflict): string {
+  return `${flagNameForConflictKey(conflict.key)}=${conflict.value}`;
 }
 
 function describeDevice(session: SessionState): string {
@@ -65,4 +91,15 @@ function describeDevice(session: SessionState): string {
   const name = session.device.name.trim();
   const id = session.device.id;
   return `${platform} device "${name}" (${id})`;
+}
+
+function flagNameForConflictKey(key: SessionSelectorConflictKey): string {
+  switch (key) {
+    case 'iosSimulatorDeviceSet':
+      return '--ios-simulator-device-set';
+    case 'androidDeviceAllowlist':
+      return '--android-device-allowlist';
+    default:
+      return `--${key}`;
+  }
 }

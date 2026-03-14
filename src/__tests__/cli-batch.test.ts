@@ -115,3 +115,116 @@ test('batch --steps-file rejects invalid JSON payload', async () => {
   assert.equal(result.calls.length, 0);
   assert.match(result.stderr, /Batch steps must be valid JSON/);
 });
+
+test('batch forwards strip lock policy for nested steps when bound session uses strip mode', async () => {
+  const previousSession = process.env.AGENT_DEVICE_SESSION;
+  const previousPlatform = process.env.AGENT_DEVICE_PLATFORM;
+  const previousLock = process.env.AGENT_DEVICE_SESSION_LOCK;
+  process.env.AGENT_DEVICE_SESSION = 'qa-ios';
+  process.env.AGENT_DEVICE_PLATFORM = 'ios';
+  process.env.AGENT_DEVICE_SESSION_LOCK = 'strip';
+
+  try {
+    const result = await runCliCapture([
+      'batch',
+      '--steps',
+      '[{"command":"snapshot","flags":{"platform":"android","serial":"emulator-5554"}}]',
+      '--json',
+    ]);
+    assert.equal(result.code, null);
+    assert.equal(result.calls.length, 1);
+    assert.equal(result.calls[0]?.meta?.lockPolicy, 'strip');
+    assert.equal(result.calls[0]?.meta?.lockPlatform, 'ios');
+    const stepFlags = (result.calls[0]?.flags?.batchSteps ?? [])[0]?.flags ?? {};
+    assert.equal(stepFlags.platform, 'android');
+    assert.equal(stepFlags.serial, 'emulator-5554');
+  } finally {
+    if (previousSession === undefined) delete process.env.AGENT_DEVICE_SESSION;
+    else process.env.AGENT_DEVICE_SESSION = previousSession;
+    if (previousPlatform === undefined) delete process.env.AGENT_DEVICE_PLATFORM;
+    else process.env.AGENT_DEVICE_PLATFORM = previousPlatform;
+    if (previousLock === undefined) delete process.env.AGENT_DEVICE_SESSION_LOCK;
+    else process.env.AGENT_DEVICE_SESSION_LOCK = previousLock;
+  }
+});
+
+test('batch forwards reject lock policy for target retargeting', async () => {
+  const previousPlatform = process.env.AGENT_DEVICE_PLATFORM;
+  const previousLocked = process.env.AGENT_DEVICE_SESSION_LOCKED;
+  process.env.AGENT_DEVICE_PLATFORM = 'ios';
+  process.env.AGENT_DEVICE_SESSION_LOCKED = '1';
+
+  try {
+    const result = await runCliCapture([
+      'batch',
+      '--steps',
+      '[{"command":"open","flags":{"target":"tv"}}]',
+      '--json',
+    ]);
+    assert.equal(result.code, null);
+    assert.equal(result.calls.length, 1);
+    assert.equal(result.calls[0]?.meta?.lockPolicy, 'reject');
+    const stepFlags = (result.calls[0]?.flags?.batchSteps ?? [])[0]?.flags ?? {};
+    assert.equal(stepFlags.target, 'tv');
+  } finally {
+    if (previousPlatform === undefined) delete process.env.AGENT_DEVICE_PLATFORM;
+    else process.env.AGENT_DEVICE_PLATFORM = previousPlatform;
+    if (previousLocked === undefined) delete process.env.AGENT_DEVICE_SESSION_LOCKED;
+    else process.env.AGENT_DEVICE_SESSION_LOCKED = previousLocked;
+  }
+});
+
+test('batch session lock flags apply to nested steps without env configuration', async () => {
+  const previousPlatform = process.env.AGENT_DEVICE_PLATFORM;
+  const previousLocked = process.env.AGENT_DEVICE_SESSION_LOCKED;
+  process.env.AGENT_DEVICE_PLATFORM = 'ios';
+  process.env.AGENT_DEVICE_SESSION_LOCKED = '0';
+
+  try {
+    const result = await runCliCapture([
+      'batch',
+      '--session-lock',
+      'strip',
+      '--steps',
+      '[{"command":"snapshot","flags":{"target":"tv","serial":"emulator-5554"}}]',
+      '--json',
+    ]);
+    assert.equal(result.code, null);
+    assert.equal(result.calls.length, 1);
+    assert.equal(result.calls[0]?.meta?.lockPolicy, 'strip');
+    assert.equal(result.calls[0]?.meta?.lockPlatform, 'ios');
+    assert.equal(result.calls[0]?.flags?.platform, undefined);
+    const stepFlags = (result.calls[0]?.flags?.batchSteps ?? [])[0]?.flags ?? {};
+    assert.equal(stepFlags.platform, undefined);
+    assert.equal(stepFlags.target, 'tv');
+    assert.equal(stepFlags.serial, 'emulator-5554');
+  } finally {
+    if (previousPlatform === undefined) delete process.env.AGENT_DEVICE_PLATFORM;
+    else process.env.AGENT_DEVICE_PLATFORM = previousPlatform;
+    if (previousLocked === undefined) delete process.env.AGENT_DEVICE_SESSION_LOCKED;
+    else process.env.AGENT_DEVICE_SESSION_LOCKED = previousLocked;
+  }
+});
+
+test('batch step without explicit platform inherits parent platform over env default', async () => {
+  const previousPlatform = process.env.AGENT_DEVICE_PLATFORM;
+  process.env.AGENT_DEVICE_PLATFORM = 'ios';
+
+  try {
+    const result = await runCliCapture([
+      'batch',
+      '--platform',
+      'android',
+      '--steps',
+      '[{"command":"snapshot"}]',
+      '--json',
+    ]);
+    assert.equal(result.code, null);
+    assert.equal(result.calls.length, 1);
+    const stepFlags = (result.calls[0]?.flags?.batchSteps ?? [])[0]?.flags ?? {};
+    assert.equal(stepFlags.platform, 'android');
+  } finally {
+    if (previousPlatform === undefined) delete process.env.AGENT_DEVICE_PLATFORM;
+    else process.env.AGENT_DEVICE_PLATFORM = previousPlatform;
+  }
+});
