@@ -79,6 +79,8 @@ type DaemonClientSettings = {
   remoteAuthToken?: string;
 };
 
+type ResolvedDaemonTransport = 'socket' | 'http';
+
 const REQUEST_TIMEOUT_MS = resolveDaemonRequestTimeoutMs();
 const DAEMON_STARTUP_TIMEOUT_MS = resolveDaemonStartupTimeoutMs();
 const DAEMON_STARTUP_ATTEMPTS = resolveDaemonStartupAttempts();
@@ -532,25 +534,44 @@ async function stopDaemonProcessForTakeover(info: DaemonInfo): Promise<void> {
 }
 
 function readDaemonInfo(infoPath: string): DaemonInfo | null {
-  const data = readJsonFile(infoPath) as DaemonInfo | null;
-  if (!data || typeof data.token !== 'string' || data.token.length === 0) return null;
-  const hasSocket = Number.isInteger(data.port) && Number(data.port) > 0;
-  const hasHttp = Number.isInteger(data.httpPort) && Number(data.httpPort) > 0;
+  const data = readJsonFile(infoPath);
+  if (!data || typeof data !== 'object') return null;
+  const parsed = data as Partial<DaemonInfo>;
+  const token = typeof parsed.token === 'string' && parsed.token.length > 0 ? parsed.token : null;
+  if (!token) return null;
+  const hasSocket = Number.isInteger(parsed.port) && Number(parsed.port) > 0;
+  const hasHttp = Number.isInteger(parsed.httpPort) && Number(parsed.httpPort) > 0;
   if (!hasSocket && !hasHttp) return null;
+  const transport = parsed.transport;
+  const version = typeof parsed.version === 'string' ? parsed.version : undefined;
+  const codeSignature = typeof parsed.codeSignature === 'string' ? parsed.codeSignature : undefined;
+  const processStartTime = typeof parsed.processStartTime === 'string' ? parsed.processStartTime : undefined;
+  const hasPid = Number.isInteger(parsed.pid) && Number(parsed.pid) > 0;
   return {
-    ...data,
-    port: hasSocket ? Number(data.port) : undefined,
-    httpPort: hasHttp ? Number(data.httpPort) : undefined,
-    pid: Number.isInteger(data.pid) && data.pid > 0 ? data.pid : 0,
+    token,
+    port: hasSocket ? Number(parsed.port) : undefined,
+    httpPort: hasHttp ? Number(parsed.httpPort) : undefined,
+    transport: transport === 'socket' || transport === 'http' || transport === 'dual' ? transport : undefined,
+    pid: hasPid ? Number(parsed.pid) : 0,
+    version,
+    codeSignature,
+    processStartTime,
   };
 }
 
 function readDaemonLockInfo(lockPath: string): DaemonLockInfo | null {
-  const data = readJsonFile(lockPath) as DaemonLockInfo | null;
-  if (!data || !Number.isInteger(data.pid) || data.pid <= 0) {
+  const data = readJsonFile(lockPath);
+  if (!data || typeof data !== 'object') return null;
+  const parsed = data as Partial<DaemonLockInfo>;
+  const hasPid = Number.isInteger(parsed.pid) && Number(parsed.pid) > 0;
+  if (!hasPid) {
     return null;
   }
-  return data;
+  return {
+    pid: Number(parsed.pid),
+    processStartTime: typeof parsed.processStartTime === 'string' ? parsed.processStartTime : undefined,
+    startedAt: typeof parsed.startedAt === 'number' ? parsed.startedAt : undefined,
+  };
 }
 
 function removeDaemonInfo(infoPath: string): void {
@@ -720,7 +741,7 @@ async function sendRequest(
   return await sendSocketRequest(info, req);
 }
 
-function chooseTransport(info: DaemonInfo, preference: DaemonTransportPreference): 'socket' | 'http' {
+function chooseTransport(info: DaemonInfo, preference: DaemonTransportPreference): ResolvedDaemonTransport {
   if (info.baseUrl) {
     // Defensive guard: resolveClientSettings rejects this earlier for normal CLI flow.
     if (preference === 'socket') {
@@ -730,20 +751,27 @@ function chooseTransport(info: DaemonInfo, preference: DaemonTransportPreference
     }
     return 'http';
   }
-  if (preference === 'http') {
-    if (!info.httpPort) throw new AppError('COMMAND_FAILED', 'Daemon HTTP endpoint is unavailable');
-    return 'http';
+  if (preference === 'http' || preference === 'socket') {
+    return requireDaemonTransport(info, preference);
   }
-  if (preference === 'socket') {
-    if (!info.port) throw new AppError('COMMAND_FAILED', 'Daemon socket endpoint is unavailable');
-    return 'socket';
-  }
-  const transport = info.transport;
-  if (transport === 'http' && info.httpPort) return 'http';
-  if ((transport === 'socket' || transport === 'dual') && info.port) return 'socket';
-  if (info.httpPort) return 'http';
-  if (info.port) return 'socket';
+  const autoOrder: ResolvedDaemonTransport[] = info.transport === 'socket' || info.transport === 'dual'
+    ? ['socket', 'http']
+    : ['http', 'socket'];
+  const available = autoOrder.find((transport) => hasDaemonTransport(info, transport));
+  if (available) return available;
   throw new AppError('COMMAND_FAILED', 'Daemon metadata has no reachable transport');
+}
+
+function hasDaemonTransport(info: DaemonInfo, transport: ResolvedDaemonTransport): boolean {
+  return transport === 'http' ? Boolean(info.httpPort) : Boolean(info.port);
+}
+
+function requireDaemonTransport(info: DaemonInfo, transport: ResolvedDaemonTransport): ResolvedDaemonTransport {
+  if (hasDaemonTransport(info, transport)) return transport;
+  throw new AppError(
+    'COMMAND_FAILED',
+    transport === 'http' ? 'Daemon HTTP endpoint is unavailable' : 'Daemon socket endpoint is unavailable',
+  );
 }
 
 async function sendSocketRequest(info: DaemonInfo, req: DaemonRequest): Promise<DaemonResponse> {
