@@ -14,7 +14,7 @@ test('resolveIosSimulatorDeviceSetPath prefers CLI flag over env', () => {
   assert.equal(value, '/tmp/flag-set');
 });
 
-test('resolveIosSimulatorDeviceSetPath falls back to AGENT_DEVICE env first', () => {
+test('resolveIosSimulatorDeviceSetPath falls back to AGENT_DEVICE env before compat env', () => {
   const value = resolveIosSimulatorDeviceSetPath(undefined, {
     AGENT_DEVICE_IOS_SIMULATOR_DEVICE_SET: '/tmp/agent-set',
     IOS_SIMULATOR_DEVICE_SET: '/tmp/compat-set',
@@ -27,12 +27,12 @@ test('parseSerialAllowlist splits comma and whitespace separators', () => {
   assert.deepEqual(Array.from(parsed).sort(), ['device-1234', 'emulator-5554', 'emulator-7777']);
 });
 
-test('resolveAndroidSerialAllowlist resolves from CLI and env', () => {
-  const flag = resolveAndroidSerialAllowlist(' emulator-5554 , device-1234 ');
-  assert.deepEqual(Array.from(flag ?? []).sort(), ['device-1234', 'emulator-5554']);
+test('resolveAndroidSerialAllowlist prefers CLI value and falls back to env', () => {
+  const fromFlag = resolveAndroidSerialAllowlist(' emulator-5554 , device-1234 ');
+  assert.deepEqual(Array.from(fromFlag ?? []).sort(), ['device-1234', 'emulator-5554']);
 
-  const env = resolveAndroidSerialAllowlist(undefined, {
+  const fromEnv = resolveAndroidSerialAllowlist(undefined, {
     AGENT_DEVICE_ANDROID_DEVICE_ALLOWLIST: 'emulator-7777',
   });
-  assert.deepEqual(Array.from(env ?? []), ['emulator-7777']);
+  assert.deepEqual(Array.from(fromEnv ?? []), ['emulator-7777']);
 });
