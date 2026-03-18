@@ -104,6 +104,34 @@ const clientCommandHandlers: Partial<Record<string, ClientCommandHandler>> = {
     }
     return false;
   },
+  metro: async ({ positionals, flags, client }) => {
+    const action = (positionals[0] ?? '').toLowerCase();
+    if (action !== 'prepare') {
+      throw new AppError('INVALID_ARGS', 'metro only supports prepare');
+    }
+    if (!flags.metroPublicBaseUrl) {
+      throw new AppError('INVALID_ARGS', 'metro prepare requires --public-base-url <url>.');
+    }
+
+    const result = await client.metro.prepare({
+      projectRoot: flags.metroProjectRoot,
+      kind: flags.metroKind,
+      port: flags.metroPreparePort,
+      listenHost: flags.metroListenHost,
+      statusHost: flags.metroStatusHost,
+      publicBaseUrl: flags.metroPublicBaseUrl,
+      proxyBaseUrl: flags.metroProxyBaseUrl,
+      bearerToken: flags.metroBearerToken,
+      startupTimeoutMs: flags.metroStartupTimeoutMs,
+      probeTimeoutMs: flags.metroProbeTimeoutMs,
+      reuseExisting: flags.metroNoReuseExisting ? false : undefined,
+      installDependenciesIfNeeded: flags.metroNoInstallDeps ? false : undefined,
+      runtimeFilePath: flags.metroRuntimeFile,
+    });
+
+    writeMetroPrepareResult(result, flags);
+    return true;
+  },
   install: async ({ positionals, flags, client }) => {
     const result = await runDeployCommand('install', positionals, flags, client);
     if (flags.json) printJson({ success: true, data: serializeDeployResult(result) });
@@ -306,6 +334,14 @@ function writeRuntimeResult(result: RuntimeResult, flags: CliFlags): void {
     process.stdout.write('No runtime hints configured\n');
   } else {
     process.stdout.write(`${JSON.stringify(result.runtime ?? {}, null, 2)}\n`);
+  }
+}
+
+function writeMetroPrepareResult(result: unknown, flags: CliFlags): void {
+  if (flags.json) {
+    printJson({ success: true, data: result });
+  } else {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   }
 }
 
