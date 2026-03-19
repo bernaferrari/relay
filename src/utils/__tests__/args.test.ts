@@ -456,31 +456,65 @@ test('parseArgs rejects invalid swipe pattern', () => {
   );
 });
 
-test('usage includes --relaunch flag', () => {
-  assert.match(usage(), /--relaunch/);
-  assert.match(usage(), /install-from-source <url>/);
-  assert.match(usage(), /metro prepare/);
-  assert.match(usage(), /--header <name:value>/);
-  assert.match(usage(), /--public-base-url <url>/);
-  assert.match(usage(), /--restart/);
-  assert.match(usage(), /--target mobile\|tv/);
-  assert.match(usage(), /--ios-simulator-device-set <path>/);
-  assert.match(usage(), /--android-device-allowlist <serials>/);
-  assert.match(usage(), /--fps <n>/);
-  assert.match(usage(), /network dump/);
-  assert.match(usage(), /--save-script \[path\]/);
-  assert.match(usage(), /clipboard read \| clipboard write <text>/);
-  assert.match(usage(), /keyboard \[status\|get\|dismiss\]/);
-  assert.match(usage(), /trigger-app-event <event> \[payloadJson\]/);
-  assert.match(usage(), /pinch <scale> \[x\] \[y\]/);
-  assert.match(usage(), /--state-dir <path>/);
-  assert.match(usage(), /--daemon-transport auto\|socket\|http/);
-  assert.match(usage(), /--daemon-server-mode socket\|http\|dual/);
-  assert.match(usage(), /--tenant <id>/);
-  assert.match(usage(), /--session-isolation none\|tenant/);
-  assert.match(usage(), /--run-id <id>/);
-  assert.match(usage(), /--lease-id <id>/);
-  assert.doesNotMatch(usage(), /--metadata/);
+test('usage includes concise top-level commands', () => {
+  const usageText = usage();
+  assert.match(usageText, /install-from-source <url>/);
+  assert.match(usageText, /metro prepare --public-base-url <url>/);
+  assert.match(usageText, /batch --steps <json> \| --steps-file <path>/);
+  assert.match(usageText, /network dump/);
+  assert.match(usageText, /clipboard read \| clipboard write <text>/);
+  assert.match(usageText, /keyboard \[action\]/);
+  assert.match(usageText, /trigger-app-event <event> \[payloadJson\]/);
+  assert.match(usageText, /pinch <scale> \[x\] \[y\]/);
+  assert.match(usageText, /record start \[path\] \| record stop/);
+  assert.match(usageText, /trace start \[path\] \| trace stop/);
+});
+
+test('usage includes only global flags in the top-level flags section', () => {
+  const usageText = usage();
+  assert.match(usageText, /--target mobile\|tv/);
+  assert.match(usageText, /--ios-simulator-device-set <path>/);
+  assert.match(usageText, /--android-device-allowlist <serials>/);
+  assert.match(usageText, /--state-dir <path>/);
+  assert.match(usageText, /--daemon-transport auto\|socket\|http/);
+  assert.match(usageText, /--daemon-server-mode socket\|http\|dual/);
+  assert.match(usageText, /--tenant <id>/);
+  assert.match(usageText, /--session-isolation none\|tenant/);
+  assert.match(usageText, /--run-id <id>/);
+  assert.match(usageText, /--lease-id <id>/);
+  assert.doesNotMatch(usageText, /--relaunch/);
+  assert.doesNotMatch(usageText, /--header <name:value>/);
+  assert.doesNotMatch(usageText, /--restart/);
+  assert.doesNotMatch(usageText, /--fps <n>/);
+  assert.doesNotMatch(usageText, /--save-script \[path\]/);
+  assert.doesNotMatch(usageText, /--metadata/);
+});
+
+test('usage includes skills, config, environment, and examples footers', () => {
+  const usageText = usage();
+  assert.match(usageText, /Agent Skills:/);
+  assert.match(usageText, /agent-device\s+Canonical mobile automation flows/);
+  assert.match(usageText, /dogfood\s+Exploratory QA and bug hunts/);
+  assert.match(usageText, /See `skills\/<name>\/SKILL\.md` in the installed package\./);
+  assert.match(usageText, /Configuration:/);
+  assert.match(
+    usageText,
+    /Default config files: ~\/\.agent-device\/config\.json, \.\/agent-device\.json/,
+  );
+  assert.match(
+    usageText,
+    /Use --config <path> or AGENT_DEVICE_CONFIG to load one explicit config file\./,
+  );
+  assert.match(usageText, /Environment:/);
+  assert.match(usageText, /AGENT_DEVICE_SESSION\s+Default session name/);
+  assert.match(usageText, /AGENT_DEVICE_PLATFORM\s+Default platform binding/);
+  assert.match(usageText, /AGENT_DEVICE_SESSION_LOCK\s+Bound-session conflict mode/);
+  assert.match(usageText, /AGENT_DEVICE_DAEMON_BASE_URL\s+Connect to remote daemon/);
+  assert.match(usageText, /Examples:/);
+  assert.match(usageText, /agent-device open Settings --platform ios/);
+  assert.match(usageText, /agent-device snapshot -i/);
+  assert.match(usageText, /agent-device fill @e3 "test@example\.com"/);
+  assert.match(usageText, /agent-device replay \.\/session\.ad/);
 });
 
 test('apps defaults to --all filter and allows overrides', () => {
@@ -617,13 +651,25 @@ test('invalid range errors are deterministic', () => {
 
 test('usage includes swipe and press series options', () => {
   const help = usage();
-  assert.match(help, /diff snapshot/);
+  assert.match(help, /diff <kind>/);
   assert.match(help, /swipe <x1> <y1> <x2> <y2>/);
-  assert.match(help, /--pattern one-way\|ping-pong/);
-  assert.match(help, /--interval-ms/);
-  assert.match(help, /settings <wifi\|airplane\|location> <on\|off>/);
-  assert.match(help, /settings appearance <light\|dark\|toggle>/);
-  assert.match(help, /settings permission <grant\|deny\|reset>/);
+  assert.match(help, /settings \[area\] \[options\]/);
+  assert.doesNotMatch(help, /--pattern one-way\|ping-pong/);
+  assert.doesNotMatch(help, /--interval-ms/);
+});
+
+test('usage renders concise commands inline with descriptions', () => {
+  const help = usage();
+  assert.match(help, /Commands:[\s\S]*\n  boot\s{2,}Boot target device\/simulator/);
+  assert.match(help, /  metro prepare --public-base-url <url>\s{2,}Prepare local Metro runtime/);
+  assert.match(help, /  batch --steps <json> \| --steps-file <path>\s{2,}Run multiple commands/);
+  assert.match(help, /  session list\s{2,}List active sessions/);
+  assert.doesNotMatch(help, /  metro prepare[^\n]*--project-root/);
+  assert.doesNotMatch(help, /\n  batch\s{2,}Run multiple commands/);
+  assert.doesNotMatch(
+    help,
+    /Prepare a local Metro runtime and optionally bridge it through agent-device-proxy/,
+  );
 });
 
 test('command usage shows command and global flags separately', () => {
@@ -634,6 +680,15 @@ test('command usage shows command and global flags separately', () => {
   assert.match(help, /--pattern one-way\|ping-pong/);
   assert.match(help, /Global flags:/);
   assert.match(help, /--platform ios\|android\|apple/);
+});
+
+test('command usage keeps detailed descriptions', () => {
+  const help = usageForCommand('metro');
+  if (help === null) throw new Error('Expected command help text');
+  assert.match(
+    help,
+    /Prepare a local Metro runtime and optionally bridge it through agent-device-proxy/,
+  );
 });
 
 test('command usage shows no command flags when unsupported', () => {
