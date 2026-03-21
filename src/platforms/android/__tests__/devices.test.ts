@@ -11,6 +11,96 @@ import {
   resolveAndroidAvdName,
 } from '../devices.ts';
 
+const MOCK_ANDROID_ADB_SCRIPT = [
+  '#!/bin/sh',
+  'if [ "$1" = "devices" ] && [ "$2" = "-l" ]; then',
+  '  echo "List of devices attached"',
+  '  if [ -f "$AGENT_DEVICE_TEST_EMU_BOOTED_FILE" ]; then',
+  '    echo "emulator-5554 device product:sdk_gphone64 model:Pixel_9_Pro_XL device:emu64a transport_id:2"',
+  '  fi',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "emu" ] && [ "$4" = "avd" ] && [ "$5" = "name" ]; then',
+  '  echo "Pixel_9_Pro_XL"',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "ro.boot.qemu.avd_name" ]; then',
+  '  echo "Pixel_9_Pro_XL"',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "persist.sys.avd_name" ]; then',
+  '  echo "Pixel_9_Pro_XL"',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "sys.boot_completed" ]; then',
+  '  if [ -f "$AGENT_DEVICE_TEST_EMU_BOOTED_FILE" ]; then',
+  '    echo "1"',
+  '  else',
+  '    echo "0"',
+  '  fi',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "ro.build.characteristics" ]; then',
+  '  echo "phone"',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "cmd" ] && [ "$5" = "package" ] && [ "$6" = "has-feature" ]; then',
+  '  echo "false"',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "pm" ] && [ "$5" = "list" ] && [ "$6" = "features" ]; then',
+  '  echo ""',
+  '  exit 0',
+  'fi',
+  'echo "unexpected adb args: $@" >> "$AGENT_DEVICE_TEST_EMU_LOG_FILE"',
+  'exit 1',
+  '',
+];
+
+const MOCK_ANDROID_EMULATOR_SCRIPT = [
+  '#!/bin/sh',
+  'if [ "$1" = "-list-avds" ]; then',
+  '  echo "Pixel_9_Pro_XL"',
+  '  exit 0',
+  'fi',
+  'if [ "$1" = "-avd" ]; then',
+  '  echo "$@" >> "$AGENT_DEVICE_TEST_EMU_LOG_FILE"',
+  '  touch "$AGENT_DEVICE_TEST_EMU_BOOTED_FILE"',
+  '  exit 0',
+  'fi',
+  'echo "unexpected emulator args: $@" >> "$AGENT_DEVICE_TEST_EMU_LOG_FILE"',
+  'exit 1',
+  '',
+];
+
+async function writeExecutable(filePath: string, lines: readonly string[]): Promise<void> {
+  await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+  await fs.chmod(filePath, 0o755);
+}
+
+async function withEnv(
+  overrides: Record<string, string | undefined>,
+  run: () => Promise<void>,
+): Promise<void> {
+  const saved = Object.fromEntries(
+    Object.keys(overrides).map((key) => [key, process.env[key]]),
+  ) as Record<string, string | undefined>;
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+
+  try {
+    await run();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 test('parseAndroidTargetFromCharacteristics detects tv markers', () => {
   assert.equal(parseAndroidTargetFromCharacteristics('tv,nosdcard'), 'tv');
   assert.equal(parseAndroidTargetFromCharacteristics('watch,leanback'), 'tv');
@@ -47,92 +137,56 @@ async function withMockedAndroidTools(
   const adbPath = path.join(tmpDir, 'adb');
   const emulatorPath = path.join(tmpDir, 'emulator');
 
-  await fs.writeFile(
-    adbPath,
-    [
-      '#!/bin/sh',
-      'if [ "$1" = "devices" ] && [ "$2" = "-l" ]; then',
-      '  echo "List of devices attached"',
-      '  if [ -f "$AGENT_DEVICE_TEST_EMU_BOOTED_FILE" ]; then',
-      '    echo "emulator-5554 device product:sdk_gphone64 model:Pixel_9_Pro_XL device:emu64a transport_id:2"',
-      '  fi',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "emu" ] && [ "$4" = "avd" ] && [ "$5" = "name" ]; then',
-      '  echo "Pixel_9_Pro_XL"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "ro.boot.qemu.avd_name" ]; then',
-      '  echo "Pixel_9_Pro_XL"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "persist.sys.avd_name" ]; then',
-      '  echo "Pixel_9_Pro_XL"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "sys.boot_completed" ]; then',
-      '  if [ -f "$AGENT_DEVICE_TEST_EMU_BOOTED_FILE" ]; then',
-      '    echo "1"',
-      '  else',
-      '    echo "0"',
-      '  fi',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "getprop" ] && [ "$5" = "ro.build.characteristics" ]; then',
-      '  echo "phone"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "cmd" ] && [ "$5" = "package" ] && [ "$6" = "has-feature" ]; then',
-      '  echo "false"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-s" ] && [ "$2" = "emulator-5554" ] && [ "$3" = "shell" ] && [ "$4" = "pm" ] && [ "$5" = "list" ] && [ "$6" = "features" ]; then',
-      '  echo ""',
-      '  exit 0',
-      'fi',
-      'echo "unexpected adb args: $@" >> "$AGENT_DEVICE_TEST_EMU_LOG_FILE"',
-      'exit 1',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  await fs.writeFile(
-    emulatorPath,
-    [
-      '#!/bin/sh',
-      'if [ "$1" = "-list-avds" ]; then',
-      '  echo "Pixel_9_Pro_XL"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "-avd" ]; then',
-      '  echo "$@" >> "$AGENT_DEVICE_TEST_EMU_LOG_FILE"',
-      '  touch "$AGENT_DEVICE_TEST_EMU_BOOTED_FILE"',
-      '  exit 0',
-      'fi',
-      'echo "unexpected emulator args: $@" >> "$AGENT_DEVICE_TEST_EMU_LOG_FILE"',
-      'exit 1',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  await fs.chmod(adbPath, 0o755);
-  await fs.chmod(emulatorPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  const previousBooted = process.env.AGENT_DEVICE_TEST_EMU_BOOTED_FILE;
-  const previousLog = process.env.AGENT_DEVICE_TEST_EMU_LOG_FILE;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-  process.env.AGENT_DEVICE_TEST_EMU_BOOTED_FILE = emulatorBootedPath;
-  process.env.AGENT_DEVICE_TEST_EMU_LOG_FILE = emulatorLogPath;
+  await writeExecutable(adbPath, MOCK_ANDROID_ADB_SCRIPT);
+  await writeExecutable(emulatorPath, MOCK_ANDROID_EMULATOR_SCRIPT);
 
   try {
-    await run({ emulatorLogPath, emulatorBootedPath });
+    await withEnv(
+      {
+        PATH: `${tmpDir}${path.delimiter}${process.env.PATH ?? ''}`,
+        AGENT_DEVICE_TEST_EMU_BOOTED_FILE: emulatorBootedPath,
+        AGENT_DEVICE_TEST_EMU_LOG_FILE: emulatorLogPath,
+        HOME: tmpDir,
+        ANDROID_SDK_ROOT: undefined,
+        ANDROID_HOME: undefined,
+      },
+      async () => await run({ emulatorLogPath, emulatorBootedPath }),
+    );
   } finally {
-    process.env.PATH = previousPath;
-    if (previousBooted === undefined) delete process.env.AGENT_DEVICE_TEST_EMU_BOOTED_FILE;
-    else process.env.AGENT_DEVICE_TEST_EMU_BOOTED_FILE = previousBooted;
-    if (previousLog === undefined) delete process.env.AGENT_DEVICE_TEST_EMU_LOG_FILE;
-    else process.env.AGENT_DEVICE_TEST_EMU_LOG_FILE = previousLog;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function withMockedAndroidSdkRoot(
+  run: (ctx: { emulatorLogPath: string; emulatorBootedPath: string; sdkRoot: string }) => Promise<void>,
+): Promise<void> {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-android-sdk-root-'));
+  const sdkRoot = path.join(tmpDir, 'Android', 'Sdk');
+  const platformToolsDir = path.join(sdkRoot, 'platform-tools');
+  const emulatorDir = path.join(sdkRoot, 'emulator');
+  const emulatorLogPath = path.join(tmpDir, 'emulator.log');
+  const emulatorBootedPath = path.join(tmpDir, 'emulator.booted');
+  const adbPath = path.join(platformToolsDir, 'adb');
+  const emulatorPath = path.join(emulatorDir, 'emulator');
+
+  await fs.mkdir(platformToolsDir, { recursive: true });
+  await fs.mkdir(emulatorDir, { recursive: true });
+
+  await writeExecutable(adbPath, MOCK_ANDROID_ADB_SCRIPT);
+  await writeExecutable(emulatorPath, MOCK_ANDROID_EMULATOR_SCRIPT);
+
+  try {
+    await withEnv(
+      {
+        PATH: process.env.PATH ?? '',
+        AGENT_DEVICE_TEST_EMU_BOOTED_FILE: emulatorBootedPath,
+        AGENT_DEVICE_TEST_EMU_LOG_FILE: emulatorLogPath,
+        ANDROID_SDK_ROOT: sdkRoot,
+        ANDROID_HOME: undefined,
+      },
+      async () => await run({ emulatorLogPath, emulatorBootedPath, sdkRoot }),
+    );
+  } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 }
@@ -178,5 +232,21 @@ test('ensureAndroidEmulatorBooted launches emulator with GUI by default', async 
     const log = await fs.readFile(emulatorLogPath, 'utf8');
     assert.match(log, /-avd Pixel_9_Pro_XL/);
     assert.doesNotMatch(log, /-no-window/);
+  });
+});
+
+test('ensureAndroidEmulatorBooted falls back to ANDROID_SDK_ROOT when PATH is incomplete', async () => {
+  await withMockedAndroidSdkRoot(async ({ emulatorLogPath, sdkRoot }) => {
+    const device = await ensureAndroidEmulatorBooted({
+      avdName: 'Pixel 9 Pro XL',
+      timeoutMs: 5_000,
+      headless: true,
+    });
+    assert.equal(device.id, 'emulator-5554');
+    const log = await fs.readFile(emulatorLogPath, 'utf8');
+    assert.match(log, /-avd Pixel_9_Pro_XL -no-window -no-audio/);
+    assert.ok((process.env.PATH ?? '').includes(path.join(sdkRoot, 'platform-tools')));
+    assert.ok((process.env.PATH ?? '').includes(path.join(sdkRoot, 'emulator')));
+    assert.equal(process.env.ANDROID_HOME, sdkRoot);
   });
 });
