@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { DeviceInfo } from '../../../utils/device.ts';
 import { AppError } from '../../../utils/errors.ts';
 import {
@@ -13,6 +16,10 @@ import {
   resolveRunnerSigningBuildSettings,
   shouldRetryRunnerConnectError,
 } from '../runner-client.ts';
+import {
+  shouldDeleteRunnerDerivedRootEntry,
+  xctestrunReferencesProjectRoot,
+} from '../runner-xctestrun.ts';
 
 const iosSimulator: DeviceInfo = {
   platform: 'ios',
@@ -45,6 +52,15 @@ const tvOsDevice: DeviceInfo = {
   name: 'Apple TV',
   kind: 'device',
   target: 'tv',
+  booted: true,
+};
+
+const macOsDevice: DeviceInfo = {
+  platform: 'macos',
+  id: 'host-macos-local',
+  name: 'Host Mac',
+  kind: 'device',
+  target: 'desktop',
   booted: true,
 };
 
@@ -83,6 +99,13 @@ test('resolveRunnerMaxConcurrentDestinationsFlag uses simulator flag for simulat
 test('resolveRunnerMaxConcurrentDestinationsFlag uses device flag for physical devices', () => {
   assert.equal(
     resolveRunnerMaxConcurrentDestinationsFlag(iosDevice),
+    '-maximum-concurrent-test-device-destinations',
+  );
+});
+
+test('resolveRunnerMaxConcurrentDestinationsFlag uses device flag for macOS desktop', () => {
+  assert.equal(
+    resolveRunnerMaxConcurrentDestinationsFlag(macOsDevice),
     '-maximum-concurrent-test-device-destinations',
   );
 });
@@ -210,4 +233,32 @@ test('isRetryableRunnerError does not retry xcodebuild early-exit errors', () =>
 test('isRetryableRunnerError does not retry busy-connecting errors', () => {
   const err = new AppError('COMMAND_FAILED', 'Device is busy (Connecting to iPhone)');
   assert.equal(isRetryableRunnerError(err), false);
+});
+
+test('xctestrunReferencesProjectRoot rejects stale worktree artifacts', async () => {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-device-xctestrun-'));
+  const xctestrunPath = path.join(tmpDir, 'AgentDeviceRunner.xctestrun');
+  fs.writeFileSync(
+    xctestrunPath,
+    '<plist><dict><key>SourceFilesCommonPathPrefix</key><string>/tmp/other-worktree/agent-device/ios-runner/AgentDeviceRunner</string></dict></plist>',
+    'utf8',
+  );
+
+  assert.equal(
+    xctestrunReferencesProjectRoot(xctestrunPath, '/tmp/current-worktree/agent-device'),
+    false,
+  );
+  assert.equal(
+    xctestrunReferencesProjectRoot(xctestrunPath, '/tmp/other-worktree/agent-device'),
+    true,
+  );
+});
+
+test('shouldDeleteRunnerDerivedRootEntry only removes known xcode transient entries', () => {
+  assert.equal(shouldDeleteRunnerDerivedRootEntry('Build'), true);
+  assert.equal(shouldDeleteRunnerDerivedRootEntry('Logs'), true);
+  assert.equal(shouldDeleteRunnerDerivedRootEntry('Index.noindex'), true);
+  assert.equal(shouldDeleteRunnerDerivedRootEntry('device'), false);
+  assert.equal(shouldDeleteRunnerDerivedRootEntry('macos'), false);
+  assert.equal(shouldDeleteRunnerDerivedRootEntry('visionos'), false);
 });

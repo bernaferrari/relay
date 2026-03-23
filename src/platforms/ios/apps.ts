@@ -35,7 +35,17 @@ import {
   getSimulatorState,
 } from './simulator.ts';
 import { buildSimctlArgsForDevice } from './simctl.ts';
-import { prepareIosInstallArtifact } from './install-artifact.ts';
+import { prepareIosInstallArtifact, readIosBundleInfo } from './install-artifact.ts';
+import { filterAppleAppsByBundlePrefix } from './app-filter.ts';
+import {
+  closeMacOsApp,
+  listMacApps,
+  openMacOsApp,
+  readMacOsClipboardText,
+  resolveMacOsApp,
+  setMacOsAppearance,
+  writeMacOsClipboardText,
+} from './macos-apps.ts';
 export {
   screenshotIos,
   shouldFallbackToRunnerForIosScreenshot,
@@ -69,6 +79,9 @@ type InstallIosAppOptions = {
 };
 
 export async function resolveIosApp(device: DeviceInfo, app: string): Promise<string> {
+  if (device.platform === 'macos') {
+    return await resolveMacOsApp(app);
+  }
   const trimmed = app.trim();
   if (trimmed.includes('.')) return trimmed;
 
@@ -93,6 +106,10 @@ export async function openIosApp(
   app: string,
   options?: { appBundleId?: string; url?: string },
 ): Promise<void> {
+  if (device.platform === 'macos') {
+    await openMacOsApp(device, app, options);
+    return;
+  }
   const explicitUrl = options?.url?.trim();
   if (explicitUrl) {
     if (!isDeepLinkTarget(explicitUrl)) {
@@ -145,6 +162,9 @@ export async function openIosApp(
 }
 
 export async function openIosDevice(device: DeviceInfo): Promise<void> {
+  if (device.platform === 'macos') {
+    return;
+  }
   if (device.kind !== 'simulator') return;
   const state = await getSimulatorState(device);
   if (state === 'Booted') return;
@@ -154,6 +174,10 @@ export async function openIosDevice(device: DeviceInfo): Promise<void> {
 }
 
 export async function closeIosApp(device: DeviceInfo, app: string): Promise<void> {
+  if (device.platform === 'macos') {
+    await closeMacOsApp(device, app);
+    return;
+  }
   const bundleId = await resolveIosApp(device, app);
   if (device.kind === 'simulator') {
     await ensureBootedSimulator(device);
@@ -283,6 +307,9 @@ export async function installIosInstallablePath(
 }
 
 export async function readIosClipboardText(device: DeviceInfo): Promise<string> {
+  if (device.platform === 'macos') {
+    return await readMacOsClipboardText();
+  }
   ensureSimulator(device, 'clipboard');
   await ensureBootedSimulator(device);
   const result = await runSimctl(device, ['pbpaste', device.id], { allowFailure: true });
@@ -297,6 +324,10 @@ export async function readIosClipboardText(device: DeviceInfo): Promise<string> 
 }
 
 export async function writeIosClipboardText(device: DeviceInfo, text: string): Promise<void> {
+  if (device.platform === 'macos') {
+    await writeMacOsClipboardText(text);
+    return;
+  }
   ensureSimulator(device, 'clipboard');
   await ensureBootedSimulator(device);
   const result = await runSimctl(device, ['pbcopy', device.id], {
@@ -336,6 +367,16 @@ export async function setIosSetting(
   appBundleId?: string,
   options?: PermissionSettingOptions,
 ): Promise<void> {
+  if (device.platform === 'macos') {
+    if (setting.toLowerCase() !== 'appearance') {
+      throw new AppError(
+        'INVALID_ARGS',
+        `Unsupported macOS setting: ${setting}. macOS currently supports only settings appearance <light|dark|toggle>.`,
+      );
+    }
+    await setMacOsAppearance(state);
+    return;
+  }
   ensureSimulator(device, 'settings');
   await ensureBootedSimulator(device);
   const normalized = setting.toLowerCase();
@@ -416,9 +457,12 @@ export async function listIosApps(
   device: DeviceInfo,
   filter: 'user-installed' | 'all' = 'all',
 ): Promise<IosAppInfo[]> {
+  if (device.platform === 'macos') {
+    return await listMacApps(filter);
+  }
   if (device.kind === 'simulator') {
     const apps = await listSimulatorApps(device);
-    return filterIosAppsByBundlePrefix(apps, filter);
+    return filterAppleAppsByBundlePrefix(apps, filter);
   }
   return await listIosDeviceApps(device, filter);
 }
@@ -853,14 +897,4 @@ async function launchIosDeviceProcess(
     args.push('--payload-url', options.payloadUrl);
   }
   await runIosDevicectl(args, { action: 'launch iOS app', deviceId: device.id });
-}
-
-function filterIosAppsByBundlePrefix(
-  apps: IosAppInfo[],
-  filter: 'user-installed' | 'all',
-): IosAppInfo[] {
-  if (filter === 'user-installed') {
-    return apps.filter((app) => !app.bundleId.startsWith('com.apple.'));
-  }
-  return apps;
 }

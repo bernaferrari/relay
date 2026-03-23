@@ -7,7 +7,12 @@ import {
 } from '../../core/dispatch.ts';
 import { isCommandSupportedOnDevice } from '../../core/capabilities.ts';
 import { AppError, asAppError, normalizeError } from '../../utils/errors.ts';
-import { normalizePlatformSelector, type DeviceInfo } from '../../utils/device.ts';
+import {
+  isApplePlatform,
+  normalizePlatformSelector,
+  resolveAppleSimulatorSetPathForSelector,
+  type DeviceInfo,
+} from '../../utils/device.ts';
 import {
   resolveAndroidSerialAllowlist,
   resolveIosSimulatorDeviceSetPath,
@@ -80,9 +85,13 @@ type EnsureAndroidEmulatorBoot = (params: {
   serial?: string;
   headless?: boolean;
 }) => Promise<DeviceInfo>;
+type ListAndroidDevices = typeof import('../../platforms/android/devices.ts').listAndroidDevices;
+type ListAppleDevices = typeof import('../../platforms/ios/devices.ts').listAppleDevices;
 
 const IOS_APPSTATE_SESSION_REQUIRED_MESSAGE =
   'iOS appstate requires an active session on the target device. Run open first (for example: open --session sim --platform ios --device "<name>" <app>).';
+const MACOS_APPSTATE_SESSION_REQUIRED_MESSAGE =
+  'macOS appstate requires an active session on the target device. Run open first (for example: open --session macos --platform macos "System Settings").';
 const REPLAY_PARENT_FLAG_KEYS: Array<keyof CommandFlags> = [
   'platform',
   'target',
@@ -180,19 +189,16 @@ async function runSessionOrSelectorDispatch(params: {
   }
   return { ok: true, data: result ?? {} };
 }
-async function resolveInstalledAppIdentifier(
-  device: DeviceInfo,
-  app: string,
-): Promise<{ bundleId?: string; package?: string }> {
-  if (device.platform === 'ios') {
-    const { resolveIosApp } = await import('../../platforms/ios/index.ts');
-    try {
-      return { bundleId: await resolveIosApp(device, app) };
-    } catch {
-      return {};
-    }
+function resolveSessionLogBackendLabel(
+  session: SessionState,
+): 'ios-simulator' | 'ios-device' | 'android' {
+  if (session.appLog) {
+    return session.appLog.backend;
   }
-  return { package: await resolveAndroidPackageForOpen(device, app) };
+  if (session.device.platform === 'ios') {
+    return session.device.kind === 'device' ? 'ios-device' : 'ios-simulator';
+  }
+  return 'android';
 }
 
 async function handleAppStateCommand(params: {
@@ -222,10 +228,12 @@ async function handleAppStateCommand(params: {
   const guard = requireSessionOrExplicitSelector('appstate', session, flags);
   if (guard) return guard;
 
-  const shouldUseSessionStateForIos =
-    session?.device.platform === 'ios' && selectorTargetsSessionDevice(flags, session);
+  const shouldUseSessionStateForApple =
+    (session?.device.platform === 'ios' || session?.device.platform === 'macos') &&
+    selectorTargetsSessionDevice(flags, session);
   const targetsIos = normalizedPlatform === 'ios';
-  if (targetsIos && !shouldUseSessionStateForIos) {
+  const targetsMacOs = normalizedPlatform === 'macos';
+  if (targetsIos && !shouldUseSessionStateForApple) {
     return {
       ok: false,
       error: {
@@ -234,27 +242,40 @@ async function handleAppStateCommand(params: {
       },
     };
   }
-  if (shouldUseSessionStateForIos) {
+  if (targetsMacOs && !shouldUseSessionStateForApple) {
+    return {
+      ok: false,
+      error: {
+        code: 'SESSION_NOT_FOUND',
+        message: MACOS_APPSTATE_SESSION_REQUIRED_MESSAGE,
+      },
+    };
+  }
+  if (shouldUseSessionStateForApple && session) {
     const appName = session.appName ?? session.appBundleId;
     if (!session.appName && !session.appBundleId) {
+      const sessionPlatform = session.device.platform === 'macos' ? 'macOS' : 'iOS';
       return {
         ok: false,
         error: {
           code: 'COMMAND_FAILED',
-          message:
-            'No foreground app is tracked for this iOS session. Open an app in the session, then retry appstate.',
+          message: `No foreground app is tracked for this ${sessionPlatform} session. Open an app in the session, then retry appstate.`,
         },
       };
     }
     return {
       ok: true,
       data: {
-        platform: 'ios',
+        platform: session.device.platform,
         appName: appName ?? 'unknown',
         appBundleId: session.appBundleId,
         source: 'session',
-        device_udid: session.device.id,
-        ios_simulator_device_set: session.device.simulatorSetPath ?? null,
+        ...(session.device.platform === 'ios'
+          ? {
+              device_udid: session.device.id,
+              ios_simulator_device_set: session.device.simulatorSetPath ?? null,
+            }
+          : {}),
       },
     };
   }
@@ -271,6 +292,15 @@ async function handleAppStateCommand(params: {
       error: {
         code: 'SESSION_NOT_FOUND',
         message: IOS_APPSTATE_SESSION_REQUIRED_MESSAGE,
+      },
+    };
+  }
+  if (device.platform === 'macos') {
+    return {
+      ok: false,
+      error: {
+        code: 'SESSION_NOT_FOUND',
+        message: MACOS_APPSTATE_SESSION_REQUIRED_MESSAGE,
       },
     };
   }
@@ -370,6 +400,12 @@ export async function handleSessionCommands(params: {
   settleSimulator?: typeof settleIosSimulator;
   shutdownSimulator?: typeof shutdownSimulator;
   shutdownAndroidEmulator?: ShutdownAndroidEmulatorFn;
+  listAndroidDevices?: ListAndroidDevices;
+  listAppleDevices?: ListAppleDevices;
+  listAppleApps?: (
+    device: DeviceInfo,
+    filter: 'user-installed' | 'all',
+  ) => Promise<Array<{ bundleId: string; name?: string }>>;
 }): Promise<DaemonResponse | null> {
   const {
     req,
@@ -395,6 +431,9 @@ export async function handleSessionCommands(params: {
     settleSimulator: settleSimulatorOverride,
     shutdownSimulator: shutdownSimulatorOverride,
     shutdownAndroidEmulator: shutdownAndroidEmulatorOverride,
+    listAndroidDevices: listAndroidDevicesOverride,
+    listAppleDevices: listAppleDevicesOverride,
+    listAppleApps: listAppleAppsOverride,
   } = params;
   const dispatch = dispatchOverride ?? dispatchCommand;
   const ensureReady = ensureReadyOverride ?? ensureDeviceReady;
@@ -414,6 +453,7 @@ export async function handleSessionCommands(params: {
         target: s.device.target ?? 'mobile',
         device: s.device.name,
         id: s.device.id,
+        device_id: s.device.id,
         createdAt: s.createdAt,
         ...(s.device.platform === 'ios' && {
           device_udid: s.device.id,
@@ -478,36 +518,54 @@ export async function handleSessionCommands(params: {
   if (command === 'devices') {
     try {
       const devices: DeviceInfo[] = [];
-      const iosSimulatorSetPath = resolveIosSimulatorDeviceSetPath(
-        req.flags?.iosSimulatorDeviceSet,
-      );
       const androidSerialAllowlist = resolveAndroidSerialAllowlist(
         req.flags?.androidDeviceAllowlist,
       );
       const requestedPlatform = normalizePlatformSelector(req.flags?.platform);
+      const iosSimulatorSetPath = resolveAppleSimulatorSetPathForSelector({
+        simulatorSetPath: resolveIosSimulatorDeviceSetPath(req.flags?.iosSimulatorDeviceSet),
+        platform: requestedPlatform,
+        target: req.flags?.target,
+      });
       if (requestedPlatform === 'android') {
-        const { listAndroidDevices } = await import('../../platforms/android/devices.ts');
+        const listAndroidDevices =
+          listAndroidDevicesOverride ??
+          (await import('../../platforms/android/devices.ts')).listAndroidDevices;
         devices.push(...(await listAndroidDevices({ serialAllowlist: androidSerialAllowlist })));
-      } else if (requestedPlatform === 'ios') {
-        const { listIosDevices } = await import('../../platforms/ios/devices.ts');
-        devices.push(...(await listIosDevices({ simulatorSetPath: iosSimulatorSetPath })));
+      } else if (requestedPlatform === 'ios' || requestedPlatform === 'macos') {
+        const listAppleDevices =
+          listAppleDevicesOverride ??
+          (await import('../../platforms/ios/devices.ts')).listAppleDevices;
+        devices.push(...(await listAppleDevices({ simulatorSetPath: iosSimulatorSetPath })));
       } else {
-        const { listAndroidDevices } = await import('../../platforms/android/devices.ts');
-        const { listIosDevices } = await import('../../platforms/ios/devices.ts');
-        try {
-          devices.push(...(await listAndroidDevices({ serialAllowlist: androidSerialAllowlist })));
-        } catch {
-          // ignore
+        if (requestedPlatform !== 'apple') {
+          const listAndroidDevices =
+            listAndroidDevicesOverride ??
+            (await import('../../platforms/android/devices.ts')).listAndroidDevices;
+          try {
+            devices.push(
+              ...(await listAndroidDevices({ serialAllowlist: androidSerialAllowlist })),
+            );
+          } catch {
+            // ignore
+          }
         }
+        const listAppleDevices =
+          listAppleDevicesOverride ??
+          (await import('../../platforms/ios/devices.ts')).listAppleDevices;
         try {
-          devices.push(...(await listIosDevices({ simulatorSetPath: iosSimulatorSetPath })));
+          devices.push(...(await listAppleDevices({ simulatorSetPath: iosSimulatorSetPath })));
         } catch {
           // ignore
         }
       }
+      const platformFiltered =
+        requestedPlatform === 'ios' || requestedPlatform === 'macos'
+          ? devices.filter((device) => device.platform === requestedPlatform)
+          : devices;
       const filtered = req.flags?.target
-        ? devices.filter((device) => (device.target ?? 'mobile') === req.flags?.target)
-        : devices;
+        ? platformFiltered.filter((device) => (device.target ?? 'mobile') === req.flags?.target)
+        : platformFiltered;
       const publicDevices = filtered.map(
         ({ simulatorSetPath: _simulatorSetPath, ...device }) => device,
       );
@@ -540,9 +598,10 @@ export async function handleSessionCommands(params: {
       };
     }
     const appsFilter = req.flags?.appsFilter ?? 'all';
-    if (device.platform === 'ios') {
-      const { listIosApps } = await import('../../platforms/ios/index.ts');
-      const apps = await listIosApps(device, appsFilter);
+    if (isApplePlatform(device.platform)) {
+      const listAppleApps =
+        listAppleAppsOverride ?? (await import('../../platforms/ios/index.ts')).listIosApps;
+      const apps = await listAppleApps(device, appsFilter);
       const formatted = apps.map((app) =>
         app.name && app.name !== app.bundleId ? `${app.name} (${app.bundleId})` : app.bundleId,
       );
@@ -919,6 +978,15 @@ export async function handleSessionCommands(params: {
         error: { code: 'SESSION_NOT_FOUND', message: 'logs requires an active session' },
       };
     }
+    if (!isCommandSupportedOnDevice('logs', session.device)) {
+      const unsupportedError = normalizeError(
+        new AppError('UNSUPPORTED_OPERATION', 'logs is not supported on this device'),
+      );
+      return {
+        ok: false,
+        error: unsupportedError,
+      };
+    }
     const action = (req.positionals?.[0] ?? 'path').toLowerCase();
     const restart = Boolean(req.flags?.restart);
     if (!LOG_ACTIONS.includes(action as (typeof LOG_ACTIONS)[number])) {
@@ -936,13 +1004,7 @@ export async function handleSessionCommands(params: {
     if (action === 'path') {
       const logPath = sessionStore.resolveAppLogPath(sessionName);
       const metadata = getAppLogPathMetadata(logPath);
-      const backend =
-        session.appLog?.backend ??
-        (session.device.platform === 'ios'
-          ? session.device.kind === 'device'
-            ? 'ios-device'
-            : 'ios-simulator'
-          : 'android');
+      const backend = resolveSessionLogBackendLabel(session);
       return {
         ok: true,
         data: {
@@ -997,15 +1059,6 @@ export async function handleSessionCommands(params: {
               code: 'INVALID_ARGS',
               message: 'logs clear --restart requires an app session; run open <app> first',
             },
-          };
-        }
-        if (!isCommandSupportedOnDevice('logs', session.device)) {
-          const unsupportedError = normalizeError(
-            new AppError('UNSUPPORTED_OPERATION', 'logs is not supported on this device'),
-          );
-          return {
-            ok: false,
-            error: unsupportedError,
           };
         }
       }
@@ -1065,15 +1118,6 @@ export async function handleSessionCommands(params: {
           },
         };
       }
-      if (!isCommandSupportedOnDevice('logs', session.device)) {
-        const unsupportedError = normalizeError(
-          new AppError('UNSUPPORTED_OPERATION', 'logs is not supported on this device'),
-        );
-        return {
-          ok: false,
-          error: unsupportedError,
-        };
-      }
       const appLogPath = sessionStore.resolveAppLogPath(sessionName);
       const appLogPidPath = sessionStore.resolveAppLogPidPath(sessionName);
       try {
@@ -1121,6 +1165,15 @@ export async function handleSessionCommands(params: {
         error: { code: 'SESSION_NOT_FOUND', message: 'network requires an active session' },
       };
     }
+    if (!isCommandSupportedOnDevice('network', session.device)) {
+      const unsupportedError = normalizeError(
+        new AppError('UNSUPPORTED_OPERATION', 'network is not supported on this device'),
+      );
+      return {
+        ok: false,
+        error: unsupportedError,
+      };
+    }
     const action = (req.positionals?.[0] ?? 'dump').toLowerCase();
     if (!NETWORK_ACTIONS.includes(action as (typeof NETWORK_ACTIONS)[number])) {
       return { ok: false, error: { code: 'INVALID_ARGS', message: NETWORK_ACTIONS_MESSAGE } };
@@ -1153,13 +1206,7 @@ export async function handleSessionCommands(params: {
       maxPayloadChars: 2048,
       maxScanLines: 4000,
     });
-    const backend =
-      session.appLog?.backend ??
-      (session.device.platform === 'ios'
-        ? session.device.kind === 'device'
-          ? 'ios-device'
-          : 'ios-simulator'
-        : 'android');
+    const backend = resolveSessionLogBackendLabel(session);
     const notes: string[] = [];
     if (!session.appLog) {
       notes.push(
