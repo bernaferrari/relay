@@ -12,6 +12,7 @@ import { getInteractor, type RunnerContext } from '../utils/interactors.ts';
 import { runIosRunnerCommand } from '../platforms/ios/runner-client.ts';
 import { pushIosNotification } from '../platforms/ios/index.ts';
 import { isDeepLinkTarget } from './open-target.ts';
+import { getClickButtonValidationError, resolveClickButton } from './click-button.ts';
 import { parseTriggerAppEventArgs, resolveAppEventUrl } from './app-events.ts';
 import type { RawSnapshotNode } from '../utils/snapshot.ts';
 import type { CliFlags } from '../utils/command-schema.ts';
@@ -62,6 +63,7 @@ export async function dispatchCommand(
     holdMs?: number;
     jitterPx?: number;
     doubleTap?: boolean;
+    clickButton?: 'primary' | 'secondary' | 'middle';
     pauseMs?: number;
     pattern?: 'one-way' | 'ping-pong';
   },
@@ -141,6 +143,39 @@ export async function dispatchCommand(
           const [x, y] = positionals.map(Number);
           if (Number.isNaN(x) || Number.isNaN(y))
             throw new AppError('INVALID_ARGS', 'press requires x y');
+          const clickButton = resolveClickButton(context);
+          if (clickButton !== 'primary') {
+            const validationError = getClickButtonValidationError({
+              commandLabel: 'click',
+              platform: device.platform,
+              button: clickButton,
+              count: context?.count,
+              intervalMs: context?.intervalMs,
+              holdMs: context?.holdMs,
+              jitterPx: context?.jitterPx,
+              doubleTap: context?.doubleTap,
+            });
+            if (validationError) {
+              throw validationError;
+            }
+            await runIosRunnerCommand(
+              device,
+              {
+                command: 'mouseClick',
+                x,
+                y,
+                button: clickButton,
+                appBundleId: context?.appBundleId,
+              },
+              {
+                verbose: context?.verbose,
+                logPath: context?.logPath,
+                traceLogPath: context?.traceLogPath,
+                requestId: context?.requestId,
+              },
+            );
+            return { x, y, button: clickButton };
+          }
           const count = requireIntInRange(context?.count ?? 1, 'count', 1, 200);
           const intervalMs = requireIntInRange(context?.intervalMs ?? 0, 'interval-ms', 0, 10_000);
           const holdMs = requireIntInRange(context?.holdMs ?? 0, 'hold-ms', 0, 10_000);

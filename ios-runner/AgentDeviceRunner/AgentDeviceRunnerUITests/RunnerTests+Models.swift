@@ -2,6 +2,7 @@
 
 enum CommandType: String, Codable {
   case tap
+  case mouseClick
   case tapSeries
   case longPress
   case drag
@@ -36,6 +37,7 @@ struct Command: Codable {
   let action: String?
   let x: Double?
   let y: Double?
+  let button: String?
   let count: Double?
   let intervalMs: Double?
   let doubleTap: Bool?
