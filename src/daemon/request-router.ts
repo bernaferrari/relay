@@ -58,9 +58,8 @@ function contextFromFlags(
 }
 
 function normalizeAliasedCommands(req: DaemonRequest): DaemonRequest {
-  if (req.command === 'click') {
-    return { ...req, command: 'press' };
-  }
+  // Keep this hook for future daemon-level aliases. click is intentionally preserved
+  // as-is so handlers can distinguish it from press-only behavior such as --button.
   return req;
 }
 

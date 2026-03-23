@@ -365,6 +365,15 @@ test('parseArgs recognizes click series flags', () => {
   assert.equal(parsed.flags.intervalMs, 10);
 });
 
+test('parseArgs recognizes click button flag', () => {
+  const parsed = parseArgs(['click', '@e5', '--button', 'secondary'], {
+    strictFlags: true,
+  });
+  assert.equal(parsed.command, 'click');
+  assert.deepEqual(parsed.positionals, ['@e5']);
+  assert.equal(parsed.flags.clickButton, 'secondary');
+});
+
 test('parseArgs recognizes double-tap flag for repeated press', () => {
   const parsed = parseArgs(['press', '201', '545', '--count', '5', '--double-tap'], {
     strictFlags: true,
@@ -561,6 +570,26 @@ test('compat mode warns and strips unsupported command flags', () => {
 test('strict mode rejects unsupported pilot-command flags', () => {
   assert.throws(
     () => parseArgs(['press', '10', '20', '--pause-ms', '2'], { strictFlags: true }),
+    (error) =>
+      error instanceof AppError &&
+      error.code === 'INVALID_ARGS' &&
+      error.message.includes('not supported for command press'),
+  );
+});
+
+test('strict mode rejects removed secondary alias', () => {
+  assert.throws(
+    () => parseArgs(['click', '@e5', '--secondary'], { strictFlags: true }),
+    (error) =>
+      error instanceof AppError &&
+      error.code === 'INVALID_ARGS' &&
+      error.message === 'Unknown flag: --secondary',
+  );
+});
+
+test('strict mode rejects click-only button flag on press', () => {
+  assert.throws(
+    () => parseArgs(['press', '10', '20', '--button', 'secondary'], { strictFlags: true }),
     (error) =>
       error instanceof AppError &&
       error.code === 'INVALID_ARGS' &&

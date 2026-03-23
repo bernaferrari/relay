@@ -7,8 +7,15 @@ import { runCmd, runCmdStreaming, type ExecBackgroundResult } from '../../utils/
 import { isEnvTruthy } from '../../utils/retry.ts';
 import { resolveApplePlatformName, type DeviceInfo } from '../../utils/device.ts';
 import { withKeyedLock } from '../../utils/keyed-lock.ts';
+import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { resolveSigningFailureHint } from './runner-errors.ts';
 import { logChunk } from './runner-transport.ts';
+import {
+  repairMacOsRunnerProductsIfNeeded,
+  isExpectedRunnerRepairFailure,
+} from './runner-macos-products.ts';
+import { resolveExistingXctestrunProductPaths } from './runner-xctestrun-products.ts';
+export { xctestrunReferencesExistingProducts } from './runner-xctestrun-products.ts';
 
 const DEFAULT_IOS_RUNNER_APP_BUNDLE_ID = 'com.callstack.agentdevice.runner';
 
@@ -54,24 +61,89 @@ export const IOS_RUNNER_CONTAINER_BUNDLE_IDS: string[] = resolveRunnerContainerB
   process.env,
 );
 
+type EnsureXctestrunDeps = {
+  findProjectRoot: () => string;
+  findXctestrun: (root: string) => string | null;
+  xctestrunReferencesProjectRoot: (xctestrunPath: string, projectRoot: string) => boolean;
+  resolveExistingXctestrunProductPaths: (xctestrunPath: string) => string[] | null;
+  repairRunnerProductsIfNeeded: (
+    device: DeviceInfo,
+    productPaths: string[],
+    xctestrunPath: string,
+  ) => Promise<void>;
+  assertSafeDerivedCleanup: (derivedPath: string) => void;
+  cleanRunnerDerivedArtifacts: (derivedPath: string) => void;
+  buildRunnerXctestrun: (
+    device: DeviceInfo,
+    projectPath: string,
+    derived: string,
+    options: { verbose?: boolean; logPath?: string; traceLogPath?: string },
+  ) => Promise<void>;
+};
+
+const defaultEnsureXctestrunDeps: EnsureXctestrunDeps = {
+  findProjectRoot,
+  findXctestrun,
+  xctestrunReferencesProjectRoot,
+  resolveExistingXctestrunProductPaths,
+  repairRunnerProductsIfNeeded: repairMacOsRunnerProductsIfNeeded,
+  assertSafeDerivedCleanup,
+  cleanRunnerDerivedArtifacts,
+  buildRunnerXctestrun,
+};
+
 export async function ensureXctestrun(
   device: DeviceInfo,
   options: { verbose?: boolean; logPath?: string; traceLogPath?: string },
+  deps: EnsureXctestrunDeps = defaultEnsureXctestrunDeps,
 ): Promise<string> {
   const derived = resolveRunnerDerivedPath(device);
-  const projectRoot = findProjectRoot();
+  const projectRoot = deps.findProjectRoot();
   return await withKeyedLock(runnerXctestrunBuildLocks, derived, async () => {
     if (shouldCleanDerived()) {
-      assertSafeDerivedCleanup(derived);
-      cleanRunnerDerivedArtifacts(derived);
+      emitRunnerXctestrunDecision('clean', 'forced_clean', { derived });
+      deps.assertSafeDerivedCleanup(derived);
+      deps.cleanRunnerDerivedArtifacts(derived);
     }
-    const existing = findXctestrun(derived);
-    if (existing && xctestrunReferencesProjectRoot(existing, projectRoot)) {
-      return existing;
+    const existing = evaluateExistingXctestrun({
+      derived,
+      projectRoot,
+      findXctestrun: deps.findXctestrun,
+      xctestrunReferencesProjectRoot: deps.xctestrunReferencesProjectRoot,
+      resolveExistingXctestrunProductPaths: deps.resolveExistingXctestrunProductPaths,
+    });
+    if (existing.reason !== 'reuse_ready') {
+      emitRunnerXctestrunDecision('rebuild', existing.reason, {
+        derived,
+        xctestrunPath: existing.xctestrunPath,
+      });
     }
-    if (existing) {
-      assertSafeDerivedCleanup(derived);
-      cleanRunnerDerivedArtifacts(derived);
+    if (existing.reason === 'reuse_ready') {
+      try {
+        await deps.repairRunnerProductsIfNeeded(
+          device,
+          existing.productPaths,
+          existing.xctestrunPath,
+        );
+        emitRunnerXctestrunDecision('reuse', 'reuse_ready', {
+          derived,
+          xctestrunPath: existing.xctestrunPath,
+        });
+        return existing.xctestrunPath;
+      } catch (error) {
+        if (!isExpectedRunnerRepairFailure(error)) {
+          throw error;
+        }
+        emitRunnerXctestrunDecision('rebuild', 'repair_failed', {
+          derived,
+          xctestrunPath: existing.xctestrunPath,
+        });
+        // Fall through and rebuild from a clean derived state.
+      }
+    }
+    if (existing.xctestrunPath) {
+      deps.assertSafeDerivedCleanup(derived);
+      deps.cleanRunnerDerivedArtifacts(derived);
     }
     const projectPath = path.join(
       projectRoot,
@@ -84,66 +156,23 @@ export async function ensureXctestrun(
       throw new AppError('COMMAND_FAILED', 'iOS runner project not found', { projectPath });
     }
 
-    const runnerBundleBuildSettings = resolveRunnerBundleBuildSettings(process.env);
-    const signingBuildSettings = resolveRunnerSigningBuildSettings(
-      process.env,
-      device.kind === 'device',
-    );
-    const provisioningArgs = device.kind === 'device' ? ['-allowProvisioningUpdates'] : [];
-    const performanceBuildSettings = resolveRunnerPerformanceBuildSettings();
-    try {
-      await runCmdStreaming(
-        'xcodebuild',
-        [
-          'build-for-testing',
-          '-project',
-          projectPath,
-          '-scheme',
-          'AgentDeviceRunner',
-          '-parallel-testing-enabled',
-          'NO',
-          resolveRunnerMaxConcurrentDestinationsFlag(device),
-          '1',
-          '-destination',
-          resolveRunnerBuildDestination(device),
-          '-derivedDataPath',
-          derived,
-          ...performanceBuildSettings,
-          ...runnerBundleBuildSettings,
-          ...provisioningArgs,
-          ...signingBuildSettings,
-        ],
-        {
-          detached: true,
-          onSpawn: (child) => {
-            runnerPrepProcesses.add(child);
-            child.on('close', () => {
-              runnerPrepProcesses.delete(child);
-            });
-          },
-          onStdoutChunk: (chunk) => {
-            logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
-          },
-          onStderrChunk: (chunk) => {
-            logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
-          },
-        },
-      );
-    } catch (err) {
-      const appErr = err instanceof AppError ? err : new AppError('COMMAND_FAILED', String(err));
-      const hint = resolveSigningFailureHint(appErr);
-      throw new AppError('COMMAND_FAILED', 'xcodebuild build-for-testing failed', {
-        error: appErr.message,
-        details: appErr.details,
-        logPath: options.logPath,
-        hint,
-      });
-    }
+    await deps.buildRunnerXctestrun(device, projectPath, derived, options);
 
-    const built = findXctestrun(derived);
+    const built = deps.findXctestrun(derived);
     if (!built) {
       throw new AppError('COMMAND_FAILED', 'Failed to locate .xctestrun after build');
     }
+    const builtProductPaths = deps.resolveExistingXctestrunProductPaths(built);
+    if (!builtProductPaths) {
+      throw new AppError('COMMAND_FAILED', 'Runner build is missing expected products', {
+        xctestrunPath: built,
+      });
+    }
+    await deps.repairRunnerProductsIfNeeded(device, builtProductPaths, built);
+    emitRunnerXctestrunDecision('build', 'built_new', {
+      derived,
+      xctestrunPath: built,
+    });
     return built;
   });
 }
@@ -326,6 +355,70 @@ export async function prepareXctestrunWithEnv(
   return { xctestrunPath: tmpXctestrunPath, jsonPath: tmpJsonPath };
 }
 
+async function buildRunnerXctestrun(
+  device: DeviceInfo,
+  projectPath: string,
+  derived: string,
+  options: { verbose?: boolean; logPath?: string; traceLogPath?: string },
+): Promise<void> {
+  const runnerBundleBuildSettings = resolveRunnerBundleBuildSettings(process.env);
+  const signingBuildSettings = resolveRunnerSigningBuildSettings(
+    process.env,
+    device.kind === 'device',
+    device.platform,
+  );
+  const provisioningArgs = device.kind === 'device' ? ['-allowProvisioningUpdates'] : [];
+  const performanceBuildSettings = resolveRunnerPerformanceBuildSettings();
+  try {
+    await runCmdStreaming(
+      'xcodebuild',
+      [
+        'build-for-testing',
+        '-project',
+        projectPath,
+        '-scheme',
+        'AgentDeviceRunner',
+        '-parallel-testing-enabled',
+        'NO',
+        resolveRunnerMaxConcurrentDestinationsFlag(device),
+        '1',
+        '-destination',
+        resolveRunnerBuildDestination(device),
+        '-derivedDataPath',
+        derived,
+        ...performanceBuildSettings,
+        ...runnerBundleBuildSettings,
+        ...provisioningArgs,
+        ...signingBuildSettings,
+      ],
+      {
+        detached: true,
+        onSpawn: (child) => {
+          runnerPrepProcesses.add(child);
+          child.on('close', () => {
+            runnerPrepProcesses.delete(child);
+          });
+        },
+        onStdoutChunk: (chunk) => {
+          logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
+        },
+        onStderrChunk: (chunk) => {
+          logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
+        },
+      },
+    );
+  } catch (err) {
+    const appErr = err instanceof AppError ? err : new AppError('COMMAND_FAILED', String(err));
+    const hint = resolveSigningFailureHint(appErr);
+    throw new AppError('COMMAND_FAILED', 'xcodebuild build-for-testing failed', {
+      error: appErr.message,
+      details: appErr.details,
+      logPath: options.logPath,
+      hint,
+    });
+  }
+}
+
 function resolveRunnerDerivedPath(device: DeviceInfo): string {
   const override = process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH?.trim();
   if (override) {
@@ -391,7 +484,16 @@ export function resolveRunnerMaxConcurrentDestinationsFlag(device: DeviceInfo): 
 export function resolveRunnerSigningBuildSettings(
   env: NodeJS.ProcessEnv = process.env,
   forDevice = false,
+  platform: DeviceInfo['platform'] = 'ios',
 ): string[] {
+  if (platform === 'macos') {
+    return [
+      'CODE_SIGNING_ALLOWED=NO',
+      'CODE_SIGNING_REQUIRED=NO',
+      'CODE_SIGN_IDENTITY=',
+      'DEVELOPMENT_TEAM=',
+    ];
+  }
   if (!forDevice) {
     return [];
   }
@@ -418,8 +520,8 @@ export function resolveRunnerBundleBuildSettings(env: NodeJS.ProcessEnv = proces
   ];
 }
 
-function resolveRunnerPerformanceBuildSettings(): string[] {
-  return ['COMPILER_INDEX_STORE_ENABLE=NO'];
+export function resolveRunnerPerformanceBuildSettings(): string[] {
+  return ['COMPILER_INDEX_STORE_ENABLE=NO', 'ENABLE_CODE_COVERAGE=NO'];
 }
 
 function shouldCleanDerived(): boolean {
@@ -449,4 +551,59 @@ export function assertSafeDerivedCleanup(
 
 function isCleanupOverrideAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   return isEnvTruthy(env.AGENT_DEVICE_IOS_ALLOW_OVERRIDE_DERIVED_CLEAN);
+}
+
+type ExistingXctestrunState =
+  | {
+      reason: 'missing_xctestrun';
+      xctestrunPath: null;
+    }
+  | {
+      reason: 'project_root_mismatch' | 'missing_products' | 'reuse_ready';
+      xctestrunPath: string;
+      productPaths: string[];
+    };
+
+function evaluateExistingXctestrun(options: {
+  derived: string;
+  projectRoot: string;
+  findXctestrun: (root: string) => string | null;
+  xctestrunReferencesProjectRoot: (xctestrunPath: string, projectRoot: string) => boolean;
+  resolveExistingXctestrunProductPaths: (xctestrunPath: string) => string[] | null;
+}): ExistingXctestrunState {
+  const xctestrunPath = options.findXctestrun(options.derived);
+  if (!xctestrunPath) {
+    return { reason: 'missing_xctestrun', xctestrunPath: null };
+  }
+  const productPaths = options.resolveExistingXctestrunProductPaths(xctestrunPath);
+  if (!productPaths) {
+    return { reason: 'missing_products', xctestrunPath, productPaths: [] };
+  }
+  if (!options.xctestrunReferencesProjectRoot(xctestrunPath, options.projectRoot)) {
+    return { reason: 'project_root_mismatch', xctestrunPath, productPaths };
+  }
+  return { reason: 'reuse_ready', xctestrunPath, productPaths };
+}
+
+function emitRunnerXctestrunDecision(
+  action: 'clean' | 'reuse' | 'rebuild' | 'build',
+  reason:
+    | 'forced_clean'
+    | 'missing_xctestrun'
+    | 'project_root_mismatch'
+    | 'missing_products'
+    | 'repair_failed'
+    | 'reuse_ready'
+    | 'built_new',
+  data: Record<string, unknown>,
+): void {
+  emitDiagnostic({
+    level: action === 'rebuild' ? 'warn' : 'info',
+    phase: 'runner_xctestrun_cache',
+    data: {
+      action,
+      reason,
+      ...data,
+    },
+  });
 }

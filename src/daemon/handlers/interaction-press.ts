@@ -1,4 +1,9 @@
 import { isCommandSupportedOnDevice } from '../../core/capabilities.ts';
+import {
+  buttonTag,
+  getClickButtonValidationError,
+  resolveClickButton,
+} from '../../core/click-button.ts';
 import { buildSelectorChainForNode } from '../selectors.ts';
 import { findNodeByLabel, resolveRefLabel } from '../snapshot-processing.ts';
 import { findNodeByRef } from '../../utils/snapshot.ts';
@@ -17,6 +22,7 @@ export async function handlePressCommand(
   params: InteractionHandlerParams,
 ): Promise<DaemonResponse> {
   const { req, sessionName, sessionStore, contextFromFlags, dispatch } = params;
+  const commandLabel = req.command === 'click' ? 'click' : 'press';
   const session = sessionStore.get(sessionName);
   if (!session) {
     return {
@@ -29,6 +35,30 @@ export async function handlePressCommand(
       ok: false,
       error: { code: 'UNSUPPORTED_OPERATION', message: 'press is not supported on this device' },
     };
+  }
+  const clickButton = resolveClickButton(req.flags);
+  const resultButtonTag = buttonTag(clickButton);
+  if (clickButton !== 'primary') {
+    const validationError = getClickButtonValidationError({
+      commandLabel,
+      platform: session.device.platform,
+      button: clickButton,
+      count: req.flags?.count,
+      intervalMs: req.flags?.intervalMs,
+      holdMs: req.flags?.holdMs,
+      jitterPx: req.flags?.jitterPx,
+      doubleTap: req.flags?.doubleTap,
+    });
+    if (validationError) {
+      return {
+        ok: false,
+        error: {
+          code: validationError.code,
+          message: validationError.message,
+          details: validationError.details,
+        },
+      };
+    }
   }
   const directCoordinates = parseCoordinateTarget(req.positionals ?? []);
   if (directCoordinates) {
@@ -45,9 +75,22 @@ export async function handlePressCommand(
       command: req.command,
       positionals: req.positionals ?? [String(directCoordinates.x), String(directCoordinates.y)],
       flags: req.flags ?? {},
-      result: data ?? { x: directCoordinates.x, y: directCoordinates.y },
+      result: data ?? {
+        x: directCoordinates.x,
+        y: directCoordinates.y,
+        ...resultButtonTag,
+      },
     });
-    return { ok: true, data: data ?? { x: directCoordinates.x, y: directCoordinates.y } };
+    return {
+      ok: true,
+      data:
+        data ??
+        ({
+          x: directCoordinates.x,
+          y: directCoordinates.y,
+          ...resultButtonTag,
+        } as Record<string, unknown>),
+    };
   }
 
   const refInput = req.positionals?.[0] ?? '';
@@ -61,7 +104,7 @@ export async function handlePressCommand(
       refInput,
       fallbackLabel,
       requireRect: true,
-      invalidRefMessage: 'press requires a ref like @e2',
+      invalidRefMessage: `${commandLabel} requires a ref like @e2`,
       notFoundMessage: `Ref ${refInput} not found or has no bounds`,
     });
     if (!resolvedRefTarget.ok) return resolvedRefTarget.response;
@@ -116,9 +159,19 @@ export async function handlePressCommand(
       command: req.command,
       positionals: req.positionals ?? [],
       flags: req.flags ?? {},
-      result: { ref, x, y, refLabel, selectorChain },
+      result: {
+        ref,
+        x,
+        y,
+        refLabel,
+        selectorChain,
+        ...resultButtonTag,
+      },
     });
-    return { ok: true, data: { ...(data ?? {}), ref, x, y } };
+    return {
+      ok: true,
+      data: { ...(data ?? {}), ref, x, y, ...resultButtonTag },
+    };
   }
 
   const selectorExpression = (req.positionals ?? []).join(' ').trim();
@@ -127,7 +180,7 @@ export async function handlePressCommand(
       ok: false,
       error: {
         code: 'INVALID_ARGS',
-        message: 'press requires @ref, selector expression, or x y coordinates',
+        message: `${commandLabel} requires @ref, selector expression, or x y coordinates`,
       },
     };
   }
@@ -174,7 +227,17 @@ export async function handlePressCommand(
       selector: resolved.selector.raw,
       selectorChain,
       refLabel,
+      ...resultButtonTag,
     },
   });
-  return { ok: true, data: { ...(data ?? {}), selector: resolved.selector.raw, x, y } };
+  return {
+    ok: true,
+    data: {
+      ...(data ?? {}),
+      selector: resolved.selector.raw,
+      x,
+      y,
+      ...resultButtonTag,
+    },
+  };
 }

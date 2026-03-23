@@ -60,6 +60,7 @@ export type CliFlags = {
   holdMs?: number;
   jitterPx?: number;
   doubleTap?: boolean;
+  clickButton?: 'primary' | 'secondary' | 'middle';
   pauseMs?: number;
   pattern?: 'one-way' | 'ping-pong';
   activity?: string;
@@ -542,6 +543,14 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     usageDescription: 'Use double-tap gesture per press iteration',
   },
   {
+    key: 'clickButton',
+    names: ['--button'],
+    type: 'enum',
+    enumValues: ['primary', 'secondary', 'middle'],
+    usageLabel: '--button primary|secondary|middle',
+    usageDescription: 'Click: choose mouse button (middle reserved for future macOS support)',
+  },
+  {
     key: 'pauseMs',
     names: ['--pause-ms'],
     type: 'int',
@@ -951,6 +960,7 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
       'holdMs',
       'jitterPx',
       'doubleTap',
+      'clickButton',
       ...SELECTOR_SNAPSHOT_FLAGS,
     ],
   },

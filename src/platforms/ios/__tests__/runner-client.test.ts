@@ -17,7 +17,10 @@ import {
   shouldRetryRunnerConnectError,
 } from '../runner-client.ts';
 import {
+  ensureXctestrun,
+  resolveRunnerPerformanceBuildSettings,
   shouldDeleteRunnerDerivedRootEntry,
+  xctestrunReferencesExistingProducts,
   xctestrunReferencesProjectRoot,
 } from '../runner-xctestrun.ts';
 
@@ -63,6 +66,14 @@ const macOsDevice: DeviceInfo = {
   target: 'desktop',
   booted: true,
 };
+
+async function makeTmpDir(t: test.TestContext): Promise<string> {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-device-xctestrun-'));
+  t.after(async () => {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+  });
+  return tmpDir;
+}
 
 test('resolveRunnerDestination uses simulator destination for simulators', () => {
   assert.equal(resolveRunnerDestination(iosSimulator), 'platform=iOS Simulator,id=sim-1');
@@ -114,6 +125,15 @@ test('resolveRunnerSigningBuildSettings returns empty args without env overrides
   assert.deepEqual(resolveRunnerSigningBuildSettings({}), []);
 });
 
+test('resolveRunnerSigningBuildSettings disables signing for macOS desktop builds', () => {
+  assert.deepEqual(resolveRunnerSigningBuildSettings({}, true, 'macos'), [
+    'CODE_SIGNING_ALLOWED=NO',
+    'CODE_SIGNING_REQUIRED=NO',
+    'CODE_SIGN_IDENTITY=',
+    'DEVELOPMENT_TEAM=',
+  ]);
+});
+
 test('resolveRunnerSigningBuildSettings enables automatic signing for device builds without forcing identity', () => {
   assert.deepEqual(resolveRunnerSigningBuildSettings({}, true), ['CODE_SIGN_STYLE=Automatic']);
 });
@@ -146,6 +166,13 @@ test('resolveRunnerSigningBuildSettings applies optional overrides when provided
     'DEVELOPMENT_TEAM=ABCDE12345',
     'CODE_SIGN_IDENTITY=Apple Development',
     'PROVISIONING_PROFILE_SPECIFIER=My Profile',
+  ]);
+});
+
+test('resolveRunnerPerformanceBuildSettings disables indexing and code coverage', () => {
+  assert.deepEqual(resolveRunnerPerformanceBuildSettings(), [
+    'COMPILER_INDEX_STORE_ENABLE=NO',
+    'ENABLE_CODE_COVERAGE=NO',
   ]);
 });
 
@@ -235,8 +262,8 @@ test('isRetryableRunnerError does not retry busy-connecting errors', () => {
   assert.equal(isRetryableRunnerError(err), false);
 });
 
-test('xctestrunReferencesProjectRoot rejects stale worktree artifacts', async () => {
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agent-device-xctestrun-'));
+test('xctestrunReferencesProjectRoot rejects stale worktree artifacts', async (t) => {
+  const tmpDir = await makeTmpDir(t);
   const xctestrunPath = path.join(tmpDir, 'AgentDeviceRunner.xctestrun');
   fs.writeFileSync(
     xctestrunPath,
@@ -251,6 +278,192 @@ test('xctestrunReferencesProjectRoot rejects stale worktree artifacts', async ()
   assert.equal(
     xctestrunReferencesProjectRoot(xctestrunPath, '/tmp/other-worktree/agent-device'),
     true,
+  );
+});
+
+test('xctestrunReferencesExistingProducts rejects missing runner host artifacts', async (t) => {
+  const tmpDir = await makeTmpDir(t);
+  const productsDir = path.join(tmpDir, 'Build', 'Products');
+  const debugDir = path.join(productsDir, 'Debug');
+  await fs.promises.mkdir(path.join(debugDir, 'AgentDeviceRunner.app'), { recursive: true });
+  const xctestrunPath = path.join(productsDir, 'AgentDeviceRunner.xctestrun');
+  fs.writeFileSync(
+    xctestrunPath,
+    [
+      '<plist><dict>',
+      '<key>ProductPaths</key><array>',
+      '<string>__TESTROOT__/Debug/AgentDeviceRunner.app</string>',
+      '<string>__TESTROOT__/Debug/AgentDeviceRunnerUITests-Runner.app</string>',
+      '</array>',
+      '<key>TestHostPath</key><string>__TESTROOT__/Debug/AgentDeviceRunnerUITests-Runner.app</string>',
+      '<key>TestBundlePath</key><string>__TESTHOST__/Contents/PlugIns/AgentDeviceRunnerUITests.xctest</string>',
+      '</dict></plist>',
+    ].join(''),
+    'utf8',
+  );
+
+  assert.equal(xctestrunReferencesExistingProducts(xctestrunPath), false);
+});
+
+test('xctestrunReferencesExistingProducts accepts xctestruns when referenced products exist', async (t) => {
+  const tmpDir = await makeTmpDir(t);
+  const productsDir = path.join(tmpDir, 'Build', 'Products');
+  const debugDir = path.join(productsDir, 'Debug');
+  await fs.promises.mkdir(path.join(debugDir, 'AgentDeviceRunner.app'), { recursive: true });
+  await fs.promises.mkdir(
+    path.join(
+      debugDir,
+      'AgentDeviceRunnerUITests-Runner.app',
+      'Contents',
+      'PlugIns',
+      'AgentDeviceRunnerUITests.xctest',
+    ),
+    { recursive: true },
+  );
+  const xctestrunPath = path.join(productsDir, 'AgentDeviceRunner.xctestrun');
+  fs.writeFileSync(
+    xctestrunPath,
+    [
+      '<plist><dict>',
+      '<key>ProductPaths</key><array>',
+      '<string>__TESTROOT__/Debug/AgentDeviceRunner.app</string>',
+      '<string>__TESTROOT__/Debug/AgentDeviceRunnerUITests-Runner.app</string>',
+      '</array>',
+      '<key>TestHostPath</key><string>__TESTROOT__/Debug/AgentDeviceRunnerUITests-Runner.app</string>',
+      '<key>TestBundlePath</key><string>__TESTHOST__/Contents/PlugIns/AgentDeviceRunnerUITests.xctest</string>',
+      '</dict></plist>',
+    ].join(''),
+    'utf8',
+  );
+
+  assert.equal(xctestrunReferencesExistingProducts(xctestrunPath), true);
+});
+
+test('ensureXctestrun rebuilds after cached macOS runner repair failure', async (t) => {
+  // Cached runner artifacts can look reusable until ad-hoc repair fails; ensure we clean once,
+  // rebuild, and return the repaired rebuilt xctestrun instead of looping on stale cache state.
+  const tmpDir = await makeTmpDir(t);
+  const projectRoot = path.join(tmpDir, 'project');
+  const derivedPath = path.join(tmpDir, 'derived');
+  const projectPath = path.join(
+    projectRoot,
+    'ios-runner',
+    'AgentDeviceRunner',
+    'AgentDeviceRunner.xcodeproj',
+  );
+  await fs.promises.mkdir(path.dirname(projectPath), { recursive: true });
+  fs.writeFileSync(projectPath, '', 'utf8');
+
+  const existingXctestrunPath = path.join(derivedPath, 'existing.xctestrun');
+  const rebuiltXctestrunPath = path.join(derivedPath, 'rebuilt.xctestrun');
+  await fs.promises.mkdir(derivedPath, { recursive: true });
+  fs.writeFileSync(existingXctestrunPath, 'existing', 'utf8');
+
+  const previousDerivedPath = process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH;
+  process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH = derivedPath;
+  t.after(() => {
+    if (previousDerivedPath === undefined) {
+      delete process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH;
+      return;
+    }
+    process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH = previousDerivedPath;
+  });
+
+  let currentXctestrunPath = existingXctestrunPath;
+  let cleanCalls = 0;
+  let buildCalls = 0;
+  const repairedPaths: string[] = [];
+
+  const result = await ensureXctestrun(
+    macOsDevice,
+    {},
+    {
+      findProjectRoot: () => projectRoot,
+      findXctestrun: () => currentXctestrunPath,
+      xctestrunReferencesProjectRoot: () => true,
+      resolveExistingXctestrunProductPaths: () => ['/tmp/runner.app'],
+      repairRunnerProductsIfNeeded: async (_device, _productPaths, xctestrunPath) => {
+        repairedPaths.push(xctestrunPath);
+        if (xctestrunPath === existingXctestrunPath) {
+          throw new AppError('COMMAND_FAILED', 'cached runner is damaged', {
+            reason: 'RUNNER_PRODUCT_REPAIR_FAILED',
+          });
+        }
+      },
+      assertSafeDerivedCleanup: (targetPath) => {
+        assert.equal(targetPath, derivedPath);
+      },
+      cleanRunnerDerivedArtifacts: (targetPath) => {
+        assert.equal(targetPath, derivedPath);
+        cleanCalls += 1;
+      },
+      buildRunnerXctestrun: async (_device, targetProjectPath, targetDerivedPath) => {
+        assert.equal(targetProjectPath, projectPath);
+        assert.equal(targetDerivedPath, derivedPath);
+        buildCalls += 1;
+        currentXctestrunPath = rebuiltXctestrunPath;
+        fs.writeFileSync(rebuiltXctestrunPath, 'rebuilt', 'utf8');
+      },
+    },
+  );
+
+  assert.equal(result, rebuiltXctestrunPath);
+  assert.equal(cleanCalls, 1);
+  assert.equal(buildCalls, 1);
+  assert.deepEqual(repairedPaths, [existingXctestrunPath, rebuiltXctestrunPath]);
+});
+
+test('ensureXctestrun rethrows unexpected cached macOS runner repair errors', async (t) => {
+  const tmpDir = await makeTmpDir(t);
+  const projectRoot = path.join(tmpDir, 'project');
+  const derivedPath = path.join(tmpDir, 'derived');
+  const projectPath = path.join(
+    projectRoot,
+    'ios-runner',
+    'AgentDeviceRunner',
+    'AgentDeviceRunner.xcodeproj',
+  );
+  await fs.promises.mkdir(path.dirname(projectPath), { recursive: true });
+  fs.writeFileSync(projectPath, '', 'utf8');
+
+  const existingXctestrunPath = path.join(derivedPath, 'existing.xctestrun');
+  await fs.promises.mkdir(derivedPath, { recursive: true });
+  fs.writeFileSync(existingXctestrunPath, 'existing', 'utf8');
+
+  const previousDerivedPath = process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH;
+  process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH = derivedPath;
+  t.after(() => {
+    if (previousDerivedPath === undefined) {
+      delete process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH;
+      return;
+    }
+    process.env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH = previousDerivedPath;
+  });
+
+  await assert.rejects(
+    ensureXctestrun(
+      macOsDevice,
+      {},
+      {
+        findProjectRoot: () => projectRoot,
+        findXctestrun: () => existingXctestrunPath,
+        xctestrunReferencesProjectRoot: () => true,
+        resolveExistingXctestrunProductPaths: () => ['/tmp/runner.app'],
+        repairRunnerProductsIfNeeded: async () => {
+          throw new Error('permission denied');
+        },
+        assertSafeDerivedCleanup: () => {
+          throw new Error('should not clean derived data for unexpected repair errors');
+        },
+        cleanRunnerDerivedArtifacts: () => {
+          throw new Error('should not rebuild for unexpected repair errors');
+        },
+        buildRunnerXctestrun: async () => {
+          throw new Error('should not rebuild for unexpected repair errors');
+        },
+      },
+    ),
+    /permission denied/,
   );
 });
 
