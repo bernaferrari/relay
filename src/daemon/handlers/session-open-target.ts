@@ -6,8 +6,9 @@ async function resolveIosBundleIdForOpen(
   openTarget: string | undefined,
   currentAppBundleId?: string,
 ): Promise<string | undefined> {
-  if (device.platform !== 'ios' || !openTarget) return undefined;
+  if ((device.platform !== 'ios' && device.platform !== 'macos') || !openTarget) return undefined;
   if (isDeepLinkTarget(openTarget)) {
+    if (device.platform === 'macos') return undefined;
     if (device.kind === 'device') {
       return resolveIosDeviceDeepLinkBundleId(currentAppBundleId, openTarget);
     }
