@@ -63,7 +63,7 @@ export const IOS_RUNNER_CONTAINER_BUNDLE_IDS: string[] = resolveRunnerContainerB
 
 type EnsureXctestrunDeps = {
   findProjectRoot: () => string;
-  findXctestrun: (root: string) => string | null;
+  findXctestrun: (root: string, device?: DeviceInfo) => string | null;
   xctestrunReferencesProjectRoot: (xctestrunPath: string, projectRoot: string) => boolean;
   resolveExistingXctestrunProductPaths: (xctestrunPath: string) => string[] | null;
   repairRunnerProductsIfNeeded: (
@@ -108,7 +108,7 @@ export async function ensureXctestrun(
     const existing = evaluateExistingXctestrun({
       derived,
       projectRoot,
-      findXctestrun: deps.findXctestrun,
+      findXctestrun: (root) => deps.findXctestrun(root, device),
       xctestrunReferencesProjectRoot: deps.xctestrunReferencesProjectRoot,
       resolveExistingXctestrunProductPaths: deps.resolveExistingXctestrunProductPaths,
     });
@@ -158,7 +158,7 @@ export async function ensureXctestrun(
 
     await deps.buildRunnerXctestrun(device, projectPath, derived, options);
 
-    const built = deps.findXctestrun(derived);
+    const built = deps.findXctestrun(derived, device);
     if (!built) {
       throw new AppError('COMMAND_FAILED', 'Failed to locate .xctestrun after build');
     }
@@ -209,9 +209,14 @@ export function shouldDeleteRunnerDerivedRootEntry(entryName: string): boolean {
   return RUNNER_ROOT_TRANSIENT_ENTRY_NAMES.has(entryName);
 }
 
-function findXctestrun(root: string): string | null {
+type XctestrunCandidate = {
+  path: string;
+  mtimeMs: number;
+};
+
+export function findXctestrun(root: string, device?: DeviceInfo): string | null {
   if (!fs.existsSync(root)) return null;
-  const candidates: { path: string; mtimeMs: number }[] = [];
+  const candidates: XctestrunCandidate[] = [];
   const stack: string[] = [root];
   while (stack.length > 0) {
     const current = stack.pop() as string;
@@ -233,8 +238,83 @@ function findXctestrun(root: string): string | null {
     }
   }
   if (candidates.length === 0) return null;
-  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  candidates.sort((a, b) => {
+    if (device) {
+      const scoreDiff =
+        scoreXctestrunCandidate(b.path, device) - scoreXctestrunCandidate(a.path, device);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+    }
+    return b.mtimeMs - a.mtimeMs || a.path.localeCompare(b.path);
+  });
   return candidates[0]?.path ?? null;
+}
+
+export function scoreXctestrunCandidate(candidatePath: string, device: DeviceInfo): number {
+  let score = 0;
+  const normalizedPath = candidatePath.toLowerCase();
+  const fileName = path.basename(normalizedPath);
+
+  if (fileName.startsWith('agentdevicerunner.env.')) {
+    score -= 1_000;
+  }
+
+  if (normalizedPath.includes(`${path.sep}macos${path.sep}`)) {
+    score -= 5_000;
+  }
+
+  const platformHints = resolveRunnerXctestrunHints(device);
+  if (platformHints.preferred.length > 0) {
+    if (platformHints.preferred.some((hint) => normalizedPath.includes(hint))) {
+      score += 2_000;
+    } else {
+      score -= 500;
+    }
+  }
+
+  if (platformHints.disallowed.some((hint) => normalizedPath.includes(hint))) {
+    score -= 2_500;
+  }
+
+  return score;
+}
+
+function resolveRunnerXctestrunHints(device: DeviceInfo): {
+  preferred: string[];
+  disallowed: string[];
+} {
+  if (device.platform === 'macos') {
+    return {
+      preferred: ['macos'],
+      disallowed: ['iphoneos', 'iphonesimulator', 'appletvos', 'appletvsimulator'],
+    };
+  }
+
+  if (device.target === 'tv') {
+    if (device.kind === 'simulator') {
+      return {
+        preferred: ['appletvsimulator'],
+        disallowed: ['appletvos', 'iphoneos', 'iphonesimulator', 'macos'],
+      };
+    }
+    return {
+      preferred: ['appletvos'],
+      disallowed: ['appletvsimulator', 'iphoneos', 'iphonesimulator', 'macos'],
+    };
+  }
+
+  if (device.kind === 'simulator') {
+    return {
+      preferred: ['iphonesimulator'],
+      disallowed: ['iphoneos', 'appletvos', 'appletvsimulator', 'macos'],
+    };
+  }
+
+  return {
+    preferred: ['iphoneos'],
+    disallowed: ['iphonesimulator', 'appletvos', 'appletvsimulator', 'macos'],
+  };
 }
 
 export function xctestrunReferencesProjectRoot(

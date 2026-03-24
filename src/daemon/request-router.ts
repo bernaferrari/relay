@@ -3,7 +3,13 @@ import type { CommandFlags } from '../core/dispatch.ts';
 import { dispatchCommand } from '../core/dispatch.ts';
 import { isCommandSupportedOnDevice } from '../core/capabilities.ts';
 import { AppError, normalizeError } from '../utils/errors.ts';
-import type { DaemonArtifact, DaemonRequest, DaemonResponse, DaemonResponseData } from './types.ts';
+import type {
+  DaemonArtifact,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonResponseData,
+  SessionState,
+} from './types.ts';
 import { SessionStore } from './session-store.ts';
 import {
   contextFromFlags as contextFromFlagsWithLog,
@@ -27,6 +33,14 @@ import {
 } from '../utils/diagnostics.ts';
 import { resolveLeaseScope } from './lease-context.ts';
 import type { LeaseRegistry } from './lease-registry.ts';
+import {
+  augmentScrollVisualizationResult,
+  recordTouchVisualizationEvent,
+} from './recording-gestures.ts';
+import { recoverAndroidBlockingSystemDialog } from './android-system-dialog.ts';
+import { snapshotAndroid, openAndroidApp, getAndroidAppState } from '../platforms/android/index.ts';
+import { getRunnerSessionSnapshot } from '../platforms/ios/runner-client.ts';
+import { runCmd } from '../utils/exec.ts';
 
 const selectorValidationExemptCommands = new Set([
   'session_list',
@@ -194,6 +208,34 @@ function collectPendingArtifacts(req: DaemonRequest, data: DaemonResponseData): 
   );
 }
 
+function refreshRecordingHealth(session: SessionState): void {
+  const recording = session.recording;
+  if (!recording || session.device.platform !== 'ios') {
+    return;
+  }
+
+  const snapshot = getRunnerSessionSnapshot(session.device.id);
+  if (!recording.runnerSessionId) {
+    if (snapshot?.alive) {
+      recording.runnerSessionId = snapshot.sessionId;
+    }
+    return;
+  }
+
+  if (!snapshot?.alive) {
+    recording.invalidatedReason ??= 'iOS runner session exited during recording';
+    return;
+  }
+
+  if (snapshot.sessionId !== recording.runnerSessionId) {
+    recording.invalidatedReason ??= 'iOS runner session restarted during recording';
+  }
+}
+
+function shouldBlockForInvalidRecording(command: string): boolean {
+  return command !== 'record' && command !== 'close';
+}
+
 export type RequestRouterDeps = {
   logPath: string;
   token: string;
@@ -205,6 +247,10 @@ export type RequestRouterDeps = {
     fileName?: string;
   }) => string;
   dispatchCommand?: typeof dispatchCommand;
+  snapshotAndroidUi?: typeof snapshotAndroid;
+  reopenAndroidApp?: typeof openAndroidApp;
+  readAndroidAppState?: typeof getAndroidAppState;
+  execCommand?: typeof runCmd;
 };
 
 export function createRequestHandler(
@@ -212,6 +258,10 @@ export function createRequestHandler(
 ): (req: DaemonRequest) => Promise<DaemonResponse> {
   const { logPath, token, sessionStore, leaseRegistry, trackDownloadableArtifact } = deps;
   const dispatch = deps.dispatchCommand ?? dispatchCommand;
+  const snapshotAndroidUi = deps.snapshotAndroidUi ?? snapshotAndroid;
+  const reopenAndroidApp = deps.reopenAndroidApp ?? openAndroidApp;
+  const readAndroidAppState = deps.readAndroidAppState ?? getAndroidAppState;
+  const execCommand = deps.execCommand ?? runCmd;
 
   async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
     const normalizedReq = normalizeAliasedCommands(req);
@@ -258,9 +308,25 @@ export function createRequestHandler(
           }
           const sessionName = resolveEffectiveSessionName(scopedReq, sessionStore);
           const existingSession = sessionStore.get(sessionName);
+          if (existingSession) {
+            refreshRecordingHealth(existingSession);
+            sessionStore.set(sessionName, existingSession);
+          }
           const lockedReq = applyRequestLockPolicy(scopedReq, existingSession);
           const finalize = (response: DaemonResponse): DaemonResponse =>
             finalizeDaemonResponse(lockedReq, response, trackDownloadableArtifact);
+          if (
+            existingSession?.recording?.invalidatedReason &&
+            shouldBlockForInvalidRecording(command)
+          ) {
+            return finalize({
+              ok: false,
+              error: {
+                code: 'COMMAND_FAILED',
+                message: existingSession.recording.invalidatedReason,
+              },
+            });
+          }
           if (
             existingSession &&
             !lockedReq.meta?.lockPolicy &&
@@ -336,6 +402,25 @@ export function createRequestHandler(
             });
           }
 
+          if (session.device.platform === 'android' && session.recording && command !== 'record') {
+            const androidRecoveryResult = await recoverAndroidBlockingSystemDialog({
+              session,
+              snapshotAndroidUi,
+              reopenAndroidApp,
+              readAndroidAppState,
+              execCommand,
+            });
+            if (androidRecoveryResult === 'failed') {
+              return finalize({
+                ok: false,
+                error: {
+                  code: 'COMMAND_FAILED',
+                  message: 'Android system dialog blocked the recording session',
+                },
+              });
+            }
+          }
+
           const positionals = lockedReq.positionals ?? [];
           const outFlag = lockedReq.flags?.out;
           const resolvedPositionals =
@@ -354,14 +439,34 @@ export function createRequestHandler(
             command === 'screenshot' && resolvedOut
               ? { ...(lockedReq.flags ?? {}), out: resolvedOut }
               : (lockedReq.flags ?? {});
-          const data = await dispatch(session.device, command, resolvedPositionals, resolvedOut, {
+          const actionStartedAt = Date.now();
+          const dispatchContext = {
             ...contextFromFlags(
               logPath,
               lockedReq.flags,
               session.appBundleId,
               session.trace?.outPath,
             ),
+          };
+          const data = await dispatch(session.device, command, resolvedPositionals, resolvedOut, {
+            ...dispatchContext,
           });
+          const actionFinishedAt = Date.now();
+          const visualizationData = augmentScrollVisualizationResult(
+            session,
+            command,
+            resolvedPositionals,
+            data as Record<string, unknown> | void,
+          );
+          recordTouchVisualizationEvent(
+            session,
+            command,
+            resolvedPositionals,
+            visualizationData as Record<string, unknown> | void,
+            (lockedReq.flags ?? {}) as Record<string, unknown>,
+            actionStartedAt,
+            actionFinishedAt,
+          );
           sessionStore.recordAction(session, {
             command,
             positionals: recordedPositionals,

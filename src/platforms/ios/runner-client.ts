@@ -17,6 +17,7 @@ import {
 import {
   type RunnerSession,
   ensureRunnerSession,
+  getRunnerSessionSnapshot,
   stopRunnerSession,
   stopIosRunnerSession,
   validateRunnerDevice,
@@ -44,6 +45,7 @@ export type RunnerCommand = {
     | 'pinch'
     | 'recordStart'
     | 'recordStop'
+    | 'uptime'
     | 'shutdown';
   appBundleId?: string;
   text?: string;
@@ -163,6 +165,7 @@ export {
 } from './runner-xctestrun.ts';
 
 export {
+  getRunnerSessionSnapshot,
   stopIosRunnerSession,
   abortAllIosRunnerSessions,
   stopAllIosRunnerSessions,

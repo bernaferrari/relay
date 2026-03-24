@@ -3,6 +3,7 @@ import { AppError } from '../../utils/errors.ts';
 import { appendOpenActionScriptArgs, parseReplayOpenFlags } from '../session-open-script.ts';
 import type { SessionAction, SessionState } from '../types.ts';
 import {
+  appendRecordActionScriptArgs,
   appendRuntimeHintFlags,
   appendScriptSeriesFlags,
   formatScriptArgQuoteIfNeeded,
@@ -158,6 +159,28 @@ function parseReplayScriptLine(line: string): SessionAction | null {
     return action;
   }
 
+  if (command === 'record') {
+    const positionals: string[] = [];
+    for (let index = 0; index < args.length; index += 1) {
+      const token = args[index];
+      if (token === '--hide-touches') {
+        action.flags.hideTouches = true;
+        continue;
+      }
+      if (token === '--fps' && index + 1 < args.length) {
+        const parsedFps = Number(args[index + 1]);
+        if (Number.isFinite(parsedFps)) {
+          action.flags.fps = Math.floor(parsedFps);
+        }
+        index += 1;
+        continue;
+      }
+      positionals.push(token);
+    }
+    action.positionals = positionals;
+    return action;
+  }
+
   action.positionals = args;
   return action;
 }
@@ -251,6 +274,10 @@ function formatReplayActionLine(action: SessionAction): string {
       parts.push(formatScriptArgQuoteIfNeeded(positional));
     }
     appendRuntimeHintFlags(parts, action.flags);
+    return parts.join(' ');
+  }
+  if (action.command === 'record') {
+    appendRecordActionScriptArgs(parts, action);
     return parts.join(' ');
   }
   for (const positional of action.positionals ?? []) {

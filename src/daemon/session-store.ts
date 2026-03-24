@@ -6,6 +6,7 @@ import { inferFillText } from './action-utils.ts';
 import { resolveUserPath } from '../utils/path-resolution.ts';
 import { appendOpenActionScriptArgs } from './session-open-script.ts';
 import {
+  appendRecordActionScriptArgs,
   appendRuntimeHintFlags,
   appendScriptSeriesFlags,
   formatScriptArgQuoteIfNeeded,
@@ -235,6 +236,8 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     relaunch,
     saveScript,
     noRecord,
+    fps,
+    hideTouches,
     count,
     intervalMs,
     holdMs,
@@ -263,6 +266,8 @@ function sanitizeFlags(flags: CommandFlags | undefined): SessionAction['flags'] 
     relaunch,
     saveScript,
     noRecord,
+    fps,
+    hideTouches,
     count,
     intervalMs,
     holdMs,
@@ -362,6 +367,10 @@ function formatActionLine(action: SessionAction): string {
       parts.push(formatScriptArgQuoteIfNeeded(subcommand));
     }
     appendRuntimeHintFlags(parts, action.flags);
+    return parts.join(' ');
+  }
+  if (action.command === 'record') {
+    appendRecordActionScriptArgs(parts, action);
     return parts.join(' ');
   }
   for (const positional of action.positionals ?? []) {
