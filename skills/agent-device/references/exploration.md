@@ -4,22 +4,48 @@
 
 Open this file when the app or screen is already running and you need to discover the UI, choose targets, read state, wait for conditions, or perform normal interactions.
 
-## Main commands to reach for first
+## Read-only first
+
+- If the question is what text, labels, or structure is visible on screen, start with plain `snapshot`.
+- Escalate to `snapshot -i` only when you need refs such as `@e3` for interactive exploration or a requested action.
+- If you intend to `press`, `fill`, or otherwise interact, start with `snapshot -i` and fall back to plain `snapshot` only if interactive refs are unavailable.
+- Prefer `get`, `is`, or `find` before mutating the UI when a read-only command can answer the question.
+- You may take the smallest reversible UI action needed to unblock inspection, such as dismissing a popup, closing an alert, or backing out of an unintended surface.
+- Do not type or fill text just to make hidden information easier to access unless the user asked for that interaction.
+- Do not use external sources to infer missing UI state unless the user explicitly asked.
+- If the answer is not visible or exposed in the UI, report that gap instead of compensating with search, navigation, or text entry.
+
+## Decision shortcut
+
+- User asks what is visible on screen: `snapshot`
+- User asks for exact text from a known target: `get text`
+- User asks you to tap, type, or choose an element: `snapshot -i`, then act
+- UI does not expose the answer: say so plainly; do not browse or force the app into a new state unless asked
+
+## Read-only commands
 
 - `snapshot`
+- `get`
+- `is`
+- `find`
+
+## Interaction commands
+
 - `snapshot -i`
 - `press`
 - `fill`
-- `get`
-- `is`
+- `type`
 - `wait`
-- `find`
 
 ## Most common mistake to avoid
 
 Do not treat `@ref` values as durable after navigation or dynamic updates. Re-snapshot after the UI changes, and switch to selectors when the flow must stay stable.
 
-## Canonical loop
+## Common example loops
+
+These are examples, not required exact sequences. Adapt them to the app, state, and task at hand.
+
+### Interactive exploration loop
 
 ```bash
 agent-device open Settings --platform ios
@@ -30,11 +56,21 @@ agent-device get text 'label="Privacy & Security"'
 agent-device close
 ```
 
+### Screen verification loop
+
+```bash
+agent-device open MyApp --platform ios
+# perform the necessary actions to reach the state you need to verify
+agent-device snapshot
+# verify whether the expected element or text is present
+agent-device close
+```
+
 ## Snapshot choices
 
 - Use plain `snapshot` when you only need to verify whether visible text or structure is on screen.
-- Use `snapshot -i` when you need refs such as `@e3` for interactive exploration.
-- Treat large text-surface lines in `snapshot -i` as discovery output. If a node shows preview/truncation metadata, use `get text @ref` to expand the actual text after you choose the surface.
+- Use `snapshot -i` when you need refs such as `@e3` for interactive exploration or for an intended interaction.
+- Treat large text-surface lines in `snapshot -i` as discovery output. If a node shows preview or truncation metadata, use `get text @ref` only after you have already decided that `snapshot -i` is needed for that surface.
 - Use `snapshot -i -s "Camera"` or `snapshot -i -s @e3` when you want a smaller, scoped result.
 
 Example:
@@ -74,6 +110,7 @@ agent-device is visible 'id="camera_settings_anchor"'
 
 - Use `fill` to replace text in an editable field.
 - Use `type` to append text to the current insertion point.
+- Do not use `fill` or `type` just to make the app reveal information that is not currently visible unless the user asked for that interaction.
 
 ## Query and sync rules
 
@@ -108,6 +145,11 @@ Anti-hallucination rules:
 - Do not invent app names, device ids, session names, refs, selectors, or package names.
 - Discover them first with `devices`, `open`, `snapshot -i`, `find`, or `session list`.
 - If refs drift after navigation, re-snapshot or switch to selectors instead of guessing.
+
+Avoid this escalation path for visible-text questions:
+
+- Do not jump from `snapshot -i` to `get text @ref`, then to web search, then to typing into a search box just to force the app to reveal the answer.
+- Start with `snapshot`. If the text is not visible or exposed, report that directly.
 
 Canonical QA loop:
 
