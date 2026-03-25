@@ -4,14 +4,14 @@ import type { DeviceInfo } from '../utils/device.ts';
 import { AppError } from '../utils/errors.ts';
 import { runCmd } from '../utils/exec.ts';
 import { assertAndroidPackageArgSafe, startAndroidAppLog } from './app-log-android.ts';
-import { startIosDeviceAppLog, startIosSimulatorAppLog } from './app-log-ios.ts';
+import { startIosDeviceAppLog, startIosSimulatorAppLog, startMacOsAppLog } from './app-log-ios.ts';
 import type { AppLogResult } from './app-log-process.ts';
 import { waitForChildExit } from './app-log-stream.ts';
 
 export type { AppLogResult } from './app-log-process.ts';
 export { APP_LOG_PID_FILENAME, cleanupStaleAppLogProcesses } from './app-log-process.ts';
 export { assertAndroidPackageArgSafe } from './app-log-android.ts';
-export { buildIosDeviceLogStreamArgs, buildIosLogPredicate } from './app-log-ios.ts';
+export { buildAppleLogPredicate, buildIosDeviceLogStreamArgs } from './app-log-ios.ts';
 
 export type AppLogDoctorResult = {
   checks: Record<string, boolean>;
@@ -114,6 +114,9 @@ export async function startAppLog(
     assertAndroidPackageArgSafe(appBundleId);
     return await startAndroidAppLog(device.id, appBundleId, stream, redactionPatterns, pidPath);
   }
+  if (device.platform === 'macos') {
+    return await startMacOsAppLog(appBundleId, stream, redactionPatterns, pidPath);
+  }
   stream.end();
   throw new AppError('UNSUPPORTED_PLATFORM', `unsupported platform: ${device.platform}`);
 }
@@ -166,6 +169,14 @@ export async function runAppLogDoctor(
       checks.devicectlAvailable = devicectl.exitCode === 0;
     } catch {
       checks.devicectlAvailable = false;
+    }
+  }
+  if (device.platform === 'macos') {
+    try {
+      const log = await runCmd('log', ['help'], { allowFailure: true });
+      checks.logAvailable = log.exitCode === 0;
+    } catch {
+      checks.logAvailable = false;
     }
   }
   return { checks, notes };

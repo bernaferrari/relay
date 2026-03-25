@@ -21,6 +21,8 @@ import {
   shouldFallbackToRunnerForIosScreenshot,
   shouldRetryIosSimulatorScreenshot,
 } from '../apps.ts';
+import { withMockedMacOsHelper } from './macos-helper-test-utils.ts';
+import { quitMacOsApp, resolveMacOsHelperPackageRootFrom } from '../macos-helper.ts';
 import {
   captureSimulatorScreenshotWithFallback,
   prepareSimulatorStatusBarForScreenshot,
@@ -55,6 +57,23 @@ const MACOS_TEST_DEVICE: DeviceInfo = {
   target: 'desktop',
   booted: true,
 };
+
+test('resolveMacOsHelperPackageRootFrom finds helper package from source and dist-like paths', async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-helper-root-'));
+  const helperRoot = path.join(repoRoot, 'macos-helper');
+  await fs.mkdir(helperRoot, { recursive: true });
+  await fs.writeFile(path.join(helperRoot, 'Package.swift'), '// test\n', 'utf8');
+
+  try {
+    const sourceLike = path.join(repoRoot, 'src', 'platforms', 'ios', 'macos-helper.ts');
+    const distLike = path.join(repoRoot, 'dist', 'src', 'platforms', 'ios', 'macos-helper.js');
+
+    assert.equal(resolveMacOsHelperPackageRootFrom(sourceLike), helperRoot);
+    assert.equal(resolveMacOsHelperPackageRootFrom(distLike), helperRoot);
+  } finally {
+    await fs.rm(repoRoot, { recursive: true, force: true });
+  }
+});
 
 async function withMockedXcrun(
   tempPrefix: string,
@@ -834,43 +853,36 @@ test('openIosApp on macOS resolves aliases before invoking open', async () => {
   );
 });
 
-test('closeIosApp on macOS resolves dotted app names before quitting', async () => {
-  await withMockedMacTools(
-    'agent-device-macos-close-dot-app-test-',
-    {
-      osascript: [
-        '#!/bin/sh',
-        'printf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"',
-        'case "$2" in',
-        '  *"id of app \\"Foo.Bar\\""*)',
-        '    echo "com.example.foobar"',
-        '    exit 0',
-        '    ;;',
-        '  *"tell application id \\"com.example.foobar\\" to quit"*)',
-        '    exit 0',
-        '    ;;',
-        'esac',
-        'exit 1',
-        '',
-      ].join('\n'),
-    },
+test('closeIosApp on macOS uses helper quit for bundle identifiers', async () => {
+  await withMockedMacOsHelper(
+    [
+      '#!/bin/sh',
+      'printf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"',
+      "cat <<'JSON'",
+      '{"ok":true,"data":{"bundleId":"com.example.foobar","running":true,"terminated":true,"forceTerminated":false}}',
+      'JSON',
+      '',
+    ].join('\n'),
     async ({ tmpDir }) => {
       const argsLogPath = path.join(tmpDir, 'args.log');
       const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
       process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
 
       try {
-        await closeIosApp(MACOS_TEST_DEVICE, 'Foo.Bar');
+        await closeIosApp(MACOS_TEST_DEVICE, 'com.example.foobar');
         const logged = await fs.readFile(argsLogPath, 'utf8');
-        assert.match(logged, /id of app "Foo\.Bar"/);
-        assert.match(logged, /tell application id "com\.example\.foobar" to quit/);
-        assert.doesNotMatch(logged, /tell application "Foo\.Bar" to quit/);
+        assert.equal(logged, 'app\nquit\n--bundle-id\ncom.example.foobar\n');
       } finally {
         if (previousArgsFile === undefined) delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
         else process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
       }
     },
+    { tempPrefix: 'agent-device-macos-close-helper-test-' },
   );
+});
+
+test('quitMacOsApp rejects invalid bundle identifiers before invoking helper', async () => {
+  await assert.rejects(() => quitMacOsApp('not a bundle id'), /reverse-DNS form/i);
 });
 
 test('reinstallIosApp on iOS physical device uses devicectl uninstall + install', async () => {
@@ -1901,13 +1913,53 @@ test('setIosSetting appearance toggle queries current osascript appearance on ma
   }
 });
 
-test('setIosSetting rejects unsupported macOS settings', async () => {
+test('setIosSetting permission grant accessibility uses macOS helper', async () => {
+  await withMockedMacOsHelper(
+    [
+      '#!/bin/sh',
+      'printf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"',
+      "cat <<'JSON'",
+      '{"ok":true,"data":{"target":"accessibility","action":"grant","granted":true,"requested":true,"openedSettings":false}}',
+      'JSON',
+      '',
+    ].join('\n'),
+    async ({ tmpDir }) => {
+      const argsLogPath = path.join(tmpDir, 'args.log');
+      const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
+      process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
+
+      try {
+        const result = await setIosSetting(MACOS_TEST_DEVICE, 'permission', 'grant', undefined, {
+          permissionTarget: 'accessibility',
+        });
+        const logged = await fs.readFile(argsLogPath, 'utf8');
+        assert.equal(logged, 'permission\ngrant\naccessibility\n');
+        assert.deepEqual(result, {
+          action: 'grant',
+          granted: true,
+          openedSettings: false,
+          requested: true,
+          target: 'accessibility',
+        });
+      } finally {
+        if (previousArgsFile === undefined) delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
+        else process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
+      }
+    },
+    { tempPrefix: 'agent-device-macos-permission-grant-test-' },
+  );
+});
+
+test('setIosSetting rejects unsupported macOS permission deny action', async () => {
   await assert.rejects(
-    () => setIosSetting(MACOS_TEST_DEVICE, 'permission', 'grant'),
+    () =>
+      setIosSetting(MACOS_TEST_DEVICE, 'permission', 'deny', undefined, {
+        permissionTarget: 'accessibility',
+      }),
     (error: unknown) => {
       assert.equal(error instanceof AppError, true);
       assert.equal((error as AppError).code, 'INVALID_ARGS');
-      assert.match((error as AppError).message, /Unsupported macOS setting/i);
+      assert.match((error as AppError).message, /Unsupported macOS permission action/i);
       return true;
     },
   );

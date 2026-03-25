@@ -8,6 +8,7 @@ import { retainMaterializedPaths } from '../../materialized-path-registry.ts';
 import { SessionStore } from '../../session-store.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../../types.ts';
 import { AppError } from '../../../utils/errors.ts';
+import { withMockedMacOsHelper } from '../../../platforms/ios/__tests__/macos-helper-test-utils.ts';
 
 function makeSessionStore(): SessionStore {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-session-handler-'));
@@ -1538,8 +1539,55 @@ test('appstate on macOS session returns session state', async () => {
     assert.equal(response.data?.appName, 'System Settings');
     assert.equal(response.data?.appBundleId, 'com.apple.systempreferences');
     assert.equal(response.data?.source, 'session');
+    assert.equal(response.data?.surface, 'app');
     assert.equal(response.data?.device_udid, undefined);
     assert.equal(response.data?.ios_simulator_device_set, undefined);
+  }
+});
+
+test('appstate on macOS desktop surface returns surface state without app bundle id', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'macos-desktop';
+  sessionStore.set(sessionName, {
+    ...makeSession(sessionName, {
+      platform: 'macos',
+      id: 'host-macos-local',
+      name: 'Host Mac',
+      kind: 'device',
+      target: 'desktop',
+      booted: true,
+    }),
+    surface: 'desktop',
+  });
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'appstate',
+      positionals: [],
+      flags: {},
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    ensureReady: async () => {},
+    dispatch: async () => {
+      throw new Error('dispatch should not run');
+    },
+    resolveTargetDevice: async () => {
+      throw new Error('resolveTargetDevice should not run');
+    },
+  });
+
+  assert.equal(response?.ok, true);
+  if (response && response.ok) {
+    assert.equal(response.data?.platform, 'macos');
+    assert.equal(response.data?.appName, 'desktop');
+    assert.equal(response.data?.appBundleId, undefined);
+    assert.equal(response.data?.surface, 'desktop');
+    assert.equal(response.data?.source, 'session');
   }
 });
 
@@ -2375,6 +2423,195 @@ test('open app on existing macOS session resolves and stores bundle id', async (
   assert.equal(updated?.appBundleId, 'com.apple.systempreferences');
   assert.equal(updated?.appName, 'settings');
   assert.equal(dispatchedContext?.appBundleId, 'com.apple.systempreferences');
+});
+
+test('open on macOS with --surface frontmost-app stores frontmost app state', async () => {
+  await withMockedMacOsHelper(
+    [
+      '#!/bin/sh',
+      "cat <<'JSON'",
+      '{"ok":true,"data":{"bundleId":"com.apple.TextEdit","appName":"TextEdit","pid":123}}',
+      'JSON',
+      '',
+    ].join('\n'),
+    async () => {
+      const sessionStore = makeSessionStore();
+      const sessionName = 'macos-frontmost';
+      let dispatchedPositionals: string[] | undefined;
+      const response = await handleSessionCommands({
+        req: {
+          token: 't',
+          session: sessionName,
+          command: 'open',
+          positionals: [],
+          flags: {
+            platform: 'macos',
+            surface: 'frontmost-app',
+          },
+        },
+        sessionName,
+        logPath: path.join(os.tmpdir(), 'daemon.log'),
+        sessionStore,
+        invoke: noopInvoke,
+        dispatch: async (_device, _command, positionals) => {
+          dispatchedPositionals = positionals;
+          return {};
+        },
+        ensureReady: async () => {},
+        resolveTargetDevice: async () => ({
+          platform: 'macos',
+          id: 'host-macos-local',
+          name: 'Host Mac',
+          kind: 'device',
+          target: 'desktop',
+          booted: true,
+        }),
+      });
+
+      assert.equal(response?.ok, true);
+      assert.deepEqual(dispatchedPositionals, []);
+      const session = sessionStore.get(sessionName);
+      assert.equal(session?.surface, 'frontmost-app');
+      assert.equal(session?.appBundleId, 'com.apple.TextEdit');
+      assert.equal(session?.appName, 'TextEdit');
+      if (response && response.ok) {
+        assert.equal(response.data?.surface, 'frontmost-app');
+        assert.equal(response.data?.appBundleId, 'com.apple.TextEdit');
+        assert.equal(response.data?.appName, 'TextEdit');
+      }
+    },
+  );
+});
+
+test('open rejects --surface on non-macOS devices', async () => {
+  const sessionStore = makeSessionStore();
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: 'ios-surface',
+      command: 'open',
+      positionals: ['Notes'],
+      flags: {
+        platform: 'ios',
+        surface: 'frontmost-app',
+      },
+    },
+    sessionName: 'ios-surface',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    dispatch: async () => ({}),
+    ensureReady: async () => {},
+    resolveTargetDevice: async () => ({
+      platform: 'ios',
+      id: 'sim-1',
+      name: 'iPhone 17',
+      kind: 'simulator',
+      target: 'mobile',
+      booted: true,
+    }),
+  });
+
+  assertInvalidArgsMessage(response, 'surface is only supported on macOS');
+});
+
+test('open on existing macOS frontmost-app session preserves surface without --surface flag', async () => {
+  await withMockedMacOsHelper(
+    [
+      '#!/bin/sh',
+      "cat <<'JSON'",
+      '{"ok":true,"data":{"bundleId":"com.apple.TextEdit","appName":"TextEdit","pid":123}}',
+      'JSON',
+      '',
+    ].join('\n'),
+    async () => {
+      const sessionStore = makeSessionStore();
+      const sessionName = 'macos-frontmost-existing';
+      sessionStore.set(sessionName, {
+        ...makeSession(sessionName, {
+          platform: 'macos',
+          id: 'host-macos-local',
+          name: 'Host Mac',
+          kind: 'device',
+          target: 'desktop',
+          booted: true,
+        }),
+        surface: 'frontmost-app',
+        appBundleId: 'com.apple.TextEdit',
+        appName: 'TextEdit',
+      });
+
+      const response = await handleSessionCommands({
+        req: {
+          token: 't',
+          session: sessionName,
+          command: 'open',
+          positionals: [],
+          flags: {
+            platform: 'macos',
+          },
+        },
+        sessionName,
+        logPath: path.join(os.tmpdir(), 'daemon.log'),
+        sessionStore,
+        invoke: noopInvoke,
+        dispatch: async (_device, _command, positionals) => {
+          assert.deepEqual(positionals, []);
+          return {};
+        },
+        ensureReady: async () => {},
+        resolveTargetDevice: async () =>
+          sessionStore.get(sessionName)?.device as SessionState['device'],
+      });
+
+      assert.equal(response?.ok, true);
+      const session = sessionStore.get(sessionName);
+      assert.equal(session?.surface, 'frontmost-app');
+      assert.equal(session?.appBundleId, 'com.apple.TextEdit');
+      assert.equal(session?.appName, 'TextEdit');
+      if (response && response.ok) {
+        assert.equal(response.data?.surface, 'frontmost-app');
+      }
+    },
+  );
+});
+
+test('open on macOS rejects desktop surface until desktop-global backend lands', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'macos-desktop-surface';
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'open',
+      positionals: [],
+      flags: {
+        platform: 'macos',
+        surface: 'desktop' as any,
+      },
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+    dispatch: async () => ({}),
+    ensureReady: async () => {},
+    resolveTargetDevice: async () => ({
+      platform: 'macos',
+      id: 'host-macos-local',
+      name: 'Host Mac',
+      kind: 'device',
+      target: 'desktop',
+      booted: true,
+    }),
+  });
+
+  assert.equal(response?.ok, false);
+  if (response && !response.ok) {
+    assert.equal(response.error.code, 'INVALID_ARGS');
+    assert.match(response.error.message, /not supported yet/i);
+    assert.match(response.error.message, /app\|frontmost-app/i);
+  }
 });
 
 test('open on existing iOS session refreshes unavailable simulator by name', async () => {
@@ -3288,7 +3525,7 @@ test('logs path returns path and active flag when session exists', async () => {
   }
 });
 
-test('logs rejects unsupported macOS desktop sessions', async () => {
+test('logs path supports macOS desktop sessions', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'macos-default';
   sessionStore.set(
@@ -3315,10 +3552,11 @@ test('logs rejects unsupported macOS desktop sessions', async () => {
     sessionStore,
     invoke: noopInvoke,
   });
-  assert.equal(response?.ok, false);
-  if (response && !response.ok) {
-    assert.equal(response.error.code, 'UNSUPPORTED_OPERATION');
-    assert.match(response.error.message, /logs is not supported/i);
+  assert.equal(response?.ok, true);
+  if (response && response.ok) {
+    assert.equal(response.data?.active, false);
+    assert.equal(response.data?.backend, 'macos');
+    assert.equal(typeof response.data?.path, 'string');
   }
 });
 
@@ -3947,7 +4185,7 @@ test('network dump returns recent parsed HTTP entries', async () => {
   }
 });
 
-test('network dump rejects unsupported macOS desktop sessions', async () => {
+test('network dump supports macOS desktop sessions', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'macos-network';
   sessionStore.set(sessionName, {
@@ -3961,6 +4199,13 @@ test('network dump rejects unsupported macOS desktop sessions', async () => {
     }),
     appBundleId: 'com.apple.systempreferences',
   });
+  const appLogPath = sessionStore.resolveAppLogPath(sessionName);
+  fs.mkdirSync(path.dirname(appLogPath), { recursive: true });
+  fs.writeFileSync(
+    appLogPath,
+    '2026-02-24T10:00:00Z GET https://example.com/mac status=204',
+    'utf8',
+  );
   const response = await handleSessionCommands({
     req: {
       token: 't',
@@ -3974,11 +4219,12 @@ test('network dump rejects unsupported macOS desktop sessions', async () => {
     sessionStore,
     invoke: noopInvoke,
   });
-
-  assert.equal(response?.ok, false);
-  if (response && !response.ok) {
-    assert.equal(response.error.code, 'UNSUPPORTED_OPERATION');
-    assert.match(response.error.message, /network is not supported/i);
+  assert.equal(response?.ok, true);
+  if (response && response.ok) {
+    assert.equal(response.data?.backend, 'macos');
+    const entries = Array.isArray(response.data?.entries) ? response.data.entries : [];
+    assert.equal(entries.length, 1);
+    assert.equal((entries[0] as Record<string, unknown>).url, 'https://example.com/mac');
   }
 });
 
