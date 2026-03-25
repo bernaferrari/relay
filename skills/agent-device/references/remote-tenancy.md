@@ -2,10 +2,11 @@
 
 ## When to open this file
 
-Open this file only for remote daemon HTTP flows that require explicit daemon URL setup, authentication, lease allocation, or tenant-scoped command admission.
+Open this file for remote daemon HTTP flows, including `--remote-config` launches, that let an agent running in a Linux sandbox talk to another `agent-device` instance on a remote macOS host in order to control devices that are not available locally. This file covers daemon URL setup, authentication, lease allocation, and tenant-scoped command admission.
 
 ## Main commands to reach for first
 
+- `agent-device open <app> --remote-config <path> --relaunch`
 - `AGENT_DEVICE_DAEMON_BASE_URL=...`
 - `AGENT_DEVICE_DAEMON_AUTH_TOKEN=...`
 - `curl ... agent_device.lease.allocate`
@@ -17,7 +18,19 @@ Open this file only for remote daemon HTTP flows that require explicit daemon UR
 
 Do not run a tenant-isolated command without matching `tenant`, `run`, and `lease` scope. Admission checks require all three to line up.
 
-## Canonical loop
+## Preferred remote launch path
+
+Use this when the agent needs the simplest remote control flow: a Linux sandbox agent talks over HTTP to `agent-device` on a remote macOS host and launches the target app through a checked-in `--remote-config` profile.
+
+```bash
+agent-device open com.example.myapp --remote-config ./agent-device.remote.json --relaunch
+```
+
+- This is the preferred remote launch path for sandbox or cloud agents.
+- For Android React Native relaunch flows, install or reinstall the APK first, then relaunch by installed package name.
+- Do not use `open <apk|aab> --relaunch`; remote runtime hints are applied through the installed app sandbox.
+
+## Lease flow example
 
 ```bash
 export AGENT_DEVICE_DAEMON_BASE_URL=http://mac-host.example:4310

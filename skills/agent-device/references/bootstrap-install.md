@@ -2,29 +2,72 @@
 
 ## When to open this file
 
-Open this file when you still need to choose the right target, start the right session, install or relaunch the app, or pin automation to one device before interacting.
+Open this file when you still need to choose the right target, start the right session, install or relaunch the app, or pin automation to one device before interacting. This is the deterministic setup layer for sandbox, cloud, or other environments where install paths, device state, or app readiness may be uncertain.
 
-## Main commands to reach for first
+## Open-first path
 
 - `devices`
+- `apps`
 - `ensure-simulator`
 - `open`
-- `install` or `reinstall`
-- `close`
 - `session list`
+
+## Install path
+
+- `install` or `reinstall`
 
 ## Most common mistake to avoid
 
 Do not start acting before you have pinned the correct target and opened an `app` session. In mixed-device environments, always pass `--device`, `--udid`, or `--serial`.
 
-## Canonical loop
+## Deterministic setup rule
+
+If there is no simulator, no app install, no open app session, or any uncertainty about where the app should come from, stay in this file and use deterministic setup commands or bootstrap scripts first. Do not improvise install paths or app-launch flows while exploring.
+
+After setup is confirmed or completed, move to `exploration.md` before doing UI inspection or interaction.
+
+## Open-first rule
+
+- If the user asks to test an app and does not provide an install artifact or explicit install instruction, try `open <app>` first.
+- If `open <app>` fails, run `agent-device apps` and retry with a discovered app name before considering install steps.
+- Do not install or reinstall on the first attempt unless the user explicitly asks for installation or provides a concrete artifact path or URL.
+- When installation is required from a known location, prefer a checked-in shell script or other deterministic bootstrap command over ad hoc path guessing.
+
+- If `open <app>` fails, or you are not sure which app name is available on the target, run `agent-device apps` first and choose from the discovered app list instead of guessing.
+- Use `apps --platform <platform>` together with `--device`, `--udid`, or `--serial` when target selection matters.
+- Once you have the correct app name, retry `open` with that exact discovered value.
+
+## Common starting points
+
+These are examples, not required exact sequences. Use the smallest setup flow that matches the task.
+
+### Boot a simulator and open an app
 
 ```bash
 agent-device ensure-simulator --platform ios --device "iPhone 17 Pro" --boot
 agent-device open MyApp --platform ios --device "iPhone 17 Pro" --relaunch
-agent-device snapshot -i
-agent-device close
 ```
+
+### Install an app artifact
+
+```bash
+agent-device install com.example.app ./build/app.apk --platform android --serial emulator-5554
+```
+
+```bash
+agent-device install com.example.app ./build/MyApp.app --platform ios --device "iPhone 17 Pro"
+```
+
+## Install guidance
+
+- Use `install <app> <path>` when the app may already be installed and you do not need a fresh-state reset.
+- Use `reinstall <app> <path>` when you explicitly need uninstall plus install as one deterministic step.
+- Keep install and open as separate phases. Do not turn them into one default command flow.
+- Supported binary formats:
+  - Android: `.apk` and `.aab`
+  - iOS: `.app` and `.ipa`
+- For iOS `.ipa` files, `<app>` is used as the bundle id or bundle name hint when the archive contains multiple app bundles.
+- After install or reinstall, later use `open <app>` with the exact discovered or known package/bundle identifier, not the artifact path.
 
 ## Choose the right starting point
 
@@ -32,7 +75,6 @@ agent-device close
 - iOS in mixed simulator and device environments: run `ensure-simulator` first, then keep using `--device` or `--udid`.
 - TV targets: use `--target tv` together with `--platform` when the task is for tvOS or Android TV rather than phone or tablet surfaces.
 - Android binary flow: use `install` or `reinstall` for `.apk` or `.aab`, then open by installed package name.
-- Android React Native plus Metro flow: `reinstall <app> <apk>` first, then `open <package> --remote-config <path> --relaunch`.
 - macOS desktop app flow: use `open <app> --platform macos`. Only load [macos-desktop.md](macos-desktop.md) if a desktop surface or macOS-specific behavior matters.
 
 TV example:
@@ -95,8 +137,6 @@ export AGENT_DEVICE_PLATFORM=ios
 export AGENT_DEVICE_SESSION_LOCK=strip
 
 agent-device open MyApp --relaunch
-agent-device snapshot -i
-agent-device close
 ```
 
 - `AGENT_DEVICE_SESSION` plus `AGENT_DEVICE_PLATFORM` provides the default binding.
@@ -111,10 +151,7 @@ Android emulator variant:
 export AGENT_DEVICE_SESSION=qa-android
 export AGENT_DEVICE_PLATFORM=android
 
-agent-device reinstall MyApp /path/to/app-debug.apk --serial emulator-5554
 agent-device --session-lock reject open com.example.myapp --relaunch
-agent-device snapshot -i
-agent-device close --shutdown
 ```
 
 ## Scoped discovery
@@ -151,11 +188,14 @@ agent-device replay -u ./session.ad --session auth
 - Once the correct target and session are pinned, move to [exploration.md](exploration.md).
 - If opening, startup, permissions, or logs become the blocker, switch to [debugging.md](debugging.md).
 
-## Install and open examples
+## Install examples
 
 ```bash
 agent-device reinstall MyApp /path/to/app-debug.apk --platform android --serial emulator-5554
-agent-device open com.example.myapp --remote-config ./agent-device.remote.json --relaunch
+```
+
+```bash
+agent-device install com.example.app ./build/MyApp.ipa --platform ios --device "iPhone 17 Pro"
 ```
 
 Do not use `open <apk|aab> --relaunch` on Android.
