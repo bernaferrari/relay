@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { clearPidFile, writePidFile, type AppLogResult } from './app-log-process.ts';
 import { attachChildToStream, createLineWriter, waitForChildExit } from './app-log-stream.ts';
 
-export function buildIosLogPredicate(appBundleId: string): string {
+export function buildAppleLogPredicate(appBundleId: string): string {
   return [
     `subsystem == "${appBundleId}"`,
     `processImagePath ENDSWITH[c] "/${appBundleId}"`,
@@ -25,7 +25,7 @@ export async function startIosSimulatorAppLog(
   let state: 'active' | 'failed' = 'active';
   const child = spawn(
     'log',
-    ['stream', '--style', 'compact', '--predicate', buildIosLogPredicate(appBundleId)],
+    ['stream', '--style', 'compact', '--predicate', buildAppleLogPredicate(appBundleId)],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
     },
@@ -43,6 +43,46 @@ export async function startIosSimulatorAppLog(
   );
   return {
     backend: 'ios-simulator',
+    getState: () => state,
+    startedAt: Date.now(),
+    wait,
+    stop: async () => {
+      if (!child.killed) child.kill('SIGINT');
+      await waitForChildExit(wait);
+      if (!child.killed) child.kill('SIGKILL');
+      await waitForChildExit(wait);
+      clearPidFile(pidPath);
+    },
+  };
+}
+
+export async function startMacOsAppLog(
+  appBundleId: string,
+  stream: fs.WriteStream,
+  redactionPatterns: RegExp[],
+  pidPath?: string,
+): Promise<AppLogResult> {
+  let state: 'active' | 'failed' = 'active';
+  const child = spawn(
+    'log',
+    ['stream', '--style', 'compact', '--predicate', buildAppleLogPredicate(appBundleId)],
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+  const writer = createLineWriter(stream, { redactionPatterns });
+  if (typeof child.pid === 'number') {
+    writePidFile(pidPath, child.pid);
+  }
+  const wait = attachChildToStream(child, stream, { endStreamOnClose: true, writer }).then(
+    (result) => {
+      if (result.exitCode !== 0) state = 'failed';
+      clearPidFile(pidPath);
+      return result;
+    },
+  );
+  return {
+    backend: 'macos',
     getState: () => state,
     startedAt: Date.now(),
     wait,

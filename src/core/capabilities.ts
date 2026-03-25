@@ -14,12 +14,17 @@ type CommandCapability = {
 };
 
 const isNotMacOs = (device: DeviceInfo): boolean => device.platform !== 'macos';
+const isMacOsOrAppleSimulator = (device: DeviceInfo): boolean =>
+  device.platform === 'macos' || device.kind === 'simulator';
 
 const COMMAND_CAPABILITY_MATRIX: Record<string, CommandCapability> = {
   // Apple simulator-only.
   alert: {
-    apple: { simulator: true },
+    // macOS desktop targets report kind=device, so this stays enabled here and the
+    // supports() guard excludes iOS physical devices.
+    apple: { simulator: true, device: true },
     android: {},
+    supports: isMacOsOrAppleSimulator,
   },
   pinch: {
     apple: { simulator: true },
@@ -90,12 +95,10 @@ const COMMAND_CAPABILITY_MATRIX: Record<string, CommandCapability> = {
   logs: {
     apple: { simulator: true, device: true },
     android: { emulator: true, device: true, unknown: true },
-    supports: isNotMacOs,
   },
   network: {
     apple: { simulator: true, device: true },
     android: { emulator: true, device: true, unknown: true },
-    supports: isNotMacOs,
   },
   longpress: {
     apple: { simulator: true, device: true },
