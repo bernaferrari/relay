@@ -423,7 +423,12 @@ extension RunnerTests {
         return Response(ok: false, error: ErrorPayload(message: "type requires text"))
       }
       let delaySeconds = Double(max(command.delayMs ?? 0, 0)) / 1000.0
-      let target = focusedTextInput(app: activeApp)
+      let target: XCUIElement?
+      if let x = command.x, let y = command.y {
+        target = textInputAt(app: activeApp, x: x, y: y) ?? focusedTextInput(app: activeApp)
+      } else {
+        target = focusedTextInput(app: activeApp)
+      }
       func typeIntoTarget(_ value: String) {
         if let focused = target {
           focused.typeText(value)
@@ -433,7 +438,11 @@ extension RunnerTests {
       }
       if command.clearFirst == true {
         guard let focused = target else {
-          return Response(ok: false, error: ErrorPayload(message: "no focused text input to clear"))
+          let message =
+            (command.x != nil && command.y != nil)
+            ? "no text input found at the provided coordinates to clear"
+            : "no focused text input to clear"
+          return Response(ok: false, error: ErrorPayload(message: message))
         }
         clearTextInput(focused)
       }
