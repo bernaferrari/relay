@@ -21,6 +21,7 @@ import { handleFindCommands } from './handlers/find.ts';
 import { handleRecordTraceCommands } from './handlers/record-trace.ts';
 import { handleInteractionCommands } from './handlers/interaction.ts';
 import { handleLeaseCommands } from './handlers/lease.ts';
+import { buildSnapshotState, captureSnapshotData } from './handlers/snapshot-capture.ts';
 import { assertSessionSelectorMatches } from './session-selector.ts';
 import { applyRequestLockPolicy } from './request-lock-policy.ts';
 import { resolveEffectiveSessionName } from './session-routing.ts';
@@ -39,6 +40,7 @@ import {
 } from './recording-gestures.ts';
 import { recoverAndroidBlockingSystemDialog } from './android-system-dialog.ts';
 import { getRunnerSessionSnapshot } from '../platforms/ios/runner-client.ts';
+import { annotateScreenshotWithRefs } from './screenshot-overlay.ts';
 
 const selectorValidationExemptCommands = new Set([
   'session_list',
@@ -436,6 +438,26 @@ export function createRequestHandler(
           const data = await dispatch(session.device, command, resolvedPositionals, resolvedOut, {
             ...dispatchContext,
           });
+          if (
+            command === 'screenshot' &&
+            lockedReq.flags?.overlayRefs &&
+            typeof data?.path === 'string'
+          ) {
+            const overlaySnapshotData = await captureSnapshotData({
+              device: session.device,
+              session,
+              flags: undefined,
+              logPath,
+              snapshotScope: undefined,
+            });
+            const overlaySnapshot = buildSnapshotState(overlaySnapshotData, false);
+            session.snapshot = overlaySnapshot;
+            const overlayRefs = await annotateScreenshotWithRefs({
+              screenshotPath: data.path,
+              snapshot: overlaySnapshot,
+            });
+            data.overlayRefs = overlayRefs;
+          }
           const actionFinishedAt = Date.now();
           const visualizationData = augmentScrollVisualizationResult(
             session,

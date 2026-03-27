@@ -112,6 +112,19 @@ agent-device press 'id="camera_row" || label="Camera" role=button'
 agent-device is visible 'id="camera_settings_anchor"'
 ```
 
+## Interaction fallbacks
+
+When `press @ref` fails:
+
+1. Re-snapshot if the UI may have changed.
+2. Retry `press @ref` or a selector-based `press`.
+3. If `screenshot --overlay-refs --json` returned a reliable `overlayRefs[].center`, use `agent-device press <x> <y>`.
+4. Use an external vision-based tap tool only after semantic and coordinate targeting fail.
+
+- Prefer `@ref` over coordinates.
+- Do not guess coordinates from the image when structured `center` is available.
+- `agent-device` does not provide a built-in vision-tap flag.
+
 ## Text entry rules
 
 - Use `fill` to replace text in an editable field.

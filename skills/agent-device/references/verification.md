@@ -22,7 +22,7 @@ Do not use verification tools as the first exploration step. First get the app i
 agent-device open Settings --platform ios
 # after using exploration to reach the state you want to verify
 agent-device snapshot
-agent-device screenshot /tmp/settings-proof.png
+agent-device screenshot /tmp/settings-proof.png --overlay-refs
 agent-device close
 ```
 
@@ -44,6 +44,8 @@ agent-device diff snapshot -i
 ## Visual artifacts
 
 Use `screenshot` when the proof needs a rendered image instead of a structural tree.
+
+- Add `--overlay-refs` when you want the saved PNG to show fresh `@eN` refs burned into the screenshot.
 
 ## Session recording
 

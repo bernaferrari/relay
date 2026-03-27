@@ -5,6 +5,11 @@ export type Rect = {
   height: number;
 };
 
+export type Point = {
+  x: number;
+  y: number;
+};
+
 export type SnapshotOptions = {
   interactiveOnly?: boolean;
   compact?: boolean;
@@ -45,6 +50,14 @@ export type SnapshotState = {
   backend?: 'xctest' | 'android' | 'macos-helper';
 };
 
+export type ScreenshotOverlayRef = {
+  ref: string;
+  label?: string;
+  rect: Rect;
+  overlayRect: Rect;
+  center: Point;
+};
+
 export function attachRefs(nodes: RawSnapshotNode[]): SnapshotNode[] {
   return nodes.map((node, idx) => ({ ...node, ref: `e${idx + 1}` }));
 }
@@ -63,7 +76,7 @@ export function findNodeByRef(nodes: SnapshotNode[], ref: string): SnapshotNode 
   return nodes.find((node) => node.ref === ref) ?? null;
 }
 
-export function centerOfRect(rect: Rect): { x: number; y: number } {
+export function centerOfRect(rect: Rect): Point {
   return {
     x: Math.round(rect.x + rect.width / 2),
     y: Math.round(rect.y + rect.height / 2),

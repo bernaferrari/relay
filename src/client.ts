@@ -9,6 +9,7 @@ import {
   normalizeInstallFromSourceResult,
   normalizeMaterializationReleaseResult,
   normalizeOpenDevice,
+  readScreenshotOverlayRefs,
   normalizeRuntimeHints,
   normalizeSession,
   normalizeStartupSample,
@@ -231,6 +232,7 @@ export function createAgentDeviceClient(
         const data = await execute('screenshot', options.path ? [options.path] : [], options);
         return {
           path: readRequiredString(data, 'path'),
+          overlayRefs: readScreenshotOverlayRefs(data),
           identifiers: { session },
         };
       },
