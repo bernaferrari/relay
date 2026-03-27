@@ -2,7 +2,7 @@ import type { CommandFlags } from './core/dispatch.ts';
 import type { DaemonRequest, SessionRuntimeHints } from './daemon/types.ts';
 import { AppError } from './utils/errors.ts';
 import type { DeviceKind, DeviceTarget, Platform } from './utils/device.ts';
-import type { SnapshotNode } from './utils/snapshot.ts';
+import type { Point, ScreenshotOverlayRef, SnapshotNode } from './utils/snapshot.ts';
 import { buildAppIdentifiers, buildDeviceIdentifiers } from './client-shared.ts';
 import type {
   AgentDeviceDevice,
@@ -191,6 +191,30 @@ export function readSnapshotNodes(value: unknown): SnapshotNode[] {
   return Array.isArray(value) ? (value as SnapshotNode[]) : [];
 }
 
+export function readScreenshotOverlayRefs(
+  record: Record<string, unknown>,
+): ScreenshotOverlayRef[] | undefined {
+  const value = record.overlayRefs;
+  if (!Array.isArray(value)) return undefined;
+  const refs: ScreenshotOverlayRef[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const ref = readOptionalString(entry, 'ref');
+    const rect = readRect(entry, 'rect');
+    const overlayRect = readRect(entry, 'overlayRect');
+    const center = readPoint(entry, 'center');
+    if (!ref || !rect || !overlayRect || !center) continue;
+    refs.push({
+      ref,
+      label: readOptionalString(entry, 'label'),
+      rect,
+      overlayRect,
+      center,
+    });
+  }
+  return refs;
+}
+
 export function buildFlags(options: InternalRequestOptions): CommandFlags {
   return stripUndefined({
     stateDir: options.stateDir,
@@ -226,6 +250,7 @@ export function buildFlags(options: InternalRequestOptions): CommandFlags {
     snapshotDepth: options.depth,
     snapshotScope: options.scope,
     snapshotRaw: options.raw,
+    overlayRefs: options.overlayRefs,
     verbose: options.debug,
   }) as CommandFlags;
 }
@@ -328,6 +353,33 @@ function readRequired<T>(
     throw new AppError('COMMAND_FAILED', message, { response: record });
   }
   return value;
+}
+
+function readRect(
+  record: Record<string, unknown>,
+  key: string,
+): { x: number; y: number; width: number; height: number } | undefined {
+  const value = record[key];
+  if (!isRecord(value)) return undefined;
+  const x = typeof value.x === 'number' ? value.x : undefined;
+  const y = typeof value.y === 'number' ? value.y : undefined;
+  const width = typeof value.width === 'number' ? value.width : undefined;
+  const height = typeof value.height === 'number' ? value.height : undefined;
+  if (x === undefined || y === undefined || width === undefined || height === undefined) {
+    return undefined;
+  }
+  return { x, y, width, height };
+}
+
+function readPoint(record: Record<string, unknown>, key: string): Point | undefined {
+  const value = record[key];
+  if (!isRecord(value)) return undefined;
+  const x = typeof value.x === 'number' ? value.x : undefined;
+  const y = typeof value.y === 'number' ? value.y : undefined;
+  if (x === undefined || y === undefined) {
+    return undefined;
+  }
+  return { x, y };
 }
 
 function readOptional<T>(
