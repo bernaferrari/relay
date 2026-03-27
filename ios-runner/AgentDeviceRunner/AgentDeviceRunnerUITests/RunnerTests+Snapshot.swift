@@ -1,7 +1,16 @@
 import XCTest
 
 extension RunnerTests {
+  private static let collapsedTabCandidateTypes: Set<XCUIElement.ElementType> = [
+    .button,
+    .link,
+    .menuItem,
+    .other,
+    .staticText
+  ]
+
   private struct SnapshotTraversalContext {
+    let queryRoot: XCUIElement
     let rootSnapshot: XCUIElementSnapshot
     let viewport: CGRect
     let flatSnapshots: [XCUIElementSnapshot]
@@ -68,12 +77,34 @@ extension RunnerTests {
       return DataPayload(nodes: [], truncated: false)
     }
 
+    var cachedDescendantElements: [XCUIElement]?
+    func collapsedTabDescendants() -> [XCUIElement] {
+      if let cachedDescendantElements {
+        return cachedDescendantElements
+      }
+      let fetched = safeSnapshotElementsQuery {
+        context.queryRoot.descendants(matching: .any).allElementsBoundByIndex
+      }
+      cachedDescendantElements = fetched
+      return fetched
+    }
+
     var nodes: [SnapshotNode] = []
     var truncated = false
     let rootEvaluation = evaluateSnapshot(context.rootSnapshot, in: context)
     nodes.append(
       makeSnapshotNode(snapshot: context.rootSnapshot, evaluation: rootEvaluation, depth: 0, index: 0)
     )
+    if context.maxDepth > 0 {
+      let didTruncateFallback = appendCollapsedTabFallbackNodes(
+        to: &nodes,
+        containerSnapshot: context.rootSnapshot,
+        resolveElements: collapsedTabDescendants,
+        depth: 1,
+        nodeLimit: fastSnapshotLimit
+      )
+      truncated = truncated || didTruncateFallback
+    }
 
     var seen = Set<String>()
     var stack: [(XCUIElementSnapshot, Int, Int)] = context.rootSnapshot.children.map { ($0, 1, 1) }
@@ -119,6 +150,16 @@ extension RunnerTests {
           index: nodes.count
         )
       )
+      if visibleDepth < context.maxDepth {
+        let didTruncateFallback = appendCollapsedTabFallbackNodes(
+          to: &nodes,
+          containerSnapshot: snapshot,
+          resolveElements: collapsedTabDescendants,
+          depth: visibleDepth + 1,
+          nodeLimit: fastSnapshotLimit
+        )
+        truncated = truncated || didTruncateFallback
+      }
 
     }
 
@@ -247,6 +288,7 @@ extension RunnerTests {
 
     let (flatSnapshots, snapshotRanges) = flattenedSnapshots(rootSnapshot)
     return SnapshotTraversalContext(
+      queryRoot: queryRoot,
       rootSnapshot: rootSnapshot,
       viewport: viewport,
       flatSnapshots: flatSnapshots,
@@ -375,5 +417,184 @@ extension RunnerTests {
   private func isVisibleInViewport(_ rect: CGRect, _ viewport: CGRect) -> Bool {
     if rect.isNull || rect.isEmpty { return false }
     return rect.intersects(viewport)
+  }
+
+  private func appendCollapsedTabFallbackNodes(
+    to nodes: inout [SnapshotNode],
+    containerSnapshot: XCUIElementSnapshot,
+    resolveElements: () -> [XCUIElement],
+    depth: Int,
+    nodeLimit: Int
+  ) -> Bool {
+    let fallbackNodes = collapsedTabFallbackNodes(
+      for: containerSnapshot,
+      resolveElements: resolveElements,
+      startingIndex: nodes.count,
+      depth: depth
+    )
+    if fallbackNodes.isEmpty { return false }
+    let remaining = max(0, nodeLimit - nodes.count)
+    if remaining == 0 { return true }
+    nodes.append(contentsOf: fallbackNodes.prefix(remaining))
+    return fallbackNodes.count > remaining
+  }
+
+  private func collapsedTabFallbackNodes(
+    for containerSnapshot: XCUIElementSnapshot,
+    resolveElements: () -> [XCUIElement],
+    startingIndex: Int,
+    depth: Int
+  ) -> [SnapshotNode] {
+    if !containerSnapshot.children.isEmpty { return [] }
+    guard shouldExpandCollapsedTabContainer(containerSnapshot) else { return [] }
+    let containerFrame = containerSnapshot.frame
+    if containerFrame.isNull || containerFrame.isEmpty { return [] }
+
+    // Collapsed tab containers should be rare, so a full descendant scan is acceptable once per
+    // snapshot as a fallback for XCTest omitting the tab children from the snapshot tree.
+    let elements = resolveElements()
+    let candidates = elements.compactMap { element in
+      collapsedTabCandidateNode(
+        element: element,
+        containerSnapshot: containerSnapshot,
+        containerFrame: containerFrame
+      )
+    }
+    .sorted { left, right in
+      if left.rect.x != right.rect.x {
+        return left.rect.x < right.rect.x
+      }
+      return left.rect.y < right.rect.y
+    }
+
+    if candidates.count < 2 { return [] }
+    let rowMidpoints = candidates.map { $0.rect.y + ($0.rect.height / 2) }
+    let rowSpread = (rowMidpoints.max() ?? 0) - (rowMidpoints.min() ?? 0)
+    // Allow modest vertical jitter and short two-row wraps while still rejecting unrelated controls.
+    if rowSpread > max(24.0, Double(containerFrame.height) * 0.6) { return [] }
+
+    var seen = Set<String>()
+    let uniqueCandidates = candidates.filter { node in
+      let key = "\(node.type)-\(node.label ?? "")-\(node.identifier ?? "")-\(node.value ?? "")-\(node.rect.x)-\(node.rect.y)-\(node.rect.width)-\(node.rect.height)"
+      if seen.contains(key) { return false }
+      seen.insert(key)
+      return true
+    }
+    if uniqueCandidates.count < 2 { return [] }
+
+    return uniqueCandidates.enumerated().map { offset, node in
+      SnapshotNode(
+        index: startingIndex + offset,
+        type: node.type,
+        label: node.label,
+        identifier: node.identifier,
+        value: node.value,
+        rect: node.rect,
+        enabled: node.enabled,
+        hittable: node.hittable,
+        depth: depth
+      )
+    }
+  }
+
+  private func collapsedTabCandidateNode(
+    element: XCUIElement,
+    containerSnapshot: XCUIElementSnapshot,
+    containerFrame: CGRect
+  ) -> SnapshotNode? {
+    var node: SnapshotNode?
+    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+      if !element.exists { return }
+      let elementType = element.elementType
+      if !Self.collapsedTabCandidateTypes.contains(elementType) { return }
+      let frame = element.frame
+      if frame.isNull || frame.isEmpty { return }
+      if frame.equalTo(containerFrame) { return }
+      let area = max(CGFloat(1), frame.width * frame.height)
+      let containerArea = max(CGFloat(1), containerFrame.width * containerFrame.height)
+      if area >= containerArea * 0.9 { return }
+      let center = CGPoint(x: frame.midX, y: frame.midY)
+      if !containerFrame.contains(center) { return }
+
+      let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+      let identifier = element.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+      let valueText = snapshotValueText(element)
+      let hasContent = !label.isEmpty || !identifier.isEmpty || valueText != nil
+      if !hasContent { return }
+      if sameSemanticElement(
+        containerSnapshot: containerSnapshot,
+        elementType: elementType,
+        label: label,
+        identifier: identifier
+      ) {
+        return
+      }
+
+      node = SnapshotNode(
+        index: 0,
+        type: elementTypeName(elementType),
+        label: label.isEmpty ? nil : label,
+        identifier: identifier.isEmpty ? nil : identifier,
+        value: valueText,
+        rect: snapshotRect(from: frame),
+        enabled: element.isEnabled,
+        hittable: element.isHittable,
+        depth: 0
+      )
+    })
+    if let exceptionMessage {
+      NSLog(
+        "AGENT_DEVICE_RUNNER_SNAPSHOT_TAB_FALLBACK_IGNORED_EXCEPTION=%@",
+        exceptionMessage
+      )
+      return nil
+    }
+    return node
+  }
+
+  private func shouldExpandCollapsedTabContainer(_ snapshot: XCUIElementSnapshot) -> Bool {
+    let frame = snapshot.frame
+    if frame.isNull || frame.isEmpty { return false }
+    if frame.width < max(CGFloat(160), frame.height * 1.75) { return false }
+    switch snapshot.elementType {
+    case .tabBar, .segmentedControl, .slider:
+      return true
+    default:
+      return false
+    }
+  }
+
+  private func snapshotValueText(_ element: XCUIElement) -> String? {
+    let text = String(describing: element.value ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return text.isEmpty ? nil : text
+  }
+
+  private func sameSemanticElement(
+    containerSnapshot: XCUIElementSnapshot,
+    elementType: XCUIElement.ElementType,
+    label: String,
+    identifier: String
+  ) -> Bool {
+    if containerSnapshot.elementType != elementType { return false }
+    let containerLabel = containerSnapshot.label.trimmingCharacters(in: .whitespacesAndNewlines)
+    let containerIdentifier = containerSnapshot.identifier
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return containerLabel == label && containerIdentifier == identifier
+  }
+
+  private func safeSnapshotElementsQuery(_ fetch: () -> [XCUIElement]) -> [XCUIElement] {
+    var elements: [XCUIElement] = []
+    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+      elements = fetch()
+    })
+    if let exceptionMessage {
+      NSLog(
+        "AGENT_DEVICE_RUNNER_SNAPSHOT_QUERY_IGNORED_EXCEPTION=%@",
+        exceptionMessage
+      )
+      return []
+    }
+    return elements
   }
 }
