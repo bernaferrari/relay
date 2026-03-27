@@ -17,11 +17,6 @@ extension RunnerTests {
     let referenceHeight: Double
   }
 
-  struct GestureReferenceFrame {
-    let referenceWidth: Double
-    let referenceHeight: Double
-  }
-
   // MARK: - Navigation Gestures
 
   func tapInAppBackControl(app: XCUIApplication) -> Bool {
@@ -376,7 +371,7 @@ extension RunnerTests {
     )
   }
 
-  private func resolvedTouchReferenceFrame(app: XCUIApplication, appFrame: CGRect) -> CGRect {
+  func resolvedTouchReferenceFrame(app: XCUIApplication, appFrame: CGRect) -> CGRect {
     let window = app.windows.firstMatch
     let windowFrame = window.frame
     if window.exists && !windowFrame.isEmpty {
@@ -386,14 +381,6 @@ extension RunnerTests {
       return appFrame
     }
     return CGRect(x: 0, y: 0, width: 0, height: 0)
-  }
-
-  func resolvedGestureReferenceFrame(app: XCUIApplication) -> GestureReferenceFrame {
-    let frame = resolvedTouchReferenceFrame(app: app, appFrame: app.frame)
-    return GestureReferenceFrame(
-      referenceWidth: frame.width,
-      referenceHeight: frame.height
-    )
   }
 
   func runSeries(count: Int, pauseMs: Double, operation: (Int) -> Void) {
@@ -407,39 +394,36 @@ extension RunnerTests {
     }
   }
 
-  func swipe(app: XCUIApplication, direction: SwipeDirection) {
+  func swipe(app: XCUIApplication, direction: String) -> DragVisualizationFrame? {
     if performTvRemoteSwipeIfAvailable(direction: direction) {
-      return
+      let frame = resolvedTouchReferenceFrame(app: app, appFrame: app.frame)
+      let midX = frame.midX
+      let midY = frame.midY
+      return DragVisualizationFrame(
+        x: midX,
+        y: midY,
+        x2: midX,
+        y2: midY,
+        referenceWidth: frame.width,
+        referenceHeight: frame.height
+      )
     }
-    let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
-    let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
-    let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-    let left = target.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
-    let right = target.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-
-    switch direction {
-    case .up:
-      end.press(forDuration: 0.1, thenDragTo: start)
-    case .down:
-      start.press(forDuration: 0.1, thenDragTo: end)
-    case .left:
-      right.press(forDuration: 0.1, thenDragTo: left)
-    case .right:
-      left.press(forDuration: 0.1, thenDragTo: right)
-    }
+    return nil
   }
 
-  private func performTvRemoteSwipeIfAvailable(direction: SwipeDirection) -> Bool {
+  private func performTvRemoteSwipeIfAvailable(direction: String) -> Bool {
 #if os(tvOS)
     switch direction {
-    case .up:
+    case "up":
       XCUIRemote.shared.press(.up)
-    case .down:
+    case "down":
       XCUIRemote.shared.press(.down)
-    case .left:
+    case "left":
       XCUIRemote.shared.press(.left)
-    case .right:
+    case "right":
       XCUIRemote.shared.press(.right)
+    default:
+      return false
     }
     return true
 #else
@@ -515,5 +499,4 @@ extension RunnerTests {
     let element = app.descendants(matching: .any).matching(predicate).firstMatch
     return element.exists ? element : nil
   }
-
 }

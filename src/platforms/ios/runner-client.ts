@@ -31,6 +31,7 @@ export type RunnerCommand = {
     | 'mouseClick'
     | 'tapSeries'
     | 'longPress'
+    | 'interactionFrame'
     | 'drag'
     | 'dragSeries'
     | 'type'
