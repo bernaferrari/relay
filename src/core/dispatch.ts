@@ -11,7 +11,11 @@ import {
 } from '../platforms/android/index.ts';
 import { getInteractor, type RunnerContext } from '../utils/interactors.ts';
 import { runIosRunnerCommand } from '../platforms/ios/runner-client.ts';
-import { runMacOsReadTextAction } from '../platforms/ios/macos-helper.ts';
+import {
+  runMacOsPressAction,
+  runMacOsReadTextAction,
+  runMacOsScreenshotAction,
+} from '../platforms/ios/macos-helper.ts';
 import { pushIosNotification } from '../platforms/ios/index.ts';
 import type { SessionSurface } from './session-surface.ts';
 import { isDeepLinkTarget } from './open-target.ts';
@@ -63,6 +67,7 @@ export async function dispatchCommand(
     snapshotDepth?: number;
     snapshotScope?: string;
     snapshotRaw?: boolean;
+    screenshotFullscreen?: boolean;
     count?: number;
     intervalMs?: number;
     delayMs?: number;
@@ -153,6 +158,20 @@ export async function dispatchCommand(
           const [x, y] = positionals.map(Number);
           if (Number.isNaN(x) || Number.isNaN(y))
             throw new AppError('INVALID_ARGS', 'press requires x y');
+          if (device.platform === 'macos' && context?.surface && context.surface !== 'app') {
+            const clickButton = resolveClickButton(context);
+            if (clickButton !== 'primary') {
+              throw new AppError(
+                'UNSUPPORTED_OPERATION',
+                `${clickButton} click is not supported on macOS ${context.surface} sessions.`,
+              );
+            }
+            await runMacOsPressAction(x, y, {
+              bundleId: context.appBundleId,
+              surface: context.surface,
+            });
+            return { x, y, ...successText(formatPressMessage({ x, y })) };
+          }
           const clickButton = resolveClickButton(context);
           if (clickButton !== 'primary') {
             const validationError = getClickButtonValidationError({
@@ -435,6 +454,12 @@ export async function dispatchCommand(
               'Android pinch is not supported in current adb backend; requires instrumentation-based backend.',
             );
           }
+          if (device.platform === 'macos' && context?.surface && context.surface !== 'app') {
+            throw new AppError(
+              'UNSUPPORTED_OPERATION',
+              'pinch is only supported in macOS app sessions. Re-open the target app without --surface desktop|menubar|frontmost-app first.',
+            );
+          }
           const scale = Number(positionals[0]);
           const x = positionals[1] ? Number(positionals[1]) : undefined;
           const y = positionals[2] ? Number(positionals[2]) : undefined;
@@ -468,7 +493,18 @@ export async function dispatchCommand(
           const positionalPath = positionals[0];
           const screenshotPath = positionalPath ?? outPath ?? `./screenshot-${Date.now()}.png`;
           await fs.mkdir(pathModule.dirname(screenshotPath), { recursive: true });
-          await interactor.screenshot(screenshotPath, context?.appBundleId);
+          if (device.platform === 'macos' && context?.surface && context.surface !== 'app') {
+            await runMacOsScreenshotAction(screenshotPath, {
+              surface: context.surface,
+              fullscreen: context.screenshotFullscreen,
+            });
+          } else {
+            await interactor.screenshot(
+              screenshotPath,
+              context?.appBundleId,
+              context?.screenshotFullscreen,
+            );
+          }
           return { path: screenshotPath, ...successText(`Saved screenshot: ${screenshotPath}`) };
         }
         case 'back': {

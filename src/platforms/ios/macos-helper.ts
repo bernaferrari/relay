@@ -278,13 +278,20 @@ export async function runMacOsAlertAction(
   return await runMacOsHelper(args);
 }
 
-export async function runMacOsSnapshotAction(surface: Exclude<SessionSurface, 'app'>): Promise<{
+export async function runMacOsSnapshotAction(
+  surface: Exclude<SessionSurface, 'app'>,
+  options: { bundleId?: string } = {},
+): Promise<{
   surface: Exclude<SessionSurface, 'app'>;
   nodes: MacOsSnapshotNode[];
   truncated: boolean;
   backend: 'macos-helper';
 }> {
-  return await runMacOsHelper(['snapshot', '--surface', surface]);
+  const args = ['snapshot', '--surface', surface];
+  if (options.bundleId) {
+    args.push('--bundle-id', assertMacOsBundleId(options.bundleId));
+  }
+  return await runMacOsHelper(args);
 }
 
 export async function runMacOsReadTextAction(
@@ -300,6 +307,44 @@ export async function runMacOsReadTextAction(
   }
   if (options.surface) {
     args.push('--surface', options.surface);
+  }
+  return await runMacOsHelper(args);
+}
+
+export async function runMacOsPressAction(
+  x: number,
+  y: number,
+  options: { bundleId?: string; surface?: SessionSurface } = {},
+): Promise<{
+  x: number;
+  y: number;
+  bundleId?: string;
+  surface?: SessionSurface;
+}> {
+  const args = ['press', '--x', String(x), '--y', String(y)];
+  if (options.bundleId) {
+    args.push('--bundle-id', assertMacOsBundleId(options.bundleId));
+  }
+  if (options.surface) {
+    args.push('--surface', options.surface);
+  }
+  return await runMacOsHelper(args);
+}
+
+export async function runMacOsScreenshotAction(
+  outPath: string,
+  options: { surface?: SessionSurface; fullscreen?: boolean } = {},
+): Promise<{
+  path: string;
+  surface?: SessionSurface;
+  fullscreen: boolean;
+}> {
+  const args = ['screenshot', '--out', outPath];
+  if (options.surface) {
+    args.push('--surface', options.surface);
+  }
+  if (options.fullscreen) {
+    args.push('--fullscreen');
   }
   return await runMacOsHelper(args);
 }
