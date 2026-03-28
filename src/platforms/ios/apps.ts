@@ -7,6 +7,7 @@ import { runCmd } from '../../utils/exec.ts';
 import { resolveIosSimulatorDeviceSetPath } from '../../utils/device-isolation.ts';
 import { Deadline, retryWithPolicy } from '../../utils/retry.ts';
 import { isDeepLinkTarget, resolveIosDeviceDeepLinkBundleId } from '../../core/open-target.ts';
+import { getUnsupportedMacOsSettingMessage } from '../../core/settings-contract.ts';
 import {
   parsePermissionAction,
   parsePermissionTarget,
@@ -377,18 +378,12 @@ export async function setIosSetting(
     if (normalizedSetting === 'permission') {
       const action = parsePermissionAction(state);
       if (action === 'deny') {
-        throw new AppError(
-          'INVALID_ARGS',
-          'Unsupported macOS permission action: deny. macOS supports only settings permission <grant|reset> <accessibility|screen-recording|input-monitoring>.',
-        );
+        throw new AppError('INVALID_ARGS', getUnsupportedMacOsSettingMessage('permission'));
       }
       const permissionTarget = parseMacOsPermissionTarget(options?.permissionTarget);
       return await runMacOsPermissionAction(action, permissionTarget);
     }
-    throw new AppError(
-      'INVALID_ARGS',
-      `Unsupported macOS setting: ${setting}. macOS supports settings appearance <light|dark|toggle> and settings permission <grant|reset> <accessibility|screen-recording|input-monitoring>.`,
-    );
+    throw new AppError('INVALID_ARGS', getUnsupportedMacOsSettingMessage(setting));
   }
   ensureSimulator(device, 'settings');
   await ensureBootedSimulator(device);
