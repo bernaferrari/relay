@@ -15,7 +15,6 @@ export async function receiveUpload(
 ): Promise<{ artifactPath: string; tempDir: string }> {
   const artifactType = req.headers['x-artifact-type'] as string | undefined;
   const rawFilename = req.headers['x-artifact-filename'] as string | undefined;
-
   if (!artifactType || !rawFilename) {
     throw new AppError(
       'INVALID_ARGS',
@@ -32,24 +31,23 @@ export async function receiveUpload(
   validateArtifactContentLength(req.headers['content-length']);
   const artifactFilename = sanitizeArtifactFilename(rawFilename);
   const tempDir = createArtifactTempDir('upload');
-
   try {
     if (artifactType === 'file') {
-      const destPath = path.join(tempDir, artifactFilename);
-      await streamReadableToFile(req, destPath);
-      return { artifactPath: destPath, tempDir };
+      const artifactPath = path.join(tempDir, artifactFilename);
+      await streamReadableToFile(req, artifactPath);
+      return { artifactPath, tempDir };
     }
 
     const archivePath = path.join(tempDir, 'artifact.tar');
     await streamReadableToFile(req, archivePath);
-    const destPath = await extractTarInstallableArtifact({
+    const artifactPath = await extractTarInstallableArtifact({
       archivePath,
       tempDir,
       platform: 'ios',
       expectedRootName: artifactFilename,
     });
     fs.rmSync(archivePath, { force: true });
-    return { artifactPath: destPath, tempDir };
+    return { artifactPath, tempDir };
   } catch (error) {
     fs.rmSync(tempDir, { recursive: true, force: true });
     throw error;

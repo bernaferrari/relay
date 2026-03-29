@@ -1,7 +1,7 @@
 import type { Platform } from '../utils/device.ts';
 import type { SnapshotNode, SnapshotState } from '../utils/snapshot.ts';
-import type { Selector, SelectorChain } from './selectors-parse.ts';
 import { matchesSelector } from './selectors-match.ts';
+import type { Selector, SelectorChain } from './selectors-parse.ts';
 
 export type SelectorDiagnostics = {
   selector: string;
@@ -28,22 +28,16 @@ export function resolveSelectorChain(
 ): SelectorResolution | null {
   const requireRect = options.requireRect ?? false;
   const requireUnique = options.requireUnique ?? true;
-  const disambiguateAmbiguous = options.disambiguateAmbiguous ?? false;
   const diagnostics: SelectorDiagnostics[] = [];
   for (let i = 0; i < chain.selectors.length; i += 1) {
     const selector = chain.selectors[i];
-    const summary = analyzeSelectorMatches(nodes, selector, {
-      platform: options.platform,
-      requireRect,
-    });
+    const summary = analyzeSelectorMatches(nodes, selector, options.platform, requireRect);
     diagnostics.push({ selector: selector.raw, matches: summary.count });
     if (summary.count === 0 || !summary.firstNode) continue;
     if (requireUnique && summary.count !== 1) {
-      if (!disambiguateAmbiguous) continue;
-      const disambiguatedNode = summary.disambiguated;
-      if (!disambiguatedNode) continue;
+      if (!options.disambiguateAmbiguous || !summary.disambiguated) continue;
       return {
-        node: disambiguatedNode,
+        node: summary.disambiguated,
         selector,
         selectorIndex: i,
         matches: summary.count,
@@ -78,10 +72,7 @@ export function findSelectorChainMatch(
   const diagnostics: SelectorDiagnostics[] = [];
   for (let i = 0; i < chain.selectors.length; i += 1) {
     const selector = chain.selectors[i];
-    const matches = countSelectorMatchesOnly(nodes, selector, {
-      platform: options.platform,
-      requireRect,
-    });
+    const matches = countSelectorMatchesOnly(nodes, selector, options.platform, requireRect);
     diagnostics.push({ selector: selector.raw, matches });
     if (matches > 0) {
       return { selectorIndex: i, selector, matches, diagnostics };
@@ -95,33 +86,30 @@ export function formatSelectorFailure(
   diagnostics: SelectorDiagnostics[],
   options: { unique?: boolean },
 ): string {
-  const unique = options.unique ?? true;
   if (diagnostics.length === 0) {
     return `Selector did not match: ${chain.raw}`;
   }
   const summary = diagnostics.map((entry) => `${entry.selector} -> ${entry.matches}`).join(', ');
-  if (unique) {
-    return `Selector did not resolve uniquely (${summary})`;
-  }
-  return `Selector did not match (${summary})`;
+  return (options.unique ?? true)
+    ? `Selector did not resolve uniquely (${summary})`
+    : `Selector did not match (${summary})`;
 }
 
 function analyzeSelectorMatches(
   nodes: SnapshotState['nodes'],
   selector: Selector,
-  options: { platform: Platform; requireRect: boolean },
+  platform: Platform,
+  requireRect: boolean,
 ): { count: number; firstNode: SnapshotNode | null; disambiguated: SnapshotNode | null } {
   let count = 0;
   let firstNode: SnapshotNode | null = null;
   let best: SnapshotNode | null = null;
   let tie = false;
   for (const node of nodes) {
-    if (options.requireRect && !node.rect) continue;
-    if (!matchesSelector(node, selector, options.platform)) continue;
+    if (requireRect && !node.rect) continue;
+    if (!matchesSelector(node, selector, platform)) continue;
     count += 1;
-    if (!firstNode) {
-      firstNode = node;
-    }
+    firstNode ??= node;
     if (!best) {
       best = node;
       continue;
@@ -130,9 +118,7 @@ function analyzeSelectorMatches(
     if (comparison > 0) {
       best = node;
       tie = false;
-      continue;
-    }
-    if (comparison === 0) {
+    } else if (comparison === 0) {
       tie = true;
     }
   }
@@ -146,12 +132,13 @@ function analyzeSelectorMatches(
 function countSelectorMatchesOnly(
   nodes: SnapshotState['nodes'],
   selector: Selector,
-  options: { platform: Platform; requireRect: boolean },
+  platform: Platform,
+  requireRect: boolean,
 ): number {
   let count = 0;
   for (const node of nodes) {
-    if (options.requireRect && !node.rect) continue;
-    if (!matchesSelector(node, selector, options.platform)) continue;
+    if (requireRect && !node.rect) continue;
+    if (!matchesSelector(node, selector, platform)) continue;
     count += 1;
   }
   return count;
@@ -168,6 +155,5 @@ function compareDisambiguationCandidates(a: SnapshotNode, b: SnapshotNode): numb
 }
 
 function areaOfNode(node: SnapshotNode): number {
-  if (!node.rect) return Number.POSITIVE_INFINITY;
-  return node.rect.width * node.rect.height;
+  return node.rect ? node.rect.width * node.rect.height : Number.POSITIVE_INFINITY;
 }
