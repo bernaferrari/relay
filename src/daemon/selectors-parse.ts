@@ -93,9 +93,9 @@ export function splitSelectorFromArgs(
   if (boundaries.length === 0) return null;
   let boundary = boundaries[boundaries.length - 1];
   if (preferTrailingValue) {
-    for (let j = boundaries.length - 1; j >= 0; j -= 1) {
-      if (boundaries[j] < args.length) {
-        boundary = boundaries[j];
+    for (let i = boundaries.length - 1; i >= 0; i -= 1) {
+      if (boundaries[i] < args.length) {
+        boundary = boundaries[i];
         break;
       }
     }
@@ -126,8 +126,7 @@ function parseSelector(segment: string): Selector {
   if (tokens.length === 0) {
     throw new AppError('INVALID_ARGS', `Invalid selector segment: ${segment}`);
   }
-  const terms = tokens.map(parseTerm);
-  return { raw, terms };
+  return { raw, terms: tokens.map(parseTerm) };
 }
 
 function parseTerm(token: string): SelectorTerm {
@@ -143,22 +142,22 @@ function parseTerm(token: string): SelectorTerm {
     }
     return { key, value: true };
   }
-  const keyRaw = normalized.slice(0, equalsIdx).trim().toLowerCase() as SelectorKey;
+  const key = normalized.slice(0, equalsIdx).trim().toLowerCase() as SelectorKey;
   const valueRaw = normalized.slice(equalsIdx + 1).trim();
-  if (!ALL_KEYS.has(keyRaw)) {
-    throw new AppError('INVALID_ARGS', `Unknown selector key: ${keyRaw}`);
+  if (!ALL_KEYS.has(key)) {
+    throw new AppError('INVALID_ARGS', `Unknown selector key: ${key}`);
   }
   if (!valueRaw) {
-    throw new AppError('INVALID_ARGS', `Missing selector value for key: ${keyRaw}`);
+    throw new AppError('INVALID_ARGS', `Missing selector value for key: ${key}`);
   }
-  if (BOOLEAN_KEYS.has(keyRaw)) {
-    const parsedBoolean = parseBoolean(valueRaw);
-    if (parsedBoolean === null) {
-      throw new AppError('INVALID_ARGS', `Invalid boolean value for ${keyRaw}: ${valueRaw}`);
+  if (BOOLEAN_KEYS.has(key)) {
+    const value = parseBoolean(valueRaw);
+    if (value === null) {
+      throw new AppError('INVALID_ARGS', `Invalid boolean value for ${key}: ${valueRaw}`);
     }
-    return { key: keyRaw, value: parsedBoolean };
+    return { key, value };
   }
-  return { key: keyRaw, value: unquote(valueRaw) };
+  return { key, value: unquote(valueRaw) };
 }
 
 function splitByFallback(expression: string): string[] {
@@ -168,11 +167,7 @@ function splitByFallback(expression: string): string[] {
   for (let i = 0; i < expression.length; i += 1) {
     const ch = expression[i];
     if ((ch === '"' || ch === "'") && !isEscapedQuote(expression, i)) {
-      if (!quote) {
-        quote = ch;
-      } else if (quote === ch) {
-        quote = null;
-      }
+      quote = updateQuoteState(quote, ch);
       current += ch;
       continue;
     }
@@ -203,18 +198,12 @@ function tokenize(segment: string): string[] {
   for (let i = 0; i < segment.length; i += 1) {
     const ch = segment[i];
     if ((ch === '"' || ch === "'") && !isEscapedQuote(segment, i)) {
-      if (!quote) {
-        quote = ch;
-      } else if (quote === ch) {
-        quote = null;
-      }
+      quote = updateQuoteState(quote, ch);
       current += ch;
       continue;
     }
     if (!quote && /\s/.test(ch)) {
-      if (current.trim().length > 0) {
-        tokens.push(current.trim());
-      }
+      if (current.trim()) tokens.push(current.trim());
       current = '';
       continue;
     }
@@ -223,10 +212,13 @@ function tokenize(segment: string): string[] {
   if (quote) {
     throw new AppError('INVALID_ARGS', `Unclosed quote in selector: ${segment}`);
   }
-  if (current.trim().length > 0) {
-    tokens.push(current.trim());
-  }
+  if (current.trim()) tokens.push(current.trim());
   return tokens;
+}
+
+function updateQuoteState(currentQuote: '"' | "'" | null, ch: '"' | "'"): '"' | "'" | null {
+  if (!currentQuote) return ch;
+  return currentQuote === ch ? null : currentQuote;
 }
 
 function unquote(value: string): string {

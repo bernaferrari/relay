@@ -44,7 +44,7 @@ export async function resolveTarArchiveRootName(params: {
     throw new AppError('INVALID_ARGS', 'Uploaded app bundle archive is empty');
   }
 
-  const normalizedEntries = entries.map((entry) => normalizeArchiveEntry(entry));
+  const normalizedEntries = entries.map(normalizeArchiveEntry);
   const rootName =
     params.expectedRootName ?? resolveArchiveRootName(normalizedEntries, params.platform);
   const hasExpectedRoot = normalizedEntries.some(
@@ -62,10 +62,8 @@ export async function resolveTarArchiveRootName(params: {
   }
 
   const verboseResult = await runCmd('tar', ['-tvf', params.archivePath]);
-  const lines = verboseResult.stdout.split(/\r?\n/).filter(Boolean);
-  for (const line of lines) {
-    const entryType = line[0];
-    if (entryType === 'l' || entryType === 'h') {
+  for (const line of verboseResult.stdout.split(/\r?\n/).filter(Boolean)) {
+    if (line[0] === 'l' || line[0] === 'h') {
       throw new AppError(
         'INVALID_ARGS',
         'Uploaded app bundle archive cannot contain symlinks or hard links',

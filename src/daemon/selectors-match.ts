@@ -18,8 +18,7 @@ export function isNodeVisible(node: SnapshotNode): boolean {
 }
 
 export function isNodeEditable(node: SnapshotNode, platform: Platform): boolean {
-  const type = node.type ?? '';
-  return isFillableType(type, platform) && node.enabled !== false;
+  return isFillableType(node.type ?? '', platform) && node.enabled !== false;
 }
 
 function matchesTerm(node: SnapshotNode, term: SelectorTerm, platform: Platform): boolean {
@@ -27,15 +26,13 @@ function matchesTerm(node: SnapshotNode, term: SelectorTerm, platform: Platform)
     case 'id':
       return textEquals(node.identifier, String(term.value));
     case 'role':
-      return roleEquals(node.type, String(term.value));
+      return textEquals(normalizeType(node.type ?? ''), String(term.value));
     case 'label':
       return textEquals(node.label, String(term.value));
     case 'value':
       return textEquals(node.value, String(term.value));
-    case 'text': {
-      const query = normalizeText(String(term.value));
-      return normalizeText(extractNodeText(node)) === query;
-    }
+    case 'text':
+      return textEquals(extractNodeText(node), String(term.value));
     case 'visible':
       return isNodeVisible(node) === Boolean(term.value);
     case 'hidden':
@@ -57,14 +54,6 @@ function textEquals(value: string | undefined, query: string): boolean {
   return normalizeText(value ?? '') === normalizeText(query);
 }
 
-function roleEquals(value: string | undefined, query: string): boolean {
-  return normalizeRole(value ?? '') === normalizeRole(query);
-}
-
 function normalizeText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function normalizeRole(value: string): string {
-  return normalizeType(value);
 }
