@@ -18,7 +18,6 @@ jobs:
     name: Smoke Tests
     runs-on: macos-26
     timeout-minutes: 80
-    continue-on-error: true
     env:
       IOS_RUNTIME_VERSION: "26.2"
       AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/ios-runner-derived
