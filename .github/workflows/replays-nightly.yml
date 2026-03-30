@@ -1,0 +1,132 @@
+name: Replay Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nightly-android:
+    name: Android Replay Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Setup Android replay host
+        id: android-replay-host
+        uses: ./.github/actions/setup-android-replay-host
+
+      - name: Run Android replay suite
+        uses: reactivecircus/android-emulator-runner@b530d96654c385303d652368551fb075bc2f0b6b # v2.35.0
+        with:
+          api-level: 36
+          arch: x86_64
+          profile: pixel_7
+          target: google_apis_playstore
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          script: node --experimental-strip-types src/bin.ts test test/integration/replays/android --retries 3 --report-junit test/artifacts/replays-android.junit.xml
+
+      - name: Upload Android artifacts
+        if: always()
+        uses: ./.github/actions/upload-agent-device-artifacts
+        with:
+          artifact-name: replay-nightly-android-artifacts
+          agent-home-dir: ${{ steps.android-replay-host.outputs.agent-home-dir }}
+
+  nightly-ios:
+    name: iOS Replay Suite
+    runs-on: macos-26
+    timeout-minutes: 80
+    env:
+      IOS_RUNTIME_VERSION: "26.2"
+      AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/ios-runner-derived
+      AGENT_DEVICE_IOS_SIMCTL_LIST_TIMEOUT_MS: "60000"
+      AGENT_DEVICE_IOS_BOOT_TIMEOUT_MS: "180000"
+      AGENT_DEVICE_IOS_APP_LAUNCH_TIMEOUT_MS: "60000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Setup Apple replay
+        id: apple-replay
+        uses: ./.github/actions/setup-apple-replay
+        with:
+          derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
+          cache-key-prefix: ios-runner-prebuilt
+          cache-key-suffix: -ios-${{ env.IOS_RUNTIME_VERSION }}
+          build-command: sh ./scripts/build-xcuitest-apple.sh
+          xcuitest-platform: ios
+          xcuitest-destination: platform=iOS Simulator,name=iPhone 17 Pro,OS=${{ env.IOS_RUNTIME_VERSION }}
+          clean-derived: "1"
+
+      - name: Boot iOS test simulator
+        uses: ./.github/actions/boot-ios-test-simulator
+        with:
+          runtime-version: ${{ env.IOS_RUNTIME_VERSION }}
+          preferred-device-name: iPhone 17 Pro
+
+      - name: Run iOS simulator replay suite
+        run: node --experimental-strip-types src/bin.ts test test/integration/replays/ios/simulator --retries 3 --report-junit test/artifacts/replays-ios-simulator.junit.xml
+
+      - name: Run iOS physical device replay suite
+        if: env.IOS_UDID != ''
+        env:
+          IOS_UDID: ${{ vars.IOS_UDID }}
+        run: node --experimental-strip-types src/bin.ts test test/integration/replays/ios/device --udid "$IOS_UDID" --retries 3 --report-junit test/artifacts/replays-ios-device.junit.xml
+
+      - name: Upload iOS artifacts
+        if: always()
+        uses: ./.github/actions/upload-agent-device-artifacts
+        with:
+          artifact-name: replay-nightly-ios-artifacts
+          agent-home-dir: ${{ steps.apple-replay.outputs.agent-home-dir }}
+
+  nightly-macos:
+    name: macOS Replay Suite
+    runs-on: macos-26
+    timeout-minutes: 80
+    env:
+      AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/macos-runner-derived
+      AGENT_DEVICE_IOS_APP_LAUNCH_TIMEOUT_MS: "60000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup toolchain
+        uses: ./.github/actions/setup-node-pnpm
+
+      - name: Setup Apple replay
+        id: apple-replay
+        uses: ./.github/actions/setup-apple-replay
+        with:
+          derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
+          cache-key-prefix: macos-runner-prebuilt
+          build-command: pnpm build:xcuitest:macos
+
+      - name: Build macOS helper
+        run: pnpm build:macos-helper
+
+      - name: Run macOS replay suite
+        run: node --experimental-strip-types src/bin.ts test test/integration/replays/macos --retries 3 --report-junit test/artifacts/replays-macos.junit.xml
+
+      - name: Upload macOS artifacts
+        if: always()
+        uses: ./.github/actions/upload-agent-device-artifacts
+        with:
+          artifact-name: replay-nightly-macos-artifacts
+          agent-home-dir: ${{ steps.apple-replay.outputs.agent-home-dir }}
