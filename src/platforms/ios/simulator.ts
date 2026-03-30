@@ -17,7 +17,7 @@ export function ensureSimulator(device: DeviceInfo, command: string): void {
   }
 }
 
-export async function focusIosSimulatorWindow(): Promise<void> {
+export async function openIosSimulatorApp(): Promise<void> {
   await runCmd('open', ['-a', 'Simulator'], {
     allowFailure: true,
     timeoutMs: IOS_SIMULATOR_FOCUS_TIMEOUT_MS,
@@ -151,6 +151,8 @@ export async function ensureBootedSimulator(device: DeviceInfo): Promise<void> {
       bootstatus: bootStatusResult,
     });
   }
+
+  await openIosSimulatorApp();
 }
 
 export async function shutdownSimulator(device: DeviceInfo): Promise<{
