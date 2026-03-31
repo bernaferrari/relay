@@ -16,28 +16,25 @@ export function buildSnapshotDisplayLines(
   nodes: SnapshotNode[],
   options: SnapshotLineFormatOptions = {},
 ): SnapshotDisplayLine[] {
-  const hiddenGroupDepths: number[] = [];
+  const visibleDepths: number[] = [];
   const lines: SnapshotDisplayLine[] = [];
   for (const node of nodes) {
     const depth = node.depth ?? 0;
-    while (
-      hiddenGroupDepths.length > 0 &&
-      depth <= hiddenGroupDepths[hiddenGroupDepths.length - 1]
-    ) {
-      hiddenGroupDepths.pop();
-    }
     const label = node.label?.trim() || node.value?.trim() || node.identifier?.trim() || '';
     const type = formatRole(node.type ?? 'Element');
-    const isHiddenGroup = type === 'group' && !label;
-    if (isHiddenGroup) {
-      hiddenGroupDepths.push(depth);
+    if (type === 'group' && !label) {
+      continue;
     }
-    const adjustedDepth = isHiddenGroup ? depth : Math.max(0, depth - hiddenGroupDepths.length);
+    while (visibleDepths.length > 0 && depth <= visibleDepths[visibleDepths.length - 1]!) {
+      visibleDepths.pop();
+    }
+    const adjustedDepth = visibleDepths.length;
+    visibleDepths.push(depth);
     lines.push({
       node,
       depth: adjustedDepth,
       type,
-      text: formatSnapshotLine(node, adjustedDepth, isHiddenGroup, type, options),
+      text: formatSnapshotLine(node, adjustedDepth, false, type, options),
     });
   }
   return lines;
