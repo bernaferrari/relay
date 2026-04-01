@@ -22,6 +22,7 @@ import { resolveRefTarget } from './interaction-targeting.ts';
 
 type ScrollRefState = {
   ref: string;
+  currentRef: string;
   node: SnapshotNode & { rect: NonNullable<SnapshotNode['rect']> };
   snapshotNodes: SnapshotNode[];
   viewportRect: NonNullable<ReturnType<typeof resolveViewportRect>>;
@@ -66,7 +67,7 @@ export async function handleScrollIntoViewCommand(
   if (!initialState.ok) return initialState.response;
 
   const { ref } = initialState.state;
-  let { node, snapshotNodes, viewportRect } = initialState.state;
+  let { currentRef, node, snapshotNodes, viewportRect } = initialState.state;
   const refLabel = resolveRefLabel(node, snapshotNodes);
   const selectorChain = buildSelectorChainForNode(node, session.device.platform, {
     action: 'get',
@@ -74,28 +75,23 @@ export async function handleScrollIntoViewCommand(
   const trackingLabel = fallbackLabel || refLabel || node.label || '';
 
   if (!buildScrollIntoViewPlan(node.rect, viewportRect)) {
+    const result = buildScrollIntoViewSuccessData({
+      ref,
+      currentRef,
+      attempts: 0,
+      alreadyVisible: true,
+    });
     sessionStore.recordAction(session, {
       command: req.command,
       positionals: req.positionals ?? [],
       flags: req.flags ?? {},
       result: {
-        ref,
-        attempts: 0,
-        alreadyVisible: true,
         refLabel,
         selectorChain,
-        ...successText(`Scrolled into view: @${ref}`),
+        ...result,
       },
     });
-    return {
-      ok: true,
-      data: {
-        ref,
-        attempts: 0,
-        alreadyVisible: true,
-        ...successText(`Scrolled into view: @${ref}`),
-      },
-    };
+    return { ok: true, data: result };
   }
   const maxScrolls = req.flags?.maxScrolls ?? DEFAULT_SCROLL_INTO_VIEW_MAX_SCROLLS;
   let attempts = 0;
@@ -135,7 +131,7 @@ export async function handleScrollIntoViewCommand(
       platform: session.device.platform,
     });
     if (!refreshedState.ok) return refreshedState.response;
-    ({ node, snapshotNodes, viewportRect } = refreshedState.state);
+    ({ currentRef, node, snapshotNodes, viewportRect } = refreshedState.state);
 
     const distance = distanceFromSafeViewportBand(node.rect, viewportRect);
     if (distance === 0) break;
@@ -162,30 +158,24 @@ export async function handleScrollIntoViewCommand(
     });
   }
 
+  const result = buildScrollIntoViewSuccessData({
+    data,
+    ref,
+    currentRef,
+    attempts,
+    direction: lastDirection,
+  });
   sessionStore.recordAction(session, {
     command: req.command,
     positionals: req.positionals ?? [],
     flags: req.flags ?? {},
     result: {
-      ...(data ?? {}),
-      ref,
-      attempts,
-      direction: lastDirection,
       refLabel,
       selectorChain,
-      ...successText(`Scrolled into view: @${ref}`),
+      ...result,
     },
   });
-  return {
-    ok: true,
-    data: {
-      ...(data ?? {}),
-      ref,
-      attempts,
-      direction: lastDirection,
-      ...successText(`Scrolled into view: @${ref}`),
-    },
-  };
+  return { ok: true, data: result };
 }
 
 function resolveInitialScrollRefState(
@@ -234,11 +224,16 @@ function resolveRefreshedScrollRefState(params: {
       platform,
     );
     if (trackedNode) {
-      return finalizeScrollRefState(targetInput, attempts, {
-        ref,
-        node: trackedNode,
-        snapshotNodes: session.snapshot.nodes,
-      });
+      return finalizeScrollRefState(
+        targetInput,
+        attempts,
+        {
+          ref,
+          node: trackedNode,
+          snapshotNodes: session.snapshot.nodes,
+        },
+        { currentRef: trackedNode.ref },
+      );
     }
   }
 
@@ -265,6 +260,7 @@ function resolveRefreshedScrollRefState(params: {
   }
   return finalizeScrollRefState(targetInput, attempts, resolvedRefTarget.target, {
     ref,
+    currentRef: resolvedRefTarget.target.node.ref,
     missingBoundsMessage: `scrollintoview lost bounds for ${targetInput} after ${attempts} scroll${attempts === 1 ? '' : 's'}`,
   });
 }
@@ -273,9 +269,9 @@ function finalizeScrollRefState(
   targetInput: string,
   attempts: number,
   resolvedTarget: { ref: string; node: SnapshotNode; snapshotNodes: SnapshotNode[] },
-  options: { ref?: string; missingBoundsMessage?: string } = {},
+  options: { ref?: string; currentRef?: string; missingBoundsMessage?: string } = {},
 ): { ok: true; state: ScrollRefState } | { ok: false; response: DaemonResponse } {
-  const { ref, missingBoundsMessage } = options;
+  const { ref, currentRef, missingBoundsMessage } = options;
   const node = resolvedTarget.node;
   if (!node.rect) {
     return {
@@ -302,7 +298,8 @@ function finalizeScrollRefState(
   return {
     ok: true,
     state: {
-      ref: resolvedTarget.ref,
+      ref: ref ?? resolvedTarget.ref,
+      currentRef: currentRef ?? resolvedTarget.node.ref,
       node: node as ScrollRefState['node'],
       snapshotNodes: resolvedTarget.snapshotNodes,
       viewportRect,
@@ -348,5 +345,25 @@ function notFoundScrollResponse(
         ...rest,
       },
     },
+  };
+}
+
+function buildScrollIntoViewSuccessData(params: {
+  data?: Record<string, unknown> | void;
+  ref: string;
+  currentRef: string;
+  attempts: number;
+  alreadyVisible?: boolean;
+  direction?: 'up' | 'down';
+}): Record<string, unknown> {
+  const { data, ref, currentRef, attempts, alreadyVisible, direction } = params;
+  return {
+    ...(data ?? {}),
+    ref,
+    currentRef,
+    attempts,
+    ...(alreadyVisible ? { alreadyVisible } : {}),
+    ...(direction ? { direction } : {}),
+    ...successText(`Scrolled into view: @${ref}`),
   };
 }

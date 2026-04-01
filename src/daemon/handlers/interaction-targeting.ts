@@ -11,6 +11,11 @@ import type { SessionStore } from '../session-store.ts';
 import type { DaemonResponse, SessionState } from '../types.ts';
 import type { CaptureSnapshotForSession } from './interaction-snapshot.ts';
 import type { ContextFromFlags } from './interaction-common.ts';
+import {
+  isNodeVisibleInEffectiveViewport,
+  resolveEffectiveViewportRect,
+} from '../../utils/mobile-snapshot-semantics.ts';
+import { containsPoint, pickLargestRect } from '../../utils/rect-visibility.ts';
 
 export type ResolveRefTarget = typeof resolveRefTarget;
 
@@ -93,6 +98,7 @@ export async function resolveRefTargetWithRectRefresh(params: {
   session: SessionState;
   refInput: string;
   fallbackLabel: string;
+  commandLabel: string;
   promoteToHittableAncestor: boolean;
   invalidRefMessage: string;
   missingBoundsMessage: string;
@@ -118,6 +124,7 @@ export async function resolveRefTargetWithRectRefresh(params: {
     session,
     refInput,
     fallbackLabel,
+    commandLabel,
     promoteToHittableAncestor,
     invalidRefMessage,
     missingBoundsMessage,
@@ -195,6 +202,27 @@ export async function resolveRefTargetWithRectRefresh(params: {
     };
   }
 
+  const viewport = node.rect ? resolveEffectiveViewportRect(node, snapshotNodes) : null;
+  if (node.rect && viewport && !isNodeVisibleInEffectiveViewport(node, snapshotNodes)) {
+    return {
+      ok: false,
+      response: {
+        ok: false,
+        error: {
+          code: 'COMMAND_FAILED',
+          message: `Ref ${refInput} is off-screen and not safe to ${commandLabel}`,
+          hint: `Run scrollintoview ${refInput}, then retry ${commandLabel} with the returned currentRef or a fresh snapshot.`,
+          details: {
+            reason: 'offscreen_ref',
+            ref,
+            rect: node.rect,
+            viewport,
+          },
+        },
+      },
+    };
+  }
+
   return { ok: true, target: { ref, node, snapshotNodes, point } };
 }
 
@@ -208,6 +236,9 @@ export function resolveActionableTouchNode(
   }
   const ancestor = findNearestHittableAncestor(nodes, node);
   if (ancestor?.rect && resolveRectCenter(ancestor.rect)) {
+    if (isOverlyBroadAncestor(node, ancestor, nodes)) {
+      return node;
+    }
     return ancestor;
   }
   return node;
@@ -248,4 +279,58 @@ function areRectsApproximatelyEqual(left: Rect, right: Rect): boolean {
     Math.abs(left.width - right.width) <= tolerance &&
     Math.abs(left.height - right.height) <= tolerance
   );
+}
+
+function isOverlyBroadAncestor(
+  node: SnapshotNode,
+  ancestor: SnapshotNode,
+  nodes: SnapshotNode[],
+): boolean {
+  const nodeRect = normalizeRect(node.rect);
+  const ancestorRect = normalizeRect(ancestor.rect);
+  if (!nodeRect || !ancestorRect) return false;
+  const rootViewportRect = resolveRootViewportRect(nodes, nodeRect);
+  if (!rootViewportRect) return false;
+  if (!isRectViewportSized(ancestorRect, rootViewportRect)) return false;
+  return !areRectsApproximatelyEqual(nodeRect, ancestorRect);
+}
+
+function resolveRootViewportRect(nodes: SnapshotNode[], targetRect: Rect): Rect | null {
+  const targetCenter = centerOfRect(targetRect);
+  const viewportRects = nodes
+    .filter((node) => {
+      const type = (node.type ?? '').toLowerCase();
+      return type.includes('application') || type.includes('window');
+    })
+    .map((node) => normalizeRect(node.rect))
+    .filter((rect): rect is Rect => rect !== null);
+  if (viewportRects.length === 0) return null;
+
+  const containingRects = viewportRects.filter((rect) =>
+    containsPoint(rect, targetCenter.x, targetCenter.y),
+  );
+  return pickLargestRect(containingRects.length > 0 ? containingRects : viewportRects);
+}
+
+function isRectViewportSized(rect: Rect, viewportRect: Rect): boolean {
+  const overlapArea = intersectionArea(rect, viewportRect);
+  const rectArea = rect.width * rect.height;
+  const viewportArea = viewportRect.width * viewportRect.height;
+  if (overlapArea <= 0 || rectArea <= 0 || viewportArea <= 0) return false;
+
+  const viewportCoverage = overlapArea / viewportArea;
+  const rectCoverage = overlapArea / rectArea;
+  return viewportCoverage >= 0.9 && rectCoverage >= 0.8;
+}
+
+function intersectionArea(left: Rect, right: Rect): number {
+  const xOverlap = Math.max(
+    0,
+    Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x),
+  );
+  const yOverlap = Math.max(
+    0,
+    Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y),
+  );
+  return xOverlap * yOverlap;
 }

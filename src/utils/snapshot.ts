@@ -37,6 +37,8 @@ export type RawSnapshotNode = {
   appName?: string;
   windowTitle?: string;
   surface?: string;
+  hiddenContentAbove?: boolean;
+  hiddenContentBelow?: boolean;
 };
 
 export type SnapshotNode = RawSnapshotNode & {
