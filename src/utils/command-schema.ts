@@ -92,6 +92,8 @@ export type CliFlags = {
   reportJunit?: string;
   steps?: string;
   stepsFile?: string;
+  findFirst?: boolean;
+  findLast?: boolean;
   batchOnError?: 'stop';
   batchMaxSteps?: number;
   batchSteps?: Array<{
@@ -868,6 +870,20 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     usageDescription: 'Snapshot: raw node output',
   },
   {
+    key: 'findFirst',
+    names: ['--first'],
+    type: 'boolean',
+    usageLabel: '--first',
+    usageDescription: 'Find: pick the first match when ambiguous',
+  },
+  {
+    key: 'findLast',
+    names: ['--last'],
+    type: 'boolean',
+    usageLabel: '--last',
+    usageDescription: 'Find: pick the last match when ambiguous',
+  },
+  {
     key: 'out',
     names: ['--out'],
     type: 'string',
@@ -1267,12 +1283,12 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
     allowedFlags: ['networkInclude'],
   },
   find: {
-    usageOverride: 'find <locator|text> <action> [value]',
+    usageOverride: 'find <locator|text> <action> [value] [--first|--last]',
     helpDescription: 'Find by text/label/value/role/id and run action',
     summary: 'Find an element and act',
     positionalArgs: ['query', 'action', 'value?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...FIND_SNAPSHOT_FLAGS],
+    allowedFlags: [...FIND_SNAPSHOT_FLAGS, 'findFirst', 'findLast'],
   },
   is: {
     helpDescription: 'Assert UI state (visible|hidden|exists|editable|selected|text)',

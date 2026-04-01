@@ -17,6 +17,7 @@ import {
 import { countConfiguredRuntimeHints, setSessionRuntimeHintsForOpen } from './session-runtime.ts';
 import { STARTUP_SAMPLE_METHOD, type StartupPerfSample } from './session-startup-metrics.ts';
 import { buildNextOpenSession, buildOpenResult } from './session-open-surface.ts';
+import { markAndroidSnapshotFreshness } from '../android-snapshot-freshness.ts';
 import {
   invalidOpenArgs,
   prepareOpenCommandDetails,
@@ -156,6 +157,11 @@ async function completeOpenCommand(params: {
     };
   }
 
+  if (existingSession) {
+    // Mark freshness before buildNextOpenSession clears the stored snapshot. `open` is one of
+    // the few nav-sensitive commands that would otherwise lose its pre-action baseline.
+    markAndroidSnapshotFreshness(existingSession, 'open', existingSession.snapshot);
+  }
   const nextSession = buildNextOpenSession({
     existingSession,
     sessionName,
