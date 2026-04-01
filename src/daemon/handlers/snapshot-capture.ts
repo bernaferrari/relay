@@ -9,6 +9,15 @@ import {
   type SnapshotState,
 } from '../../utils/snapshot.ts';
 import type { DaemonResponse, SessionState } from '../types.ts';
+import {
+  ANDROID_FRESHNESS_RETRY_DELAYS_MS,
+  clearAndroidSnapshotFreshness,
+  getActiveAndroidSnapshotFreshness,
+  isLikelySnapshotStuckOnPreviousRoute,
+  isLikelyStaleSnapshotDrop,
+  isNavigationSensitiveAction,
+  type AndroidFreshnessCaptureMeta,
+} from '../android-snapshot-freshness.ts';
 import { contextFromFlags } from '../context.ts';
 import { findNodeByLabel, pruneGroupNodes, resolveRefLabel } from '../snapshot-processing.ts';
 
@@ -28,12 +37,21 @@ type SnapshotData = {
   analysis?: AndroidSnapshotAnalysis;
 };
 
-export async function captureSnapshot(
-  params: CaptureSnapshotParams,
-): Promise<{ snapshot: SnapshotState; analysis?: AndroidSnapshotAnalysis }> {
+type AndroidFreshnessReason = 'empty-interactive' | 'sharp-drop' | 'stuck-route';
+
+export async function captureSnapshot(params: CaptureSnapshotParams): Promise<{
+  snapshot: SnapshotState;
+  analysis?: AndroidSnapshotAnalysis;
+  freshness?: AndroidFreshnessCaptureMeta;
+}> {
+  const freshness = getActiveAndroidSnapshotFreshness(params.session);
+  if (freshness && params.device.platform === 'android') {
+    return await captureAndroidFreshnessAwareSnapshot(params, freshness);
+  }
   const data = await captureSnapshotData(params);
+  clearAndroidSnapshotFreshness(params.session);
   return {
-    snapshot: buildSnapshotState(data, params.flags?.snapshotRaw),
+    snapshot: buildSnapshotState(data, params.flags),
     analysis: data.analysis,
   };
 }
@@ -60,21 +78,124 @@ export async function captureSnapshotData(params: CaptureSnapshotParams): Promis
   })) as SnapshotData;
 }
 
+async function captureAndroidFreshnessAwareSnapshot(
+  params: CaptureSnapshotParams,
+  freshness: NonNullable<SessionState['androidSnapshotFreshness']>,
+): Promise<{
+  snapshot: SnapshotState;
+  analysis?: AndroidSnapshotAnalysis;
+  freshness?: AndroidFreshnessCaptureMeta;
+}> {
+  let latest = await captureSnapshotAttempt(params);
+  let suspiciousReason = getAndroidFreshnessReason(latest, freshness, params.flags);
+  let retryCount = 0;
+
+  for (const delayMs of ANDROID_FRESHNESS_RETRY_DELAYS_MS) {
+    if (!suspiciousReason) break;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    latest = await captureSnapshotAttempt(params);
+    retryCount += 1;
+    suspiciousReason = getAndroidFreshnessReason(latest, freshness, params.flags);
+  }
+
+  if (!suspiciousReason) {
+    clearAndroidSnapshotFreshness(params.session);
+  }
+
+  return {
+    snapshot: latest.snapshot,
+    analysis: latest.data.analysis,
+    freshness:
+      retryCount > 0 || Boolean(suspiciousReason)
+        ? {
+            action: freshness.action,
+            retryCount,
+            staleAfterRetries: Boolean(suspiciousReason),
+            reason: suspiciousReason ?? undefined,
+          }
+        : undefined,
+  };
+}
+
+async function captureSnapshotAttempt(
+  params: CaptureSnapshotParams,
+): Promise<{ data: SnapshotData; snapshot: SnapshotState }> {
+  const data = await captureSnapshotData(params);
+  return {
+    data,
+    snapshot: buildSnapshotState(data, params.flags),
+  };
+}
+
+function getAndroidFreshnessReason(
+  attempt: { data: SnapshotData; snapshot: SnapshotState },
+  freshness: NonNullable<SessionState['androidSnapshotFreshness']>,
+  flags: CommandFlags | undefined,
+): AndroidFreshnessReason | null {
+  const interactiveOnly = flags?.snapshotInteractiveOnly === true;
+  const analysis = attempt.data.analysis;
+
+  if (
+    interactiveOnly &&
+    attempt.snapshot.nodes.length === 0 &&
+    analysis &&
+    analysis.rawNodeCount >= 12
+  ) {
+    return 'empty-interactive';
+  }
+
+  if (isLikelyStaleSnapshotDrop(freshness.baselineCount, attempt.snapshot.nodes.length)) {
+    return !hasMeaningfulSnapshotContent(attempt.snapshot) ? 'sharp-drop' : null;
+  }
+
+  return freshness.routeComparable &&
+    isNavigationSensitiveAction(freshness.action) &&
+    isLikelySnapshotStuckOnPreviousRoute(freshness.baselineSignatures, attempt.snapshot.nodes)
+    ? 'stuck-route'
+    : null;
+}
+
+function hasMeaningfulSnapshotContent(snapshot: SnapshotState): boolean {
+  return snapshot.nodes.some(
+    (node) =>
+      node.hittable === true ||
+      Boolean(node.label?.trim()) ||
+      Boolean(node.value?.trim()) ||
+      Boolean(node.identifier?.trim()),
+  );
+}
+
 export function buildSnapshotState(
   data: {
     nodes?: RawSnapshotNode[];
     truncated?: boolean;
     backend?: 'xctest' | 'android' | 'macos-helper';
   },
-  snapshotRaw: boolean | undefined,
+  flags:
+    | (Pick<
+        CommandFlags,
+        'snapshotCompact' | 'snapshotDepth' | 'snapshotInteractiveOnly' | 'snapshotRaw'
+      > &
+        Partial<Pick<CommandFlags, 'snapshotScope'>>)
+    | undefined,
 ): SnapshotState {
   const rawNodes = data?.nodes ?? [];
+  const snapshotRaw = flags?.snapshotRaw;
   const nodes = attachRefs(snapshotRaw ? rawNodes : pruneGroupNodes(rawNodes));
   return {
     nodes,
     truncated: data?.truncated,
     createdAt: Date.now(),
     backend: data?.backend,
+    // Only broad Android snapshots become freshness baselines. If the user asked for a scoped
+    // or filtered view, preserve that output contract but avoid pretending it is safe for
+    // route-level comparisons on the next capture.
+    comparisonSafe:
+      data?.backend === 'android' &&
+      flags?.snapshotInteractiveOnly !== true &&
+      flags?.snapshotCompact !== true &&
+      typeof flags?.snapshotDepth !== 'number' &&
+      !flags?.snapshotScope,
   };
 }
 

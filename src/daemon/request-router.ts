@@ -41,6 +41,10 @@ import {
 import { recoverAndroidBlockingSystemDialog } from './android-system-dialog.ts';
 import { getRunnerSessionSnapshot } from '../platforms/ios/runner-client.ts';
 import { annotateScreenshotWithRefs } from './screenshot-overlay.ts';
+import {
+  isNavigationSensitiveAction,
+  markAndroidSnapshotFreshness,
+} from './android-snapshot-freshness.ts';
 
 const selectorValidationExemptCommands = new Set([
   'session_list',
@@ -454,7 +458,7 @@ export function createRequestHandler(
               logPath,
               snapshotScope: undefined,
             });
-            const overlaySnapshot = buildSnapshotState(overlaySnapshotData, false);
+            const overlaySnapshot = buildSnapshotState(overlaySnapshotData, undefined);
             session.snapshot = overlaySnapshot;
             const overlayRefs = await annotateScreenshotWithRefs({
               screenshotPath: data.path,
@@ -484,6 +488,9 @@ export function createRequestHandler(
             flags: recordedFlags,
             result: data ?? {},
           });
+          if (isNavigationSensitiveAction(command)) {
+            markAndroidSnapshotFreshness(session, command);
+          }
           return finalize({ ok: true, data: data ?? {} });
         } catch (error) {
           emitDiagnostic({
