@@ -192,6 +192,302 @@ test('formatSnapshotText compresses visible indentation after hidden wrapper cha
   assert.match(text, /^    @e5 \[image\]$/m);
 });
 
+test('formatSnapshotText hides off-screen refs and adds compact discovery summaries', () => {
+  const text = withNoColor(() =>
+    formatSnapshotText({
+      nodes: [
+        {
+          ref: 'e1',
+          index: 0,
+          depth: 0,
+          type: 'Window',
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          ref: 'e2',
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'XCUIElementTypeButton',
+          label: 'Settings',
+          rect: { x: 20, y: 120, width: 120, height: 44 },
+          hittable: true,
+        },
+        {
+          ref: 'e3',
+          index: 2,
+          depth: 1,
+          parentIndex: 0,
+          type: 'XCUIElementTypeButton',
+          label: 'Privacy',
+          rect: { x: 20, y: 1200, width: 120, height: 44 },
+          hittable: true,
+        },
+        {
+          ref: 'e4',
+          index: 3,
+          depth: 1,
+          parentIndex: 0,
+          type: 'XCUIElementTypeButton',
+          label: 'Battery',
+          rect: { x: 20, y: 1360, width: 120, height: 44 },
+          hittable: true,
+        },
+      ],
+      truncated: false,
+    }),
+  );
+
+  assert.match(text, /Snapshot: 2 visible nodes \(4 total\)/);
+  assert.match(text, /^@e1 \[window\]$/m);
+  assert.match(text, /^  @e2 \[button\] "Settings"$/m);
+  assert.doesNotMatch(text, /@e3 \[button\] "Privacy"/);
+  assert.doesNotMatch(text, /@e4 \[button\] "Battery"/);
+  assert.match(text, /\[off-screen below\] 2 interactive items: "Privacy", "Battery"/);
+});
+
+test('formatSnapshotText keeps zero-height visible nodes out of off-screen summaries', () => {
+  const text = withNoColor(() =>
+    formatSnapshotText({
+      nodes: [
+        {
+          ref: 'e1',
+          index: 0,
+          depth: 0,
+          type: 'Window',
+          rect: { x: 0, y: 0, width: 1440, height: 800 },
+        },
+        {
+          ref: 'e2',
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'android.widget.FrameLayout',
+          rect: { x: 0, y: 0, width: 1440, height: 3120 },
+        },
+        {
+          ref: 'e3',
+          index: 2,
+          depth: 2,
+          parentIndex: 1,
+          type: 'android.widget.Button',
+          label: 'View',
+          rect: { x: 264, y: 378, width: 972, height: 0 },
+          hittable: true,
+        },
+        {
+          ref: 'e4',
+          index: 3,
+          depth: 2,
+          parentIndex: 1,
+          type: 'android.widget.Button',
+          label: 'Later',
+          rect: { x: 264, y: 2200, width: 972, height: 120 },
+          hittable: true,
+        },
+      ],
+      truncated: false,
+    }),
+  );
+
+  assert.match(text, /^  @e3 \[button\] "View"$/m);
+  assert.doesNotMatch(text, /\[off-screen above\].*"View"/);
+  assert.match(text, /\[off-screen below\] 1 interactive item: "Later"/);
+});
+
+test('formatSnapshotText renders explicit hidden scroll-area content hints', () => {
+  const text = withNoColor(() =>
+    formatSnapshotText({
+      nodes: [
+        {
+          ref: 'e1',
+          index: 0,
+          depth: 0,
+          type: 'Window',
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          ref: 'e2',
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'android.widget.ScrollView',
+          label: 'Messages',
+          rect: { x: 0, y: 120, width: 390, height: 500 },
+          hiddenContentAbove: true,
+          hiddenContentBelow: true,
+        },
+        {
+          ref: 'e3',
+          index: 2,
+          depth: 2,
+          parentIndex: 1,
+          type: 'android.widget.Button',
+          label: 'Visible message',
+          rect: { x: 20, y: 240, width: 350, height: 48 },
+          hittable: true,
+        },
+      ],
+      truncated: false,
+    }),
+  );
+
+  assert.match(text, /^  @e2 \[scroll-area\] "Messages" \[scrollable\]$/m);
+  assert.match(text, /^    \[content above scroll-area hidden\]$/m);
+  assert.match(text, /^    \[content below scroll-area hidden\]$/m);
+});
+
+test('formatSnapshotText renders hidden scroll-area content hints in flattened output', () => {
+  const text = withNoColor(() =>
+    formatSnapshotText(
+      {
+        nodes: [
+          {
+            ref: 'e1',
+            index: 0,
+            depth: 0,
+            type: 'Window',
+            rect: { x: 0, y: 0, width: 390, height: 844 },
+          },
+          {
+            ref: 'e2',
+            index: 1,
+            depth: 1,
+            parentIndex: 0,
+            type: 'android.widget.ScrollView',
+            label: 'Messages',
+            rect: { x: 0, y: 120, width: 390, height: 500 },
+            hiddenContentAbove: true,
+            hiddenContentBelow: true,
+          },
+        ],
+        truncated: false,
+      },
+      { flatten: true },
+    ),
+  );
+
+  assert.match(text, /^@e2 \[scroll-area\] "Messages" \[scrollable\]$/m);
+  assert.match(text, /^  \[content above scroll-area hidden\]$/m);
+  assert.match(text, /^  \[content below scroll-area hidden\]$/m);
+});
+
+test('formatSnapshotText normalizes RecyclerView containers to list', () => {
+  const text = withNoColor(() =>
+    formatSnapshotText({
+      nodes: [
+        {
+          ref: 'e1',
+          index: 0,
+          depth: 0,
+          type: 'androidx.recyclerview.widget.RecyclerView',
+          identifier: 'com.android.settings:id/recycler_view',
+          rect: { x: 0, y: 0, width: 390, height: 500 },
+          hiddenContentBelow: true,
+        },
+      ],
+      truncated: false,
+    }),
+  );
+
+  assert.match(text, /^@e1 \[list\]$/m);
+  assert.match(text, /^  \[content below list hidden\]$/m);
+});
+
+test('formatSnapshotText marks visible scroll areas with hidden content above and below', () => {
+  const text = withNoColor(() =>
+    formatSnapshotText({
+      nodes: [
+        {
+          ref: 'e1',
+          index: 0,
+          depth: 0,
+          type: 'Window',
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          ref: 'e2',
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'android.widget.ScrollView',
+          label: 'Messages',
+          rect: { x: 0, y: 120, width: 390, height: 500 },
+        },
+        {
+          ref: 'e3',
+          index: 2,
+          depth: 2,
+          parentIndex: 1,
+          type: 'android.widget.Button',
+          label: 'Earlier message',
+          rect: { x: 20, y: 20, width: 350, height: 48 },
+          hittable: true,
+        },
+        {
+          ref: 'e4',
+          index: 3,
+          depth: 2,
+          parentIndex: 1,
+          type: 'android.widget.Button',
+          label: 'Visible message',
+          rect: { x: 20, y: 240, width: 350, height: 48 },
+          hittable: true,
+        },
+        {
+          ref: 'e5',
+          index: 4,
+          depth: 2,
+          parentIndex: 1,
+          type: 'android.widget.Button',
+          label: 'Later message',
+          rect: { x: 20, y: 700, width: 350, height: 48 },
+          hittable: true,
+        },
+      ],
+      truncated: false,
+    }),
+  );
+
+  assert.match(text, /^  @e2 \[scroll-area\] "Messages" \[scrollable\]$/m);
+  assert.match(text, /^    \[content above scroll-area hidden\]$/m);
+  assert.match(text, /^    \[content below scroll-area hidden\]$/m);
+  assert.match(text, /^    @e4 \[button\] "Visible message"$/m);
+  assert.doesNotMatch(text, /\[off-screen above\].*"Earlier message"/);
+  assert.doesNotMatch(text, /\[off-screen below\].*"Later message"/);
+});
+
+test('formatSnapshotText suppresses noisy system scroll-container labels', () => {
+  const text = withNoColor(() =>
+    formatSnapshotText({
+      nodes: [
+        {
+          ref: 'e1',
+          index: 0,
+          depth: 0,
+          type: 'Window',
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          ref: 'e2',
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'ScrollView',
+          label: 'Vertical scroll bar, 2 pages',
+          rect: { x: 0, y: 100, width: 390, height: 600 },
+          hiddenContentBelow: true,
+        },
+      ],
+      truncated: false,
+    }),
+  );
+
+  assert.match(text, /^  @e2 \[scroll-area\] \[scrollable\]$/m);
+  assert.match(text, /^    \[content below scroll-area hidden\]$/m);
+  assert.doesNotMatch(text, /Vertical scroll bar, 2 pages/);
+});
+
 test('formatSnapshotText prints snapshot warnings ahead of empty output', () => {
   const text = withNoColor(() =>
     formatSnapshotText({

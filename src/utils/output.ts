@@ -4,6 +4,7 @@ import { buildSnapshotDisplayLines, formatSnapshotLine } from './snapshot-lines.
 import type { SnapshotNode } from './snapshot.ts';
 import type { ScreenshotDiffResult } from './screenshot-diff.ts';
 import { styleText } from 'node:util';
+import { buildMobileSnapshotPresentation } from './mobile-snapshot-semantics.ts';
 
 type JsonResult =
   | { success: true; data?: unknown }
@@ -54,13 +55,21 @@ export function formatSnapshotText(
 ): string {
   const rawNodes = data.nodes;
   const nodes = Array.isArray(rawNodes) ? (rawNodes as SnapshotNode[]) : [];
+  const backend = typeof data.backend === 'string' ? data.backend : undefined;
+  const visiblePresentation =
+    options.raw || backend === 'macos-helper' ? null : buildMobileSnapshotPresentation(nodes);
   const truncated = Boolean(data.truncated);
   const appName = typeof data.appName === 'string' ? data.appName : undefined;
   const appBundleId = typeof data.appBundleId === 'string' ? data.appBundleId : undefined;
   const meta: string[] = [];
   if (appName) meta.push(`Page: ${appName}`);
   if (appBundleId) meta.push(`App: ${appBundleId}`);
-  const header = `Snapshot: ${nodes.length} nodes${truncated ? ' (truncated)' : ''}`;
+  const displayedNodes = visiblePresentation?.nodes ?? nodes;
+  const hiddenCount = visiblePresentation?.hiddenCount ?? 0;
+  const header =
+    hiddenCount > 0
+      ? `Snapshot: ${displayedNodes.length} visible nodes (${nodes.length} total)${truncated ? ' (truncated)' : ''}`
+      : `Snapshot: ${nodes.length} nodes${truncated ? ' (truncated)' : ''}`;
   const prefix = meta.length > 0 ? `${meta.join('\n')}\n` : '';
   const notices = buildSnapshotNotices(data, nodes, options);
   const noticesBlock = notices.length > 0 ? `${notices.join('\n')}\n` : '';
@@ -72,15 +81,21 @@ export function formatSnapshotText(
     return `${prefix}${header}\n${noticesBlock}${rawLines.join('\n')}\n`;
   }
   if (options.flatten) {
-    const flatLines = nodes.map((node) =>
-      formatSnapshotLine(node, 0, false, undefined, { summarizeTextSurfaces: true }),
-    );
-    return `${prefix}${header}\n${noticesBlock}${flatLines.join('\n')}\n`;
+    const flatLines = buildFlattenedSnapshotDisplayLines(displayedNodes);
+    const summaryBlock =
+      visiblePresentation && visiblePresentation.summaryLines.length > 0
+        ? `\n${visiblePresentation.summaryLines.join('\n')}`
+        : '';
+    return `${prefix}${header}\n${noticesBlock}${flatLines.join('\n')}${summaryBlock}\n`;
   }
-  const lines = buildSnapshotDisplayLines(nodes, { summarizeTextSurfaces: true }).map(
-    (line) => line.text,
+  const lines = renderSnapshotDisplayLines(
+    buildSnapshotDisplayLines(displayedNodes, { summarizeTextSurfaces: true }),
   );
-  return `${prefix}${header}\n${noticesBlock}${lines.join('\n')}\n`;
+  const summaryBlock =
+    visiblePresentation && visiblePresentation.summaryLines.length > 0
+      ? `\n${visiblePresentation.summaryLines.join('\n')}`
+      : '';
+  return `${prefix}${header}\n${noticesBlock}${lines.join('\n')}${summaryBlock}\n`;
 }
 
 export function formatSnapshotDiffText(data: Record<string, unknown>): string {
@@ -258,4 +273,43 @@ function detectPossibleRepeatedNavSubtree(nodes: SnapshotNode[]): boolean {
 
 function displayNodeLabel(node: SnapshotNode): string {
   return node.label?.trim() || node.value?.trim() || node.identifier?.trim() || '';
+}
+
+function renderSnapshotDisplayLines(lines: ReturnType<typeof buildSnapshotDisplayLines>): string[] {
+  return lines.flatMap((line) => [line.text, ...readHiddenContentHintLines(line)]);
+}
+
+function buildFlattenedSnapshotDisplayLines(nodes: SnapshotNode[]): string[] {
+  return buildSnapshotDisplayLines(nodes, { summarizeTextSurfaces: true }).flatMap((line) => [
+    formatSnapshotLine(line.node, 0, false, line.type, { summarizeTextSurfaces: true }),
+    ...readHiddenContentHintLines({ ...line, depth: 0 }),
+  ]);
+}
+
+function readHiddenContentHintLines(
+  line: ReturnType<typeof buildSnapshotDisplayLines>[number],
+): string[] {
+  const target = hintTargetLabel(line.type);
+  if (!target) {
+    return [];
+  }
+  const hints: string[] = [];
+  if (line.node.hiddenContentAbove) {
+    hints.push(`[content above ${target} hidden]`);
+  }
+  if (line.node.hiddenContentBelow) {
+    hints.push(`[content below ${target} hidden]`);
+  }
+  if (hints.length === 0) {
+    return [];
+  }
+  const indent = '  '.repeat(line.depth + 1);
+  return hints.map((hint) => `${indent}${hint}`);
+}
+
+function hintTargetLabel(type: string): string | null {
+  if (type === 'scroll-area' || type === 'list' || type === 'collection' || type === 'table') {
+    return type;
+  }
+  return null;
 }

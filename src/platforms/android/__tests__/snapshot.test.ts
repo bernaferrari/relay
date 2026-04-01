@@ -14,7 +14,7 @@ vi.mock('../adb.ts', async (importOriginal) => {
 });
 
 import { screenshotAndroid } from '../screenshot.ts';
-import { dumpUiHierarchy } from '../snapshot.ts';
+import { dumpUiHierarchy, snapshotAndroid } from '../snapshot.ts';
 import type { DeviceInfo } from '../../../utils/device.ts';
 import { AppError } from '../../../utils/errors.ts';
 import { runCmd } from '../../../utils/exec.ts';
@@ -268,4 +268,131 @@ test('dumpUiHierarchy retries when fallback dump file is temporarily missing', a
     ).length,
     2,
   );
+});
+
+test('snapshotAndroid preserves hidden scroll content hints in interactive snapshots', async () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy rotation="0">
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" clickable="false" focusable="false">
+    <node class="android.widget.ScrollView" content-desc="Messages" bounds="[0,100][390,600]" clickable="false" focusable="false">
+      <node class="android.view.ViewGroup" bounds="[0,100][390,600]" clickable="false" focusable="false">
+        <node class="android.widget.Button" text="Earlier message" bounds="[0,100][390,268]" clickable="true" focusable="true" />
+        <node class="android.widget.Button" text="Visible message" bounds="[0,268][390,436]" clickable="true" focusable="true" />
+        <node class="android.widget.Button" text="Later message" bounds="[0,436][390,604]" clickable="true" focusable="true" />
+      </node>
+    </node>
+  </node>
+</hierarchy>`;
+  const dump = [
+    '    com.facebook.react.views.scroll.ReactScrollView{d32a800 VFED.V... ........ 0,0-390,500 #4b2}',
+    '      com.facebook.react.views.view.ReactViewGroup{77d31ae V.E...... ........ 0,0-390,1000 #4b0}',
+    '        com.facebook.react.views.view.ReactViewGroup{a V.E...... ........ 0,300-390,468 #1}',
+    '        com.facebook.react.views.view.ReactViewGroup{b V.E...... ........ 0,468-390,636 #2}',
+    '        com.facebook.react.views.view.ReactViewGroup{c V.E...... ........ 0,636-390,804 #3}',
+  ].join('\n');
+
+  mockRunCmd.mockImplementation(async (_cmd, args) => {
+    if (args.includes('exec-out')) {
+      return { exitCode: 0, stdout: xml, stderr: '' };
+    }
+    if (args.includes('dumpsys') && args.includes('activity') && args.includes('top')) {
+      return { exitCode: 0, stdout: dump, stderr: '' };
+    }
+    throw new Error(`unexpected args: ${args.join(' ')}`);
+  });
+
+  const result = await snapshotAndroid(device, { interactiveOnly: true });
+  const scrollArea = result.nodes.find((node) => node.label === 'Messages');
+
+  assert.ok(scrollArea);
+  assert.equal(scrollArea?.hiddenContentAbove, true);
+  assert.equal(scrollArea?.hiddenContentBelow, true);
+});
+
+test('snapshotAndroid keeps generic-id scroll containers in interactive snapshots', async () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy rotation="0">
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" clickable="false" focusable="false">
+    <node class="android.widget.ScrollView" resource-id="com.android.settings:id/main_content_scrollable_container" bounds="[0,100][390,600]" clickable="false" focusable="false">
+      <node class="android.view.ViewGroup" bounds="[0,100][390,600]" clickable="false" focusable="false">
+        <node class="android.widget.TextView" text="Network &amp; internet" bounds="[20,140][240,180]" clickable="false" focusable="false" />
+        <node class="android.widget.Button" text="Apps" bounds="[20,240][200,288]" clickable="true" focusable="true" />
+      </node>
+    </node>
+  </node>
+</hierarchy>`;
+
+  mockRunCmd.mockImplementation(async (_cmd, args) => {
+    if (args.includes('exec-out')) {
+      return { exitCode: 0, stdout: xml, stderr: '' };
+    }
+    if (args.includes('dumpsys') && args.includes('activity') && args.includes('top')) {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected args: ${args.join(' ')}`);
+  });
+
+  const result = await snapshotAndroid(device, { interactiveOnly: true });
+  const scrollArea = result.nodes.find(
+    (node) =>
+      node.type === 'android.widget.ScrollView' &&
+      node.identifier === 'com.android.settings:id/main_content_scrollable_container',
+  );
+
+  assert.ok(scrollArea);
+});
+
+test('snapshotAndroid skips activity dump when snapshot has no scrollable nodes', async () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy rotation="0">
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" clickable="false" focusable="false">
+    <node class="android.widget.Button" text="Continue" bounds="[20,120][200,180]" clickable="true" focusable="true" />
+  </node>
+</hierarchy>`;
+
+  mockRunCmd.mockImplementation(async (_cmd, args) => {
+    if (args.includes('exec-out')) {
+      return { exitCode: 0, stdout: xml, stderr: '' };
+    }
+    if (args.includes('dumpsys') && args.includes('activity') && args.includes('top')) {
+      throw new Error('dumpsys activity top should not run without scrollable nodes');
+    }
+    throw new Error(`unexpected args: ${args.join(' ')}`);
+  });
+
+  const result = await snapshotAndroid(device, { interactiveOnly: true });
+
+  assert.equal(result.nodes.length, 1);
+  assert.equal(result.nodes[0]?.label, 'Continue');
+});
+
+test('snapshotAndroid derives hidden content hints for interactive snapshots from shared visibility semantics', async () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy rotation="0">
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" clickable="false" focusable="false">
+    <node class="android.widget.ScrollView" content-desc="Messages" bounds="[0,100][390,500]" clickable="false" focusable="false">
+      <node class="android.view.ViewGroup" bounds="[0,100][390,500]" clickable="false" focusable="false">
+        <node class="android.widget.Button" text="Visible message" bounds="[0,120][390,180]" clickable="true" focusable="true" />
+        <node class="android.widget.TextView" text="Offscreen message" bounds="[0,560][390,620]" clickable="false" focusable="false" />
+      </node>
+    </node>
+  </node>
+</hierarchy>`;
+
+  mockRunCmd.mockImplementation(async (_cmd, args) => {
+    if (args.includes('exec-out')) {
+      return { exitCode: 0, stdout: xml, stderr: '' };
+    }
+    if (args.includes('dumpsys') && args.includes('activity') && args.includes('top')) {
+      return { exitCode: 0, stdout: '', stderr: '' };
+    }
+    throw new Error(`unexpected args: ${args.join(' ')}`);
+  });
+
+  const result = await snapshotAndroid(device, { interactiveOnly: true });
+  const scrollArea = result.nodes.find((node) => node.label === 'Messages');
+
+  assert.ok(scrollArea);
+  assert.equal(scrollArea?.hiddenContentAbove, undefined);
+  assert.equal(scrollArea?.hiddenContentBelow, true);
 });

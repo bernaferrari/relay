@@ -1,3 +1,4 @@
+import { isSystemScrollIndicatorLabel } from './scroll-indicator.ts';
 import type { SnapshotNode } from './snapshot.ts';
 import { buildTextPreview, describeTextSurface, trimText } from './text-surface.ts';
 
@@ -63,6 +64,9 @@ export function formatSnapshotLine(
 
 export function displayLabel(node: SnapshotNode, type: string): string {
   const label = node.label?.trim();
+  if (label && shouldSuppressScrollContainerLabel(type, label)) {
+    return '';
+  }
   const value = node.value?.trim();
   if (isEditableRole(type)) {
     if (value) return value;
@@ -96,6 +100,9 @@ export function formatRole(type: string): string {
       .replace(/^androidx\./, '')
       .replace(/^com\.google\.android\./, '')
       .replace(/^com\.android\./, '');
+    if (isAndroidClass && normalized.includes('.')) {
+      normalized = normalized.slice(normalized.lastIndexOf('.') + 1);
+    }
   }
   switch (normalized) {
     case 'application':
@@ -171,6 +178,13 @@ export function formatRole(type: string): string {
 
 function isEditableRole(type: string): boolean {
   return type === 'text-field' || type === 'text-view' || type === 'search';
+}
+
+function shouldSuppressScrollContainerLabel(type: string, label: string): boolean {
+  if (type !== 'scroll-area' && type !== 'list' && type !== 'collection' && type !== 'table') {
+    return false;
+  }
+  return isSystemScrollIndicatorLabel(label);
 }
 
 function isGenericResourceId(value: string): boolean {
