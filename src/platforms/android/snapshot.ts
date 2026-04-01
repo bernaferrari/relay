@@ -33,9 +33,13 @@ export async function snapshotAndroid(
   const parsed = buildUiHierarchySnapshot(tree, 800, { ...options, interactiveOnly: false });
   await annotateScrollableContentHintsIfNeeded(device, parsed.nodes);
   applyDerivedPresentationHiddenContentHints(parsed.nodes);
-  const interactiveParsed = buildUiHierarchySnapshot(tree, 800, options);
-  copyHiddenContentHints(parsed.nodes, interactiveParsed.nodes);
-  return interactiveParsed;
+  applyHiddenContentHintsToSourceNodes(parsed);
+  const { sourceNodes: _sourceNodes, ...interactiveSnapshot } = buildUiHierarchySnapshot(
+    tree,
+    800,
+    options,
+  );
+  return interactiveSnapshot;
 }
 
 async function annotateScrollableContentHintsIfNeeded(
@@ -132,38 +136,22 @@ async function dumpActivityTop(device: DeviceInfo): Promise<string | null> {
   }
 }
 
-function copyHiddenContentHints(
-  sourceNodes: RawSnapshotNode[],
-  targetNodes: RawSnapshotNode[],
+function applyHiddenContentHintsToSourceNodes(
+  parsed: ReturnType<typeof buildUiHierarchySnapshot>,
 ): void {
-  const hintsBySignature = new Map<string, RawSnapshotNode>();
-  const hintsByLooseSignature = new Map<string, RawSnapshotNode>();
-  for (const node of sourceNodes) {
-    if (!node.hiddenContentAbove && !node.hiddenContentBelow) {
+  // `tree` is parsed fresh for each snapshot call, so mutating the paired source nodes here
+  // is scoped to this invocation and feeds the interactive rebuild below.
+  for (const [index, sourceNode] of parsed.sourceNodes.entries()) {
+    const snapshotNode = parsed.nodes[index];
+    if (!snapshotNode) {
       continue;
     }
-    const signature = buildHintSignature(node);
-    if (signature && !hintsBySignature.has(signature)) {
-      hintsBySignature.set(signature, node);
+    if (snapshotNode.hiddenContentAbove) {
+      sourceNode.hiddenContentAbove = true;
     }
-    const looseSignature = buildLooseHintSignature(node);
-    if (!looseSignature || hintsByLooseSignature.has(looseSignature)) {
-      continue;
+    if (snapshotNode.hiddenContentBelow) {
+      sourceNode.hiddenContentBelow = true;
     }
-    hintsByLooseSignature.set(looseSignature, node);
-  }
-
-  for (const node of targetNodes) {
-    const signature = buildHintSignature(node);
-    const looseSignature = buildLooseHintSignature(node);
-    const source =
-      (signature ? hintsBySignature.get(signature) : undefined) ??
-      (looseSignature ? hintsByLooseSignature.get(looseSignature) : undefined);
-    if (!source) {
-      continue;
-    }
-    node.hiddenContentAbove = source.hiddenContentAbove;
-    node.hiddenContentBelow = source.hiddenContentBelow;
   }
 }
 
@@ -192,22 +180,4 @@ function applyDerivedPresentationHiddenContentHints(nodes: RawSnapshotNode[]): v
       node.hiddenContentBelow = true;
     }
   }
-}
-
-function buildHintSignature(node: RawSnapshotNode): string | null {
-  if (!node.rect) {
-    return null;
-  }
-  const looseSignature = buildLooseHintSignature(node);
-  if (!looseSignature) {
-    return null;
-  }
-  return [looseSignature, node.rect.x, node.rect.y, node.rect.width, node.rect.height].join('|');
-}
-
-function buildLooseHintSignature(node: RawSnapshotNode): string | null {
-  if (!node.type) {
-    return null;
-  }
-  return [node.type, node.label ?? '', node.identifier ?? ''].join('|');
 }

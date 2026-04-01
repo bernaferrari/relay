@@ -36,16 +36,29 @@ export function parseUiHierarchy(
   options: SnapshotOptions,
 ): { nodes: RawSnapshotNode[]; truncated?: boolean; analysis: AndroidSnapshotAnalysis } {
   const tree = parseUiHierarchyTree(xml);
-  return buildUiHierarchySnapshot(tree, maxNodes, options);
+  const { sourceNodes: _sourceNodes, ...snapshot } = buildUiHierarchySnapshot(
+    tree,
+    maxNodes,
+    options,
+  );
+  return snapshot;
 }
+
+export type AndroidBuiltSnapshot = {
+  nodes: RawSnapshotNode[];
+  sourceNodes: AndroidUiHierarchy[];
+  truncated?: boolean;
+  analysis: AndroidSnapshotAnalysis;
+};
 
 export function buildUiHierarchySnapshot(
   tree: AndroidUiHierarchy,
   maxNodes: number,
   options: SnapshotOptions,
-): { nodes: RawSnapshotNode[]; truncated?: boolean; analysis: AndroidSnapshotAnalysis } {
+): AndroidBuiltSnapshot {
   const analysis = analyzeAndroidTree(tree);
   const nodes: RawSnapshotNode[] = [];
+  const sourceNodes: AndroidUiHierarchy[] = [];
   let truncated = false;
   const maxDepth = options.depth ?? Number.POSITIVE_INFINITY;
   const scopedRoot = options.scope ? findScopeNode(tree, options.scope) : null;
@@ -90,6 +103,7 @@ export function buildUiHierarchySnapshot(
     let currentIndex = parentIndex;
     if (include) {
       currentIndex = nodes.length;
+      sourceNodes.push(node);
       nodes.push({
         index: currentIndex,
         type: node.type ?? undefined,
@@ -101,6 +115,8 @@ export function buildUiHierarchySnapshot(
         hittable: node.hittable,
         depth,
         parentIndex,
+        ...(node.hiddenContentAbove ? { hiddenContentAbove: true } : {}),
+        ...(node.hiddenContentBelow ? { hiddenContentBelow: true } : {}),
       });
     }
     const nextAncestorHittable = ancestorHittable || Boolean(node.hittable);
@@ -116,7 +132,7 @@ export function buildUiHierarchySnapshot(
     if (truncated) break;
   }
 
-  return truncated ? { nodes, truncated, analysis } : { nodes, analysis };
+  return truncated ? { nodes, sourceNodes, truncated, analysis } : { nodes, sourceNodes, analysis };
 }
 
 export function readNodeAttributes(node: string): {
@@ -203,6 +219,8 @@ export type AndroidUiHierarchy = {
   hittable?: boolean;
   depth: number;
   parentIndex?: number;
+  hiddenContentAbove?: boolean;
+  hiddenContentBelow?: boolean;
   children: AndroidNode[];
 };
 
