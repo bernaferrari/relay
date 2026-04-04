@@ -1,11 +1,13 @@
 import { dispatchCommand, type CommandFlags } from '../../core/dispatch.ts';
 import { runMacOsSnapshotAction } from '../../platforms/ios/macos-helper.ts';
+import { snapshotLinux } from '../../platforms/linux/index.ts';
 import type { AndroidSnapshotAnalysis } from '../../platforms/android/ui-hierarchy.ts';
 import {
   attachRefs,
   findNodeByRef,
   normalizeRef,
   type RawSnapshotNode,
+  type SnapshotBackend,
   type SnapshotState,
   type SnapshotVisibility,
 } from '../../utils/snapshot.ts';
@@ -24,6 +26,10 @@ import {
 import { contextFromFlags } from '../context.ts';
 import { findNodeByLabel, pruneGroupNodes, resolveRefLabel } from '../snapshot-processing.ts';
 
+function isDesktopBackend(backend: SnapshotBackend | undefined): boolean {
+  return backend === 'macos-helper' || backend === 'linux-atspi';
+}
+
 type CaptureSnapshotParams = {
   device: SessionState['device'];
   session: SessionState | undefined;
@@ -36,7 +42,7 @@ type CaptureSnapshotParams = {
 type SnapshotData = {
   nodes?: RawSnapshotNode[];
   truncated?: boolean;
-  backend?: 'xctest' | 'android' | 'macos-helper';
+  backend?: SnapshotBackend;
   analysis?: AndroidSnapshotAnalysis;
 };
 
@@ -61,11 +67,18 @@ export async function captureSnapshot(params: CaptureSnapshotParams): Promise<{
 
 export async function captureSnapshotData(params: CaptureSnapshotParams): Promise<SnapshotData> {
   const { device, session, flags, outPath, logPath, snapshotScope } = params;
+  if (device.platform === 'linux') {
+    const linuxResult = await snapshotLinux(session?.surface);
+    return shapeDesktopSurfaceSnapshot(
+      { nodes: linuxResult.nodes, truncated: linuxResult.truncated, backend: 'linux-atspi' },
+      { snapshotDepth: flags?.snapshotDepth, snapshotInteractiveOnly: flags?.snapshotInteractiveOnly, snapshotScope },
+    );
+  }
   if (device.platform === 'macos' && session?.surface && session.surface !== 'app') {
     const helperSnapshot = await runMacOsSnapshotAction(session.surface, {
       bundleId: session.surface === 'menubar' ? session.appBundleId : undefined,
     });
-    return shapeMacOsSurfaceSnapshot(helperSnapshot, {
+    return shapeDesktopSurfaceSnapshot(helperSnapshot, {
       snapshotDepth: flags?.snapshotDepth,
       snapshotInteractiveOnly: flags?.snapshotInteractiveOnly,
       snapshotScope,
@@ -175,7 +188,7 @@ export function buildSnapshotState(
   data: {
     nodes?: RawSnapshotNode[];
     truncated?: boolean;
-    backend?: 'xctest' | 'android' | 'macos-helper';
+    backend?: SnapshotBackend;
   },
   flags:
     | (Pick<
@@ -216,7 +229,7 @@ export function buildSnapshotVisibility(params: {
   snapshotRaw?: boolean;
 }): SnapshotVisibility {
   const { nodes, backend, snapshotRaw } = params;
-  if (snapshotRaw || backend === 'macos-helper') {
+  if (snapshotRaw || isDesktopBackend(backend)) {
     return {
       partial: false,
       visibleNodeCount: nodes.length,
@@ -245,7 +258,7 @@ export function buildSnapshotVisibility(params: {
   };
 }
 
-function shapeMacOsSurfaceSnapshot(
+function shapeDesktopSurfaceSnapshot(
   data: SnapshotData,
   options: {
     snapshotDepth?: number;
