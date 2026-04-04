@@ -10,6 +10,7 @@ import {
 import { listAndroidDevices } from '../platforms/android/devices.ts';
 import { ensureAdb } from '../platforms/android/index.ts';
 import { findBootableIosSimulator, listAppleDevices } from '../platforms/ios/devices.ts';
+import { listLinuxDevices } from '../platforms/linux/devices.ts';
 import { withDiagnosticTimer } from '../utils/diagnostics.ts';
 import {
   resolveAndroidSerialAllowlist,
@@ -104,8 +105,13 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
       if (selector.target && !selector.platform) {
         throw new AppError(
           'INVALID_ARGS',
-          'Device target selector requires --platform. Use --platform ios|macos|android|apple with --target mobile|tv|desktop.',
+          'Device target selector requires --platform. Use --platform ios|macos|android|linux|apple with --target mobile|tv|desktop.',
         );
+      }
+
+      if (selector.platform === 'linux') {
+        const devices = await listLinuxDevices();
+        return await resolveDevice(devices, selector);
       }
 
       if (selector.platform === 'android') {
@@ -129,6 +135,13 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
       }
       try {
         devices.push(...(await listAppleDevices({ simulatorSetPath: iosSimulatorSetPath })));
+      } catch {
+        // ignore
+      }
+      // Linux local device is appended last so it does not displace
+      // connected Android/Apple devices in implicit auto-selection.
+      try {
+        devices.push(...(await listLinuxDevices()));
       } catch {
         // ignore
       }

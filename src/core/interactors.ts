@@ -38,6 +38,24 @@ import {
   iosRunnerOverrides,
   resolveAppleBackRunnerCommand,
 } from '../platforms/ios/interactions.ts';
+import {
+  pressLinux,
+  doubleClickLinux,
+  swipeLinux,
+  longPressLinux,
+  focusLinux,
+  typeLinux,
+  fillLinux,
+  scrollLinux,
+} from '../platforms/linux/input-actions.ts';
+import { screenshotLinux } from '../platforms/linux/screenshot.ts';
+import {
+  openLinuxApp,
+  closeLinuxApp,
+  backLinux,
+  homeLinux,
+} from '../platforms/linux/app-lifecycle.ts';
+import { readLinuxClipboard, writeLinuxClipboard } from '../platforms/linux/clipboard.ts';
 import type { PermissionSettingOptions } from '../platforms/permission-utils.ts';
 import type { SessionSurface } from './session-surface.ts';
 
@@ -133,6 +151,37 @@ export function getInteractor(device: DeviceInfo, runnerContext: RunnerContext):
         writeClipboard: (text) => writeAndroidClipboardText(device, text),
         setSetting: (setting, state, appId, options) =>
           setAndroidSetting(device, setting, state, appId, options),
+      };
+    case 'linux':
+      return {
+        open: (app) => openLinuxApp(app),
+        openDevice: () => Promise.resolve(),
+        close: (app) => closeLinuxApp(app),
+        tap: (x, y) => pressLinux(x, y),
+        doubleTap: (x, y) => doubleClickLinux(x, y),
+        swipe: (x1, y1, x2, y2, durationMs) => swipeLinux(x1, y1, x2, y2, durationMs),
+        longPress: (x, y, durationMs) => longPressLinux(x, y, durationMs),
+        focus: (x, y) => focusLinux(x, y),
+        type: (text, delayMs) => typeLinux(text, delayMs),
+        fill: (x, y, text, delayMs) => fillLinux(x, y, text, delayMs),
+        scroll: (direction, options) => scrollLinux(direction, options),
+        scrollIntoView: () => {
+          throw new AppError('UNSUPPORTED_OPERATION', 'scrollIntoView not yet supported on Linux');
+        },
+        screenshot: (outPath) => screenshotLinux(outPath),
+        back: () => backLinux(),
+        home: () => homeLinux(),
+        rotate: () => {
+          throw new AppError('UNSUPPORTED_OPERATION', 'rotate not supported on Linux');
+        },
+        appSwitcher: () => {
+          throw new AppError('UNSUPPORTED_OPERATION', 'appSwitcher not yet supported on Linux');
+        },
+        readClipboard: () => readLinuxClipboard(),
+        writeClipboard: (text) => writeLinuxClipboard(text),
+        setSetting: () => {
+          throw new AppError('UNSUPPORTED_OPERATION', 'setSetting not supported on Linux');
+        },
       };
     case 'ios':
     case 'macos': {
