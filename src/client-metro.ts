@@ -1,10 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ensureMetroCompanion } from './client-metro-companion.ts';
-import { normalizeBaseUrl } from './utils/url.ts';
+import type {
+  MetroBridgeDescriptor,
+  MetroBridgeResult,
+  MetroBridgeRuntimePayload,
+  MetroRuntimeHints,
+} from './metro.ts';
 import { AppError } from './utils/errors.ts';
 import { runCmdSync, runCmdDetached } from './utils/exec.ts';
 import { resolveUserPath } from './utils/path-resolution.ts';
+import { buildBundleUrl, normalizeBaseUrl } from './utils/url.ts';
 
 export type MetroPrepareKind = 'auto' | 'react-native' | 'expo';
 type ResolvedMetroKind = Exclude<MetroPrepareKind, 'auto'>;
@@ -22,64 +28,6 @@ type PackageManagerConfig = {
 
 type MetroProcessResult = {
   pid: number;
-};
-
-type MetroRuntimeHintsPayload = {
-  metro_host?: string;
-  metro_port?: number;
-  metro_bundle_url?: string;
-  launch_url?: string;
-};
-
-type MetroBridgeResponsePayload = {
-  enabled: boolean;
-  base_url: string;
-  status_url: string;
-  bundle_url: string;
-  ios_runtime: MetroRuntimeHintsPayload;
-  android_runtime: MetroRuntimeHintsPayload;
-  upstream: {
-    bundle_url: string;
-    host: string;
-    port: number;
-    status_url: string;
-  };
-  probe: {
-    reachable: boolean;
-    status_code: number;
-    latency_ms: number;
-    detail: string;
-  };
-};
-
-// Keep this internal shape aligned with the public copies in src/metro.ts and src/contracts.ts.
-export type MetroRuntimeHints = {
-  platform?: 'ios' | 'android';
-  metroHost?: string;
-  metroPort?: number;
-  bundleUrl?: string;
-  launchUrl?: string;
-};
-
-export type MetroBridgeResult = {
-  enabled: boolean;
-  baseUrl: string;
-  statusUrl: string;
-  bundleUrl: string;
-  iosRuntime: MetroRuntimeHints;
-  androidRuntime: MetroRuntimeHints;
-  upstream: {
-    bundleUrl: string;
-    host: string;
-    port: number;
-    statusUrl: string;
-  };
-  probe: {
-    reachable: boolean;
-    statusCode: number;
-    latencyMs: number;
-    detail: string;
-  };
 };
 
 export type PrepareMetroRuntimeOptions = {
@@ -122,7 +70,7 @@ export type PrepareMetroRuntimeResult = {
 type ProxyBridgeRequestOptions = {
   baseUrl: string;
   bearerToken: string;
-  runtime: MetroRuntimeHintsPayload;
+  runtime: MetroBridgeRuntimePayload;
   timeoutMs: number;
 };
 
@@ -140,14 +88,6 @@ function normalizeOptionalString(input: unknown): string | undefined {
 
 function resolvePath(inputPath: string, env: EnvSource, cwd: string): string {
   return resolveUserPath(inputPath, { env, cwd });
-}
-
-function buildBundleUrl(baseUrl: string, platform: 'ios' | 'android'): string {
-  const url = new URL(`${normalizeBaseUrl(baseUrl)}/index.bundle`);
-  url.searchParams.set('platform', platform);
-  url.searchParams.set('dev', 'true');
-  url.searchParams.set('minify', 'false');
-  return url.toString();
 }
 
 function fileExists(filePath: string): boolean {
@@ -237,7 +177,7 @@ export function buildMetroRuntimeHints(
 }
 
 function normalizeProxyRuntimeHints(
-  value: MetroRuntimeHintsPayload | undefined,
+  value: MetroBridgeRuntimePayload | undefined,
   platform: 'ios' | 'android',
 ): MetroRuntimeHints {
   return {
@@ -424,23 +364,23 @@ async function configureMetroBridge(input: ProxyBridgeRequestOptions): Promise<M
   }
 
   return normalizeBridgeResponse(
-    (responsePayload.data ?? responsePayload) as MetroBridgeResponsePayload,
+    (responsePayload.data ?? responsePayload) as MetroBridgeDescriptor,
   );
 }
 
-function normalizeBridgeResponse(response: MetroBridgeResponsePayload): MetroBridgeResult {
+function normalizeBridgeResponse(response: MetroBridgeDescriptor): MetroBridgeResult {
   return {
     enabled: response.enabled,
     baseUrl: response.base_url,
-    statusUrl: response.status_url,
-    bundleUrl: response.bundle_url,
+    statusUrl: response.status_url ?? '',
+    bundleUrl: response.bundle_url ?? '',
     iosRuntime: normalizeProxyRuntimeHints(response.ios_runtime, 'ios'),
     androidRuntime: normalizeProxyRuntimeHints(response.android_runtime, 'android'),
     upstream: {
-      bundleUrl: response.upstream.bundle_url,
-      host: response.upstream.host,
-      port: response.upstream.port,
-      statusUrl: response.upstream.status_url,
+      bundleUrl: response.upstream.bundle_url ?? '',
+      host: response.upstream.host ?? '',
+      port: response.upstream.port ?? 0,
+      statusUrl: response.upstream.status_url ?? '',
     },
     probe: {
       reachable: response.probe.reachable,
@@ -530,7 +470,7 @@ async function waitForMetroReady(
 async function configureMetroBridgeUntilReady(options: {
   baseUrl: string;
   bearerToken: string;
-  runtime: MetroRuntimeHintsPayload;
+  runtime: MetroBridgeRuntimePayload;
   probeTimeoutMs: number;
   startupTimeoutMs: number;
   initialBridgeError?: string | null;
