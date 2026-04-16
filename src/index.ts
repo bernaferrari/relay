@@ -1,6 +1,84 @@
+export {
+  assertBackendCapabilityAllowed,
+  createAgentDevice,
+  createMemorySessionStore,
+  localCommandPolicy,
+  restrictedCommandPolicy,
+} from './runtime.ts';
 export { createAgentDeviceClient } from './client.ts';
-export { AppError } from './utils/errors.ts';
+export { createLocalArtifactAdapter } from './io.ts';
+export { commandCatalog, commands, createCommandRouter, ref, selector } from './commands/index.ts';
+export { AppError, isAgentDeviceError, normalizeAgentDeviceError } from './utils/errors.ts';
 export { centerOfRect } from './utils/snapshot.ts';
+
+export type {
+  AgentDevice,
+  AgentDeviceRuntime,
+  AgentDeviceRuntimeConfig,
+  CommandClock,
+  CommandContext,
+  CommandPolicy,
+  CommandSessionRecord,
+  CommandSessionStore,
+  DiagnosticsSink,
+} from './runtime.ts';
+
+export type {
+  AgentDeviceBackend,
+  AgentDeviceBackendPlatform,
+  BackendActionResult,
+  BackendCapabilityName,
+  BackendCapabilitySet,
+  BackendCommandContext,
+  BackendEscapeHatches,
+  BackendFillOptions,
+  BackendInstallTarget,
+  BackendFindTextResult,
+  BackendOpenTarget,
+  BackendReadTextResult,
+  BackendRunnerCommand,
+  BackendSnapshotAnalysis,
+  BackendSnapshotFreshness,
+  BackendSnapshotOptions,
+  BackendScreenshotOptions,
+  BackendScreenshotResult,
+  BackendShellResult,
+  BackendSnapshotResult,
+  BackendTapOptions,
+} from './backend.ts';
+
+export type {
+  ArtifactAdapter,
+  ArtifactDescriptor,
+  CreateTempFileOptions,
+  FileInputRef,
+  FileOutputRef,
+  LocalArtifactAdapterOptions,
+  OutputVisibility,
+  ReserveOutputOptions,
+  ReservedOutputFile,
+  ResolveInputOptions,
+  ResolvedInputFile,
+  TemporaryFile,
+} from './io.ts';
+
+export type {
+  BoundAgentDeviceCommands,
+  BoundRuntimeCommand,
+  CommandCatalogEntry,
+  CommandResult,
+  CommandRouter,
+  CommandRouterConfig,
+  CommandRouterRequest,
+  CommandRouterResponse,
+  CommandRouterResult,
+  RuntimeCommand,
+  SelectorSnapshotOptions,
+  TypeTextCommandOptions,
+  TypeTextCommandResult,
+} from './commands/index.ts';
+
+export type { AppErrorCode, NormalizedError } from './utils/errors.ts';
 
 export type {
   AgentDeviceClient,

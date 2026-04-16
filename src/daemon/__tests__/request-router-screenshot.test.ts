@@ -10,6 +10,7 @@ vi.mock('../../core/dispatch.ts', async (importOriginal) => {
 
 import { dispatchCommand } from '../../core/dispatch.ts';
 import { createRequestHandler } from '../request-router.ts';
+import { dispatchScreenshotViaRuntime } from '../screenshot-runtime.ts';
 import type { SessionState } from '../types.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { attachRefs } from '../../utils/snapshot.ts';
@@ -92,6 +93,28 @@ test('screenshot resolves relative positional path against request cwd', async (
   expect(path.isAbsolute(capturedPath!)).toBe(true);
   const recordedAction = sessionStore.get('default')?.actions.at(-1);
   expect(recordedAction?.positionals).toEqual([path.join(callerCwd, 'evidence/test.png')]);
+});
+
+test('default screenshot temp directory is cleaned when capture fails', async () => {
+  const session = makeSession('default');
+  let capturedPath: string | undefined;
+  mockDispatch.mockImplementation(async (_device, command, positionals) => {
+    if (command === 'screenshot') capturedPath = positionals[0];
+    throw new Error('capture failed');
+  });
+
+  await expect(
+    dispatchScreenshotViaRuntime({
+      session,
+      sessionName: session.name,
+      outputPlacement: 'default',
+      dispatchContext: {},
+    }),
+  ).rejects.toThrow(/capture failed/);
+
+  expect(capturedPath).toBeTruthy();
+  expect(path.basename(capturedPath!)).toBe('screenshot.png');
+  expect(fs.existsSync(path.dirname(capturedPath!))).toBe(false);
 });
 
 test('router serializes concurrent commands for the same device across sessions', async () => {
@@ -258,6 +281,42 @@ test('screenshot keeps absolute positional path unchanged', async () => {
   expect(capturedPath).toBe(absolutePath);
   const recordedAction = sessionStore.get('default')?.actions.at(-1);
   expect(recordedAction?.positionals).toEqual([absolutePath]);
+});
+
+test('screenshot runtime supplies default output path when none is requested', async () => {
+  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
+  sessionStore.set('default', makeSession('default'));
+
+  let capturedPath: string | undefined;
+  mockDispatch.mockImplementation(async (_device, command, positionals) => {
+    if (command === 'screenshot') {
+      capturedPath = positionals[0];
+    }
+    return {};
+  });
+
+  const handler = createRequestHandler({
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    token: 'test-token',
+    sessionStore,
+    leaseRegistry: new LeaseRegistry(),
+    trackDownloadableArtifact: () => 'artifact-id',
+  });
+
+  const response = await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'screenshot',
+    positionals: [],
+    meta: { requestId: 'req-default-screenshot' },
+  });
+
+  expect(response.ok).toBe(true);
+  expect(capturedPath).toContain('agent-device-screenshot-');
+  expect(path.basename(capturedPath ?? '')).toBe('screenshot.png');
+  if (response.ok) {
+    expect(response.data?.path).toBe(capturedPath);
+  }
 });
 
 test('screenshot resolves --out flag path against request cwd', async () => {

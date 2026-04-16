@@ -1,0 +1,55 @@
+import { AppError } from '../utils/errors.ts';
+import { successText } from '../utils/success-text.ts';
+import type { ArtifactDescriptor } from '../io.ts';
+import type { RuntimeCommand, ScreenshotCommandOptions } from './index.ts';
+import { reserveCommandOutput } from './io-policy.ts';
+
+export type ScreenshotCommandResult = {
+  path: string;
+  artifacts?: ArtifactDescriptor[];
+  message?: string;
+};
+
+export const screenshotCommand: RuntimeCommand<
+  ScreenshotCommandOptions,
+  ScreenshotCommandResult
+> = async (runtime, options): Promise<ScreenshotCommandResult> => {
+  if (!runtime.backend.captureScreenshot) {
+    throw new AppError('UNSUPPORTED_OPERATION', 'screenshot is not supported by this backend');
+  }
+
+  const reserved = await reserveCommandOutput(runtime, options.out, {
+    field: 'path',
+    ext: '.png',
+  });
+
+  let artifact: ArtifactDescriptor | undefined;
+  try {
+    await runtime.backend.captureScreenshot(
+      {
+        session: options.session,
+        requestId: options.requestId,
+        appId: options.appId,
+        appBundleId: options.appBundleId,
+        signal: options.signal ?? runtime.signal,
+        metadata: options.metadata,
+      },
+      reserved.path,
+      {
+        fullscreen: options.fullscreen,
+        overlayRefs: options.overlayRefs,
+        surface: options.surface,
+      },
+    );
+    artifact = await reserved.publish();
+  } catch (error) {
+    await reserved.cleanup?.();
+    throw error;
+  }
+
+  return {
+    path: reserved.path,
+    ...(artifact ? { artifacts: [artifact] } : {}),
+    ...successText(`Saved screenshot: ${reserved.path}`),
+  };
+};
