@@ -44,6 +44,47 @@ const backend = {
   pushFile: async () => {},
   triggerAppEvent: async () => {},
   pressHome: async () => {},
+  readLogs: async () => ({ entries: [{ message: 'ready' }] }),
+  dumpNetwork: async () => ({ entries: [{ method: 'GET', url: 'https://example.test' }] }),
+  measurePerf: async () => ({ metrics: [{ name: 'cpu', value: 1, unit: '%' }] }),
+} satisfies AgentDeviceBackend;
+
+const routerAlignmentBackend = {
+  ...backend,
+  captureSnapshot: async () => ({ nodes: [] }),
+  tap: async () => {},
+  fill: async () => {},
+  focus: async () => {},
+  longPress: async () => {},
+  swipe: async () => {},
+  scroll: async () => {},
+  pinch: async () => {},
+  pressBack: async () => {},
+  rotate: async () => {},
+  setKeyboard: async () => ({ visible: true }),
+  getClipboard: async () => ({ text: '' }),
+  setClipboard: async () => {},
+  openSettings: async () => {},
+  handleAlert: async () => ({ kind: 'alertStatus', alert: null }),
+  openAppSwitcher: async () => {},
+  listDevices: async () => [],
+  bootDevice: async () => {},
+  ensureSimulator: async () => ({
+    udid: 'SIM-1',
+    device: 'iPhone 16',
+    runtime: 'iOS 18',
+    created: false,
+    booted: true,
+  }),
+  installApp: async () => ({}),
+  reinstallApp: async () => ({}),
+  startRecording: async () => ({}),
+  stopRecording: async () => ({}),
+  startTrace: async () => ({}),
+  stopTrace: async () => ({}),
+  readLogs: async () => ({ entries: [] }),
+  dumpNetwork: async () => ({ entries: [] }),
+  measurePerf: async () => ({ metrics: [] }),
 } satisfies AgentDeviceBackend;
 
 const artifacts = {
@@ -79,6 +120,9 @@ test('package root exposes command runtime skeleton', async () => {
   assert.equal(typeof device.interactions.click, 'function');
   assert.equal(typeof device.system.back, 'function');
   assert.equal(typeof device.apps.open, 'function');
+  assert.equal(typeof device.admin.install, 'function');
+  assert.equal(typeof device.recording.record, 'function');
+  assert.equal(typeof device.observability.logs, 'function');
   const result = await device.capture.screenshot({});
   assert.equal(result.path, '/tmp/path.png');
 });
@@ -166,6 +210,41 @@ test('public runtime policy helpers expose local and restricted defaults', async
   assert.equal(restrictedCommandPolicy({ allowLocalInputPaths: true }).allowLocalInputPaths, true);
   const store = createMemorySessionStore([{ name: 'default' }]);
   assert.equal((await store.get('default'))?.name, 'default');
+});
+
+test('runtime router command map stays aligned with implemented catalog entries', async () => {
+  const catalogRuntimeCommands = commandCatalog
+    .filter(
+      (entry) =>
+        entry.status === 'implemented' &&
+        (entry.command.includes('.') || entry.command === 'record' || entry.command === 'trace'),
+    )
+    .map((entry) => entry.command);
+  const router = createCommandRouter({
+    createRuntime: () =>
+      createAgentDevice({
+        backend: routerAlignmentBackend,
+        artifacts,
+        policy: localCommandPolicy(),
+      }),
+  });
+  for (const command of catalogRuntimeCommands) {
+    const result = await router.dispatch({ command, options: {} } as never);
+    assert.notEqual(result.ok ? undefined : result.error.code, 'NOT_IMPLEMENTED', command);
+    assert.notEqual(result.ok ? undefined : result.error.code, 'UNSUPPORTED_OPERATION', command);
+  }
+  assert.equal(
+    commandCatalog.some((entry) => entry.command === 'batch' && entry.status === 'implemented'),
+    true,
+  );
+  assert.equal(
+    commandCatalog.some((entry) => entry.command === 'replay' && entry.status === 'planned'),
+    true,
+  );
+  assert.equal(
+    commandCatalog.some((entry) => entry.command === 'test' && entry.status === 'planned'),
+    true,
+  );
 });
 
 test('local artifact adapter marks command outputs and temp files by visibility', async () => {
@@ -380,11 +459,18 @@ test('public backend, commands, io, and conformance subpaths are importable', ()
   assert.equal(typeof commands.system.settings, 'function');
   assert.equal(typeof commands.system.alert, 'function');
   assert.equal(typeof commands.system.appSwitcher, 'function');
+  assert.equal(typeof commands.admin.devices, 'function');
+  assert.equal(typeof commands.admin.install, 'function');
+  assert.equal(typeof commands.recording.record, 'function');
+  assert.equal(typeof commands.recording.trace, 'function');
+  assert.equal(typeof commands.diagnostics.logs, 'function');
+  assert.equal(typeof commands.diagnostics.network, 'function');
+  assert.equal(typeof commands.diagnostics.perf, 'function');
   assert.equal(
     commandCatalog.some((entry) => entry.command === 'click' && entry.status === 'implemented'),
     true,
   );
-  assert.equal(commandConformanceSuites.length, 5);
+  assert.equal(commandConformanceSuites.length, 8);
   assert.equal(typeof runCommandConformance, 'function');
   assert.equal(target.name, 'fake');
 });
@@ -470,8 +556,24 @@ test('command router dispatches implemented runtime commands and normalizes erro
     1,
   );
 
+  const batch = await router.dispatch({
+    command: 'batch',
+    options: {
+      steps: [{ command: 'apps.open', options: { app: 'com.example.app' } }],
+    },
+  });
+  assert.equal(batch.ok, true);
+  assert.equal(batch.ok && 'kind' in batch.data ? batch.data.kind : undefined, 'batch');
+
+  const logs = await router.dispatch({
+    command: 'diagnostics.logs',
+    options: { limit: 10 },
+  });
+  assert.equal(logs.ok, true);
+  assert.equal(logs.ok && 'kind' in logs.data ? logs.data.kind : undefined, 'diagnosticsLogs');
+
   const planned = await router.dispatch({
-    command: 'alert',
+    command: 'session',
     options: {},
   } as never);
   assert.equal(planned.ok, false);
