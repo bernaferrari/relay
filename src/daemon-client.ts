@@ -272,6 +272,7 @@ async function prepareRemoteRequest(
     localPath,
     baseUrl: info.baseUrl!,
     token: info.token,
+    platform: req.flags?.platform,
   });
   return {
     positionals,
@@ -323,6 +324,7 @@ async function prepareRemoteInstallSource(
     localPath,
     baseUrl: info.baseUrl!,
     token: info.token,
+    platform: req.flags?.platform,
   });
   return {
     installSource: {
