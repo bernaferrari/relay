@@ -92,6 +92,33 @@ Their semantics should live in `agent-device/commands` as they migrate.
   and selector targets.
 - `pinch`: runtime `interactions.pinch` implemented behind the typed backend
   primitive.
+- `devices`: runtime `admin.devices` implemented through typed backend
+  inventory primitives.
+- `boot`: runtime `admin.boot` implemented through a typed backend boot
+  primitive.
+- `ensure-simulator`: runtime `admin.ensureSimulator` implemented with typed
+  simulator options and result shape.
+- `install`: runtime `admin.install` implemented with structured install
+  sources and local path policy enforcement.
+- `reinstall`: runtime `admin.reinstall` implemented with structured install
+  sources and local path policy enforcement.
+- `install-from-source`: runtime `admin.installFromSource` implemented with the
+  same structured source resolver used by install/reinstall.
+- `batch`: runtime router command implemented; nested steps are dispatched
+  through `createCommandRouter()` so policy and error formatting run per step.
+- `record`: runtime `record` router/API command implemented with typed record
+  start/stop result unions.
+- `trace`: runtime `trace` router/API command implemented with typed trace
+  start/stop result unions.
+- `logs`: runtime `diagnostics.logs` implemented with bounded, paginated,
+  best-effort redacted log entries.
+- `network`: runtime `diagnostics.network` implemented with bounded,
+  structured, best-effort redacted network entries.
+- `perf`: runtime `diagnostics.perf` implemented with typed metric entries.
+- `replay`: still daemon/CLI owned; runtime router migration is deferred until
+  it can reuse the real `.ad` parser and healing semantics.
+- `test`: still daemon/CLI owned; runtime router migration is deferred until it
+  can share daemon replay-suite semantics end to end.
 
 ## Boundary Requirements
 
@@ -147,17 +174,9 @@ the portable command runtime.
 
 ## Later Capability-Gated Runtime Commands
 
-These commands should migrate only after the runtime, backend capability, and IO
-contracts are established for their behavior.
-
-- `batch`
-- `logs`
-- `network`
-- `perf`
-- `record`
-- `replay`
-- `test`
-- `trace`
+All currently identified capability-gated diagnostics have runtime command
+contracts. New diagnostics should follow the `diagnostics.*` namespace with
+bounded result windows and backend-specific support.
 
 ## Compatibility Helper Subpaths
 
