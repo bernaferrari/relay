@@ -266,6 +266,37 @@ test('press coordinates dispatches press and records as press', async () => {
   expect(session?.actions[0]?.positionals).toEqual(['100', '200']);
 });
 
+test('type dispatches through runtime and records as type', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'default';
+  sessionStore.set(sessionName, makeSession(sessionName));
+
+  mockDispatch.mockResolvedValue({ ok: true, message: 'Typed 5 chars' });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'type',
+      positionals: ['hello'],
+      flags: { delayMs: 3 },
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockDispatch).toHaveBeenCalledTimes(1);
+  expect(mockDispatch.mock.calls[0]?.[1]).toBe('type');
+  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['hello']);
+  const context = mockDispatch.mock.calls[0]?.[4] as Record<string, unknown> | undefined;
+  expect(context?.delayMs).toBe(3);
+  const session = sessionStore.get(sessionName);
+  expect(session?.actions.at(-1)?.command).toBe('type');
+  expect(session?.actions.at(-1)?.positionals).toEqual(['hello']);
+});
+
 test('click rejects macOS desktop surface interactions until helper routing exists', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'macos-desktop-click';
@@ -430,7 +461,11 @@ test('press coordinates appends touch-visualization events while recording', asy
   };
   sessionStore.set(sessionName, session);
 
-  mockDispatch.mockResolvedValue({ ok: true });
+  mockDispatch.mockResolvedValue({
+    ok: true,
+    videoPath: '/tmp/demo.mp4',
+    artifactUri: 'agent-device://artifacts/demo.mp4',
+  });
 
   const response = await handleInteractionCommands({
     req: {
@@ -454,6 +489,13 @@ test('press coordinates appends touch-visualization events while recording', asy
   expect(recorded?.gestureEvents[0]?.y).toBe(200);
   expect(recorded?.gestureEvents[0]?.referenceWidth).toBe(402);
   expect(recorded?.gestureEvents[0]?.referenceHeight).toBe(874);
+  const actionResult = sessionStore.get(sessionName)?.actions[0]?.result;
+  expect(actionResult?.videoPath).toBe('/tmp/demo.mp4');
+  expect(actionResult?.artifactUri).toBe('agent-device://artifacts/demo.mp4');
+  if (response?.ok) {
+    expect(response.data?.videoPath).toBe('/tmp/demo.mp4');
+    expect(response.data?.artifactUri).toBe('agent-device://artifacts/demo.mp4');
+  }
 });
 
 test('press coordinates on Android recording uses physical screen size when no snapshot exists', async () => {
@@ -740,6 +782,71 @@ test('press @ref resolves snapshot node and records press action', async () => {
   expect(Array.isArray(result.selectorChain)).toBe(true);
 });
 
+test('press @ref refreshes stale stored refs and syncs the daemon session snapshot', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'stale-ref-refresh';
+  const session = makeSession(sessionName);
+  session.snapshot = {
+    nodes: attachRefs([
+      {
+        index: 0,
+        type: 'XCUIElementTypeButton',
+        label: 'Continue',
+        enabled: true,
+        hittable: true,
+      },
+    ]),
+    createdAt: Date.now(),
+    backend: 'xctest',
+  };
+  sessionStore.set(sessionName, session);
+
+  mockDispatch.mockImplementation(async (_device, command) => {
+    if (command === 'snapshot') {
+      return {
+        nodes: [
+          {
+            index: 0,
+            type: 'XCUIElementTypeButton',
+            label: 'Continue',
+            rect: { x: 10, y: 20, width: 100, height: 40 },
+            enabled: true,
+            hittable: true,
+          },
+        ],
+        backend: 'xctest',
+      };
+    }
+    return { pressed: true };
+  });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'press',
+      positionals: ['@e1'],
+      flags: {},
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response?.ok).toBe(true);
+  if (response?.ok) {
+    expect(response.data?.x).toBe(60);
+    expect(response.data?.y).toBe(40);
+  }
+  expect(mockDispatch.mock.calls.map((call) => call[1])).toEqual(['snapshot', 'press']);
+  expect(sessionStore.get(sessionName)?.snapshot?.nodes[0]?.rect).toEqual({
+    x: 10,
+    y: 20,
+    width: 100,
+    height: 40,
+  });
+});
+
 test('press @ref fails when Android tap escapes to launcher', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'android-escape';
@@ -783,6 +890,7 @@ test('press @ref fails when Android tap escapes to launcher', async () => {
     code: 'COMMAND_FAILED',
     message: expect.stringContaining('tap likely escaped the app'),
   });
+  expect(sessionStore.get(sessionName)?.actions).toEqual([]);
 });
 
 test('press @ref fails when Android tap escapes to Settings', async () => {
@@ -1011,6 +1119,43 @@ test('fill @ref preserves fallback coordinates for recording when platform resul
   expect(event?.kind).toBe('tap');
   expect(event?.x).toBe(60);
   expect(event?.y).toBe(40);
+});
+
+test('fill coordinates dispatches point fill and records the action', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'default';
+  sessionStore.set(sessionName, makeSession(sessionName));
+
+  mockDispatch.mockResolvedValue({ filled: true });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'fill',
+      positionals: ['25', '75', 'hello world'],
+      flags: { delayMs: 40 },
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response).toBeTruthy();
+  expect(response?.ok).toBe(true);
+  if (response?.ok) {
+    expect(response.data?.filled).toBe(true);
+    expect(response.data?.x).toBe(25);
+    expect(response.data?.y).toBe(75);
+    expect(response.data?.text).toBe('hello world');
+  }
+  expect(mockDispatch).toHaveBeenCalledTimes(1);
+  expect(mockDispatch.mock.calls[0]?.[1]).toBe('fill');
+  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['25', '75', 'hello world']);
+  expect((mockDispatch.mock.calls[0]?.[4] as Record<string, unknown> | undefined)?.delayMs).toBe(
+    40,
+  );
+  expect(sessionStore.get(sessionName)?.actions.length).toBe(1);
 });
 
 test('fill @ref keeps the original editable node when its parent is the hittable ancestor', async () => {
@@ -1572,6 +1717,62 @@ test('is visible captures one snapshot before evaluating selector predicate', as
     expect(response.data?.pass).toBe(true);
     expect(response.data?.selector).toBe('id=auth_continue');
   }
+});
+
+test('is visible preserves CLI snapshot flags during runtime snapshot capture', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'snapshot-flags';
+  sessionStore.set(sessionName, makeSession(sessionName));
+
+  mockDispatch.mockImplementation(async (_device, command) => {
+    if (command !== 'snapshot') throw new Error(`unexpected command: ${command}`);
+    return {
+      nodes: [
+        {
+          index: 0,
+          depth: 0,
+          type: 'XCUIElementTypeWindow',
+          label: 'Login',
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'XCUIElementTypeButton',
+          label: 'Continue',
+          identifier: 'auth_continue',
+          rect: { x: 10, y: 20, width: 100, height: 40 },
+          enabled: true,
+          hittable: true,
+          visible: true,
+        },
+      ],
+      backend: 'xctest',
+    };
+  });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'is',
+      positionals: ['visible', 'id=auth_continue'],
+      flags: { snapshotDepth: 2, snapshotScope: 'Login', snapshotRaw: true },
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockDispatch.mock.calls[0]?.[4]).toMatchObject({
+    snapshotDepth: 2,
+    snapshotScope: 'Login',
+    snapshotRaw: true,
+    snapshotInteractiveOnly: false,
+    snapshotCompact: false,
+  });
 });
 
 test('is visible passes for list text that inherits viewport visibility from an ancestor', async () => {

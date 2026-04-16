@@ -7,6 +7,7 @@ export type AppErrorCode =
   | 'APP_NOT_INSTALLED'
   | 'UNSUPPORTED_PLATFORM'
   | 'UNSUPPORTED_OPERATION'
+  | 'NOT_IMPLEMENTED'
   | 'COMMAND_FAILED'
   | 'SESSION_NOT_FOUND'
   | 'UNAUTHORIZED'
@@ -46,6 +47,17 @@ export function asAppError(err: unknown): AppError {
     return new AppError('UNKNOWN', err.message, undefined, err);
   }
   return new AppError('UNKNOWN', 'Unknown error', { err });
+}
+
+export function isAgentDeviceError(err: unknown): err is AppError {
+  return err instanceof AppError;
+}
+
+export function normalizeAgentDeviceError(
+  err: unknown,
+  context: { diagnosticId?: string; logPath?: string } = {},
+): NormalizedError {
+  return normalizeError(err, context);
 }
 
 export function normalizeError(
@@ -129,6 +141,8 @@ export function defaultHintForCode(code: string): string | undefined {
       return 'Run apps to discover the exact installed package or bundle id, or install the app before open.';
     case 'UNSUPPORTED_OPERATION':
       return 'This command is not available for the selected platform/device.';
+    case 'NOT_IMPLEMENTED':
+      return 'This command is part of the planned API but is not implemented yet.';
     case 'COMMAND_FAILED':
       return 'Retry with --debug and inspect diagnostics log for details.';
     case 'UNAUTHORIZED':
