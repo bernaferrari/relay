@@ -80,7 +80,7 @@ type ProxyBridgeRequestOptions = {
   baseUrl: string;
   bearerToken: string;
   scope: MetroBridgeScope;
-  runtime: MetroBridgeRuntimePayload;
+  runtime?: MetroBridgeRuntimePayload;
   timeoutMs: number;
 };
 
@@ -366,7 +366,7 @@ async function configureMetroBridge(input: ProxyBridgeRequestOptions): Promise<M
       headers: createProxyHeaders(input.baseUrl, input.bearerToken),
       body: JSON.stringify({
         ...input.scope,
-        ios_runtime: input.runtime,
+        ...(input.runtime ? { ios_runtime: input.runtime } : {}),
         timeout_ms: input.timeoutMs,
       }),
       signal: AbortSignal.timeout(input.timeoutMs),
@@ -495,6 +495,18 @@ function describeBridgeFailure(
   return parts.join(' ');
 }
 
+function requireBridgeRuntimeDescriptor(baseUrl: string, bridge: MetroBridgeResult | null): void {
+  if (!bridge?.iosRuntime.bundleUrl) {
+    throw new Error(
+      describeBridgeFailure(
+        baseUrl,
+        'bridge descriptor is missing ios_runtime.metro_bundle_url',
+        bridge,
+      ),
+    );
+  }
+}
+
 function resolveProxySettings(
   proxyBaseUrl: string,
   proxyBearerToken: string,
@@ -556,7 +568,7 @@ async function configureMetroBridgeUntilReady(options: {
   baseUrl: string;
   bearerToken: string;
   scope: MetroBridgeScope;
-  runtime: MetroBridgeRuntimePayload;
+  runtime?: MetroBridgeRuntimePayload;
   probeTimeoutMs: number;
   startupTimeoutMs: number;
   initialBridgeError?: string | null;
@@ -637,7 +649,10 @@ export async function prepareMetroRuntime(
   );
 
   if (!publicBaseUrl) {
-    throw new AppError('INVALID_ARGS', 'metro prepare requires --public-base-url <url>.');
+    const hasProxyBaseUrl = Boolean(normalizeOptionalBaseUrl(input.proxyBaseUrl));
+    if (!hasProxyBaseUrl) {
+      throw new AppError('INVALID_ARGS', 'metro prepare requires --public-base-url <url>.');
+    }
   }
 
   const { proxyEnabled, proxyBaseUrl, proxyBearerToken } = resolveProxySettings(
@@ -676,8 +691,12 @@ export async function prepareMetroRuntime(
     }
   }
 
-  const publicIosRuntime = buildMetroRuntimeHints(publicBaseUrl, 'ios');
-  const publicAndroidRuntime = buildMetroRuntimeHints(publicBaseUrl, 'android');
+  const publicIosRuntime = publicBaseUrl
+    ? buildMetroRuntimeHints(publicBaseUrl, 'ios')
+    : { platform: 'ios' as const };
+  const publicAndroidRuntime = publicBaseUrl
+    ? buildMetroRuntimeHints(publicBaseUrl, 'android')
+    : { platform: 'android' as const };
 
   let bridge: MetroBridgeResult | null = null;
   let initialBridgeError: string | null = null;
@@ -688,9 +707,6 @@ export async function prepareMetroRuntime(
         baseUrl: proxyBaseUrl,
         bearerToken: proxyBearerToken,
         scope: bridgeScope,
-        runtime: {
-          metro_bundle_url: publicIosRuntime.bundleUrl,
-        },
         timeoutMs: probeTimeoutMs,
       });
     } catch (error) {
@@ -731,9 +747,6 @@ export async function prepareMetroRuntime(
         baseUrl: proxyBaseUrl,
         bearerToken: proxyBearerToken,
         scope: bridgeScope,
-        runtime: {
-          metro_bundle_url: publicIosRuntime.bundleUrl,
-        },
         probeTimeoutMs,
         startupTimeoutMs,
         initialBridgeError,
@@ -742,6 +755,10 @@ export async function prepareMetroRuntime(
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error));
     }
+  }
+
+  if (bridgeScope) {
+    requireBridgeRuntimeDescriptor(proxyBaseUrl, bridge);
   }
 
   const iosRuntime = bridge?.iosRuntime ?? publicIosRuntime;
