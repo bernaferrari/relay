@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { handleSnapshotCommands } from '../snapshot.ts';
-import { buildSnapshotState, buildSnapshotVisibility } from '../snapshot-capture.ts';
+import {
+  buildSnapshotState,
+  buildSnapshotVisibility,
+  captureSnapshot,
+} from '../snapshot-capture.ts';
 import { SessionStore } from '../../session-store.ts';
 import type { SessionState } from '../../types.ts';
 import { AppError } from '../../../utils/errors.ts';
@@ -326,11 +330,11 @@ test('snapshot warns when Android freshness retries still return the previous ro
   if (response?.ok) {
     expect(response.data?.warnings).toEqual([
       expect.stringContaining(
-        'Recent press was followed by a nearly identical snapshot after 2 automatic retries',
+        'Recent press was followed by a nearly identical snapshot after 3 automatic retries',
       ),
     ]);
   }
-  expect(mockDispatch).toHaveBeenCalledTimes(3);
+  expect(mockDispatch).toHaveBeenCalledTimes(4);
 });
 
 test('snapshot response includes normalized visibility metadata', async () => {
@@ -442,11 +446,61 @@ test('diff snapshot carries stale-tree warnings for recent Android presses', asy
   if (response?.ok) {
     expect(response.data?.warnings).toEqual([
       expect.stringContaining(
-        'Recent press was followed by a nearly identical snapshot after 2 automatic retries',
+        'Recent press was followed by a nearly identical snapshot after 3 automatic retries',
       ),
     ]);
   }
-  expect(mockDispatch).toHaveBeenCalledTimes(3);
+  expect(mockDispatch).toHaveBeenCalledTimes(4);
+});
+
+test('Android ref refresh mode does not retry narrow snapshots as sharp drops', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'android-ref-refresh-no-sharp-drop';
+  const session = makeSession(sessionName, androidDevice);
+  const baselineNodes = Array.from({ length: 50 }, (_, index) => ({
+    ref: `e${index + 1}`,
+    index,
+    depth: 0,
+    type: 'android.widget.TextView',
+    label: `Previous row ${index + 1}`,
+  }));
+  session.snapshot = {
+    nodes: baselineNodes,
+    createdAt: Date.now(),
+    backend: 'android',
+    comparisonSafe: true,
+  };
+  session.androidSnapshotFreshness = {
+    action: 'press',
+    markedAt: Date.now(),
+    baselineCount: baselineNodes.length,
+    baselineSignatures: buildSnapshotSignatures(baselineNodes),
+    routeComparable: true,
+  };
+  sessionStore.set(sessionName, session);
+
+  mockDispatch.mockResolvedValue({
+    nodes: Array.from({ length: 8 }, (_, index) => ({
+      index,
+      depth: 0,
+      type: 'android.widget.TextView',
+    })),
+    truncated: false,
+    backend: 'android',
+    analysis: { rawNodeCount: 8, maxDepth: 1 },
+  });
+
+  const result = await captureSnapshot({
+    device: androidDevice,
+    session,
+    flags: { snapshotInteractiveOnly: true, snapshotCompact: true },
+    logPath: '/tmp/daemon.log',
+    androidFreshnessMode: 'ref-refresh',
+  });
+
+  expect(result.freshness).toBeUndefined();
+  expect(mockDispatch).toHaveBeenCalledTimes(1);
+  expect(session.androidSnapshotFreshness).toBeUndefined();
 });
 
 test('wait text on Android uses freshness-aware capture instead of one-shot snapshot polling', async () => {
@@ -659,7 +713,9 @@ test('settings on macOS rejects wifi before dispatch with explicit subset guidan
     expect(response.error.message).toMatch(
       /permission <grant\|reset> <accessibility\|screen-recording\|input-monitoring>/,
     );
-    expect(response.error.message).toMatch(/wifi\|airplane\|location remain unsupported on macOS/i);
+    expect(response.error.message).toMatch(
+      /wifi\|airplane\|location\|animations remain unsupported on macOS/i,
+    );
   }
 });
 

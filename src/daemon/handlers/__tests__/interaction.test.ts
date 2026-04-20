@@ -58,7 +58,7 @@ async function emulateCaptureSnapshotForSession(
     appBundleId?: string,
     traceLogPath?: string,
   ) => Record<string, unknown>,
-  options: { interactiveOnly: boolean },
+  options: { interactiveOnly: boolean; androidFreshnessMode?: 'ref-refresh' },
 ) {
   const effectiveFlags = {
     ...(flags ?? {}),
@@ -844,6 +844,133 @@ test('press @ref refreshes stale stored refs and syncs the daemon session snapsh
     y: 20,
     width: 100,
     height: 40,
+  });
+});
+
+test('press @ref refreshes Android snapshot when freshness tracking is active', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'android-fresh-ref-refresh';
+  const session = makeAndroidSession(sessionName);
+  session.snapshot = {
+    nodes: attachRefs([
+      {
+        index: 0,
+        type: 'android.widget.Button',
+        label: 'Continue',
+        rect: { x: 0, y: 0, width: 40, height: 40 },
+        enabled: true,
+        hittable: true,
+      },
+    ]),
+    createdAt: Date.now(),
+    backend: 'android',
+    comparisonSafe: true,
+  };
+  session.androidSnapshotFreshness = {
+    action: 'press',
+    markedAt: Date.now(),
+    baselineCount: 1,
+    routeComparable: false,
+  };
+  sessionStore.set(sessionName, session);
+
+  mockDispatch.mockImplementation(async (_device, command, args) => {
+    if (command === 'snapshot') {
+      return {
+        nodes: [
+          {
+            index: 0,
+            type: 'android.widget.Button',
+            label: 'Continue',
+            rect: { x: 100, y: 200, width: 80, height: 40 },
+            enabled: true,
+            hittable: true,
+          },
+        ],
+        backend: 'android',
+      };
+    }
+    return { pressed: true, args };
+  });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'press',
+      positionals: ['@e1', 'Continue'],
+      flags: {},
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockCaptureSnapshotForSession.mock.calls[0]?.[4]).toEqual({
+    interactiveOnly: true,
+    androidFreshnessMode: 'ref-refresh',
+  });
+  expect(mockDispatch.mock.calls.map((call) => call[1])).toEqual(['snapshot', 'press']);
+  expect(mockDispatch.mock.calls[1]?.[2]).toEqual(['140', '220']);
+  expect(sessionStore.get(sessionName)?.androidSnapshotFreshness).toMatchObject({
+    action: 'press',
+    baselineCount: 1,
+    routeComparable: true,
+  });
+});
+
+test('press @ref falls back to cached Android ref when freshness refresh fails', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'android-fresh-ref-refresh-failure';
+  const session = makeAndroidSession(sessionName);
+  session.snapshot = {
+    nodes: attachRefs([
+      {
+        index: 0,
+        type: 'android.widget.Button',
+        label: 'Continue',
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+        enabled: true,
+        hittable: true,
+      },
+    ]),
+    createdAt: Date.now(),
+    backend: 'android',
+    comparisonSafe: true,
+  };
+  session.androidSnapshotFreshness = {
+    action: 'press',
+    markedAt: Date.now(),
+    baselineCount: 1,
+    routeComparable: true,
+  };
+  sessionStore.set(sessionName, session);
+
+  mockCaptureSnapshotForSession.mockRejectedValueOnce(new Error('uiautomator timeout'));
+  mockDispatch.mockResolvedValue({ pressed: true });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'press',
+      positionals: ['@e1', 'Continue'],
+      flags: {},
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockCaptureSnapshotForSession).toHaveBeenCalledTimes(1);
+  expect(mockDispatch.mock.calls.map((call) => call[1])).toEqual(['press']);
+  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['60', '40']);
+  expect(sessionStore.get(sessionName)?.androidSnapshotFreshness).toMatchObject({
+    action: 'press',
+    baselineCount: 1,
+    routeComparable: true,
   });
 });
 
