@@ -69,6 +69,10 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
 
     const [token, inlineValue] = isLongFlag ? splitLongFlag(arg) : [arg, undefined];
     const definition = getFlagDefinition(token);
+    if (shouldPassThroughReactDevtoolsFlag(command, definition)) {
+      positionals.push(arg);
+      continue;
+    }
     if (!definition) {
       if (shouldTreatUnknownDashTokenAsPositional(command, positionals, arg)) {
         if (!command) command = arg;
@@ -95,6 +99,15 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
   }
 
   return { command, positionals, flags, warnings, providedFlags };
+}
+
+function shouldPassThroughReactDevtoolsFlag(
+  command: string | null,
+  definition: FlagDefinition | undefined,
+): boolean {
+  if (command !== 'react-devtools') return false;
+  if (!definition) return true;
+  return !isFlagSupportedForCommand(definition.key, command);
 }
 
 export function finalizeParsedArgs(
