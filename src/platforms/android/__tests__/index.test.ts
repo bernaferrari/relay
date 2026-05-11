@@ -28,7 +28,7 @@ import {
 import { withAndroidAdbProvider } from '../adb-executor.ts';
 import type { DeviceInfo } from '../../../utils/device.ts';
 import { AppError } from '../../../utils/errors.ts';
-import { findBounds, parseUiHierarchy } from '../ui-hierarchy.ts';
+import { androidUiNodes, parseUiHierarchy } from '../ui-hierarchy.ts';
 
 async function withMockedAdb(
   tempPrefix: string,
@@ -116,17 +116,26 @@ test('parseUiHierarchy decodes XML entities in Android node attributes', () => {
   assert.equal(result.nodes[0].label, 'Line 1\nLine 2\t&<>"\'');
 });
 
-test('findBounds supports single and double quoted attributes', () => {
-  const xml = [
-    '<hierarchy>',
-    '<node text="Nothing" content-desc="Irrelevant" bounds="[0,0][10,10]"/>',
-    "<node text='Target from single quote' content-desc='Alt single' bounds='[100,200][300,500]'/>",
-    '<node text="Target from double quote" content-desc="Alt double" bounds="[50,50][150,250]"/>',
-    '</hierarchy>',
-  ].join('');
+test('androidUiNodes exposes decoded Android hierarchy metadata', () => {
+  const xml =
+    '<hierarchy><node package="com.example.app" class="android.widget.EditText" text="Fish &amp; Chips" content-desc="Search&#10;field" resource-id="com.example.app:id/search" bounds="[10,20][110,70]" clickable="false" enabled="true" focusable="true" focused="true" password="true"/></hierarchy>';
 
-  assert.deepEqual(findBounds(xml, 'single quote'), { x: 200, y: 350 });
-  assert.deepEqual(findBounds(xml, 'alt double'), { x: 100, y: 150 });
+  assert.deepEqual(Array.from(androidUiNodes(xml)), [
+    {
+      text: 'Fish & Chips',
+      desc: 'Search\nfield',
+      resourceId: 'com.example.app:id/search',
+      packageName: 'com.example.app',
+      className: 'android.widget.EditText',
+      bounds: '[10,20][110,70]',
+      rect: { x: 10, y: 20, width: 100, height: 50 },
+      clickable: false,
+      enabled: true,
+      focusable: true,
+      focused: true,
+      password: true,
+    },
+  ]);
 });
 
 test('parseUiHierarchy ignores attribute-name prefix spoofing', () => {
@@ -136,16 +145,6 @@ test('parseUiHierarchy ignores attribute-name prefix spoofing', () => {
   const result = parseUiHierarchy(xml, 800, { raw: true });
   assert.equal(result.nodes.length, 1);
   assert.equal(result.nodes[0].value, 'Actual');
-});
-
-test('findBounds ignores bounds-like fragments inside other attribute values', () => {
-  const xml = [
-    '<hierarchy>',
-    "<node text='Target' content-desc=\"metadata bounds='[900,900][1000,1000]'\" bounds='[100,200][300,500]'/>",
-    '</hierarchy>',
-  ].join('');
-
-  assert.deepEqual(findBounds(xml, 'target'), { x: 200, y: 350 });
 });
 
 test('scrollAndroid supports explicit pixel travel distance', async () => {
