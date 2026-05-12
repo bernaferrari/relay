@@ -39,7 +39,7 @@ import {
 import { readNotificationPayload } from './dispatch-payload.ts';
 import { parseDeviceRotation } from './device-rotation.ts';
 
-export { resolveTargetDevice, withResolveTargetDeviceCacheScope } from './dispatch-resolve.ts';
+export { resolveTargetDevice } from './dispatch-resolve.ts';
 export { shouldUseIosTapSeries, shouldUseIosDragSeries };
 
 export type BatchStep = {
@@ -567,6 +567,9 @@ async function handlePinchCommand(
       'UNSUPPORTED_OPERATION',
       'Android pinch is not supported in current adb backend; requires instrumentation-based backend.',
     );
+  }
+  if (device.target === 'tv') {
+    throw new AppError('UNSUPPORTED_OPERATION', 'pinch is not supported on tvOS');
   }
   if (device.platform === 'macos' && context?.surface && context.surface !== 'app') {
     throw new AppError(
