@@ -1,8 +1,11 @@
 import { AppError } from '../../utils/errors.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
+import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import type { DeviceRotation } from '../../core/device-rotation.ts';
 import { buildScrollGesturePlan, type ScrollDirection } from '../../core/scroll-gesture.ts';
-import { isClipboardShellUnsupported, runAndroidAdb, sleep } from './adb.ts';
+import { runAndroidAdb, sleep } from './adb.ts';
+import { resolveAndroidTextInjector } from './adb-executor.ts';
+import { getAndroidKeyboardState, type AndroidKeyboardState } from './device-input-state.ts';
 import {
   androidFillFailureDetails,
   androidFillFailureMessage,
@@ -90,33 +93,24 @@ export async function longPressAndroid(
 }
 
 export async function typeAndroid(device: DeviceInfo, text: string, delayMs = 0): Promise<void> {
-  if (delayMs > 0 && Array.from(text).length > 1) {
-    await typeAndroidChunked(device, text, 1, delayMs);
+  const providerText = resolveAndroidTextInjector(device);
+  if (providerText) {
+    await providerText({ action: 'type', text, delayMs });
+    emitAndroidTextDiagnostic('type', 'provider-native', text);
     return;
   }
-  await typeAndroidImmediate(device, text);
-}
-
-async function typeAndroidImmediate(device: DeviceInfo, text: string): Promise<void> {
-  const shouldInjectViaClipboard = shouldUseClipboardTextInjection(text);
-  if (shouldInjectViaClipboard) {
-    const clipboardResult = await typeAndroidViaClipboard(device, text);
-    if (clipboardResult === 'ok') return;
+  assertAndroidShellTextSupported(text);
+  await assertAndroidShellInputIsAppOwned(device, 'type');
+  if (delayMs > 0 && Array.from(text).length > 1) {
+    await typeAndroidShell(device, { action: 'type', text, chunkSize: 1, delayMs });
+    return;
   }
-  try {
-    const encoded = encodeAndroidInputText(text);
-    await runAndroidAdb(device, ['shell', 'input', 'text', encoded]);
-  } catch (error) {
-    if (shouldInjectViaClipboard && isAndroidInputTextUnsupported(error)) {
-      throw new AppError(
-        'COMMAND_FAILED',
-        'Non-ASCII text input is not supported on this Android shell. Install an ADB keyboard IME or use ASCII input.',
-        { textPreview: text.slice(0, 32) },
-        error instanceof Error ? error : undefined,
-      );
-    }
-    throw error;
-  }
+  await typeAndroidShell(device, {
+    action: 'type',
+    text,
+    chunkSize: ANDROID_INPUT_TEXT_CHUNK_SIZE,
+    delayMs: 0,
+  });
 }
 
 export async function focusAndroid(device: DeviceInfo, x: number, y: number): Promise<void> {
@@ -130,42 +124,57 @@ export async function fillAndroid(
   text: string,
   delayMs = 0,
 ): Promise<void> {
+  const providerText = resolveAndroidTextInjector(device);
+  if (providerText) {
+    await providerText({ action: 'fill', target: { x, y }, text, delayMs });
+    emitAndroidTextDiagnostic('fill', 'provider-native', text);
+    const verification = await verifyAndroidFilledText(device, x, y, text);
+    if (verification.ok) return;
+    throwAndroidFillFailure(text, verification);
+  }
+  assertAndroidShellTextSupported(text);
+
   const textCodePointLength = Array.from(text).length;
-  const requiresClipboardInjection = shouldUseClipboardTextInjection(text);
   const attempts: Array<{
-    strategy: 'input_text' | 'clipboard_paste' | 'chunked_input';
     clearPadding: number;
     minClear: number;
     maxClear: number;
-  }> = [{ strategy: 'input_text', clearPadding: 12, minClear: 8, maxClear: 48 }];
-  if (!requiresClipboardInjection && delayMs <= 0) {
-    attempts.push({ strategy: 'clipboard_paste', clearPadding: 12, minClear: 8, maxClear: 48 });
-  }
-  if (!requiresClipboardInjection || delayMs > 0) {
-    // Delayed typing must keep chunked input available, even for text that otherwise requires clipboard injection.
-    attempts.push({ strategy: 'chunked_input', clearPadding: 24, minClear: 16, maxClear: 96 });
-  }
+    chunkSize: number;
+    inputDelayMs: number;
+  }> = [
+    {
+      clearPadding: 12,
+      minClear: 8,
+      maxClear: 48,
+      chunkSize: delayMs > 0 ? 1 : ANDROID_INPUT_TEXT_CHUNK_SIZE,
+      inputDelayMs: delayMs,
+    },
+    {
+      clearPadding: 24,
+      minClear: 16,
+      maxClear: 96,
+      chunkSize: delayMs > 0 ? 1 : 4,
+      inputDelayMs: delayMs > 0 ? delayMs : 15,
+    },
+  ];
 
   let lastVerification: AndroidFillVerification | null = null;
 
   for (const attempt of attempts) {
     await focusAndroid(device, x, y);
+    await assertAndroidShellInputIsAppOwned(device, 'fill');
     const clearCount = clampCount(
       textCodePointLength + attempt.clearPadding,
       attempt.minClear,
       attempt.maxClear,
     );
     await clearFocusedText(device, clearCount);
-    if (attempt.strategy === 'input_text') {
-      await typeAndroid(device, text, delayMs);
-    } else if (attempt.strategy === 'clipboard_paste') {
-      const clipboardResult = await typeAndroidViaClipboard(device, text);
-      if (clipboardResult !== 'ok') {
-        continue;
-      }
-    } else {
-      await typeAndroidChunked(device, text, 1, delayMs > 0 ? delayMs : 15);
-    }
+    await typeAndroidShell(device, {
+      action: 'fill',
+      text,
+      chunkSize: attempt.chunkSize,
+      delayMs: attempt.inputDelayMs,
+    });
     const verification = await verifyAndroidFilledText(device, x, y, text);
     lastVerification = verification;
     if (verification.ok) return;
@@ -231,6 +240,43 @@ function resolveAndroidUserRotation(orientation: DeviceRotation): string {
   }
 }
 
+async function assertAndroidShellInputIsAppOwned(
+  device: DeviceInfo,
+  action: 'type' | 'fill',
+): Promise<void> {
+  let state: AndroidKeyboardState;
+  try {
+    state = await getAndroidKeyboardState(device);
+  } catch (error) {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'android_input_ownership_probe_failed',
+      data: {
+        action,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    return;
+  }
+  if (state.inputOwner !== 'ime') return;
+  throw new AppError(
+    'COMMAND_FAILED',
+    'KEYBOARD_OVERLAY_BLOCKING: Android text input is blocked because the focused input belongs to the active keyboard/IME.',
+    {
+      failureReason: 'ime_capture',
+      action,
+      inputOwner: state.inputOwner,
+      inputType: state.inputType,
+      type: state.type,
+      inputMethodPackage: state.inputMethodPackage,
+      focusedPackage: state.focusedPackage,
+      focusedResourceId: state.focusedResourceId,
+      nextAction:
+        'Focused input appears to be owned by the keyboard/IME; dismiss or change the IME before retrying text entry.',
+    },
+  );
+}
+
 export async function getAndroidScreenSize(
   device: DeviceInfo,
 ): Promise<{ width: number; height: number }> {
@@ -240,58 +286,60 @@ export async function getAndroidScreenSize(
   return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-async function typeAndroidChunked(
+const ANDROID_INPUT_TEXT_CHUNK_SIZE = 8;
+
+async function typeAndroidShell(
   device: DeviceInfo,
-  text: string,
-  chunkSize: number,
-  delayMs: number,
+  options: { action: 'type' | 'fill'; text: string; chunkSize: number; delayMs: number },
 ): Promise<void> {
-  const size = Math.max(1, Math.floor(chunkSize));
-  const chars = Array.from(text);
-  for (let i = 0; i < chars.length; i += size) {
-    const chunk = chars.slice(i, i + size).join('');
-    await typeAndroidImmediate(device, chunk);
-    if (delayMs > 0 && i + size < chars.length) {
-      await sleep(delayMs);
+  const parts = options.text.split('\n');
+  for (const [partIndex, part] of parts.entries()) {
+    const chunks = chunkAndroidInputText(part, options.chunkSize);
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      await typeAndroidShellChunk(device, chunk);
+      if (options.delayMs > 0 && (chunkIndex + 1 < chunks.length || partIndex + 1 < parts.length)) {
+        await sleep(options.delayMs);
+      }
     }
+    if (partIndex + 1 < parts.length) {
+      await runAndroidAdb(device, ['shell', 'input', 'keyevent', 'ENTER']);
+    }
+  }
+  emitAndroidTextDiagnostic(options.action, 'adb-shell', options.text);
+}
+
+async function typeAndroidShellChunk(device: DeviceInfo, text: string): Promise<void> {
+  if (!text) return;
+  try {
+    await runAndroidAdb(device, ['shell', 'input', 'text', encodeAndroidInputText(text)]);
+  } catch (error) {
+    if (isAndroidInputTextUnsupported(error)) {
+      throw unsupportedAndroidShellTextError(text, error);
+    }
+    throw error;
   }
 }
 
-function shouldUseClipboardTextInjection(text: string): boolean {
+function assertAndroidShellTextSupported(text: string): void {
+  if (isAndroidShellTextSupported(text)) return;
+  throw unsupportedAndroidShellTextError(text);
+}
+
+function isAndroidShellTextSupported(text: string): boolean {
   for (const char of text) {
     const code = char.codePointAt(0);
     if (code === undefined) continue;
-    if (code < 0x20 || code > 0x7e) return true;
+    if (char === '\n') continue;
+    if (code < 0x20 || code > 0x7e) {
+      return false;
+    }
   }
-  return false;
+  return true;
 }
 
 function encodeAndroidInputText(text: string): string {
   // Android shell input uses `%s` as the escaped token for spaces.
   return text.replace(/ /g, '%s');
-}
-
-async function typeAndroidViaClipboard(
-  device: DeviceInfo,
-  text: string,
-): Promise<'ok' | 'unsupported' | 'failed'> {
-  const setClipboard = await runAndroidAdb(
-    device,
-    ['shell', 'cmd', 'clipboard', 'set', 'text', text],
-    { allowFailure: true },
-  );
-  if (setClipboard.exitCode !== 0) return 'failed';
-  if (isClipboardShellUnsupported(setClipboard.stdout, setClipboard.stderr)) return 'unsupported';
-
-  const pasteByName = await runAndroidAdb(device, ['shell', 'input', 'keyevent', 'KEYCODE_PASTE'], {
-    allowFailure: true,
-  });
-  if (pasteByName.exitCode === 0) return 'ok';
-
-  const pasteByCode = await runAndroidAdb(device, ['shell', 'input', 'keyevent', '279'], {
-    allowFailure: true,
-  });
-  return pasteByCode.exitCode === 0 ? 'ok' : 'failed';
 }
 
 function isAndroidInputTextUnsupported(error: unknown): boolean {
@@ -303,6 +351,40 @@ function isAndroidInputTextUnsupported(error: unknown): boolean {
   if (stderr.includes('nullpointerexception') && stderr.includes('inputshellcommand.sendtext'))
     return true;
   return false;
+}
+
+function unsupportedAndroidShellTextError(text: string, cause?: unknown): AppError {
+  return new AppError(
+    'COMMAND_FAILED',
+    'Android text input requires provider-native text injection for non-ASCII/control characters; the current adb-shell fallback supports ASCII text only.',
+    {
+      backend: 'adb-shell',
+      textLength: Array.from(text).length,
+      textPreview: text.slice(0, 32),
+    },
+    cause instanceof Error ? cause : undefined,
+  );
+}
+
+function chunkAndroidInputText(text: string, chunkSize: number): string[] {
+  const size = Math.max(1, Math.floor(chunkSize));
+  const chunks: string[] = [];
+  const chars = Array.from(text);
+  for (let i = 0; i < chars.length; i += size) {
+    chunks.push(chars.slice(i, i + size).join(''));
+  }
+  return chunks.length > 0 ? chunks : [''];
+}
+
+function emitAndroidTextDiagnostic(
+  action: 'type' | 'fill',
+  backend: 'provider-native' | 'adb-shell',
+  text: string,
+): void {
+  emitDiagnostic({
+    phase: 'android_text_injection',
+    data: { action, backend, textLength: Array.from(text).length },
+  });
 }
 
 async function clearFocusedText(device: DeviceInfo, count: number): Promise<void> {

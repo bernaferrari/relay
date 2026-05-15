@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { ANDROID_EMULATOR } from '../../../__tests__/test-utils/index.ts';
 import { AppError } from '../../../utils/errors.ts';
-import { fillAndroid } from '../index.ts';
+import { fillAndroid, typeAndroid } from '../index.ts';
 import { withAndroidAdbProvider, type AndroidAdbExecutor } from '../adb-executor.ts';
 import {
   androidFillFailureDetails,
@@ -47,6 +47,164 @@ test('fillAndroid reports when the IME captures input instead of the app field',
     calls.some((args) => args.join('\n') === 'shell\ninput\nkeyevent\nKEYCODE_PASTE'),
     false,
   );
+  assert.equal(calls.filter(isTextInput).length, 1);
+  assert.equal(calls.filter((args) => args[0] === 'exec-out').length, 1);
+});
+
+test('typeAndroid rejects unicode text without provider-native injection', async () => {
+  await assert.rejects(
+    () => typeAndroid(ANDROID_EMULATOR, '很 ☝ 😀'),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.code, 'COMMAND_FAILED');
+      assert.match(error.message, /provider-native text injection/i);
+      assert.equal(error.details?.backend, 'adb-shell');
+      return true;
+    },
+  );
+});
+
+test('typeAndroid refuses shell fallback when the IME owns input focus', async () => {
+  const calls: string[][] = [];
+  await withFillAdb(
+    async (args) => {
+      calls.push(args);
+      if (args.join('\n') === 'shell\ndumpsys\ninput_method') {
+        return adbResult(imeOwnedInputMethodDump());
+      }
+      if (isTextInput(args)) throw new Error('input text should not run');
+      return adbResult('');
+    },
+    async () => {
+      await assert.rejects(
+        () => typeAndroid(ANDROID_EMULATOR, 'filed the expense'),
+        (error: unknown) => {
+          assert.ok(error instanceof AppError);
+          assert.equal(error.code, 'COMMAND_FAILED');
+          assert.match(error.message, /KEYBOARD_OVERLAY_BLOCKING/);
+          assert.equal(error.details?.failureReason, 'ime_capture');
+          assert.equal(error.details?.inputOwner, 'ime');
+          assert.equal(error.details?.inputMethodPackage, 'com.google.android.inputmethod.latin');
+          return true;
+        },
+      );
+    },
+  );
+
+  assert.equal(calls.filter(isTextInput).length, 0);
+});
+
+test('fillAndroid refuses shell fallback after focus when the IME owns input focus', async () => {
+  const calls: string[][] = [];
+  await withFillAdb(
+    async (args) => {
+      calls.push(args);
+      if (args.join('\n') === 'shell\ndumpsys\ninput_method') {
+        return adbResult(imeOwnedInputMethodDump());
+      }
+      if (isTextInput(args)) throw new Error('input text should not run');
+      return adbResult('');
+    },
+    async () => {
+      await assert.rejects(
+        () => fillAndroid(ANDROID_EMULATOR, 10, 10, 'filed the expense'),
+        (error: unknown) => {
+          assert.ok(error instanceof AppError);
+          assert.equal(error.code, 'COMMAND_FAILED');
+          assert.match(error.message, /KEYBOARD_OVERLAY_BLOCKING/);
+          assert.equal(error.details?.failureReason, 'ime_capture');
+          assert.equal(error.details?.action, 'fill');
+          return true;
+        },
+      );
+    },
+  );
+
+  assert.equal(
+    calls.some((args) => args.join('\n') === 'shell\ninput\ntap\n10\n10'),
+    true,
+  );
+  assert.equal(calls.filter(isDeleteKey).length, 0);
+  assert.equal(calls.filter(isTextInput).length, 0);
+});
+
+test('typeAndroid prefers provider-native text injection when available', async () => {
+  const calls: unknown[] = [];
+  await withAndroidAdbProvider(
+    {
+      exec: async () => {
+        throw new Error('adb should not run');
+      },
+      text: async (request) => {
+        calls.push(request);
+      },
+    },
+    { serial: ANDROID_EMULATOR.id },
+    async () => {
+      await typeAndroid(ANDROID_EMULATOR, '很 ☝ 😀');
+    },
+  );
+
+  assert.deepEqual(calls, [{ action: 'type', text: '很 ☝ 😀', delayMs: 0 }]);
+});
+
+test('fillAndroid delegates target replacement to provider-native text injection', async () => {
+  const calls: unknown[] = [];
+  let value = '';
+  await withAndroidAdbProvider(
+    {
+      exec: async (args) => {
+        if (args[0] === 'exec-out') {
+          return adbResult(androidInputXml({ text: value }));
+        }
+        throw new Error(`unexpected adb call: ${args.join(' ')}`);
+      },
+      text: async (request) => {
+        calls.push(request);
+        value = request.text;
+      },
+    },
+    { serial: ANDROID_EMULATOR.id },
+    async () => {
+      await fillAndroid(ANDROID_EMULATOR, 10, 10, 'filed the expense');
+    },
+  );
+
+  assert.deepEqual(calls, [
+    {
+      action: 'fill',
+      target: { x: 10, y: 10 },
+      text: 'filed the expense',
+      delayMs: 0,
+    },
+  ]);
+});
+
+test('fillAndroid waits for settled app text before reporting success', async () => {
+  let typed = '';
+  let dumpCount = 0;
+  let inputCount = 0;
+  await withFillAdb(
+    async (args) => {
+      if (isDeleteKey(args)) typed = '';
+      if (isTextInput(args)) {
+        inputCount += 1;
+        typed += args[3] ?? '';
+      }
+      if (args[0] === 'exec-out') {
+        dumpCount += 1;
+        const visibleText = dumpCount <= 1 ? typed : dumpCount <= 3 ? 'file' : 'filed';
+        return adbResult(androidInputXml({ text: visibleText }));
+      }
+      return adbResult('');
+    },
+    async () => {
+      await fillAndroid(ANDROID_EMULATOR, 10, 10, 'filed');
+    },
+  );
+
+  assert.ok(inputCount > 1);
+  assert.ok(dumpCount >= 4);
 });
 
 test('verifyAndroidFilledTextInHierarchy accepts matching-length masked password verification', () => {
@@ -70,6 +228,18 @@ test('verifyAndroidFilledTextInHierarchy accepts Android sentence autocapitaliza
   );
 
   assert.equal(verification.ok, true);
+});
+
+test('verifyAndroidFilledTextInHierarchy rejects near-complete prefixes', () => {
+  const verification = verifyAndroidFilledTextInHierarchy(
+    androidInputXml({ text: 'filed the expens' }),
+    10,
+    10,
+    'filed the expense',
+  );
+
+  assert.equal(verification.ok, false);
+  assert.equal(verification.actual, 'filed the expens');
 });
 
 test('verifyAndroidFilledTextInHierarchy rejects reverse sentence autocapitalization mismatch', () => {
@@ -149,6 +319,16 @@ function isDeleteKey(args: string[]): boolean {
 
 function inputDetails(error: AppError, key: 'actualInput' | 'targetInput') {
   return error.details?.[key] as Record<string, unknown> | null | undefined;
+}
+
+function imeOwnedInputMethodDump(): string {
+  return [
+    'mInputShown=true',
+    'mCurMethodId=com.google.android.inputmethod.latin/.LatinIME',
+    'packageName=com.google.android.inputmethod.latin',
+    `resourceId=${IME_RESOURCE_ID}`,
+    'inputType=0x1',
+  ].join('\n');
 }
 
 function assertMaskedPasswordFailure(
