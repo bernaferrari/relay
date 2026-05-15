@@ -26,7 +26,9 @@ import {
   writeAndroidClipboardText,
 } from '../index.ts';
 import { withAndroidAdbProvider } from '../adb-executor.ts';
+import { parseAndroidLaunchablePackages } from '../app-parsers.ts';
 import type { DeviceInfo } from '../../../utils/device.ts';
+import { flushDiagnosticsToSessionFile, withDiagnosticsScope } from '../../../utils/diagnostics.ts';
 import { AppError } from '../../../utils/errors.ts';
 import { androidUiNodes, parseUiHierarchy } from '../ui-hierarchy.ts';
 
@@ -230,7 +232,9 @@ test('listAndroidApps returns launchable apps with inferred names', async () => 
       '  shift',
       'fi',
       'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "package" ] && [ "$4" = "query-activities" ]; then',
+      '  echo "25"',
       '  echo "com.google.android.apps.maps/.MainActivity"',
+      '  echo "priority=0"',
       '  echo "org.mozilla.firefox/.App"',
       '  echo "com.android.settings/.Settings"',
       '  exit 0',
@@ -271,6 +275,21 @@ test('listAndroidApps returns launchable apps with inferred names', async () => 
     process.env.PATH = previousPath;
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('parseAndroidLaunchablePackages ignores cmd package query metadata lines', () => {
+  assert.deepEqual(
+    parseAndroidLaunchablePackages(
+      [
+        '25',
+        'priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true',
+        'com.google.android.apps.maps/.MainActivity',
+        'service-without-component',
+        'org.mozilla.firefox/.App',
+      ].join('\n'),
+    ),
+    ['com.google.android.apps.maps', 'org.mozilla.firefox'],
+  );
 });
 
 test('listAndroidApps user-installed excludes non-launchable packages', async () => {
@@ -1265,48 +1284,24 @@ test('parseAndroidLaunchComponent handles multi-entry resolve output', () => {
   );
 });
 
-test('typeAndroid uses clipboard paste for unicode text', async () => {
+test('typeAndroid chunks ASCII input text for shell fallback', async () => {
   await withMockedAdb(
-    'agent-device-android-type-unicode-',
+    'agent-device-android-type-ascii-chunked-',
     [
       '#!/bin/sh',
       'printf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"',
       'printf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"',
-      'if [ "$1" = "-s" ]; then',
-      '  shift',
-      '  shift',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "clipboard" ] && [ "$4" = "set" ] && [ "$5" = "text" ]; then',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "keyevent" ] && [ "$4" = "KEYCODE_PASTE" ]; then',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "text" ]; then',
-      '  echo "unexpected fallback to input text" >&2',
-      '  exit 1',
-      'fi',
-      'exit 1',
+      'exit 0',
       '',
     ].join('\n'),
     async ({ argsLogPath, device }) => {
-      await typeAndroid(device, '很 ☝ 😀');
+      await typeAndroid(device, 'filed the expense');
       const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /shell\ncmd\nclipboard\nset\ntext\n很 ☝ 😀/);
-      assert.match(logged, /shell\ninput\nkeyevent\nKEYCODE_PASTE/);
-      assert.doesNotMatch(logged, /shell\ninput\ntext/);
-    },
-  );
-});
-
-test('typeAndroid uses adb input text for ascii text', async () => {
-  await withMockedAdb(
-    'agent-device-android-type-ascii-',
-    '#!/bin/sh\nprintf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    async ({ argsLogPath, device }) => {
-      await typeAndroid(device, 'hello world');
-      const args = (await fs.readFile(argsLogPath, 'utf8')).trim().split('\n').filter(Boolean);
-      assert.deepEqual(args, ['-s', 'emulator-5554', 'shell', 'input', 'text', 'hello%sworld']);
+      assert.match(logged, /shell\ninput\ntext\nfiled%sth/);
+      assert.match(logged, /shell\ninput\ntext\ne%sexpens/);
+      assert.match(logged, /shell\ninput\ntext\ne/);
+      const shellInputTextCount = (logged.match(/shell\ninput\ntext\n/g) ?? []).length;
+      assert.equal(shellInputTextCount, 3);
     },
   );
 });
@@ -1314,18 +1309,14 @@ test('typeAndroid uses adb input text for ascii text', async () => {
 test('typeAndroid passes shell-sensitive ascii text to adb input text', async () => {
   await withMockedAdb(
     'agent-device-android-type-ascii-special-',
-    '#!/bin/sh\nprintf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
+    '#!/bin/sh\nprintf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
     async ({ argsLogPath, device }) => {
       await typeAndroid(device, 'curtis.layne+test+73kmc@uber.com');
-      const args = (await fs.readFile(argsLogPath, 'utf8')).trim().split('\n').filter(Boolean);
-      assert.deepEqual(args, [
-        '-s',
-        'emulator-5554',
-        'shell',
-        'input',
-        'text',
-        'curtis.layne+test+73kmc@uber.com',
-      ]);
+      const logged = await fs.readFile(argsLogPath, 'utf8');
+      assert.match(logged, /shell\ninput\ntext\ncurtis\.l/);
+      assert.match(logged, /shell\ninput\ntext\nayne\+tes/);
+      assert.match(logged, /shell\ninput\ntext\nt\+73kmc@/);
+      assert.match(logged, /shell\ninput\ntext\nuber\.com/);
     },
   );
 });
@@ -1333,11 +1324,12 @@ test('typeAndroid passes shell-sensitive ascii text to adb input text', async ()
 test('typeAndroid preserves percent signs while encoding spaces', async () => {
   await withMockedAdb(
     'agent-device-android-type-ascii-percent-',
-    '#!/bin/sh\nprintf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
+    '#!/bin/sh\nprintf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
     async ({ argsLogPath, device }) => {
       await typeAndroid(device, '50% complete');
-      const args = (await fs.readFile(argsLogPath, 'utf8')).trim().split('\n').filter(Boolean);
-      assert.deepEqual(args, ['-s', 'emulator-5554', 'shell', 'input', 'text', '50%%scomplete']);
+      const logged = await fs.readFile(argsLogPath, 'utf8');
+      assert.match(logged, /shell\ninput\ntext\n50%%scomp/);
+      assert.match(logged, /shell\ninput\ntext\nlete/);
     },
   );
 });
@@ -1364,13 +1356,13 @@ test('typeAndroid sends one character at a time when delay is requested', async 
   );
 });
 
-test('fillAndroid falls back to clipboard paste when adb input text truncates', async () => {
+test('fillAndroid uses chunk-safe shell input and retries when verification still fails', async () => {
   await withMockedAdb(
     'agent-device-android-fill-fallback-',
     [
       '#!/bin/sh',
       'STATE_FILE="$(dirname "$AGENT_DEVICE_TEST_ARGS_FILE")/fill_state.txt"',
-      'CLIP_FILE="$(dirname "$AGENT_DEVICE_TEST_ARGS_FILE")/clipboard_state.txt"',
+      'INPUT_COUNT_FILE="$(dirname "$AGENT_DEVICE_TEST_ARGS_FILE")/input_count.txt"',
       'printf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"',
       'printf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"',
       'if [ "$1" = "-s" ]; then',
@@ -1388,24 +1380,14 @@ test('fillAndroid falls back to clipboard paste when adb input text truncates', 
       '  exit 0',
       'fi',
       'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "text" ]; then',
-      '  # Simulate WebView truncation on shell text input with special chars.',
-      '  if [ "$4" = "curtis.layne+test+73kmc@uber.com" ]; then',
+      '  count="$(cat "$INPUT_COUNT_FILE" 2>/dev/null || echo 0)"',
+      '  count=$((count + 1))',
+      '  printf "%s" "$count" > "$INPUT_COUNT_FILE"',
+      '  if [ "$count" -eq 1 ]; then',
       '    printf "curti" > "$STATE_FILE"',
       '  else',
-      '    printf "%s" "$4" > "$STATE_FILE"',
+      '    printf "%s" "$4" >> "$STATE_FILE"',
       '  fi',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "clipboard" ] && [ "$4" = "set" ] && [ "$5" = "text" ]; then',
-      '  printf "%s" "$6" > "$CLIP_FILE"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "keyevent" ] && [ "$4" = "KEYCODE_PASTE" ]; then',
-      '  cat "$CLIP_FILE" > "$STATE_FILE"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "keyevent" ] && [ "$4" = "279" ]; then',
-      '  cat "$CLIP_FILE" > "$STATE_FILE"',
       '  exit 0',
       'fi',
       'if [ "$1" = "exec-out" ] && [ "$2" = "uiautomator" ] && [ "$3" = "dump" ] && [ "$4" = "/dev/tty" ]; then',
@@ -1420,14 +1402,10 @@ test('fillAndroid falls back to clipboard paste when adb input text truncates', 
     async ({ argsLogPath, device }) => {
       await fillAndroid(device, 10, 10, 'curtis.layne+test+73kmc@uber.com');
       const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /shell\ninput\ntext\ncurtis\.layne\+test\+73kmc@uber\.com/);
-      assert.match(
-        logged,
-        /shell\ncmd\nclipboard\nset\ntext\ncurtis\.layne\+test\+73kmc@uber\.com/,
-      );
-      assert.match(logged, /shell\ninput\nkeyevent\nKEYCODE_PASTE/);
+      assert.doesNotMatch(logged, /shell\ncmd\nclipboard\nset\ntext/);
+      assert.doesNotMatch(logged, /shell\ninput\nkeyevent\nKEYCODE_PASTE/);
       const shellInputTextCount = (logged.match(/shell\ninput\ntext\n/g) ?? []).length;
-      assert.equal(shellInputTextCount, 1);
+      assert.ok(shellInputTextCount > 1);
     },
   );
 });
@@ -1502,7 +1480,8 @@ test('fillAndroid tolerates delayed React Native text verification', async () =>
       '  exit 0',
       'fi',
       'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "text" ]; then',
-      '  printf "%s" "$4" > "$STATE_FILE"',
+      '  text="$(printf "%s" "$4" | sed "s/%s/ /g")"',
+      '  printf "%s" "$text" >> "$STATE_FILE"',
       '  exit 0',
       'fi',
       'if [ "$1" = "exec-out" ] && [ "$2" = "uiautomator" ] && [ "$3" = "dump" ] && [ "$4" = "/dev/tty" ]; then',
@@ -1523,42 +1502,6 @@ test('fillAndroid tolerates delayed React Native text verification', async () =>
     ].join('\n'),
     async ({ device }) => {
       await fillAndroid(device, 10, 10, 'sent the update');
-    },
-  );
-});
-
-test('typeAndroid reports clear error when unicode input is unsupported', async () => {
-  await withMockedAdb(
-    'agent-device-android-type-unicode-unsupported-',
-    [
-      '#!/bin/sh',
-      'if [ "$1" = "-s" ]; then',
-      '  shift',
-      '  shift',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "clipboard" ] && [ "$4" = "set" ] && [ "$5" = "text" ]; then',
-      '  echo "No shell command implementation."',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "text" ]; then',
-      '  echo "Exception occurred while executing \'text\':" >&2',
-      '  echo "java.lang.NullPointerException" >&2',
-      '  exit 255',
-      'fi',
-      'echo "unexpected args: $@" >&2',
-      'exit 1',
-      '',
-    ].join('\n'),
-    async ({ device }) => {
-      await assert.rejects(
-        () => typeAndroid(device, '很'),
-        (error: unknown) => {
-          assert.equal(error instanceof AppError, true);
-          assert.equal((error as AppError).code, 'COMMAND_FAILED');
-          assert.match((error as AppError).message, /non-ascii text input is not supported/i);
-          return true;
-        },
-      );
     },
   );
 });
@@ -1622,6 +1565,105 @@ test('getAndroidKeyboardState reads visibility and input type', async () => {
       assert.equal(state.visible, true);
       assert.equal(state.inputType, '0x21');
       assert.equal(state.type, 'email');
+    },
+  );
+});
+
+test('getAndroidKeyboardState reports active IME ownership from dumpsys', async () => {
+  await withMockedAdb(
+    'agent-device-android-keyboard-ime-owner-',
+    [
+      '#!/bin/sh',
+      'if [ "$1" = "-s" ]; then',
+      '  shift',
+      '  shift',
+      'fi',
+      'if [ "$1" = "shell" ] && [ "$2" = "dumpsys" ] && [ "$3" = "input_method" ]; then',
+      '  echo "mInputShown=true mIsInputViewShown=true"',
+      '  echo "mCurMethodId=com.samsung.android.honeyboard/.service.HoneyBoardService"',
+      '  echo "mCurAttribute=EditorInfo{packageName=com.samsung.android.honeyboard inputType=0x1 resourceId=com.samsung.android.honeyboard:id/handwriting}"',
+      '  exit 0',
+      'fi',
+      'echo "unexpected args: $@" >&2',
+      'exit 1',
+      '',
+    ].join('\n'),
+    async ({ device }) => {
+      const state = await getAndroidKeyboardState(device);
+      assert.equal(state.visible, true);
+      assert.equal(state.inputType, '0x1');
+      assert.equal(state.inputMethodPackage, 'com.samsung.android.honeyboard');
+      assert.equal(state.focusedPackage, 'com.samsung.android.honeyboard');
+      assert.equal(state.focusedResourceId, 'com.samsung.android.honeyboard:id/handwriting');
+      assert.equal(state.inputOwner, 'ime');
+    },
+  );
+});
+
+test('getAndroidKeyboardState diagnoses fallback IME ownership classification', async () => {
+  await withMockedAdb(
+    'agent-device-android-keyboard-ime-fallback-',
+    [
+      '#!/bin/sh',
+      'if [ "$1" = "-s" ]; then',
+      '  shift',
+      '  shift',
+      'fi',
+      'if [ "$1" = "shell" ] && [ "$2" = "dumpsys" ] && [ "$3" = "input_method" ]; then',
+      '  echo "mInputShown=true mIsInputViewShown=true"',
+      '  echo "mCurAttribute=EditorInfo{packageName=com.google.android.inputmethod.latin inputType=0x1 resourceId=com.google.android.inputmethod.latin:id/handwriting}"',
+      '  exit 0',
+      'fi',
+      'echo "unexpected args: $@" >&2',
+      'exit 1',
+      '',
+    ].join('\n'),
+    async ({ device }) => {
+      const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-diagnostics-home-'));
+      const previousHome = process.env.HOME;
+      let diagnosticsPath: string | null = null;
+      try {
+        process.env.HOME = homeDir;
+        const state = await withDiagnosticsScope({ session: 'keyboard-ime-fallback' }, async () => {
+          const keyboardState = await getAndroidKeyboardState(device);
+          diagnosticsPath = flushDiagnosticsToSessionFile({ force: true });
+          return keyboardState;
+        });
+
+        assert.equal(state.inputOwner, 'ime');
+        assert.ok(diagnosticsPath);
+        const diagnostics = await fs.readFile(diagnosticsPath, 'utf8');
+        assert.match(diagnostics, /android_input_ownership_fallback/);
+        assert.match(diagnostics, /com\.google\.android\.inputmethod\.latin/);
+      } finally {
+        process.env.HOME = previousHome;
+      }
+    },
+  );
+});
+
+test('getAndroidKeyboardState does not treat inputmethod substring as IME ownership', async () => {
+  await withMockedAdb(
+    'agent-device-android-keyboard-inputmethod-substring-',
+    [
+      '#!/bin/sh',
+      'if [ "$1" = "-s" ]; then',
+      '  shift',
+      '  shift',
+      'fi',
+      'if [ "$1" = "shell" ] && [ "$2" = "dumpsys" ] && [ "$3" = "input_method" ]; then',
+      '  echo "mInputShown=true mIsInputViewShown=true"',
+      '  echo "mCurAttribute=EditorInfo{packageName=com.example.inputmethodnotes inputType=0x1 resourceId=com.example.inputmethodnotes:id/editor}"',
+      '  exit 0',
+      'fi',
+      'echo "unexpected args: $@" >&2',
+      'exit 1',
+      '',
+    ].join('\n'),
+    async ({ device }) => {
+      const state = await getAndroidKeyboardState(device);
+      assert.equal(state.focusedPackage, 'com.example.inputmethodnotes');
+      assert.equal(state.inputOwner, 'app');
     },
   );
 });

@@ -249,6 +249,10 @@ async function handleKeyboardCommand(
         visible: result.visible,
         inputType: result.inputType,
         type: result.type,
+        inputMethodPackage: result.inputMethodPackage,
+        focusedPackage: result.focusedPackage,
+        focusedResourceId: result.focusedResourceId,
+        inputOwner: result.inputOwner,
       };
     }
     const state = await getAndroidKeyboardState(device);
@@ -258,6 +262,10 @@ async function handleKeyboardCommand(
       visible: state.visible,
       inputType: state.inputType,
       type: state.type,
+      inputMethodPackage: state.inputMethodPackage,
+      focusedPackage: state.focusedPackage,
+      focusedResourceId: state.focusedResourceId,
+      inputOwner: state.inputOwner,
     };
   }
   if (device.platform === 'ios') {

@@ -11,6 +11,8 @@ export {
   type AndroidAdbPuller,
   type AndroidAdbSpawner,
   type AndroidAdbTransferOptions,
+  type AndroidTextInjectionRequest,
+  type AndroidTextInjector,
   type AndroidPortReverseEndpoint,
   type AndroidPortReverseMapping,
   type AndroidPortReverseOptions,

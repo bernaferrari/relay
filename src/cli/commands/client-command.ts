@@ -4,10 +4,12 @@ import type {
   ClipboardCommandOptions,
   ClipboardCommandResult,
   KeyboardCommandOptions,
+  KeyboardCommandResult,
   RotateCommandOptions,
 } from '../../client.ts';
 import type { CliFlags } from '../../utils/command-schema.ts';
 import { AppError } from '../../utils/errors.ts';
+import { readCommandMessage } from '../../utils/success-text.ts';
 import { waitCommandCodec } from '../../command-codecs.ts';
 import { parseDeviceRotation } from '../../core/device-rotation.ts';
 import { buildSelectionOptions, writeCommandMessage, writeCommandOutput } from './shared.ts';
@@ -50,7 +52,7 @@ export const clientCommandMethodHandlers = {
     return true;
   },
   keyboard: async ({ positionals, flags, client }) => {
-    writeCommandMessage(
+    writeKeyboardOutput(
       flags,
       await client.command.keyboard(readKeyboardOptions(positionals, flags)),
     );
@@ -97,6 +99,37 @@ function readKeyboardOptions(positionals: string[], flags: CliFlags): KeyboardCo
     ...buildSelectionOptions(flags),
     ...(action ? { action } : {}),
   };
+}
+
+function writeKeyboardOutput(flags: CliFlags, result: KeyboardCommandResult): void {
+  writeCommandOutput(flags, result, () => {
+    if (result.platform === 'android' && result.action === 'status') {
+      const lines = [
+        `Keyboard visible: ${result.visible === true ? 'yes' : 'no'}`,
+        `Input type: ${result.type ?? result.inputType ?? 'unknown'}`,
+        `Input owner: ${result.inputOwner ?? 'unknown'}`,
+      ];
+      if (result.inputMethodPackage) lines.push(`Input method: ${result.inputMethodPackage}`);
+      if (result.focusedPackage) lines.push(`Focused package: ${result.focusedPackage}`);
+      if (result.focusedResourceId) lines.push(`Focused resource: ${result.focusedResourceId}`);
+      lines.push(`Next action: ${androidKeyboardNextAction(result.visible, result.inputOwner)}`);
+      return lines.join('\n');
+    }
+    return readCommandMessage(result);
+  });
+}
+
+function androidKeyboardNextAction(
+  visible: boolean | undefined,
+  inputOwner: KeyboardCommandResult['inputOwner'],
+): string {
+  if (inputOwner === 'ime') {
+    return 'Focused input appears to be owned by the keyboard/IME; dismiss or change the IME before retrying text entry.';
+  }
+  if (visible === true) {
+    return 'Keyboard is visible and focused input appears app-owned; fill/type can proceed.';
+  }
+  return 'Keyboard is hidden; focus an app field before type, or use fill with a concrete target.';
 }
 
 function readClipboardOptions(positionals: string[], flags: CliFlags): ClipboardCommandOptions {
