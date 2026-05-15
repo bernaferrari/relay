@@ -10,7 +10,12 @@ import type {
 import type { DeviceKind, DeviceTarget, Platform, PlatformSelector } from './utils/device.ts';
 import type { FindLocator } from './utils/finders.ts';
 import type { AndroidSnapshotBackendMetadata } from './platforms/android/snapshot-types.ts';
-import type { ScreenshotOverlayRef, SnapshotNode, SnapshotVisibility } from './utils/snapshot.ts';
+import type {
+  ScreenshotOverlayRef,
+  SnapshotNode,
+  SnapshotUnchanged,
+  SnapshotVisibility,
+} from './utils/snapshot.ts';
 import type {
   MetroPrepareKind,
   PrepareMetroRuntimeResult,
@@ -295,6 +300,7 @@ export type CaptureSnapshotOptions = AgentDeviceRequestOverrides &
     depth?: number;
     scope?: string;
     raw?: boolean;
+    forceFull?: boolean;
   };
 
 export type CaptureSnapshotResult = {
@@ -305,6 +311,7 @@ export type CaptureSnapshotResult = {
   visibility?: SnapshotVisibility;
   androidSnapshot?: AndroidSnapshotBackendMetadata;
   warnings?: string[];
+  unchanged?: SnapshotUnchanged;
   identifiers: AgentDeviceIdentifiers;
 };
 
@@ -734,6 +741,7 @@ type CommandExecutionOptions = {
   depth?: number;
   scope?: string;
   raw?: boolean;
+  forceFull?: boolean;
   screenshotFullscreen?: boolean;
   screenshotMaxSize?: number;
   screenshotNoStabilize?: boolean;
