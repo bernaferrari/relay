@@ -144,24 +144,6 @@ export type SessionCloseResult = {
   identifiers: AgentDeviceIdentifiers;
 };
 
-export type EnsureSimulatorOptions = AgentDeviceRequestOverrides & {
-  device: string;
-  runtime?: string;
-  boot?: boolean;
-  reuseExisting?: boolean;
-  iosSimulatorDeviceSet?: string;
-};
-
-export type EnsureSimulatorResult = {
-  udid: string;
-  device: string;
-  runtime: string;
-  created: boolean;
-  booted: boolean;
-  iosSimulatorDeviceSet?: string | null;
-  identifiers: AgentDeviceIdentifiers;
-};
-
 export type AppDeployOptions = AgentDeviceRequestOverrides &
   AgentDeviceSelectionOptions & {
     app: string;
@@ -793,11 +775,8 @@ type CommandExecutionOptions = {
 export type InternalRequestOptions = AgentDeviceClientConfig &
   AgentDeviceSelectionOptions &
   CommandExecutionOptions & {
-    simulatorRuntimeId?: string;
     runtime?: SessionRuntimeHints;
     overlayRefs?: boolean;
-    boot?: boolean;
-    reuseExisting?: boolean;
     surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
     activity?: string;
     relaunch?: boolean;
@@ -832,9 +811,6 @@ export type AgentDeviceClient = {
     close: (
       options?: AgentDeviceRequestOverrides & { shutdown?: boolean },
     ) => Promise<SessionCloseResult>;
-  };
-  simulators: {
-    ensure: (options: EnsureSimulatorOptions) => Promise<EnsureSimulatorResult>;
   };
   apps: {
     install: (options: AppDeployOptions) => Promise<AppDeployResult>;
