@@ -9,34 +9,30 @@ import {
 } from '../request-cancel.ts';
 import type { DaemonResponse } from '../types.ts';
 import type { ReplayScriptMetadata } from './session-replay-script.ts';
+import type { ReplayTestRuntimeDependencies } from './session-test-types.ts';
 
 const REPLAY_TIMEOUT_CLEANUP_GRACE_MS = 2_000;
 const REPLAY_TEST_TIMEOUT_HINT =
   'Replay test timeouts are cooperative; the active command may take a short grace period to stop.';
 
-export async function runReplayTestAttempt(params: {
-  filePath: string;
-  sessionName: string;
-  requestId: string;
-  timeoutMs?: number;
-  platform?: ReplayScriptMetadata['platform'];
-  artifactsDir?: string;
-  runReplay: (params: {
+export async function runReplayTestAttempt(
+  params: {
     filePath: string;
     sessionName: string;
+    requestId: string;
+    timeoutMs?: number;
     platform?: ReplayScriptMetadata['platform'];
-    requestId?: string;
+    target?: ReplayScriptMetadata['target'];
     artifactsDir?: string;
-    artifactPaths?: Set<string>;
-  }) => Promise<DaemonResponse>;
-  cleanupSession: (sessionName: string) => Promise<void>;
-}): Promise<DaemonResponse> {
+  } & ReplayTestRuntimeDependencies,
+): Promise<DaemonResponse> {
   const {
     filePath,
     sessionName,
     requestId,
     timeoutMs,
     platform,
+    target,
     artifactsDir,
     runReplay,
     cleanupSession,
@@ -49,6 +45,7 @@ export async function runReplayTestAttempt(params: {
     filePath,
     sessionName,
     platform,
+    target,
     requestId,
     artifactsDir,
     artifactPaths,

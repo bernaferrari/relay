@@ -7,8 +7,13 @@ import type { DaemonRequest, DaemonResponse } from './types.ts';
 import { SessionStore } from './session-store.ts';
 import {
   type AndroidAdbProviderResolver,
-  withRequestAndroidAdbScope,
-} from './request-android-adb.ts';
+  type AppleRunnerProviderResolver,
+  type AppleToolProviderResolver,
+  type AppLogProviderResolver,
+  type LinuxToolProviderResolver,
+  type RecordingProviderResolver,
+  withRequestPlatformProviderScope,
+} from './request-platform-providers.ts';
 import {
   emitDiagnostic,
   flushDiagnosticsToSessionFile,
@@ -33,6 +38,11 @@ export type RequestRouterDeps = {
   sessionStore: SessionStore;
   leaseRegistry: LeaseRegistry;
   androidAdbProvider?: AndroidAdbProviderResolver;
+  appleRunnerProvider?: AppleRunnerProviderResolver;
+  appleToolProvider?: AppleToolProviderResolver;
+  linuxToolProvider?: LinuxToolProviderResolver;
+  appLogProvider?: AppLogProviderResolver;
+  recordingProvider?: RecordingProviderResolver;
   deviceInventoryProvider?: DeviceInventoryProvider;
   trackDownloadableArtifact: (opts: {
     artifactPath: string;
@@ -44,8 +54,18 @@ export type RequestRouterDeps = {
 export function createRequestHandler(
   deps: RequestRouterDeps,
 ): (req: DaemonRequest) => Promise<DaemonResponse> {
-  const { logPath, token, androidAdbProvider, deviceInventoryProvider, trackDownloadableArtifact } =
-    deps;
+  const {
+    logPath,
+    token,
+    androidAdbProvider,
+    appleRunnerProvider,
+    appleToolProvider,
+    linuxToolProvider,
+    appLogProvider,
+    recordingProvider,
+    deviceInventoryProvider,
+    trackDownloadableArtifact,
+  } = deps;
   const { sessionStore, leaseRegistry } = deps;
 
   async function handleRequest(req: DaemonRequest): Promise<DaemonResponse> {
@@ -82,15 +102,22 @@ export function createRequestHandler(
               if (locked.type === 'response') return locked.response;
               const lockedScope = locked.scope;
 
-              return await withRequestAndroidAdbScope(
+              return await withRequestPlatformProviderScope(
                 {
                   req: lockedScope.req,
                   existingSession: lockedScope.existingSession,
-                  androidAdbProvider,
+                  providers: {
+                    androidAdbProvider,
+                    appleRunnerProvider,
+                    appleToolProvider,
+                    linuxToolProvider,
+                    appLogProvider,
+                    recordingProvider,
+                  },
                 },
-                async (executor) => {
-                  // The ADB provider is scoped to this single locked request; handlers may re-read
-                  // the session state, but all device-scoped adb calls in this request share it.
+                async (providerScope) => {
+                  // Platform providers are scoped to this single locked request; handlers may
+                  // re-read session state, but all device-scoped calls in this request share them.
                   // Phase 1: Try specialized handler chain
                   const handlerResponse = await runRequestHandlerChain({
                     req: lockedScope.req,
@@ -99,7 +126,7 @@ export function createRequestHandler(
                     sessionStore,
                     leaseRegistry,
                     invoke: handleRequest,
-                    androidAdbExecutor: executor,
+                    androidAdbExecutor: providerScope.androidAdbExecutor,
                     contextFromFlags: lockedScope.handlerContextFromFlags,
                   });
                   if (handlerResponse) return lockedScope.finalize(handlerResponse);

@@ -1,5 +1,5 @@
 import type { AndroidSnapshotBackendMetadata } from './platforms/android/snapshot-types.ts';
-import type { AppsFilter } from './client-types.ts';
+import type { AppsFilter } from './commands/app-inventory-contract.ts';
 import type {
   Point,
   ScreenshotOverlayRef,
@@ -99,6 +99,7 @@ export type BackendKeyboardResult = {
   action?: BackendKeyboardOptions['action'];
   visible?: boolean;
   inputType?: string | null;
+  inputMethodPackage?: string | null;
   type?: string | null;
   wasVisible?: boolean;
   dismissed?: boolean;

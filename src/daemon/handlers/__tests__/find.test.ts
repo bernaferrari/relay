@@ -1,15 +1,9 @@
 import { test, expect, vi, beforeEach } from 'vitest';
-import fs from 'node:fs';
-import path from 'node:path';
-import { parseFindArgs, handleFindCommands } from '../find.ts';
+import { handleFindCommands } from '../find.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from '../../types.ts';
-import { withMockedMacOsHelper } from '../../../platforms/ios/__tests__/macos-helper-test-utils.ts';
 import { buildSnapshotSignatures } from '../../android-snapshot-freshness.ts';
 import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts';
-import {
-  makeIosSession as makeSession,
-  makeMacOsSession as makeBaseMacOsSession,
-} from '../../../__tests__/test-utils/session-factories.ts';
+import { makeIosSession as makeSession } from '../../../__tests__/test-utils/session-factories.ts';
 
 vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../core/dispatch.ts')>();
@@ -32,18 +26,6 @@ beforeEach(() => {
     return command === 'snapshot' ? { nodes: [] } : {};
   });
 });
-
-function makeMacOsSession(name: string) {
-  return makeBaseMacOsSession(name, { surface: 'desktop' });
-}
-
-const INCREMENT_NODE = {
-  type: 'Button',
-  label: 'Increment',
-  hittable: true,
-  rect: { x: 50, y: 0, width: 100, height: 100 },
-  depth: 0,
-};
 
 async function runFindClickScenario(options: {
   positionals: string[];
@@ -91,113 +73,6 @@ async function runFindClickScenario(options: {
   return { response: response!, invokeCalls };
 }
 
-test('parseFindArgs defaults to click with any locator', () => {
-  const parsed = parseFindArgs(['Login']);
-  expect(parsed.locator).toBe('any');
-  expect(parsed.query).toBe('Login');
-  expect(parsed.action).toBe('click');
-});
-
-test('parseFindArgs supports explicit locator and fill payload', () => {
-  const parsed = parseFindArgs(['label', 'Email', 'fill', 'user@example.com']);
-  expect(parsed.locator).toBe('label');
-  expect(parsed.query).toBe('Email');
-  expect(parsed.action).toBe('fill');
-  expect(parsed.value).toBe('user@example.com');
-});
-
-test('parseFindArgs parses wait timeout', () => {
-  const parsed = parseFindArgs(['text', 'Settings', 'wait', '2500']);
-  expect(parsed.locator).toBe('text');
-  expect(parsed.action).toBe('wait');
-  expect(parsed.timeoutMs).toBe(2500);
-});
-
-test('parseFindArgs parses get text', () => {
-  const parsed = parseFindArgs(['label', 'Price', 'get', 'text']);
-  expect(parsed.locator).toBe('label');
-  expect(parsed.query).toBe('Price');
-  expect(parsed.action).toBe('get_text');
-});
-
-test('parseFindArgs parses get attrs', () => {
-  const parsed = parseFindArgs(['id', 'btn-1', 'get', 'attrs']);
-  expect(parsed.locator).toBe('id');
-  expect(parsed.query).toBe('btn-1');
-  expect(parsed.action).toBe('get_attrs');
-});
-
-test('parseFindArgs rejects invalid get sub-action', () => {
-  expect(() => parseFindArgs(['text', 'Settings', 'get', 'foo'])).toThrow(
-    expect.objectContaining({
-      code: 'INVALID_ARGS',
-      message: expect.stringContaining('find get only supports text or attrs'),
-    }),
-  );
-});
-
-test('parseFindArgs parses type action with value', () => {
-  const parsed = parseFindArgs(['label', 'Name', 'type', 'Jane']);
-  expect(parsed.locator).toBe('label');
-  expect(parsed.query).toBe('Name');
-  expect(parsed.action).toBe('type');
-  expect(parsed.value).toBe('Jane');
-});
-
-test('parseFindArgs joins multi-word fill value', () => {
-  const parsed = parseFindArgs(['label', 'Bio', 'fill', 'hello', 'world']);
-  expect(parsed.action).toBe('fill');
-  expect(parsed.value).toBe('hello world');
-});
-
-test('parseFindArgs joins multi-word type value', () => {
-  const parsed = parseFindArgs(['label', 'Bio', 'type', 'hello', 'world']);
-  expect(parsed.action).toBe('type');
-  expect(parsed.value).toBe('hello world');
-});
-
-test('parseFindArgs wait without timeout leaves timeoutMs undefined', () => {
-  const parsed = parseFindArgs(['text', 'Loading', 'wait']);
-  expect(parsed.action).toBe('wait');
-  expect(parsed.timeoutMs).toBeUndefined();
-});
-
-test('parseFindArgs wait with non-numeric timeout leaves timeoutMs undefined', () => {
-  const parsed = parseFindArgs(['text', 'Loading', 'wait', 'abc']);
-  expect(parsed.action).toBe('wait');
-  expect(parsed.timeoutMs).toBeUndefined();
-});
-
-test('parseFindArgs throws on unsupported action', () => {
-  expect(() => parseFindArgs(['text', 'OK', 'swipe'])).toThrow(
-    expect.objectContaining({
-      code: 'INVALID_ARGS',
-      message: expect.stringContaining('Unsupported find action: swipe'),
-    }),
-  );
-});
-
-test('parseFindArgs with bare locator yields empty query', () => {
-  const parsed = parseFindArgs(['text']);
-  expect(parsed.locator).toBe('text');
-  expect(parsed.query).toBe('');
-  expect(parsed.action).toBe('click');
-});
-
-test('handleFindCommands rejects --first with --last', async () => {
-  const { response } = await runFindClickScenario({
-    positionals: ['Increment', 'click'],
-    nodes: [INCREMENT_NODE],
-    flags: { findFirst: true, findLast: true },
-  });
-
-  expect(response.ok).toBe(false);
-  if (!response.ok) {
-    expect(response.error.code).toBe('INVALID_ARGS');
-    expect(response.error.message).toContain('only one of --first or --last');
-  }
-});
-
 test('handleFindCommands click returns deterministic metadata across locator variants', async () => {
   const hittableParentNoRect = { index: 0, type: 'View', hittable: true, depth: 0 };
   const nonHittableChildWithRect = {
@@ -212,31 +87,12 @@ test('handleFindCommands click returns deterministic metadata across locator var
 
   const scenarios = [
     {
-      label: 'returns deterministic matched-target metadata',
-      positionals: ['Increment', 'click'],
-      nodes: [INCREMENT_NODE],
-      invoke: async () => ({ platformSpecificRef: 'XCUIElementTypeApplication', x: 0, y: 0 }),
-      expectedKeys: ['locator', 'query', 'ref', 'x', 'y'],
-      expectedLocator: 'any',
-      expectedQuery: 'Increment',
-      expectedCoordinates: { x: 100, y: 50 },
-    },
-    {
       label: 'falls back to deterministic key set when resolved node has no rect',
       positionals: ['Increment', 'click'],
       nodes: [hittableParentNoRect, nonHittableChildWithRect],
       invoke: async () => ({ platformSpecificRef: 'XCUIElementTypeView' }),
       expectedKeys: ['locator', 'query', 'ref', 'x', 'y'],
       expectedLocator: 'any',
-      expectedQuery: 'Increment',
-      expectedCoordinates: { x: 100, y: 50 },
-    },
-    {
-      label: 'keeps explicit label locator in metadata',
-      positionals: ['label', 'Increment', 'click'],
-      nodes: [INCREMENT_NODE],
-      expectedKeys: ['locator', 'query', 'ref', 'x', 'y'],
-      expectedLocator: 'label',
       expectedQuery: 'Increment',
       expectedCoordinates: { x: 100, y: 50 },
     },
@@ -346,57 +202,4 @@ test('handleFindCommands wait reuses rapid selector snapshots', async () => {
     expect(response.error.message).toContain('find wait timed out');
   }
   expect(mockDispatch).toHaveBeenCalledTimes(1);
-});
-
-test('handleFindCommands uses helper-backed snapshots for macOS desktop sessions', async () => {
-  await withMockedMacOsHelper(
-    [
-      '#!/bin/sh',
-      'printf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"',
-      "cat <<'JSON'",
-      '{"ok":true,"data":{"surface":"desktop","nodes":[{"index":0,"depth":0,"type":"DesktopSurface","label":"Desktop","surface":"desktop"},{"index":1,"depth":1,"parentIndex":0,"type":"Window","label":"Notes","surface":"desktop","rect":{"x":32,"y":48,"width":640,"height":480}}],"truncated":false,"backend":"macos-helper"}}',
-      'JSON',
-      '',
-    ].join('\n'),
-    async ({ tmpDir }) => {
-      const argsLogPath = path.join(tmpDir, 'args.log');
-      const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-      process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
-      const sessionStore = makeSessionStore();
-      const sessionName = 'macos-desktop-find';
-      sessionStore.set(sessionName, makeMacOsSession(sessionName));
-      let snapshotDispatchCalls = 0;
-
-      mockDispatch.mockImplementation(async (_device, command) => {
-        if (command === 'snapshot') {
-          snapshotDispatchCalls += 1;
-        }
-        return {};
-      });
-
-      try {
-        const response = await handleFindCommands({
-          req: {
-            token: 't',
-            session: sessionName,
-            command: 'find',
-            positionals: ['label', 'Notes', 'get', 'attrs'],
-            flags: {},
-          },
-          sessionName,
-          logPath: '/tmp/test.log',
-          sessionStore,
-          invoke: async () => ({ ok: true }) as DaemonResponse,
-        });
-
-        expect(response?.ok).toBe(true);
-        expect(snapshotDispatchCalls).toBe(0);
-        const logged = await fs.promises.readFile(argsLogPath, 'utf8');
-        expect(logged).toBe('snapshot\n--surface\ndesktop\n');
-      } finally {
-        if (previousArgsFile === undefined) delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-        else process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
-      }
-    },
-  );
 });

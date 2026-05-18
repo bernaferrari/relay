@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { ANDROID_EMULATOR } from '../../../__tests__/test-utils/index.ts';
 import { AppError } from '../../../utils/errors.ts';
-import { fillAndroid, typeAndroid } from '../index.ts';
+import { fillAndroid, typeAndroid } from '../input-actions.ts';
 import { withAndroidAdbProvider, type AndroidAdbExecutor } from '../adb-executor.ts';
 import {
   androidFillFailureDetails,
@@ -47,6 +47,40 @@ test('fillAndroid reports when the IME captures input instead of the app field',
     calls.some((args) => args.join('\n') === 'shell\ninput\nkeyevent\nKEYCODE_PASTE'),
     false,
   );
+  assert.equal(calls.filter(isTextInput).length, 1);
+  assert.equal(calls.filter((args) => args[0] === 'exec-out').length, 1);
+});
+
+test('fillAndroid detects unknown active IME package during verification', async () => {
+  const calls: string[][] = [];
+  let imeText = '';
+  await withFillAdb(
+    async (args) => {
+      calls.push(args);
+      if (args.join('\n') === 'shell\ndumpsys\ninput_method') {
+        return adbResult(vendorImeWithAppFocusInputMethodDump());
+      }
+      if (isTextInput(args)) imeText = args[3] ?? '';
+      return adbResult(args[0] === 'exec-out' ? vendorImeCaptureHierarchy(imeText) : '');
+    },
+    async () => {
+      await assert.rejects(
+        () => fillAndroid(ANDROID_EMULATOR, 10, 10, 'chips'),
+        (error: unknown) => {
+          assert.ok(error instanceof AppError);
+          assert.equal(error.code, 'COMMAND_FAILED');
+          assert.equal(error.details?.failureReason, 'ime_capture');
+          assert.equal(inputDetails(error, 'actualInput')?.packageName, 'com.vendor.keyboard');
+          assert.equal(
+            inputDetails(error, 'targetInput')?.resourceId,
+            'com.example.shop:id/search',
+          );
+          return true;
+        },
+      );
+    },
+  );
+
   assert.equal(calls.filter(isTextInput).length, 1);
   assert.equal(calls.filter((args) => args[0] === 'exec-out').length, 1);
 });
@@ -242,6 +276,35 @@ test('verifyAndroidFilledTextInHierarchy rejects near-complete prefixes', () => 
   assert.equal(verification.actual, 'filed the expens');
 });
 
+test('verifyAndroidFilledTextInHierarchy does not treat inputmethod substring as IME ownership', () => {
+  const verification = verifyAndroidFilledTextInHierarchy(
+    appPackageWithInputMethodSubstringHierarchy(),
+    10,
+    10,
+    'chips',
+  );
+
+  assert.equal(verification.ok, true);
+  assert.notEqual(verification.reason, 'ime_capture');
+  assert.equal(verification.actualInput?.packageName, 'com.example.inputmethod.demo');
+  assert.equal(verification.actualInput?.inputMethodOwned, false);
+});
+
+test('verifyAndroidFilledTextInHierarchy treats active unknown IME package as IME ownership', () => {
+  const verification = verifyAndroidFilledTextInHierarchy(
+    vendorImeCaptureHierarchy('chips'),
+    10,
+    10,
+    'chips',
+    { activeInputMethodPackage: 'com.vendor.keyboard' },
+  );
+
+  assert.equal(verification.ok, false);
+  assert.equal(verification.reason, 'ime_capture');
+  assert.equal(verification.actualInput?.packageName, 'com.vendor.keyboard');
+  assert.equal(verification.actualInput?.inputMethodOwned, true);
+});
+
 test('verifyAndroidFilledTextInHierarchy rejects reverse sentence autocapitalization mismatch', () => {
   const verification = verifyAndroidFilledTextInHierarchy(
     androidInputXml({ text: 'john' }),
@@ -331,6 +394,16 @@ function imeOwnedInputMethodDump(): string {
   ].join('\n');
 }
 
+function vendorImeWithAppFocusInputMethodDump(): string {
+  return [
+    'mInputShown=true',
+    'mCurMethodId=com.vendor.keyboard/.VendorIme',
+    'packageName=com.example.shop',
+    'resourceId=com.example.shop:id/search',
+    'inputType=0x1',
+  ].join('\n');
+}
+
 function assertMaskedPasswordFailure(
   message: string,
   details: Record<string, unknown>,
@@ -360,6 +433,13 @@ function imeCaptureHierarchy(imeText: string): string {
 </hierarchy>`;
 }
 
+function vendorImeCaptureHierarchy(imeText: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?><hierarchy>
+<node package="com.example.shop" class="android.widget.EditText" text="Search Products" resource-id="com.example.shop:id/search" focused="false" bounds="[0,0][300,100]"/>
+<node package="com.vendor.keyboard" class="android.widget.EditText" text="${imeText}" resource-id="com.vendor.keyboard:id/composing" focused="true" bounds="[0,700][300,800]"/>
+</hierarchy>`;
+}
+
 function passwordHierarchy(mask: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?><hierarchy><node package="com.example" class="android.widget.EditText" text="${mask}" password="true" focused="true" bounds="[0,0][200,100]"/></hierarchy>`;
 }
@@ -372,6 +452,13 @@ function focusedEditHierarchy(): string {
   return `<?xml version="1.0" encoding="UTF-8"?><hierarchy>
 <node package="com.example" class="android.widget.TextView" text="point fallback" focused="false" bounds="[0,0][200,100]"/>
 <node package="com.example" class="android.widget.EditText" text="focused value" focused="true" bounds="[300,300][500,400]"/>
+</hierarchy>`;
+}
+
+function appPackageWithInputMethodSubstringHierarchy(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?><hierarchy>
+<node package="com.example.shop" class="android.widget.EditText" text="Search Products" resource-id="com.example.shop:id/search" focused="false" bounds="[0,0][300,100]"/>
+<node package="com.example.inputmethod.demo" class="android.widget.EditText" text="chips" resource-id="com.example.inputmethod.demo:id/search" focused="true" bounds="[0,700][300,800]"/>
 </hierarchy>`;
 }
 

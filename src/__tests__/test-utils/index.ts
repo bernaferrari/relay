@@ -16,3 +16,11 @@ export {
 } from './session-factories.ts';
 
 export { makeSnapshotState } from './snapshot-builders.ts';
+
+export {
+  closeLoopbackServer,
+  listenOnLoopback,
+  skipWhenLoopbackUnavailable,
+  supportsLoopbackBind,
+  waitForHttpOk,
+} from './loopback.ts';

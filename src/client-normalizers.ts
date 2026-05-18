@@ -1,4 +1,5 @@
 import type { CommandFlags } from './core/dispatch.ts';
+import { screenshotFlagsFromOptions } from './commands/capture-screenshot-options.ts';
 import type { DaemonRequest, SessionRuntimeHints } from './daemon/types.ts';
 import { AppError } from './utils/errors.ts';
 import type { ScreenshotOverlayRef, SnapshotNode } from './utils/snapshot.ts';
@@ -87,11 +88,7 @@ export function normalizeMaterializationReleaseResult(
 }
 
 export function normalizeDevice(value: unknown): AgentDeviceDevice {
-  const record = asRecord(value);
-  const platform = readRequiredPlatform(record, 'platform');
-  const id = readRequiredString(record, 'id');
-  const name = readRequiredString(record, 'name');
-  const target = readDeviceTarget(record, 'target');
+  const { record, platform, id, name, target } = readClientDeviceIdentity(value, 'name');
   return {
     platform,
     target,
@@ -100,17 +97,12 @@ export function normalizeDevice(value: unknown): AgentDeviceDevice {
     name,
     booted: typeof record.booted === 'boolean' ? record.booted : undefined,
     identifiers: buildDeviceIdentifiers(platform, id, name),
-    ios: platform === 'ios' ? { udid: id } : undefined,
-    android: platform === 'android' ? { serial: id } : undefined,
+    ...buildClientDevicePlatformFields(platform, id),
   };
 }
 
 export function normalizeSession(value: unknown): AgentDeviceSession {
-  const record = asRecord(value);
-  const platform = readRequiredPlatform(record, 'platform');
-  const id = readRequiredString(record, 'id');
-  const name = readRequiredString(record, 'name');
-  const target = readDeviceTarget(record, 'target');
+  const { record, platform, id, name, target } = readClientDeviceIdentity(value, 'name');
   const deviceName = readRequiredString(record, 'device');
   const identifiers = {
     session: name,
@@ -125,16 +117,41 @@ export function normalizeSession(value: unknown): AgentDeviceSession {
       id,
       name: deviceName,
       identifiers,
-      ios:
-        platform === 'ios'
-          ? {
-              udid: id,
-              simulatorSetPath: readNullableString(record, 'ios_simulator_device_set'),
-            }
-          : undefined,
-      android: platform === 'android' ? { serial: id } : undefined,
+      ...buildClientDevicePlatformFields(
+        platform,
+        id,
+        readNullableString(record, 'ios_simulator_device_set'),
+      ),
     },
     identifiers,
+  };
+}
+
+function readClientDeviceIdentity(value: unknown, nameField: string) {
+  const record = asRecord(value);
+  return {
+    record,
+    platform: readRequiredPlatform(record, 'platform'),
+    id: readRequiredString(record, 'id'),
+    name: readRequiredString(record, nameField),
+    target: readDeviceTarget(record, 'target'),
+  };
+}
+
+function buildClientDevicePlatformFields(
+  platform: AgentDeviceDevice['platform'],
+  id: string,
+  simulatorSetPath?: string | null,
+): Pick<AgentDeviceSessionDevice, 'ios' | 'android'> {
+  return {
+    ios:
+      platform === 'ios'
+        ? {
+            udid: id,
+            ...(simulatorSetPath !== undefined ? { simulatorSetPath } : {}),
+          }
+        : undefined,
+    android: platform === 'android' ? { serial: id } : undefined,
   };
 }
 
@@ -160,7 +177,14 @@ export function normalizeOpenDevice(
   const platform = value.platform;
   const id = readOptionalString(value, 'id');
   const name = readOptionalString(value, 'device');
-  if ((platform !== 'ios' && platform !== 'macos' && platform !== 'android') || !id || !name) {
+  if (
+    (platform !== 'ios' &&
+      platform !== 'macos' &&
+      platform !== 'android' &&
+      platform !== 'linux') ||
+    !id ||
+    !name
+  ) {
     return undefined;
   }
   const target = readDeviceTarget(value, 'target');
@@ -266,10 +290,7 @@ export function buildFlags(options: InternalRequestOptions): CommandFlags {
     snapshotScope: options.scope,
     snapshotRaw: options.raw,
     snapshotForceFull: options.forceFull,
-    screenshotFullscreen: options.screenshotFullscreen,
-    screenshotMaxSize: options.screenshotMaxSize,
-    screenshotNoStabilize: options.screenshotNoStabilize,
-    overlayRefs: options.overlayRefs,
+    ...screenshotFlagsFromOptions(options),
     appsFilter: options.appsFilter,
     out: options.out,
     count: options.count,

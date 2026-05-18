@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { AppError } from '../../utils/errors.ts';
 import { sleep } from '../../utils/timeouts.ts';
-import { runCmd, runCmdStreaming, type ExecBackgroundResult } from '../../utils/exec.ts';
+import { runCmdStreaming, type ExecBackgroundResult } from '../../utils/exec.ts';
 import { resolveIosSimulatorDeviceSetPath } from '../../utils/device-isolation.ts';
 import { isProcessAlive, readProcessStartTime } from '../../utils/process-identity.ts';
 import { isEnvTruthy } from '../../utils/retry.ts';
@@ -13,6 +13,7 @@ import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { findProjectRoot } from '../../utils/version.ts';
 import { resolveSigningFailureHint } from './runner-contract.ts';
 import { logChunk } from './runner-transport.ts';
+import { runAppleToolCommand } from './tool-provider.ts';
 import {
   repairMacOsRunnerProductsIfNeeded,
   isExpectedRunnerRepairFailure,
@@ -429,7 +430,7 @@ export async function ensureXctestrun(
       assertSafeDerivedCleanup(derived);
       cleanRunnerDerivedArtifacts(derived);
     }
-    const existing = evaluateExistingXctestrun({
+    const existing = await evaluateExistingXctestrun({
       derived,
       projectRoot,
       findXctestrun: (root) => findXctestrun(root, device),
@@ -486,7 +487,7 @@ export async function ensureXctestrun(
     if (!built) {
       throw new AppError('COMMAND_FAILED', 'Failed to locate .xctestrun after build');
     }
-    const builtProductPaths = resolveExistingXctestrunProductPaths(built);
+    const builtProductPaths = await resolveExistingXctestrunProductPaths(built);
     if (!builtProductPaths) {
       throw new AppError('COMMAND_FAILED', 'Runner build is missing expected products', {
         xctestrunPath: built,
@@ -679,9 +680,13 @@ export async function prepareXctestrunWithEnv(
 }
 
 async function readXctestrunPlist(xctestrunPath: string): Promise<XctestrunPlist> {
-  const jsonResult = await runCmd('plutil', ['-convert', 'json', '-o', '-', xctestrunPath], {
-    allowFailure: true,
-  });
+  const jsonResult = await runAppleToolCommand(
+    'plutil',
+    ['-convert', 'json', '-o', '-', xctestrunPath],
+    {
+      allowFailure: true,
+    },
+  );
   if (jsonResult.exitCode !== 0 || !jsonResult.stdout.trim()) {
     throw new AppError('COMMAND_FAILED', 'Failed to read xctestrun plist', {
       xctestrunPath,
@@ -709,7 +714,7 @@ async function writeXctestrunPlist(
   tmpXctestrunPath: string,
 ): Promise<void> {
   fs.writeFileSync(tmpJsonPath, JSON.stringify(parsed, null, 2));
-  const plistResult = await runCmd(
+  const plistResult = await runAppleToolCommand(
     'plutil',
     ['-convert', 'xml1', '-o', tmpXctestrunPath, tmpJsonPath],
     {
@@ -1001,18 +1006,18 @@ type ExistingXctestrunState =
       productPaths: string[];
     };
 
-function evaluateExistingXctestrun(options: {
+async function evaluateExistingXctestrun(options: {
   derived: string;
   projectRoot: string;
   findXctestrun: (root: string) => string | null;
   xctestrunReferencesProjectRoot: (xctestrunPath: string, projectRoot: string) => boolean;
-  resolveExistingXctestrunProductPaths: (xctestrunPath: string) => string[] | null;
-}): ExistingXctestrunState {
+  resolveExistingXctestrunProductPaths: (xctestrunPath: string) => Promise<string[] | null>;
+}): Promise<ExistingXctestrunState> {
   const xctestrunPath = options.findXctestrun(options.derived);
   if (!xctestrunPath) {
     return { reason: 'missing_xctestrun', xctestrunPath: null };
   }
-  const productPaths = options.resolveExistingXctestrunProductPaths(xctestrunPath);
+  const productPaths = await options.resolveExistingXctestrunProductPaths(xctestrunPath);
   if (!productPaths) {
     return { reason: 'missing_products', xctestrunPath, productPaths: [] };
   }

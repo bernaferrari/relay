@@ -3,8 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { DeviceInfo } from '../../utils/device.ts';
 import { AppError } from '../../utils/errors.ts';
-import { runCmd } from '../../utils/exec.ts';
-import type { AppsFilter } from '../../client-types.ts';
+import type { AppsFilter } from '../../commands/app-inventory-contract.ts';
 import { requireLocationCoordinates } from '../../utils/location-coordinates.ts';
 import { resolveIosSimulatorDeviceSetPath } from '../../utils/device-isolation.ts';
 import { Deadline, retryWithPolicy } from '../../utils/retry.ts';
@@ -18,6 +17,10 @@ import {
 import { parseAppearanceAction } from '../appearance.ts';
 import { parseSettingState } from '../setting-state.ts';
 import { createAppResolutionCache, type AppResolutionCacheScope } from '../app-resolution-cache.ts';
+import {
+  summarizeCommandAttemptFailures,
+  type CommandAttemptFailure,
+} from '../command-attempts.ts';
 
 import { IOS_APP_LAUNCH_TIMEOUT_MS, IOS_DEVICECTL_TIMEOUT_MS } from './config.ts';
 import {
@@ -35,6 +38,7 @@ import {
 } from './launch-diagnostics.ts';
 import { ensureBootedSimulator, getSimulatorState, requireSimulatorDevice } from './simulator.ts';
 import { buildSimctlArgsForDevice } from './simctl.ts';
+import { runAppleToolCommand, runXcrun } from './tool-provider.ts';
 import { prepareIosInstallArtifact } from './install-artifact.ts';
 import { filterAppleAppsByBundlePrefix } from './app-filter.ts';
 import {
@@ -69,8 +73,8 @@ function simctlArgs(device: DeviceInfo, args: string[]): string[] {
   return buildSimctlArgsForDevice(device, args);
 }
 
-function runSimctl(device: DeviceInfo, args: string[], options?: Parameters<typeof runCmd>[2]) {
-  return runCmd('xcrun', simctlArgs(device, args), options);
+function runSimctl(device: DeviceInfo, args: string[], options?: Parameters<typeof runXcrun>[1]) {
+  return runXcrun(simctlArgs(device, args), options);
 }
 
 function isMissingAppErrorOutput(output: string): boolean {
@@ -191,7 +195,7 @@ export async function closeIosApp(device: DeviceInfo, app: string): Promise<void
   if (device.kind === 'simulator') {
     await ensureBootedSimulator(device);
     const terminateArgs = simctlArgs(device, ['terminate', device.id, bundleId]);
-    const result = await runCmd('xcrun', terminateArgs, {
+    const result = await runXcrun(terminateArgs, {
       allowFailure: true,
     });
     if (result.exitCode !== 0) {
@@ -222,7 +226,7 @@ export async function uninstallIosApp(
     const bundleId = await resolveIosApp(device, app);
     if (device.kind !== 'simulator') {
       const args = ['devicectl', 'device', 'uninstall', 'app', '--device', device.id, bundleId];
-      const result = await runCmd('xcrun', args, {
+      const result = await runXcrun(args, {
         allowFailure: true,
         timeoutMs: IOS_DEVICECTL_TIMEOUT_MS,
       });
@@ -510,7 +514,7 @@ export async function listSimulatorApps(device: DeviceInfo): Promise<IosAppInfo[
 
   if (!parsed && trimmed.startsWith('{')) {
     try {
-      const converted = await runCmd('plutil', ['-convert', 'json', '-o', '-', '-'], {
+      const converted = await runAppleToolCommand('plutil', ['-convert', 'json', '-o', '-', '-'], {
         allowFailure: true,
         stdin: trimmed,
       });
@@ -774,11 +778,11 @@ async function runIosBiometricSimctlCommand(
   },
 ): Promise<void> {
   const attempts = biometricCommandAttempts(device.id, action, options.modalityAliases);
-  const failures: Array<{ args: string[]; stderr: string; stdout: string; exitCode: number }> = [];
+  const failures: CommandAttemptFailure[] = [];
 
   for (const args of attempts) {
     const commandArgs = simctlArgs(device, args);
-    const result = await runCmd('xcrun', commandArgs, { allowFailure: true });
+    const result = await runXcrun(commandArgs, { allowFailure: true });
     if (result.exitCode === 0) return;
     failures.push({
       args: commandArgs,
@@ -788,11 +792,7 @@ async function runIosBiometricSimctlCommand(
     });
   }
 
-  const attemptsPayload = failures.map((failure) => ({
-    args: failure.args.join(' '),
-    exitCode: failure.exitCode,
-    stderr: failure.stderr.slice(0, 400),
-  }));
+  const attemptsPayload = summarizeCommandAttemptFailures(failures);
   const capabilityMissing =
     failures.length > 0 &&
     failures.every((failure) => isIosBiometricCapabilityMissing(failure.stdout, failure.stderr));
@@ -880,7 +880,7 @@ async function launchIosSimulatorApp(device: DeviceInfo, bundleId: string): Prom
         }
 
         const launchArgs = simctlArgs(device, ['launch', device.id, bundleId]);
-        const result = await runCmd('xcrun', launchArgs, {
+        const result = await runXcrun(launchArgs, {
           allowFailure: true,
         });
         if (result.exitCode === 0) return;

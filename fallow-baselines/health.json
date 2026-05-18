@@ -1,5 +1,16 @@
 {
   "finding_counts": {
+    "scripts/integration-progress.mjs": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
     "src/__tests__/cli-config.test.ts": {
       "crap_high": {
         "count": 1
@@ -95,9 +106,6 @@
       "complexity_high": {
         "count": 1
       },
-      "crap_high": {
-        "count": 1
-      },
       "crap_moderate": {
         "count": 3
       }
@@ -140,10 +148,7 @@
       }
     },
     "src/commands/capture-snapshot.ts": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
+      "crap_moderate": {
         "count": 1
       }
     },
@@ -222,11 +227,6 @@
         "count": 4
       }
     },
-    "src/daemon/__tests__/http-server.test.ts": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
     "src/daemon/__tests__/network-log.test.ts": {
       "crap_moderate": {
         "count": 1
@@ -245,11 +245,6 @@
         "count": 1
       }
     },
-    "src/daemon/context.ts": {
-      "complexity_moderate": {
-        "count": 1
-      }
-    },
     "src/daemon/device-ready.ts": {
       "complexity_critical": {
         "count": 1
@@ -263,16 +258,10 @@
         "count": 1
       },
       "crap_moderate": {
-        "count": 6
+        "count": 3
       }
     },
     "src/daemon/handlers/__tests__/record-trace.test.ts": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
       "crap_moderate": {
         "count": 1
       }
@@ -295,33 +284,17 @@
         "count": 1
       }
     },
-    "src/daemon/handlers/__tests__/session-reinstall.test.ts": {
-      "crap_moderate": {
-        "count": 2
-      }
-    },
     "src/daemon/handlers/__tests__/session-replay-vars.test.ts": {
       "crap_moderate": {
         "count": 1
       }
     },
     "src/daemon/handlers/__tests__/session.test.ts": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
       "crap_high": {
-        "count": 5
+        "count": 4
       },
       "crap_moderate": {
-        "count": 12
-      }
-    },
-    "src/daemon/handlers/__tests__/snapshot-handler.test.ts": {
-      "crap_moderate": {
-        "count": 2
+        "count": 7
       }
     },
     "src/daemon/handlers/find.ts": {
@@ -332,14 +305,6 @@
         "count": 2
       },
       "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/daemon/handlers/install-source.ts": {
-      "complexity_high": {
-        "count": 1
-      },
-      "crap_high": {
         "count": 1
       }
     },
@@ -380,10 +345,7 @@
       }
     },
     "src/daemon/handlers/session-inventory.ts": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
+      "complexity_moderate": {
         "count": 1
       }
     },
@@ -429,7 +391,7 @@
         "count": 1
       },
       "crap_high": {
-        "count": 1
+        "count": 2
       },
       "crap_moderate": {
         "count": 1
@@ -577,14 +539,6 @@
         "count": 1
       }
     },
-    "src/daemon/server-lifecycle.ts": {
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 3
-      }
-    },
     "src/daemon/session-selector.ts": {
       "complexity_moderate": {
         "count": 1
@@ -603,11 +557,6 @@
     "src/platforms/android/device-input-state.ts": {
       "crap_moderate": {
         "count": 2
-      }
-    },
-    "src/platforms/android/input-actions.ts": {
-      "complexity_moderate": {
-        "count": 1
       }
     },
     "src/platforms/android/manifest.ts": {
@@ -731,14 +680,11 @@
         "count": 1
       },
       "crap_moderate": {
-        "count": 3
+        "count": 2
       }
     },
     "src/platforms/ios/screenshot.ts": {
       "complexity_moderate": {
-        "count": 1
-      },
-      "crap_moderate": {
         "count": 1
       }
     },
@@ -789,7 +735,7 @@
       "complexity_critical": {
         "count": 2
       },
-      "complexity_high": {
+      "complexity_moderate": {
         "count": 1
       },
       "crap_critical": {
@@ -906,15 +852,51 @@
         "count": 2
       }
     },
+    "test/integration/provider-scenarios/android-lifecycle.test.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "test/integration/provider-scenarios/android-world.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "test/integration/provider-scenarios/daemon-http-server.test.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "test/integration/provider-scenarios/ios-record-trace.test.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "test/integration/provider-scenarios/macos-world.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "test/integration/provider-scenarios/remote-daemon-client.test.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
     "test/integration/recording-overlay.test.ts": {
       "crap_moderate": {
         "count": 1
       }
     },
     "test/integration/smoke-daemon-http.test.ts": {
-      "crap_critical": {
-        "count": 2
-      },
       "crap_moderate": {
         "count": 1
       }
@@ -934,56 +916,51 @@
       "crap_moderate": {
         "count": 4
       }
-    },
-    "test/scripts/metro-prepare-packaged-smoke.mjs": {
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 1
-      }
     }
   },
   "runtime_coverage_findings": [],
   "target_keys": [
     "src/daemon/handlers/snapshot-capture.ts:high impact",
     "src/daemon/handlers/session-device-utils.ts:high impact",
-    "src/utils/process-identity.ts:high impact",
     "src/daemon/handlers/session.ts:complexity",
+    "src/daemon/handlers/session-replay-script.ts:complexity",
     "src/client-shared.ts:high impact",
-    "src/daemon/context.ts:high impact",
+    "src/daemon/config.ts:high impact",
+    "src/commands/selector-read-utils.ts:high impact",
     "src/daemon/handlers/session-replay-heal.ts:complexity",
     "src/cli/commands/connection-runtime.ts:complexity",
-    "src/daemon/handlers/session-replay-script.ts:complexity",
-    "src/commands/selector-read-utils.ts:high impact",
     "src/daemon/android-snapshot-freshness.ts:high impact",
-    "src/daemon/config.ts:high impact",
-    "src/daemon/handlers/session-open-target.ts:high impact",
-    "src/daemon/handlers/snapshot-alert.ts:complexity",
+    "src/daemon/context.ts:high impact",
+    "src/daemon/handlers/session-replay-runtime.ts:high impact",
     "src/daemon/script-utils.ts:high impact",
     "src/platforms/boot-diagnostics.ts:complexity",
-    "src/daemon/handlers/session-inventory.ts:complexity",
+    "src/daemon/handlers/session-open-target.ts:high impact",
+    "src/daemon/handlers/snapshot-alert.ts:complexity",
     "src/utils/success-text.ts:high impact",
     "src/cli/commands/output.ts:untested risk",
-    "src/daemon/handlers/install-source.ts:complexity",
     "src/utils/snapshot-processing.ts:high impact",
-    "src/daemon/handlers/session-state.ts:complexity",
-    "src/daemon/handlers/session-open.ts:complexity",
-    "src/utils/snapshot-lines.ts:high impact",
+    "src/utils/process-identity.ts:high impact",
     "src/utils/output.ts:high impact",
+    "src/utils/snapshot-lines.ts:high impact",
     "src/platforms/ios/xml.ts:high impact",
-    "src/daemon/request-cancel.ts:high impact",
+    "src/daemon/handlers/session-state.ts:complexity",
+    "src/platforms/linux/snapshot.ts:high impact",
+    "src/daemon/handlers/session-open.ts:complexity",
     "src/utils/args.ts:high impact",
+    "src/daemon/request-cancel.ts:high impact",
     "src/cli.ts:complexity",
     "src/client-metro.ts:complexity",
-    "src/utils/device.ts:high impact",
-    "src/daemon/app-log-process.ts:high impact",
+    "src/utils/parsing.ts:high impact",
     "src/utils/selector-build.ts:high impact",
+    "src/daemon/app-log-process.ts:high impact",
+    "src/utils/device.ts:high impact",
     "src/utils/text-surface.ts:high impact",
     "src/cli-test.ts:untested risk",
+    "src/platforms/android/app-parsers.ts:high impact",
     "src/utils/keyed-lock.ts:high impact",
     "src/core/batch.ts:complexity",
     "src/daemon/app-log-stream.ts:high impact",
+    "src/__tests__/test-utils/loopback.ts:high impact",
     "src/platforms/android/sdk.ts:high impact",
     "src/utils/source-value.ts:high impact",
     "src/utils/screenshot-diff-regions.ts:complexity",

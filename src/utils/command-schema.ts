@@ -9,104 +9,104 @@ import {
   SELECTOR_SNAPSHOT_FLAGS,
 } from '../commands/selectors-definition.ts';
 import { SESSION_LIFECYCLE_COMMAND_SCHEMAS } from '../commands/session-lifecycle/definition.ts';
+import {
+  SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS,
+  type ScreenshotRequestFlags,
+} from '../commands/capture-screenshot-options.ts';
 
-export type CliFlags = RemoteConfigMetroOptions & {
-  json: boolean;
-  config?: string;
-  remoteConfig?: string;
-  stateDir?: string;
-  daemonBaseUrl?: string;
-  daemonAuthToken?: string;
-  daemonTransport?: 'auto' | 'socket' | 'http';
-  daemonServerMode?: 'socket' | 'http' | 'dual';
-  tenant?: string;
-  sessionIsolation?: 'none' | 'tenant';
-  runId?: string;
-  leaseId?: string;
-  leaseBackend?: 'ios-simulator' | 'ios-instance' | 'android-instance';
-  force?: boolean;
-  noLogin?: boolean;
-  sessionLock?: 'reject' | 'strip';
-  sessionLocked?: boolean;
-  sessionLockConflicts?: 'reject' | 'strip';
-  platform?: 'ios' | 'macos' | 'android' | 'linux' | 'apple';
-  target?: 'mobile' | 'tv' | 'desktop';
-  device?: string;
-  udid?: string;
-  serial?: string;
-  iosSimulatorDeviceSet?: string;
-  androidDeviceAllowlist?: string;
-  out?: string;
-  session?: string;
-  metroHost?: string;
-  metroPort?: number;
-  bundleUrl?: string;
-  launchUrl?: string;
-  verbose?: boolean;
-  snapshotInteractiveOnly?: boolean;
-  snapshotDiff?: boolean;
-  snapshotCompact?: boolean;
-  snapshotDepth?: number;
-  snapshotScope?: string;
-  snapshotRaw?: boolean;
-  snapshotForceFull?: boolean;
-  networkInclude?: 'summary' | 'headers' | 'body' | 'all';
-  overlayRefs?: boolean;
-  screenshotFullscreen?: boolean;
-  screenshotMaxSize?: number;
-  screenshotNoStabilize?: boolean;
-  baseline?: string;
-  threshold?: string;
-  appsFilter?: 'user-installed' | 'all';
-  count?: number;
-  fps?: number;
-  quality?: number;
-  hideTouches?: boolean;
-  intervalMs?: number;
-  delayMs?: number;
-  holdMs?: number;
-  jitterPx?: number;
-  pixels?: number;
-  doubleTap?: boolean;
-  clickButton?: 'primary' | 'secondary' | 'middle';
-  backMode?: 'in-app' | 'system';
-  pauseMs?: number;
-  pattern?: 'one-way' | 'ping-pong';
-  activity?: string;
-  header?: string[];
-  githubActionsArtifact?: string;
-  installSource?: DaemonInstallSource;
-  saveScript?: boolean | string;
-  shutdown?: boolean;
-  relaunch?: boolean;
-  surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
-  headless?: boolean;
-  restart?: boolean;
-  noRecord?: boolean;
-  retainPaths?: boolean;
-  retentionMs?: number;
-  replayUpdate?: boolean;
-  replayEnv?: string[];
-  replayShellEnv?: Record<string, string>;
-  failFast?: boolean;
-  timeoutMs?: number;
-  retries?: number;
-  artifactsDir?: string;
-  reportJunit?: string;
-  steps?: string;
-  stepsFile?: string;
-  findFirst?: boolean;
-  findLast?: boolean;
-  batchOnError?: 'stop';
-  batchMaxSteps?: number;
-  batchSteps?: Array<{
-    command: string;
-    positionals?: string[];
-    flags?: Record<string, unknown>;
-  }>;
-  help: boolean;
-  version: boolean;
-};
+export type CliFlags = RemoteConfigMetroOptions &
+  ScreenshotRequestFlags & {
+    json: boolean;
+    config?: string;
+    remoteConfig?: string;
+    stateDir?: string;
+    daemonBaseUrl?: string;
+    daemonAuthToken?: string;
+    daemonTransport?: 'auto' | 'socket' | 'http';
+    daemonServerMode?: 'socket' | 'http' | 'dual';
+    tenant?: string;
+    sessionIsolation?: 'none' | 'tenant';
+    runId?: string;
+    leaseId?: string;
+    leaseBackend?: 'ios-simulator' | 'ios-instance' | 'android-instance';
+    force?: boolean;
+    noLogin?: boolean;
+    sessionLock?: 'reject' | 'strip';
+    sessionLocked?: boolean;
+    sessionLockConflicts?: 'reject' | 'strip';
+    platform?: 'ios' | 'macos' | 'android' | 'linux' | 'apple';
+    target?: 'mobile' | 'tv' | 'desktop';
+    device?: string;
+    udid?: string;
+    serial?: string;
+    iosSimulatorDeviceSet?: string;
+    androidDeviceAllowlist?: string;
+    session?: string;
+    metroHost?: string;
+    metroPort?: number;
+    bundleUrl?: string;
+    launchUrl?: string;
+    verbose?: boolean;
+    snapshotInteractiveOnly?: boolean;
+    snapshotDiff?: boolean;
+    snapshotCompact?: boolean;
+    snapshotDepth?: number;
+    snapshotScope?: string;
+    snapshotRaw?: boolean;
+    snapshotForceFull?: boolean;
+    networkInclude?: 'summary' | 'headers' | 'body' | 'all';
+    baseline?: string;
+    threshold?: string;
+    appsFilter?: 'user-installed' | 'all';
+    count?: number;
+    fps?: number;
+    quality?: number;
+    hideTouches?: boolean;
+    intervalMs?: number;
+    delayMs?: number;
+    holdMs?: number;
+    jitterPx?: number;
+    pixels?: number;
+    doubleTap?: boolean;
+    clickButton?: 'primary' | 'secondary' | 'middle';
+    backMode?: 'in-app' | 'system';
+    pauseMs?: number;
+    pattern?: 'one-way' | 'ping-pong';
+    activity?: string;
+    header?: string[];
+    githubActionsArtifact?: string;
+    installSource?: DaemonInstallSource;
+    saveScript?: boolean | string;
+    shutdown?: boolean;
+    relaunch?: boolean;
+    surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
+    headless?: boolean;
+    restart?: boolean;
+    noRecord?: boolean;
+    retainPaths?: boolean;
+    retentionMs?: number;
+    replayUpdate?: boolean;
+    replayEnv?: string[];
+    replayShellEnv?: Record<string, string>;
+    failFast?: boolean;
+    timeoutMs?: number;
+    retries?: number;
+    artifactsDir?: string;
+    reportJunit?: string;
+    steps?: string;
+    stepsFile?: string;
+    findFirst?: boolean;
+    findLast?: boolean;
+    batchOnError?: 'stop';
+    batchMaxSteps?: number;
+    batchSteps?: Array<{
+      command: string;
+      positionals?: string[];
+      flags?: Record<string, unknown>;
+    }>;
+    help: boolean;
+    version: boolean;
+  };
 
 export type FlagKey = keyof CliFlags;
 type FlagType = 'boolean' | 'int' | 'enum' | 'string' | 'booleanOrString';
@@ -640,7 +640,7 @@ Rules:
 } as const satisfies Record<string, { summary: string; body: string }>;
 
 export type HelpTopicName = keyof typeof HELP_TOPICS;
-export const HELP_TOPIC_NAMES = Object.keys(HELP_TOPICS) as readonly HelpTopicName[];
+export const HELP_TOPIC_NAMES = Object.freeze(Object.keys(HELP_TOPICS) as HelpTopicName[]);
 
 const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
   {
@@ -1184,7 +1184,7 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     names: ['--shutdown'],
     type: 'boolean',
     usageLabel: '--shutdown',
-    usageDescription: 'close: shutdown associated iOS simulator after ending session',
+    usageDescription: 'close: shutdown associated simulator/emulator after ending session',
   },
   {
     key: 'relaunch',
@@ -1388,29 +1388,7 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     usageDescription:
       'Screenshot: draw current snapshot refs and target rectangles onto the saved PNG; diff screenshot: also write a separate current-screen overlay guide',
   },
-  {
-    key: 'screenshotFullscreen',
-    names: ['--fullscreen'],
-    type: 'boolean',
-    usageLabel: '--fullscreen',
-    usageDescription: 'Screenshot: capture the full screen instead of the app window',
-  },
-  {
-    key: 'screenshotMaxSize',
-    names: ['--max-size'],
-    type: 'int',
-    min: 1,
-    usageLabel: '--max-size <px>',
-    usageDescription: 'Screenshot: downscale so the longest edge is at most <px>',
-  },
-  {
-    key: 'screenshotNoStabilize',
-    names: ['--no-stabilize'],
-    type: 'boolean',
-    usageLabel: '--no-stabilize',
-    usageDescription:
-      'Screenshot: skip Android demo-mode/status-bar stabilization and settle delay for low-latency capture loops',
-  },
+  ...SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS,
   {
     key: 'baseline',
     names: ['--baseline', '-b'],
@@ -1491,14 +1469,6 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
       'metroNoInstallDeps',
       'launchUrl',
     ],
-    skipCapabilityCheck: true,
-  },
-  mcp: {
-    helpDescription:
-      'Start the official stdio MCP router for status, install guidance, version-matched CLI help, workflow prompts, and help resources. The MCP router does not expose device automation or shell execution tools.',
-    summary: 'Start MCP discovery router',
-    positionalArgs: [],
-    allowedFlags: [],
     skipCapabilityCheck: true,
   },
   disconnect: {
@@ -1827,6 +1797,22 @@ export function getFlagDefinitions(): readonly FlagDefinition[] {
 export function getCommandSchema(command: string | null): CommandSchema | undefined {
   if (!command) return undefined;
   return COMMAND_SCHEMAS[command];
+}
+
+export function applyCommandDefaults(
+  command: string | null,
+  flags: Record<string, unknown>,
+): boolean {
+  const commandSchema = getCommandSchema(command);
+  if (!commandSchema?.defaults) return false;
+  let changed = false;
+  for (const [key, value] of Object.entries(commandSchema.defaults) as Array<[FlagKey, unknown]>) {
+    if (flags[key] === undefined) {
+      flags[key] = value;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 export function getCliCommandNames(): string[] {

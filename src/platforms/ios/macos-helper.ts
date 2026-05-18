@@ -4,8 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError } from '../../utils/errors.ts';
-import { resolveExecutableOverridePath, runCmd } from '../../utils/exec.ts';
+import { resolveExecutableOverridePath } from '../../utils/exec.ts';
 import type { SessionSurface } from '../../core/session-surface.ts';
+import {
+  hasScopedAppleToolProvider,
+  resolveAppleToolProvider,
+  runAppleToolCommand,
+} from './tool-provider.ts';
 
 export type MacOsPermissionTarget = 'accessibility' | 'screen-recording' | 'input-monitoring';
 
@@ -75,6 +80,18 @@ function assertMacOsBundleId(bundleId: string): string {
   return normalized;
 }
 
+function appendMacOsHelperContextArgs(
+  args: string[],
+  options: { bundleId?: string; surface?: SessionSurface },
+): void {
+  if (options.bundleId) {
+    args.push('--bundle-id', assertMacOsBundleId(options.bundleId));
+  }
+  if (options.surface) {
+    args.push('--surface', options.surface);
+  }
+}
+
 export function resolveMacOsHelperPackageRootFrom(modulePath: string): string {
   let currentDir = path.dirname(modulePath);
   while (true) {
@@ -131,7 +148,7 @@ async function computeMacOsHelperFingerprint(packageRoot: string): Promise<strin
     hash.update(await fs.readFile(filePath));
     hash.update('\0');
   }
-  const swiftVersion = await runCmd('swift', ['--version'], {
+  const swiftVersion = await runAppleToolCommand('swift', ['--version'], {
     allowFailure: true,
     cwd: packageRoot,
     timeoutMs: 10_000,
@@ -178,7 +195,7 @@ async function ensureMacOsHelperBinary(): Promise<string> {
 
   const sourceBinary = resolveMacOsHelperSourceBinaryPath();
   process.stderr.write('agent-device: building macOS helper (first run or helper update)\n');
-  await runCmd('swift', ['build', '-c', 'release', '--package-path', packageRoot], {
+  await runAppleToolCommand('swift', ['build', '-c', 'release', '--package-path', packageRoot], {
     cwd: packageRoot,
     timeoutMs: 120_000,
   });
@@ -195,13 +212,33 @@ async function ensureMacOsHelperBinary(): Promise<string> {
   return installedPath;
 }
 
-async function runMacOsHelper<T extends Record<string, unknown>>(args: string[]): Promise<T> {
+async function resolveMacOsHelperCommandPath(): Promise<string> {
   const configuredPath = process.env[MACOS_HELPER_ENV_PATH]?.trim();
-  if (process.platform !== 'darwin' && !configuredPath) {
+  if (configuredPath) {
+    const resolvedPath = await resolveExecutableOverridePath(configuredPath, MACOS_HELPER_ENV_PATH);
+    if (resolvedPath) return resolvedPath;
+  }
+  if (hasScopedAppleToolProvider()) {
+    return MACOS_HELPER_PRODUCT_NAME;
+  }
+  if (process.platform !== 'darwin') {
     throw new AppError('UNSUPPORTED_PLATFORM', 'macOS helper is only available on macOS');
   }
-  const helperPath = await ensureMacOsHelperBinary();
-  const result = await runCmd(helperPath, args, { allowFailure: true, timeoutMs: 30_000 });
+  return await ensureMacOsHelperBinary();
+}
+
+async function runMacOsHelper<T extends Record<string, unknown>>(args: string[]): Promise<T> {
+  const helperOptions = {
+    allowFailure: true,
+    timeoutMs: 30_000,
+  };
+  const helperProvider = resolveAppleToolProvider().macosHelper;
+  const helperPath = helperProvider
+    ? MACOS_HELPER_PRODUCT_NAME
+    : await resolveMacOsHelperCommandPath();
+  const result = helperProvider
+    ? await helperProvider.run(args, helperOptions)
+    : await runAppleToolCommand(helperPath, args, helperOptions);
   const stdout = result.stdout.trim();
   let parsed: HelperResult<T> | null = null;
   if (stdout) {
@@ -272,12 +309,7 @@ export async function runMacOsAlertAction(
   bundleId?: string;
 }> {
   const args = ['alert', action];
-  if (options.bundleId) {
-    args.push('--bundle-id', assertMacOsBundleId(options.bundleId));
-  }
-  if (options.surface) {
-    args.push('--surface', options.surface);
-  }
+  appendMacOsHelperContextArgs(args, options);
   return await runMacOsHelper(args);
 }
 
@@ -291,9 +323,7 @@ export async function runMacOsSnapshotAction(
   backend: 'macos-helper';
 }> {
   const args = ['snapshot', '--surface', surface];
-  if (options.bundleId) {
-    args.push('--bundle-id', assertMacOsBundleId(options.bundleId));
-  }
+  appendMacOsHelperContextArgs(args, options);
   return await runMacOsHelper(args);
 }
 
@@ -305,12 +335,7 @@ export async function runMacOsReadTextAction(
   text: string;
 }> {
   const args = ['read', '--x', String(x), '--y', String(y)];
-  if (options.bundleId) {
-    args.push('--bundle-id', assertMacOsBundleId(options.bundleId));
-  }
-  if (options.surface) {
-    args.push('--surface', options.surface);
-  }
+  appendMacOsHelperContextArgs(args, options);
   return await runMacOsHelper(args);
 }
 
@@ -325,12 +350,7 @@ export async function runMacOsPressAction(
   surface?: SessionSurface;
 }> {
   const args = ['press', '--x', String(x), '--y', String(y)];
-  if (options.bundleId) {
-    args.push('--bundle-id', assertMacOsBundleId(options.bundleId));
-  }
-  if (options.surface) {
-    args.push('--surface', options.surface);
-  }
+  appendMacOsHelperContextArgs(args, options);
   return await runMacOsHelper(args);
 }
 
@@ -343,9 +363,7 @@ export async function runMacOsScreenshotAction(
   fullscreen: boolean;
 }> {
   const args = ['screenshot', '--out', outPath];
-  if (options.surface) {
-    args.push('--surface', options.surface);
-  }
+  appendMacOsHelperContextArgs(args, options);
   if (options.fullscreen) {
     args.push('--fullscreen');
   }

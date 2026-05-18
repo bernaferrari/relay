@@ -5,17 +5,18 @@ import type { DeviceInfo } from '../utils/device.ts';
 import {
   dismissAndroidKeyboard,
   getAndroidKeyboardState,
-  pushAndroidNotification,
-} from '../platforms/android/index.ts';
+} from '../platforms/android/device-input-state.ts';
+import { pushAndroidNotification } from '../platforms/android/notifications.ts';
 import { getInteractor } from './interactors.ts';
 import type { Interactor, RunnerContext } from './interactor-types.ts';
 import { runIosRunnerCommand } from '../platforms/ios/runner-client.ts';
-import { pushIosNotification } from '../platforms/ios/index.ts';
+import { pushIosNotification } from '../platforms/ios/apps.ts';
 import { isDeepLinkTarget } from './open-target.ts';
 import { parseTriggerAppEventArgs, resolveAppEventUrl } from './app-events.ts';
 import { emitDiagnostic, withDiagnosticTimer } from '../utils/diagnostics.ts';
 import { readLocationCoordinate } from '../utils/location-coordinates.ts';
 import { successText, withSuccessText } from '../utils/success-text.ts';
+import { screenshotOptionsFromFlags } from '../commands/capture-screenshot-options.ts';
 import type { DispatchContext } from './dispatch-context.ts';
 import {
   handleFillCommand,
@@ -103,10 +104,11 @@ export async function dispatchCommand(
           const positionalPath = positionals[0];
           const screenshotPath = positionalPath ?? outPath ?? `./screenshot-${Date.now()}.png`;
           await fs.mkdir(pathModule.dirname(screenshotPath), { recursive: true });
+          const screenshotOptions = screenshotOptionsFromFlags(context);
           await interactor.screenshot(screenshotPath, {
             appBundleId: context?.appBundleId,
-            fullscreen: context?.screenshotFullscreen,
-            stabilize: context?.screenshotNoStabilize ? false : undefined,
+            fullscreen: screenshotOptions.fullscreen,
+            stabilize: screenshotOptions.stabilize,
             surface: context?.surface,
           });
           return { path: screenshotPath, ...successText(`Saved screenshot: ${screenshotPath}`) };

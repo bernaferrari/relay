@@ -6,7 +6,7 @@ import {
   screenshotIos,
   setIosSetting,
   writeIosClipboardText,
-} from '../../platforms/ios/index.ts';
+} from '../../platforms/ios/apps.ts';
 import {
   appleRemotePressCommand,
   iosRunnerOverrides,
@@ -38,7 +38,7 @@ export function createAppleInteractor(
         });
         return;
       }
-      await screenshotIos(device, outPath, options?.appBundleId, options?.fullscreen);
+      await screenshotIos(device, outPath, options?.appBundleId, options?.fullscreen, runnerOpts);
     },
     snapshot: async (options) => {
       const result = readAppleSnapshotResult(

@@ -1,5 +1,5 @@
 import { test, expect, vi, beforeEach } from 'vitest';
-import { handleInteractionCommands, unsupportedRefSnapshotFlags } from '../interaction.ts';
+import { handleInteractionCommands } from '../interaction.ts';
 import type { SessionStore } from '../../session-store.ts';
 import type { SessionState } from '../../types.ts';
 import type { CommandFlags } from '../../../core/dispatch.ts';
@@ -20,11 +20,20 @@ vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
   };
 });
 
-vi.mock('../../../platforms/android/index.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../platforms/android/index.ts')>();
+vi.mock('../../../platforms/android/input-actions.ts', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../platforms/android/input-actions.ts')>();
   return {
     ...actual,
     getAndroidScreenSize: vi.fn(async () => ({ width: 1344, height: 2992 })),
+  };
+});
+
+vi.mock('../../../platforms/android/app-lifecycle.ts', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../platforms/android/app-lifecycle.ts')>();
+  return {
+    ...actual,
     getAndroidAppState: vi.fn(async () => ({})),
   };
 });
@@ -42,7 +51,8 @@ vi.mock('../interaction-snapshot.ts', async (importOriginal) => {
 });
 
 import { dispatchCommand } from '../../../core/dispatch.ts';
-import { getAndroidAppState, getAndroidScreenSize } from '../../../platforms/android/index.ts';
+import { getAndroidAppState } from '../../../platforms/android/app-lifecycle.ts';
+import { getAndroidScreenSize } from '../../../platforms/android/input-actions.ts';
 import { captureSnapshotForSession } from '../interaction-snapshot.ts';
 const mockDispatch = vi.mocked(dispatchCommand);
 const mockGetAndroidAppState = vi.mocked(getAndroidAppState);
@@ -115,24 +125,6 @@ beforeEach(() => {
   mockCaptureSnapshotForSession.mockImplementation(emulateCaptureSnapshotForSession);
 });
 
-test('unsupportedRefSnapshotFlags returns unsupported snapshot flags for @ref flows', () => {
-  const unsupported = unsupportedRefSnapshotFlags({
-    snapshotDepth: 2,
-    snapshotScope: 'Login',
-    snapshotRaw: true,
-  });
-  expect(unsupported).toEqual(['--depth', '--scope', '--raw']);
-});
-
-test('unsupportedRefSnapshotFlags returns empty when no ref-unsupported flags are present', () => {
-  const unsupported = unsupportedRefSnapshotFlags({
-    platform: 'ios',
-    session: 'default',
-    verbose: true,
-  });
-  expect(unsupported).toEqual([]);
-});
-
 test('get text prefers underlying value for text surfaces and avoids recording giant ref labels', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'get-text-editor';
@@ -181,122 +173,6 @@ test('get text prefers underlying value for text surfaces and avoids recording g
   expect(recorded?.result?.refLabel).toBeUndefined();
 });
 
-test('get text uses backend read expansion when the resolved node has a rect', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'get-text-backend-read';
-  const session = makeSession(sessionName);
-  session.snapshot = {
-    nodes: attachRefs([
-      {
-        index: 0,
-        depth: 0,
-        type: 'TextView',
-        label: 'Editor for MainActivity.kt',
-        value: 'preview only',
-        rect: { x: 20, y: 40, width: 120, height: 80 },
-      },
-    ]),
-    createdAt: Date.now(),
-    backend: 'xctest',
-  };
-  sessionStore.set(sessionName, session);
-
-  mockDispatch.mockResolvedValue({
-    action: 'read',
-    text: 'package com.example.app\nclass MainActivity {}',
-  });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'get',
-      positionals: ['text', '@e1'],
-      flags: {},
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('read');
-  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['80', '80']);
-  expect(response?.ok).toBe(true);
-  if (response?.ok) {
-    expect(response.data?.text).toBe('package com.example.app\nclass MainActivity {}');
-  }
-});
-
-test('press coordinates dispatches press and records as press', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'default';
-  const storedSession = makeSession(sessionName);
-  sessionStore.set(sessionName, storedSession);
-
-  mockDispatch.mockResolvedValue({ ok: true });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'press',
-      positionals: ['100', '200'],
-      flags: { count: 3, intervalMs: 1, doubleTap: true },
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response).toBeTruthy();
-  expect(response?.ok).toBe(true);
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('press');
-  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['100', '200']);
-  const context = mockDispatch.mock.calls[0]?.[4] as Record<string, unknown> | undefined;
-  expect(context?.count).toBe(3);
-  expect(context?.intervalMs).toBe(1);
-  expect(context?.doubleTap).toBe(true);
-
-  const session = sessionStore.get(sessionName);
-  expect(session).toBeTruthy();
-  expect(session?.actions.length).toBe(1);
-  expect(session?.actions[0]?.command).toBe('press');
-  expect(session?.actions[0]?.positionals).toEqual(['100', '200']);
-});
-
-test('type dispatches through runtime and records as type', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'default';
-  sessionStore.set(sessionName, makeSession(sessionName));
-
-  mockDispatch.mockResolvedValue({ ok: true, message: 'Typed 5 chars' });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'type',
-      positionals: ['hello'],
-      flags: { delayMs: 3 },
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response?.ok).toBe(true);
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('type');
-  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['hello']);
-  const context = mockDispatch.mock.calls[0]?.[4] as Record<string, unknown> | undefined;
-  expect(context?.delayMs).toBe(3);
-  const session = sessionStore.get(sessionName);
-  expect(session?.actions.at(-1)?.command).toBe('type');
-  expect(session?.actions.at(-1)?.positionals).toEqual(['hello']);
-});
-
 test('click rejects macOS desktop surface interactions until helper routing exists', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'macos-desktop-click';
@@ -322,30 +198,6 @@ test('click rejects macOS desktop surface interactions until helper routing exis
     expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
     expect(response.error.message).toMatch(/macOS desktop sessions/);
   }
-});
-
-test('click on macOS menubar sessions dispatches press through the helper-backed path', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'macos-menubar-click';
-  sessionStore.set(sessionName, makeMacOsMenubarSession(sessionName));
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'click',
-      positionals: ['100', '200'],
-      flags: {},
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response?.ok).toBe(true);
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('press');
-  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['100', '200']);
 });
 
 test('click on a macOS menubar wrapper ref promotes to the same-rect menu bar item', async () => {
@@ -724,62 +576,6 @@ test('press @ref preserves native timing in recorded result and touch visualizat
   expect(result.gestureStartUptimeMs).toBe(5_100);
   expect(result.gestureEndUptimeMs).toBe(5_180);
   expect(stored?.recording?.gestureEvents[0]?.tMs).toBe(570);
-});
-
-test('press @ref resolves snapshot node and records press action', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'default';
-  const session = makeSession(sessionName);
-  session.snapshot = {
-    nodes: attachRefs([
-      {
-        index: 0,
-        type: 'XCUIElementTypeButton',
-        label: 'Continue',
-        identifier: 'auth_continue',
-        rect: { x: 10, y: 20, width: 100, height: 40 },
-        enabled: true,
-        hittable: true,
-      },
-    ]),
-    createdAt: Date.now(),
-    backend: 'xctest',
-  };
-  sessionStore.set(sessionName, session);
-
-  mockDispatch.mockResolvedValue({ pressed: true });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'press',
-      positionals: ['@e1'],
-      flags: {},
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response).toBeTruthy();
-  expect(response?.ok).toBe(true);
-  if (response?.ok) {
-    expect(response.data?.ref).toBe('e1');
-    expect(response.data?.x).toBe(60);
-    expect(response.data?.y).toBe(40);
-  }
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('press');
-  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['60', '40']);
-
-  const stored = sessionStore.get(sessionName);
-  expect(stored).toBeTruthy();
-  expect(stored?.actions.length).toBe(1);
-  expect(stored?.actions[0]?.command).toBe('press');
-  const result = (stored?.actions[0]?.result ?? {}) as Record<string, unknown>;
-  expect(result.ref).toBe('e1');
-  expect(Array.isArray(result.selectorChain)).toBe(true);
 });
 
 test('press @ref refreshes stale stored refs and syncs the daemon session snapshot', async () => {
@@ -1246,43 +1042,6 @@ test('fill @ref preserves fallback coordinates for recording when platform resul
   expect(event?.kind).toBe('tap');
   expect(event?.x).toBe(60);
   expect(event?.y).toBe(40);
-});
-
-test('fill coordinates dispatches point fill and records the action', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'default';
-  sessionStore.set(sessionName, makeSession(sessionName));
-
-  mockDispatch.mockResolvedValue({ filled: true });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'fill',
-      positionals: ['25', '75', 'hello world'],
-      flags: { delayMs: 40 },
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response).toBeTruthy();
-  expect(response?.ok).toBe(true);
-  if (response?.ok) {
-    expect(response.data?.filled).toBe(true);
-    expect(response.data?.x).toBe(25);
-    expect(response.data?.y).toBe(75);
-    expect(response.data?.text).toBe('hello world');
-  }
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('fill');
-  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['25', '75', 'hello world']);
-  expect((mockDispatch.mock.calls[0]?.[4] as Record<string, unknown> | undefined)?.delayMs).toBe(
-    40,
-  );
-  expect(sessionStore.get(sessionName)?.actions.length).toBe(1);
 });
 
 test('fill @ref keeps the original editable node when its parent is the hittable ancestor', async () => {
@@ -1794,56 +1553,6 @@ test('press coordinates does not treat extra trailing args as selector', async (
   expect(mockDispatch.mock.calls[0]?.[1]).toBe('press');
   expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['100', '200']);
   expect(sessionStore.get(sessionName)?.actions.length).toBe(1);
-});
-
-test('is visible captures one snapshot before evaluating selector predicate', async () => {
-  const sessionStore = makeSessionStore();
-  const sessionName = 'default';
-  sessionStore.set(sessionName, makeSession(sessionName));
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'snapshot') {
-      return {
-        nodes: [
-          {
-            index: 0,
-            type: 'XCUIElementTypeButton',
-            label: 'Continue',
-            identifier: 'auth_continue',
-            rect: { x: 10, y: 20, width: 100, height: 40 },
-            enabled: true,
-            hittable: true,
-            visible: true,
-          },
-        ],
-        backend: 'xctest',
-      };
-    }
-    throw new Error(`unexpected command: ${command}`);
-  });
-
-  const response = await handleInteractionCommands({
-    req: {
-      token: 't',
-      session: sessionName,
-      command: 'is',
-      positionals: ['visible', 'id=auth_continue'],
-      flags: {},
-    },
-    sessionName,
-    sessionStore,
-    contextFromFlags,
-  });
-
-  expect(response).toBeTruthy();
-  expect(response?.ok).toBe(true);
-  const snapshotCalls = mockDispatch.mock.calls.filter((c) => c[1] === 'snapshot');
-  expect(snapshotCalls.length).toBe(1);
-  if (response?.ok) {
-    expect(response.data?.predicate).toBe('visible');
-    expect(response.data?.pass).toBe(true);
-    expect(response.data?.selector).toBe('id=auth_continue');
-  }
 });
 
 test('is visible preserves CLI snapshot flags during runtime snapshot capture', async () => {

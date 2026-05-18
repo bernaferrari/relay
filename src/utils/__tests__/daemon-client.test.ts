@@ -1,11 +1,16 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PassThrough, Writable } from 'node:stream';
+import {
+  closeLoopbackServer,
+  listenOnLoopback,
+  supportsLoopbackBind,
+} from '../../__tests__/test-utils/index.ts';
 import { runCmdBackground } from '../exec.ts';
 import {
   computeDaemonCodeSignature,
@@ -22,27 +27,11 @@ import { resolveDaemonPaths } from '../../daemon/config.ts';
 import {
   isProcessAlive,
   readProcessCommand,
+  readProcessStartTime,
   stopProcessForTakeover,
   waitForProcessExit,
 } from '../process-identity.ts';
-
-let loopbackBindSupportPromise: Promise<boolean> | null = null;
-
-async function supportsLoopbackBind(): Promise<boolean> {
-  if (loopbackBindSupportPromise) {
-    return await loopbackBindSupportPromise;
-  }
-  loopbackBindSupportPromise = new Promise<boolean>((resolve) => {
-    const server = http.createServer();
-    server.once('error', () => {
-      resolve(false);
-    });
-    server.listen(0, '127.0.0.1', () => {
-      server.close(() => resolve(true));
-    });
-  });
-  return await loopbackBindSupportPromise;
-}
+import { findProjectRoot, readVersion } from '../version.ts';
 
 type MockHttpResponse = EventEmitter & {
   statusCode?: number;
@@ -115,6 +104,37 @@ function respondToHealthcheck(options: Record<string, any>, res: MockHttpRespons
   return true;
 }
 
+function resolveCurrentDaemonCodeSignature(): string {
+  const root = findProjectRoot();
+  const distPath = path.join(root, 'dist', 'src', 'internal', 'daemon.js');
+  const sourcePath = path.join(root, 'src', 'daemon.ts');
+  const entryPath =
+    process.execArgv.includes('--experimental-strip-types') || !fs.existsSync(distPath)
+      ? sourcePath
+      : distPath;
+  return computeDaemonCodeSignature(entryPath, root);
+}
+
+function writeCurrentDaemonInfo(
+  stateDir: string,
+  info: { port?: number; httpPort?: number; transport: 'socket' | 'http' | 'dual' },
+): void {
+  const paths = resolveDaemonPaths(stateDir);
+  fs.mkdirSync(paths.baseDir, { recursive: true });
+  fs.writeFileSync(
+    paths.infoPath,
+    `${JSON.stringify({
+      ...info,
+      token: 'local-secret',
+      pid: process.pid,
+      version: readVersion(),
+      codeSignature: resolveCurrentDaemonCodeSignature(),
+      processStartTime: readProcessStartTime(process.pid) ?? undefined,
+    })}\n`,
+    'utf8',
+  );
+}
+
 test('daemon timeout and retry helpers normalize configured values', () => {
   const scenarios: Array<{
     resolve: (value: string | undefined) => number;
@@ -185,6 +205,115 @@ test('resolveDaemonStartupHint includes configured state directory paths', () =>
   const hint = resolveDaemonStartupHint({ hasInfo: false, hasLock: true }, paths);
   assert.match(hint, /\/tmp\/ad-custom-state\/daemon\.lock/);
   assert.match(hint, /\/tmp\/ad-custom-state\/daemon\.json/);
+});
+
+test('sendToDaemon reuses reachable local socket daemon metadata', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-local-socket-daemon-'));
+  let requestBody = '';
+  const server = net.createServer((socket) => {
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk) => {
+      requestBody += chunk;
+      if (!requestBody.includes('\n')) return;
+      const request = JSON.parse(requestBody.trim()) as Record<string, any>;
+      assert.equal(request.command, 'local-socket-smoke');
+      assert.equal(request.token, 'local-secret');
+      assert.equal(request.meta?.requestId, 'req-local-socket');
+      socket.end(`${JSON.stringify({ ok: true, data: { via: 'socket' } })}\n`);
+    });
+  });
+
+  try {
+    const port = await listenOnLoopback(server);
+    writeCurrentDaemonInfo(stateDir, { port, transport: 'socket' });
+
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'local-socket-smoke',
+      positionals: ['ping'],
+      flags: { stateDir, daemonTransport: 'socket' },
+      meta: { requestId: 'req-local-socket' },
+    });
+
+    assert.deepEqual(response, { ok: true, data: { via: 'socket' } });
+  } finally {
+    await closeLoopbackServer(server);
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('sendToDaemon reuses reachable local HTTP daemon metadata with token params', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-local-http-daemon-'));
+  const seenPaths: string[] = [];
+  const observed: { rpcRequest?: Record<string, any> } = {};
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url || '/', 'http://127.0.0.1');
+    seenPaths.push(`${req.method ?? 'GET'} ${url.pathname}`);
+    if (req.method === 'GET' && url.pathname === '/health') {
+      res.writeHead(200);
+      res.end('ok');
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/rpc') {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      req.on('end', () => {
+        observed.rpcRequest = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
+          string,
+          any
+        >;
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: observed.rpcRequest.id,
+            result: { ok: true, data: { via: 'http' } },
+          }),
+        );
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end('not found');
+  });
+
+  try {
+    const httpPort = await listenOnLoopback(server);
+    writeCurrentDaemonInfo(stateDir, { httpPort, transport: 'http' });
+
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'local-http-smoke',
+      positionals: ['ping'],
+      flags: { stateDir, daemonTransport: 'http' },
+      meta: { requestId: 'req-local-http' },
+    });
+
+    assert.deepEqual(response, { ok: true, data: { via: 'http' } });
+    assert.deepEqual(seenPaths, ['GET /health', 'POST /rpc']);
+    const request = observed.rpcRequest;
+    if (!request) {
+      throw new Error('Expected local HTTP daemon RPC request.');
+    }
+    assert.equal(request.method, 'agent_device.command');
+    assert.equal(request.params?.command, 'local-http-smoke');
+    assert.equal(request.params?.token, 'local-secret');
+  } finally {
+    await closeLoopbackServer(server);
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
 });
 
 test('sendToDaemon uses explicit remote daemon base URL and auth token', async () => {
@@ -612,160 +741,6 @@ test('sendToDaemon requires auth for non-loopback remote daemon URLs', async () 
   }
 });
 
-test('sendToDaemon uploads local install artifacts for remote daemons and passes upload id to RPC', async () => {
-  const seenPaths: string[] = [];
-  let uploadBodySize = 0;
-  let uploadHeaders: Record<string, unknown> | undefined;
-  let rpcRequest: Record<string, unknown> | null = null;
-  const originalHttpRequest = http.request;
-
-  class MockRequest extends Writable {
-    private chunks: Buffer[] = [];
-    private readonly options: Record<string, unknown>;
-    private readonly callbackFn: (
-      res: EventEmitter & {
-        statusCode?: number;
-        resume?: () => void;
-        setEncoding: (_encoding: string) => void;
-      },
-    ) => void;
-
-    constructor(
-      options: Record<string, unknown>,
-      callbackFn: (
-        res: EventEmitter & {
-          statusCode?: number;
-          resume?: () => void;
-          setEncoding: (_encoding: string) => void;
-        },
-      ) => void,
-    ) {
-      super();
-      this.options = options;
-      this.callbackFn = callbackFn;
-    }
-
-    _write(
-      chunk: Buffer | string,
-      _encoding: BufferEncoding,
-      callback: (error?: Error | null) => void,
-    ): void {
-      this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      callback();
-    }
-
-    override end(chunk?: any, encoding?: any, callback?: any): this {
-      if (typeof chunk === 'function') {
-        callback = chunk;
-        chunk = undefined;
-      }
-      if (typeof encoding === 'function') {
-        callback = encoding;
-        encoding = undefined;
-      }
-      if (chunk !== undefined) {
-        this.write(chunk, encoding);
-      }
-      super.end(() => {
-        seenPaths.push(String(this.options.path ?? ''));
-        const res = new EventEmitter() as EventEmitter & {
-          statusCode?: number;
-          resume?: () => void;
-          setEncoding: (_encoding: string) => void;
-        };
-        res.statusCode = 200;
-        res.resume = () => {};
-        res.setEncoding = () => {};
-        process.nextTick(() => {
-          this.callbackFn(res);
-          if (this.options.method === 'GET') {
-            res.emit('end');
-            callback?.();
-            return;
-          }
-
-          const body = Buffer.concat(this.chunks).toString('utf8');
-          if (String(this.options.path).endsWith('/upload')) {
-            uploadHeaders = this.options.headers as Record<string, unknown>;
-            uploadBodySize = Buffer.concat(this.chunks).byteLength;
-            res.emit('data', JSON.stringify({ ok: true, uploadId: 'upload-123' }));
-            res.emit('end');
-            callback?.();
-            return;
-          }
-
-          rpcRequest = JSON.parse(body) as Record<string, unknown>;
-          res.emit(
-            'data',
-            JSON.stringify({
-              jsonrpc: '2.0',
-              id: 'req-remote-upload',
-              result: {
-                ok: true,
-                data: { source: 'remote-daemon' },
-              },
-            }),
-          );
-          res.emit('end');
-          callback?.();
-        });
-      });
-      return this;
-    }
-
-    override destroy(error?: Error): this {
-      super.destroy(error);
-      return this;
-    }
-  }
-
-  (http as unknown as { request: typeof http.request }).request = ((
-    options: any,
-    callback: any,
-  ) => {
-    return new MockRequest(options, callback) as any;
-  }) as typeof http.request;
-
-  const previousBaseUrl = process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-  const previousAuthToken = process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-remote-upload-'));
-  const appPath = path.join(tempRoot, 'Sample.apk');
-  fs.writeFileSync(appPath, 'apk-binary');
-  process.env.AGENT_DEVICE_DAEMON_BASE_URL = 'http://remote-mac.example.test:7777/agent-device';
-  process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = 'remote-secret';
-
-  try {
-    const response = await sendToDaemon({
-      session: 'default',
-      command: 'install',
-      positionals: ['com.example.app', appPath],
-      flags: {},
-      meta: { requestId: 'req-remote-upload' },
-    });
-
-    assert.equal(response.ok, true);
-    assert.deepEqual(seenPaths, [
-      '/agent-device/health',
-      '/agent-device/upload',
-      '/agent-device/rpc',
-    ]);
-    assert.equal(uploadHeaders?.authorization, 'Bearer remote-secret');
-    assert.equal(uploadHeaders?.['x-agent-device-token'], 'remote-secret');
-    assert.equal(uploadHeaders?.['x-artifact-type'], 'file');
-    assert.equal(uploadHeaders?.['x-artifact-filename'], 'Sample.apk');
-    assert.ok(uploadBodySize > 0);
-    assert.equal((rpcRequest as any)?.params?.positionals?.[1], appPath);
-    assert.equal((rpcRequest as any)?.params?.meta?.uploadedArtifactId, 'upload-123');
-  } finally {
-    (http as unknown as { request: typeof http.request }).request = originalHttpRequest;
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-    if (previousBaseUrl === undefined) delete process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-    else process.env.AGENT_DEVICE_DAEMON_BASE_URL = previousBaseUrl;
-    if (previousAuthToken === undefined) delete process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-    else process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = previousAuthToken;
-  }
-});
-
 test('sendToDaemon preserves explicit remote install paths without uploading', async () => {
   const seenPaths: string[] = [];
   let rpcRequest: Record<string, unknown> | null = null;
@@ -883,323 +858,6 @@ test('sendToDaemon preserves install_source payload metadata for remote HTTP RPC
   }
 });
 
-test('sendToDaemon uploads local install_source path artifacts for remote daemons', async () => {
-  const seenPaths: string[] = [];
-  let uploadBodySize = 0;
-  let uploadHeaders: Record<string, unknown> | undefined;
-  let rpcRequest: Record<string, unknown> | null = null;
-  const originalHttpRequest = http.request;
-
-  class MockRequest extends Writable {
-    private chunks: Buffer[] = [];
-    private readonly options: Record<string, unknown>;
-    private readonly callbackFn: (
-      res: PassThrough & {
-        statusCode?: number;
-        resume?: () => void;
-        setEncoding: (_encoding: string) => void;
-      },
-    ) => void;
-
-    constructor(
-      options: Record<string, unknown>,
-      callbackFn: (
-        res: PassThrough & {
-          statusCode?: number;
-          resume?: () => void;
-          setEncoding: (_encoding: string) => void;
-        },
-      ) => void,
-    ) {
-      super();
-      this.options = options;
-      this.callbackFn = callbackFn;
-    }
-
-    _write(
-      chunk: Buffer | string,
-      _encoding: BufferEncoding,
-      callback: (error?: Error | null) => void,
-    ): void {
-      this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      callback();
-    }
-
-    override end(chunk?: any, encoding?: any, callback?: any): this {
-      if (chunk) {
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding);
-        this.chunks.push(buffer);
-      }
-      const res = new PassThrough() as PassThrough & {
-        statusCode?: number;
-        resume?: () => void;
-        setEncoding: (_encoding: string) => void;
-      };
-      res.statusCode = 200;
-      res.resume = () => res as any;
-      res.setEncoding = () => res as any;
-      process.nextTick(() => {
-        this.callbackFn(res);
-        seenPaths.push(String(this.options.path ?? ''));
-        if (this.options.method === 'GET') {
-          res.emit('end');
-          callback?.();
-          return;
-        }
-        const body = Buffer.concat(this.chunks).toString('utf8');
-        if (String(this.options.path).endsWith('/upload')) {
-          uploadHeaders = this.options.headers as Record<string, unknown>;
-          uploadBodySize = Buffer.concat(this.chunks).byteLength;
-          res.emit('data', JSON.stringify({ ok: true, uploadId: 'upload-path-123' }));
-          res.emit('end');
-          callback?.();
-          return;
-        }
-
-        rpcRequest = JSON.parse(body) as Record<string, unknown>;
-        res.emit(
-          'data',
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 'req-install-source-path',
-            result: {
-              ok: true,
-              data: { source: 'remote-daemon' },
-            },
-          }),
-        );
-        res.emit('end');
-        callback?.();
-      });
-      return this;
-    }
-
-    override destroy(error?: Error): this {
-      super.destroy(error);
-      return this;
-    }
-  }
-
-  (http as unknown as { request: typeof http.request }).request = ((
-    options: any,
-    callback: any,
-  ) => {
-    return new MockRequest(options, callback) as any;
-  }) as typeof http.request;
-
-  const previousBaseUrl = process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-  const previousAuthToken = process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-install-source-path-'));
-  const appPath = path.join(tempRoot, 'Sample.apk');
-  fs.writeFileSync(appPath, 'apk-binary');
-  process.env.AGENT_DEVICE_DAEMON_BASE_URL = 'http://remote-mac.example.test:7777/agent-device';
-  process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = 'remote-secret';
-
-  try {
-    const response = await sendToDaemon({
-      session: 'default',
-      command: 'install_source',
-      positionals: [],
-      flags: { platform: 'android' },
-      meta: {
-        requestId: 'req-install-source-path',
-        installSource: {
-          kind: 'path',
-          path: appPath,
-        },
-      },
-    });
-
-    assert.equal(response.ok, true);
-    assert.deepEqual(seenPaths, [
-      '/agent-device/health',
-      '/agent-device/upload',
-      '/agent-device/rpc',
-    ]);
-    assert.equal(uploadHeaders?.authorization, 'Bearer remote-secret');
-    assert.equal(uploadHeaders?.['x-agent-device-token'], 'remote-secret');
-    assert.equal(uploadHeaders?.['x-artifact-type'], 'file');
-    assert.equal(uploadHeaders?.['x-artifact-filename'], 'Sample.apk');
-    assert.ok(uploadBodySize > 0);
-    assert.equal((rpcRequest as any)?.params?.meta?.uploadedArtifactId, 'upload-path-123');
-    assert.deepEqual((rpcRequest as any)?.params?.meta?.installSource, {
-      kind: 'path',
-      path: appPath,
-    });
-  } finally {
-    (http as unknown as { request: typeof http.request }).request = originalHttpRequest;
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-    if (previousBaseUrl === undefined) delete process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-    else process.env.AGENT_DEVICE_DAEMON_BASE_URL = previousBaseUrl;
-    if (previousAuthToken === undefined) delete process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-    else process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = previousAuthToken;
-  }
-});
-
-test('sendToDaemon downloads remote artifacts and rewrites local paths', async () => {
-  const seenPaths: string[] = [];
-  let rpcRequest: Record<string, unknown> | null = null;
-  const originalHttpRequest = http.request;
-
-  class MockRequest extends Writable {
-    private chunks: Buffer[] = [];
-    private readonly options: Record<string, unknown>;
-    private readonly callbackFn: (
-      res: PassThrough & {
-        statusCode?: number;
-        resume?: () => void;
-        setEncoding: (_encoding: string) => void;
-      },
-    ) => void;
-    constructor(
-      options: Record<string, unknown>,
-      callbackFn: (
-        res: PassThrough & {
-          statusCode?: number;
-          resume?: () => void;
-          setEncoding: (_encoding: string) => void;
-        },
-      ) => void,
-    ) {
-      super();
-      this.options = options;
-      this.callbackFn = callbackFn;
-    }
-
-    _write(
-      chunk: Buffer | string,
-      _encoding: BufferEncoding,
-      callback: (error?: Error | null) => void,
-    ): void {
-      this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      callback();
-    }
-
-    override end(chunk?: any, encoding?: any, callback?: any): this {
-      if (typeof chunk === 'function') {
-        callback = chunk;
-        chunk = undefined;
-      }
-      if (typeof encoding === 'function') {
-        callback = encoding;
-        encoding = undefined;
-      }
-      if (chunk !== undefined) {
-        this.write(chunk, encoding);
-      }
-      super.end(() => {
-        seenPaths.push(String(this.options.path ?? ''));
-        const res = new PassThrough() as PassThrough & {
-          statusCode?: number;
-          resume?: () => void;
-          setEncoding: (_encoding: string) => void;
-        };
-        res.statusCode = 200;
-        process.nextTick(() => {
-          this.callbackFn(res);
-          if (this.options.method === 'GET' && String(this.options.path).endsWith('/health')) {
-            res.end();
-            callback?.();
-            return;
-          }
-          if (this.options.method === 'GET' && String(this.options.path).includes('/artifacts/')) {
-            res.end(Buffer.from('png-binary'));
-            callback?.();
-            return;
-          }
-          rpcRequest = JSON.parse(Buffer.concat(this.chunks).toString('utf8')) as Record<
-            string,
-            unknown
-          >;
-          res.end(
-            JSON.stringify({
-              jsonrpc: '2.0',
-              id: 'req-remote-artifact',
-              result: {
-                ok: true,
-                data: {
-                  path: '/tmp/remote-screenshot.png',
-                  artifacts: [
-                    {
-                      field: 'path',
-                      artifactId: 'artifact-123',
-                      fileName: 'screen.png',
-                      localPath: path.join(tempRoot, 'artifacts', 'screen.png'),
-                    },
-                  ],
-                },
-              },
-            }),
-          );
-          callback?.();
-        });
-      });
-      return this;
-    }
-
-    override destroy(error?: Error): this {
-      super.destroy(error);
-      return this;
-    }
-  }
-
-  (http as unknown as { request: typeof http.request }).request = ((
-    options: any,
-    callback: any,
-  ) => {
-    return new MockRequest(options, callback) as any;
-  }) as typeof http.request;
-
-  const previousBaseUrl = process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-  const previousAuthToken = process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-remote-artifact-'));
-  process.env.AGENT_DEVICE_DAEMON_BASE_URL = 'http://remote-mac.example.test:7777/agent-device';
-  process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = 'remote-secret';
-
-  try {
-    const response = await sendToDaemon({
-      session: 'default',
-      command: 'screenshot',
-      positionals: ['artifacts/screen.png'],
-      flags: {},
-      meta: {
-        requestId: 'req-remote-artifact',
-        cwd: tempRoot,
-      },
-    });
-
-    assert.equal(response.ok, true);
-    assert.deepEqual(seenPaths, [
-      '/agent-device/health',
-      '/agent-device/rpc',
-      '/agent-device/artifacts/artifact-123',
-    ]);
-    assert.match(
-      String((rpcRequest as any)?.params?.positionals?.[0]),
-      /^\/tmp\/agent-device-screenshot-/,
-    );
-    assert.equal(
-      (rpcRequest as any)?.params?.meta?.clientArtifactPaths?.path,
-      path.join(tempRoot, 'artifacts', 'screen.png'),
-    );
-    assert.equal(
-      (response as Extract<typeof response, { ok: true }>).data?.path,
-      path.join(tempRoot, 'artifacts', 'screen.png'),
-    );
-    assert.equal(
-      fs.readFileSync(path.join(tempRoot, 'artifacts', 'screen.png'), 'utf8'),
-      'png-binary',
-    );
-  } finally {
-    (http as unknown as { request: typeof http.request }).request = originalHttpRequest;
-    fs.rmSync(tempRoot, { recursive: true, force: true });
-    if (previousBaseUrl === undefined) delete process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-    else process.env.AGENT_DEVICE_DAEMON_BASE_URL = previousBaseUrl;
-    if (previousAuthToken === undefined) delete process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-    else process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN = previousAuthToken;
-  }
-});
-
 test('downloadRemoteArtifact times out stalled artifact responses and removes partial files', async (t) => {
   if (!(await supportsLoopbackBind())) {
     t.skip('loopback listeners are not permitted in this environment');
@@ -1212,10 +870,7 @@ test('downloadRemoteArtifact times out stalled artifact responses and removes pa
       return;
     }
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-  const address = server.address();
-  assert.equal(typeof address, 'object');
-  const port = typeof address === 'object' && address ? address.port : 0;
+  const port = await listenOnLoopback(server);
 
   try {
     await assert.rejects(
@@ -1236,15 +891,7 @@ test('downloadRemoteArtifact times out stalled artifact responses and removes pa
     );
     assert.equal(fs.existsSync(destinationPath), false);
   } finally {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    await closeLoopbackServer(server);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });

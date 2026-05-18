@@ -1,5 +1,5 @@
-import { runCmd } from '../../utils/exec.ts';
 import { ensureInputTool } from './linux-env.ts';
+import { resolveLinuxToolProvider, type LinuxPointerButton } from './tool-provider.ts';
 import { sleep } from '../../utils/timeouts.ts';
 import type { ScrollDirection } from '../../core/scroll-gesture.ts';
 
@@ -9,11 +9,21 @@ import type { ScrollDirection } from '../../core/scroll-gesture.ts';
 const INPUT_TIMEOUT_MS = 10_000;
 
 async function xdotool(...args: string[]): Promise<void> {
-  await runCmd('xdotool', args, { allowFailure: false, timeoutMs: INPUT_TIMEOUT_MS });
+  await resolveLinuxToolProvider().runCommand('xdotool', args, {
+    allowFailure: false,
+    timeoutMs: INPUT_TIMEOUT_MS,
+  });
 }
 
 async function ydotool(...args: string[]): Promise<void> {
-  await runCmd('ydotool', args, { allowFailure: false, timeoutMs: INPUT_TIMEOUT_MS });
+  await resolveLinuxToolProvider().runCommand('ydotool', args, {
+    allowFailure: false,
+    timeoutMs: INPUT_TIMEOUT_MS,
+  });
+}
+
+function resolveLinuxInputProvider() {
+  return resolveLinuxToolProvider().input;
 }
 
 /** Move the pointer to (x, y) using the detected input tool. */
@@ -32,6 +42,12 @@ async function moveTo(x: number, y: number): Promise<void> {
  * key:state pairs) must be provided — ydotool requires scancodes.
  */
 export async function sendKey(combo: string, scancodes: string[]): Promise<void> {
+  const provider = resolveLinuxInputProvider();
+  if (provider) {
+    await provider.key(combo, scancodes);
+    return;
+  }
+
   const { tool } = await ensureInputTool();
   if (tool === 'xdotool') {
     await xdotool('key', '--clearmodifiers', combo);
@@ -56,19 +72,41 @@ async function clickButton(x: number, y: number, xdoBtn: string, ydoCode: string
   }
 }
 
+async function clickLinuxButton(
+  x: number,
+  y: number,
+  button: LinuxPointerButton,
+  xdoBtn: string,
+  ydoCode: string,
+): Promise<void> {
+  const provider = resolveLinuxInputProvider();
+  if (provider) {
+    await provider.click(x, y, button);
+    return;
+  }
+
+  await clickButton(x, y, xdoBtn, ydoCode);
+}
+
 export async function pressLinux(x: number, y: number): Promise<void> {
-  await clickButton(x, y, '1', '0xC0');
+  await clickLinuxButton(x, y, 'primary', '1', '0xC0');
 }
 
 export async function rightClickLinux(x: number, y: number): Promise<void> {
-  await clickButton(x, y, '3', '0xC1');
+  await clickLinuxButton(x, y, 'secondary', '3', '0xC1');
 }
 
 export async function middleClickLinux(x: number, y: number): Promise<void> {
-  await clickButton(x, y, '2', '0xC2');
+  await clickLinuxButton(x, y, 'middle', '2', '0xC2');
 }
 
 export async function doubleClickLinux(x: number, y: number): Promise<void> {
+  const provider = resolveLinuxInputProvider();
+  if (provider) {
+    await provider.doubleClick(x, y);
+    return;
+  }
+
   const { tool } = await ensureInputTool();
   await moveTo(x, y);
   if (tool === 'xdotool') {
@@ -80,6 +118,12 @@ export async function doubleClickLinux(x: number, y: number): Promise<void> {
 }
 
 export async function longPressLinux(x: number, y: number, durationMs = 800): Promise<void> {
+  const provider = resolveLinuxInputProvider();
+  if (provider) {
+    await provider.longPress(x, y, durationMs);
+    return;
+  }
+
   const { tool } = await ensureInputTool();
   await moveTo(x, y);
   if (tool === 'xdotool') {
@@ -107,6 +151,12 @@ export async function swipeLinux(
   y2: number,
   durationMs = 300,
 ): Promise<void> {
+  const provider = resolveLinuxInputProvider();
+  if (provider) {
+    await provider.drag(x1, y1, x2, y2, durationMs);
+    return;
+  }
+
   const { tool } = await ensureInputTool();
   await moveTo(x1, y1);
   if (tool === 'xdotool') {
@@ -129,6 +179,12 @@ export async function scrollLinux(
   direction: ScrollDirection,
   options?: { amount?: number; pixels?: number },
 ): Promise<void> {
+  const provider = resolveLinuxInputProvider();
+  if (provider) {
+    await provider.scroll(direction, options);
+    return;
+  }
+
   const { tool } = await ensureInputTool();
 
   // Translate amount/pixels into a discrete click count.
@@ -165,6 +221,12 @@ export async function scrollLinux(
 // ── Keyboard actions ────────────────────────────────────────────────────
 
 export async function typeLinux(text: string, delayMs = 0): Promise<void> {
+  const provider = resolveLinuxInputProvider();
+  if (provider) {
+    await provider.typeText(text, { delayMs });
+    return;
+  }
+
   const { tool } = await ensureInputTool();
   if (tool === 'xdotool') {
     const args = ['type'];
