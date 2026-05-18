@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { DeviceInfo } from '../../utils/device.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { AppError } from '../../utils/errors.ts';
-import { runCmd } from '../../utils/exec.ts';
+import type { ExecOptions } from '../../utils/exec.ts';
 import { Deadline, retryWithPolicy } from '../../utils/retry.ts';
 
 import {
@@ -16,16 +16,15 @@ import {
 } from './config.ts';
 import { runIosDevicectl } from './devicectl.ts';
 import { runIosRunnerCommand, IOS_RUNNER_CONTAINER_BUNDLE_IDS } from './runner-client.ts';
+import type { AppleRunnerCommandOptions } from './runner-provider.ts';
 import { prepareSimulatorStatusBarForScreenshot } from './screenshot-status-bar.ts';
 import { ensureBootedSimulator } from './simulator.ts';
-import { buildSimctlArgsForDevice } from './simctl.ts';
+import { runSimctlForDevice } from './simctl.ts';
+import { extractAppleToolErrorMeta } from './tool-diagnostics.ts';
+import { runXcrun } from './tool-provider.ts';
 
-function simctlArgs(device: DeviceInfo, args: string[]): string[] {
-  return buildSimctlArgsForDevice(device, args);
-}
-
-function runSimctl(device: DeviceInfo, args: string[], options?: Parameters<typeof runCmd>[2]) {
-  return runCmd('xcrun', simctlArgs(device, args), options);
+function runSimctl(device: DeviceInfo, args: string[], options?: ExecOptions) {
+  return runSimctlForDevice(device, args, options);
 }
 
 type SimulatorScreenshotFlowDeps = {
@@ -38,6 +37,7 @@ type SimulatorScreenshotFlowDeps = {
     outPath: string,
     appBundleId?: string,
     fullscreen?: boolean,
+    runnerOptions?: AppleRunnerCommandOptions,
   ) => Promise<void>;
   shouldFallbackToRunner: (error: unknown) => boolean;
 };
@@ -55,13 +55,21 @@ export async function screenshotIos(
   outPath: string,
   appBundleId?: string,
   fullscreen?: boolean,
+  runnerOptions?: AppleRunnerCommandOptions,
 ): Promise<void> {
   if (device.platform === 'macos') {
-    await captureScreenshotViaRunner(device, outPath, appBundleId, fullscreen);
+    await captureScreenshotViaRunner(device, outPath, appBundleId, fullscreen, runnerOptions);
     return;
   }
   if (device.kind === 'simulator') {
-    await captureSimulatorScreenshotWithFallback(device, outPath, appBundleId, fullscreen);
+    await captureSimulatorScreenshotWithFallback(
+      device,
+      outPath,
+      appBundleId,
+      fullscreen,
+      undefined,
+      runnerOptions,
+    );
     return;
   }
 
@@ -78,7 +86,7 @@ export async function screenshotIos(
     emitScreenshotFallbackDiagnostic(device, 'devicectl_screenshot', error);
   }
 
-  await captureScreenshotViaRunner(device, outPath, appBundleId, fullscreen);
+  await captureScreenshotViaRunner(device, outPath, appBundleId, fullscreen, runnerOptions);
 }
 
 export async function captureSimulatorScreenshotWithFallback(
@@ -87,6 +95,7 @@ export async function captureSimulatorScreenshotWithFallback(
   appBundleId?: string,
   fullscreenOrDeps?: boolean | SimulatorScreenshotFlowDeps,
   deps: SimulatorScreenshotFlowDeps = defaultSimulatorScreenshotFlowDeps,
+  runnerOptions?: AppleRunnerCommandOptions,
 ): Promise<void> {
   if (device.kind !== 'simulator') {
     throw new AppError(
@@ -120,7 +129,7 @@ export async function captureSimulatorScreenshotWithFallback(
       }
       emitScreenshotFallbackDiagnostic(device, 'simctl_screenshot', error);
     }
-    await effectiveDeps.captureWithRunner(device, outPath, appBundleId, fullscreen);
+    await effectiveDeps.captureWithRunner(device, outPath, appBundleId, fullscreen, runnerOptions);
   } finally {
     await restoreStatusBar().catch((error) =>
       emitStatusBarDiagnostic(device, 'restore_failed', error),
@@ -158,14 +167,19 @@ export async function captureScreenshotViaRunner(
   outPath: string,
   appBundleId?: string,
   fullscreen?: boolean,
+  runnerOptions?: AppleRunnerCommandOptions,
 ): Promise<void> {
   // Capture with the XCTest runner, then pull from the runner container.
   // Devices use `devicectl ... copy from`; simulators use `simctl get_app_container`.
-  const result = await runIosRunnerCommand(device, {
-    command: 'screenshot',
-    appBundleId,
-    fullscreen,
-  });
+  const result = await runIosRunnerCommand(
+    device,
+    {
+      command: 'screenshot',
+      appBundleId,
+      fullscreen,
+    },
+    runnerOptions,
+  );
   const remoteFileName = result['message'] as string;
   if (!remoteFileName) {
     throw new AppError(
@@ -194,8 +208,7 @@ async function copyRunnerScreenshotFromDevice(
   const deadline = Deadline.fromTimeoutMs(IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS);
   let copyResult = { exitCode: 1, stdout: '', stderr: '' };
   for (const bundleId of IOS_RUNNER_CONTAINER_BUNDLE_IDS) {
-    copyResult = await runCmd(
-      'xcrun',
+    copyResult = await runXcrun(
       [
         'devicectl',
         'device',
@@ -294,7 +307,7 @@ function emitScreenshotFallbackDiagnostic(
   from: 'simctl_screenshot' | 'devicectl_screenshot',
   error: unknown,
 ): void {
-  const errorMeta = extractScreenshotFallbackErrorMeta(error);
+  const errorMeta = extractAppleToolErrorMeta(error);
   emitDiagnostic({
     level: 'warn',
     phase: 'ios_screenshot_fallback',
@@ -310,7 +323,7 @@ function emitScreenshotFallbackDiagnostic(
 }
 
 function emitScreenshotFallbackSkippedDiagnostic(device: DeviceInfo, error: unknown): void {
-  const errorMeta = extractScreenshotFallbackErrorMeta(error);
+  const errorMeta = extractAppleToolErrorMeta(error);
   emitDiagnostic({
     level: 'warn',
     phase: 'ios_screenshot_fallback_skipped',
@@ -363,37 +376,9 @@ function emitStatusBarDiagnostic(
       platform: device.platform,
       deviceKind: device.kind,
       deviceId: device.id,
-      ...extractScreenshotFallbackErrorMeta(error),
+      ...extractAppleToolErrorMeta(error),
     },
   });
-}
-
-function extractScreenshotFallbackErrorMeta(error: unknown): Record<string, unknown> {
-  if (!(error instanceof AppError)) {
-    return { reason: error instanceof Error ? error.message : String(error) };
-  }
-  const details = (error.details ?? {}) as {
-    args?: unknown;
-    exitCode?: unknown;
-    stderr?: unknown;
-    stdout?: unknown;
-    timeoutMs?: unknown;
-  };
-  const args = Array.isArray(details.args)
-    ? details.args.filter((value): value is string => typeof value === 'string').join(' ')
-    : undefined;
-
-  return {
-    errorCode: error.code,
-    reason: error.message,
-    timeoutMs: typeof details.timeoutMs === 'number' ? details.timeoutMs : undefined,
-    exitCode: typeof details.exitCode === 'number' ? details.exitCode : undefined,
-    stderr:
-      typeof details.stderr === 'string' && details.stderr.trim() ? details.stderr : undefined,
-    stdout:
-      typeof details.stdout === 'string' && details.stdout.trim() ? details.stdout : undefined,
-    commandArgs: args,
-  };
 }
 
 export function resolveSimulatorRunnerScreenshotCandidatePaths(

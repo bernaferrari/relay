@@ -7,34 +7,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Duplex } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { closeLoopbackServer, listenOnLoopback } from '../../src/__tests__/test-utils/loopback.ts';
 import { runCmd, runCmdSync } from '../../src/utils/exec.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SUBPROCESS_TIMEOUT_MS = 120_000;
-
-async function listen(server: http.Server): Promise<number> {
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve());
-  });
-  const address = server.address();
-  if (!address || typeof address === 'string') {
-    throw new Error('Expected TCP server address.');
-  }
-  return address.port;
-}
-
-async function closeServer(server: http.Server): Promise<void> {
-  if (!server.listening) return;
-  server.closeAllConnections();
-  server.closeIdleConnections();
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) reject(error);
-      else resolve();
-    });
-  });
-}
 
 function destroySocket(socket: Duplex | null): void {
   socket?.destroy();
@@ -65,6 +42,16 @@ function packInstalledPackage(tempRoot: string): string {
   });
   const tarballName = result.stdout.trim();
   return path.join(packDir, tarballName);
+}
+
+function ensureBuiltPackage(): void {
+  const distMetroPath = path.join(repoRoot, 'dist', 'src', 'metro.js');
+  if (fs.existsSync(distMetroPath)) return;
+
+  runCmdSync('pnpm', ['build'], {
+    cwd: repoRoot,
+    timeoutMs: SUBPROCESS_TIMEOUT_MS,
+  });
 }
 
 function extractInstalledPackage(tarballPath: string, consumerRoot: string): string {
@@ -119,12 +106,6 @@ function acceptWebSocket(socket: Duplex, key: string): void {
 }
 
 test('installed package exposes Node APIs and packaged companion tunnel entrypoint', async (t) => {
-  const distMetroPath = path.join(repoRoot, 'dist', 'src', 'metro.js');
-  if (!fs.existsSync(distMetroPath)) {
-    t.skip('run pnpm build before executing installed-package integration tests');
-    return;
-  }
-
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-installed-package-'));
   const consumerRoot = path.join(root, 'consumer');
   const projectRoot = path.join(root, 'project');
@@ -229,6 +210,7 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
   });
   let metroPort = 0;
   try {
+    ensureBuiltPackage();
     const tarballPath = packInstalledPackage(root);
     installedPackageRoot = extractInstalledPackage(tarballPath, consumerRoot);
     linkRuntimeDependencies(installedPackageRoot, consumerRoot);
@@ -243,9 +225,9 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
       false,
     );
 
-    metroPort = await listen(metroServer);
+    metroPort = await listenOnLoopback(metroServer);
     t.after(async () => {
-      await closeServer(metroServer);
+      await closeLoopbackServer(metroServer);
     });
 
     bridgeServer.on('upgrade', (req, socket) => {
@@ -261,10 +243,10 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
       bridgeSocketRef = socket;
       acceptWebSocket(socket, key);
     });
-    bridgePort = await listen(bridgeServer);
+    bridgePort = await listenOnLoopback(bridgeServer);
     t.after(async () => {
       destroySocket(bridgeSocketRef);
-      await closeServer(bridgeServer);
+      await closeLoopbackServer(bridgeServer);
     });
 
     remoteConfigPath = path.join(configDir, 'demo.remote.json');
@@ -380,8 +362,8 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
       });
     }
     destroySocket(bridgeSocketRef);
-    await closeServer(bridgeServer);
-    await closeServer(metroServer);
+    await closeLoopbackServer(bridgeServer);
+    await closeLoopbackServer(metroServer);
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

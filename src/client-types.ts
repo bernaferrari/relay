@@ -22,12 +22,12 @@ import type {
   ReloadMetroResult,
 } from './client-metro.ts';
 import type { MetroBridgeScope } from './client-companion-tunnel-contract.ts';
+import type { AppsFilter } from './commands/app-inventory-contract.ts';
+import type { ScreenshotRequestFlags } from './commands/capture-screenshot-options.ts';
 
 export type { FindLocator } from './utils/finders.ts';
 export type { CompanionTunnelScope, MetroBridgeScope } from './client-companion-tunnel-contract.ts';
-
-export type AppsFilter = 'user-installed' | 'all';
-export const DEFAULT_APPS_FILTER: AppsFilter = 'user-installed';
+export type { AppsFilter } from './commands/app-inventory-contract.ts';
 
 type DaemonTransportMode = 'auto' | 'socket' | 'http';
 type DaemonServerMode = 'socket' | 'http' | 'dual';
@@ -437,8 +437,8 @@ export type KeyboardCommandResult = DaemonResponseData & {
   action?: 'status' | 'dismiss';
   visible?: boolean;
   inputType?: string | null;
-  type?: string | null;
   inputMethodPackage?: string | null;
+  type?: string | null;
   focusedPackage?: string | null;
   focusedResourceId?: string | null;
   inputOwner?: 'app' | 'ime' | 'unknown';
@@ -733,7 +733,7 @@ export type SettingsUpdateOptions =
       mode?: 'full' | 'limited';
     });
 
-type CommandExecutionOptions = {
+type CommandExecutionOptions = Partial<ScreenshotRequestFlags> & {
   positionals?: string[];
   out?: string;
   interactiveOnly?: boolean;
@@ -742,9 +742,6 @@ type CommandExecutionOptions = {
   scope?: string;
   raw?: boolean;
   forceFull?: boolean;
-  screenshotFullscreen?: boolean;
-  screenshotMaxSize?: number;
-  screenshotNoStabilize?: boolean;
   count?: number;
   fps?: number;
   quality?: RecordingQuality;

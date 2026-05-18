@@ -6,21 +6,23 @@ import { isCommandSupportedOnDevice } from '../../core/capabilities.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
 import { SessionStore } from '../session-store.ts';
 import type { DaemonArtifact, DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
-import { runCmd, runCmdBackground } from '../../utils/exec.ts';
+import { runCmd } from '../../utils/exec.ts';
 import { isPlayableVideo, waitForStableFile } from '../../utils/video.ts';
 import { deriveRecordingTelemetryPath } from '../recording-telemetry.ts';
 import { runIosRunnerCommand } from '../../platforms/ios/runner-client.ts';
+import { runXcrun } from '../../platforms/ios/tool-provider.ts';
 import {
   overlayRecordingTouches,
   resizeRecording,
   trimRecordingStart,
 } from '../../recording/overlay.ts';
-import { buildSimctlArgsForDevice } from '../../platforms/ios/simctl.ts';
 import { formatRecordTraceError, formatRecordTraceExecFailure } from '../record-trace-errors.ts';
+import { resolveRecordingProvider } from '../recording-provider.ts';
 import { finalizeRecordingOverlay } from './record-trace-finalize.ts';
 import { errorResponse } from './response.ts';
 import { startAndroidRecording, stopAndroidRecording } from './record-trace-android.ts';
 import {
+  getIosRunnerOptions,
   normalizeAppBundleId,
   startIosDeviceRecording,
   startMacOsRecording,
@@ -42,8 +44,10 @@ export type { RecordTraceDeps, RecordingBase } from './record-trace-types.ts';
 
 function buildRecordTraceDeps(): RecordTraceDeps {
   return {
-    runCmd,
-    runCmdBackground,
+    runCmd: async (cmd, args, options) =>
+      cmd === 'xcrun' ? await runXcrun(args, options) : await runCmd(cmd, args, options),
+    startIosSimulatorRecording: (request) =>
+      resolveRecordingProvider().startIosSimulatorRecording(request),
     runIosRunnerCommand,
     waitForStableFile,
     isPlayableVideo,
@@ -108,13 +112,7 @@ async function startIosSimulatorRecording(params: {
     logPath,
     deps,
   });
-  const { child, wait } = deps.runCmdBackground(
-    'xcrun',
-    buildSimctlArgsForDevice(device, ['io', device.id, 'recordVideo', resolvedOut]),
-    {
-      allowFailure: true,
-    },
-  );
+  const { child, wait } = deps.startIosSimulatorRecording({ device, outPath: resolvedOut });
   const readyAt = await waitForLocalRecordingSettleWindow(resolvedOut);
   let gestureClockOriginAtMs: number | undefined;
   let gestureClockOriginUptimeMs: number | undefined;
@@ -126,11 +124,7 @@ async function startIosSimulatorRecording(params: {
         command: 'uptime',
         appBundleId: normalizeAppBundleId(activeSession),
       },
-      {
-        verbose: req.flags?.verbose,
-        logPath,
-        traceLogPath: activeSession.trace?.outPath,
-      },
+      getIosRunnerOptions(req, logPath, activeSession),
     );
     const uptimeRequestFinishedAtMs = Date.now();
     gestureClockOriginAtMs = Math.round((uptimeRequestStartedAtMs + uptimeRequestFinishedAtMs) / 2);

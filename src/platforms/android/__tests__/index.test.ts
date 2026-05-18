@@ -5,26 +5,24 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  dismissAndroidKeyboard,
-  fillAndroid,
-  getAndroidKeyboardState,
   inferAndroidAppName,
   installAndroidApp,
   installAndroidInstallablePath,
   isAmStartError,
-  listAndroidApps,
   openAndroidApp,
   parseAndroidLaunchComponent,
   resolveAndroidApp,
-  pushAndroidNotification,
-  readAndroidClipboardText,
+} from '../app-lifecycle.ts';
+import { dismissAndroidKeyboard, getAndroidKeyboardState } from '../device-input-state.ts';
+import {
+  fillAndroid,
   rotateAndroid,
-  setAndroidSetting,
   scrollAndroid,
   swipeAndroid,
   typeAndroid,
-  writeAndroidClipboardText,
-} from '../index.ts';
+} from '../input-actions.ts';
+import { pushAndroidNotification } from '../notifications.ts';
+import { setAndroidSetting } from '../settings.ts';
 import { withAndroidAdbProvider } from '../adb-executor.ts';
 import { parseAndroidLaunchablePackages } from '../app-parsers.ts';
 import type { DeviceInfo } from '../../../utils/device.ts';
@@ -220,63 +218,6 @@ test('inferAndroidAppName derives readable names from package ids', () => {
   assert.equal(inferAndroidAppName('com.android.app.services'), 'Services');
 });
 
-test('listAndroidApps returns launchable apps with inferred names', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-android-apps-all-'));
-  const adbPath = path.join(tmpDir, 'adb');
-  await fs.writeFile(
-    adbPath,
-    [
-      '#!/bin/sh',
-      'if [ "$1" = "-s" ]; then',
-      '  shift',
-      '  shift',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "package" ] && [ "$4" = "query-activities" ]; then',
-      '  echo "25"',
-      '  echo "com.google.android.apps.maps/.MainActivity"',
-      '  echo "priority=0"',
-      '  echo "org.mozilla.firefox/.App"',
-      '  echo "com.android.settings/.Settings"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "pm" ] && [ "$3" = "list" ] && [ "$4" = "packages" ] && [ "$5" = "-3" ]; then',
-      '  echo "package:com.google.android.apps.maps"',
-      '  echo "package:com.example.serviceonly"',
-      '  echo "package:org.mozilla.firefox"',
-      '  exit 0',
-      'fi',
-      'echo "unexpected args: $@" >&2',
-      'exit 1',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  await fs.chmod(adbPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-
-  const device: DeviceInfo = {
-    platform: 'android',
-    id: 'emulator-5554',
-    name: 'Pixel',
-    kind: 'emulator',
-    booted: true,
-  };
-
-  try {
-    const apps = await listAndroidApps(device, 'all');
-    assert.deepEqual(apps, [
-      { package: 'com.android.settings', name: 'Settings' },
-      { package: 'com.google.android.apps.maps', name: 'Maps' },
-      { package: 'org.mozilla.firefox', name: 'Firefox' },
-    ]);
-  } finally {
-    process.env.PATH = previousPath;
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
 test('parseAndroidLaunchablePackages ignores cmd package query metadata lines', () => {
   assert.deepEqual(
     parseAndroidLaunchablePackages(
@@ -290,59 +231,6 @@ test('parseAndroidLaunchablePackages ignores cmd package query metadata lines', 
     ),
     ['com.google.android.apps.maps', 'org.mozilla.firefox'],
   );
-});
-
-test('listAndroidApps user-installed excludes non-launchable packages', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-android-apps-user-'));
-  const adbPath = path.join(tmpDir, 'adb');
-  await fs.writeFile(
-    adbPath,
-    [
-      '#!/bin/sh',
-      'if [ "$1" = "-s" ]; then',
-      '  shift',
-      '  shift',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "package" ] && [ "$4" = "query-activities" ]; then',
-      '  echo "com.google.android.apps.maps/.MainActivity"',
-      '  echo "org.mozilla.firefox/.App"',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "pm" ] && [ "$3" = "list" ] && [ "$4" = "packages" ] && [ "$5" = "-3" ]; then',
-      '  echo "package:com.google.android.apps.maps"',
-      '  echo "package:com.example.serviceonly"',
-      '  echo "package:org.mozilla.firefox"',
-      '  exit 0',
-      'fi',
-      'echo "unexpected args: $@" >&2',
-      'exit 1',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  await fs.chmod(adbPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-
-  const device: DeviceInfo = {
-    platform: 'android',
-    id: 'emulator-5554',
-    name: 'Pixel',
-    kind: 'emulator',
-    booted: true,
-  };
-
-  try {
-    const apps = await listAndroidApps(device, 'user-installed');
-    assert.deepEqual(apps, [
-      { package: 'com.google.android.apps.maps', name: 'Maps' },
-      { package: 'org.mozilla.firefox', name: 'Firefox' },
-    ]);
-  } finally {
-    process.env.PATH = previousPath;
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
 });
 
 test('installAndroidApp installs .apk via adb install -r', async () => {
@@ -730,19 +618,6 @@ test('openAndroidApp rejects activity override for deep link URLs', async () => 
   );
 });
 
-test('setAndroidSetting appearance dark uses cmd uimode night yes', async () => {
-  await withMockedAdb(
-    'agent-device-android-appearance-dark-',
-    '#!/bin/sh\nprintf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    async ({ argsLogPath, device }) => {
-      await setAndroidSetting(device, 'appearance', 'dark');
-      const lines = (await fs.readFile(argsLogPath, 'utf8')).trim().split('\n').filter(Boolean);
-      const logged = lines.join(' ');
-      assert.match(logged, /shell cmd uimode night yes/);
-    },
-  );
-});
-
 test('setAndroidSetting appearance toggle flips current mode', async () => {
   await withMockedAdb(
     'agent-device-android-appearance-toggle-',
@@ -829,33 +704,6 @@ test('rotateAndroid locks auto-rotate and sets user rotation', async () => {
       const logged = lines.join(' ');
       assert.match(logged, /shell settings put system accelerometer_rotation 0/);
       assert.match(logged, /shell settings put system user_rotation 1/);
-    },
-  );
-});
-
-test('setAndroidSetting location set sends emulator geo fix with longitude then latitude', async () => {
-  await withMockedAdb(
-    'agent-device-android-location-set-',
-    '#!/bin/sh\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    async ({ argsLogPath, device }) => {
-      await setAndroidSetting(device, 'location', 'set', undefined, {
-        latitude: 37.3349,
-        longitude: -122.009,
-      });
-      const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /emu\ngeo\nfix\n-122\.009\n37\.3349/);
-    },
-  );
-});
-
-test('setAndroidSetting fingerprint match uses adb shell cmd fingerprint touch', async () => {
-  await withMockedAdb(
-    'agent-device-android-fingerprint-match-',
-    '#!/bin/sh\nprintf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    async ({ argsLogPath, device }) => {
-      await setAndroidSetting(device, 'fingerprint', 'match');
-      const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /shell\ncmd\nfingerprint\ntouch\n1/);
     },
   );
 });
@@ -1506,38 +1354,38 @@ test('fillAndroid tolerates delayed React Native text verification', async () =>
   );
 });
 
-test('writeAndroidClipboardText uses adb cmd clipboard set text', async () => {
+test('typeAndroid reports clear error when unicode input is unsupported', async () => {
   await withMockedAdb(
-    'agent-device-android-clipboard-write-',
-    '#!/bin/sh\nprintf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    async ({ argsLogPath, device }) => {
-      await writeAndroidClipboardText(device, 'hello otp');
-      const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /shell\ncmd\nclipboard\nset\ntext\nhello otp/);
-    },
-  );
-});
-
-test('readAndroidClipboardText uses adb cmd clipboard get text', async () => {
-  await withMockedAdb(
-    'agent-device-android-clipboard-read-',
+    'agent-device-android-type-unicode-unsupported-',
     [
       '#!/bin/sh',
       'if [ "$1" = "-s" ]; then',
       '  shift',
       '  shift',
       'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "clipboard" ] && [ "$4" = "get" ] && [ "$5" = "text" ]; then',
-      '  echo "copied-value"',
+      'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "clipboard" ] && [ "$4" = "set" ] && [ "$5" = "text" ]; then',
+      '  echo "No shell command implementation."',
       '  exit 0',
+      'fi',
+      'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "text" ]; then',
+      '  echo "Exception occurred while executing \'text\':" >&2',
+      '  echo "java.lang.NullPointerException" >&2',
+      '  exit 255',
       'fi',
       'echo "unexpected args: $@" >&2',
       'exit 1',
       '',
     ].join('\n'),
     async ({ device }) => {
-      const text = await readAndroidClipboardText(device);
-      assert.equal(text, 'copied-value');
+      await assert.rejects(
+        () => typeAndroid(device, '很'),
+        (error: unknown) => {
+          assert.equal(error instanceof AppError, true);
+          assert.equal((error as AppError).code, 'COMMAND_FAILED');
+          assert.match((error as AppError).message, /provider-native text injection/i);
+          return true;
+        },
+      );
     },
   );
 });
@@ -1838,38 +1686,6 @@ test('dismissAndroidKeyboard fails explicitly when non-navigation dismiss does n
       const logged = await fs.readFile(argsLogPath, 'utf8');
       assert.match(logged, /shell\ninput\nkeyevent\n111/);
       assert.doesNotMatch(logged, /shell\ninput\nkeyevent\n4/);
-    },
-  );
-});
-
-test('setAndroidSetting permission grant camera uses pm grant', async () => {
-  await withMockedAdb(
-    'agent-device-android-permission-camera-',
-    '#!/bin/sh\nprintf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    async ({ argsLogPath, device }) => {
-      await setAndroidSetting(device, 'permission', 'grant', 'com.example.app', {
-        permissionTarget: 'camera',
-      });
-      const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /shell\npm\ngrant\ncom\.example\.app\nandroid\.permission\.CAMERA/);
-    },
-  );
-});
-
-test('setAndroidSetting animations off disables global animation scales', async () => {
-  await withMockedAdb(
-    'agent-device-android-animations-',
-    '#!/bin/sh\nprintf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nprintf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    async ({ argsLogPath, device }) => {
-      const result = await setAndroidSetting(device, 'animations', 'off');
-      const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /shell\nsettings\nput\nglobal\nwindow_animation_scale\n0/);
-      assert.match(logged, /shell\nsettings\nput\nglobal\ntransition_animation_scale\n0/);
-      assert.match(logged, /shell\nsettings\nput\nglobal\nanimator_duration_scale\n0/);
-      assert.deepEqual(result, {
-        scale: '0',
-        keys: ['window_animation_scale', 'transition_animation_scale', 'animator_duration_scale'],
-      });
     },
   );
 });

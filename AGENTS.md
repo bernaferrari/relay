@@ -2,6 +2,20 @@
 
 Minimal operating guide for AI coding agents in this repo.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in GitHub Issues for `callstackincubator/agent-device`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default Matt Pocock skills triage vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo. Read `CONTEXT.md` for domain language and testing/architecture vocabulary, and `docs/adr/` for accepted architecture decisions. See `docs/agents/domain.md`.
+
 ## First 60 Seconds
 - Classify task type:
   - Info-only (triage/review/questions/docs guidance): no code edits and no test runs unless explicitly requested.
@@ -48,7 +62,7 @@ Minimal operating guide for AI coding agents in this repo.
 - Put request policies in focused request modules:
   - tenant/lease/selector/lock admission: `src/daemon/request-admission.ts`
   - artifact/error finalization: `src/daemon/request-finalization.ts`
-  - Android ADB provider scoping: `src/daemon/request-android-adb.ts`
+  - request-scoped platform provider scoping: `src/daemon/request-platform-providers.ts`
   - generic fallback dispatch + action recording: `src/daemon/request-generic-dispatch.ts`
   - recording invalidation health: `src/daemon/request-recording-health.ts`
 - Put command logic in handler modules:
@@ -67,7 +81,6 @@ Minimal operating guide for AI coding agents in this repo.
 - TypeScript is strict enough to surface dead code early: `strict`, `isolatedModules`, `noUnusedLocals`, and `noUnusedParameters` are enabled.
 - The repo emits with `rslib`, not `tsc`. If declaration generation fails, inspect `tsconfig.lib.json` first.
 - `tsconfig.lib.json` needs an explicit `rootDir: "./src"` for declaration layout.
-- `server.json` MCP registry metadata must stay in sync with `package.json` `version` and `mcpName`; run `pnpm sync:mcp-metadata` after changing either field, and rely on `pnpm check:tooling`/CI to verify it.
 - Use the aggregate scripts in `package.json` when possible; they encode the expected validation bundles better than ad hoc command lists.
 
 ## Cheap Exploration
@@ -175,7 +188,6 @@ Command-only flags (like `find --first`) that don't flow to the platform layer o
 - Keep tests behavioral; do not assert shapes or cases TypeScript already proves.
 - Any TS change: `pnpm typecheck` or `pnpm check:quick`.
 - Tooling/config change (`package.json`, `tsconfig*.json`, `.oxlintrc.json`, `.oxfmtrc.json`): `pnpm check:tooling`.
-- MCP registry metadata changes (`server.json` or package `version`/`mcpName`): run `pnpm sync:mcp-metadata`, then `pnpm check:tooling`.
 - Daemon handler/shared module change: `pnpm check:unit`.
 - iOS runner/Swift change: `pnpm build:xcuitest`.
 - Cross-platform behavior change: run `pnpm test:integration`.

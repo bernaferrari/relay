@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DeviceInfo } from '../../utils/device.ts';
 import { AppError } from '../../utils/errors.ts';
-import { runCmd } from '../../utils/exec.ts';
+import type { ExecResult } from '../../utils/exec.ts';
+import { splitNonEmptyTrimmedLines } from '../../utils/parsing.ts';
 import { roundPercent } from '../perf-utils.ts';
 import { uniqueStrings } from '../../daemon/action-utils.ts';
 import {
@@ -16,6 +17,7 @@ import {
 } from './devicectl.ts';
 import { readInfoPlistString } from './plist.ts';
 import { buildSimctlArgsForDevice } from './simctl.ts';
+import { runAppleToolCommand, runXcrun } from './tool-provider.ts';
 import { parseXmlDocumentSync, type XmlNode } from './xml.ts';
 import {
   findAllXmlNodes,
@@ -93,7 +95,7 @@ type IosDeviceTraceRecord = {
 };
 
 type IosDeviceTraceRecordAttempt = IosDeviceTraceRecord & {
-  result: Awaited<ReturnType<typeof runCmd>>;
+  result: ExecResult;
 };
 
 export async function sampleApplePerfMetrics(
@@ -323,7 +325,7 @@ async function runIosDeviceTraceRecord(
       await new Promise((resolve) => setTimeout(resolve, IOS_DEVICE_TRACE_RECORD_RETRY_DELAY_MS));
     }
     const startedAt = new Date().toISOString();
-    const result = await runCmd('xcrun', recordArgs, {
+    const result = await runXcrun(recordArgs, {
       allowFailure: true,
       timeoutMs: IOS_DEVICE_PERF_RECORD_TIMEOUT_MS,
     });
@@ -395,7 +397,7 @@ async function exportIosDevicePerfTable(
     '--output',
     outputPath,
   ];
-  const exportResult = await runCmd('xcrun', exportArgs, {
+  const exportResult = await runXcrun(exportArgs, {
     allowFailure: true,
     timeoutMs: IOS_DEVICE_PERF_EXPORT_TIMEOUT_MS,
   });
@@ -429,9 +431,7 @@ async function exportOptionalIosDevicePerfTable(
 
 export function parseApplePsOutput(stdout: string): AppleProcessSample[] {
   const rows: AppleProcessSample[] = [];
-  for (const rawLine of stdout.split('\n')) {
-    const line = rawLine.trim();
-    if (line.length === 0) continue;
+  for (const line of splitNonEmptyTrimmedLines(stdout)) {
     const match = line.match(/^(\d+)\s+([0-9]+(?:\.[0-9]+)?)\s+(\d+)\s+(.+)$/);
     if (!match) continue;
     const pid = Number(match[1]);
@@ -726,7 +726,7 @@ function summarizeIosDevicePerfSnapshot(
 
 async function resolveMacOsBundlePath(appBundleId: string): Promise<string> {
   const query = `kMDItemCFBundleIdentifier == "${appBundleId.replaceAll('"', '\\"')}"`;
-  const result = await runCmd('mdfind', [query], {
+  const result = await runAppleToolCommand('mdfind', [query], {
     allowFailure: true,
     timeoutMs: APPLE_PERF_TIMEOUT_MS,
   });
@@ -761,7 +761,7 @@ async function resolveIosSimulatorAppContainer(
     appBundleId,
     'app',
   ]);
-  const result = await runCmd('xcrun', args, {
+  const result = await runXcrun(args, {
     allowFailure: true,
     timeoutMs: APPLE_PERF_TIMEOUT_MS,
   });
@@ -805,9 +805,10 @@ async function readAppleProcessSamples(
           '-axo',
           'pid=,%cpu=,rss=,command=',
         ]);
-  const result = await runCmd(device.platform === 'macos' ? 'ps' : 'xcrun', args, {
-    timeoutMs: APPLE_PERF_TIMEOUT_MS,
-  });
+  const result =
+    device.platform === 'macos'
+      ? await runAppleToolCommand('ps', args, { timeoutMs: APPLE_PERF_TIMEOUT_MS })
+      : await runXcrun(args, { timeoutMs: APPLE_PERF_TIMEOUT_MS });
   return parseApplePsOutput(result.stdout).filter((process) =>
     matchesAppleExecutableProcess(process.command, executable),
   );

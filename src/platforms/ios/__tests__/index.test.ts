@@ -47,18 +47,13 @@ import {
   closeIosApp,
   installIosApp,
   installIosInstallablePath,
-  listIosApps,
   openIosApp,
-  parseIosDeviceAppsPayload,
   pushIosNotification,
   readIosClipboardText,
   reinstallIosApp,
   resolveIosApp,
   screenshotIos,
   setIosSetting,
-  writeIosClipboardText,
-} from '../index.ts';
-import {
   shouldFallbackToRunnerForIosScreenshot,
   shouldRetryIosSimulatorScreenshot,
 } from '../apps.ts';
@@ -79,7 +74,7 @@ import { withDiagnosticsScope } from '../../../utils/diagnostics.ts';
 import { AppError } from '../../../utils/errors.ts';
 import { runCmd } from '../../../utils/exec.ts';
 import { retryWithPolicy } from '../../../utils/retry.ts';
-import { parseIosDeviceProcessesPayload } from '../devicectl.ts';
+import { parseIosDeviceAppsPayload, parseIosDeviceProcessesPayload } from '../devicectl.ts';
 
 const IOS_TEST_DEVICE: DeviceInfo = {
   platform: 'ios',
@@ -183,31 +178,6 @@ async function withMockedXcrun(
     } else {
       process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
     }
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-}
-
-async function withMockedMacTools(
-  tempPrefix: string,
-  scripts: Record<string, string>,
-  run: (ctx: { tmpDir: string; files: Record<string, string> }) => Promise<void>,
-): Promise<void> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), tempPrefix));
-  const files: Record<string, string> = {};
-  for (const [name, content] of Object.entries(scripts)) {
-    const filePath = path.join(tmpDir, name);
-    await fs.writeFile(filePath, content, 'utf8');
-    await fs.chmod(filePath, 0o755);
-    files[name] = filePath;
-  }
-
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-
-  try {
-    await run({ tmpDir, files });
-  } finally {
-    process.env.PATH = previousPath;
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
 }
@@ -885,104 +855,6 @@ test('openIosApp custom scheme on iOS device uses active app context', async () 
   }
 });
 
-test('writeIosClipboardText uses simctl pbcopy with stdin', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-ios-clipboard-write-test-'));
-  const xcrunPath = path.join(tmpDir, 'xcrun');
-  const argsLogPath = path.join(tmpDir, 'args.log');
-  const stdinLogPath = path.join(tmpDir, 'stdin.log');
-  await fs.writeFile(
-    xcrunPath,
-    [
-      '#!/bin/sh',
-      'printf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"',
-      'if [ "$1" = "simctl" ] && [ "$2" = "list" ] && [ "$3" = "devices" ] && [ "$4" = "-j" ]; then',
-      '  echo \'{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-0":[{"udid":"sim-1","state":"Booted"}]}}\'',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "simctl" ] && [ "$2" = "pbcopy" ]; then',
-      '  cat > "$AGENT_DEVICE_TEST_STDIN_FILE"',
-      '  exit 0',
-      'fi',
-      'exit 1',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  await fs.chmod(xcrunPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-  const previousStdinFile = process.env.AGENT_DEVICE_TEST_STDIN_FILE;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-  process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
-  process.env.AGENT_DEVICE_TEST_STDIN_FILE = stdinLogPath;
-
-  try {
-    await writeIosClipboardText(IOS_TEST_SIMULATOR, 'hello otp');
-    const args = (await fs.readFile(argsLogPath, 'utf8')).trim().split('\n').filter(Boolean);
-    assert.deepEqual(args, ['simctl', 'pbcopy', 'sim-1']);
-    assert.equal(await fs.readFile(stdinLogPath, 'utf8'), 'hello otp');
-  } finally {
-    process.env.PATH = previousPath;
-    if (previousArgsFile === undefined) {
-      delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-    } else {
-      process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
-    }
-    if (previousStdinFile === undefined) {
-      delete process.env.AGENT_DEVICE_TEST_STDIN_FILE;
-    } else {
-      process.env.AGENT_DEVICE_TEST_STDIN_FILE = previousStdinFile;
-    }
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('readIosClipboardText uses simctl pbpaste', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-ios-clipboard-read-test-'));
-  const xcrunPath = path.join(tmpDir, 'xcrun');
-  const argsLogPath = path.join(tmpDir, 'args.log');
-  await fs.writeFile(
-    xcrunPath,
-    [
-      '#!/bin/sh',
-      'printf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"',
-      'if [ "$1" = "simctl" ] && [ "$2" = "list" ] && [ "$3" = "devices" ] && [ "$4" = "-j" ]; then',
-      '  echo \'{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-0":[{"udid":"sim-1","state":"Booted"}]}}\'',
-      '  exit 0',
-      'fi',
-      'if [ "$1" = "simctl" ] && [ "$2" = "pbpaste" ]; then',
-      '  echo "copied-value"',
-      '  exit 0',
-      'fi',
-      'exit 1',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  await fs.chmod(xcrunPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-  process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
-
-  try {
-    const text = await readIosClipboardText(IOS_TEST_SIMULATOR);
-    assert.equal(text, 'copied-value');
-    const logged = await fs.readFile(argsLogPath, 'utf8');
-    assert.match(logged, /simctl\npbpaste\nsim-1/);
-  } finally {
-    process.env.PATH = previousPath;
-    if (previousArgsFile === undefined) {
-      delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-    } else {
-      process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
-    }
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
 test('readIosClipboardText rejects physical devices', async () => {
   await assert.rejects(
     () => readIosClipboardText(IOS_TEST_DEVICE),
@@ -990,74 +862,6 @@ test('readIosClipboardText rejects physical devices', async () => {
       assert.equal(error instanceof AppError, true);
       assert.equal((error as AppError).code, 'UNSUPPORTED_OPERATION');
       return true;
-    },
-  );
-});
-
-test('writeIosClipboardText uses pbcopy on macOS', async () => {
-  const tmpDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'agent-device-macos-clipboard-write-test-'),
-  );
-  const pbcopyPath = path.join(tmpDir, 'pbcopy');
-  const stdinLogPath = path.join(tmpDir, 'stdin.log');
-  await fs.writeFile(pbcopyPath, '#!/bin/sh\ncat > "$AGENT_DEVICE_TEST_STDIN_FILE"\n', 'utf8');
-  await fs.chmod(pbcopyPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  const previousStdinFile = process.env.AGENT_DEVICE_TEST_STDIN_FILE;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-  process.env.AGENT_DEVICE_TEST_STDIN_FILE = stdinLogPath;
-
-  try {
-    await writeIosClipboardText(MACOS_TEST_DEVICE, 'desktop clipboard');
-    assert.equal(await fs.readFile(stdinLogPath, 'utf8'), 'desktop clipboard');
-  } finally {
-    process.env.PATH = previousPath;
-    if (previousStdinFile === undefined) delete process.env.AGENT_DEVICE_TEST_STDIN_FILE;
-    else process.env.AGENT_DEVICE_TEST_STDIN_FILE = previousStdinFile;
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('readIosClipboardText uses pbpaste on macOS', async () => {
-  const tmpDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'agent-device-macos-clipboard-read-test-'),
-  );
-  const pbpastePath = path.join(tmpDir, 'pbpaste');
-  await fs.writeFile(pbpastePath, '#!/bin/sh\necho "desktop-value"\n', 'utf8');
-  await fs.chmod(pbpastePath, 0o755);
-
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-
-  try {
-    const text = await readIosClipboardText(MACOS_TEST_DEVICE);
-    assert.equal(text, 'desktop-value');
-  } finally {
-    process.env.PATH = previousPath;
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('openIosApp on macOS resolves aliases before invoking open', async () => {
-  await withMockedMacTools(
-    'agent-device-macos-open-alias-test-',
-    {
-      open: '#!/bin/sh\nprintf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"\n',
-    },
-    async ({ tmpDir }) => {
-      const argsLogPath = path.join(tmpDir, 'args.log');
-      const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-      process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
-
-      try {
-        await openIosApp(MACOS_TEST_DEVICE, 'settings');
-        const logged = await fs.readFile(argsLogPath, 'utf8');
-        assert.equal(logged, '-b\ncom.apple.systempreferences\n');
-      } finally {
-        if (previousArgsFile === undefined) delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-        else process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
-      }
     },
   );
 });
@@ -1831,125 +1635,6 @@ test('installIosInstallablePath invalidates cached display-name bundle matches',
   }
 });
 
-test('listIosApps applies user-installed filter on simulator', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-ios-list-sim-'));
-  const xcrunPath = path.join(tmpDir, 'xcrun');
-  await fs.writeFile(
-    xcrunPath,
-    [
-      '#!/bin/sh',
-      'if [ "$1" = "simctl" ] && [ "$2" = "listapps" ]; then',
-      "  cat <<'JSON'",
-      '{"com.apple.Maps":{"CFBundleDisplayName":"Maps"},"com.example.demo":{"CFBundleDisplayName":"Demo"}}',
-      'JSON',
-      '  exit 0',
-      'fi',
-      'echo "unexpected xcrun args: $@" >&2',
-      'exit 1',
-      '',
-    ].join('\n'),
-    'utf8',
-  );
-  await fs.chmod(xcrunPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-
-  const device: DeviceInfo = {
-    platform: 'ios',
-    id: 'sim-1',
-    name: 'iPhone Sim',
-    kind: 'simulator',
-    booted: true,
-  };
-
-  try {
-    const apps = await listIosApps(device, 'user-installed');
-    assert.deepEqual(apps, [{ bundleId: 'com.example.demo', name: 'Demo' }]);
-  } finally {
-    process.env.PATH = previousPath;
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('listIosApps reads standard macOS app bundles from Contents/Info.plist', async () => {
-  await withMockedMacTools(
-    'agent-device-macos-app-list-test-',
-    {
-      find: `#!/bin/sh
-printf '%s\n' "$AGENT_DEVICE_TEST_MAC_APP_ONE" "$AGENT_DEVICE_TEST_MAC_APP_TWO"
-`,
-      plutil: `#!/bin/sh
-key="$2"
-last=""
-for arg in "$@"; do
-  last="$arg"
-done
-case "$key:$last" in
-  CFBundleIdentifier:*Demo.app/Contents/Info.plist)
-    echo "com.example.demo"
-    exit 0
-    ;;
-  CFBundleDisplayName:*Demo.app/Contents/Info.plist)
-    echo "Demo"
-    exit 0
-    ;;
-  CFBundleName:*Demo.app/Contents/Info.plist)
-    echo "Demo"
-    exit 0
-    ;;
-  CFBundleIdentifier:*Safari.app/Contents/Info.plist)
-    echo "com.apple.Safari"
-    exit 0
-    ;;
-  CFBundleDisplayName:*Safari.app/Contents/Info.plist)
-    echo "Safari"
-    exit 0
-    ;;
-  CFBundleName:*Safari.app/Contents/Info.plist)
-    echo "Safari"
-    exit 0
-    ;;
-  *)
-    exit 1
-    ;;
-esac
-`,
-    },
-    async ({ tmpDir }) => {
-      const applicationsPath = path.join(tmpDir, 'Applications');
-      const demoAppPath = path.join(applicationsPath, 'Demo.app');
-      const safariAppPath = path.join(applicationsPath, 'Safari.app');
-      await fs.mkdir(path.join(demoAppPath, 'Contents'), { recursive: true });
-      await fs.mkdir(path.join(safariAppPath, 'Contents'), { recursive: true });
-      await fs.writeFile(path.join(demoAppPath, 'Contents', 'Info.plist'), '', 'utf8');
-      await fs.writeFile(path.join(safariAppPath, 'Contents', 'Info.plist'), '', 'utf8');
-
-      const previousAppOne = process.env.AGENT_DEVICE_TEST_MAC_APP_ONE;
-      const previousAppTwo = process.env.AGENT_DEVICE_TEST_MAC_APP_TWO;
-      const previousHome = process.env.HOME;
-      process.env.AGENT_DEVICE_TEST_MAC_APP_ONE = demoAppPath;
-      process.env.AGENT_DEVICE_TEST_MAC_APP_TWO = safariAppPath;
-      process.env.HOME = tmpDir;
-
-      try {
-        const apps = await listIosApps(MACOS_TEST_DEVICE, 'all');
-        assert.deepEqual(apps, [
-          { bundleId: 'com.example.demo', name: 'Demo' },
-          { bundleId: 'com.apple.Safari', name: 'Safari' },
-        ]);
-      } finally {
-        if (previousAppOne === undefined) delete process.env.AGENT_DEVICE_TEST_MAC_APP_ONE;
-        else process.env.AGENT_DEVICE_TEST_MAC_APP_ONE = previousAppOne;
-        if (previousAppTwo === undefined) delete process.env.AGENT_DEVICE_TEST_MAC_APP_TWO;
-        else process.env.AGENT_DEVICE_TEST_MAC_APP_TWO = previousAppTwo;
-        if (previousHome === undefined) delete process.env.HOME;
-        else process.env.HOME = previousHome;
-      }
-    },
-  );
-});
-
 test('setIosSetting faceid match uses simctl biometric match', async () => {
   await withMockedXcrun(
     'agent-device-ios-faceid-match-test-',
@@ -2166,70 +1851,6 @@ exit 1
   );
 });
 
-test('setIosSetting appearance dark uses simctl ui appearance', async () => {
-  await withMockedXcrun(
-    'agent-device-ios-appearance-dark-test-',
-    `#!/bin/sh
-printf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"
-printf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"
-if [ "$1" = "simctl" ] && [ "$2" = "list" ] && [ "$3" = "devices" ] && [ "$4" = "-j" ]; then
-  cat <<'JSON'
-{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-0":[{"udid":"sim-1","state":"Booted"}]}}
-JSON
-  exit 0
-fi
-if [ "$1" = "simctl" ] && [ "$2" = "ui" ] && [ "$3" = "sim-1" ] && [ "$4" = "appearance" ] && [ "$5" = "dark" ]; then
-  exit 0
-fi
-echo "unexpected xcrun args: $@" >&2
-exit 1
-`,
-    async ({ argsLogPath }) => {
-      const device: DeviceInfo = {
-        platform: 'ios',
-        id: 'sim-1',
-        name: 'iPhone Sim',
-        kind: 'simulator',
-        booted: true,
-      };
-      await setIosSetting(device, 'appearance', 'dark');
-      const lines = (await fs.readFile(argsLogPath, 'utf8')).trim().split('\n').filter(Boolean);
-      const logged = lines.join(' ');
-      assert.match(logged, /simctl ui sim-1 appearance dark/);
-    },
-  );
-});
-
-test('setIosSetting appearance dark uses osascript on macOS', async () => {
-  const tmpDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), 'agent-device-macos-appearance-dark-test-'),
-  );
-  const osascriptPath = path.join(tmpDir, 'osascript');
-  const argsLogPath = path.join(tmpDir, 'args.log');
-  await fs.writeFile(
-    osascriptPath,
-    '#!/bin/sh\nprintf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    'utf8',
-  );
-  await fs.chmod(osascriptPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-  process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
-
-  try {
-    await setIosSetting(MACOS_TEST_DEVICE, 'appearance', 'dark');
-    const logged = await fs.readFile(argsLogPath, 'utf8');
-    assert.match(logged, /set dark mode to true/);
-  } finally {
-    process.env.PATH = previousPath;
-    if (previousArgsFile === undefined) delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-    else process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-});
-
 test('setIosSetting appearance toggle queries current osascript appearance on macOS', async () => {
   const tmpDir = await fs.mkdtemp(
     path.join(os.tmpdir(), 'agent-device-macos-appearance-toggle-test-'),
@@ -2431,41 +2052,6 @@ exit 0
           return true;
         },
       );
-    },
-  );
-});
-
-test('setIosSetting permission grant camera uses simctl privacy', async () => {
-  await withMockedXcrun(
-    'agent-device-ios-permission-camera-test-',
-    `#!/bin/sh
-printf "__CMD__\\n" >> "$AGENT_DEVICE_TEST_ARGS_FILE"
-printf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"
-if [ "$1" = "simctl" ] && [ "$2" = "list" ] && [ "$3" = "devices" ] && [ "$4" = "-j" ]; then
-  cat <<'JSON'
-{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-18-0":[{"udid":"sim-1","state":"Booted"}]}}
-JSON
-  exit 0
-fi
-if [ "$1" = "simctl" ] && [ "$2" = "privacy" ] && [ "$3" = "sim-1" ] && [ "$4" = "grant" ] && [ "$5" = "camera" ] && [ "$6" = "com.example.app" ]; then
-  exit 0
-fi
-echo "unexpected xcrun args: $@" >&2
-exit 1
-`,
-    async ({ argsLogPath }) => {
-      const device: DeviceInfo = {
-        platform: 'ios',
-        id: 'sim-1',
-        name: 'iPhone Sim',
-        kind: 'simulator',
-        booted: true,
-      };
-      await setIosSetting(device, 'permission', 'grant', 'com.example.app', {
-        permissionTarget: 'camera',
-      });
-      const logged = await fs.readFile(argsLogPath, 'utf8');
-      assert.match(logged, /simctl\nprivacy\nsim-1\ngrant\ncamera\ncom\.example\.app/);
     },
   );
 });

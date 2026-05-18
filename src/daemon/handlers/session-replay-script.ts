@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { AppError } from '../../utils/errors.ts';
-import type { PlatformSelector } from '../../utils/device.ts';
+import { readScreenshotScriptFlag } from '../../commands/capture-screenshot-options.ts';
+import type { DeviceTarget, PlatformSelector } from '../../utils/device.ts';
 import { parseReplayOpenFlags } from '../session-open-script.ts';
 import { formatPortableActionLine } from '../session-script-formatting.ts';
 import type { SessionAction, SessionState } from '../types.ts';
@@ -20,9 +21,11 @@ const REPLAY_METADATA_PLATFORMS = new Set<ReplayScriptPlatform>([
   'macos',
   'linux',
 ]);
+const REPLAY_METADATA_TARGETS = new Set<DeviceTarget>(['mobile', 'tv', 'desktop']);
 
 export type ReplayScriptMetadata = {
   platform?: ReplayScriptPlatform;
+  target?: DeviceTarget;
   timeoutMs?: number;
   retries?: number;
   env?: Record<string, string>;
@@ -81,6 +84,13 @@ export function readReplayScriptMetadata(script: string): ReplayScriptMetadata {
       const platform = platformMatch[1] as ReplayScriptPlatform | undefined;
       if (platform && REPLAY_METADATA_PLATFORMS.has(platform)) {
         assignReplayMetadataValue(metadata, 'platform', platform);
+      }
+    }
+    const targetMatch = trimmed.match(/(?:^|\s)target=([^\s]+)/);
+    if (targetMatch) {
+      const target = targetMatch[1] as DeviceTarget | undefined;
+      if (target && REPLAY_METADATA_TARGETS.has(target)) {
+        assignReplayMetadataValue(metadata, 'target', target);
       }
     }
     const timeoutMatch = trimmed.match(/(?:^|\s)timeout=(\d+)/);
@@ -203,6 +213,10 @@ function parseReplayScriptLine(line: string): SessionAction | null {
       }
       if (token === '--raw') {
         action.flags.snapshotRaw = true;
+        continue;
+      }
+      if (token === '--force-full') {
+        action.flags.snapshotForceFull = true;
         continue;
       }
       if ((token === '-d' || token === '--depth') && index + 1 < args.length) {
@@ -344,22 +358,9 @@ function parseReplayScriptLine(line: string): SessionAction | null {
     const positionals: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
       const token = args[index];
-      if (token === '--fullscreen') {
-        action.flags.screenshotFullscreen = true;
-        continue;
-      }
-      if (token === '--no-stabilize') {
-        action.flags.screenshotNoStabilize = true;
-        continue;
-      }
-      if (token === '--max-size') {
-        const value = args[index + 1];
-        const maxSize = value === undefined ? NaN : Number(value);
-        if (!Number.isInteger(maxSize) || maxSize < 1) {
-          throw new AppError('INVALID_ARGS', 'screenshot --max-size requires a positive integer');
-        }
-        action.flags.screenshotMaxSize = maxSize;
-        index += 1;
+      const screenshotFlag = readScreenshotScriptFlag({ args, index, flags: action.flags });
+      if (screenshotFlag.handled) {
+        index = screenshotFlag.nextIndex;
         continue;
       }
       positionals.push(token);

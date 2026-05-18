@@ -1,5 +1,6 @@
 import { isCommandSupportedOnDevice } from '../../core/capabilities.ts';
-import { DEFAULT_APPS_FILTER } from '../../client-types.ts';
+import { listDeviceInventory } from '../../core/dispatch-resolve.ts';
+import { assertResolvedAppsFilter } from '../../commands/app-inventory-contract.ts';
 import { asAppError } from '../../utils/errors.ts';
 import {
   isApplePlatform,
@@ -13,8 +14,8 @@ import {
 } from '../../utils/device-isolation.ts';
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
-import { listAndroidApps } from '../../platforms/android/index.ts';
-import { listIosApps } from '../../platforms/ios/index.ts';
+import { listAndroidApps } from '../../platforms/android/app-lifecycle.ts';
+import { listIosApps } from '../../platforms/ios/apps.ts';
 import { requireSessionOrExplicitSelector, resolveCommandDevice } from './session-device-utils.ts';
 import { errorResponse } from './response.ts';
 
@@ -49,7 +50,6 @@ export async function handleSessionInventoryCommands(params: {
 
   if (req.command === 'devices') {
     try {
-      const devices: DeviceInfo[] = [];
       const androidSerialAllowlist = resolveAndroidSerialAllowlist(
         req.flags?.androidDeviceAllowlist,
       );
@@ -60,36 +60,21 @@ export async function handleSessionInventoryCommands(params: {
         target: req.flags?.target,
       });
 
-      if (requestedPlatform === 'android') {
-        const { listAndroidDevices } = await import('../../platforms/android/devices.ts');
-        devices.push(...(await listAndroidDevices({ serialAllowlist: androidSerialAllowlist })));
-      } else if (requestedPlatform === 'ios' || requestedPlatform === 'macos') {
-        const { listAppleDevices } = await import('../../platforms/ios/devices.ts');
-        devices.push(...(await listAppleDevices({ simulatorSetPath: iosSimulatorSetPath })));
-      } else {
-        if (requestedPlatform !== 'apple') {
-          const { listAndroidDevices } = await import('../../platforms/android/devices.ts');
-          try {
-            devices.push(
-              ...(await listAndroidDevices({ serialAllowlist: androidSerialAllowlist })),
-            );
-          } catch {
-            // ignore discovery failures so the other platform can still respond
-          }
-        }
+      const devices = await listDeviceInventory({
+        platform: requestedPlatform,
+        target: req.flags?.target,
+        deviceName: req.flags?.device,
+        udid: req.flags?.udid,
+        serial: req.flags?.serial,
+        iosSimulatorSetPath,
+        androidSerialAllowlist: androidSerialAllowlist
+          ? Array.from(androidSerialAllowlist).sort()
+          : undefined,
+      });
 
-        const { listAppleDevices } = await import('../../platforms/ios/devices.ts');
-        try {
-          devices.push(...(await listAppleDevices({ simulatorSetPath: iosSimulatorSetPath })));
-        } catch {
-          // ignore discovery failures so the other platform can still respond
-        }
-      }
-
-      const platformFiltered =
-        requestedPlatform === 'ios' || requestedPlatform === 'macos'
-          ? devices.filter((device) => device.platform === requestedPlatform)
-          : devices;
+      const platformFiltered = requestedPlatform
+        ? devices.filter((device) => matchesRequestedPlatform(device, requestedPlatform))
+        : devices;
       const filtered = req.flags?.target
         ? platformFiltered.filter((device) => (device.target ?? 'mobile') === req.flags?.target)
         : platformFiltered;
@@ -118,7 +103,7 @@ export async function handleSessionInventoryCommands(params: {
       return errorResponse('UNSUPPORTED_OPERATION', 'apps is not supported on this device');
     }
 
-    const appsFilter = req.flags?.appsFilter ?? DEFAULT_APPS_FILTER;
+    const appsFilter = assertResolvedAppsFilter(req.flags?.appsFilter);
     if (isApplePlatform(device.platform)) {
       const apps = await listIosApps(device, appsFilter);
       return {
@@ -143,4 +128,13 @@ export async function handleSessionInventoryCommands(params: {
   }
 
   return null;
+}
+
+function matchesRequestedPlatform(
+  device: DeviceInfo,
+  requestedPlatform: ReturnType<typeof normalizePlatformSelector>,
+): boolean {
+  if (!requestedPlatform) return true;
+  if (requestedPlatform === 'apple') return isApplePlatform(device.platform);
+  return device.platform === requestedPlatform;
 }
