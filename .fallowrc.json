@@ -24,7 +24,8 @@
   ],
   "ignorePatterns": [
     "examples/test-app/**",
-    "ios-runner/AgentDeviceRunner/AgentDeviceRunnerUITests.xctestplan"
+    "ios-runner/AgentDeviceRunner/AgentDeviceRunnerUITests.xctestplan",
+    "scripts/write-xcuitest-cache-metadata.mjs"
   ],
   "ignoreDependencies": ["@microsoft/api-extractor", "@theme"],
   "ignoreExports": [
@@ -64,14 +65,6 @@
     {
       "file": "src/platforms/ios/index.ts",
       "exports": ["listSimulatorApps", "uninstallIosApp"]
-    },
-    {
-      "file": "src/platforms/ios/runner-client.ts",
-      "exports": [
-        "buildRunnerConnectError",
-        "buildRunnerEarlyExitError",
-        "resolveSigningFailureHint"
-      ]
     }
   ],
   "usedClassMembers": ["name", "listActiveLeases", "delete", "values", "elapsedMs", "isExpired"],

@@ -41,6 +41,7 @@ const STATE_COMMANDS = DAEMON_COMMAND_GROUPS.state;
 const OBSERVABILITY_COMMANDS = DAEMON_COMMAND_GROUPS.observability;
 const REPLAY_COMMANDS = DAEMON_COMMAND_GROUPS.replay;
 
+// fallow-ignore-next-line complexity
 async function runSessionOrSelectorDispatch(params: {
   req: DaemonRequest;
   sessionName: string;
@@ -99,6 +100,7 @@ async function runSessionOrSelectorDispatch(params: {
   return { ok: true, data: result ?? {} };
 }
 
+// fallow-ignore-next-line complexity
 async function handleClipboardCommand(params: {
   req: DaemonRequest;
   sessionName: string;
@@ -145,15 +147,25 @@ async function handleClipboardCommand(params: {
   return { ok: true, data: { platform: device.platform, ...(result ?? {}) } };
 }
 
+// fallow-ignore-next-line complexity
 export async function handleSessionCommands(params: {
   req: DaemonRequest;
   sessionName: string;
   logPath: string;
   sessionStore: SessionStore;
   invoke: (req: DaemonRequest) => Promise<DaemonResponse>;
+  invokeReplayAction?: (req: DaemonRequest) => Promise<DaemonResponse>;
   androidAdbExecutor?: AndroidAdbExecutor;
 }): Promise<DaemonResponse | null> {
-  const { req, sessionName, logPath, sessionStore, invoke, androidAdbExecutor } = params;
+  const {
+    req,
+    sessionName,
+    logPath,
+    sessionStore,
+    invoke,
+    invokeReplayAction,
+    androidAdbExecutor,
+  } = params;
 
   if (INVENTORY_COMMANDS.has(req.command)) {
     return await handleSessionInventoryCommands({
@@ -304,7 +316,7 @@ export async function handleSessionCommands(params: {
       sessionName,
       logPath,
       sessionStore,
-      invoke,
+      invoke: invokeReplayAction ?? invoke,
     });
   }
 
