@@ -1,4 +1,5 @@
 import type { AndroidSnapshotBackendMetadata } from './platforms/android/snapshot-types.ts';
+import type { AlertAction, AlertInfo } from './alert-contract.ts';
 import type { AppsFilter } from './commands/app-inventory-contract.ts';
 import type {
   Point,
@@ -110,13 +111,9 @@ export type BackendClipboardTextResult = {
   text: string;
 };
 
-export type BackendAlertAction = 'get' | 'accept' | 'dismiss' | 'wait';
+export type BackendAlertAction = AlertAction;
 
-export type BackendAlertInfo = {
-  title?: string;
-  message?: string;
-  buttons?: string[];
-};
+export type BackendAlertInfo = AlertInfo;
 
 export type BackendAlertResult =
   | {
