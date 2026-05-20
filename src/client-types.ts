@@ -471,6 +471,10 @@ export type ClipboardCommandResult =
       textLength: number;
     });
 
+export type ReactNativeCommandOptions = ClientCommandBaseOptions & {
+  action: 'dismiss-overlay';
+};
+
 export type AgentDeviceCommandClient = {
   wait: (options: WaitCommandOptions) => Promise<WaitCommandResult>;
   alert: (options?: AlertCommandOptions) => Promise<AlertCommandResult>;
@@ -481,6 +485,7 @@ export type AgentDeviceCommandClient = {
   appSwitcher: (options?: AppSwitcherCommandOptions) => Promise<AppSwitcherCommandResult>;
   keyboard: (options?: KeyboardCommandOptions) => Promise<KeyboardCommandResult>;
   clipboard: (options: ClipboardCommandOptions) => Promise<ClipboardCommandResult>;
+  reactNative: (options: ReactNativeCommandOptions) => Promise<CommandRequestResult>;
 };
 
 type SelectorSnapshotCommandOptions = Pick<CaptureSnapshotOptions, 'depth' | 'scope' | 'raw'>;
@@ -556,11 +561,11 @@ export type PressOptions = ClientCommandBaseOptions &
   InteractionTarget &
   RepeatedPressOptions;
 
-export type LongPressOptions = ClientCommandBaseOptions & {
-  x: number;
-  y: number;
-  durationMs?: number;
-};
+export type LongPressOptions = ClientCommandBaseOptions &
+  SelectorSnapshotCommandOptions &
+  InteractionTarget & {
+    durationMs?: number;
+  };
 
 export type SwipeOptions = ClientCommandBaseOptions & {
   from: { x: number; y: number };
@@ -589,7 +594,7 @@ export type FillOptions = ClientCommandBaseOptions &
   };
 
 export type ScrollOptions = ClientCommandBaseOptions & {
-  direction: 'up' | 'down' | 'left' | 'right';
+  direction: 'up' | 'down' | 'left' | 'right' | 'top' | 'bottom';
   amount?: number;
   pixels?: number;
 };

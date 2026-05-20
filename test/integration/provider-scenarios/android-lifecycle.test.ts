@@ -716,13 +716,24 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
   assert.deepEqual(baselineDiff.summary, { additions: 0, removals: 0, unchanged: 3 });
   assert.deepEqual(baselineDiff.lines, []);
 
-  const snapshot = await client.capture.snapshot({ interactiveOnly: true, ...selection });
+  const snapshot = await client.capture.snapshot({
+    interactiveOnly: true,
+    compact: true,
+    ...selection,
+  });
   const apps = snapshot.nodes.find((node) => node.label === 'Apps');
   const search = snapshot.nodes.find((node) => node.label === 'Search');
   assert.ok(apps, JSON.stringify(snapshot.nodes));
   assert.ok(search, JSON.stringify(snapshot.nodes));
   assert.equal(apps.ref, 'e2', JSON.stringify(snapshot.nodes));
   assert.equal(search.ref, 'e3', JSON.stringify(snapshot.nodes));
+
+  const reactNativeDismiss = await daemon.callCommand('react-native', ['dismiss-overlay'], {
+    ...selection,
+  });
+  assert.equal(reactNativeDismiss.statusCode, 200, JSON.stringify(reactNativeDismiss.json));
+  assert.equal(reactNativeDismiss.json?.result?.data?.detected, false);
+  assert.equal(reactNativeDismiss.json?.result?.data?.dismissed, false);
 
   const rawSnapshot = await daemon.callCommand('snapshot', [], {
     snapshotRaw: true,
@@ -952,6 +963,9 @@ function assertAndroidInventoryContract(world: AndroidSettingsWorld): void {
 
 function assertAndroidInstallAndLaunchContract(world: AndroidSettingsWorld): void {
   const { adbCalls, apkInstallCalls, bundleInstallCalls } = world;
+  const appApkInstallCalls = apkInstallCalls.filter((call) =>
+    ['Demo.apk', 'ManifestDemo.apk'].includes(path.basename(call.apkPath)),
+  );
   assertCommandCall(adbCalls, ['shell', 'am', 'start', '-W', '-a', 'android.settings.SETTINGS']);
   assertCommandCall(adbCalls, ['shell', 'am', 'force-stop', 'com.example.demo']);
   assertCommandCall(adbCalls, [
@@ -969,11 +983,11 @@ function assertAndroidInstallAndLaunchContract(world: AndroidSettingsWorld): voi
     'com.example.demo/.MainActivity',
   ]);
   assertCommandCall(adbCalls, ['uninstall', 'com.example.demo']);
-  assert.equal(apkInstallCalls.length, 2);
-  assert.equal(path.basename(apkInstallCalls[0]?.apkPath ?? ''), 'Demo.apk');
-  assert.equal(apkInstallCalls[0]?.replace, true);
-  assert.equal(path.basename(apkInstallCalls[1]?.apkPath ?? ''), 'ManifestDemo.apk');
-  assert.equal(apkInstallCalls[1]?.replace, true);
+  assert.equal(appApkInstallCalls.length, 2);
+  assert.equal(path.basename(appApkInstallCalls[0]?.apkPath ?? ''), 'Demo.apk');
+  assert.equal(appApkInstallCalls[0]?.replace, true);
+  assert.equal(path.basename(appApkInstallCalls[1]?.apkPath ?? ''), 'ManifestDemo.apk');
+  assert.equal(appApkInstallCalls[1]?.replace, true);
   assert.deepEqual(bundleInstallCalls, [{ bundlePath: world.aabPath, mode: 'universal' }]);
 }
 

@@ -5,6 +5,7 @@ import { commands, ref, selector } from '../commands/index.ts';
 import { resolveActionableTouchResolution } from '../commands/interaction-targeting.ts';
 import { createLocalArtifactAdapter } from '../io.ts';
 import { createAgentDevice, createMemorySessionStore, localCommandPolicy } from '../runtime.ts';
+import { AppError } from '../utils/errors.ts';
 import type { Point, SnapshotState } from '../utils/snapshot.ts';
 import { makeSnapshotState } from './test-utils/index.ts';
 
@@ -444,6 +445,136 @@ test('runtime scroll resolves selector targets before calling the backend primit
   ]);
 });
 
+test('runtime scroll bottom rejects blind scrolling without snapshot support', async () => {
+  const calls: unknown[] = [];
+  const device = createInteractionDevice(selectorSnapshot(), {
+    captureSnapshot: async () => {
+      throw new Error('snapshot unavailable');
+    },
+    scroll: async (_context, target, options) => {
+      calls.push({ target, options });
+      return { pass: calls.length };
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      device.interactions.scroll({
+        direction: 'bottom',
+      }),
+    /Failed to verify scroll bottom state/,
+  );
+
+  assert.equal(calls.length, 0);
+});
+
+test('runtime scroll bottom does not scroll when no hidden content is below', async () => {
+  const calls: unknown[] = [];
+  const device = createInteractionDevice(runtimeScrollSnapshot({ hiddenBelow: false }), {
+    scroll: async (_context, target, options) => {
+      calls.push({ target, options });
+      return { pass: calls.length };
+    },
+  });
+
+  const result = await device.interactions.scroll({
+    direction: 'bottom',
+  });
+
+  assert.equal(result.kind, 'viewport');
+  assert.equal(result.edge, 'bottom');
+  assert.equal(result.passes, 0);
+  assert.equal(calls.length, 0);
+});
+
+test('runtime scroll bottom scrolls only while scoped snapshot confirms hidden content', async () => {
+  const calls: unknown[] = [];
+  const snapshotScopes: unknown[] = [];
+  const snapshots = [
+    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Middle message' }),
+    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Middle message' }),
+    runtimeScrollSnapshot({ hiddenBelow: false, message: 'Latest message' }),
+  ];
+  const device = createInteractionDevice(selectorSnapshot(), {
+    captureSnapshot: async (_context, options) => {
+      snapshotScopes.push(options?.scope);
+      return { snapshot: snapshots[Math.min(snapshotScopes.length - 1, snapshots.length - 1)] };
+    },
+    scroll: async (_context, target, options) => {
+      calls.push({ target, options });
+      return { pass: calls.length };
+    },
+  });
+
+  const result = await device.interactions.scroll({
+    direction: 'bottom',
+  });
+
+  assert.equal(result.kind, 'viewport');
+  assert.equal(result.edge, 'bottom');
+  assert.equal(result.passes, 1);
+  assert.equal(result.backendResult?.pass, 1);
+  assert.deepEqual(calls, [
+    {
+      target: { kind: 'viewport' },
+      options: { direction: 'down' },
+    },
+  ]);
+  assert.deepEqual(snapshotScopes, [undefined, 'Messages', 'Messages']);
+});
+
+test('runtime scroll bottom tolerates unchanged signatures while hidden content advances', async () => {
+  const calls: unknown[] = [];
+  const snapshots = [
+    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Repeated row' }),
+    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Repeated row' }),
+    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Repeated row' }),
+    runtimeScrollSnapshot({ hiddenBelow: false, message: 'Repeated row' }),
+  ];
+  let snapshotIndex = 0;
+  const device = createInteractionDevice(selectorSnapshot(), {
+    captureSnapshot: async () => ({
+      snapshot: snapshots[Math.min(snapshotIndex++, snapshots.length - 1)],
+    }),
+    scroll: async (_context, target, options) => {
+      calls.push({ target, options });
+      return { pass: calls.length };
+    },
+  });
+
+  const result = await device.interactions.scroll({
+    direction: 'bottom',
+  });
+
+  assert.equal(result.passes, 2);
+  assert.equal(calls.length, 2);
+});
+
+test('runtime scroll bottom keeps scoped snapshot failures scoped', async () => {
+  let snapshotCount = 0;
+  const device = createInteractionDevice(selectorSnapshot(), {
+    captureSnapshot: async (_context, options) => {
+      snapshotCount += 1;
+      if (options?.scope) throw new Error('scoped snapshot failed');
+      return { snapshot: runtimeScrollSnapshot({ hiddenBelow: true, message: 'Middle message' }) };
+    },
+    scroll: async () => ({}),
+  });
+
+  await assert.rejects(
+    () =>
+      device.interactions.scroll({
+        direction: 'bottom',
+      }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'COMMAND_FAILED' &&
+      /scoped container/i.test(error.message) &&
+      error.details?.scope === 'Messages',
+  );
+  assert.equal(snapshotCount, 2);
+});
+
 test('runtime swipe supports explicit and viewport-derived targets', async () => {
   const calls: unknown[] = [];
   const device = createInteractionDevice(selectorSnapshot(), {
@@ -592,6 +723,28 @@ function selectorSnapshot(): SnapshotState {
       label: 'Continue',
       value: 'Continue',
       rect: { x: 10, y: 20, width: 100, height: 40 },
+      hittable: true,
+    },
+  ]);
+}
+
+function runtimeScrollSnapshot(options: { hiddenBelow: boolean; message?: string }): SnapshotState {
+  return makeSnapshotState([
+    {
+      index: 1,
+      depth: 0,
+      type: 'ScrollView',
+      label: 'Messages',
+      hiddenContentBelow: options.hiddenBelow ? true : undefined,
+      rect: { x: 0, y: 100, width: 400, height: 600 },
+    },
+    {
+      index: 2,
+      depth: 1,
+      parentIndex: 1,
+      type: 'Button',
+      label: options.message ?? 'Latest message',
+      rect: { x: 0, y: 640, width: 400, height: 56 },
       hittable: true,
     },
   ]);

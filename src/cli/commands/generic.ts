@@ -10,6 +10,7 @@ import {
   findCommandCodec,
   interactionTargetCodec,
   isCommandCodec,
+  longPressCommandCodec,
   settingsCommandCodec,
 } from '../../command-codecs.ts';
 import { selectorSnapshotOptionsFromFlags } from '../../command-codecs/flags.ts';
@@ -96,10 +97,9 @@ const genericClientCommandRunners = {
     }),
   longpress: ({ client, positionals, flags }) =>
     client.interactions.longPress({
+      ...longPressCommandCodec.decode(positionals),
+      ...selectorSnapshotOptionsFromFlags(flags),
       ...buildSelectionOptions(flags),
-      x: Number(positionals[0]),
-      y: Number(positionals[1]),
-      durationMs: optionalNumber(positionals[2]),
     }),
   swipe: ({ client, positionals, flags }) =>
     client.interactions.swipe({
@@ -179,6 +179,11 @@ const genericClientCommandRunners = {
       limit: optionalNumber(positionals[1]),
       include: flags.networkInclude ?? readNetworkInclude(positionals[2]),
     }),
+  'react-native': ({ client, positionals, flags }) =>
+    client.command.reactNative({
+      ...buildSelectionOptions(flags),
+      action: readReactNativeAction(positionals[0]),
+    }),
   find: ({ client, positionals, flags }) =>
     client.interactions.find(findCommandCodec.decode(positionals, flags)),
   is: ({ client, positionals, flags }) =>
@@ -216,8 +221,19 @@ function readGetFormat(value: string | undefined): 'text' | 'attrs' {
   throw new AppError('INVALID_ARGS', 'get only supports text or attrs');
 }
 
-function readScrollDirection(value: string | undefined): 'up' | 'down' | 'left' | 'right' {
-  if (value === 'up' || value === 'down' || value === 'left' || value === 'right') return value;
+function readScrollDirection(
+  value: string | undefined,
+): 'up' | 'down' | 'left' | 'right' | 'top' | 'bottom' {
+  if (
+    value === 'up' ||
+    value === 'down' ||
+    value === 'left' ||
+    value === 'right' ||
+    value === 'top' ||
+    value === 'bottom'
+  ) {
+    return value;
+  }
   throw new AppError('INVALID_ARGS', `Unknown direction: ${String(value)}`);
 }
 
@@ -271,6 +287,11 @@ function readJsonObject(value: string, label: string): Record<string, unknown> {
 function required(value: string | undefined, message: string): string {
   if (value === undefined || value === '') throw new AppError('INVALID_ARGS', message);
   return value;
+}
+
+function readReactNativeAction(value: string | undefined): 'dismiss-overlay' {
+  if (value === 'dismiss-overlay') return value;
+  throw new AppError('INVALID_ARGS', 'react-native supports only: dismiss-overlay');
 }
 
 function optionalNumber(value: string | undefined): number | undefined {
