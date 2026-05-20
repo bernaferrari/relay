@@ -4,6 +4,7 @@ import type { DaemonInstallSource } from '../contracts.ts';
 import type { RemoteConfigMetroOptions } from '../remote-config-schema.ts';
 import { CAPTURE_COMMAND_SCHEMAS } from '../commands/capture-definition.ts';
 import { INTERACTION_COMMAND_SCHEMAS } from '../commands/interactions/definition.ts';
+import { REACT_NATIVE_COMMAND_SCHEMAS } from '../commands/react-native/definition.ts';
 import {
   SELECTOR_COMMAND_SCHEMAS,
   SELECTOR_SNAPSHOT_FLAGS,
@@ -161,12 +162,12 @@ const AGENT_WORKFLOWS = [
 const AGENT_QUICKSTART_LINES = [
   'Default loop: devices/apps -> open -> snapshot -i -> press/fill/get/is/wait/find -> verify -> close.',
   'Use selectors or refs as positional targets: id="submit", label="Allow", or @e12 from snapshot -i.',
-  'Plain snapshot reads state; snapshot -i is required to refresh interactive refs.',
+  'Plain snapshot reads state; snapshot -i refreshes current interactive refs only.',
   'Default snapshot text is an agent-facing, token-efficient view for planning and targeting actions.',
   'Read-only visible/state question: use snapshot/get/is/find; use snapshot -i only when refs are needed.',
   'Anti-pattern: snapshot -i followed by snapshot -i | grep ...; prior refs stay valid until app state changes, and --force-full is the explicit full re-read.',
   'Truncated text/input preview: expand first with snapshot -s @e12, not get text.',
-  'React Native apps: read help react-native for Metro, LogBox/RedBox overlays, DevTools routing, and RN-specific blockers.',
+  'React Native apps: read help react-native for Metro, DevTools routing, and RN-specific blockers; use react-native dismiss-overlay for LogBox/RedBox overlays.',
   'Android RN/Expo Metro: adb reverse tcp:<port> tcp:<port> is harmless and helps the device reach any local Metro port.',
   'Expo Go/dev clients: use the provided URL when given; on iOS prefer open "Expo Go" <url>; Android URL opens infer the foreground package for logs/perf when possible.',
   'Install flows: install/install-from-source first, then open the installed id with --relaunch.',
@@ -176,7 +177,7 @@ const AGENT_QUICKSTART_LINES = [
   'Run mutating commands serially against one session; parallelize only read-only commands or separate sessions.',
   'Before taking over a shared device, run session list and reuse the active session name when one already owns the device.',
   'Clipboard limits: iOS Allow Paste cannot be automated through XCUITest; prefill with clipboard write. Android non-ASCII should use fill/type, not raw adb input.',
-  'After mutation: diff snapshot -i. Off-screen hints: scroll, then snapshot -i.',
+  'After mutation: refs are stale. If the next target is known, use its selector directly; otherwise refresh with snapshot -i, scoped with -s when a stable container is known.',
   'Raw coordinates are fallback-only: use snapshot -i -c --json rects when iOS refs no-op or child refs are missing.',
   'Batch JSON steps use "command", "positionals", "flags"; never "args" or "step".',
   'Navigation: app-owned back uses back; system back uses back --system.',
@@ -250,19 +251,20 @@ Bootstrap:
   Do not open artifact paths or invent package ids. If apps lookup misses the target and no URL/artifact is provided, ask or stop.
 
 Snapshots and refs:
-  snapshot reads visible state. snapshot -i gets current interactive refs.
+  snapshot reads visible state. snapshot -i gets current interactive refs only; it is the fast path when the next step is an interaction.
   Default snapshot text is an agent-facing, token-efficient view for planning and targeting actions; use --raw or --json only when you need the full provider tree.
   Snapshot legend:
     @e12 [button] label="Add to cart" id="add-cart" enabled hittable -> press @e12 or press 'id="add-cart"'.
     @e13 [textinput] label="Notes" preview="Leave at side..." truncated -> snapshot -s @e13 before reading.
     @e14 [cell] label="Profiles" focused -> tvOS focus is currently on this row.
     [off-screen below] 4 items: "Privacy", "About" -> scroll down, then snapshot -i; those are hints, not refs.
-  Re-snapshot after navigation, submit, modal/list/reload/dynamic changes.
+  Re-snapshot after navigation, submit, typing/fill, modal/list/reload/dynamic changes when you need new refs.
   Anti-pattern: snapshot -i followed by snapshot -i | grep ...
-  Refs from the first snapshot remain valid until you press, fill, scroll, go back, wait for async UI, or otherwise change app state.
+  Refs from the first snapshot remain valid until you press, fill, type, scroll, go back, wait for async UI, or otherwise change app state.
+  After a mutation, prefer a known selector/label directly (for example press 'label="Send"') because interaction commands refresh interactive state internally. If you need to discover the new control, use snapshot -i, or snapshot -i -s "Composer" when a stable container label/id can scope the refresh.
   For a targeted query, use find/get/is. If you truly need the full tree again, pass --force-full.
   Off-screen summaries are scroll hints; use scroll, not swipe, then snapshot -i.
-  Missing target in a long list: use a short manual scroll + snapshot loop with a max attempt count; do not rely on unbounded scrollintoview.
+  Missing target in a long list: use a short manual scroll + snapshot loop with a max attempt count. If a named target is summarized as off-screen below/above, use scroll down/up, then snapshot -i; do not use scroll bottom/top because the target may appear before the absolute list edge. Use scroll bottom/top only when the task explicitly asks for the list edge. Edge scrolls verify hidden content with snapshots and stop when no matching hidden content remains.
   Truncated text/input previews: do not use get text first; expand with snapshot -s @ref (for example snapshot -s @e7), then read the scoped output.
   Rare iOS accessibility gaps: if a row ref is shown disabled/hittable:false and press @ref reports success but no UI change, or a horizontal tab/filter bar is collapsed into one composite/seekbar with no child refs, run agent-device snapshot -i -c --json to read rects, compute the target center, press x y, then diff snapshot -i. Coordinates are fallback-only; document why you used them.
 
@@ -310,8 +312,9 @@ Navigation and gestures:
   If app-owned back is ambiguous or has just misrouted, prefer a visible nav/back button ref, tab-bar ref, or deep link over repeated back/system back.
   App-owned action sheets, menus, and camera/scan screens are normal UI. After opening one, run snapshot -i or wait for the option, press by label/ref, handle visible permission sheets through UI or platform-supported native alerts, then wait for a concrete result before returning to chat/form state.
   Keep count/pause/pattern on one swipe; flags are --count, --pause-ms, --pattern ping-pong.
-  longpress duration and pinch scale/center are positional:
+  longpress accepts coordinates, @refs, or selectors. Prefer @ref/selector from snapshot -i; use coordinates only as a fallback when accessibility refs miss the exact target. Duration and pinch scale/center are positional:
     agent-device longpress 300 500 800
+    agent-device longpress @e12 800
     agent-device swipe 320 500 40 500 --count 8 --pause-ms 30 --pattern ping-pong
     agent-device pinch 0.5 200 400
 
@@ -322,7 +325,7 @@ Validation and evidence:
   If task says snapshot, use snapshot. If it asks visual evidence, use screenshot.
   Icon/tappable visual proof: screenshot --overlay-refs. Flag is --overlay-refs.
   Startup/frame health/CPU/memory: perf --json or metrics. Replay maintenance: replay -u ./flow.ad.
-  Recording: record start/stop. Tracing: trace start ./trace.log, trace stop ./trace.log. Paths are positional.
+  Recording: record start/stop. By default, stop burns touch overlays into the video; use record start --hide-touches for the fastest raw recording. Tracing: trace start ./trace.log, trace stop ./trace.log. Paths are positional.
   Stable known flow: batch ./steps.json, not workflow batch.
   Inline batch JSON example:
     agent-device batch --steps '[{"command":"open","positionals":["settings"],"flags":{}},{"command":"wait","positionals":["100"],"flags":{}}]'
@@ -338,7 +341,7 @@ React Native dev loop:
     agent-device metro reload
     agent-device find "Home"
   Do not use agent-device reload. Use open --relaunch for native startup reset.
-  React Native apps: use help react-native for Metro/Fast Refresh, LogBox/RedBox overlays, DevTools routing, and RN-specific blockers.
+  React Native apps: use help react-native for Metro/Fast Refresh, DevTools routing, and RN-specific blockers; use react-native dismiss-overlay for LogBox/RedBox overlays.
   Android RN/Expo Metro: run adb reverse tcp:<port> tcp:<port> before opening the app or URL; it is harmless even if already configured.
   Expo Go is a host shell. Use a provided project URL instead of inventing a bundle id; if no URL is provided but a target/app name is provided, open that target and do not inspect project files to find one. On iOS, prefer host + URL when the host shell is known because direct URL open can report success while leaving the runner/shell focused; verify with snapshot -i after opening:
     agent-device open "Expo Go" exp://127.0.0.1:8081 --platform ios
@@ -500,8 +503,9 @@ React Native dev loop:
   Expo Go/dev clients are host shells. Use provided project URLs, verify with snapshot -i after opening, and ask instead of inventing app ids or URLs. Help workflow owns the full Expo URL command shapes.
 
 Overlays and busy RN UIs:
-  React Native warning/error overlays belong to the app run. Treat them as blockers before normal app work: press visible Dismiss/Close immediately when unrelated, or press the collapsed warning banner first if only a warning chip is visible; then re-snapshot and report the overlay in the final summary. Use screenshot --overlay-refs only if visual evidence is required.
-  Full-screen RedBox stack traces are app errors, not failed navigation. If Minimize is visible, prefer Minimize over Dismiss; Dismiss can re-trigger infinite-loop render errors such as getSnapshot/useOnyx stack paths.
+  If snapshot reports a React Native warning/error overlay, handle it before interacting with the app: run agent-device react-native dismiss-overlay, then agent-device snapshot -i -c. Use refs from the new snapshot.
+  Do not manually press warning/error text bodies, collapsed banner bodies, full-screen warning parents, or broad LogBox/RedBox refs. The dismiss-overlay command owns the narrow LogBox/RedBox targeting policy.
+  Report the overlay in the final summary. Use screenshot --overlay-refs before dismissing only if visual evidence is required.
   If snapshot times out because the UI never becomes idle, Android accessibility may be blocked by busy or continuously changing app UI. After that timeout, use screenshot as visual truth instead of repeatedly retrying snapshots.
   Android runtime permission dialogs and native alerts are handled by alert wait/accept/dismiss. If alert reports no alert, treat the visible surface as app-owned UI and use snapshot -i plus press by label/ref.
 
@@ -602,7 +606,7 @@ Loop:
 
 Coverage:
   Navigation, forms, empty/error/loading states, offline or retry behavior, permissions, settings, accessibility labels, orientation/keyboard, and obvious performance stalls.
-  React Native warning/error overlays can be real findings or test blockers. Capture them, dismiss if unrelated, re-snapshot, and report them.
+  React Native warning/error overlays can be real findings or test blockers. Capture them, use react-native dismiss-overlay if unrelated, re-snapshot, and report them.
   Expo Go/dev-client shells: use the provided exp:// or dev-client URL and record whether the shell, project load, or app UI is being tested. On iOS dogfood, prefer agent-device open "Expo Go" <url> when Expo Go is the known shell, then snapshot -i to confirm the project UI rather than the runner splash.
   Android RN/Expo Metro: run adb reverse tcp:<port> tcp:<port> before opening the app or URL; it is harmless even if already configured.
   Categories: visual, functional, UX, content, performance, diagnostics, permissions, accessibility.
@@ -618,6 +622,7 @@ Evidence commands:
   agent-device --session qa logs mark "issue-001 repro"
   agent-device --session qa logs path
   agent-device --session qa record start ./dogfood-output/videos/issue-001.mp4
+  agent-device --session qa record start ./dogfood-output/videos/benchmark.mp4 --hide-touches
   agent-device --session qa record stop
   agent-device --session qa close
 
@@ -1033,7 +1038,7 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     names: ['--hide-touches'],
     type: 'boolean',
     usageLabel: '--hide-touches',
-    usageDescription: 'Record: disable touch overlays in the final video',
+    usageDescription: 'Record: skip touch-overlay post-processing for faster raw benchmark videos',
   },
   {
     key: 'intervalMs',
@@ -1698,10 +1703,12 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
     ],
   },
   longpress: {
-    helpDescription: 'Long press by coordinates (iOS and Android)',
-    summary: 'Long press by coordinates',
-    positionalArgs: ['x', 'y', 'durationMs?'],
-    allowedFlags: [],
+    usageOverride: 'longpress <x y|@ref|selector> [durationMs]',
+    helpDescription: 'Long press a coordinate, ref, or selector (iOS and Android)',
+    summary: 'Long press a target',
+    positionalArgs: ['targetOrX', 'yOrDurationMs?', 'durationMs?'],
+    allowsExtraPositionals: true,
+    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS],
   },
   swipe: {
     helpDescription: 'Swipe coordinates with optional repeat pattern',
@@ -1723,10 +1730,10 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
     allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS, 'delayMs'],
   },
   scroll: {
-    usageOverride: 'scroll <direction> [amount] [--pixels <n>]',
-    helpDescription: 'Scroll in direction (relative amount or explicit pixels)',
-    summary: 'Scroll in a direction',
-    positionalArgs: ['direction', 'amount?'],
+    usageOverride: 'scroll <direction|top|bottom> [amount] [--pixels <n>]',
+    helpDescription: 'Scroll in direction, or verify hidden content and scroll toward top/bottom',
+    summary: 'Scroll in a direction or to an edge',
+    positionalArgs: ['directionOrEdge', 'amount?'],
     allowedFlags: ['pixels'],
   },
   pinch: {
@@ -1750,6 +1757,7 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
     positionalArgs: ['start|stop', 'path?'],
     allowedFlags: ['fps', 'quality', 'hideTouches'],
   },
+  ...REACT_NATIVE_COMMAND_SCHEMAS,
   trace: {
     usageOverride: 'trace start <path> | trace stop <path>',
     listUsageOverride: 'trace start <path> | trace stop <path>',

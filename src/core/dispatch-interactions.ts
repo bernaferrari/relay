@@ -14,6 +14,13 @@ import {
   type ClickButton,
 } from './click-button.ts';
 import {
+  captureScrollEdgeState,
+  formatScrollEdgeMessage,
+  runScrollEdgePasses,
+  type ScrollEdge,
+  type ScrollEdgeState,
+} from '../utils/scroll-edge-state.ts';
+import {
   requireIntInRange,
   clampIosSwipeDuration,
   shouldUseIosTapSeries,
@@ -32,7 +39,9 @@ export async function handleLongPressCommand(
   const y = Number(positionals[1]);
   const durationMs = positionals[2] ? Number(positionals[2]) : undefined;
   if (Number.isNaN(x) || Number.isNaN(y)) {
-    throw new AppError('INVALID_ARGS', 'longpress requires x y [durationMs]');
+    throw new AppError('INVALID_ARGS', 'longpress requires x y [durationMs]', {
+      hint: 'Direct platform longpress requires coordinates. In an open daemon session, use agent-device longpress @ref|selector [durationMs]; otherwise run snapshot -i -c, use the target rect center as x y, then retry longpress x y durationMs.',
+    });
   }
   await interactor.longPress(x, y, durationMs);
   return { x, y, durationMs, ...successText(`Long pressed (${x}, ${y})`) };
@@ -456,21 +465,76 @@ export async function handleScrollCommand(
       'scroll accepts either a relative amount or --pixels, not both',
     );
   }
-  const direction = parseScrollDirection(directionInput);
-  const interactionResult = await interactor.scroll(direction, { amount, pixels });
+  const target = parseScrollTarget(directionInput);
+  let interactionResult: Record<string, unknown> | void = {};
+  let completedPasses = 0;
+
+  if (target.edge) {
+    const edge = target.edge;
+    const edgeResult = await runScrollEdgePasses({
+      edge,
+      captureState: async (scope) =>
+        await captureVerifiedScrollEdgeState(interactor, context, edge, scope),
+      scroll: async () => await interactor.scroll(target.direction, { amount, pixels }),
+    });
+    interactionResult = edgeResult.result ?? {};
+    completedPasses = edgeResult.passes;
+  } else {
+    interactionResult = await interactor.scroll(target.direction, { amount, pixels });
+    completedPasses = 1;
+  }
+
   return withSuccessText(
     {
-      direction,
+      direction: target.direction,
+      ...(target.edge
+        ? {
+            edge: target.edge,
+            passes: completedPasses,
+          }
+        : {}),
       ...(amount !== undefined ? { amount } : {}),
       ...(pixels !== undefined ? { pixels } : {}),
       ...interactionResult,
     },
-    pixels !== undefined
-      ? `Scrolled ${direction} by ${pixels}px`
-      : amount !== undefined
-        ? `Scrolled ${direction} by ${amount}`
-        : `Scrolled ${direction}`,
+    formatScrollEdgeMessage(target.direction, target.edge, completedPasses, amount, pixels),
   );
+}
+
+async function captureVerifiedScrollEdgeState(
+  interactor: Interactor,
+  context: DispatchContext | undefined,
+  edge: ScrollEdge,
+  scope?: string,
+): Promise<ScrollEdgeState> {
+  if (typeof interactor.snapshot !== 'function') {
+    throw new AppError(
+      'UNSUPPORTED_OPERATION',
+      `scroll ${edge} requires snapshot support to verify hidden content before scrolling`,
+    );
+  }
+  const snapshot = interactor.snapshot;
+  return await captureScrollEdgeState({
+    edge,
+    scope,
+    captureNodes: async (snapshotScope) =>
+      (
+        await snapshot({
+          appBundleId: context?.appBundleId,
+          compact: true,
+          scope: snapshotScope,
+        })
+      ).nodes ?? [],
+  });
+}
+
+function parseScrollTarget(input: string): {
+  direction: ReturnType<typeof parseScrollDirection>;
+  edge?: 'top' | 'bottom';
+} {
+  if (input === 'bottom') return { direction: 'down', edge: 'bottom' };
+  if (input === 'top') return { direction: 'up', edge: 'top' };
+  return { direction: parseScrollDirection(input) };
 }
 
 export async function handlePinchCommand(

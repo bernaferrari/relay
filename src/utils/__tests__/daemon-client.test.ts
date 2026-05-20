@@ -13,6 +13,7 @@ import {
 } from '../../__tests__/test-utils/index.ts';
 import { runCmdBackground } from '../exec.ts';
 import {
+  cleanupFailedDaemonStartupMetadata,
   computeDaemonCodeSignature,
   downloadRemoteArtifact,
   openApp,
@@ -134,7 +135,7 @@ function writeCurrentDaemonInfo(
 test('resolveDaemonStartupHint prefers stale lock guidance when lock exists without info', () => {
   const hint = resolveDaemonStartupHint({ hasInfo: false, hasLock: true });
   assert.match(hint, /daemon\.lock/i);
-  assert.match(hint, /delete/i);
+  assert.match(hint, /automatically/i);
 });
 
 test('resolveDaemonStartupHint covers stale info+lock pair', () => {
@@ -145,7 +146,7 @@ test('resolveDaemonStartupHint covers stale info+lock pair', () => {
 
 test('resolveDaemonStartupHint falls back to daemon.json guidance', () => {
   const hint = resolveDaemonStartupHint({ hasInfo: true, hasLock: false });
-  assert.match(hint, /daemon\.json/i);
+  assert.match(hint, /cleaned automatically/i);
 });
 
 test('resolveDaemonStartupHint includes configured state directory paths', () => {
@@ -153,6 +154,128 @@ test('resolveDaemonStartupHint includes configured state directory paths', () =>
   const hint = resolveDaemonStartupHint({ hasInfo: false, hasLock: true }, paths);
   assert.match(hint, /\/tmp\/ad-custom-state\/daemon\.lock/);
   assert.match(hint, /\/tmp\/ad-custom-state\/daemon\.json/);
+});
+
+test('cleanupFailedDaemonStartupMetadata removes partial startup metadata', async () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-cleanup-'));
+  const paths = resolveDaemonPaths(stateDir);
+  try {
+    fs.mkdirSync(paths.baseDir, { recursive: true });
+    fs.writeFileSync(paths.infoPath, '{"invalid":true}\n', 'utf8');
+    fs.writeFileSync(paths.lockPath, 'not-json\n', 'utf8');
+
+    const result = await cleanupFailedDaemonStartupMetadata(paths, 'startup_timeout');
+
+    assert.deepEqual(result, {
+      reason: 'startup_timeout',
+      removedInfo: true,
+      removedLock: true,
+      stoppedInfoProcess: false,
+      stoppedLockProcess: false,
+    });
+    assert.equal(fs.existsSync(paths.infoPath), false);
+    assert.equal(fs.existsSync(paths.lockPath), false);
+  } finally {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('cleanupFailedDaemonStartupMetadata retains live startup daemon on timeout', async (t) => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-live-cleanup-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-live-daemon-'));
+  const daemonDir = path.join(root, 'agent-device', 'dist', 'src', 'internal');
+  const daemonScriptPath = path.join(daemonDir, 'daemon.js');
+  fs.mkdirSync(daemonDir, { recursive: true });
+  fs.writeFileSync(daemonScriptPath, 'setInterval(() => {}, 1000);\n', 'utf8');
+  const daemonProcess = runCmdBackground(process.execPath, [daemonScriptPath], {
+    stdio: 'ignore',
+    allowFailure: true,
+    captureOutput: false,
+  });
+  void daemonProcess.wait.catch(() => {});
+  const pid = daemonProcess.child.pid;
+  assert.ok(pid, 'spawned child should have a pid');
+
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const processStartTime = readProcessStartTime(pid) ?? undefined;
+    if (readProcessCommand(pid) === null || processStartTime === undefined) {
+      t.skip('process command/start inspection is unavailable in this environment');
+      return;
+    }
+
+    const paths = resolveDaemonPaths(stateDir);
+    fs.mkdirSync(paths.baseDir, { recursive: true });
+    fs.writeFileSync(
+      paths.infoPath,
+      `${JSON.stringify({
+        token: 'startup-secret',
+        port: 65530,
+        transport: 'socket',
+        pid,
+        processStartTime,
+      })}\n`,
+      'utf8',
+    );
+    fs.writeFileSync(
+      paths.lockPath,
+      `${JSON.stringify({ pid, processStartTime, startedAt: Date.now() })}\n`,
+      'utf8',
+    );
+
+    const result = await cleanupFailedDaemonStartupMetadata(paths, 'startup_timeout', {
+      stopLiveProcesses: false,
+    });
+
+    assert.equal(result.retainedInfoProcess, true);
+    assert.equal(result.retainedLockProcess, true);
+    assert.equal(result.removedInfo, false);
+    assert.equal(result.removedLock, false);
+    assert.equal(isProcessAlive(pid), true);
+    assert.equal(fs.existsSync(paths.infoPath), true);
+    assert.equal(fs.existsSync(paths.lockPath), true);
+  } finally {
+    if (isProcessAlive(pid)) {
+      process.kill(pid, 'SIGKILL');
+      await waitForProcessExit(pid, 1_500);
+    }
+    fs.rmSync(stateDir, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanupFailedDaemonStartupMetadata removes stale daemon metadata on timeout', async () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-stale-cleanup-'));
+  const paths = resolveDaemonPaths(stateDir);
+  try {
+    fs.mkdirSync(paths.baseDir, { recursive: true });
+    fs.writeFileSync(
+      paths.infoPath,
+      `${JSON.stringify({
+        token: 'startup-secret',
+        port: 65530,
+        transport: 'socket',
+        pid: 999_999,
+      })}\n`,
+      'utf8',
+    );
+    fs.writeFileSync(
+      paths.lockPath,
+      `${JSON.stringify({ pid: 999_999, startedAt: Date.now() })}\n`,
+      'utf8',
+    );
+
+    const result = await cleanupFailedDaemonStartupMetadata(paths, 'startup_timeout', {
+      stopLiveProcesses: false,
+    });
+
+    assert.equal(result.removedInfo, true);
+    assert.equal(result.removedLock, true);
+    assert.equal(fs.existsSync(paths.infoPath), false);
+    assert.equal(fs.existsSync(paths.lockPath), false);
+  } finally {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
 });
 
 test('sendToDaemon reuses reachable local socket daemon metadata', async (t) => {
