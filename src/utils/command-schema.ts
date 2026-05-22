@@ -236,7 +236,7 @@ Command shape:
   Snapshot refs look like @e12. After snapshot -i, use the exact @eN ref from that output.
   If the exact ref is not known yet, first output snapshot -i, then use a concrete example shape like press @e12 in the next command; do not write @<ref>, @ref, @Label_Name, or @eN placeholders.
   Close means agent-device close. App-owned back means back; system back means back --system.
-  Taps are press or click. Gestures are direct commands: swipe, longpress, pinch.
+  Taps are press or click. Gestures use swipe, longpress, or gesture <pan|fling|pinch|rotate|transform>. Android pinch, rotate, and transform use provider-native touch injection when available, then the bundled multi-touch helper.
 
 Bootstrap:
   agent-device devices --platform ios
@@ -309,15 +309,21 @@ Read-only and waits:
   Ambiguous find: add --first or --last. If info is not visible/exposed, report that gap instead of typing/searching/navigating to reveal it.
 
 Navigation and gestures:
-  Use scroll for lists; swipe for coordinate gestures/carousels.
+  Use scroll for lists; swipe for coordinate gestures/carousels; gesture pan for deliberate drags; gesture fling for fast directional throws.
+  For raw coordinate gestures, run snapshot -i first and choose a point near the center of the intended app-owned target. Avoid screen edges, tab bars, navigation bars, and home indicators because those areas can trigger system or app navigation instead of the gesture under test.
   If app-owned back is ambiguous or has just misrouted, prefer a visible nav/back button ref, tab-bar ref, or deep link over repeated back/system back.
   App-owned action sheets, menus, and camera/scan screens are normal UI. After opening one, run snapshot -i or wait for the option, press by label/ref, handle visible permission sheets through UI or platform-supported native alerts, then wait for a concrete result before returning to chat/form state.
   Keep count/pause/pattern on one swipe; flags are --count, --pause-ms, --pattern ping-pong.
-  longpress accepts coordinates, @refs, or selectors. Prefer @ref/selector from snapshot -i; use coordinates only as a fallback when accessibility refs miss the exact target. Duration and pinch scale/center are positional:
+  longpress accepts coordinates, @refs, or selectors. Prefer @ref/selector from snapshot -i; use coordinates only as a fallback when accessibility refs miss the exact target. Duration and gesture scale/center are positional:
     agent-device longpress 300 500 800
     agent-device longpress @e12 800
     agent-device swipe 320 500 40 500 --count 8 --pause-ms 30 --pattern ping-pong
-    agent-device pinch 0.5 200 400
+    agent-device gesture pan 200 420 0 -80 500
+    agent-device gesture fling right 200 420 180
+    agent-device gesture pinch 0.5 200 400
+    agent-device gesture rotate 35 200 420
+    agent-device gesture transform 200 420 80 -40 2 35 700
+  iOS simulator transform uses XCTest gesture primitives; verify app metrics instead of assuming requested degrees map exactly to recognizer output.
 
 Validation and evidence:
   Nearby mutation diff: agent-device diff snapshot -i.
@@ -326,7 +332,7 @@ Validation and evidence:
   If task says snapshot, use snapshot. If it asks visual evidence, use screenshot.
   Icon/tappable visual proof: screenshot --overlay-refs. Flag is --overlay-refs.
   Startup/frame health/CPU/memory: perf --json or metrics. Replay maintenance: replay -u ./flow.ad.
-  Recording: record start/stop. By default, stop burns touch overlays into the video; use record start --hide-touches for the fastest raw recording. Tracing: trace start ./trace.log, trace stop ./trace.log. Paths are positional.
+  Recording: record start/stop. By default, stop burns touch overlays into the video; use record start --hide-touches for the fastest raw recording. For gesture-heavy iOS simulator proof videos, prefer --hide-touches because overlay timing depends on a stable runner session while gestures are executing. Tracing: trace start ./trace.log, trace stop ./trace.log. Paths are positional.
   Stable known flow: batch ./steps.json, not workflow batch.
   Inline batch JSON example:
     agent-device batch --steps '[{"command":"open","positionals":["settings"],"flags":{}},{"command":"wait","positionals":["100"],"flags":{}}]'
@@ -1728,6 +1734,17 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
     positionalArgs: ['x1', 'y1', 'x2', 'y2', 'durationMs?'],
     allowedFlags: ['count', 'pauseMs', 'pattern'],
   },
+  gesture: {
+    usageOverride: 'gesture <pan|fling|pinch|rotate|transform> ...',
+    listUsageOverride: 'gesture <pan|fling|pinch|rotate|transform> ...',
+    helpDescription:
+      'Run touch gestures: pan <x> <y> <dx> <dy> [durationMs], fling <up|down|left|right> <x> <y> [distance] [durationMs], pinch <scale> [x] [y], rotate <degrees> [x] [y] [velocity], or transform <x> <y> <dx> <dy> <scale> <degrees> [durationMs]',
+    summary: 'Run pan, fling, pinch, rotate, or transform gestures',
+    positionalArgs: ['pan|fling|pinch|rotate|transform', 'args?'],
+    allowsExtraPositionals: true,
+    allowedFlags: [],
+    skipCapabilityCheck: true,
+  },
   focus: {
     helpDescription: 'Focus input at coordinates',
     positionalArgs: ['x', 'y'],
@@ -1747,11 +1764,6 @@ const COMMAND_SCHEMAS: Record<string, CommandSchema> = {
     summary: 'Scroll in a direction or to an edge',
     positionalArgs: ['directionOrEdge', 'amount?'],
     allowedFlags: ['pixels'],
-  },
-  pinch: {
-    helpDescription: 'Pinch/zoom gesture (Apple simulator or macOS app session)',
-    positionalArgs: ['scale', 'x?', 'y?'],
-    allowedFlags: [],
   },
   'trigger-app-event': {
     usageOverride: 'trigger-app-event <event> [payloadJson]',

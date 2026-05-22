@@ -24,13 +24,17 @@ import { screenshotOptionsFromFlags } from '../commands/capture-screenshot-optio
 import type { DispatchContext } from './dispatch-context.ts';
 import {
   handleFillCommand,
+  handleFlingCommand,
   handleFocusCommand,
   handleLongPressCommand,
+  handlePanCommand,
   handlePinchCommand,
   handlePressCommand,
   handleReadCommand,
+  handleRotateGestureCommand,
   handleScrollCommand,
   handleSwipeCommand,
+  handleTransformGestureCommand,
   handleTypeCommand,
 } from './dispatch-interactions.ts';
 import { readNotificationPayload } from './dispatch-payload.ts';
@@ -82,6 +86,10 @@ export async function dispatchCommand(
           return handlePressCommand(device, interactor, positionals, context);
         case 'swipe':
           return handleSwipeCommand(device, interactor, positionals, context);
+        case 'pan':
+          return handlePanCommand(interactor, positionals);
+        case 'fling':
+          return handleFlingCommand(interactor, positionals);
         case 'longpress':
           return handleLongPressCommand(interactor, positionals);
         case 'focus':
@@ -93,7 +101,11 @@ export async function dispatchCommand(
         case 'scroll':
           return handleScrollCommand(interactor, positionals, context);
         case 'pinch':
-          return handlePinchCommand(device, positionals, context);
+          return handlePinchCommand(device, interactor, positionals, context);
+        case 'rotate-gesture':
+          return handleRotateGestureCommand(device, interactor, positionals);
+        case 'transform-gesture':
+          return handleTransformGestureCommand(device, interactor, positionals);
         case 'trigger-app-event': {
           const { eventName, payload } = parseTriggerAppEventArgs(positionals);
           const eventUrl = resolveAppEventUrl(device.platform, eventName, payload);

@@ -88,6 +88,11 @@ pnpm test-app:replay:android
 
 These run the `.ad` replay suite in `examples/test-app/replays`.
 
+`gesture-lab.ad` verifies `gesture pan`, `gesture fling`, `gesture pinch`, and
+`gesture rotate` against the gesture metrics rendered by the Home screen on iOS
+and Android. Android and iOS simulator sessions also support `gesture transform`
+for a combined pan/zoom/rotate gesture.
+
 To target a specific iOS simulator or an installed Expo development build, run the
 underlying command directly so global flags stay before replay inputs:
 

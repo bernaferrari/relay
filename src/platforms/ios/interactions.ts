@@ -34,11 +34,16 @@ type IosRunnerOverrides = Pick<
   | 'tapElementSelector'
   | 'doubleTap'
   | 'swipe'
+  | 'pan'
+  | 'fling'
   | 'longPress'
   | 'focus'
   | 'type'
   | 'fill'
   | 'scroll'
+  | 'pinch'
+  | 'rotateGesture'
+  | 'transformGesture'
 >;
 
 export function resolveAppleBackRunnerCommand(mode?: BackMode): AppleBackRunnerCommand {
@@ -103,6 +108,36 @@ export function iosRunnerOverrides(
           runnerOpts,
         );
       },
+      pan: async (x1, y1, x2, y2, durationMs) => {
+        return await runIosRunnerCommand(
+          device,
+          {
+            command: 'drag',
+            x: x1,
+            y: y1,
+            x2,
+            y2,
+            durationMs: durationMs ?? 500,
+            appBundleId: ctx.appBundleId,
+          },
+          runnerOpts,
+        );
+      },
+      fling: async (x1, y1, x2, y2, durationMs) => {
+        return await runIosRunnerCommand(
+          device,
+          {
+            command: 'drag',
+            x: x1,
+            y: y1,
+            x2,
+            y2,
+            durationMs: durationMs ?? 16,
+            appBundleId: ctx.appBundleId,
+          },
+          runnerOpts,
+        );
+      },
       longPress: async (x, y, durationMs) => {
         return await runIosRunnerCommand(
           device,
@@ -153,6 +188,50 @@ export function iosRunnerOverrides(
           runnerOpts,
           direction,
           options,
+        );
+      },
+      pinch: async (scale, x, y) => {
+        await runIosRunnerCommand(
+          device,
+          {
+            command: 'pinch',
+            scale,
+            x,
+            y,
+            appBundleId: ctx.appBundleId,
+          },
+          runnerOpts,
+        );
+      },
+      rotateGesture: async (degrees, x, y, velocity) => {
+        await runIosRunnerCommand(
+          device,
+          {
+            command: 'rotateGesture',
+            degrees,
+            x,
+            y,
+            velocity,
+            appBundleId: ctx.appBundleId,
+          },
+          runnerOpts,
+        );
+      },
+      transformGesture: async (options) => {
+        return await runIosRunnerCommand(
+          device,
+          {
+            command: 'transformGesture',
+            x: options.x,
+            y: options.y,
+            dx: options.dx,
+            dy: options.dy,
+            scale: options.scale,
+            degrees: options.degrees,
+            durationMs: options.durationMs,
+            appBundleId: ctx.appBundleId,
+          },
+          runnerOpts,
         );
       },
     },

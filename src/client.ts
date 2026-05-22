@@ -52,6 +52,7 @@ import type {
   MetroPrepareOptions,
   NetworkOptions,
 } from './client-types.ts';
+import { AppError } from './utils/errors.ts';
 
 export function createAgentDeviceClient(
   config: AgentDeviceClientConfig = {},
@@ -331,6 +332,35 @@ export function createAgentDeviceClient(
           ],
           options,
         ),
+      pan: async (options) =>
+        await executeCommandRequest(
+          PUBLIC_COMMANDS.gesture,
+          [
+            'pan',
+            String(options.x),
+            String(options.y),
+            String(options.dx),
+            String(options.dy),
+            ...optionalNumber(options.durationMs),
+          ],
+          options,
+        ),
+      fling: async (options) => {
+        const distance =
+          options.durationMs !== undefined ? (options.distance ?? 180) : options.distance;
+        return await executeCommandRequest(
+          PUBLIC_COMMANDS.gesture,
+          [
+            'fling',
+            options.direction,
+            String(options.x),
+            String(options.y),
+            ...optionalNumber(distance),
+            ...optionalNumber(options.durationMs),
+          ],
+          options,
+        );
+      },
       focus: async (options) =>
         await executeCommandRequest(
           PUBLIC_COMMANDS.focus,
@@ -357,8 +387,45 @@ export function createAgentDeviceClient(
         ),
       pinch: async (options) =>
         await executeCommandRequest(
-          PUBLIC_COMMANDS.pinch,
-          [String(options.scale), ...optionalNumber(options.x), ...optionalNumber(options.y)],
+          PUBLIC_COMMANDS.gesture,
+          [
+            'pinch',
+            String(options.scale),
+            ...optionalNumber(options.x),
+            ...optionalNumber(options.y),
+          ],
+          options,
+        ),
+      rotateGesture: async (options) => {
+        if (
+          (options.x === undefined && options.y !== undefined) ||
+          (options.x !== undefined && options.y === undefined)
+        ) {
+          throw new AppError('INVALID_ARGS', 'gesture rotate center requires both x and y');
+        }
+        const center =
+          options.x === undefined || options.y === undefined
+            ? []
+            : [String(options.x), String(options.y)];
+        return await executeCommandRequest(
+          PUBLIC_COMMANDS.gesture,
+          ['rotate', String(options.degrees), ...center, ...optionalNumber(options.velocity)],
+          options,
+        );
+      },
+      transformGesture: async (options) =>
+        await executeCommandRequest(
+          PUBLIC_COMMANDS.gesture,
+          [
+            'transform',
+            String(options.x),
+            String(options.y),
+            String(options.dx),
+            String(options.dy),
+            String(options.scale),
+            String(options.degrees),
+            ...optionalNumber(options.durationMs),
+          ],
           options,
         ),
       get: async (options) =>

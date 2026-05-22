@@ -14,6 +14,7 @@ export const PUBLIC_COMMANDS = {
   fill: 'fill',
   find: 'find',
   focus: 'focus',
+  gesture: 'gesture',
   get: 'get',
   home: 'home',
   install: 'install',
@@ -25,7 +26,6 @@ export const PUBLIC_COMMANDS = {
   network: 'network',
   open: 'open',
   perf: 'perf',
-  pinch: 'pinch',
   press: 'press',
   push: 'push',
   record: 'record',
@@ -53,6 +53,9 @@ export const INTERNAL_COMMANDS = {
   releaseMaterializedPaths: 'release_materialized_paths',
   sessionList: 'session_list',
 } as const;
+
+const GESTURE_SUBCOMMANDS = ['pan', 'fling', 'pinch', 'rotate', 'transform'] as const;
+export const GESTURE_SUBCOMMAND_ERROR = `gesture requires one of: ${GESTURE_SUBCOMMANDS.join(', ')}`;
 
 export type PublicCommandName = (typeof PUBLIC_COMMANDS)[keyof typeof PUBLIC_COMMANDS];
 export type CliCommandName =
@@ -88,12 +91,13 @@ export const DAEMON_COMMAND_GROUPS = {
     PUBLIC_COMMANDS.diff,
     PUBLIC_COMMANDS.fill,
     PUBLIC_COMMANDS.find,
+    PUBLIC_COMMANDS.gesture,
     PUBLIC_COMMANDS.get,
     PUBLIC_COMMANDS.home,
     PUBLIC_COMMANDS.is,
     PUBLIC_COMMANDS.keyboard,
     PUBLIC_COMMANDS.longPress,
-    PUBLIC_COMMANDS.pinch,
+    'pinch',
     PUBLIC_COMMANDS.press,
     PUBLIC_COMMANDS.record,
     PUBLIC_COMMANDS.reactNative,
