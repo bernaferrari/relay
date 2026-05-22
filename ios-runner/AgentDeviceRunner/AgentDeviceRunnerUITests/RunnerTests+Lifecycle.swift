@@ -248,7 +248,9 @@ extension RunnerTests {
       .rotate,
       .appSwitcher,
       .keyboardDismiss,
-      .pinch:
+      .pinch,
+      .rotateGesture,
+      .transformGesture:
       return true
     default:
       return false

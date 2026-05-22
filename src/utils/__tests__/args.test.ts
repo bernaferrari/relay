@@ -611,6 +611,32 @@ test('parseArgs recognizes swipe positional + pattern flags', () => {
   assert.equal(parsed.flags.pattern, 'ping-pong');
 });
 
+test('parseArgs recognizes gesture subcommand positionals', () => {
+  const pan = parseArgs(['gesture', 'pan', '200', '420', '0', '-80', '500'], {
+    strictFlags: true,
+  });
+  assert.equal(pan.command, 'gesture');
+  assert.deepEqual(pan.positionals, ['pan', '200', '420', '0', '-80', '500']);
+
+  const fling = parseArgs(['gesture', 'fling', 'right', '200', '420', '180'], {
+    strictFlags: true,
+  });
+  assert.equal(fling.command, 'gesture');
+  assert.deepEqual(fling.positionals, ['fling', 'right', '200', '420', '180']);
+
+  const rotate = parseArgs(['gesture', 'rotate', '35', '200', '420'], {
+    strictFlags: true,
+  });
+  assert.equal(rotate.command, 'gesture');
+  assert.deepEqual(rotate.positionals, ['rotate', '35', '200', '420']);
+
+  const transform = parseArgs(['gesture', 'transform', '200', '420', '80', '-40', '2', '35'], {
+    strictFlags: true,
+  });
+  assert.equal(transform.command, 'gesture');
+  assert.deepEqual(transform.positionals, ['transform', '200', '420', '80', '-40', '2', '35']);
+});
+
 test('parseArgs recognizes type and fill delay flags', () => {
   const typeParsed = parseArgs(['type', 'hello', '--delay-ms', '75'], {
     strictFlags: true,
@@ -787,7 +813,11 @@ test('usage includes concise top-level commands', () => {
   assert.match(usageText, /clipboard read \| clipboard write <text>/);
   assert.match(usageText, /keyboard \[action\]/);
   assert.match(usageText, /trigger-app-event <event> \[payloadJson\]/);
-  assert.match(usageText, /pinch <scale> \[x\] \[y\]/);
+  assert.match(usageText, /gesture <pan\|fling\|pinch\|rotate\|transform> \.\.\./);
+  assert.doesNotMatch(usageText, /^  pan <x> <y> <dx> <dy> \[durationMs\]/m);
+  assert.doesNotMatch(usageText, /^  fling <up\|down\|left\|right>/m);
+  assert.doesNotMatch(usageText, /^  pinch <scale> \[x\] \[y\]/m);
+  assert.doesNotMatch(usageText, /^  rotate-gesture <degrees>/m);
   assert.match(usageText, /rotate <orientation>/);
   assert.match(usageText, /record start \[path\] \| record stop/);
   assert.match(usageText, /trace start <path> \| trace stop <path>/);
@@ -916,6 +946,8 @@ test('usageForCommand resolves workflow help topic', () => {
   assert.match(help, /report that gap instead of typing\/searching\/navigating/);
   assert.match(help, /App-owned action sheets, menus, and camera\/scan screens are normal UI/);
   assert.match(help, /wait for a concrete result before returning to chat\/form state/);
+  assert.match(help, /choose a point near the center of the intended app-owned target/);
+  assert.match(help, /Avoid screen edges, tab bars, navigation bars, and home indicators/);
   assert.match(help, /longpress accepts coordinates, @refs, or selectors/);
   assert.match(help, /use help react-native for Metro\/Fast Refresh/);
   assert.match(help, /iOS Allow Paste prompt cannot be exercised under XCUITest/);
@@ -929,6 +961,7 @@ test('usageForCommand resolves workflow help topic', () => {
     /Do not run open\/press\/fill\/type\/scroll\/back\/alert\/replay\/batch\/close commands in parallel/,
   );
   assert.match(help, /agent-device clipboard write "some text"/);
+  assert.match(help, /For gesture-heavy iOS simulator proof videos, prefer --hide-touches/);
   assert.match(help, /Android Gboard handwriting\/stylus UI can capture text/);
   assert.match(help, /targetInput\/actualInput details/);
   assert.match(help, /Do not keep retrying fill\/type against the same field/);
@@ -1085,15 +1118,29 @@ test('apps defaults to user-installed filter and allows overrides', () => {
   );
 });
 
-test('every capability command has a parser schema entry', () => {
+const INTERNAL_GESTURE_CAPABILITY_COMMANDS = new Set([
+  'pan',
+  'fling',
+  'pinch',
+  'rotate-gesture',
+  'transform-gesture',
+]);
+
+test('every public capability command has a parser schema entry', () => {
   const schemaCommands = new Set(getCliCommandNames());
   for (const command of listCapabilityCommands()) {
+    if (INTERNAL_GESTURE_CAPABILITY_COMMANDS.has(command)) continue;
     assert.equal(schemaCommands.has(command), true, `Missing schema for command: ${command}`);
   }
 });
 
 test('schema capability mappings match capability source-of-truth', () => {
-  assert.deepEqual(getSchemaCapabilityKeys(), listCapabilityCommands());
+  assert.deepEqual(
+    getSchemaCapabilityKeys(),
+    listCapabilityCommands().filter(
+      (command) => !INTERNAL_GESTURE_CAPABILITY_COMMANDS.has(command),
+    ),
+  );
 });
 
 test('compat mode warns and strips unsupported command flags', () => {

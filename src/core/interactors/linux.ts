@@ -29,11 +29,18 @@ export function createLinuxInteractor(): Interactor {
     tap: (x, y) => pressLinux(x, y),
     doubleTap: (x, y) => doubleClickLinux(x, y),
     swipe: (x1, y1, x2, y2, durationMs) => swipeLinux(x1, y1, x2, y2, durationMs),
+    pan: (x1, y1, x2, y2, durationMs) => swipeLinux(x1, y1, x2, y2, durationMs),
+    fling: () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'gesture fling not supported on Linux');
+    },
     longPress: (x, y, durationMs) => longPressLinux(x, y, durationMs),
     focus: (x, y) => focusLinux(x, y),
     type: (text, delayMs) => typeLinux(text, delayMs),
     fill: (x, y, text, delayMs) => fillLinux(x, y, text, delayMs),
     scroll: (direction, options) => scrollLinux(direction, options),
+    pinch: () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'gesture pinch not supported on Linux');
+    },
     screenshot: (outPath, options) => screenshotLinux(outPath, options),
     snapshot: async (options) => {
       const result = await withDiagnosticTimer(
@@ -51,6 +58,12 @@ export function createLinuxInteractor(): Interactor {
     home: () => homeLinux(),
     rotate: () => {
       throw new AppError('UNSUPPORTED_OPERATION', 'rotate not supported on Linux');
+    },
+    rotateGesture: () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'gesture rotate not supported on Linux');
+    },
+    transformGesture: () => {
+      throw new AppError('UNSUPPORTED_OPERATION', 'gesture transform not supported on Linux');
     },
     appSwitcher: () => {
       throw new AppError('UNSUPPORTED_OPERATION', 'appSwitcher not yet supported on Linux');

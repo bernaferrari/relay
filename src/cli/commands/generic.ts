@@ -16,7 +16,7 @@ import {
 import { selectorSnapshotOptionsFromFlags } from '../../command-codecs/flags.ts';
 import { buildSelectionOptions } from './shared.ts';
 import { writeCommandCliOutput } from './output.ts';
-import type { PublicCommandName } from '../../command-catalog.ts';
+import { GESTURE_SUBCOMMAND_ERROR, type PublicCommandName } from '../../command-catalog.ts';
 import type { ClientCommandHandler } from './router-types.ts';
 
 type GenericClientCommandRunner = (params: {
@@ -111,6 +111,12 @@ const genericClientCommandRunners = {
       pauseMs: flags.pauseMs,
       pattern: flags.pattern,
     }),
+  gesture: ({ client, positionals, flags }) =>
+    runGestureCommand({
+      client,
+      positionals,
+      flags,
+    }),
   focus: ({ client, positionals, flags }) =>
     client.interactions.focus({
       ...buildSelectionOptions(flags),
@@ -134,13 +140,6 @@ const genericClientCommandRunners = {
       direction: readScrollDirection(positionals[0]),
       amount: optionalNumber(positionals[1]),
       pixels: flags.pixels,
-    }),
-  pinch: ({ client, positionals, flags }) =>
-    client.interactions.pinch({
-      ...buildSelectionOptions(flags),
-      scale: Number(positionals[0]),
-      x: optionalNumber(positionals[1]),
-      y: optionalNumber(positionals[2]),
     }),
   'trigger-app-event': ({ client, positionals, flags }) =>
     client.apps.triggerEvent({
@@ -192,6 +191,64 @@ const genericClientCommandRunners = {
     client.settings.update(settingsCommandCodec.decode(positionals, flags)),
 } satisfies Partial<Record<PublicCommandName, GenericClientCommandRunner>>;
 
+function runGestureCommand(params: {
+  client: AgentDeviceClient;
+  positionals: string[];
+  flags: CliFlags;
+}): Promise<CommandRequestResult> {
+  const { client, positionals, flags } = params;
+  const subcommand = required(positionals[0], 'gesture requires subcommand');
+  const args = positionals.slice(1);
+  switch (subcommand) {
+    case 'pan':
+      return client.interactions.pan({
+        ...buildSelectionOptions(flags),
+        x: Number(args[0]),
+        y: Number(args[1]),
+        dx: Number(args[2]),
+        dy: Number(args[3]),
+        durationMs: optionalNumber(args[4]),
+      });
+    case 'fling':
+      return client.interactions.fling({
+        ...buildSelectionOptions(flags),
+        direction: readGestureDirection(args[0], 'gesture fling'),
+        x: Number(args[1]),
+        y: Number(args[2]),
+        distance: optionalNumber(args[3]),
+        durationMs: optionalNumber(args[4]),
+      });
+    case 'pinch':
+      return client.interactions.pinch({
+        ...buildSelectionOptions(flags),
+        scale: Number(args[0]),
+        x: optionalNumber(args[1]),
+        y: optionalNumber(args[2]),
+      });
+    case 'rotate':
+      return client.interactions.rotateGesture({
+        ...buildSelectionOptions(flags),
+        degrees: Number(args[0]),
+        x: optionalNumber(args[1]),
+        y: optionalNumber(args[2]),
+        velocity: optionalNumber(args[3]),
+      });
+    case 'transform':
+      return client.interactions.transformGesture({
+        ...buildSelectionOptions(flags),
+        x: Number(args[0]),
+        y: Number(args[1]),
+        dx: Number(args[2]),
+        dy: Number(args[3]),
+        scale: Number(args[4]),
+        degrees: Number(args[5]),
+        durationMs: optionalNumber(args[6]),
+      });
+    default:
+      throw new AppError('INVALID_ARGS', GESTURE_SUBCOMMAND_ERROR);
+  }
+}
+
 export const genericClientCommandHandlers = Object.fromEntries(
   Object.entries(genericClientCommandRunners).map(([command, run]) => [
     command,
@@ -235,6 +292,14 @@ function readScrollDirection(
     return value;
   }
   throw new AppError('INVALID_ARGS', `Unknown direction: ${String(value)}`);
+}
+
+function readGestureDirection(
+  value: string | undefined,
+  command: string,
+): 'up' | 'down' | 'left' | 'right' {
+  if (value === 'up' || value === 'down' || value === 'left' || value === 'right') return value;
+  throw new AppError('INVALID_ARGS', `${command} direction must be up, down, left, or right`);
 }
 
 function readStartStop(value: string | undefined, command: string): 'start' | 'stop' {

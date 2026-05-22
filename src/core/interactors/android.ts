@@ -17,6 +17,11 @@ import {
   typeAndroid,
 } from '../../platforms/android/input-actions.ts';
 import {
+  pinchAndroid,
+  rotateGestureAndroid,
+  transformGestureAndroid,
+} from '../../platforms/android/multitouch-helper.ts';
+import {
   readAndroidClipboardText,
   writeAndroidClipboardText,
 } from '../../platforms/android/device-input-state.ts';
@@ -38,11 +43,14 @@ export function createAndroidInteractor(device: DeviceInfo): Interactor {
       await pressAndroid(device, x, y);
     },
     swipe: (x1, y1, x2, y2, durationMs) => swipeAndroid(device, x1, y1, x2, y2, durationMs),
+    pan: (x1, y1, x2, y2, durationMs) => swipeAndroid(device, x1, y1, x2, y2, durationMs),
+    fling: (x1, y1, x2, y2, durationMs) => swipeAndroid(device, x1, y1, x2, y2, durationMs),
     longPress: (x, y, durationMs) => longPressAndroid(device, x, y, durationMs),
     focus: (x, y) => focusAndroid(device, x, y),
     type: (text, delayMs) => typeAndroid(device, text, delayMs),
     fill: (x, y, text, delayMs) => fillAndroid(device, x, y, text, delayMs),
     scroll: (direction, options) => scrollAndroid(device, direction, options),
+    pinch: (scale, x, y) => pinchAndroid(device, { scale, x, y }),
     screenshot: (outPath, options) => screenshotAndroid(device, outPath, options),
     snapshot: async (options) => {
       const result = await withDiagnosticTimer(
@@ -68,6 +76,9 @@ export function createAndroidInteractor(device: DeviceInfo): Interactor {
     back: (_mode) => backAndroid(device),
     home: () => homeAndroid(device),
     rotate: (orientation) => rotateAndroid(device, orientation),
+    rotateGesture: (degrees, x, y, velocity) =>
+      rotateGestureAndroid(device, { degrees, x, y, velocity }),
+    transformGesture: (options) => transformGestureAndroid(device, options),
     appSwitcher: () => appSwitcherAndroid(device),
     readClipboard: () => readAndroidClipboardText(device),
     writeClipboard: (text) => writeAndroidClipboardText(device, text),
