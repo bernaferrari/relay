@@ -15,6 +15,7 @@ import {
 } from './handlers/snapshot-session.ts';
 import { createDaemonRuntimePolicy } from './runtime-policy.ts';
 import { createDaemonRuntimeSessionStore } from './runtime-session.ts';
+import { maybeBuildAndroidSnapshotTimeoutFailure } from './android-snapshot-timeout-evidence.ts';
 
 export async function dispatchSnapshotViaRuntime(params: {
   req: DaemonRequest;
@@ -125,12 +126,25 @@ async function dispatchSnapshotRuntimeCommand(
       device,
       snapshotScope: resolvedScope.scope,
     });
-    const result = await params.execute({
-      runtime,
-      sessionName,
-      req,
-      snapshotScope: resolvedScope.scope,
-    });
+    let result: Awaited<ReturnType<SnapshotRuntimeCommandParams['execute']>>;
+    try {
+      result = await params.execute({
+        runtime,
+        sessionName,
+        req,
+        snapshotScope: resolvedScope.scope,
+      });
+    } catch (error) {
+      const timeoutResponse = await maybeBuildAndroidSnapshotTimeoutFailure({
+        error,
+        command: params.command,
+        logPath,
+        session,
+        device,
+      });
+      if (!timeoutResponse) throw error;
+      return timeoutResponse;
+    }
     recordSnapshotRuntimeAction({
       req,
       sessionName,
