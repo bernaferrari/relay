@@ -258,7 +258,14 @@ function readDirectIosSelectorTapTarget(params: {
   if (commandLabel !== 'click') return null;
   if (target.kind !== 'selector') return null;
   if (hasNonDefaultClickOptions(flags)) return null;
-  return readSimpleIosSelectorTarget({ session, selectorExpression: target.selector });
+  const selector = readSimpleIosSelectorTarget({ session, selectorExpression: target.selector });
+  if (!selector) return null;
+  return {
+    ...selector,
+    ...(flags?.maestro?.allowNonHittableCoordinateFallback
+      ? { allowNonHittableCoordinateFallback: true }
+      : {}),
+  };
 }
 
 function hasNonDefaultClickOptions(flags: CommandFlags | undefined): boolean {
@@ -277,11 +284,44 @@ async function dispatchDirectIosSelectorTap(
   session: SessionState,
   selector: DirectIosSelectorTarget,
 ): Promise<DaemonResponse | null> {
+  return await dispatchDirectIosSelectorInteraction({
+    params,
+    session,
+    selector,
+    command: 'press',
+    positionals: [],
+    extra: { selector: selector.raw },
+    fallbackPhase: 'ios_direct_selector_tap_fallback',
+  });
+}
+
+async function dispatchDirectIosSelectorInteraction(params: {
+  params: InteractionHandlerParams;
+  session: SessionState;
+  selector: DirectIosSelectorTarget;
+  command: 'press' | 'fill';
+  positionals: string[];
+  extra: Record<string, unknown>;
+  fallbackPhase: string;
+}): Promise<DaemonResponse | null> {
+  const {
+    params: handlerParams,
+    session,
+    selector,
+    command,
+    positionals,
+    extra,
+    fallbackPhase,
+  } = params;
   const actionStartedAt = Date.now();
   try {
     const data =
-      (await dispatchCommand(session.device, 'press', [], params.req.flags?.out, {
-        ...params.contextFromFlags(params.req.flags, session.appBundleId, session.trace?.outPath),
+      (await dispatchCommand(session.device, command, positionals, handlerParams.req.flags?.out, {
+        ...handlerParams.contextFromFlags(
+          handlerParams.req.flags,
+          session.appBundleId,
+          session.trace?.outPath,
+        ),
         directElementSelector: selector,
         surface: session.surface,
       })) ?? {};
@@ -293,15 +333,16 @@ async function dispatchDirectIosSelectorTap(
       fallbackY: point.y,
       referenceFrame: readReferenceFrameFromDirectSelectorTapResult(data),
       extra: {
-        selector: selector.raw,
+        ...extra,
+        ...directIosSelectorFallbackDetails(selector, data),
       },
     });
     return finalizeTouchInteraction({
       session,
-      sessionStore: params.sessionStore,
-      command: params.req.command,
-      positionals: params.req.positionals ?? [],
-      flags: params.req.flags,
+      sessionStore: handlerParams.sessionStore,
+      command: handlerParams.req.command,
+      positionals: handlerParams.req.positionals ?? [],
+      flags: handlerParams.req.flags,
       result: responseData,
       responseData,
       actionStartedAt,
@@ -313,7 +354,7 @@ async function dispatchDirectIosSelectorTap(
     }
     emitDiagnostic({
       level: 'debug',
-      phase: 'ios_direct_selector_tap_fallback',
+      phase: fallbackPhase,
       data: {
         selector: selector.raw,
         error: error instanceof Error ? error.message : String(error),
@@ -321,6 +362,19 @@ async function dispatchDirectIosSelectorTap(
     });
     return null;
   }
+}
+
+function directIosSelectorFallbackDetails(
+  selector: DirectIosSelectorTarget,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!selector.allowNonHittableCoordinateFallback) return {};
+  const used = data.message === 'tapped via non-hittable coordinate fallback';
+  return {
+    maestroNonHittableCoordinateFallbackAllowed: true,
+    maestroNonHittableCoordinateFallbackUsed: used,
+    ...(used ? { maestroFallbackReason: 'non-hittable-coordinate' } : {}),
+  };
 }
 
 function readPointFromDirectSelectorTapResult(data: Record<string, unknown>): {
@@ -367,6 +421,20 @@ async function dispatchFillViaRuntime(
     if (invalidRefFlagsResponse) return invalidRefFlagsResponse;
     await refreshAndroidRefSnapshotIfFreshnessActive(params, session);
   }
+  const directSelector = readDirectIosSelectorFillTarget({
+    session,
+    target: parsedTarget.target,
+    flags: req.flags,
+  });
+  if (directSelector) {
+    const directResponse = await dispatchDirectIosSelectorFill(
+      params,
+      session,
+      directSelector,
+      parsedTarget.text,
+    );
+    if (directResponse) return directResponse;
+  }
 
   return await dispatchRuntimeInteraction(params, {
     run: async (runtime) =>
@@ -405,6 +473,40 @@ async function dispatchFillViaRuntime(
       if (result.warning) responseData.warning = result.warning;
       return { result: recordedResult, responseData };
     },
+  });
+}
+
+function readDirectIosSelectorFillTarget(params: {
+  session: SessionState;
+  target: InteractionTarget;
+  flags: CommandFlags | undefined;
+}): DirectIosSelectorTarget | null {
+  const { session, target, flags } = params;
+  if (target.kind !== 'selector') return null;
+  const selector = readSimpleIosSelectorTarget({ session, selectorExpression: target.selector });
+  if (!selector) return null;
+  return {
+    ...selector,
+    ...(flags?.maestro?.allowNonHittableCoordinateFallback
+      ? { allowNonHittableCoordinateFallback: true }
+      : {}),
+  };
+}
+
+async function dispatchDirectIosSelectorFill(
+  params: InteractionHandlerParams,
+  session: SessionState,
+  selector: DirectIosSelectorTarget,
+  text: string,
+): Promise<DaemonResponse | null> {
+  return await dispatchDirectIosSelectorInteraction({
+    params,
+    session,
+    selector,
+    command: 'fill',
+    positionals: [text],
+    extra: { selector: selector.raw, text },
+    fallbackPhase: 'ios_direct_selector_fill_fallback',
   });
 }
 

@@ -4,6 +4,7 @@ import { parseAllDocuments } from 'yaml';
 import type { SessionAction } from '../../daemon/types.ts';
 import { AppError } from '../../utils/errors.ts';
 import { convertMaestroCommandWithLine } from './command-mapper.ts';
+import { MAESTRO_RUNTIME_COMMAND } from './runtime-commands.ts';
 import { isPlainRecord, normalizeCommandList, normalizePlatform, readEnvMap } from './support.ts';
 import type {
   MaestroCommand,
@@ -74,7 +75,100 @@ function convertRootCommands(params: {
     actions.push(...converted);
     converted.forEach(() => actionLines.push(line));
   }
-  return { actions, actionLines };
+  return optimizeInputTextActions(actions, actionLines);
+}
+
+function optimizeInputTextActions(
+  actions: SessionAction[],
+  actionLines: number[],
+): { actions: SessionAction[]; actionLines: number[] } {
+  const mergedActions: SessionAction[] = [];
+  const mergedLines: number[] = [];
+  for (let index = 0; index < actions.length; index += 1) {
+    const action = actions[index];
+    const optimized = optimizeTypedAfterTap(actions, actionLines, index);
+    if (optimized) {
+      mergedActions.push(...optimized.actions);
+      mergedLines.push(...optimized.actionLines);
+      index += optimized.consumed - 1;
+      continue;
+    }
+    mergedActions.push(action);
+    mergedLines.push(actionLines[index] ?? 1);
+  }
+  return { actions: mergedActions, actionLines: mergedLines };
+}
+
+function optimizeTypedAfterTap(
+  actions: SessionAction[],
+  actionLines: number[],
+  index: number,
+): { actions: SessionAction[]; actionLines: number[]; consumed: number } | null {
+  const action = actions[index];
+  const nextAction = actions[index + 1];
+  const typedAfterTap = readPlainTypeText(nextAction);
+  const tapSelector = readPlainMaestroTapSelector(action);
+  if (typedAfterTap === null || tapSelector === null) return null;
+  const line = actionLines[index] ?? 1;
+  if (!isLikelyTextEntrySelector(tapSelector)) {
+    return { actions: [clearMaestroNonHittableTap(action)], actionLines: [line], consumed: 1 };
+  }
+  if (actions[index + 2]?.command !== MAESTRO_RUNTIME_COMMAND.pressEnter) {
+    return { actions: [clearMaestroNonHittableTap(action)], actionLines: [line], consumed: 1 };
+  }
+  return {
+    actions: [
+      {
+        ...action,
+        command: 'wait',
+        positionals: [tapSelector, '30000'],
+      },
+      {
+        ...nextAction,
+        command: 'fill',
+        positionals: [tapSelector, typedAfterTap],
+        flags: action.flags,
+      },
+      actions[index + 2] as SessionAction,
+    ],
+    actionLines: [line, line, actionLines[index + 2] ?? line],
+    consumed: 3,
+  };
+}
+
+function clearMaestroNonHittableTap(action: SessionAction): SessionAction {
+  const maestro = { ...(action.flags?.maestro ?? {}) };
+  delete maestro.allowNonHittableCoordinateFallback;
+  return {
+    ...action,
+    flags: {
+      ...(action.flags ?? {}),
+      maestro: {
+        ...maestro,
+      },
+    },
+  };
+}
+
+function readPlainMaestroTapSelector(action: SessionAction | undefined): string | null {
+  if (action?.command !== MAESTRO_RUNTIME_COMMAND.tapOn) return null;
+  const [selector, ...rest] = action.positionals ?? [];
+  if (rest.length > 0 || typeof selector !== 'string') return null;
+  return selector;
+}
+
+function readPlainTypeText(action: SessionAction | undefined): string | null {
+  if (action?.command !== 'type') return null;
+  if (action.flags && Object.keys(action.flags).length > 0) return null;
+  const [text, ...rest] = action.positionals ?? [];
+  if (rest.length > 0 || typeof text !== 'string') return null;
+  return text;
+}
+
+function isLikelyTextEntrySelector(selector: string): boolean {
+  return /\b(input|textfield|textarea|field|email|password|username|search|query)\b/i.test(
+    selector.replace(/([a-z])([A-Z])/g, '$1 $2'),
+  );
 }
 
 function parseYamlDocuments(script: string): unknown[] {

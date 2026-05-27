@@ -14,6 +14,9 @@ env:
 - launchApp
 - tapOn:
     id: home-open-form
+- tapOn:
+    point: 20%,20%
+    label: Dismiss save password prompt
 - doubleTapOn:
     id: release-notice
     delay: 150
@@ -37,6 +40,11 @@ env:
     start: 50%, 75%
     end: 50%, 35%
     duration: 300
+- swipe:
+    direction: LEFT
+- scrollUntilVisible:
+    element: Discover
+    direction: UP
 - takeScreenshot: ./screens/form.png
 - hideKeyboard
 - stopApp
@@ -47,34 +55,239 @@ env:
     parsed.actions.map((entry) => [entry.command, entry.positionals]),
     [
       ['open', ['com.callstack.agentdevicelab']],
-      ['click', ['id="home-open-form"']],
+      ['__maestroTapOn', ['id="home-open-form"']],
+      ['__maestroTapPointPercent', ['20', '20']],
       ['click', ['id="release-notice"']],
-      ['click', ['label="Agent Device Tester"']],
+      [
+        'click',
+        ['label="Agent Device Tester" || text="Agent Device Tester" || id="Agent Device Tester"'],
+      ],
       ['open', ['exp://localhost:8082']],
-      ['click', ['label="Full name" || text="Full name" || id="Full name"']],
+      ['__maestroTapOn', ['label="Full name" || text="Full name" || id="Full name"']],
       ['type', ['Ada Lovelace']],
-      ['wait', ['label="Checkout form"', '5000']],
-      ['is', ['hidden', 'label="Missing banner"']],
-      ['wait', ['id="submit-order"', '7000']],
+      [
+        '__maestroAssertVisible',
+        ['label="Checkout form" || text="Checkout form" || id="Checkout form"', '5000'],
+      ],
+      [
+        '__maestroAssertNotVisible',
+        ['label="Missing banner" || text="Missing banner" || id="Missing banner"'],
+      ],
+      ['__maestroAssertVisible', ['id="submit-order"', '7000']],
       ['scroll', ['down']],
-      ['scroll', ['down', '0.4']],
+      ['__maestroSwipeScreen', ['percent', '50', '75', '50', '35', '300']],
+      ['__maestroSwipeScreen', ['direction', 'left']],
+      [
+        '__maestroScrollUntilVisible',
+        ['label="Discover" || text="Discover" || id="Discover"', '5000', 'up'],
+      ],
       ['screenshot', ['./screens/form.png']],
       ['keyboard', ['dismiss']],
       ['close', ['com.callstack.agentdevicelab']],
     ],
   );
-  assert.equal(parsed.actions[2]?.flags.doubleTap, true);
-  assert.equal(parsed.actions[2]?.flags.intervalMs, 150);
-  assert.equal(parsed.actions[3]?.flags.holdMs, 3000);
+  assert.equal(parsed.actions[3]?.flags.doubleTap, true);
+  assert.equal(parsed.actions[3]?.flags.intervalMs, 150);
+  assert.equal(parsed.actions[4]?.flags.holdMs, 3000);
+  assert.equal(parsed.actions[1]?.flags.maestro?.allowNonHittableCoordinateFallback, true);
+  assert.equal(parsed.actions[6]?.flags?.maestro?.allowNonHittableCoordinateFallback, undefined);
+});
+
+test('parseMaestroReplayFlow maps iOS openLink through the app id when available', () => {
+  const parsed = parseMaestroReplayFlow(
+    `appId: com.callstack.agentdevicelab
+---
+- openLink: exp://localhost:8082
+`,
+    { platform: 'ios' },
+  );
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [['open', ['com.callstack.agentdevicelab', 'exp://localhost:8082']]],
+  );
+});
+
+test('parseMaestroReplayFlow maps Android openLink like Maestro without package binding', () => {
+  const parsed = parseMaestroReplayFlow(
+    `appId: com.callstack.agentdevicelab
+---
+- openLink: exp://localhost:8082
+`,
+    { platform: 'android' },
+  );
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [['open', ['exp://localhost:8082']]],
+  );
+});
+
+test('parseMaestroReplayFlow converts Maestro nested selector compatibility syntax', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- eraseText
+- eraseText: 12
+- tapOn:
+    id: childActionButton
+    childOf:
+      id: parent-row-secondary
+- tapOn:
+    id: overflowButton
+    index: 0
+- tapOn:
+    label: Profile name metadata
+    text: Profile name
+- swipe:
+    label: Drag item down
+    from:
+      id: reorder-handle
+    direction: UP
+    duration: 350
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['type', ['\b'.repeat(50)]],
+      ['type', ['\b'.repeat(12)]],
+      [
+        '__maestroTapOn',
+        ['id="childActionButton"', JSON.stringify({ childOf: 'id="parent-row-secondary"' })],
+      ],
+      ['__maestroTapOn', ['id="overflowButton"', JSON.stringify({ index: 0 })]],
+      ['__maestroTapOn', ['label="Profile name" || text="Profile name" || id="Profile name"']],
+      ['__maestroSwipeOn', ['id="reorder-handle"', 'up', '350']],
+    ],
+  );
+});
+
+test('parseMaestroReplayFlow preserves runScript as an ordered runtime action', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-maestro-runscript-'));
+  const scriptPath = path.join(root, 'setup.js');
+  const flowPath = path.join(root, 'flow.yml');
+  fs.writeFileSync(scriptPath, `output.result = SERVER_PATH`);
+
+  const parsed = parseMaestroReplayFlow(
+    `appId: com.callstack.agentdevicelab
+---
+- runScript:
+    file: ./setup.js
+    env:
+      SERVER_PATH: local
+- inputText: \${output.result}
+`,
+    { sourcePath: flowPath },
+  );
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['__maestroRunScript', [scriptPath]],
+      ['type', ['${output.result}']],
+    ],
+  );
+  assert.deepEqual(parsed.actions[0]?.flags.maestro?.runScriptEnv, { SERVER_PATH: 'local' });
+});
+
+test('parseMaestroReplayFlow keeps focused inputText and pressKey Enter as separate actions', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- inputText: hello
+- pressKey: Enter
+- inputText: world
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['type', ['hello']],
+      ['__maestroPressEnter', []],
+      ['type', ['world']],
+    ],
+  );
+  assert.deepEqual(parsed.actionLines, [3, 4, 5]);
+});
+
+test('parseMaestroReplayFlow marks tapOn before inputText for snapshot tap focus', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- tapOn:
+    id: editableNameInput
+- inputText: Saved list
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['__maestroTapOn', ['id="editableNameInput"']],
+      ['type', ['Saved list']],
+    ],
+  );
+  assert.equal(parsed.actions[0]?.flags?.maestro?.allowNonHittableCoordinateFallback, undefined);
+});
+
+test('parseMaestroReplayFlow coalesces tapOn inputText while preserving pressKey Enter submit', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- tapOn:
+    id: e2eProxyHeaderInput
+- inputText: \${output.result}
+- pressKey: Enter
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['wait', ['id="e2eProxyHeaderInput"', '30000']],
+      ['fill', ['id="e2eProxyHeaderInput"', '${output.result}']],
+      ['__maestroPressEnter', []],
+    ],
+  );
+  assert.deepEqual(parsed.actionLines, [3, 3, 6]);
+  assert.equal(parsed.actions[1]?.flags?.maestro?.allowNonHittableCoordinateFallback, true);
+});
+
+test('parseMaestroReplayFlow does not coalesce text entry for non-input-looking targets', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- tapOn: Continue
+- inputText: unexpected
+- pressKey: Enter
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['__maestroTapOn', ['label="Continue" || text="Continue" || id="Continue"']],
+      ['type', ['unexpected']],
+      ['__maestroPressEnter', []],
+    ],
+  );
+  assert.equal(parsed.actions[0]?.flags?.maestro?.allowNonHittableCoordinateFallback, undefined);
+});
+
+test('parseMaestroReplayFlow rejects relative runScript paths without source path', () => {
+  assert.throws(
+    () =>
+      parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- runScript: ./setup.js
+`),
+    (error) =>
+      error instanceof AppError &&
+      error.code === 'INVALID_ARGS' &&
+      /runScript file paths/.test(error.message),
+  );
 });
 
 test('parseMaestroReplayFlow rejects unsupported Maestro commands', () => {
   assert.throws(
-    () => parseMaestroReplayFlow('---\n- scrollUntilVisible: Save\n'),
+    () => parseMaestroReplayFlow('---\n- travelThroughTime: Save\n'),
     (error) =>
       error instanceof AppError &&
       error.code === 'INVALID_ARGS' &&
-      /scrollUntilVisible/.test(error.message) &&
+      /travelThroughTime/.test(error.message) &&
       /issues\/558/.test(error.message) &&
       /issues\/new/.test(error.message) &&
       /line 2/.test(error.message),
@@ -96,59 +309,14 @@ test('parseMaestroReplayFlow preserves selector state and absolute swipe command
   assert.deepEqual(
     parsed.actions.map((entry) => [entry.command, entry.positionals]),
     [
-      ['wait', ['id="shipping-pickup" selected="true"', '5000']],
+      ['__maestroAssertVisible', ['id="shipping-pickup" selected="true"', '5000']],
       ['swipe', ['100', '500', '100', '200', '300']],
     ],
   );
   assert.deepEqual(parsed.actionLines, [3, 6]);
 });
 
-test('parseMaestroReplayFlow maps easy Maestro device and utility commands', () => {
-  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
-env:
-  VIDEO_PATH: ./recordings/checkout.mp4
----
-- setAirplaneMode: true
-- setAirplaneMode: false
-- setLocation:
-    latitude: 52.2297
-    longitude: 21.0122
-- setOrientation: landscapeLeft
-- setPermissions:
-    camera: allow
-    microphone: deny
-    photos: unset
-    location: always
-- killApp
-- killApp: com.callstack.other
-- pasteText: hello there
-- startRecording:
-    path: \${VIDEO_PATH}
-- stopRecording
-- assertTrue: true
-`);
-
-  assert.deepEqual(
-    parsed.actions.map((entry) => [entry.command, entry.positionals]),
-    [
-      ['settings', ['airplane', 'on']],
-      ['settings', ['airplane', 'off']],
-      ['settings', ['location', 'set', '52.2297', '21.0122']],
-      ['rotate', ['landscape-left']],
-      ['settings', ['permission', 'grant', 'camera']],
-      ['settings', ['permission', 'deny', 'microphone']],
-      ['settings', ['permission', 'reset', 'photos']],
-      ['settings', ['permission', 'grant', 'location-always']],
-      ['close', ['com.callstack.agentdevicelab']],
-      ['close', ['com.callstack.other']],
-      ['type', ['hello there']],
-      ['record', ['start', './recordings/checkout.mp4']],
-      ['record', ['stop']],
-    ],
-  );
-});
-
-test('parseMaestroReplayFlow rejects unsupported easy-mapping variants loudly', () => {
+test('parseMaestroReplayFlow rejects deferred Maestro utility commands loudly', () => {
   assert.throws(
     () => parseMaestroReplayFlow('---\n- assertTrue: "${READY}"\n'),
     (error) =>
@@ -160,11 +328,11 @@ test('parseMaestroReplayFlow rejects unsupported easy-mapping variants loudly', 
   );
 
   assert.throws(
-    () => parseMaestroReplayFlow('---\n- setPermissions:\n    camera: always\n'),
+    () => parseMaestroReplayFlow('---\n- setPermissions:\n    camera: allow\n'),
     (error) =>
       error instanceof AppError &&
       error.code === 'INVALID_ARGS' &&
-      /setPermissions state "always"/.test(error.message) &&
+      /setPermissions/.test(error.message) &&
       /issues\/558/.test(error.message) &&
       /line 2/.test(error.message),
   );
@@ -196,12 +364,12 @@ test('parseMaestroReplayFlow reports top-level command lines around nested lists
 - runFlow:
     commands:
       - tapOn: Nested
-- scrollUntilVisible: Save
+- travelThroughTime: Save
 `),
     (error) =>
       error instanceof AppError &&
       error.code === 'INVALID_ARGS' &&
-      /scrollUntilVisible/.test(error.message) &&
+      /travelThroughTime/.test(error.message) &&
       /line 6/.test(error.message),
   );
 });
@@ -251,14 +419,14 @@ onFlowComplete:
   assert.deepEqual(
     parsed.actions.map((entry) => [entry.command, entry.positionals]),
     [
-      ['click', ['label="Before" || text="Before" || id="Before"']],
-      ['click', ['label="Nested" || text="Nested" || id="Nested"']],
-      ['click', ['id="child-repeat"']],
-      ['click', ['id="child-repeat"']],
-      ['click', ['label="iOS only" || text="iOS only" || id="iOS only"']],
-      ['click', ['label="Again" || text="Again" || id="Again"']],
-      ['click', ['label="Again" || text="Again" || id="Again"']],
-      ['click', ['label="After" || text="After" || id="After"']],
+      ['__maestroTapOn', ['label="Before" || text="Before" || id="Before"']],
+      ['__maestroTapOn', ['label="Nested" || text="Nested" || id="Nested"']],
+      ['__maestroTapOn', ['id="child-repeat"']],
+      ['__maestroTapOn', ['id="child-repeat"']],
+      ['__maestroTapOn', ['label="iOS only" || text="iOS only" || id="iOS only"']],
+      ['__maestroTapOn', ['label="Again" || text="Again" || id="Again"']],
+      ['__maestroTapOn', ['label="Again" || text="Again" || id="Again"']],
+      ['__maestroTapOn', ['label="After" || text="After" || id="After"']],
     ],
   );
 });
@@ -279,57 +447,171 @@ test('parseMaestroReplayFlow skips platform-gated runFlow commands for other pla
 
   assert.deepEqual(
     parsed.actions.map((entry) => [entry.command, entry.positionals]),
-    [['click', ['label="Shared" || text="Shared" || id="Shared"']]],
+    [['__maestroTapOn', ['label="Shared" || text="Shared" || id="Shared"']]],
   );
 });
 
-test('parseMaestroReplayFlow tolerates false launchApp reset options and rejects reset side effects', () => {
-  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+test('parseMaestroReplayFlow treats Web platform gates as non-native branches', () => {
+  const parsed = parseMaestroReplayFlow(
+    `appId: com.callstack.agentdevicelab
 ---
-- launchApp:
-    clearState: false
-    clearKeychain: false
-    stopApp: true
-`);
+- runFlow:
+    when:
+      platform: Web
+    commands:
+      - tapOn: Web only
+- tapOn: Native
+`,
+    { platform: 'ios' },
+  );
 
   assert.deepEqual(
-    parsed.actions.map((entry) => [entry.command, entry.positionals, entry.flags]),
-    [['open', ['com.callstack.agentdevicelab'], { relaunch: true }]],
-  );
-
-  assert.throws(
-    () =>
-      parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
----
-- launchApp:
-    clearState: true
-`),
-    (error) =>
-      error instanceof AppError &&
-      error.code === 'INVALID_ARGS' &&
-      /clearState: true/.test(error.message) &&
-      /line 3/.test(error.message),
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [['__maestroTapOn', ['label="Native" || text="Native" || id="Native"']]],
   );
 });
 
-test('parseMaestroReplayFlow rejects runtime-dependent flow control for now', () => {
-  assert.throws(
-    () =>
-      parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+test('parseMaestroReplayFlow evaluates simple runFlow.when.true platform expressions', () => {
+  const parsed = parseMaestroReplayFlow(
+    `appId: com.callstack.agentdevicelab
+---
+- runFlow:
+    when:
+      true: \${maestro.platform == 'android' || maestro.platform == 'ios'}
+    commands:
+      - tapOn: Native
+- runFlow:
+    when:
+      true: \${maestro.platform == 'web' || maestro.platform == 'android'}
+    commands:
+      - tapOn: Not iOS
+`,
+    { platform: 'ios' },
+  );
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [['__maestroTapOn', ['label="Native" || text="Native" || id="Native"']]],
+  );
+});
+
+test('parseMaestroReplayFlow keeps visible-gated runFlow commands for runtime evaluation', () => {
+  const parsed = parseMaestroReplayFlow(
+    `appId: com.callstack.agentdevicelab
 ---
 - runFlow:
     when:
       visible: Continue
     commands:
       - tapOn: Continue
+`,
+    { platform: 'ios' },
+  );
+
+  assert.equal(parsed.actions[0]?.command, '__maestroRunFlowWhen');
+  assert.deepEqual(parsed.actions[0]?.positionals, [
+    'visible',
+    'label="Continue" || text="Continue" || id="Continue"',
+  ]);
+  assert.deepEqual(parsed.actions[0]?.flags.batchSteps, [
+    {
+      command: '__maestroTapOn',
+      positionals: ['label="Continue" || text="Continue" || id="Continue"'],
+      flags: { maestro: { allowNonHittableCoordinateFallback: true } },
+    },
+  ]);
+});
+
+test('parseMaestroReplayFlow keeps retry commands for runtime evaluation', () => {
+  const parsed = parseMaestroReplayFlow(
+    `appId: com.callstack.agentdevicelab
+---
+- retry:
+    maxRetries: 3
+    commands:
+      - openLink:
+          link: \${APP_SCHEME}details
+      - assertVisible: Article
+`,
+    { env: { APP_SCHEME: 'example://' } },
+  );
+
+  assert.equal(parsed.actions[0]?.command, '__maestroRetry');
+  assert.deepEqual(parsed.actions[0]?.positionals, ['3']);
+  assert.deepEqual(parsed.actions[0]?.flags.batchSteps, [
+    {
+      command: 'open',
+      positionals: ['example://details'],
+      flags: {},
+    },
+    {
+      command: '__maestroAssertVisible',
+      positionals: ['label="Article" || text="Article" || id="Article"', '5000'],
+      flags: {},
+    },
+  ]);
+});
+
+test('parseMaestroReplayFlow accepts launchApp reset options', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- launchApp:
+    clearState: true
+    arguments:
+      "-EXDevMenuIsOnboardingFinished": true
+    launchArguments:
+      "-Example": "ignored"
+    stopApp: true
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals, entry.flags]),
+    [
+      [
+        'open',
+        ['com.callstack.agentdevicelab'],
+        {
+          clearAppState: true,
+          launchArgs: ['-EXDevMenuIsOnboardingFinished', 'true', '-Example', 'ignored'],
+        },
+      ],
+    ],
+  );
+});
+
+test('parseMaestroReplayFlow rejects clearKeychain instead of ignoring it', () => {
+  assert.throws(
+    () =>
+      parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- launchApp:
+    clearKeychain: true
 `),
     (error) =>
       error instanceof AppError &&
       error.code === 'INVALID_ARGS' &&
-      /when.visible/.test(error.message) &&
-      /line 3/.test(error.message),
+      /clearKeychain/.test(error.message),
   );
+});
 
+test('parseMaestroReplayFlow relaunches launchApp only when clearState is absent', () => {
+  const withLaunchArgs = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- launchApp:
+    arguments:
+      "-Example": "value"
+`);
+  const withStopApp = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- launchApp:
+    stopApp: true
+`);
+
+  assert.equal(withLaunchArgs.actions[0]?.flags.relaunch, true);
+  assert.equal(withStopApp.actions[0]?.flags.relaunch, true);
+});
+
+test('parseMaestroReplayFlow rejects unsupported runtime-dependent flow control', () => {
   assert.throws(
     () =>
       parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
@@ -359,24 +641,24 @@ test('parseMaestroReplayFlow parses the test-app Maestro suite fixture', () => {
   assert.deepEqual(
     parsed.actions.map((entry) => entry.command),
     [
-      'wait',
-      'click',
-      'wait',
-      'click',
+      '__maestroAssertVisible',
+      '__maestroTapOn',
+      '__maestroAssertVisible',
+      '__maestroTapOn',
       'type',
-      'click',
+      '__maestroTapOn',
       'type',
-      'click',
-      'wait',
-      'wait',
-      'scroll',
-      'click',
-      'wait',
-      'click',
-      'wait',
-      'click',
-      'wait',
-      'wait',
+      '__maestroTapOn',
+      '__maestroAssertVisible',
+      '__maestroAssertVisible',
+      '__maestroSwipeScreen',
+      '__maestroTapOn',
+      '__maestroAssertVisible',
+      '__maestroTapOn',
+      '__maestroAssertVisible',
+      '__maestroTapOn',
+      '__maestroAssertVisible',
+      '__maestroAssertVisible',
     ],
   );
 });

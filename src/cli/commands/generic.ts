@@ -61,6 +61,7 @@ const genericClientCommandRunners = {
       update: flags.replayUpdate,
       backend: flags.replayMaestro ? 'maestro' : undefined,
       env: flags.replayEnv,
+      timeoutMs: flags.timeoutMs,
     }),
   test: ({ client, positionals, flags }) => {
     announceReplayTestRun({ json: flags.json });
@@ -68,6 +69,7 @@ const genericClientCommandRunners = {
       ...buildSelectionOptions(flags),
       paths: positionals,
       update: flags.replayUpdate,
+      backend: flags.replayMaestro ? 'maestro' : undefined,
       env: flags.replayEnv,
       failFast: flags.failFast,
       timeoutMs: flags.timeoutMs,

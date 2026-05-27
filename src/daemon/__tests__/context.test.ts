@@ -14,6 +14,12 @@ test('contextFromFlags forwards scroll pixels from CLI flags', () => {
   assert.equal(context.pixels, 240);
 });
 
+test('contextFromFlags forwards generic app-state clearing', () => {
+  const flags: CommandFlags = { clearAppState: true };
+  const context = contextFromFlags('/tmp/agent-device.log', flags);
+  assert.equal(context.clearAppState, true);
+});
+
 test('contextFromFlags forwards screenshot flags from CLI flags', () => {
   const flags: CommandFlags = {
     screenshotFullscreen: true,

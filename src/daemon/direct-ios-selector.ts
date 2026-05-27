@@ -6,6 +6,7 @@ export type DirectIosSelectorTarget = {
   key: 'id' | 'label' | 'text' | 'value';
   value: string;
   raw: string;
+  allowNonHittableCoordinateFallback?: boolean;
 };
 
 export function readSimpleIosSelectorTarget(params: {

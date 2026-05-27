@@ -10,8 +10,17 @@ export type BatchStep = {
   runtime?: unknown;
 };
 
+export type MaestroRuntimeFlags = {
+  allowNonHittableCoordinateFallback?: boolean;
+  optional?: boolean;
+  runScriptEnv?: Record<string, string>;
+};
+
 export type CommandFlags = Omit<CliFlags, DaemonExcludedCliFlag> & {
   batchSteps?: BatchStep[];
+  clearAppState?: boolean;
+  launchArgs?: string[];
+  maestro?: MaestroRuntimeFlags;
   replayBackend?: string;
 };
 
@@ -20,6 +29,8 @@ export type DispatchContext = ScreenshotDispatchFlags & {
   appBundleId?: string;
   activity?: string;
   launchConsole?: string;
+  launchArgs?: string[];
+  clearAppState?: boolean;
   verbose?: boolean;
   logPath?: string;
   traceLogPath?: string;
@@ -44,5 +55,6 @@ export type DispatchContext = ScreenshotDispatchFlags & {
     key: 'id' | 'label' | 'text' | 'value';
     value: string;
     raw: string;
+    allowNonHittableCoordinateFallback?: boolean;
   };
 };

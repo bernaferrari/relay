@@ -34,6 +34,7 @@ export type RunnerCommand = {
     | 'transformGesture'
     | 'appSwitcher'
     | 'keyboardDismiss'
+    | 'keyboardReturn'
     | 'alert'
     | 'pinch'
     | 'recordStart'
@@ -44,6 +45,7 @@ export type RunnerCommand = {
   text?: string;
   selectorKey?: 'id' | 'label' | 'text' | 'value';
   selectorValue?: string;
+  allowNonHittableCoordinateFallback?: boolean;
   delayMs?: number;
   textEntryMode?: 'append' | 'replace';
   action?: 'get' | 'accept' | 'dismiss';

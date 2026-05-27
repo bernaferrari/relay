@@ -9,6 +9,7 @@ import type { CommandContext } from '../runtime-contract.ts';
 import { AppError } from '../utils/errors.ts';
 import { successText } from '../utils/success-text.ts';
 import { requireIntInRange } from '../utils/validation.ts';
+import { isKeyboardAction } from '../utils/keyboard-actions.ts';
 import type { RuntimeCommand } from './runtime-types.ts';
 import { toBackendContext } from './selector-read-utils.ts';
 import { normalizeOptionalText } from './text.ts';
@@ -44,7 +45,7 @@ export type SystemRotateCommandResult = {
 };
 
 export type SystemKeyboardCommandOptions = CommandContext & {
-  action?: 'status' | 'get' | 'dismiss';
+  action?: 'status' | 'get' | 'dismiss' | 'enter' | 'return';
 };
 
 export type SystemKeyboardCommandResult =
@@ -57,6 +58,13 @@ export type SystemKeyboardCommandResult =
   | {
       kind: 'keyboardDismissed';
       action: 'dismiss';
+      state: BackendKeyboardResult;
+      backendResult?: Record<string, unknown>;
+      message?: string;
+    }
+  | {
+      kind: 'keyboardEnterPressed';
+      action: 'enter';
       state: BackendKeyboardResult;
       backendResult?: Record<string, unknown>;
       message?: string;
@@ -200,27 +208,22 @@ export const keyboardCommand: RuntimeCommand<
     throw new AppError('UNSUPPORTED_OPERATION', 'system.keyboard is not supported by this backend');
   }
   const action = options.action ?? 'status';
-  if (action !== 'status' && action !== 'get' && action !== 'dismiss') {
-    throw new AppError('INVALID_ARGS', 'system.keyboard action must be status, get, or dismiss');
+  if (!isKeyboardAction(action)) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'system.keyboard action must be status, get, dismiss, enter, or return',
+    );
   }
   const state = await runtime.backend.setKeyboard(toBackendContext(runtime, options), { action });
   const formattedBackendResult = toBackendResult(state);
-  if (action === 'dismiss') {
-    const dismissed = isKeyboardResult(state) ? state.dismissed : undefined;
-    return {
-      kind: 'keyboardDismissed',
-      action,
-      state: isKeyboardResult(state) ? state : {},
-      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
-      ...successText(dismissed === false ? 'Keyboard already hidden' : 'Keyboard dismissed'),
-    };
+  const keyboardState = isKeyboardResult(state) ? state : {};
+  if (action === 'enter' || action === 'return') {
+    return normalizeKeyboardEnterResult(keyboardState, formattedBackendResult);
   }
-  return {
-    kind: 'keyboardState',
-    action,
-    state: isKeyboardResult(state) ? state : {},
-    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
-  };
+  if (action === 'dismiss') {
+    return normalizeKeyboardDismissResult(action, keyboardState, formattedBackendResult);
+  }
+  return normalizeKeyboardStateResult(action, keyboardState, formattedBackendResult);
 };
 
 export const clipboardCommand: RuntimeCommand<
@@ -349,24 +352,79 @@ function normalizeAlertResult(
   result: BackendAlertResult,
 ): SystemAlertCommandResult {
   if (action === 'get') {
-    if (result.kind !== 'alertStatus') {
-      throw new AppError('COMMAND_FAILED', 'system.alert get returned an invalid backend result');
-    }
-    return { kind: 'alertStatus', action, alert: result.alert };
+    return normalizeAlertStatusResult(result);
   }
   if (action === 'wait') {
-    if (result.kind !== 'alertWait') {
-      throw new AppError('COMMAND_FAILED', 'system.alert wait returned an invalid backend result');
-    }
-    return {
-      kind: 'alertWait',
-      action,
-      alert: result.alert,
-      ...(result.waitedMs !== undefined ? { waitedMs: result.waitedMs } : {}),
-      ...(result.timedOut !== undefined ? { timedOut: result.timedOut } : {}),
-      ...successText(result.alert ? 'Alert visible' : 'Alert wait timed out'),
-    };
+    return normalizeAlertWaitResult(result);
   }
+  return normalizeAlertHandledResult(action, result);
+}
+
+function normalizeKeyboardEnterResult(
+  state: BackendKeyboardResult,
+  backendResult: Record<string, unknown> | undefined,
+): SystemKeyboardCommandResult {
+  return {
+    kind: 'keyboardEnterPressed',
+    action: 'enter',
+    state,
+    ...(backendResult ? { backendResult } : {}),
+    ...successText('Keyboard enter pressed'),
+  };
+}
+
+function normalizeKeyboardDismissResult(
+  action: 'dismiss',
+  state: BackendKeyboardResult,
+  backendResult: Record<string, unknown> | undefined,
+): SystemKeyboardCommandResult {
+  return {
+    kind: 'keyboardDismissed',
+    action,
+    state,
+    ...(backendResult ? { backendResult } : {}),
+    ...successText(state.dismissed === false ? 'Keyboard already hidden' : 'Keyboard dismissed'),
+  };
+}
+
+function normalizeKeyboardStateResult(
+  action: 'status' | 'get',
+  state: BackendKeyboardResult,
+  backendResult: Record<string, unknown> | undefined,
+): SystemKeyboardCommandResult {
+  return {
+    kind: 'keyboardState',
+    action,
+    state,
+    ...(backendResult ? { backendResult } : {}),
+  };
+}
+
+function normalizeAlertStatusResult(result: BackendAlertResult): SystemAlertCommandResult {
+  if (result.kind !== 'alertStatus') {
+    throw new AppError('COMMAND_FAILED', 'system.alert get returned an invalid backend result');
+  }
+  return { kind: 'alertStatus', action: 'get', alert: result.alert };
+}
+
+function normalizeAlertWaitResult(result: BackendAlertResult): SystemAlertCommandResult {
+  if (result.kind !== 'alertWait') {
+    throw new AppError('COMMAND_FAILED', 'system.alert wait returned an invalid backend result');
+  }
+  return {
+    kind: 'alertWait',
+    action: 'wait',
+    alert: result.alert,
+    ...(result.waitedMs !== undefined ? { waitedMs: result.waitedMs } : {}),
+    ...(result.timedOut !== undefined ? { timedOut: result.timedOut } : {}),
+    ...successText(result.alert ? 'Alert visible' : 'Alert wait timed out'),
+  };
+}
+
+function normalizeAlertHandledResult(
+  action: Exclude<BackendAlertAction, 'get' | 'wait'>,
+  result: BackendAlertResult,
+): SystemAlertCommandResult {
   if (result.kind !== 'alertHandled') {
     throw new AppError(
       'COMMAND_FAILED',

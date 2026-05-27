@@ -6,11 +6,12 @@ import {
   dismissAndroidKeyboard,
   getAndroidKeyboardState,
 } from '../platforms/android/device-input-state.ts';
+import { pressAndroidEnter } from '../platforms/android/input-actions.ts';
 import { pushAndroidNotification } from '../platforms/android/notifications.ts';
 import { getInteractor } from './interactors.ts';
 import type { Interactor, RunnerContext } from './interactor-types.ts';
 import { runIosRunnerCommand } from '../platforms/ios/runner-client.ts';
-import { pushIosNotification } from '../platforms/ios/apps.ts';
+import { clearIosSimulatorAppState, pushIosNotification } from '../platforms/ios/apps.ts';
 import { isDeepLinkTarget } from './open-target.ts';
 import { parseTriggerAppEventArgs, resolveAppEventUrl } from './app-events.ts';
 import {
@@ -21,6 +22,7 @@ import { emitDiagnostic, withDiagnosticTimer } from '../utils/diagnostics.ts';
 import { readLocationCoordinate } from '../utils/location-coordinates.ts';
 import { successText, withSuccessText } from '../utils/success-text.ts';
 import { screenshotOptionsFromFlags } from '../commands/capture-screenshot-options.ts';
+import { isKeyboardAction, type KeyboardAction } from '../utils/keyboard-actions.ts';
 import type { DispatchContext } from './dispatch-context.ts';
 import {
   handleFillCommand,
@@ -43,7 +45,6 @@ import { parseDeviceRotation } from './device-rotation.ts';
 export { resolveTargetDevice } from './dispatch-resolve.ts';
 export type { BatchStep, CommandFlags, DispatchContext } from './dispatch-context.ts';
 
-// fallow-ignore-next-line complexity
 export async function dispatchCommand(
   device: DeviceInfo,
   command: string,
@@ -71,104 +72,99 @@ export async function dispatchCommand(
   return await withDiagnosticTimer(
     'platform_command',
     async () => {
-      switch (command) {
-        case 'open':
-          return handleOpenCommand(device, interactor, positionals, context);
-        case 'close': {
-          const app = positionals[0];
-          if (!app) {
-            return { closed: 'session', ...successText('Closed session') };
-          }
-          await interactor.close(app);
-          return { app, ...successText(`Closed: ${app}`) };
-        }
-        case 'press':
-          return handlePressCommand(device, interactor, positionals, context);
-        case 'swipe':
-          return handleSwipeCommand(device, interactor, positionals, context);
-        case 'pan':
-          return handlePanCommand(interactor, positionals);
-        case 'fling':
-          return handleFlingCommand(interactor, positionals);
-        case 'longpress':
-          return handleLongPressCommand(interactor, positionals);
-        case 'focus':
-          return handleFocusCommand(interactor, positionals);
-        case 'type':
-          return handleTypeCommand(interactor, positionals, context);
-        case 'fill':
-          return handleFillCommand(interactor, positionals, context);
-        case 'scroll':
-          return handleScrollCommand(interactor, positionals, context);
-        case 'pinch':
-          return handlePinchCommand(device, interactor, positionals, context);
-        case 'rotate-gesture':
-          return handleRotateGestureCommand(device, interactor, positionals);
-        case 'transform-gesture':
-          return handleTransformGestureCommand(device, interactor, positionals);
-        case 'trigger-app-event': {
-          const { eventName, payload } = parseTriggerAppEventArgs(positionals);
-          const eventUrl = resolveAppEventUrl(device.platform, eventName, payload);
-          await interactor.open(eventUrl, { appBundleId: context?.appBundleId });
-          return {
-            event: eventName,
-            eventUrl,
-            transport: 'deep-link',
-            ...successText(`Triggered app event: ${eventName}`),
-          };
-        }
-        case 'screenshot': {
-          const positionalPath = positionals[0];
-          const screenshotPath = positionalPath ?? outPath ?? `./screenshot-${Date.now()}.png`;
-          await fs.mkdir(pathModule.dirname(screenshotPath), { recursive: true });
-          const screenshotOptions = screenshotOptionsFromFlags(context);
-          await interactor.screenshot(screenshotPath, {
-            appBundleId: context?.appBundleId,
-            fullscreen: screenshotOptions.fullscreen,
-            stabilize: screenshotOptions.stabilize,
-            surface: context?.surface,
-          });
-          return { path: screenshotPath, ...successText(`Saved screenshot: ${screenshotPath}`) };
-        }
-        case 'back':
-          await interactor.back(context?.backMode);
-          return { action: 'back', mode: context?.backMode ?? 'in-app', ...successText('Back') };
-        case 'home':
-          await interactor.home();
-          return { action: 'home', ...successText('Home') };
-        case 'rotate': {
-          const orientation = parseDeviceRotation(positionals[0]);
-          await interactor.rotate(orientation);
-          return {
-            action: 'rotate',
-            orientation,
-            ...successText(`Rotated to ${orientation}`),
-          };
-        }
-        case 'app-switcher':
-          await interactor.appSwitcher();
-          return { action: 'app-switcher', ...successText('Opened app switcher') };
-        case 'clipboard':
-          return handleClipboardCommand(interactor, positionals);
-        case 'keyboard':
-          return handleKeyboardCommand(device, positionals, context, runnerCtx);
-        case 'settings':
-          return handleSettingsCommand(device, interactor, positionals, context);
-        case 'push':
-          return handlePushCommand(device, positionals, context);
-        case 'snapshot':
-          return await handleSnapshotCommand(interactor, context);
-        case 'read':
-          return handleReadCommand(device, positionals, context);
-        default:
-          throw new AppError('INVALID_ARGS', `Unknown command: ${command}`);
-      }
+      return await dispatchKnownCommand(
+        device,
+        interactor,
+        command,
+        positionals,
+        outPath,
+        context,
+        runnerCtx,
+      );
     },
     {
       command,
       platform: device.platform,
     },
   );
+}
+
+// fallow-ignore-next-line complexity
+async function dispatchKnownCommand(
+  device: DeviceInfo,
+  interactor: Interactor,
+  command: string,
+  positionals: string[],
+  outPath: string | undefined,
+  context: DispatchContext | undefined,
+  runnerCtx: RunnerContext,
+): Promise<Record<string, unknown> | void> {
+  switch (command) {
+    case 'open':
+      return await handleOpenCommand(device, interactor, positionals, context);
+    case 'close': {
+      const app = positionals[0];
+      if (!app) return { closed: 'session', ...successText('Closed session') };
+      await interactor.close(app);
+      return { app, ...successText(`Closed: ${app}`) };
+    }
+    case 'press':
+      return await handlePressCommand(device, interactor, positionals, context);
+    case 'swipe':
+      return await handleSwipeCommand(device, interactor, positionals, context);
+    case 'pan':
+      return await handlePanCommand(interactor, positionals);
+    case 'fling':
+      return await handleFlingCommand(interactor, positionals);
+    case 'longpress':
+      return await handleLongPressCommand(interactor, positionals);
+    case 'focus':
+      return await handleFocusCommand(interactor, positionals);
+    case 'type':
+      return await handleTypeCommand(interactor, positionals, context);
+    case 'fill':
+      return await handleFillCommand(interactor, positionals, context);
+    case 'scroll':
+      return await handleScrollCommand(interactor, positionals, context);
+    case 'pinch':
+      return await handlePinchCommand(device, interactor, positionals, context);
+    case 'rotate-gesture':
+      return await handleRotateGestureCommand(device, interactor, positionals);
+    case 'transform-gesture':
+      return await handleTransformGestureCommand(device, interactor, positionals);
+    case 'trigger-app-event':
+      return await handleTriggerAppEventCommand(device, interactor, positionals, context);
+    case 'screenshot':
+      return await handleScreenshotCommand(interactor, positionals, outPath, context);
+    case 'back':
+      await interactor.back(context?.backMode);
+      return { action: 'back', mode: context?.backMode ?? 'in-app', ...successText('Back') };
+    case 'home':
+      await interactor.home();
+      return { action: 'home', ...successText('Home') };
+    case 'rotate': {
+      const orientation = parseDeviceRotation(positionals[0]);
+      await interactor.rotate(orientation);
+      return { action: 'rotate', orientation, ...successText(`Rotated to ${orientation}`) };
+    }
+    case 'app-switcher':
+      await interactor.appSwitcher();
+      return { action: 'app-switcher', ...successText('Opened app switcher') };
+    case 'clipboard':
+      return await handleClipboardCommand(interactor, positionals);
+    case 'keyboard':
+      return await handleKeyboardCommand(device, positionals, context, runnerCtx);
+    case 'settings':
+      return await handleSettingsCommand(device, interactor, positionals, context);
+    case 'push':
+      return await handlePushCommand(device, positionals, context);
+    case 'snapshot':
+      return await handleSnapshotCommand(interactor, context);
+    case 'read':
+      return await handleReadCommand(device, positionals, context);
+    default:
+      throw new AppError('INVALID_ARGS', `Unknown command: ${command}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -199,9 +195,6 @@ async function handleOpenCommand(
     throw new AppError('UNSUPPORTED_OPERATION', LAUNCH_CONSOLE_IOS_SIMULATOR_ONLY_MESSAGE);
   }
   if (url !== undefined) {
-    if (device.platform === 'android') {
-      throw new AppError('INVALID_ARGS', 'open <app> <url> is supported only on Apple platforms');
-    }
     if (isDeepLinkTarget(app)) {
       throw new AppError(
         'INVALID_ARGS',
@@ -217,6 +210,7 @@ async function handleOpenCommand(
     await interactor.open(app, {
       activity: context?.activity,
       appBundleId: context?.appBundleId,
+      launchArgs: context?.launchArgs,
       url,
     });
     return { app, url, ...successText(`Opened: ${app}`) };
@@ -224,12 +218,70 @@ async function handleOpenCommand(
   if (launchConsole && isDeepLinkTarget(app)) {
     throw new AppError('INVALID_ARGS', LAUNCH_CONSOLE_DIRECT_APP_ONLY_MESSAGE);
   }
+  if (device.platform === 'android' && context?.launchArgs && context.launchArgs.length > 0) {
+    throw new AppError(
+      'UNSUPPORTED_OPERATION',
+      'Launch arguments are currently supported only on Apple platforms.',
+    );
+  }
+  if (context?.clearAppState) {
+    if (isDeepLinkTarget(app)) {
+      throw new AppError(
+        'INVALID_ARGS',
+        'Clearing app state requires an app target, not a deep link.',
+      );
+    }
+    if (device.platform !== 'ios' || device.kind !== 'simulator') {
+      throw new AppError(
+        'UNSUPPORTED_OPERATION',
+        'Clearing app state is currently supported only on iOS simulators.',
+      );
+    }
+    await clearIosSimulatorAppState(device, app);
+  }
   await interactor.open(app, {
     activity: context?.activity,
     appBundleId: context?.appBundleId,
     launchConsole,
+    launchArgs: context?.launchArgs,
   });
   return { app, ...(launchConsole ? { launchConsole } : {}), ...successText(`Opened: ${app}`) };
+}
+
+async function handleTriggerAppEventCommand(
+  device: DeviceInfo,
+  interactor: Interactor,
+  positionals: string[],
+  context: DispatchContext | undefined,
+): Promise<Record<string, unknown>> {
+  const { eventName, payload } = parseTriggerAppEventArgs(positionals);
+  const eventUrl = resolveAppEventUrl(device.platform, eventName, payload);
+  await interactor.open(eventUrl, { appBundleId: context?.appBundleId });
+  return {
+    event: eventName,
+    eventUrl,
+    transport: 'deep-link',
+    ...successText(`Triggered app event: ${eventName}`),
+  };
+}
+
+async function handleScreenshotCommand(
+  interactor: Interactor,
+  positionals: string[],
+  outPath: string | undefined,
+  context: DispatchContext | undefined,
+): Promise<Record<string, unknown>> {
+  const positionalPath = positionals[0];
+  const screenshotPath = positionalPath ?? outPath ?? `./screenshot-${Date.now()}.png`;
+  await fs.mkdir(pathModule.dirname(screenshotPath), { recursive: true });
+  const screenshotOptions = screenshotOptionsFromFlags(context);
+  await interactor.screenshot(screenshotPath, {
+    appBundleId: context?.appBundleId,
+    fullscreen: screenshotOptions.fullscreen,
+    stabilize: screenshotOptions.stabilize,
+    surface: context?.surface,
+  });
+  return { path: screenshotPath, ...successText(`Saved screenshot: ${screenshotPath}`) };
 }
 
 async function handleClipboardCommand(
@@ -266,65 +318,106 @@ async function handleKeyboardCommand(
   runnerCtx: RunnerContext,
 ): Promise<Record<string, unknown>> {
   const action = (positionals[0] ?? 'status').toLowerCase();
-  if (action !== 'status' && action !== 'get' && action !== 'dismiss') {
-    throw new AppError('INVALID_ARGS', 'keyboard requires a subcommand: status, get, or dismiss');
+  if (!isKeyboardAction(action)) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'keyboard requires a subcommand: status, get, dismiss, enter, or return',
+    );
   }
   if (positionals.length > 1) {
     throw new AppError('INVALID_ARGS', 'keyboard accepts at most one subcommand argument');
   }
   if (device.platform === 'android') {
-    if (action === 'dismiss') {
-      const result = await dismissAndroidKeyboard(device);
-      return {
-        platform: 'android',
-        action: 'dismiss',
-        attempts: result.attempts,
-        wasVisible: result.wasVisible,
-        dismissed: result.dismissed,
-        visible: result.visible,
-        inputType: result.inputType,
-        type: result.type,
-        inputMethodPackage: result.inputMethodPackage,
-        focusedPackage: result.focusedPackage,
-        focusedResourceId: result.focusedResourceId,
-        inputOwner: result.inputOwner,
-      };
-    }
-    const state = await getAndroidKeyboardState(device);
-    return {
-      platform: 'android',
-      action: 'status',
-      visible: state.visible,
-      inputType: state.inputType,
-      type: state.type,
-      inputMethodPackage: state.inputMethodPackage,
-      focusedPackage: state.focusedPackage,
-      focusedResourceId: state.focusedResourceId,
-      inputOwner: state.inputOwner,
-    };
+    return await handleAndroidKeyboardCommand(device, action);
   }
   if (device.platform === 'ios') {
-    if (action !== 'dismiss') {
-      throw new AppError(
-        'UNSUPPORTED_OPERATION',
-        'keyboard status/get is currently supported only on Android; use keyboard dismiss on iOS',
-      );
-    }
+    return await handleIosKeyboardCommand(device, action, context, runnerCtx);
+  }
+  throw new AppError('UNSUPPORTED_OPERATION', 'keyboard is supported only on Android and iOS');
+}
+
+async function handleAndroidKeyboardCommand(
+  device: DeviceInfo,
+  action: KeyboardAction,
+): Promise<Record<string, unknown>> {
+  if (action === 'enter' || action === 'return') {
+    await pressAndroidEnter(device);
+    return {
+      platform: 'android',
+      action: 'enter',
+      ...successText('Keyboard enter pressed'),
+    };
+  }
+  if (action === 'dismiss') {
+    const result = await dismissAndroidKeyboard(device);
+    return {
+      platform: 'android',
+      action: 'dismiss',
+      attempts: result.attempts,
+      wasVisible: result.wasVisible,
+      dismissed: result.dismissed,
+      visible: result.visible,
+      inputType: result.inputType,
+      type: result.type,
+      inputMethodPackage: result.inputMethodPackage,
+      focusedPackage: result.focusedPackage,
+      focusedResourceId: result.focusedResourceId,
+      inputOwner: result.inputOwner,
+    };
+  }
+  const state = await getAndroidKeyboardState(device);
+  return {
+    platform: 'android',
+    action: 'status',
+    visible: state.visible,
+    inputType: state.inputType,
+    type: state.type,
+    inputMethodPackage: state.inputMethodPackage,
+    focusedPackage: state.focusedPackage,
+    focusedResourceId: state.focusedResourceId,
+    inputOwner: state.inputOwner,
+  };
+}
+
+async function handleIosKeyboardCommand(
+  device: DeviceInfo,
+  action: KeyboardAction,
+  context: DispatchContext | undefined,
+  runnerCtx: RunnerContext,
+): Promise<Record<string, unknown>> {
+  if (action !== 'dismiss' && action !== 'enter' && action !== 'return') {
+    throw new AppError(
+      'UNSUPPORTED_OPERATION',
+      'keyboard status/get is currently supported only on Android; use keyboard dismiss or enter on iOS',
+    );
+  }
+  if (action === 'enter' || action === 'return') {
     const result = await runIosRunnerCommand(
       device,
-      { command: 'keyboardDismiss', appBundleId: context?.appBundleId },
+      { command: 'keyboardReturn', appBundleId: context?.appBundleId },
       runnerCtx,
     );
     return {
       platform: 'ios',
-      action: 'dismiss',
-      wasVisible: result.wasVisible,
-      dismissed: result.dismissed,
+      action: 'enter',
       visible: result.visible,
-      ...successText(result.dismissed ? 'Keyboard dismissed' : 'Keyboard already hidden'),
+      wasVisible: result.wasVisible,
+      ...successText('Keyboard enter pressed'),
     };
   }
-  throw new AppError('UNSUPPORTED_OPERATION', 'keyboard is supported only on Android and iOS');
+  const result = await runIosRunnerCommand(
+    device,
+    { command: 'keyboardDismiss', appBundleId: context?.appBundleId },
+    runnerCtx,
+  );
+  return {
+    platform: 'ios',
+    action: 'dismiss',
+    wasVisible: result.wasVisible,
+    dismissed: result.dismissed,
+    visible: result.visible,
+    ...successText(result.dismissed ? 'Keyboard dismissed' : 'Keyboard already hidden'),
+  };
 }
 
 async function handleSettingsCommand(

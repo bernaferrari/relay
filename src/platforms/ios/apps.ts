@@ -127,7 +127,7 @@ export async function resolveIosApp(device: DeviceInfo, app: string): Promise<st
 export async function openIosApp(
   device: DeviceInfo,
   app: string,
-  options?: { appBundleId?: string; launchConsole?: string; url?: string },
+  options?: { appBundleId?: string; launchConsole?: string; launchArgs?: string[]; url?: string },
 ): Promise<void> {
   const launchConsole = options?.launchConsole?.trim();
   if (launchConsole && (device.platform !== 'ios' || device.kind !== 'simulator')) {
@@ -185,7 +185,10 @@ export async function openIosApp(
 
   const bundleId = options?.appBundleId ?? (await resolveIosApp(device, app));
   if (device.kind === 'simulator') {
-    await launchIosSimulatorApp(device, bundleId, launchConsole ? { launchConsole } : undefined);
+    await launchIosSimulatorApp(device, bundleId, {
+      ...(launchConsole ? { launchConsole } : {}),
+      ...(options?.launchArgs ? { launchArgs: options.launchArgs } : {}),
+    });
     return;
   }
 
@@ -233,6 +236,53 @@ export async function closeIosApp(device: DeviceInfo, app: string): Promise<void
     action: 'terminate iOS app',
     deviceId: device.id,
   });
+}
+
+export async function clearIosSimulatorAppState(
+  device: DeviceInfo,
+  app: string,
+): Promise<{ bundleId: string; containerPath: string }> {
+  if (device.platform !== 'ios' || device.kind !== 'simulator') {
+    throw new AppError(
+      'UNSUPPORTED_OPERATION',
+      'Clearing app state is currently supported only on iOS simulators.',
+    );
+  }
+
+  const bundleId = await resolveIosApp(device, app);
+  await ensureBootedSimulator(device);
+  await closeIosApp(device, bundleId);
+
+  const result = await runSimctl(device, ['get_app_container', device.id, bundleId, 'data'], {
+    allowFailure: true,
+  });
+  if (result.exitCode !== 0) {
+    throw new AppError('COMMAND_FAILED', `simctl get_app_container failed for ${bundleId}`, {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+    });
+  }
+
+  const containerPath = result.stdout.trim();
+  if (!containerPath) {
+    throw new AppError(
+      'COMMAND_FAILED',
+      `simctl get_app_container returned an empty data container path for ${bundleId}`,
+    );
+  }
+
+  const entries = await fs.readdir(containerPath);
+  await Promise.all(
+    entries.map((entry) =>
+      fs.rm(path.join(containerPath, entry), {
+        recursive: true,
+        force: true,
+      }),
+    ),
+  );
+
+  return { bundleId, containerPath };
 }
 
 export async function uninstallIosApp(
@@ -884,7 +934,7 @@ function isIosBiometricCapabilityMissing(stdout: string, stderr: string): boolea
 async function launchIosSimulatorApp(
   device: DeviceInfo,
   bundleId: string,
-  options?: { launchConsole?: string },
+  options?: { launchConsole?: string; launchArgs?: string[] },
 ): Promise<void> {
   await ensureBootedSimulator(device);
 
@@ -947,11 +997,12 @@ async function launchIosSimulatorApp(
 function buildIosSimulatorLaunchArgs(
   deviceId: string,
   bundleId: string,
-  options?: { launchConsole?: string },
+  options?: { launchConsole?: string; launchArgs?: string[] },
 ): string[] {
   const args = ['launch'];
   if (options?.launchConsole) args.push('--console-pty');
   args.push(deviceId, bundleId);
+  if (options?.launchArgs) args.push(...options.launchArgs);
   return args;
 }
 
