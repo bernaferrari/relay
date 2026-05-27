@@ -6,7 +6,11 @@ import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { contextFromFlags } from '../context.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
-import { extractNodeText, findNearestHittableAncestor } from '../snapshot-processing.ts';
+import { extractNodeText } from '../snapshot-processing.ts';
+import {
+  resolveActionableTouchNode,
+  resolveActionableTouchResolution,
+} from '../../commands/interaction-targeting.ts';
 import { readTextForNode } from './interaction-read.ts';
 import { captureSnapshot } from './snapshot-capture.ts';
 import { setSessionSnapshot } from '../session-snapshot.ts';
@@ -36,6 +40,10 @@ type ResolvedMatch = {
   nodes: SnapshotState['nodes'];
   actionFlags: Record<string, unknown>;
 };
+
+type FindMatchResult =
+  | { ok: true; node: SnapshotState['nodes'][number] }
+  | { ok: false; response: DaemonResponse };
 
 export async function handleFindCommands(params: {
   req: DaemonRequest;
@@ -67,8 +75,7 @@ export async function handleFindCommands(params: {
   });
   if (runtimeResponse) return runtimeResponse;
   const session = sessionStore.get(sessionName);
-  const isReadOnly =
-    action === 'exists' || action === 'wait' || action === 'get_text' || action === 'get_attrs';
+  const isReadOnly = isReadOnlyFindAction(action);
   if (!session && !isReadOnly) {
     return errorResponse('SESSION_NOT_FOUND', 'No active session. Run open first.');
   }
@@ -76,9 +83,10 @@ export async function handleFindCommands(params: {
   if (!session) {
     await ensureDeviceReady(device);
   }
-  const scope = shouldScopeFind(locator) ? query : undefined;
-  const requiresRect =
-    action === 'click' || action === 'focus' || action === 'fill' || action === 'type';
+  const requiresRect = findActionRequiresRect(action);
+  // Interaction targets need the full compact tree so duplicate labels can be
+  // resolved against viewport visibility before an off-screen subtree wins.
+  const scope = shouldScopeFind(locator) && !requiresRect ? query : undefined;
   const interactiveOnly = requiresRect;
   let lastSnapshotAt = 0;
   let lastNodes: SnapshotState['nodes'] | null = null;
@@ -134,29 +142,16 @@ export async function handleFindCommands(params: {
   }
 
   const { nodes } = await fetchNodes();
-  const bestMatches = findBestMatchesByLocator(nodes, locator, query, {
-    requireRect: requiresRect,
+  const matchResult = resolveFindMatch({
+    nodes,
+    locator,
+    query,
+    requiresRect,
+    flags: req.flags,
   });
-
-  if (requiresRect && bestMatches.matches.length > 1) {
-    if (req.flags?.findFirst) {
-      bestMatches.matches = [bestMatches.matches[0]];
-    } else if (req.flags?.findLast) {
-      bestMatches.matches = [bestMatches.matches[bestMatches.matches.length - 1]];
-    } else {
-      return buildAmbiguousMatchError(bestMatches.matches, locator, query);
-    }
-  }
-
-  const node = bestMatches.matches[0] ?? null;
-  if (!node) {
-    return errorResponse('COMMAND_FAILED', 'find did not match any element');
-  }
-
-  const resolvedNode =
-    action === 'click' || action === 'focus' || action === 'fill' || action === 'type'
-      ? (findNearestHittableAncestor(nodes, node) ?? node)
-      : node;
+  if (!matchResult.ok) return matchResult.response;
+  const node = matchResult.node;
+  const resolvedNode = requiresRect ? resolveInteractiveMatchNode(nodes, node) : node;
   const ref = `@${resolvedNode.ref}`;
   const actionFlags = { ...(req.flags ?? {}), noRecord: true };
   const match: ResolvedMatch = { node, resolvedNode, ref, nodes, actionFlags };
@@ -176,6 +171,128 @@ export async function handleFindCommands(params: {
 }
 
 // --- Per-action handlers ---
+
+function isReadOnlyFindAction(action: string): boolean {
+  return (
+    action === 'exists' || action === 'wait' || action === 'get_text' || action === 'get_attrs'
+  );
+}
+
+function findActionRequiresRect(action: string): boolean {
+  return action === 'click' || action === 'focus' || action === 'fill' || action === 'type';
+}
+
+function resolveFindMatch(params: {
+  nodes: SnapshotState['nodes'];
+  locator: FindLocator;
+  query: string;
+  requiresRect: boolean;
+  flags: DaemonRequest['flags'];
+}): FindMatchResult {
+  const { nodes, locator, query, requiresRect, flags } = params;
+  const bestMatches = findBestMatchesByLocator(nodes, locator, query, {
+    requireRect: requiresRect,
+  });
+  if (requiresRect) {
+    bestMatches.matches = preferOnscreenMatches(bestMatches.matches, nodes);
+  }
+
+  if (requiresRect && bestMatches.matches.length > 1) {
+    if (flags?.findFirst) {
+      bestMatches.matches = [bestMatches.matches[0]];
+    } else if (flags?.findLast) {
+      bestMatches.matches = [bestMatches.matches[bestMatches.matches.length - 1]];
+    } else {
+      return { ok: false, response: buildAmbiguousMatchError(bestMatches.matches, locator, query) };
+    }
+  }
+
+  const node = bestMatches.matches[0] ?? null;
+  if (!node) {
+    return {
+      ok: false,
+      response: errorResponse('COMMAND_FAILED', 'find did not match any element'),
+    };
+  }
+  return { ok: true, node };
+}
+
+function preferOnscreenMatches(
+  matches: SnapshotState['nodes'],
+  nodes: SnapshotState['nodes'],
+): SnapshotState['nodes'] {
+  const viewport = nodes[0]?.rect;
+  if (!viewport) return matches;
+  const onscreen = matches.filter((node) => {
+    if (!node.rect) return false;
+    const center = centerOfRect(node.rect);
+    return (
+      center.x >= viewport.x &&
+      center.x <= viewport.x + viewport.width &&
+      center.y >= viewport.y &&
+      center.y <= viewport.y + viewport.height
+    );
+  });
+  return rankInteractiveMatches(onscreen.length > 0 ? onscreen : matches, nodes);
+}
+
+function rankInteractiveMatches(
+  matches: SnapshotState['nodes'],
+  nodes: SnapshotState['nodes'],
+): SnapshotState['nodes'] {
+  if (matches.length < 2) return matches;
+  return matches
+    .map((node, index) => ({ node, index, score: interactiveMatchScore(node, nodes) }))
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return rectArea(left.node) - rectArea(right.node) || left.index - right.index;
+    })
+    .map((entry) => entry.node);
+}
+
+function interactiveMatchScore(
+  node: SnapshotState['nodes'][number],
+  nodes: SnapshotState['nodes'],
+): number {
+  const resolution = resolveActionableTouchResolution(nodes, node);
+  if (resolution.reason === 'semantic-target' && resolution.node.rect) return 4;
+  if (resolution.reason === 'same-rect-descendant' && resolution.node.rect) return 4;
+  if (
+    resolution.reason === 'hittable-ancestor' &&
+    resolution.node.rect &&
+    !isRootInteractionContainer(resolution.node, nodes[0])
+  ) {
+    return 2;
+  }
+  if (node.hittable && node.rect && !isRootInteractionContainer(node, nodes[0])) return 3;
+  return node.rect ? 1 : 0;
+}
+
+function rectArea(node: SnapshotState['nodes'][number]): number {
+  return node.rect ? node.rect.width * node.rect.height : Number.POSITIVE_INFINITY;
+}
+
+function resolveInteractiveMatchNode(
+  nodes: SnapshotState['nodes'],
+  node: SnapshotState['nodes'][number],
+): SnapshotState['nodes'][number] {
+  return resolveActionableTouchNode(nodes, node);
+}
+
+function isRootInteractionContainer(
+  node: SnapshotState['nodes'][number],
+  root: SnapshotState['nodes'][number] | undefined,
+): boolean {
+  if (!root?.rect || !node.rect) return false;
+  const type = node.type?.toLowerCase() ?? '';
+  if (!type.includes('application') && !type.includes('window')) return false;
+  return (
+    node.rect.x === root.rect.x &&
+    node.rect.y === root.rect.y &&
+    node.rect.width === root.rect.width &&
+    node.rect.height === root.rect.height
+  );
+}
 
 async function handleFindWait(
   ctx: FindContext,
@@ -266,7 +383,11 @@ async function handleFindClick(ctx: FindContext, match: ResolvedMatch): Promise<
     flags: match.actionFlags,
   });
   if (!response.ok) return response;
-  const matchCoords = match.resolvedNode.rect ? centerOfRect(match.resolvedNode.rect) : null;
+  const matchCoords = match.resolvedNode.rect
+    ? centerOfRect(match.resolvedNode.rect)
+    : match.node.rect
+      ? centerOfRect(match.node.rect)
+      : null;
   const matchData: Record<string, unknown> = { ref: match.ref, locator, query };
   if (matchCoords) {
     matchData.x = matchCoords.x;
@@ -312,7 +433,35 @@ async function handleFindFill(
 }
 
 async function handleFindFocus(ctx: FindContext, match: ResolvedMatch): Promise<DaemonResponse> {
-  const { req, sessionStore, session, device, command, logPath } = ctx;
+  const response = await dispatchFocusForFindMatch(ctx, match);
+  if (!response.ok) return response;
+  recordFindAction(ctx, match, 'focus');
+  return response;
+}
+
+async function handleFindType(
+  ctx: FindContext,
+  match: ResolvedMatch,
+  value: string | undefined,
+): Promise<DaemonResponse> {
+  const { req, device, logPath, session } = ctx;
+  if (!value) {
+    return errorResponse('INVALID_ARGS', 'find type requires text');
+  }
+  const focusResponse = await dispatchFocusForFindMatch(ctx, match);
+  if (!focusResponse.ok) return focusResponse;
+  const response = await dispatchCommand(device, 'type', [value], req.flags?.out, {
+    ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
+  });
+  recordFindAction(ctx, match, 'type');
+  return { ok: true, data: response ?? { ref: match.ref } };
+}
+
+async function dispatchFocusForFindMatch(
+  ctx: FindContext,
+  match: ResolvedMatch,
+): Promise<DaemonResponse> {
+  const { req, device, logPath, session } = ctx;
   const coords = match.node.rect ? centerOfRect(match.node.rect) : null;
   if (!coords) {
     return errorResponse('COMMAND_FAILED', 'matched element has no bounds');
@@ -326,45 +475,19 @@ async function handleFindFocus(ctx: FindContext, match: ResolvedMatch): Promise<
       ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
     },
   );
-  if (session) {
-    sessionStore.recordAction(session, {
-      command,
-      positionals: req.positionals ?? [],
-      flags: req.flags ?? {},
-      result: { ref: match.ref, action: 'focus' },
-    });
-  }
   return { ok: true, data: response ?? { ref: match.ref } };
 }
 
-async function handleFindType(
-  ctx: FindContext,
-  match: ResolvedMatch,
-  value: string | undefined,
-): Promise<DaemonResponse> {
-  const { req, sessionStore, session, device, command, logPath } = ctx;
-  if (!value) {
-    return errorResponse('INVALID_ARGS', 'find type requires text');
-  }
-  const coords = match.node.rect ? centerOfRect(match.node.rect) : null;
-  if (!coords) {
-    return errorResponse('COMMAND_FAILED', 'matched element has no bounds');
-  }
-  await dispatchCommand(device, 'focus', [String(coords.x), String(coords.y)], req.flags?.out, {
-    ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
-  });
-  const response = await dispatchCommand(device, 'type', [value], req.flags?.out, {
-    ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
-  });
+function recordFindAction(ctx: FindContext, match: ResolvedMatch, action: string): void {
+  const { req, sessionStore, session, command } = ctx;
   if (session) {
     sessionStore.recordAction(session, {
       command,
       positionals: req.positionals ?? [],
       flags: req.flags ?? {},
-      result: { ref: match.ref, action: 'type' },
+      result: { ref: match.ref, action },
     });
   }
-  return { ok: true, data: response ?? { ref: match.ref } };
 }
 
 // --- Helpers ---

@@ -417,6 +417,91 @@ test('click simple iOS id selector uses direct runner selector tap without snaps
   }
 });
 
+test('fill simple iOS id selector uses direct runner selector fill without snapshot coordinates', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-direct-selector-fill';
+  sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
+
+  mockDispatch.mockResolvedValue({
+    message: 'filled',
+    x: 439.5,
+    y: 100.5,
+    referenceWidth: 440,
+    referenceHeight: 956,
+  });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'fill',
+      positionals: ['id="email"', 'ada@example.com'],
+      flags: { delayMs: 25 },
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockDispatch).toHaveBeenCalledTimes(1);
+  expect(mockDispatch.mock.calls[0]?.[1]).toBe('fill');
+  expect(mockDispatch.mock.calls[0]?.[2]).toEqual(['ada@example.com']);
+  const context = mockDispatch.mock.calls[0]?.[4] as Record<string, unknown>;
+  expect(context.directElementSelector).toEqual({
+    key: 'id',
+    value: 'email',
+    raw: 'id="email"',
+  });
+  expect(context.delayMs).toBe(25);
+  if (response?.ok) {
+    expect(response.data?.selector).toBe('id="email"');
+    expect(response.data?.text).toBe('ada@example.com');
+  }
+});
+
+test('click simple iOS selector forwards Maestro non-hittable coordinate fallback', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-maestro-selector-fallback';
+  sessionStore.set(sessionName, makeIosSession(sessionName, { appBundleId: 'com.example.app' }));
+
+  mockDispatch.mockResolvedValue({
+    message: 'tapped via non-hittable coordinate fallback',
+    x: 439.5,
+    y: 101.5,
+    referenceWidth: 440,
+    referenceHeight: 956,
+  });
+
+  const response = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'click',
+      positionals: ['id="hiddenTestLogin"'],
+      flags: { maestro: { allowNonHittableCoordinateFallback: true } },
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+
+  expect(response?.ok).toBe(true);
+  const pressCalls = mockDispatch.mock.calls.filter((call) => call[1] === 'press');
+  expect(pressCalls.length).toBe(1);
+  expect((pressCalls[0]?.[4] as Record<string, unknown>)?.directElementSelector).toEqual({
+    key: 'id',
+    value: 'hiddenTestLogin',
+    raw: 'id="hiddenTestLogin"',
+    allowNonHittableCoordinateFallback: true,
+  });
+  if (response?.ok) {
+    expect(response.data?.maestroNonHittableCoordinateFallbackAllowed).toBe(true);
+    expect(response.data?.maestroNonHittableCoordinateFallbackUsed).toBe(true);
+    expect(response.data?.maestroFallbackReason).toBe('non-hittable-coordinate');
+  }
+});
+
 test('click simple iOS id selector falls back to snapshot coordinates when direct tap fails', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'ios-direct-selector-fallback';

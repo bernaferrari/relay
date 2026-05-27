@@ -52,35 +52,6 @@ export function normalizePlatform(value: string | undefined): 'android' | 'ios' 
   return normalizePlatformName(value);
 }
 
-export function normalizePlatformValue(value: unknown, name: string): 'android' | 'ios' {
-  if (typeof value !== 'string') {
-    throw new AppError('INVALID_ARGS', `${name} expects Android or iOS.`);
-  }
-  const platform = normalizePlatformName(value);
-  if (!platform) {
-    throw new AppError('INVALID_ARGS', `${name} expects Android or iOS.`);
-  }
-  return platform;
-}
-
-export function normalizeToken(value: string): string {
-  return value
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/[\s_]+/g, '-')
-    .toLowerCase();
-}
-
-export function readBooleanLiteral(value: unknown, command: string): boolean {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const normalized = normalizeToken(value);
-    if (normalized === 'true') return true;
-    if (normalized === 'false') return false;
-  }
-  throw new AppError('INVALID_ARGS', `${command} expects a boolean value.`);
-}
-
 export function readEnvMap(value: unknown, name: string): Record<string, string> {
   if (value === undefined || value === null) return {};
   if (!isPlainRecord(value)) {
@@ -113,13 +84,9 @@ export function requireStringValue(command: string, value: unknown): string {
 }
 
 export function resolveMaestroString(value: string, context: MaestroParseContext): string {
-  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, key: string) => {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_.]*)\}/g, (match, key: string) => {
     return Object.prototype.hasOwnProperty.call(context.env, key) ? context.env[key] : match;
   });
-}
-
-export function resolveMaybeMaestroString(value: unknown, context: MaestroParseContext): unknown {
-  return typeof value === 'string' ? resolveMaestroString(value, context) : value;
 }
 
 export function unsupportedCommand(command: string): never {

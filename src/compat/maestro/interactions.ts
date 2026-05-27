@@ -9,19 +9,39 @@ import {
   resolveMaestroString,
   unsupportedMaestroSyntax,
 } from './support.ts';
+import { parseAbsolutePoint, parseMaestroPoint } from './points.ts';
+import { MAESTRO_RUNTIME_COMMAND } from './runtime-commands.ts';
 import type { MaestroParseContext } from './types.ts';
 
+type SwipeDirection = 'up' | 'down' | 'left' | 'right';
+
 export function convertTapOn(value: unknown, context: MaestroParseContext): SessionAction {
+  if (typeof value === 'string') {
+    return action(
+      MAESTRO_RUNTIME_COMMAND.tapOn,
+      [visibleTextSelector(resolveMaestroString(value, context))],
+      maestroTapOnFlags(value),
+    );
+  }
   if (isPlainRecord(value) && typeof value.point === 'string') {
-    assertOnlyKeys(value, 'tapOn', ['point', 'repeat', 'delay']);
-    const point = parsePoint(value.point);
+    assertOnlyKeys(value, 'tapOn', ['point', 'repeat', 'delay', 'optional', 'label']);
+    const point = parseMaestroPoint(value.point);
+    if (point.kind === 'percent') {
+      return action(
+        MAESTRO_RUNTIME_COMMAND.tapPointPercent,
+        [String(point.x), String(point.y)],
+        tapFlags(value),
+      );
+    }
     return action('click', [String(point.x), String(point.y)], tapFlags(value));
   }
   if (isPlainRecord(value)) {
     assertOnlyKeys(value, 'tapOn', [
       'id',
       'text',
+      'childOf',
       'enabled',
+      'index',
       'selected',
       'repeat',
       'delay',
@@ -29,17 +49,26 @@ export function convertTapOn(value: unknown, context: MaestroParseContext): Sess
       'label',
     ]);
   }
+  const flags = maestroTapOnFlags(value);
   return action(
-    'click',
-    [maestroSelector(value, 'tapOn', ['repeat', 'delay', 'optional', 'label'], context)],
-    tapFlags(value),
+    MAESTRO_RUNTIME_COMMAND.tapOn,
+    [
+      maestroSelector(
+        value,
+        'tapOn',
+        ['repeat', 'delay', 'optional', 'label', 'index', 'childOf'],
+        context,
+      ),
+      ...maestroTapOnRuntimeOptions(value, context),
+    ],
+    flags,
   );
 }
 
 export function convertDoubleTapOn(value: unknown, context: MaestroParseContext): SessionAction {
   if (isPlainRecord(value) && typeof value.point === 'string') {
     assertOnlyKeys(value, 'doubleTapOn', ['point', 'delay']);
-    const point = parsePoint(value.point);
+    const point = parseAbsolutePoint(value.point);
     return action('click', [String(point.x), String(point.y)], doubleTapFlags(value));
   }
   if (isPlainRecord(value)) {
@@ -55,7 +84,7 @@ export function convertDoubleTapOn(value: unknown, context: MaestroParseContext)
 export function convertLongPressOn(value: unknown, context: MaestroParseContext): SessionAction {
   if (isPlainRecord(value) && typeof value.point === 'string') {
     assertOnlyKeys(value, 'longPressOn', ['point']);
-    const point = parsePoint(value.point);
+    const point = parseAbsolutePoint(value.point);
     return action('longpress', [String(point.x), String(point.y), '3000']);
   }
   if (isPlainRecord(value)) {
@@ -74,6 +103,26 @@ export function readInputText(value: unknown): string {
     throw new AppError('INVALID_ARGS', 'inputText map requires a string text field.');
   }
   return value.text;
+}
+
+export function convertEraseText(value: unknown): SessionAction {
+  if (value === null || value === undefined) return action('type', ['\b'.repeat(50)]);
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return action('type', ['\b'.repeat(value)]);
+  }
+  if (!isPlainRecord(value)) {
+    throw new AppError('INVALID_ARGS', 'eraseText expects empty, a positive count, or a map.');
+  }
+  assertOnlyKeys(value, 'eraseText', ['charactersToErase']);
+  if (value.charactersToErase === undefined) return action('type', ['\b'.repeat(50)]);
+  if (
+    typeof value.charactersToErase !== 'number' ||
+    !Number.isInteger(value.charactersToErase) ||
+    value.charactersToErase <= 0
+  ) {
+    throw new AppError('INVALID_ARGS', 'eraseText.charactersToErase must be a positive integer.');
+  }
+  return action('type', ['\b'.repeat(value.charactersToErase)]);
 }
 
 export function convertExtendedWaitUntil(
@@ -95,7 +144,7 @@ export function convertExtendedWaitUntil(
   if (value.notVisible !== undefined) {
     return [action('wait', [timeoutMs]), action('is', ['hidden', selector])];
   }
-  return [action('wait', [selector, timeoutMs])];
+  return [action(MAESTRO_RUNTIME_COMMAND.assertVisible, [selector, timeoutMs])];
 }
 
 export function convertScroll(value: unknown): SessionAction {
@@ -105,20 +154,93 @@ export function convertScroll(value: unknown): SessionAction {
   return action('scroll', ['down']);
 }
 
-export function convertSwipe(value: unknown): SessionAction {
+export function convertScrollUntilVisible(
+  value: unknown,
+  context: MaestroParseContext,
+): SessionAction[] {
+  if (typeof value === 'string') {
+    return [
+      action(MAESTRO_RUNTIME_COMMAND.scrollUntilVisible, [
+        visibleTextSelector(resolveMaestroString(value, context)),
+        '5000',
+        'down',
+      ]),
+    ];
+  }
+  if (!isPlainRecord(value)) {
+    throw new AppError('INVALID_ARGS', 'scrollUntilVisible expects a string or map.');
+  }
+  assertOnlyKeys(value, 'scrollUntilVisible', ['element', 'direction', 'timeout']);
+  const selector = maestroSelector(value.element, 'scrollUntilVisible.element', [], context);
+  const direction =
+    typeof value.direction === 'string'
+      ? readMaestroDirection(value.direction, 'scrollUntilVisible.direction')
+      : 'down';
+  const timeoutMs = String(readTimeoutMs(value, 5000));
+  return [action(MAESTRO_RUNTIME_COMMAND.scrollUntilVisible, [selector, timeoutMs, direction])];
+}
+
+export function convertSwipe(value: unknown, context: MaestroParseContext): SessionAction {
   if (!isPlainRecord(value)) {
     throw new AppError('INVALID_ARGS', 'swipe expects a map.');
   }
-  assertOnlyKeys(value, 'swipe', ['start', 'end', 'duration']);
-  if (typeof value.start !== 'string' || typeof value.end !== 'string') {
-    throw unsupportedMaestroSyntax('Only Maestro swipe start/end coordinates are supported.');
+  assertOnlyKeys(value, 'swipe', ['start', 'end', 'direction', 'duration', 'from', 'label']);
+  const from = value.from ?? (typeof value.label === 'string' ? value.label : undefined);
+  if (from !== undefined) {
+    return convertTargetedSwipe(value, from, context);
   }
-  const start = parseSwipePoint(value.start);
-  const end = parseSwipePoint(value.end);
-  const durationMs =
-    typeof value.duration === 'number' && Number.isFinite(value.duration)
-      ? String(Math.max(16, Math.floor(value.duration)))
-      : undefined;
+  if (typeof value.direction === 'string') {
+    return action(MAESTRO_RUNTIME_COMMAND.swipeScreen, [
+      'direction',
+      readSwipeDirection(value.direction),
+      ...swipeDurationPositionals(value),
+    ]);
+  }
+  return convertCoordinateSwipe(value);
+}
+
+function convertTargetedSwipe(
+  value: Record<string, unknown>,
+  from: unknown,
+  context: MaestroParseContext,
+): SessionAction {
+  const direction = readSwipeDirection(
+    typeof value.direction === 'string' ? value.direction : 'up',
+  );
+  return action(MAESTRO_RUNTIME_COMMAND.swipeOn, [
+    maestroSelector(from, 'swipe.from', [], context),
+    direction,
+    ...swipeDurationPositionals(value),
+  ]);
+}
+
+function convertCoordinateSwipe(value: Record<string, unknown>): SessionAction {
+  const { start, end } = readCoordinateSwipePoints(value);
+  const durationMs = readSwipeDurationMs(value.duration);
+  return convertCoordinateSwipePoints(start, end, durationMs);
+}
+
+function readCoordinateSwipePoints(value: Record<string, unknown>): {
+  start: ReturnType<typeof parseMaestroPoint>;
+  end: ReturnType<typeof parseMaestroPoint>;
+} {
+  if (typeof value.start === 'string' && typeof value.end === 'string') {
+    return { start: parseMaestroPoint(value.start), end: parseMaestroPoint(value.end) };
+  }
+  throw unsupportedMaestroSyntax('Only Maestro swipe start/end coordinates are supported.');
+}
+
+function readSwipeDurationMs(duration: unknown): string | undefined {
+  return typeof duration === 'number' && Number.isFinite(duration)
+    ? String(Math.max(16, Math.floor(duration)))
+    : undefined;
+}
+
+function convertCoordinateSwipePoints(
+  start: ReturnType<typeof parseMaestroPoint>,
+  end: ReturnType<typeof parseMaestroPoint>,
+  durationMs: string | undefined,
+): SessionAction {
   if (start.kind === 'absolute' && end.kind === 'absolute') {
     return action('swipe', [
       String(start.x),
@@ -129,17 +251,41 @@ export function convertSwipe(value: unknown): SessionAction {
     ]);
   }
   if (start.kind === 'percent' && end.kind === 'percent') {
-    return action('scroll', readScrollPositionalsFromPercentSwipe(start, end));
+    return action(MAESTRO_RUNTIME_COMMAND.swipeScreen, [
+      'percent',
+      String(start.x),
+      String(start.y),
+      String(end.x),
+      String(end.y),
+      ...(durationMs ? [durationMs] : []),
+    ]);
   }
   throw unsupportedMaestroSyntax(
     'Maestro swipe start/end must both be absolute pixels or both be percentages.',
   );
 }
 
+function readMaestroDirection(direction: string, name: string): SwipeDirection {
+  const normalized = direction.toLowerCase();
+  switch (normalized) {
+    case 'up':
+    case 'down':
+    case 'left':
+    case 'right':
+      return normalized;
+    default:
+      throw unsupportedMaestroSyntax(`Maestro ${name} must be UP, DOWN, LEFT, or RIGHT.`);
+  }
+}
+
+function readSwipeDirection(direction: string): SwipeDirection {
+  return readMaestroDirection(direction, 'swipe direction');
+}
+
 export function convertPressKey(value: unknown): SessionAction {
   const key = requireStringValue('pressKey', value).toLowerCase();
   if (key === 'back') return action('back');
-  if (key === 'enter' || key === 'return') return action('press', ['return']);
+  if (key === 'enter' || key === 'return') return action(MAESTRO_RUNTIME_COMMAND.pressEnter);
   if (key === 'home') return action('home');
   throw unsupportedMaestroSyntax(`Maestro pressKey "${key}" is not supported yet.`);
 }
@@ -157,29 +303,54 @@ export function maestroSelector(
   assertOnlyKeys(value, command, ['id', 'text', 'enabled', 'selected', ...allowedExtraKeys]);
 
   const terms: string[] = [];
-  if (typeof value.id === 'string')
-    terms.push(selectorTerm('id', resolveMaestroString(value.id, context)));
-  if (typeof value.text === 'string')
-    terms.push(selectorTerm('label', resolveMaestroString(value.text, context)));
+  const stateTerms: string[] = [];
   if (typeof value.enabled === 'boolean')
-    terms.push(selectorTerm('enabled', String(value.enabled)));
+    stateTerms.push(selectorTerm('enabled', String(value.enabled)));
   if (typeof value.selected === 'boolean')
-    terms.push(selectorTerm('selected', String(value.selected)));
+    stateTerms.push(selectorTerm('selected', String(value.selected)));
+  if (typeof value.id === 'string')
+    terms.push(selectorTerm('id', resolveMaestroString(value.id, context)), ...stateTerms);
+  if (typeof value.text === 'string' && terms.length === 0) {
+    return visibleTextSelector(resolveMaestroString(value.text, context), stateTerms);
+  }
+  if (typeof value.label === 'string' && terms.length === 0)
+    terms.push(selectorTerm('label', resolveMaestroString(value.label, context)), ...stateTerms);
+  if (terms.length === 0 && stateTerms.length > 0) terms.push(...stateTerms);
   if (terms.length === 0) {
     throw new AppError(
       'INVALID_ARGS',
-      `${command} selector map must include one of id, text, enabled, or selected.`,
+      `${command} selector map must include one of id, text, label, enabled, or selected.`,
     );
   }
   return terms.join(' ');
 }
 
-function visibleTextSelector(value: string): string {
+function visibleTextSelector(value: string, extraTerms: readonly string[] = []): string {
   return [
-    selectorTerm('label', value),
-    selectorTerm('text', value),
-    selectorTerm('id', value),
+    [selectorTerm('label', value), ...extraTerms].join(' '),
+    [selectorTerm('text', value), ...extraTerms].join(' '),
+    [selectorTerm('id', value), ...extraTerms].join(' '),
   ].join(' || ');
+}
+
+function maestroTapOnRuntimeOptions(value: unknown, context: MaestroParseContext): string[] {
+  if (!isPlainRecord(value)) return [];
+  const options: { index?: number; childOf?: string } = {};
+  if (value.index !== undefined) {
+    if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) {
+      throw new AppError('INVALID_ARGS', 'tapOn.index must be a non-negative integer.');
+    }
+    options.index = value.index;
+  }
+  if (value.childOf !== undefined) {
+    options.childOf = maestroSelector(value.childOf, 'tapOn.childOf', [], context);
+  }
+  return Object.keys(options).length > 0 ? [JSON.stringify(options)] : [];
+}
+
+function swipeDurationPositionals(value: Record<string, unknown>): string[] {
+  const durationMs = readSwipeDurationMs(value.duration);
+  return durationMs ? [durationMs] : [];
 }
 
 function selectorTerm(key: string, value: string): string {
@@ -189,13 +360,23 @@ function selectorTerm(key: string, value: string): string {
 function tapFlags(value: unknown): SessionAction['flags'] | undefined {
   if (!isPlainRecord(value)) return undefined;
   const flags: SessionAction['flags'] = {};
-  if (typeof value.repeat === 'number' && Number.isInteger(value.repeat) && value.repeat > 1) {
-    flags.count = value.repeat;
-  }
-  if (typeof value.delay === 'number' && Number.isInteger(value.delay) && value.delay >= 0) {
-    flags.intervalMs = value.delay;
-  }
+  const repeat = positiveInteger(value.repeat);
+  const delay = nonNegativeInteger(value.delay);
+  if (repeat && repeat > 1) flags.count = repeat;
+  if (delay !== undefined) flags.intervalMs = delay;
+  if (value.optional === true) flags.maestro = { optional: true };
   return Object.keys(flags).length > 0 ? flags : undefined;
+}
+
+function maestroTapOnFlags(value: unknown): SessionAction['flags'] {
+  const flags = tapFlags(value) ?? {};
+  return {
+    ...flags,
+    maestro: {
+      ...(flags.maestro ?? {}),
+      allowNonHittableCoordinateFallback: true,
+    },
+  };
 }
 
 function doubleTapFlags(value: unknown): SessionAction['flags'] {
@@ -206,57 +387,10 @@ function doubleTapFlags(value: unknown): SessionAction['flags'] {
   return flags;
 }
 
-function parsePoint(value: string): { x: number; y: number } {
-  const match = value.match(/^(\d+),(\d+)$/);
-  if (!match) {
-    throw unsupportedMaestroSyntax(
-      'Only absolute Maestro point selectors like "100,200" are supported.',
-    );
-  }
-  return { x: Number(match[1]), y: Number(match[2]) };
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
-type SwipePoint =
-  | {
-      kind: 'absolute';
-      x: number;
-      y: number;
-    }
-  | {
-      kind: 'percent';
-      x: number;
-      y: number;
-    };
-
-function parseSwipePoint(value: string): SwipePoint {
-  const absolute = value.match(/^\s*(\d+)\s*,\s*(\d+)\s*$/);
-  if (absolute) {
-    return { kind: 'absolute', x: Number(absolute[1]), y: Number(absolute[2]) };
-  }
-  const percent = value.match(/^\s*(\d+(?:\.\d+)?)%\s*,\s*(\d+(?:\.\d+)?)%\s*$/);
-  if (percent) {
-    return { kind: 'percent', x: Number(percent[1]), y: Number(percent[2]) };
-  }
-  throw unsupportedMaestroSyntax(
-    'Only Maestro swipe coordinates like "100,200" or "50%,75%" are supported.',
-  );
-}
-
-function readScrollPositionalsFromPercentSwipe(
-  start: Extract<SwipePoint, { kind: 'percent' }>,
-  end: Extract<SwipePoint, { kind: 'percent' }>,
-): string[] {
-  const deltaX = end.x - start.x;
-  const deltaY = end.y - start.y;
-  if (Math.abs(deltaX) === 0 && Math.abs(deltaY) === 0) {
-    throw new AppError('INVALID_ARGS', 'swipe start and end cannot be the same point.');
-  }
-  const vertical = Math.abs(deltaY) >= Math.abs(deltaX);
-  const direction = vertical ? (deltaY < 0 ? 'down' : 'up') : deltaX < 0 ? 'right' : 'left';
-  const amount = Math.min(1, Math.max(0.01, Math.abs(vertical ? deltaY : deltaX) / 100));
-  return [direction, formatAmount(amount)];
-}
-
-function formatAmount(value: number): string {
-  return value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+function nonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
