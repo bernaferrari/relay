@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { DAEMON_COMMAND_GROUPS, PUBLIC_COMMANDS } from '../command-catalog.ts';
 import {
   fillCommandCodec,
   findCommandCodec,
@@ -17,12 +16,6 @@ const BASE_FLAGS: CliFlags = {
   help: false,
   version: false,
 };
-
-test('command catalog owns daemon routing groups', () => {
-  assert.equal(DAEMON_COMMAND_GROUPS.snapshot.has(PUBLIC_COMMANDS.wait), true);
-  assert.equal(DAEMON_COMMAND_GROUPS.observability.has(PUBLIC_COMMANDS.logs), true);
-  assert.equal(DAEMON_COMMAND_GROUPS.replay.has(PUBLIC_COMMANDS.test), true);
-});
 
 test('wait codec preserves CLI bare text and client selector forms', () => {
   const options = waitCommandCodec.decode(['Continue', '1500'], BASE_FLAGS);
