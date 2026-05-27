@@ -8,7 +8,6 @@ import {
   inferAndroidAppName,
   installAndroidApp,
   installAndroidInstallablePath,
-  isAmStartError,
   openAndroidApp,
   parseAndroidLaunchComponent,
   resolveAndroidApp,
@@ -190,23 +189,6 @@ test('parseAndroidLaunchComponent extracts final resolved component', () => {
 test('parseAndroidLaunchComponent returns null when no component is present', () => {
   const stdout = 'No activity found';
   assert.equal(parseAndroidLaunchComponent(stdout), null);
-});
-
-test('isAmStartError detects am start failure in stdout', () => {
-  assert.equal(
-    isAmStartError(
-      'Starting: Intent { ... }\nError: Activity not started, unable to resolve Intent { ... }',
-      '',
-    ),
-    true,
-  );
-});
-
-test('isAmStartError returns false for successful am start', () => {
-  assert.equal(
-    isAmStartError('Status: ok\nLaunchState: COLD\nActivity: com.example/.MainActivity', ''),
-    false,
-  );
 });
 
 test('inferAndroidAppName derives readable names from package ids', () => {

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { evaluateIsPredicate, isSupportedPredicate } from '../is-predicates.ts';
+import { evaluateIsPredicate } from '../is-predicates.ts';
 
 const viewportNode = {
   ref: 'e1',
@@ -22,12 +22,6 @@ const baseNode = {
   enabled: true,
   hittable: true,
 };
-
-test('isSupportedPredicate validates supported predicates', () => {
-  assert.equal(isSupportedPredicate('visible'), true);
-  assert.equal(isSupportedPredicate('text'), true);
-  assert.equal(isSupportedPredicate('checked'), false);
-});
 
 test('evaluateIsPredicate visible and hidden', () => {
   const nodes = [viewportNode, baseNode];

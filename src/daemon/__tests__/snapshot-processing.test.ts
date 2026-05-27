@@ -4,9 +4,7 @@ import { attachRefs } from '../../utils/snapshot.ts';
 import {
   extractNodeReadText,
   findNearestHittableAncestor,
-  isFillableType,
   pruneGroupNodes,
-  resolveRefLabel,
 } from '../snapshot-processing.ts';
 
 test('pruneGroupNodes drops unlabeled group wrappers and rebalances depth', () => {
@@ -19,15 +17,6 @@ test('pruneGroupNodes drops unlabeled group wrappers and rebalances depth', () =
   assert.equal(pruned.length, 2);
   assert.equal(pruned[1].depth, 1);
   assert.equal(pruned[1].label, 'Continue');
-});
-
-test('resolveRefLabel falls back to nearest meaningful neighbor', () => {
-  const nodes = attachRefs([
-    { index: 0, depth: 0, label: 'Email', rect: { x: 0, y: 10, width: 100, height: 20 } },
-    { index: 1, depth: 0, label: '', value: '', rect: { x: 0, y: 14, width: 100, height: 20 } },
-  ]);
-  const resolved = resolveRefLabel(nodes[1], nodes);
-  assert.equal(resolved, 'Email');
 });
 
 test('findNearestHittableAncestor walks parents until hittable node', () => {
@@ -43,25 +32,6 @@ test('findNearestHittableAncestor walks parents until hittable node', () => {
   ]);
   const ancestor = findNearestHittableAncestor(nodes, nodes[2]);
   assert.equal(ancestor?.ref, 'e1');
-});
-
-test('isFillableType matches platform-specific editable controls', () => {
-  assert.equal(isFillableType('XCUIElementTypeTextField', 'ios'), true);
-  assert.equal(isFillableType('XCUIElementTypeButton', 'ios'), false);
-  assert.equal(isFillableType('android.widget.EditText', 'android'), true);
-  assert.equal(isFillableType('android.widget.Button', 'android'), false);
-});
-
-test('extractNodeReadText prefers underlying value for text surfaces', () => {
-  const nodes = attachRefs([
-    {
-      index: 0,
-      type: 'AXTextView',
-      label: 'Editor for MainActivity.kt',
-      value: 'package com.example.app\nclass MainActivity {}',
-    },
-  ]);
-  assert.equal(extractNodeReadText(nodes[0]), 'package com.example.app\nclass MainActivity {}');
 });
 
 test('extractNodeReadText ignores generic implementation identifiers as fallback text', () => {

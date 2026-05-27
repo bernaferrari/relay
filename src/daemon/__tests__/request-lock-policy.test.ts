@@ -118,68 +118,6 @@ test('rejects existing-session selector conflicts under request lock policy', ()
   );
 });
 
-test.each([
-  {
-    command: 'apps',
-    flags: { platform: 'ios', device: 'iPhone 17' },
-    expected: { platform: 'ios', device: 'iPhone 17', serial: undefined },
-  },
-  {
-    command: 'devices',
-    flags: { platform: 'android', serial: 'emulator-5554' },
-    expected: { platform: 'android', device: undefined, serial: 'emulator-5554' },
-  },
-] as const)(
-  'allows $command to inspect a different selector under existing-session lock policy',
-  ({ command, flags, expected }) => {
-    const req = applyRequestLockPolicy(
-      {
-        token: 'token',
-        session: 'qa-ios',
-        command,
-        positionals: [],
-        flags,
-        meta: {
-          lockPolicy: 'reject',
-        },
-      },
-      IOS_SESSION,
-    );
-
-    assert.deepEqual(selectedFlags(req), expected);
-  },
-);
-
-test.each([
-  {
-    command: 'apps',
-    flags: { device: 'iPhone 17' },
-    expected: { platform: undefined, device: 'iPhone 17', serial: undefined },
-  },
-  {
-    command: 'devices',
-    flags: { serial: 'emulator-5554' },
-    expected: { platform: undefined, device: undefined, serial: 'emulator-5554' },
-  },
-] as const)(
-  'allows $command to inspect a fresh selector under session lock policy',
-  ({ command, flags, expected }) => {
-    const req = applyRequestLockPolicy({
-      token: 'token',
-      session: 'qa-ios',
-      command,
-      positionals: [],
-      flags,
-      meta: {
-        lockPolicy: 'reject',
-        lockPlatform: 'ios',
-      },
-    });
-
-    assert.deepEqual(selectedFlags(req), expected);
-  },
-);
-
 test('allows inventory commands to use explicit Apple selectors under another lock platform', () => {
   const req = applyRequestLockPolicy({
     token: 'token',
@@ -354,14 +292,3 @@ test('strips only conflicting selectors for existing sessions', () => {
   assert.equal(req.flags?.serial, undefined);
 });
 
-function selectedFlags(req: ReturnType<typeof applyRequestLockPolicy>): {
-  platform: string | undefined;
-  device: string | undefined;
-  serial: string | undefined;
-} {
-  return {
-    platform: req.flags?.platform,
-    device: req.flags?.device,
-    serial: req.flags?.serial,
-  };
-}

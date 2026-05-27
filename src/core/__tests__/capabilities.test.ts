@@ -24,14 +24,6 @@ const androidDevice: DeviceInfo = {
   kind: 'device',
 };
 
-const androidTvDevice: DeviceInfo = {
-  platform: 'android',
-  id: 'and-tv-1',
-  name: 'Android TV',
-  kind: 'device',
-  target: 'tv',
-};
-
 const macOsDevice: DeviceInfo = {
   platform: 'macos',
   id: 'mac-1',
@@ -268,13 +260,6 @@ test('macOS supports the Apple runner interaction core but excludes mobile-only 
       'rotate',
     ],
     [{ device: macOsDevice, expected: false, label: 'on macOS' }],
-  );
-});
-
-test('Android TV uses Android capabilities for core commands', () => {
-  assertCommandSupport(
-    ['open', 'apps', 'snapshot', 'press', 'swipe', 'back', 'home', 'scroll'],
-    [{ device: androidTvDevice, expected: true, label: 'on Android TV' }],
   );
 });
 

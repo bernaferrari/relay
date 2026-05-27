@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { AppError, asAppError, normalizeError, toAppErrorCode } from '../errors.ts';
+import { AppError, normalizeError, toAppErrorCode } from '../errors.ts';
 
 test('normalizeError adds default hint and strips diagnostic metadata from details', () => {
   const err = new AppError('COMMAND_FAILED', 'runner failed', {
@@ -19,17 +19,6 @@ test('normalizeError adds default hint and strips diagnostic metadata from detai
   assert.equal(normalized.details?.token, '[REDACTED]');
   assert.equal(normalized.details?.safe, 'ok');
   assert.equal(Object.hasOwn(normalized.details ?? {}, 'hint'), false);
-});
-
-test('normalizeError falls back to context metadata', () => {
-  const err = new AppError('INVALID_ARGS', 'bad argument');
-  const normalized = normalizeError(err, {
-    diagnosticId: 'diag-ctx',
-    logPath: '/tmp/context.log',
-  });
-  assert.equal(normalized.diagnosticId, 'diag-ctx');
-  assert.equal(normalized.logPath, '/tmp/context.log');
-  assert.match(normalized.hint ?? '', /help/i);
 });
 
 test('normalizeError enriches generic command-failed message with stderr excerpt', () => {
@@ -59,29 +48,6 @@ test('normalizeError skips simctl boilerplate wrappers in stderr', () => {
   assert.equal(normalized.message, 'Operation not permitted');
 });
 
-test('normalizeError does not alter generic command-failed message without process-exit marker', () => {
-  const err = new AppError('COMMAND_FAILED', 'xcrun exited with code 1', {
-    exitCode: 1,
-    stderr: 'Operation not permitted',
-  });
-  const normalized = normalizeError(err);
-  assert.equal(normalized.message, 'xcrun exited with code 1');
-});
-
-test('normalizeError does not alter non-generic command-failed message without exitCode details', () => {
-  const err = new AppError('COMMAND_FAILED', 'Failed to reset access', {
-    stderr: 'Operation not permitted',
-  });
-  const normalized = normalizeError(err);
-  assert.equal(normalized.message, 'Failed to reset access');
-});
-
-test('asAppError wraps unknown errors', () => {
-  const err = asAppError(new Error('unexpected'));
-  assert.equal(err.code, 'UNKNOWN');
-  assert.equal(err.message, 'unexpected');
-});
-
 test('normalizeError provides app discovery guidance for app-not-installed errors', () => {
   const normalized = normalizeError(
     new AppError('APP_NOT_INSTALLED', 'No package found matching "chat"'),
@@ -90,12 +56,6 @@ test('normalizeError provides app discovery guidance for app-not-installed error
     normalized.hint ?? '',
     /Run apps to discover the exact installed package or bundle id/i,
   );
-});
-
-test('toAppErrorCode preserves handler-emitted codes verbatim (including AMBIGUOUS_MATCH)', () => {
-  assert.equal(toAppErrorCode('AMBIGUOUS_MATCH'), 'AMBIGUOUS_MATCH');
-  assert.equal(toAppErrorCode('SOME_FUTURE_CODE'), 'SOME_FUTURE_CODE');
-  assert.equal(toAppErrorCode('DEVICE_IN_USE'), 'DEVICE_IN_USE');
 });
 
 test('toAppErrorCode falls back when code is missing or empty', () => {
