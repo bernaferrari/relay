@@ -111,6 +111,7 @@ async function materializeLocalSource(
   }
 }
 
+// fallow-ignore-next-line complexity
 async function downloadToTempFile(
   tempDir: string,
   url: string,
@@ -261,12 +262,15 @@ export function isBlockedIpAddress(address: string): boolean {
   return false;
 }
 
+// fallow-ignore-next-line complexity
 function isBlockedIpv4(address: string): boolean {
   const octets = address.split('.').map((part) => Number.parseInt(part, 10));
   if (octets.length !== 4 || octets.some((part) => Number.isNaN(part) || part < 0 || part > 255)) {
     return false;
   }
-  const [a, b] = octets;
+  const a = octets[0];
+  const b = octets[1];
+  if (a === undefined || b === undefined) return false;
   if (a === 10 || a === 127) return true;
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
@@ -282,6 +286,7 @@ function isBlockedIpv6(address: string): boolean {
   return false;
 }
 
+// fallow-ignore-next-line complexity
 async function resolveInstallableCandidate(
   candidatePath: string,
   params: {
@@ -322,10 +327,11 @@ async function resolveInstallableCandidate(
 
   if (stat.isDirectory()) {
     const installables = await collectMatchingPaths(candidatePath, params.isInstallablePath);
-    if (installables.length === 1) {
+    const installable = installables[0];
+    if (installable !== undefined && installables.length === 1) {
       return {
         archivePath: params.archivePath,
-        installablePath: installables[0],
+        installablePath: installable,
       };
     }
     if (installables.length > 1) {
@@ -340,19 +346,20 @@ async function resolveInstallableCandidate(
       candidatePath,
       (entryPath, entryStat) => entryStat.isFile() && isArchivePath(entryPath),
     );
-    if (archives.length === 1) {
+    const archive = archives[0];
+    if (archive !== undefined && archives.length === 1) {
       if (!params.allowArchiveExtraction) {
         throw new AppError(
           'INVALID_ARGS',
           `URL sources must point directly to a ${params.installableLabel}; nested archives are not allowed`,
-          { path: archives[0] },
+          { path: archive },
         );
       }
-      const extracted = await extractArchive(archives[0]);
+      const extracted = await extractArchive(archive);
       params.registerCleanup(extracted.cleanup);
       return await resolveInstallableCandidate(extracted.outputPath, {
         ...params,
-        archivePath: params.archivePath ?? archives[0],
+        archivePath: params.archivePath ?? archive,
       });
     }
     if (archives.length > 1) {
@@ -434,7 +441,7 @@ function isArchivePath(candidatePath: string): boolean {
 }
 
 async function runCleanupTasks(tasks: Array<() => Promise<void>>): Promise<void> {
-  for (let index = tasks.length - 1; index >= 0; index -= 1) {
-    await tasks[index]();
+  for (const task of [...tasks].reverse()) {
+    await task();
   }
 }
