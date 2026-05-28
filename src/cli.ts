@@ -481,7 +481,7 @@ function hasExplicitMetroRuntimeOverrides(explicitFlagKeys: Set<FlagKey>): boole
 
 function guessSessionFromArgv(argv: string[]): string | null {
   for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
+    const token = argv[i]!;
     if (token.startsWith('--session=')) {
       const inline = token.slice('--session='.length).trim();
       return inline.length > 0 ? inline : null;

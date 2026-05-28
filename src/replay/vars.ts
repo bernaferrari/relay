@@ -131,7 +131,7 @@ export function resolveReplayString(
       if (escapedLiteral) return '${';
       if (!key) return match;
       if (Object.prototype.hasOwnProperty.call(scope.values, key)) {
-        return scope.values[key];
+        return String(scope.values[key]);
       }
       if (fallback !== undefined) {
         return fallback.replace(/\\(.)/g, '$1');

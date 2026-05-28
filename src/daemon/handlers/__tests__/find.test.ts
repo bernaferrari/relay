@@ -118,7 +118,7 @@ test('handleFindCommands click returns deterministic metadata across locator var
     }
 
     expect(invokeCalls.length).toBe(1);
-    expect(invokeCalls[0].positionals?.[0]).toBe(scenario.expectedRef);
+    expect(invokeCalls[0]!.positionals?.[0]).toBe(scenario.expectedRef);
   }
 });
 
@@ -155,7 +155,7 @@ test('handleFindCommands click prefers on-screen duplicate text matches', async 
   });
 
   expect(response.ok).toBe(true);
-  expect(invokeCalls[0].positionals?.[0]).toBe('@e3');
+  expect(invokeCalls[0]!.positionals?.[0]).toBe('@e3');
 });
 
 test('handleFindCommands click prefers semantic controls over matching containers', async () => {
@@ -210,7 +210,7 @@ test('handleFindCommands click prefers semantic controls over matching container
   });
 
   expect(response.ok).toBe(true);
-  expect(invokeCalls[0].positionals?.[0]).toBe('@e5');
+  expect(invokeCalls[0]!.positionals?.[0]).toBe('@e5');
 });
 
 test('handleFindCommands wait bypasses snapshot cache while Android freshness recovery is active', async () => {

@@ -20,9 +20,9 @@ export function parseAndroidLaunchablePackages(stdout: string): string[] {
   for (const line of stdout.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const firstToken = trimmed.split(/\s+/)[0];
+    const firstToken = trimmed.split(/\s+/)[0] ?? '';
     if (!firstToken.includes('/')) continue;
-    const pkg = firstToken.split('/')[0];
+    const pkg = firstToken.split('/')[0] ?? '';
     if (!pkg.includes('.')) continue;
     if (pkg) packages.add(pkg);
   }
@@ -86,7 +86,9 @@ function parseAndroidBlockingDialogFromSegment(
   const respondingMatch = ANDROID_RESPONDING_TITLE_PATTERN.exec(windowText);
   if (!respondingMatch) return null;
 
-  const focusedWindow = respondingMatch[1].trim().replace(/\s+/g, ' ');
+  const focusedWindowTitle = respondingMatch[1];
+  if (focusedWindowTitle === undefined) return null;
+  const focusedWindow = focusedWindowTitle.trim().replace(/\s+/g, ' ');
   const packageName = ANDROID_PACKAGE_PATTERN.exec(focusedWindow)?.[1];
   return {
     ...(packageName ? { package: packageName } : {}),
