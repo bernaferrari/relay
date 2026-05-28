@@ -32,7 +32,7 @@ test('batch --steps parses JSON and forwards batchSteps only', async () => {
     '--platform',
     'ios',
     '--steps',
-    '[{"command":"open","positionals":["settings"]}]',
+    '[{"command":"open","input":{"app":"settings"}}]',
     '--json',
   ]);
   assert.equal(result.code, null);
@@ -49,13 +49,63 @@ test('batch --steps parses JSON and forwards batchSteps only', async () => {
 test('batch --steps-file parses file payload', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-batch-'));
   const stepsPath = path.join(tmpDir, 'steps.json');
-  fs.writeFileSync(stepsPath, JSON.stringify([{ command: 'wait', positionals: ['100'] }]), 'utf8');
+  fs.writeFileSync(
+    stepsPath,
+    JSON.stringify([{ command: 'wait', input: { kind: 'duration', durationMs: 100 } }]),
+    'utf8',
+  );
   const result = await runCliCapture(['batch', '--steps-file', stepsPath, '--json']);
   assert.equal(result.code, null);
   assert.equal(result.calls.length, 1);
   const req = result.calls[0];
   assert.equal(req.command, 'batch');
   assert.equal((req.flags?.batchSteps ?? [])[0]?.command, 'wait');
+});
+
+test('batch structured interaction target is projected to positionals, not device flags', async () => {
+  const result = await runCliCapture([
+    'batch',
+    '--steps',
+    '[{"command":"press","input":{"target":{"kind":"point","x":10,"y":20},"count":2}}]',
+    '--json',
+  ]);
+
+  assert.equal(result.code, null);
+  assert.equal(result.calls.length, 1);
+  const step = (result.calls[0]?.flags?.batchSteps ?? [])[0];
+  assert.deepEqual(step?.positionals, ['10', '20']);
+  assert.equal(step?.flags?.target, undefined);
+  assert.equal(step?.flags?.count, 2);
+});
+
+test('batch accepts legacy positionals/flags steps with deprecation warning', async () => {
+  const result = await runCliCapture([
+    'batch',
+    '--steps',
+    '[{"command":"open","positionals":["settings"],"flags":{"platform":"ios"}}]',
+    '--json',
+  ]);
+  assert.equal(result.code, null);
+  assert.match(result.stderr, /positionals\/flags are deprecated.*next major version/);
+  assert.equal(result.calls.length, 1);
+  const req = result.calls[0];
+  assert.equal(req.command, 'batch');
+  assert.deepEqual((req.flags?.batchSteps ?? [])[0], {
+    command: 'open',
+    positionals: ['settings'],
+    flags: { platform: 'ios' },
+    runtime: undefined,
+  });
+});
+
+test('batch rejects hybrid structured and legacy step shapes', async () => {
+  const result = await runCliCapture([
+    'batch',
+    '--steps',
+    '[{"command":"open","input":{},"positionals":["settings"]}]',
+  ]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /unknown legacy field\(s\): input/);
 });
 
 test('batch --steps-file returns clear error for missing file', async () => {
@@ -84,7 +134,7 @@ test('batch forwards strip lock policy for nested steps when bound session uses 
     [
       'batch',
       '--steps',
-      '[{"command":"snapshot","flags":{"platform":"android","serial":"emulator-5554"}}]',
+      '[{"command":"snapshot","input":{"platform":"android","serial":"emulator-5554"}}]',
       '--json',
     ],
     undefined,
@@ -107,7 +157,7 @@ test('batch forwards strip lock policy for nested steps when bound session uses 
 
 test('batch forwards reject lock policy for target retargeting', async () => {
   const result = await runCliCapture(
-    ['batch', '--steps', '[{"command":"open","flags":{"target":"tv"}}]', '--json'],
+    ['batch', '--steps', '[{"command":"open","input":{"target":"tv"}}]', '--json'],
     undefined,
     {
       env: {
@@ -130,7 +180,7 @@ test('batch session lock flags apply to nested steps without env configuration',
       '--session-lock',
       'strip',
       '--steps',
-      '[{"command":"snapshot","flags":{"target":"tv","serial":"emulator-5554"}}]',
+      '[{"command":"snapshot","input":{"target":"tv","serial":"emulator-5554"}}]',
       '--json',
     ],
     undefined,
@@ -161,7 +211,7 @@ test('batch step without explicit platform inherits parent platform over env def
       '--platform',
       'android',
       '--steps',
-      '[{"command":"snapshot"}]',
+      '[{"command":"snapshot","input":{}}]',
       '--json',
     ]);
     assert.equal(result.code, null);
@@ -175,30 +225,33 @@ test('batch step without explicit platform inherits parent platform over env def
 });
 
 test('batch human output renders per-step results', async () => {
-  const result = await runCliCapture(['batch', '--steps', '[{"command":"open"}]'], async () => ({
-    ok: true,
-    data: {
-      total: 2,
-      executed: 2,
-      totalDurationMs: 15,
-      results: [
-        {
-          step: 1,
-          command: 'open',
-          ok: true,
-          data: { appName: 'Settings', message: 'Opened: Settings' },
-          durationMs: 7,
-        },
-        {
-          step: 2,
-          command: 'type',
-          ok: true,
-          data: { text: 'hello', message: 'Typed 5 chars' },
-          durationMs: 8,
-        },
-      ],
-    },
-  }));
+  const result = await runCliCapture(
+    ['batch', '--steps', '[{"command":"open","input":{}}]'],
+    async () => ({
+      ok: true,
+      data: {
+        total: 2,
+        executed: 2,
+        totalDurationMs: 15,
+        results: [
+          {
+            step: 1,
+            command: 'open',
+            ok: true,
+            data: { appName: 'Settings', message: 'Opened: Settings' },
+            durationMs: 7,
+          },
+          {
+            step: 2,
+            command: 'type',
+            ok: true,
+            data: { text: 'hello', message: 'Typed 5 chars' },
+            durationMs: 8,
+          },
+        ],
+      },
+    }),
+  );
 
   assert.equal(result.code, null);
   assert.match(result.stdout, /Batch completed: 2\/2 steps in 15ms/);
@@ -207,30 +260,33 @@ test('batch human output renders per-step results', async () => {
 });
 
 test('batch human output renders failed steps distinctly', async () => {
-  const result = await runCliCapture(['batch', '--steps', '[{"command":"open"}]'], async () => ({
-    ok: true,
-    data: {
-      total: 2,
-      executed: 1,
-      totalDurationMs: 15,
-      results: [
-        {
-          step: 1,
-          command: 'open',
-          ok: true,
-          data: { appName: 'Settings', message: 'Opened: Settings' },
-          durationMs: 7,
-        },
-        {
-          step: 2,
-          command: 'type',
-          ok: false,
-          error: { message: 'type requires text' },
-          durationMs: 8,
-        },
-      ],
-    },
-  }));
+  const result = await runCliCapture(
+    ['batch', '--steps', '[{"command":"open","input":{}}]'],
+    async () => ({
+      ok: true,
+      data: {
+        total: 2,
+        executed: 1,
+        totalDurationMs: 15,
+        results: [
+          {
+            step: 1,
+            command: 'open',
+            ok: true,
+            data: { appName: 'Settings', message: 'Opened: Settings' },
+            durationMs: 7,
+          },
+          {
+            step: 2,
+            command: 'type',
+            ok: false,
+            error: { message: 'type requires text' },
+            durationMs: 8,
+          },
+        ],
+      },
+    }),
+  );
 
   assert.equal(result.code, null);
   assert.match(result.stdout, /1\. OK Opened: Settings \(7ms\)/);

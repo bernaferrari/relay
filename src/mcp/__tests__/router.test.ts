@@ -1,103 +1,96 @@
 import assert from 'node:assert/strict';
+import { setImmediate } from 'node:timers/promises';
 import { test } from 'vitest';
+import { listMcpExposedCommandNames } from '../../command-catalog.ts';
 import { handleMcpMessage } from '../router.ts';
+import { createMcpPayloadQueue, handleMcpPayload } from '../server.ts';
 
-test('MCP initialize advertises discovery-only tool capability', () => {
-  const response = handleMcpMessage({
+test('MCP exposes every automatable CLI command as a structured direct tool', async () => {
+  const response = await handleMcpMessage({
     jsonrpc: '2.0',
     id: 1,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2099-01-01',
-    },
-  });
-
-  assert.ok(response && 'result' in response);
-  const result = response.result as {
-    protocolVersion: string;
-    capabilities: Record<string, unknown>;
-  };
-  assert.equal(result.protocolVersion, '2025-11-25');
-  assert.deepEqual(result.capabilities, { tools: {} });
-});
-
-test('MCP tools/list exposes only status', () => {
-  const response = handleMcpMessage({
-    jsonrpc: '2.0',
-    id: 2,
     method: 'tools/list',
   });
 
   assert.ok(response && 'result' in response);
-  const tools = (
-    response.result as { tools: Array<{ name: string; outputSchema?: { type: string } }> }
-  ).tools;
-  assert.deepEqual(
-    tools.map((tool) => tool.name),
-    ['status'],
+  const tools = (response.result as { tools: Array<{ name: string }> }).tools.map(
+    (tool) => tool.name,
   );
-  assert.equal(tools[0]?.outputSchema?.type, 'object');
+  const expectedToolNames = listMcpExposedCommandNames().sort();
+
+  assert.deepEqual(tools.sort(), expectedToolNames);
+
+  const fillTool = (response.result as { tools: Array<Record<string, unknown>> }).tools.find(
+    (tool) => tool.name === 'fill',
+  );
+  assert.ok(fillTool);
+  const fillProperties = (fillTool.inputSchema as { properties: Record<string, unknown> })
+    .properties;
+  assert.ok(!('positionals' in fillProperties));
+  assert.ok('target' in fillProperties);
+
+  const batchTool = (response.result as { tools: Array<Record<string, unknown>> }).tools.find(
+    (tool) => tool.name === 'batch',
+  );
+  assert.ok(batchTool);
+  assert.ok(!JSON.stringify(batchTool.inputSchema).includes('"positionals"'));
+  assert.ok(!JSON.stringify(batchTool.inputSchema).includes('"flags"'));
+
+  const invalidFillResponse = await handleMcpMessage({
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/call',
+    params: { name: 'fill', arguments: {} },
+  });
+  assert.ok(invalidFillResponse && 'result' in invalidFillResponse);
+  assert.equal((invalidFillResponse.result as { isError: boolean }).isError, true);
+  assert.match(JSON.stringify(invalidFillResponse.result), /Expected target to be set/);
 });
 
-test('MCP status tool returns structured CLI handoff guidance', () => {
-  const response = handleMcpMessage({
-    jsonrpc: '2.0',
-    id: 3,
-    method: 'tools/call',
-    params: {
-      name: 'status',
+test('MCP JSON-RPC batches return responses in request order and skip notifications', async () => {
+  const response = await handleMcpPayload([
+    { jsonrpc: '2.0', id: 'first', method: 'ping' },
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: 'second', method: 'ping' },
+  ]);
+
+  assert.deepEqual(
+    (response as Array<{ id: string }>).map((entry) => entry.id),
+    ['first', 'second'],
+  );
+});
+
+test('MCP stdio payload queue serializes separate messages', async () => {
+  const started: JsonRpcId[] = [];
+  const writes: unknown[] = [];
+  const completions = new Map<JsonRpcId, (response: unknown) => void>();
+  const queue = createMcpPayloadQueue({
+    handlePayload: async (message) => {
+      const id = Array.isArray(message) ? null : (message.id ?? null);
+      started.push(id);
+      return await new Promise((resolve) => completions.set(id, resolve));
+    },
+    write: (message) => {
+      writes.push(message);
     },
   });
 
-  assert.ok(response && 'result' in response);
-  const result = response.result as {
-    content: Array<{ text: string }>;
-    isError: boolean;
-    structuredContent: {
-      packageName: string;
-      cliCommandName: string;
-      installCommand: string;
-      verifyCommand: string;
-      startingHelpCommand: string;
-      supportedTargets: string[];
-      capabilities: string[];
-      prerequisites: string[];
-      docsUrl: string;
-      agentDocsUrl: string;
-      firstCommands: string[];
-      automationInterface: string;
-      automationNote: string;
-      installRequiresHumanApproval: boolean;
-      installSafetyNote: string;
-    };
-  };
-  assert.equal(result.isError, false);
+  queue.push({ jsonrpc: '2.0', id: 'first', method: 'tools/call' });
+  queue.push({ jsonrpc: '2.0', id: 'second', method: 'tools/call' });
+  await Promise.resolve();
 
-  const handoff = result.structuredContent;
-  assert.deepEqual(JSON.parse(result.content[0]?.text ?? ''), handoff);
-  assert.equal(handoff.packageName, 'agent-device');
-  assert.equal(handoff.cliCommandName, 'agent-device');
-  assert.equal(handoff.installCommand, 'npm install -g agent-device@latest');
-  assert.equal(handoff.verifyCommand, 'agent-device --version');
-  assert.equal(handoff.startingHelpCommand, 'agent-device help workflow');
-  assert.ok(handoff.supportedTargets.includes('ios-simulator'));
-  assert.ok(handoff.supportedTargets.includes('android-emulator'));
-  assert.ok(handoff.capabilities.includes('inspect-ui'));
-  assert.ok(handoff.capabilities.includes('interact-with-elements'));
-  assert.ok(handoff.capabilities.includes('accessibility-snapshot'));
-  assert.ok(handoff.capabilities.includes('react-native'));
-  assert.ok(handoff.capabilities.includes('expo'));
-  assert.ok(handoff.capabilities.includes('android-adb'));
-  assert.ok(handoff.capabilities.includes('ios-xcuitest'));
-  assert.ok(handoff.prerequisites.includes('node>=22'));
-  assert.ok(handoff.prerequisites.includes('xcode-for-ios'));
-  assert.ok(handoff.prerequisites.includes('android-sdk-adb-for-android'));
-  assert.equal(handoff.docsUrl, 'https://agent-device.dev/');
-  assert.equal(handoff.agentDocsUrl, 'https://incubator.callstack.com/agent-device/llms-full.txt');
-  assert.ok(handoff.firstCommands.includes('agent-device apps --platform ios'));
-  assert.ok(handoff.firstCommands.includes('agent-device apps --platform android'));
-  assert.equal(handoff.automationInterface, 'cli');
-  assert.match(handoff.automationNote, /discovery-only/);
-  assert.equal(handoff.installRequiresHumanApproval, true);
-  assert.match(handoff.installSafetyNote, /human has approved/);
+  assert.deepEqual(started, ['first']);
+  completions.get('first')?.({ jsonrpc: '2.0', id: 'first', result: {} });
+  await setImmediate();
+
+  assert.deepEqual(started, ['first', 'second']);
+  completions.get('second')?.({ jsonrpc: '2.0', id: 'second', result: {} });
+  await queue.idle();
+
+  assert.deepEqual(
+    writes.map((message) => (message as { id: JsonRpcId }).id),
+    ['first', 'second'],
+  );
 });
+
+type JsonRpcId = string | number | null;
