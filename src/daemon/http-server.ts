@@ -18,6 +18,12 @@ import {
   trackUploadedArtifact,
 } from './artifact-tracking.ts';
 import { receiveUpload } from './upload.ts';
+import { type RequestProgressEvent, withRequestProgressSink } from './request-progress.ts';
+import {
+  serializeDaemonProgressEnvelope,
+  serializeDaemonRpcResponseEnvelope,
+  shouldStreamRequestProgress,
+} from './request-progress-protocol.ts';
 
 type JsonRpcRequest = JsonRpcRequestEnvelope;
 
@@ -106,6 +112,23 @@ function sendJson(
   res.statusCode = httpCode;
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify(response));
+}
+
+function writeProgressEnvelope(
+  res: http.ServerResponse<http.IncomingMessage>,
+  event: RequestProgressEvent,
+): void {
+  if (res.destroyed) return;
+  res.write(serializeDaemonProgressEnvelope(event));
+}
+
+function writeRpcResponseEnvelope(
+  res: http.ServerResponse<http.IncomingMessage>,
+  response: JsonRpcResponse,
+): void {
+  if (res.destroyed) return;
+  res.write(serializeDaemonRpcResponseEnvelope(response));
+  res.end();
 }
 
 function statusCodeForNormalizedError(code: string): number {
@@ -586,6 +609,30 @@ export async function createDaemonHttpServer(options: {
           };
         }
 
+        const streamProgress = shouldStreamRequestProgress(daemonRequest);
+        if (streamProgress) {
+          res.statusCode = 200;
+          res.setHeader('content-type', 'application/x-ndjson');
+          const daemonResponse = await withRequestProgressSink(
+            (event) => writeProgressEnvelope(res, event),
+            async () => await handleRequest(daemonRequest),
+          );
+          const rpcResponse = daemonResponse.ok
+            ? ({
+                jsonrpc: '2.0',
+                id: rpcRequest.id ?? null,
+                result: daemonResponse,
+              } satisfies JsonRpcResponse)
+            : createRpcError(
+                rpcRequest.id ?? null,
+                -32000,
+                daemonResponse.error.message,
+                daemonResponse.error,
+              );
+          writeRpcResponseEnvelope(res, rpcResponse);
+          return;
+        }
+
         const daemonResponse = await handleRequest(daemonRequest);
         if (daemonResponse.ok) {
           sendJson(res, { jsonrpc: '2.0', id: rpcRequest.id ?? null, result: daemonResponse });
@@ -603,6 +650,13 @@ export async function createDaemonHttpServer(options: {
         );
       } catch (error) {
         const normalized = normalizeError(error);
+        if (res.headersSent) {
+          writeRpcResponseEnvelope(
+            res,
+            createRpcError(rpcRequest.id ?? null, -32000, normalized.message, normalized),
+          );
+          return;
+        }
         sendJson(
           res,
           createRpcError(rpcRequest.id ?? null, -32000, normalized.message, normalized),
@@ -622,51 +676,23 @@ async function handleUpload(
   expectedToken?: string,
 ): Promise<void> {
   try {
-    // Auth: resolve token from headers and run auth hook with a synthetic context.
-    const token = resolveToken({}, req.headers);
-    const tokenError = enforceDaemonToken(token, expectedToken);
-    if (tokenError) {
-      res.statusCode = statusCodeForNormalizedError(tokenError.code);
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ ok: false, error: tokenError.message, code: tokenError.code }));
-      return;
-    }
-    const syntheticRpc: JsonRpcRequest = {
-      jsonrpc: '2.0',
-      id: null,
-      method: 'agent_device.command',
-    };
-    const syntheticDaemon: DaemonRequest = {
-      token,
-      session: 'default',
-      command: 'upload',
-      positionals: [],
-    };
-    const authResult = await runHttpAuthHook(authHook, {
-      headers: req.headers,
-      rpcRequest: syntheticRpc,
-      daemonRequest: syntheticDaemon,
+    const auth = await authorizeAuxiliaryHttpRequest({
+      req,
+      res,
+      authHook,
+      expectedToken,
+      daemonRequest: {
+        command: 'upload',
+        positionals: [],
+      },
     });
-    if (!authResult.ok) {
-      res.statusCode = authResult.statusCode;
-      res.setHeader('content-type', 'application/json');
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error:
-            authResult.response.error?.data?.message ??
-            authResult.response.error?.message ??
-            'Unauthorized',
-        }),
-      );
-      return;
-    }
+    if (!auth) return;
 
     const result = await receiveUpload(req);
     const uploadId = trackUploadedArtifact({
       artifactPath: result.artifactPath,
       tempDir: result.tempDir,
-      tenantId: authResult.tenantId,
+      tenantId: auth.tenantId,
     });
 
     res.statusCode = 200;
@@ -674,9 +700,7 @@ async function handleUpload(
     res.end(JSON.stringify({ ok: true, uploadId }));
   } catch (error) {
     const normalized = normalizeError(error);
-    res.statusCode = statusCodeForNormalizedError(normalized.code);
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ ok: false, error: normalized.message, code: normalized.code }));
+    sendRestJsonError(res, normalized);
   }
 }
 
@@ -693,45 +717,19 @@ async function handleArtifactDownload(
     return;
   }
   try {
-    const token = resolveToken({}, req.headers);
-    const tokenError = enforceDaemonToken(token, expectedToken);
-    if (tokenError) {
-      res.statusCode = statusCodeForNormalizedError(tokenError.code);
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ ok: false, error: tokenError.message, code: tokenError.code }));
-      return;
-    }
-    const syntheticRpc: JsonRpcRequest = {
-      jsonrpc: '2.0',
-      id: null,
-      method: 'agent_device.command',
-    };
-    const syntheticDaemon: DaemonRequest = {
-      token,
-      session: 'default',
-      command: 'download_artifact',
-      positionals: [artifactId],
-    };
-    const authResult = await runHttpAuthHook(authHook, {
-      headers: req.headers,
-      rpcRequest: syntheticRpc,
-      daemonRequest: syntheticDaemon,
+    const auth = await authorizeAuxiliaryHttpRequest({
+      req,
+      res,
+      authHook,
+      expectedToken,
+      daemonRequest: {
+        command: 'download_artifact',
+        positionals: [artifactId],
+      },
     });
-    if (!authResult.ok) {
-      res.statusCode = authResult.statusCode;
-      res.setHeader('content-type', 'application/json');
-      res.end(
-        JSON.stringify({
-          ok: false,
-          error:
-            authResult.response.error?.data?.message ??
-            authResult.response.error?.message ??
-            'Unauthorized',
-        }),
-      );
-      return;
-    }
-    const artifact = prepareDownloadableArtifact(artifactId, authResult.tenantId);
+    if (!auth) return;
+
+    const artifact = prepareDownloadableArtifact(artifactId, auth.tenantId);
     const stream = fs.createReadStream(artifact.artifactPath);
     res.statusCode = 200;
     res.setHeader('content-type', 'application/octet-stream');
@@ -758,10 +756,65 @@ async function handleArtifactDownload(
     stream.pipe(res);
   } catch (error) {
     const normalized = normalizeError(error);
-    res.statusCode = statusCodeForNormalizedError(normalized.code);
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ ok: false, error: normalized.message, code: normalized.code }));
+    sendRestJsonError(res, normalized);
   }
+}
+
+async function authorizeAuxiliaryHttpRequest(params: {
+  req: http.IncomingMessage;
+  res: http.ServerResponse;
+  authHook: HttpAuthHook | null;
+  expectedToken?: string;
+  daemonRequest: Pick<DaemonRequest, 'command' | 'positionals'>;
+}): Promise<{ tenantId?: string } | null> {
+  const { req, res, authHook, expectedToken, daemonRequest } = params;
+  const token = resolveToken({}, req.headers);
+  const tokenError = enforceDaemonToken(token, expectedToken);
+  if (tokenError) {
+    sendRestJsonError(res, tokenError);
+    return null;
+  }
+
+  const syntheticRpc: JsonRpcRequest = {
+    jsonrpc: '2.0',
+    id: null,
+    method: 'agent_device.command',
+  };
+  const authResult = await runHttpAuthHook(authHook, {
+    headers: req.headers,
+    rpcRequest: syntheticRpc,
+    daemonRequest: {
+      token,
+      session: 'default',
+      command: daemonRequest.command,
+      positionals: daemonRequest.positionals,
+    },
+  });
+  if (!authResult.ok) {
+    res.statusCode = authResult.statusCode;
+    res.setHeader('content-type', 'application/json');
+    res.end(
+      JSON.stringify({
+        ok: false,
+        error:
+          authResult.response.error?.data?.message ??
+          authResult.response.error?.message ??
+          'Unauthorized',
+      }),
+    );
+    return null;
+  }
+
+  return { tenantId: authResult.tenantId };
+}
+
+function sendRestJsonError(
+  res: http.ServerResponse,
+  normalized: ReturnType<typeof normalizeError>,
+): void {
+  res.statusCode = statusCodeForNormalizedError(normalized.code);
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify({ ok: false, error: normalized.message, code: normalized.code }));
 }
 
 function enforceDaemonToken(

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { sleep } from './utils/timeouts.ts';
 import { AppError, toAppErrorCode } from './utils/errors.ts';
+import { consumeTextLines } from './utils/line-stream.ts';
 import { readNodeHttpResponseBody } from './utils/node-http.ts';
 import type {
   DaemonArtifact,
@@ -28,6 +29,15 @@ import {
 import { uploadArtifact } from './upload-client.ts';
 import { computeDaemonCodeSignature } from './daemon/code-signature.ts';
 import { PUBLIC_COMMANDS } from './command-catalog.ts';
+import {
+  readDaemonHttpProgressResponse,
+  shouldReadDaemonProgressStream,
+  writeRequestProgressEvent,
+} from './daemon-client-progress.ts';
+import {
+  isDaemonProgressEnvelope,
+  isDaemonResponseEnvelope,
+} from './daemon/request-progress-protocol.ts';
 export { computeDaemonCodeSignature } from './daemon/code-signature.ts';
 export type DaemonRequest = SharedDaemonRequest;
 export type DaemonResponse = SharedDaemonResponse;
@@ -247,13 +257,21 @@ async function prepareRemoteRequest(
   const clientArtifactPaths: Record<string, string> = {};
   let uploadedArtifactId: string | undefined;
 
-  if (isRemoteDaemon(info)) {
-    flags = applyRemoteArtifactCommand(req, positionals, flags, clientArtifactPaths);
-    const remoteInstallSource = await prepareRemoteInstallSource(req, info);
-    if (remoteInstallSource) {
-      installSource = remoteInstallSource.installSource;
-      uploadedArtifactId = remoteInstallSource.uploadedArtifactId ?? uploadedArtifactId;
-    }
+  if (!isRemoteDaemon(info)) {
+    return createPreparedRemoteRequest({
+      positionals,
+      flags,
+      installSource,
+      uploadedArtifactId,
+      clientArtifactPaths,
+    });
+  }
+
+  flags = applyRemoteArtifactCommand(req, positionals, flags, clientArtifactPaths);
+  const remoteInstallSource = await prepareRemoteInstallSource(req, info);
+  if (remoteInstallSource) {
+    installSource = remoteInstallSource.installSource;
+    uploadedArtifactId = remoteInstallSource.uploadedArtifactId ?? uploadedArtifactId;
   }
 
   const baseResult = (): PreparedRemoteRequest =>
@@ -265,29 +283,33 @@ async function prepareRemoteRequest(
       clientArtifactPaths,
     });
 
-  if (!isRemoteDaemon(info) || (req.command !== 'install' && req.command !== 'reinstall')) {
-    return baseResult();
-  }
+  if (req.command !== 'install' && req.command !== 'reinstall') return baseResult();
+  const installPackageResult = await prepareRemoteInstallPackage(req, info, positionals);
+  uploadedArtifactId = installPackageResult ?? uploadedArtifactId;
+  return baseResult();
+}
 
+async function prepareRemoteInstallPackage(
+  req: Omit<DaemonRequest, 'token'>,
+  info: DaemonInfo,
+  positionals: string[],
+): Promise<string | undefined> {
   const rawPath = positionals[1];
-  if (rawPath === undefined) return baseResult();
+  if (rawPath === undefined) return undefined;
   if (rawPath.startsWith('remote:')) {
     positionals[1] = rawPath.slice('remote:'.length);
-    return createPreparedRemoteRequest({ positionals, flags, clientArtifactPaths });
+    return undefined;
   }
 
   const localPath = resolveLocalInstallPath(rawPath, req.meta?.cwd);
-  if (!localPath) {
-    return createPreparedRemoteRequest({ positionals, flags, clientArtifactPaths });
-  }
+  if (!localPath) return undefined;
 
-  uploadedArtifactId = await uploadArtifact({
+  return await uploadArtifact({
     localPath,
     baseUrl: info.baseUrl!,
     token: info.token,
     platform: req.flags?.platform,
   });
-  return baseResult();
 }
 
 function applyRemoteArtifactCommand(
@@ -455,16 +477,44 @@ function buildRemoteTempArtifactPath(prefix: string, extension: string): string 
 }
 
 function resolveClientSettings(req: Omit<DaemonRequest, 'token'>): DaemonClientSettings {
-  const explicitStateDir = req.flags?.stateDir ?? process.env.AGENT_DEVICE_STATE_DIR;
-  const rawRemoteBaseUrl = req.flags?.daemonBaseUrl ?? process.env.AGENT_DEVICE_DAEMON_BASE_URL;
-  const useOwnedReplayStateDir =
-    isOneShotReplayCommand(req.command) && !explicitStateDir && !rawRemoteBaseUrl;
-  const remoteBaseUrl = resolveRemoteDaemonBaseUrl(rawRemoteBaseUrl);
-  const remoteAuthToken = req.flags?.daemonAuthToken ?? process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-  validateRemoteDaemonTrust(remoteBaseUrl, remoteAuthToken);
+  const explicitStateDir = resolveExplicitStateDir(req);
+  const remote = resolveRemoteClientSettings(req);
+  const transport = resolveTransportClientSettings(req, remote.remoteBaseUrl);
+  const ownedStateDir = shouldUseOwnedReplayStateDir(req, explicitStateDir, remote.rawBaseUrl);
+  const stateDir = ownedStateDir ? createOwnedReplayStateDir() : explicitStateDir;
+  return {
+    paths: resolveDaemonPaths(stateDir),
+    transportPreference: transport.preference,
+    serverMode: transport.serverMode,
+    ownedStateDir,
+    remoteBaseUrl: remote.remoteBaseUrl,
+    remoteAuthToken: remote.authToken,
+  };
+}
+
+function resolveExplicitStateDir(req: Omit<DaemonRequest, 'token'>): string | undefined {
+  return req.flags?.stateDir ?? process.env.AGENT_DEVICE_STATE_DIR;
+}
+
+function resolveRemoteClientSettings(req: Omit<DaemonRequest, 'token'>): {
+  rawBaseUrl: string | undefined;
+  remoteBaseUrl?: string;
+  authToken?: string;
+} {
+  const rawBaseUrl = req.flags?.daemonBaseUrl ?? process.env.AGENT_DEVICE_DAEMON_BASE_URL;
+  const remoteBaseUrl = resolveRemoteDaemonBaseUrl(rawBaseUrl);
+  const authToken = req.flags?.daemonAuthToken ?? process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
+  validateRemoteDaemonTrust(remoteBaseUrl, authToken);
+  return { rawBaseUrl, remoteBaseUrl, authToken };
+}
+
+function resolveTransportClientSettings(
+  req: Omit<DaemonRequest, 'token'>,
+  remoteBaseUrl: string | undefined,
+): { preference: DaemonTransportPreference; serverMode: DaemonServerMode } {
   const rawTransport = req.flags?.daemonTransport ?? process.env.AGENT_DEVICE_DAEMON_TRANSPORT;
-  const transportPreference = resolveDaemonTransportPreference(rawTransport);
-  if (remoteBaseUrl && transportPreference === 'socket') {
+  const preference = resolveDaemonTransportPreference(rawTransport);
+  if (remoteBaseUrl && preference === 'socket') {
     throw new AppError(
       'INVALID_ARGS',
       'Remote daemon base URL only supports HTTP transport. Remove --daemon-transport socket.',
@@ -475,18 +525,22 @@ function resolveClientSettings(req: Omit<DaemonRequest, 'token'>): DaemonClientS
     req.flags?.daemonServerMode ??
     process.env.AGENT_DEVICE_DAEMON_SERVER_MODE ??
     (rawTransport === 'dual' ? 'dual' : undefined);
-  const serverMode = resolveDaemonServerMode(rawServerMode);
-  const stateDir = useOwnedReplayStateDir
-    ? fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-daemon-'))
-    : explicitStateDir;
   return {
-    paths: resolveDaemonPaths(stateDir),
-    transportPreference,
-    serverMode,
-    ownedStateDir: useOwnedReplayStateDir,
-    remoteBaseUrl,
-    remoteAuthToken,
+    preference,
+    serverMode: resolveDaemonServerMode(rawServerMode),
   };
+}
+
+function shouldUseOwnedReplayStateDir(
+  req: Omit<DaemonRequest, 'token'>,
+  explicitStateDir: string | undefined,
+  rawRemoteBaseUrl: string | undefined,
+): boolean {
+  return isOneShotReplayCommand(req.command) && !explicitStateDir && !rawRemoteBaseUrl;
+}
+
+function createOwnedReplayStateDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-daemon-'));
 }
 
 async function ensureDaemon(settings: DaemonClientSettings): Promise<EnsuredDaemon> {
@@ -1131,9 +1185,11 @@ async function sendSocketRequest(
     const statePaths = resolveDaemonPaths(
       req.flags?.stateDir ?? process.env.AGENT_DEVICE_STATE_DIR,
     );
+    let settled = false;
     const timeoutHandle =
       typeof timeoutMs === 'number'
         ? setTimeout(() => {
+            settled = true;
             socket.destroy();
             reject(
               handleRequestTimeout(
@@ -1151,33 +1207,44 @@ async function sendSocketRequest(
     let buffer = '';
     socket.setEncoding('utf8');
     socket.on('data', (chunk) => {
-      buffer += chunk;
-      const idx = buffer.indexOf('\n');
-      if (idx === -1) return;
-      const line = buffer.slice(0, idx).trim();
-      if (!line) return;
-      try {
-        const response = JSON.parse(line) as DaemonResponse;
-        socket.end();
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        resolve(response);
-      } catch (err) {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-        reject(
-          new AppError(
-            'COMMAND_FAILED',
-            'Invalid daemon response',
-            {
-              requestId: req.meta?.requestId,
-              line,
-            },
-            err instanceof Error ? err : undefined,
-          ),
-        );
+      if (settled) return;
+      const parsed = consumeTextLines(buffer, chunk);
+      buffer = parsed.buffer;
+      for (const line of parsed.lines) {
+        try {
+          const message = JSON.parse(line) as unknown;
+          if (isDaemonProgressEnvelope(message)) {
+            writeRequestProgressEvent(message.event);
+            continue;
+          }
+          const response = isDaemonResponseEnvelope(message) ? message.response : message;
+          settled = true;
+          socket.end();
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          resolve(response as DaemonResponse);
+          return;
+        } catch (err) {
+          settled = true;
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          reject(
+            new AppError(
+              'COMMAND_FAILED',
+              'Invalid daemon response',
+              {
+                requestId: req.meta?.requestId,
+                line,
+              },
+              err instanceof Error ? err : undefined,
+            ),
+          );
+          return;
+        }
       }
     });
 
     socket.on('error', (err) => {
+      if (settled) return;
+      settled = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       reject(handleTransportError(err, req.meta?.requestId, false));
     });
@@ -1220,6 +1287,18 @@ async function sendHttpRequest(
         headers,
       },
       (res) => {
+        if (shouldReadDaemonProgressStream(req, res.headers?.['content-type'])) {
+          readDaemonHttpProgressResponse(res, {
+            req,
+            reject,
+            clearTimeout: () => {
+              if (timeoutHandle) clearTimeout(timeoutHandle);
+            },
+            handleResponseBody: (body) =>
+              handleDaemonHttpResponseBody(body, { info, req, resolve, reject }),
+          });
+          return;
+        }
         void readNodeHttpResponseBody(res)
           .then((body) => {
             if (timeoutHandle) clearTimeout(timeoutHandle);
