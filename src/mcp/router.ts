@@ -1,7 +1,8 @@
-import { createStatusHandoff, listTools, MCP_SERVER_NAME } from './catalog.ts';
+import { listCommandTools, commandToolExecutor } from './command-tools.ts';
 import { readVersion } from '../utils/version.ts';
 
 type JsonRpcId = string | number | null;
+const MCP_SERVER_NAME = 'agent-device';
 const SUPPORTED_PROTOCOL_VERSION = '2025-11-25';
 
 export type JsonRpcMessage = {
@@ -15,7 +16,7 @@ type JsonRpcResponse =
   | { jsonrpc: '2.0'; id: JsonRpcId; result: unknown }
   | { jsonrpc: '2.0'; id: JsonRpcId; error: { code: number; message: string } };
 
-export function handleMcpMessage(message: JsonRpcMessage): JsonRpcResponse | null {
+export async function handleMcpMessage(message: JsonRpcMessage): Promise<JsonRpcResponse | null> {
   if (message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     return errorResponse(message.id ?? null, -32600, 'Invalid JSON-RPC request.');
   }
@@ -23,7 +24,7 @@ export function handleMcpMessage(message: JsonRpcMessage): JsonRpcResponse | nul
   if (message.id === undefined) return null;
 
   try {
-    return successResponse(message.id, handleRequest(message.method, message.params));
+    return successResponse(message.id, await handleRequest(message.method, message.params));
   } catch (error) {
     if (error instanceof JsonRpcMethodNotFoundError) {
       return errorResponse(message.id, -32601, error.message);
@@ -36,7 +37,7 @@ export function handleMcpMessage(message: JsonRpcMessage): JsonRpcResponse | nul
   }
 }
 
-function handleRequest(method: string, params: unknown): unknown {
+async function handleRequest(method: string, params: unknown): Promise<unknown> {
   switch (method) {
     case 'initialize':
       return {
@@ -52,20 +53,19 @@ function handleRequest(method: string, params: unknown): unknown {
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: listTools() };
+      return { tools: listCommandTools() };
     case 'tools/call':
-      return callTool(params);
+      return await callTool(params);
     default:
       throw new JsonRpcMethodNotFoundError(`Unsupported MCP method: ${method}`);
   }
 }
 
-function callTool(params: unknown): unknown {
+async function callTool(params: unknown): Promise<unknown> {
   const record = asRecord(params);
   const name = stringField(record, 'name');
   try {
-    if (name === 'status') return statusToolResult();
-    throw new Error(`Unknown tool: ${name}`);
+    return await commandToolExecutor.execute(name, record.arguments);
   } catch (error) {
     return textToolResult(error instanceof Error ? error.message : String(error), true);
   }
@@ -79,15 +79,6 @@ function textToolResult(text: string, isError = false): unknown {
   return {
     isError,
     content: [{ type: 'text', text }],
-  };
-}
-
-function statusToolResult(): unknown {
-  const handoff = createStatusHandoff();
-  return {
-    isError: false,
-    structuredContent: handoff,
-    content: [{ type: 'text', text: JSON.stringify(handoff, null, 2) }],
   };
 }
 

@@ -5,7 +5,7 @@ import { readVersion } from './utils/version.ts';
 import { pathToFileURL } from 'node:url';
 import { sendToDaemon } from './daemon-client.ts';
 import fs from 'node:fs';
-import { parseBatchStepsJson, type BatchStep } from './core/batch.ts';
+import type { BatchStep } from './client-types.ts';
 import {
   createAgentDeviceClient,
   type AgentDeviceClientConfig,
@@ -14,6 +14,7 @@ import {
 import { materializeRemoteConnectionForCommand } from './cli/commands/connection-runtime.ts';
 import { tryRunClientBackedCommand } from './cli/commands/router.ts';
 import { runReactDevtoolsCommand } from './cli/commands/react-devtools.ts';
+import { readCliBatchStepsJson } from './cli/batch-steps.ts';
 import {
   createRequestId,
   emitDiagnostic,
@@ -295,10 +296,10 @@ export async function runCli(argv: string[], deps: CliDeps = DEFAULT_CLI_DEPS): 
           }
           const batchSteps = parsedBatchSteps.map((step, _index) => ({
             ...step,
-            flags:
+            input:
               binding.lockPolicy && flags.platform === undefined
-                ? { ...((step.flags ?? {}) as Partial<typeof flags>) }
-                : applyDefaultPlatformBinding((step.flags ?? {}) as Partial<typeof flags>, {
+                ? { ...step.input }
+                : applyDefaultPlatformBinding(step.input, {
                     policyOverrides: effectiveFlags,
                     configuredPlatform: effectiveFlags.platform,
                     configuredSession: effectiveFlags.session,
@@ -384,7 +385,7 @@ function readBatchSteps(flags: ReturnType<typeof resolveCliOptions>['flags']): B
       );
     }
   }
-  return parseBatchStepsJson(raw);
+  return readCliBatchStepsJson(raw);
 }
 
 function isDaemonStartupFailure(error: AppError): boolean {

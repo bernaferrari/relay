@@ -1,12 +1,17 @@
 import { handleMcpMessage, type JsonRpcMessage } from './router.ts';
 
-type JsonRpcResponse = NonNullable<ReturnType<typeof handleMcpMessage>>;
+type JsonRpcResponse = Awaited<NonNullable<ReturnType<typeof handleMcpMessage>>>;
+type JsonRpcId = string | number | null;
 type MessageSink = (message: JsonRpcMessage | JsonRpcMessage[]) => void;
+type PayloadHandler = (
+  messageOrBatch: JsonRpcMessage | JsonRpcMessage[],
+) => Promise<unknown | null>;
+type MessageWriter = (message: unknown) => void;
 
 export async function runAgentDeviceMcpServer(): Promise<void> {
+  const payloadQueue = createMcpPayloadQueue();
   const decoder = new McpMessageDecoder((messageOrBatch) => {
-    const response = handleMcpPayload(messageOrBatch);
-    if (response) writeMessage(response);
+    payloadQueue.push(messageOrBatch);
   });
 
   process.stdin.setEncoding('utf8');
@@ -30,14 +35,68 @@ export async function runAgentDeviceMcpServer(): Promise<void> {
     process.stdin.on('close', resolve);
     process.stdin.resume();
   });
+  await payloadQueue.idle();
 }
 
-function handleMcpPayload(messageOrBatch: JsonRpcMessage | JsonRpcMessage[]): unknown | null {
+export function createMcpPayloadQueue(
+  options: {
+    handlePayload?: PayloadHandler;
+    write?: MessageWriter;
+  } = {},
+): {
+  push: (messageOrBatch: JsonRpcMessage | JsonRpcMessage[]) => void;
+  idle: () => Promise<void>;
+} {
+  const handlePayload = options.handlePayload ?? handleMcpPayload;
+  const write = options.write ?? writeMessage;
+  let pending = Promise.resolve();
+  return {
+    push: (messageOrBatch) => {
+      const fallbackId = fallbackErrorId(messageOrBatch);
+      pending = pending
+        .then(async () => {
+          const response = await handlePayload(messageOrBatch);
+          if (response) write(response);
+        })
+        .catch((error: unknown) => {
+          write({
+            jsonrpc: '2.0',
+            id: fallbackId,
+            error: {
+              code: -32603,
+              message: error instanceof Error ? error.message : String(error),
+            },
+          });
+        });
+    },
+    idle: async () => {
+      await pending;
+    },
+  };
+}
+
+export function handleMcpPayload(
+  messageOrBatch: JsonRpcMessage | JsonRpcMessage[],
+): Promise<unknown | null> {
   if (Array.isArray(messageOrBatch)) {
-    const responses = messageOrBatch.flatMap((message) => responseArray(handleMcpMessage(message)));
-    return responses.length > 0 ? responses : null;
+    return handleMcpBatch(messageOrBatch);
   }
   return handleMcpMessage(messageOrBatch);
+}
+
+async function handleMcpBatch(messages: JsonRpcMessage[]): Promise<JsonRpcResponse[] | null> {
+  const responses: JsonRpcResponse[] = [];
+  for (const message of messages) {
+    responses.push(...responseArray(await handleMcpMessage(message)));
+  }
+  return responses.length > 0 ? responses : null;
+}
+
+function fallbackErrorId(messageOrBatch: JsonRpcMessage | JsonRpcMessage[]): JsonRpcId {
+  if (Array.isArray(messageOrBatch)) {
+    return messageOrBatch.length === 1 ? (messageOrBatch[0]?.id ?? null) : null;
+  }
+  return messageOrBatch.id ?? null;
 }
 
 class McpMessageDecoder {
