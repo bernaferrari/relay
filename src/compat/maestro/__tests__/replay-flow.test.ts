@@ -90,7 +90,7 @@ env:
   assert.equal(parsed.actions[3]?.flags.intervalMs, 150);
   assert.equal(parsed.actions[4]?.flags.holdMs, 3000);
   assert.equal(parsed.actions[1]?.flags.maestro?.allowNonHittableCoordinateFallback, true);
-  assert.equal(parsed.actions[6]?.flags?.maestro?.allowNonHittableCoordinateFallback, undefined);
+  assert.equal(parsed.actions[6]?.flags?.maestro?.allowNonHittableCoordinateFallback, true);
 });
 
 test('parseMaestroReplayFlow maps iOS openLink through the app id when available', () => {
@@ -223,7 +223,7 @@ test('parseMaestroReplayFlow keeps focused inputText and pressKey Enter as separ
   assert.deepEqual(parsed.actionLines, [3, 4, 5]);
 });
 
-test('parseMaestroReplayFlow marks tapOn before inputText for snapshot tap focus', () => {
+test('parseMaestroReplayFlow keeps tapOn inputText without Enter on Maestro path', () => {
   const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
 ---
 - tapOn:
@@ -238,7 +238,29 @@ test('parseMaestroReplayFlow marks tapOn before inputText for snapshot tap focus
       ['type', ['Saved list']],
     ],
   );
-  assert.equal(parsed.actions[0]?.flags?.maestro?.allowNonHittableCoordinateFallback, undefined);
+  assert.deepEqual(parsed.actionLines, [3, 5]);
+  assert.equal(parsed.actions[0]?.flags?.maestro?.allowNonHittableCoordinateFallback, true);
+});
+
+test('parseMaestroReplayFlow preserves optional tapOn before inputText without Enter', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- tapOn:
+    id: editableNameInput
+    optional: true
+- inputText: Saved list
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['__maestroTapOn', ['id="editableNameInput"']],
+      ['type', ['Saved list']],
+    ],
+  );
+  assert.deepEqual(parsed.actionLines, [3, 6]);
+  assert.equal(parsed.actions[0]?.flags?.maestro?.optional, true);
+  assert.equal(parsed.actions[0]?.flags?.maestro?.allowNonHittableCoordinateFallback, true);
 });
 
 test('parseMaestroReplayFlow coalesces tapOn inputText while preserving pressKey Enter submit', () => {
@@ -279,6 +301,27 @@ test('parseMaestroReplayFlow does not coalesce text entry for non-input-looking 
     ],
   );
   assert.equal(parsed.actions[0]?.flags?.maestro?.allowNonHittableCoordinateFallback, undefined);
+});
+
+test('parseMaestroReplayFlow maps focused input commands to native type and keyboard actions', () => {
+  const parsed = parseMaestroReplayFlow(`appId: com.callstack.agentdevicelab
+---
+- inputText: hello
+- eraseText:
+    charactersToErase: 3
+- pasteText: pasted
+- pressKey: Return
+`);
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => [entry.command, entry.positionals]),
+    [
+      ['type', ['hello']],
+      ['type', ['\b'.repeat(3)]],
+      ['type', ['pasted']],
+      ['__maestroPressEnter', []],
+    ],
+  );
 });
 
 test('parseMaestroReplayFlow rejects relative runScript paths without source path', () => {
