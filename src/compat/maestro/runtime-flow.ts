@@ -1,11 +1,6 @@
-import { type CommandFlags } from '../../core/dispatch.ts';
-import type { DaemonRequest, DaemonResponse } from '../../daemon/types.ts';
+import type { DaemonRequest, DaemonResponse, SessionReplayControl } from '../../daemon/types.ts';
 import { getSnapshotReferenceFrame } from '../../daemon/touch-reference-frame.ts';
-import {
-  batchStepsToSessionActions,
-  invokeReplayActionBlock,
-  invokeReplayRetryBlock,
-} from '../../replay/control-flow-runtime.ts';
+import { invokeReplayActionBlock } from '../../replay/control-flow-runtime.ts';
 import {
   captureMaestroRawSnapshot,
   errorResponse,
@@ -24,70 +19,25 @@ const MAESTRO_RUN_FLOW_WHEN_POLICY = {
   visiblePollMs: 250,
 } as const;
 
-type MaestroRunFlowWhenCondition =
-  | { ok: true; mode: string; selector: string }
-  | { ok: false; response: DaemonResponse };
+type MaestroRunFlowWhenControl = Extract<SessionReplayControl, { kind: 'maestroRunFlowWhen' }>;
 
-export async function invokeMaestroRunFlowWhen(params: {
+export async function invokeMaestroRunFlowWhenControl(params: {
   baseReq: ReplayBaseRequest;
-  positionals: string[];
-  batchSteps: CommandFlags['batchSteps'] | undefined;
+  control: MaestroRunFlowWhenControl;
   line: number;
   step: number;
   invoke: (req: DaemonRequest) => Promise<DaemonResponse>;
   invokeReplayAction: MaestroReplayInvoker;
 }): Promise<DaemonResponse> {
-  const condition = readMaestroRunFlowWhenCondition(params.positionals);
-  if (!condition.ok) return condition.response;
-  const conditionResult = await evaluateMaestroRunFlowWhenCondition(params, condition);
+  const conditionResult = await evaluateMaestroRunFlowWhenCondition(params, params.control);
   if (!conditionResult.ok) return conditionResult.response;
   if (!conditionResult.matched) {
     return {
       ok: true,
-      data: { skipped: true, condition: condition.mode, selector: condition.selector },
+      data: { skipped: true, condition: params.control.mode, selector: params.control.selector },
     };
   }
-  return await invokeMaestroRunFlowWhenSteps(params, condition);
-}
-
-export async function invokeMaestroRetry(params: {
-  positionals: string[];
-  batchSteps: CommandFlags['batchSteps'] | undefined;
-  line: number;
-  step: number;
-  invokeReplayAction: MaestroReplayInvoker;
-}): Promise<DaemonResponse> {
-  const [maxRetriesValue = '1'] = params.positionals;
-  const maxRetries = Number(maxRetriesValue);
-  if (!Number.isInteger(maxRetries) || maxRetries < 0) {
-    return errorResponse('INVALID_ARGS', 'retry.maxRetries must be a non-negative integer.');
-  }
-
-  return await invokeReplayRetryBlock({
-    actions: batchStepsToSessionActions(params.batchSteps),
-    maxRetries,
-    line: params.line,
-    step: params.step,
-    invokeReplayAction: params.invokeReplayAction,
-  });
-}
-
-function readMaestroRunFlowWhenCondition(positionals: string[]): MaestroRunFlowWhenCondition {
-  const [mode, selector] = positionals;
-  if ((mode !== 'visible' && mode !== 'notVisible') || !selector) {
-    return {
-      ok: false,
-      response: errorResponse(
-        'INVALID_ARGS',
-        'runFlow.when requires visible/notVisible and a selector.',
-      ),
-    };
-  }
-  return {
-    ok: true,
-    mode,
-    selector,
-  };
+  return await invokeMaestroRunFlowWhenSteps(params);
 }
 
 async function evaluateMaestroRunFlowWhenCondition(
@@ -95,7 +45,7 @@ async function evaluateMaestroRunFlowWhenCondition(
     baseReq: ReplayBaseRequest;
     invoke: (req: DaemonRequest) => Promise<DaemonResponse>;
   },
-  condition: Extract<MaestroRunFlowWhenCondition, { ok: true }>,
+  condition: MaestroRunFlowWhenControl,
 ): Promise<{ ok: true; matched: boolean } | { ok: false; response: DaemonResponse }> {
   if (condition.mode === 'visible') {
     return await waitForMaestroRunFlowVisibleCondition(params, condition);
@@ -118,7 +68,7 @@ async function waitForMaestroRunFlowVisibleCondition(
     baseReq: ReplayBaseRequest;
     invoke: (req: DaemonRequest) => Promise<DaemonResponse>;
   },
-  condition: Extract<MaestroRunFlowWhenCondition, { ok: true }>,
+  condition: MaestroRunFlowWhenControl,
 ): Promise<{ ok: true; matched: boolean } | { ok: false; response: DaemonResponse }> {
   // Maestro conditionals commonly guard UI that appears immediately after the
   // previous command. Keep this bounded and only for visible; notVisible stays
@@ -160,17 +110,14 @@ function readMaestroRunFlowVisibleCondition(
   return { ok: true, matched };
 }
 
-async function invokeMaestroRunFlowWhenSteps(
-  params: {
-    batchSteps: CommandFlags['batchSteps'] | undefined;
-    line: number;
-    step: number;
-    invokeReplayAction: MaestroReplayInvoker;
-  },
-  condition: Extract<MaestroRunFlowWhenCondition, { ok: true }>,
-): Promise<DaemonResponse> {
+async function invokeMaestroRunFlowWhenSteps(params: {
+  control: MaestroRunFlowWhenControl;
+  line: number;
+  step: number;
+  invokeReplayAction: MaestroReplayInvoker;
+}): Promise<DaemonResponse> {
   const response = await invokeReplayActionBlock({
-    actions: batchStepsToSessionActions(params.batchSteps),
+    actions: params.control.actions,
     line: params.line,
     step: params.step,
     invokeReplayAction: params.invokeReplayAction,
@@ -179,6 +126,10 @@ async function invokeMaestroRunFlowWhenSteps(
 
   return {
     ok: true,
-    data: { ran: response.data?.ran, condition: condition.mode, selector: condition.selector },
+    data: {
+      ran: response.data?.ran,
+      condition: params.control.mode,
+      selector: params.control.selector,
+    },
   };
 }

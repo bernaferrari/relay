@@ -1,8 +1,6 @@
-import type { CommandFlags } from '../../core/dispatch.ts';
 import type { SessionAction } from '../../daemon/types.ts';
 import { AppError } from '../../utils/errors.ts';
 import { maestroSelector } from './interactions.ts';
-import { MAESTRO_RUNTIME_COMMAND } from './runtime-commands.ts';
 import {
   action,
   assertOnlyKeys,
@@ -107,8 +105,10 @@ export function convertRetry(
   const commands = normalizeCommandList(value.commands);
   const actions = convertCommandList(commands, config, context, deps);
   return [
-    action(MAESTRO_RUNTIME_COMMAND.retry, [String(maxRetries)], {
-      batchSteps: actions.map(sessionActionToBatchStep),
+    replayControlAction('retry', [String(maxRetries)], {
+      kind: 'retry',
+      maxRetries,
+      actions,
     }),
   ];
 }
@@ -412,31 +412,33 @@ function wrapRunFlowCondition(
   actions: SessionAction[],
   condition: RunFlowCondition,
 ): SessionAction[] {
-  if (!condition.visibleSelector && !condition.notVisibleSelector) return actions;
-  if (condition.visibleSelector && condition.notVisibleSelector) {
+  const { visibleSelector, notVisibleSelector } = condition;
+  if (!visibleSelector && !notVisibleSelector) return actions;
+  if (visibleSelector && notVisibleSelector) {
     throw unsupportedMaestroSyntax(
       'Maestro runFlow.when cannot combine visible and notVisible yet.',
     );
   }
+  const mode = visibleSelector ? 'visible' : 'notVisible';
+  const selector = visibleSelector ?? notVisibleSelector ?? '';
   return [
-    action(
-      MAESTRO_RUNTIME_COMMAND.runFlowWhen,
-      condition.visibleSelector
-        ? ['visible', condition.visibleSelector]
-        : ['notVisible', condition.notVisibleSelector ?? ''],
-      { batchSteps: actions.map(sessionActionToBatchStep) },
-    ),
+    replayControlAction('runFlow.when', [mode, selector], {
+      kind: 'maestroRunFlowWhen',
+      mode,
+      selector,
+      actions,
+    }),
   ];
 }
 
-function sessionActionToBatchStep(
-  entry: SessionAction,
-): NonNullable<CommandFlags['batchSteps']>[number] {
+function replayControlAction(
+  command: string,
+  positionals: string[],
+  replayControl: NonNullable<SessionAction['replayControl']>,
+): SessionAction {
   return {
-    command: entry.command,
-    positionals: entry.positionals,
-    flags: entry.flags,
-    ...(entry.runtime !== undefined ? { runtime: entry.runtime } : {}),
+    ...action(command, positionals),
+    replayControl,
   };
 }
 
