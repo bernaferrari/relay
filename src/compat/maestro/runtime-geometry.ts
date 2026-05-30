@@ -1,3 +1,4 @@
+import { clampToRange } from '../../core/scroll-gesture.ts';
 import type { Rect, SnapshotNode } from '../../utils/snapshot.ts';
 import { interiorCoordinate, pointInsideRect } from '../../utils/rect-center.ts';
 import { normalizeType } from '../../utils/snapshot-processing.ts';
@@ -39,25 +40,37 @@ export function swipeCoordinatesFromTarget(
       return {
         ok: true,
         start: center,
-        end: { x: center.x, y: clampCoordinate(center.y - verticalDistance, minY, maxY) },
+        end: {
+          x: center.x,
+          y: clampToRange(center.y - verticalDistance, minY, maxY),
+        },
       };
     case 'down':
       return {
         ok: true,
         start: center,
-        end: { x: center.x, y: clampCoordinate(center.y + verticalDistance, minY, maxY) },
+        end: {
+          x: center.x,
+          y: clampToRange(center.y + verticalDistance, minY, maxY),
+        },
       };
     case 'left':
       return {
         ok: true,
         start: center,
-        end: { x: clampCoordinate(center.x - horizontalDistance, minX, maxX), y: center.y },
+        end: {
+          x: clampToRange(center.x - horizontalDistance, minX, maxX),
+          y: center.y,
+        },
       };
     case 'right':
       return {
         ok: true,
         start: center,
-        end: { x: clampCoordinate(center.x + horizontalDistance, minX, maxX), y: center.y },
+        end: {
+          x: clampToRange(center.x + horizontalDistance, minX, maxX),
+          y: center.y,
+        },
       };
     default:
       return { ok: false, message: 'swipe.label direction must be up, down, left, or right.' };
@@ -92,10 +105,6 @@ function swipeDistance(frameSize: number | undefined, rectSize: number): number 
       Math.max(MAESTRO_GEOMETRY_POLICY.swipe.minDistancePx, screenRelative, rectSize * 1.5),
     ),
   );
-}
-
-function clampCoordinate(value: number, min: number, max: number): number {
-  return Math.round(Math.min(max, Math.max(min, value)));
 }
 
 function shouldBiasMaestroVisibleTextTap(
