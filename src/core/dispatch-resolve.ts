@@ -8,17 +8,13 @@ import {
   type DeviceTarget,
   type PlatformSelector,
 } from '../utils/device.ts';
-import { listAndroidDevices } from '../platforms/android/devices.ts';
-import { ensureAdb } from '../platforms/android/adb.ts';
-import { findBootableIosSimulator, listAppleDevices } from '../platforms/ios/devices.ts';
-import { listLinuxDevices } from '../platforms/linux/devices.ts';
-import { listMacosDevices } from '../platforms/macos/devices.ts';
 import { withDiagnosticTimer } from '../utils/diagnostics.ts';
 import {
   resolveAndroidSerialAllowlist,
   resolveIosSimulatorDeviceSetPath,
 } from '../utils/device-isolation.ts';
-import type { CliFlags } from '../utils/command-schema.ts';
+import type { CliFlags } from '../utils/cli-flags.ts';
+import { listLocalDeviceInventory, type DeviceInventoryRequest } from './platform-inventory.ts';
 type ResolveDeviceFlags = Pick<
   CliFlags,
   | 'platform'
@@ -33,15 +29,7 @@ type ResolveDeviceFlags = Pick<
 const resolveTargetDeviceCacheScope = new AsyncLocalStorage<Map<string, DeviceInfo>>();
 const deviceInventoryProviderScope = new AsyncLocalStorage<DeviceInventoryProvider>();
 
-export type DeviceInventoryRequest = {
-  platform?: PlatformSelector;
-  target?: DeviceTarget;
-  deviceName?: string;
-  udid?: string;
-  serial?: string;
-  iosSimulatorSetPath?: string;
-  androidSerialAllowlist?: string[];
-};
+export type { DeviceInventoryRequest };
 
 export type DeviceInventoryProvider = (
   request: DeviceInventoryRequest,
@@ -70,6 +58,7 @@ async function resolveAppleDevice(
   const selected = await resolveAppleDeviceCandidate(devices, selector, context);
 
   if (shouldUseAppleSimulatorFallback(selector, selected)) {
+    const { findBootableIosSimulator } = await import('../platforms/ios/devices.ts');
     const simulator = await findBootableIosSimulator({
       simulatorSetPath: context.simulatorSetPath,
       target: selector.target,
@@ -192,10 +181,6 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
         );
       }
 
-      if (selector.platform === 'android') {
-        await ensureAdb();
-      }
-
       const devices = await listLocalDeviceInventory({
         ...selector,
         iosSimulatorSetPath,
@@ -219,16 +204,6 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
       );
     },
     diagnosticData,
-  );
-}
-
-function shouldUseHostMacFastPath(selector: {
-  platform?: PlatformSelector;
-  target?: DeviceTarget;
-}): boolean {
-  return (
-    selector.platform === 'macos' ||
-    (selector.platform === 'apple' && selector.target === 'desktop')
   );
 }
 
@@ -267,56 +242,6 @@ async function readInjectedDeviceInventory(
   const devices = await provider(request);
   if (devices === undefined || devices === null) return null;
   return devices.map((device) => ({ ...device }));
-}
-
-async function listLocalDeviceInventory(request: DeviceInventoryRequest): Promise<DeviceInfo[]> {
-  if (shouldUseHostMacFastPath(request)) {
-    return await listMacosDevices();
-  }
-
-  if (request.platform === 'linux') {
-    return await listLinuxDevices();
-  }
-
-  if (request.platform === 'android') {
-    return await listAndroidDevices({
-      serialAllowlist: request.androidSerialAllowlist
-        ? new Set(request.androidSerialAllowlist)
-        : undefined,
-    });
-  }
-
-  if (request.platform) {
-    return await listAppleDevices({
-      simulatorSetPath: request.iosSimulatorSetPath,
-      udid: request.udid,
-    });
-  }
-
-  const devices: DeviceInfo[] = [];
-  try {
-    devices.push(
-      ...(await listAndroidDevices({
-        serialAllowlist: request.androidSerialAllowlist
-          ? new Set(request.androidSerialAllowlist)
-          : undefined,
-      })),
-    );
-  } catch {}
-  try {
-    devices.push(
-      ...(await listAppleDevices({
-        simulatorSetPath: request.iosSimulatorSetPath,
-        udid: request.udid,
-      })),
-    );
-  } catch {}
-  // Linux local device is appended last so it does not displace
-  // connected Android/Apple devices in implicit auto-selection.
-  try {
-    devices.push(...(await listLinuxDevices()));
-  } catch {}
-  return devices;
 }
 
 function isAppleResolutionSelector(selector: {
