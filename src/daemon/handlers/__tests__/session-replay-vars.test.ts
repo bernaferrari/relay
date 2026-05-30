@@ -224,6 +224,38 @@ test('resolveReplayAction walks runtime hints', () => {
   assert.equal(resolved.runtime?.metroHost, '10.0.0.1');
 });
 
+test('resolveReplayAction resolves replay control conditions without pre-resolving nested actions', () => {
+  const action: SessionAction = {
+    ts: 0,
+    command: 'runFlow.when',
+    positionals: ['visible', '${VISIBLE}'],
+    flags: {},
+    replayControl: {
+      kind: 'maestroRunFlowWhen',
+      mode: 'visible',
+      selector: '${VISIBLE}',
+      actions: [
+        {
+          ts: 0,
+          command: 'tap',
+          positionals: ['${TARGET}'],
+          flags: {},
+        },
+      ],
+    },
+  };
+  const scope = buildReplayVarScope({
+    fileEnv: { VISIBLE: 'Feed', TARGET: '${NEXT}', NEXT: 'Done' },
+  });
+  const resolved = resolveReplayAction(action, scope, LOC);
+  assert.equal(resolved.replayControl?.kind, 'maestroRunFlowWhen');
+  if (resolved.replayControl?.kind !== 'maestroRunFlowWhen') {
+    throw new Error('expected runFlow.when control');
+  }
+  assert.equal(resolved.replayControl.selector, 'Feed');
+  assert.deepEqual(resolved.replayControl.actions[0]?.positionals, ['${TARGET}']);
+});
+
 test('parseReplayScriptDetailed tracks line numbers', () => {
   const script = [
     '# comment',
@@ -302,6 +334,33 @@ test('runReplayScriptFile rejects replay -u on scripts with env directives', asy
   if (!response.ok) {
     assert.equal(response.error.code, 'INVALID_ARGS');
     assert.match(response.error.message, /replay -u does not yet preserve env directives/);
+  }
+});
+
+test('runReplayScriptFile rejects replay -u for Maestro compat flow controls before serialization', async () => {
+  const { response } = await runReplayFixture({
+    label: 'maestro-replay-update-flow-control',
+    script: [
+      'appId: demo.app',
+      '---',
+      '- runFlow:',
+      '    when:',
+      '      visible: Feed',
+      '    commands:',
+      '      - tapOn: Continue',
+      '- retry:',
+      '    maxRetries: 1',
+      '    commands:',
+      '      - assertVisible: Feed',
+      '',
+    ].join('\n'),
+    flags: { replayBackend: 'maestro', replayUpdate: true },
+  });
+
+  assert.equal(response.ok, false);
+  if (!response.ok) {
+    assert.equal(response.error.code, 'INVALID_ARGS');
+    assert.match(response.error.message, /replay -u is not supported for compat flow input/);
   }
 });
 
@@ -1850,6 +1909,72 @@ test('runReplayScriptFile runs nested Maestro runtime commands inside runFlow.wh
     [
       ['snapshot', []],
       ['wait', ['label="Done" || text="Done" || id="Done"', '500']],
+    ],
+  );
+});
+
+test('runReplayScriptFile resolves nested Maestro runFlow.when command variables once at execution', async () => {
+  const calls: CapturedInvocation[] = [];
+  const { response } = await runReplayFixture({
+    label: 'maestro-run-flow-when-nested-vars',
+    script: [
+      'appId: demo.app',
+      'env:',
+      '  TARGET_LABEL: ${NEXT_LABEL}',
+      '  NEXT_LABEL: ${FINAL_LABEL}',
+      '  FINAL_LABEL: Done',
+      '---',
+      '- runFlow:',
+      '    when:',
+      '      visible: Feed',
+      '    commands:',
+      '      - tapOn: ${TARGET_LABEL}',
+      '',
+    ].join('\n'),
+    flags: { replayBackend: 'maestro' },
+    invoke: async (req) => {
+      calls.push({ command: req.command, positionals: req.positionals, flags: req.flags });
+      if (req.command === 'snapshot') {
+        return {
+          ok: true,
+          data: {
+            nodes: [
+              {
+                index: 0,
+                type: 'application',
+                rect: { x: 0, y: 0, width: 390, height: 844 },
+              },
+              {
+                index: 1,
+                depth: 1,
+                parentIndex: 0,
+                type: 'statictext',
+                label: 'Feed',
+                rect: { x: 16, y: 100, width: 120, height: 24 },
+              },
+              {
+                index: 2,
+                depth: 1,
+                parentIndex: 0,
+                type: 'button',
+                label: '${FINAL_LABEL}',
+                rect: { x: 100, y: 300, width: 80, height: 40 },
+              },
+            ],
+          },
+        };
+      }
+      return { ok: true, data: {} };
+    },
+  });
+
+  assert.equal(response.ok, true);
+  assert.deepEqual(
+    calls.map((call) => [call.command, call.positionals]),
+    [
+      ['snapshot', []],
+      ['snapshot', []],
+      ['click', ['140', '320']],
     ],
   );
 });
