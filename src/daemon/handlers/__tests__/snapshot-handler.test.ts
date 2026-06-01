@@ -9,6 +9,7 @@ import { SessionStore } from '../../session-store.ts';
 import type { SessionState } from '../../types.ts';
 import { AppError } from '../../../utils/errors.ts';
 import { buildSnapshotSignatures } from '../../android-snapshot-freshness.ts';
+import { buildInteractionSurfaceSignature } from '../../interaction-outcome-policy.ts';
 import { buildSnapshotPresentationKey } from '../../../utils/snapshot.ts';
 
 vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
@@ -717,6 +718,163 @@ test('Android ref refresh mode does not retry narrow snapshots as sharp drops', 
 
   expect(result.freshness).toBeUndefined();
   expect(mockDispatch).toHaveBeenCalledTimes(1);
+  expect(session.androidSnapshotFreshness).toBeUndefined();
+});
+
+test('captureSnapshot lazily retries pending no-change touch before returning fresh state', async () => {
+  const sessionName = 'ios-lazy-outcome-retry';
+  const session = makeSession(sessionName, iosSimulatorDevice);
+  const baselineNodes = [
+    {
+      ref: 'e1',
+      index: 0,
+      depth: 0,
+      type: 'Button',
+      label: 'Open feed',
+      identifier: 'open-feed',
+      hittable: true,
+      rect: { x: 20, y: 120, width: 160, height: 48 },
+    },
+  ];
+  session.snapshot = {
+    nodes: baselineNodes,
+    createdAt: Date.now(),
+    backend: 'xctest',
+  };
+  session.pendingInteractionOutcome = {
+    action: 'click',
+    command: 'press',
+    positionals: ['100', '144'],
+    flags: { platform: 'ios' },
+    markedAt: Date.now(),
+    attemptsRemaining: 2,
+    preSignature: [
+      {
+        key: 'open-feed|Open feed||Button||enabled|unselected|hittable|#0',
+        x: 20,
+        y: 120,
+        width: 160,
+        height: 48,
+      },
+    ],
+  };
+
+  mockDispatch
+    .mockResolvedValueOnce({
+      nodes: baselineNodes,
+      backend: 'xctest',
+    })
+    .mockResolvedValueOnce({ clicked: true })
+    .mockResolvedValueOnce({
+      nodes: [
+        {
+          index: 0,
+          depth: 0,
+          type: 'Button',
+          label: 'Back',
+          identifier: 'back',
+          hittable: true,
+          rect: { x: 20, y: 60, width: 90, height: 44 },
+        },
+        {
+          index: 1,
+          depth: 0,
+          type: 'StaticText',
+          label: 'Feed',
+          rect: { x: 20, y: 140, width: 160, height: 48 },
+        },
+      ],
+      backend: 'xctest',
+    });
+
+  const result = await captureSnapshot({
+    device: iosSimulatorDevice,
+    session,
+    flags: { snapshotInteractiveOnly: true },
+    logPath: '/tmp/daemon.log',
+  });
+
+  expect(result.snapshot.nodes).toEqual(
+    expect.arrayContaining([expect.objectContaining({ label: 'Feed' })]),
+  );
+  expect(mockDispatch.mock.calls.map((call) => call[1])).toEqual(['snapshot', 'press', 'snapshot']);
+  expect(mockDispatch.mock.calls[1]?.[2]).toEqual(['100', '144']);
+  expect(session.pendingInteractionOutcome).toBeUndefined();
+});
+
+test('captureSnapshot composes pending outcome retry with Android freshness capture', async () => {
+  const sessionName = 'android-lazy-outcome-freshness';
+  const session = makeSession(sessionName, androidDevice);
+  const baselineNodes = Array.from({ length: 18 }, (_, index) => ({
+    ref: `e${index + 1}`,
+    index,
+    depth: 0,
+    type: 'android.widget.TextView',
+    label: `Inbox row ${index + 1}`,
+  }));
+  session.snapshot = {
+    nodes: baselineNodes,
+    createdAt: Date.now(),
+    backend: 'android',
+    comparisonSafe: true,
+  };
+  session.androidSnapshotFreshness = {
+    action: 'click',
+    markedAt: Date.now(),
+    baselineCount: baselineNodes.length,
+    baselineSignatures: buildSnapshotSignatures(baselineNodes),
+    routeComparable: true,
+  };
+  session.pendingInteractionOutcome = {
+    action: 'click',
+    command: 'press',
+    positionals: ['180', '330'],
+    flags: { platform: 'android' },
+    markedAt: Date.now(),
+    attemptsRemaining: 2,
+    preSignature: buildInteractionSurfaceSignature(baselineNodes),
+  };
+
+  mockDispatch
+    .mockResolvedValueOnce({
+      nodes: [],
+      truncated: false,
+      backend: 'android',
+      analysis: { rawNodeCount: 18, maxDepth: 1 },
+    })
+    .mockResolvedValueOnce({
+      nodes: [
+        {
+          index: 0,
+          depth: 0,
+          type: 'android.widget.Button',
+          label: 'Create document',
+          hittable: true,
+        },
+      ],
+      truncated: false,
+      backend: 'android',
+      analysis: { rawNodeCount: 1, maxDepth: 0 },
+    });
+
+  const result = await captureSnapshot({
+    device: androidDevice,
+    session,
+    flags: { snapshotInteractiveOnly: true },
+    logPath: '/tmp/daemon.log',
+  });
+
+  expect(result.snapshot.nodes).toEqual(
+    expect.arrayContaining([expect.objectContaining({ label: 'Create document' })]),
+  );
+  expect(result.freshness).toEqual({
+    action: 'click',
+    retryCount: 1,
+    staleAfterRetries: false,
+    reason: undefined,
+  });
+  expect(mockDispatch.mock.calls.map((call) => call[1])).toEqual(['snapshot', 'snapshot']);
+  expect(session.pendingInteractionOutcome).toBeUndefined();
   expect(session.androidSnapshotFreshness).toBeUndefined();
 });
 
