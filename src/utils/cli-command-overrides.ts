@@ -65,6 +65,15 @@ const CLI_COMMAND_OVERRIDES = {
     summary: 'Boot target device/simulator',
     allowedFlags: ['headless'],
   },
+  prepare: {
+    usageOverride: 'prepare ios-runner --platform ios [--timeout <ms>]',
+    listUsageOverride: 'prepare ios-runner --platform ios',
+    helpDescription:
+      'Prepare platform helper infrastructure. ios-runner builds/reuses and starts the XCTest runner so later iOS snapshots and interactions do not pay first-use startup cost.',
+    summary: 'Prepare platform helpers',
+    positionalArgs: ['ios-runner'],
+    allowedFlags: ['timeoutMs'],
+  },
   open: {
     helpDescription:
       'Boot device/simulator; optionally launch app or deep link URL (macOS also supports --surface app|frontmost-app|desktop|menubar)',
@@ -107,9 +116,10 @@ const CLI_COMMAND_OVERRIDES = {
     positionalArgs: ['bundleOrPackage', 'payloadOrJson'],
   },
   snapshot: {
-    usageOverride: 'snapshot [--diff] [-i] [-c] [-d <depth>] [-s <scope>] [--raw] [--force-full]',
+    usageOverride:
+      'snapshot [--diff] [-i] [-c] [-d <depth>] [-s <scope>] [--raw] [--force-full] [--timeout <ms>]',
     helpDescription: 'Capture accessibility tree or diff against the previous session baseline',
-    allowedFlags: ['snapshotDiff', ...SNAPSHOT_FLAGS, 'snapshotForceFull'],
+    allowedFlags: ['snapshotDiff', ...SNAPSHOT_FLAGS, 'snapshotForceFull', 'timeoutMs'],
   },
   diff: {
     usageOverride:

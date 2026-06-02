@@ -26,6 +26,7 @@ export const PUBLIC_COMMANDS = {
   network: 'network',
   open: 'open',
   perf: 'perf',
+  prepare: 'prepare',
   press: 'press',
   push: 'push',
   record: 'record',
@@ -129,6 +130,7 @@ const MCP_UNEXPOSED_CLI_COMMANDS = commandSet(
   LOCAL_CLI_COMMANDS.disconnect,
   LOCAL_CLI_COMMANDS.mcp,
   LOCAL_CLI_COMMANDS.reactDevtools,
+  PUBLIC_COMMANDS.prepare,
 );
 
 const CAPABILITY_EXEMPT_CLI_COMMANDS = commandSet(
@@ -141,6 +143,7 @@ const CAPABILITY_EXEMPT_CLI_COMMANDS = commandSet(
   LOCAL_CLI_COMMANDS.reactDevtools,
   LOCAL_CLI_COMMANDS.session,
   PUBLIC_COMMANDS.appState,
+  PUBLIC_COMMANDS.prepare,
   PUBLIC_COMMANDS.batch,
   PUBLIC_COMMANDS.devices,
   PUBLIC_COMMANDS.gesture,
@@ -249,6 +252,7 @@ export const DAEMON_COMMAND_GROUPS = {
     PUBLIC_COMMANDS.network,
     PUBLIC_COMMANDS.open,
     PUBLIC_COMMANDS.perf,
+    PUBLIC_COMMANDS.prepare,
     PUBLIC_COMMANDS.push,
     PUBLIC_COMMANDS.reinstall,
     PUBLIC_COMMANDS.replay,
