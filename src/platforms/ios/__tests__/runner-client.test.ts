@@ -32,6 +32,7 @@ vi.mock('../runner-macos-products.ts', async () => {
 import type { DeviceInfo } from '../../../utils/device.ts';
 import { AppError } from '../../../utils/errors.ts';
 import type { RunnerCommand } from '../runner-contract.ts';
+import { withRunnerCommandId } from '../runner-contract.ts';
 import {
   assertSafeDerivedCleanup,
   isRetryableRunnerError,
@@ -159,6 +160,7 @@ const runnerProtocolCommandFixtures: Record<RunnerCommand['command'], RunnerComm
     quality: 7,
   },
   recordStop: { command: 'recordStop' },
+  status: { command: 'status', statusCommandId: 'runner-command-1' },
   uptime: { command: 'uptime' },
   shutdown: { command: 'shutdown' },
 };
@@ -359,6 +361,7 @@ test('runner protocol fixtures cover every runner command with JSON-safe samples
     'screenshot',
     'shutdown',
     'snapshot',
+    'status',
     'swipe',
     'tap',
     'tapSeries',
@@ -378,6 +381,27 @@ test('runner protocol fixtures cover every runner command with JSON-safe samples
   assert.equal(roundTrip.rotate!.orientation, 'landscape-left');
   assert.equal(roundTrip.recordStart!.fps, 30);
   assert.equal(roundTrip.recordStart!.quality, 7);
+});
+
+test('withRunnerCommandId replaces blank command ids', () => {
+  const command = withRunnerCommandId({ command: 'uptime', commandId: '   ' });
+
+  assert.match(command.commandId ?? '', /^runner-/);
+});
+
+test('withRunnerCommandId preserves existing command ids', () => {
+  const command = withRunnerCommandId({ command: 'uptime', commandId: 'runner-existing' });
+
+  assert.deepEqual(command, { command: 'uptime', commandId: 'runner-existing' });
+});
+
+test('withRunnerCommandId does not add command ids to status probes', () => {
+  const command = withRunnerCommandId({
+    command: 'status',
+    statusCommandId: 'runner-command-1',
+  });
+
+  assert.deepEqual(command, { command: 'status', statusCommandId: 'runner-command-1' });
 });
 
 test('resolveRunnerDestination uses device destination for physical devices', () => {

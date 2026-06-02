@@ -128,10 +128,45 @@ test('runner session executes read-only commands without uptime preflight', asyn
   assert.deepEqual(result, { nodes: [], truncated: false });
   assert.equal(session.ready, true);
   assert.equal(mockWaitForRunner.mock.calls.length, 1);
-  assert.deepEqual(mockWaitForRunner.mock.calls[0]?.[2], {
+  assertRunnerCommand(mockWaitForRunner.mock.calls[0]?.[2], {
     command: 'snapshot',
     appBundleId: 'com.example.demo',
   });
+  assert.equal(mockSendRunnerCommandOnce.mock.calls.length, 0);
+});
+
+test('runner session executes status command as read-only lifecycle command', async () => {
+  const session = makeRunnerSession({ ready: true });
+  mockWaitForRunner.mockResolvedValueOnce(
+    runnerResponse({
+      commandId: 'runner-command-1',
+      lifecycleState: 'completed',
+      lifecycleResponseOk: true,
+    }),
+  );
+
+  const result = await executeRunnerCommandWithSession(
+    IOS_SIMULATOR,
+    session,
+    { command: 'status', statusCommandId: 'runner-command-1' },
+    '/tmp/runner.log',
+    30_000,
+  );
+
+  assert.deepEqual(result, {
+    commandId: 'runner-command-1',
+    lifecycleState: 'completed',
+    lifecycleResponseOk: true,
+  });
+  assert.equal(mockWaitForRunner.mock.calls.length, 1);
+  assertRunnerCommand(
+    mockWaitForRunner.mock.calls[0]?.[2],
+    {
+      command: 'status',
+      statusCommandId: 'runner-command-1',
+    },
+    { commandId: false },
+  );
   assert.equal(mockSendRunnerCommandOnce.mock.calls.length, 0);
 });
 
@@ -151,9 +186,9 @@ test('runner session probes readiness before mutating commands', async () => {
   assert.deepEqual(result, { tapped: true });
   assert.equal(session.ready, true);
   assert.equal(mockWaitForRunner.mock.calls.length, 1);
-  assert.deepEqual(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
+  assertRunnerCommand(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
   assert.equal(mockSendRunnerCommandOnce.mock.calls.length, 1);
-  assert.deepEqual(mockSendRunnerCommandOnce.mock.calls[0]?.[2], {
+  assertRunnerCommand(mockSendRunnerCommandOnce.mock.calls[0]?.[2], {
     command: 'tap',
     x: 120,
     y: 240,
@@ -239,7 +274,7 @@ test('runner session keeps readiness preflight for tap commands when ready but n
 
   assert.deepEqual(result, { tapped: true });
   assert.equal(mockWaitForRunner.mock.calls.length, 1);
-  assert.deepEqual(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
+  assertRunnerCommand(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
   assert.equal(mockSendRunnerCommandOnce.mock.calls.length, 1);
 });
 
@@ -261,7 +296,7 @@ test('runner session keeps readiness preflight for tap commands when marked read
 
   assert.deepEqual(result, { tapped: true });
   assert.equal(mockWaitForRunner.mock.calls.length, 1);
-  assert.deepEqual(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
+  assertRunnerCommand(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
   assert.equal(mockSendRunnerCommandOnce.mock.calls.length, 1);
 });
 
@@ -280,7 +315,7 @@ test('runner session keeps readiness preflight for non-tap mutating commands whe
 
   assert.deepEqual(result, { pressed: true });
   assert.equal(mockWaitForRunner.mock.calls.length, 1);
-  assert.deepEqual(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
+  assertRunnerCommand(mockWaitForRunner.mock.calls[0]?.[2], { command: 'uptime' });
   assert.equal(mockSendRunnerCommandOnce.mock.calls.length, 1);
 });
 
@@ -371,7 +406,7 @@ test('runner session stop sends shutdown, cleans temporary runner files, and rel
   mockIsProcessAlive.mockReturnValue(false);
   await stopRunnerSession(session);
 
-  assert.deepEqual(mockWaitForRunner.mock.calls.at(-1)?.[2], { command: 'shutdown' });
+  assertRunnerCommand(mockWaitForRunner.mock.calls.at(-1)?.[2], { command: 'shutdown' });
   assert.deepEqual(mockCleanupTempFile.mock.calls, [
     ['/tmp/session-runner.xctestrun'],
     ['/tmp/session-runner.json'],
@@ -452,4 +487,25 @@ function runnerResponse(data: Record<string, unknown>): Response {
 
 function runnerError(error: { code: string; message: string }): Response {
   return new Response(JSON.stringify({ ok: false, error }));
+}
+
+function assertRunnerCommand(
+  actual: unknown,
+  expected: Record<string, unknown>,
+  options: { commandId?: boolean } = {},
+): asserts actual is Record<string, unknown> {
+  assert.equal(typeof actual, 'object');
+  assert.notEqual(actual, null);
+  const command = actual as Record<string, unknown>;
+  const commandId = command.commandId;
+  if (options.commandId === false) {
+    assert.equal(commandId, undefined);
+    assert.deepEqual(command, expected);
+    return;
+  }
+  if (typeof commandId !== 'string') {
+    assert.fail('expected runner commandId');
+  }
+  assert.match(commandId, /^runner-/);
+  assert.deepEqual({ ...command, commandId: undefined }, { ...expected, commandId: undefined });
 }
