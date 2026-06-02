@@ -116,6 +116,8 @@ type EnsuredDaemon = {
 type ResolvedDaemonTransport = 'socket' | 'http';
 
 const REQUEST_TIMEOUT_MS = 90_000;
+const SNAPSHOT_REQUEST_TIMEOUT_MS = 30_000;
+const PREPARE_REQUEST_TIMEOUT_MS = 240_000;
 const DAEMON_STARTUP_TIMEOUT_MS = 15_000;
 const DAEMON_STARTUP_ATTEMPTS = 2;
 const DAEMON_TAKEOVER_TERM_TIMEOUT_MS = 3000;
@@ -192,12 +194,24 @@ export async function sendToDaemon(req: Omit<DaemonRequest, 'token'>): Promise<D
   }
 }
 
-function resolveDaemonRequestTimeoutMs(req: Omit<DaemonRequest, 'token'>): number | undefined {
+export function resolveDaemonRequestTimeoutMs(
+  req: Omit<DaemonRequest, 'token'>,
+): number | undefined {
   if (req.command === PUBLIC_COMMANDS.test) return undefined;
-  if (req.command === PUBLIC_COMMANDS.replay && typeof req.flags?.timeoutMs === 'number') {
+  if (typeof req.flags?.timeoutMs === 'number' && isExplicitTimeoutCommand(req.command)) {
     return req.flags.timeoutMs;
   }
+  if (req.command === PUBLIC_COMMANDS.prepare) return PREPARE_REQUEST_TIMEOUT_MS;
+  if (req.command === PUBLIC_COMMANDS.snapshot) return SNAPSHOT_REQUEST_TIMEOUT_MS;
   return REQUEST_TIMEOUT_MS;
+}
+
+function isExplicitTimeoutCommand(command: string | undefined): boolean {
+  return (
+    command === PUBLIC_COMMANDS.prepare ||
+    command === PUBLIC_COMMANDS.replay ||
+    command === PUBLIC_COMMANDS.snapshot
+  );
 }
 
 export async function openApp(options: OpenAppOptions = {}): Promise<DaemonResponse> {
@@ -1143,7 +1157,11 @@ function resolveRequestTimeoutHint(params: {
     return 'Retry with --debug and verify the remote daemon URL, auth token, and remote host logs.';
   }
   if (!resetDaemon) {
-    return `Retry with --debug and check daemon diagnostics logs. The timed-out ${command ?? 'request'} request was canceled and iOS runner work was aborted when detected; the daemon was kept alive so the session can still be closed or inspected.`;
+    const iosPrepareHint =
+      command === PUBLIC_COMMANDS.snapshot
+        ? ' If this was the first iOS snapshot on the device, run agent-device prepare ios-runner --platform ios before snapshot/test so runner startup is handled explicitly.'
+        : '';
+    return `Retry with --debug and check daemon diagnostics logs. The timed-out ${command ?? 'request'} request was canceled and iOS runner work was aborted when detected; the daemon was kept alive so the session can still be closed or inspected.${iosPrepareHint}`;
   }
   return 'Retry with --debug and check daemon diagnostics logs. Timed-out iOS runner xcodebuild processes were terminated when detected.';
 }
