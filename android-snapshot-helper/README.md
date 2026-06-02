@@ -48,6 +48,12 @@ can run.
 The APK emits instrumentation status records using
 `agentDeviceProtocol=android-snapshot-helper-v1`.
 
+The XML node attributes intentionally mirror fields consumed by the host parser, including
+`visible-to-user`, `drawing-order`, bounds, text/description/id, interaction booleans, and window
+metadata on window roots. `drawing-order` lets the host suppress covered same-window surfaces that
+the helper traversal can receive even when they are not user-reachable. The helper emits
+`drawing-order` on Android API 24+ and omits it on API 23, where the platform API is unavailable.
+
 Each XML chunk is sent with:
 
 - `outputFormat=uiautomator-xml`
