@@ -23,9 +23,9 @@ import {
 } from '../utils/scroll-edge-state.ts';
 import {
   requireIntInRange,
-  clampIosSwipeDuration,
   shouldUseIosTapSeries,
   shouldUseIosDragSeries,
+  shouldUseSynthesizedIosDrag,
   computeDeterministicJitter,
   runRepeatedSeries,
 } from './dispatch-series.ts';
@@ -466,8 +466,7 @@ async function runSwipeCoordinates(params: {
 }): Promise<Record<string, unknown>> {
   const { device, interactor, context, x1, y1, x2, y2, requestedDurationMs, preset } = params;
   const durationMs = requireIntInRange(requestedDurationMs, 'durationMs', 16, 10_000);
-  const effectiveDurationMs =
-    device.platform === 'ios' ? clampIosSwipeDuration(durationMs) : durationMs;
+  const effectiveDurationMs = durationMs;
   const count = requireIntInRange(context?.count ?? 1, 'count', 1, 200);
   const pauseMs = requireIntInRange(context?.pauseMs ?? 0, 'pause-ms', 0, 10_000);
   const pattern = context?.pattern ?? 'one-way';
@@ -489,6 +488,7 @@ async function runSwipeCoordinates(params: {
         count,
         pauseMs,
         pattern,
+        ...(shouldUseSynthesizedIosDrag(device) ? { synthesized: true } : {}),
         appBundleId: context?.appBundleId,
       },
       {
@@ -530,7 +530,7 @@ async function runSwipeCoordinates(params: {
       ...(preset ? { preset } : {}),
       durationMs,
       effectiveDurationMs,
-      timingMode: device.platform === 'ios' ? 'safe-normalized' : 'direct',
+      timingMode: 'direct',
       count,
       pauseMs,
       pattern,
@@ -554,7 +554,7 @@ export async function handlePanCommand(
   const durationMs = requireIntInRange(requestedDurationMs, 'durationMs', 16, 10_000);
   const x2 = x + dx;
   const y2 = y + dy;
-  await interactor.pan(x, y, x2, y2, durationMs);
+  const interactionResult = await interactor.pan(x, y, x2, y2, durationMs);
   return {
     x,
     y,
@@ -563,6 +563,7 @@ export async function handlePanCommand(
     x2,
     y2,
     durationMs,
+    ...(interactionResult ?? {}),
     ...successText(`Panned (${x}, ${y}) by (${dx}, ${dy})`),
   };
 }
