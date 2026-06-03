@@ -2,9 +2,9 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   requireIntInRange,
-  clampIosSwipeDuration,
   shouldUseIosTapSeries,
   shouldUseIosDragSeries,
+  shouldUseSynthesizedIosDrag,
 } from '../dispatch-series.ts';
 import { AppError } from '../../utils/errors.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
@@ -42,30 +42,6 @@ test('requireIntInRange throws for non-finite values', () => {
   }
 });
 
-// --- clampIosSwipeDuration ---
-
-test('clampIosSwipeDuration returns value within bounds unchanged', () => {
-  assert.equal(clampIosSwipeDuration(30), 30);
-});
-
-test('clampIosSwipeDuration clamps below-minimum to 16', () => {
-  assert.equal(clampIosSwipeDuration(5), 16);
-});
-
-test('clampIosSwipeDuration clamps above-maximum to 60', () => {
-  assert.equal(clampIosSwipeDuration(100), 60);
-});
-
-test('clampIosSwipeDuration returns exact boundary values unchanged', () => {
-  assert.equal(clampIosSwipeDuration(16), 16);
-  assert.equal(clampIosSwipeDuration(60), 60);
-});
-
-test('clampIosSwipeDuration rounds fractional input before clamping', () => {
-  assert.equal(clampIosSwipeDuration(30.4), 30);
-  assert.equal(clampIosSwipeDuration(15.6), 16);
-});
-
 // --- shouldUseIosTapSeries ---
 
 test('shouldUseIosTapSeries returns true for iOS with count > 1 and no hold or jitter', () => {
@@ -88,6 +64,23 @@ test('shouldUseIosDragSeries returns true for iOS with count > 1', () => {
 
 test('shouldUseIosDragSeries returns false when count is 1', () => {
   assert.equal(shouldUseIosDragSeries(iosDevice, 1), false);
+});
+
+// --- shouldUseSynthesizedIosDrag ---
+
+test('shouldUseSynthesizedIosDrag returns true only for non-tvOS iOS targets', () => {
+  assert.equal(shouldUseSynthesizedIosDrag(iosDevice), true);
+  assert.equal(shouldUseSynthesizedIosDrag({ ...iosDevice, target: 'tv' }), false);
+  assert.equal(
+    shouldUseSynthesizedIosDrag({
+      platform: 'macos',
+      id: 'mac',
+      name: 'Mac',
+      kind: 'device',
+      target: 'desktop',
+    }),
+    false,
+  );
 });
 
 // --- computeDeterministicJitter ---
