@@ -1,6 +1,19 @@
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import type { LogsOptions, NetworkOptions, RecordOptions } from '../../client-types.ts';
+import type {
+  LogsOptions,
+  NetworkOptions,
+  PerfOptions,
+  RecordOptions,
+} from '../../client-types.ts';
 import { AppError } from '../../utils/errors.ts';
+import {
+  isPerfAction,
+  isPerfArea,
+  PERF_ACTION_ERROR_MESSAGE,
+  PERF_AREA_ERROR_MESSAGE,
+  type PerfAction,
+  type PerfArea,
+} from '../perf-command-contract.ts';
 import {
   commonInputFromFlags,
   direct,
@@ -12,7 +25,10 @@ import {
 import type { CliReader, DaemonWriter } from './types.ts';
 
 export const observabilityCliReaders = {
-  perf: (_positionals, flags) => commonInputFromFlags(flags),
+  perf: (positionals, flags) => ({
+    ...commonInputFromFlags(flags),
+    ...readPerfPositionals(positionals),
+  }),
   logs: (positionals, flags) => ({
     ...commonInputFromFlags(flags),
     action: readLogsAction(positionals[0]),
@@ -41,7 +57,7 @@ export const observabilityCliReaders = {
 } satisfies Record<string, CliReader>;
 
 export const observabilityDaemonWriters = {
-  perf: direct(PUBLIC_COMMANDS.perf),
+  perf: direct(PUBLIC_COMMANDS.perf, (input) => perfPositionals(input as PerfOptions)),
   logs: direct(PUBLIC_COMMANDS.logs, (input) => logsPositionals(input as LogsOptions)),
   network: (input) =>
     request(PUBLIC_COMMANDS.network, networkPositionals(input as NetworkOptions), {
@@ -51,6 +67,22 @@ export const observabilityDaemonWriters = {
   record: direct(PUBLIC_COMMANDS.record, (input) => recordingPositionals(input as RecordOptions)),
   trace: direct(PUBLIC_COMMANDS.trace, (input) => recordingPositionals(input as RecordOptions)),
 } satisfies Record<string, DaemonWriter>;
+
+function perfPositionals(input: PerfOptions): string[] {
+  const area = input.area ?? (input.action ? 'metrics' : undefined);
+  return [...optionalString(area), ...optionalString(input.action)];
+}
+
+function readPerfPositionals(positionals: string[]): Pick<PerfOptions, 'area' | 'action'> {
+  if (positionals[0] !== undefined && positionals[1] === undefined) {
+    const action = readPerfAction(positionals[0], { allowUndefined: true });
+    if (action) return { action };
+  }
+  return {
+    area: readPerfArea(positionals[0]),
+    action: readPerfAction(positionals[1]),
+  };
+}
 
 function logsPositionals(input: { action?: string; message?: string }): string[] {
   return [input.action ?? 'path', ...optionalString(input.message)];
@@ -67,6 +99,24 @@ function recordingPositionals(input: RecordOptions): string[] {
 function readStartStop(value: string | undefined, command: string): 'start' | 'stop' {
   if (value === 'start' || value === 'stop') return value;
   throw new AppError('INVALID_ARGS', `${command} requires start|stop`);
+}
+
+function readPerfArea(value: string | undefined): PerfArea | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.toLowerCase();
+  if (isPerfArea(normalized)) return normalized;
+  throw new AppError('INVALID_ARGS', PERF_AREA_ERROR_MESSAGE);
+}
+
+function readPerfAction(
+  value: string | undefined,
+  options: { allowUndefined?: boolean } = {},
+): PerfAction | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.toLowerCase();
+  if (isPerfAction(normalized)) return normalized;
+  if (options.allowUndefined) return undefined;
+  throw new AppError('INVALID_ARGS', PERF_ACTION_ERROR_MESSAGE);
 }
 
 function readLogsAction(
