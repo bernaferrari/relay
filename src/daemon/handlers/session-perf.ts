@@ -13,6 +13,7 @@ import {
   sampleAndroidMemoryPerf,
 } from '../../platforms/android/perf.ts';
 import {
+  buildAppleFrameSamplingMetadata,
   buildAppleSamplingMetadata,
   sampleAppleFramePerf,
   sampleApplePerfMetrics,
@@ -36,6 +37,10 @@ type PerfResponseData = {
   deviceId: string;
   metrics: Record<string, unknown>;
   sampling: Record<string, unknown>;
+};
+type PerfFramesResponseData = Omit<PerfResponseData, 'metrics' | 'sampling'> & {
+  metrics: { fps: unknown };
+  sampling: { fps: unknown };
 };
 type BuildPerfResponseOptions = {
   androidAdb?: AndroidAdbExecutor;
@@ -79,7 +84,7 @@ function readStartupPerfSamples(actions: SessionAction[]): StartupPerfSample[] {
 export async function buildPerfResponseData(
   session: SessionState,
   options: BuildPerfResponseOptions = {},
-): Promise<Record<string, unknown>> {
+): Promise<PerfResponseData> {
   const response = buildBasePerfResponse(session);
 
   if (!supportsPlatformPerfMetrics(session)) {
@@ -92,11 +97,30 @@ export async function buildPerfResponseData(
   }
 
   if (session.device.platform === 'android') {
-    await applyAndroidPerfMetrics(response, session, options);
+    await applyAndroidPerfMetrics(response, session, session.appBundleId, options);
     return response;
   }
 
-  await applyApplePerfMetrics(response, session);
+  await applyApplePerfMetrics(response, session, session.appBundleId);
+  return response;
+}
+
+export async function buildPerfFramesResponseData(
+  session: SessionState,
+  options: BuildPerfResponseOptions = {},
+): Promise<PerfFramesResponseData> {
+  const response = buildBasePerfFramesResponse(session);
+
+  if (!supportsPlatformPerfMetrics(session)) {
+    return response;
+  }
+
+  if (!session.appBundleId) {
+    response.metrics.fps = { available: false, reason: buildMissingAppPerfReason(session) };
+    return response;
+  }
+
+  await applyFramePerfMetric(response, session, session.appBundleId, options);
   return response;
 }
 
@@ -139,12 +163,32 @@ function buildBasePerfResponse(session: SessionState): PerfResponseData {
 
 function buildDefaultUnavailableMetrics(): Record<string, unknown> {
   return {
-    fps: {
-      available: false,
-      reason: 'Dropped-frame sampling is currently available only on Android.',
-    },
+    fps: buildDefaultUnavailableFrameMetric(),
     memory: { available: false, reason: PERF_UNAVAILABLE_REASON },
     cpu: { available: false, reason: PERF_UNAVAILABLE_REASON },
+  };
+}
+
+function buildDefaultUnavailableFrameMetric(): Record<string, unknown> {
+  return {
+    available: false,
+    reason:
+      'Dropped-frame sampling is currently available only on Android app sessions and connected iOS device app sessions.',
+  };
+}
+
+function buildBasePerfFramesResponse(session: SessionState): PerfFramesResponseData {
+  return {
+    session: session.name,
+    platform: session.device.platform,
+    device: session.device.name,
+    deviceId: session.device.id,
+    metrics: {
+      fps: buildDefaultUnavailableFrameMetric(),
+    },
+    sampling: {
+      fps: buildFrameSamplingMetadata(session),
+    },
   };
 }
 
@@ -158,9 +202,31 @@ function applyMissingAppPerfMetrics(response: PerfResponseData, session: Session
 async function applyAndroidPerfMetrics(
   response: PerfResponseData,
   session: SessionState,
+  appBundleId: string,
   options: BuildPerfResponseOptions,
 ): Promise<void> {
-  const results = await sampleAndroidPerfResults(session, options);
+  const results = await sampleAndroidPerfResults(session, appBundleId, options);
+  applySampledPerfMetrics(response, session, results);
+}
+
+async function applyApplePerfMetrics(
+  response: PerfResponseData,
+  session: SessionState,
+  appBundleId: string,
+): Promise<void> {
+  const results = await sampleApplePerfResultsForSession(session, appBundleId);
+  applySampledPerfMetrics(response, session, results);
+}
+
+function applySampledPerfMetrics(
+  response: PerfResponseData,
+  session: SessionState,
+  results: {
+    memory: SettledMetricResult;
+    cpu: SettledMetricResult;
+    fps: SettledMetricResult;
+  },
+): void {
   response.metrics.memory = buildMetricResult(results.memory);
   response.metrics.cpu = buildMetricResult(results.cpu);
   response.metrics.fps = enrichFrameMetricWithSessionContext(
@@ -169,17 +235,21 @@ async function applyAndroidPerfMetrics(
   );
 }
 
-async function applyApplePerfMetrics(
-  response: PerfResponseData,
+async function applyFramePerfMetric(
+  response: PerfFramesResponseData,
   session: SessionState,
+  appBundleId: string,
+  options: BuildPerfResponseOptions,
 ): Promise<void> {
-  const results = await sampleApplePerfResultsForSession(session);
-  response.metrics.memory = buildMetricResult(results.memory);
-  response.metrics.cpu = buildMetricResult(results.cpu);
-  response.metrics.fps = enrichFrameMetricWithSessionContext(
-    buildMetricResult(results.fps),
-    session,
-  );
+  const result =
+    session.device.platform === 'android'
+      ? await settleMetric(
+          sampleAndroidFramePerf(session.device, appBundleId, {
+            adb: options.androidAdb,
+          }),
+        )
+      : await settleMetric(sampleAppleFramePerf(session.device, appBundleId));
+  response.metrics.fps = enrichFrameMetricWithSessionContext(buildMetricResult(result), session);
 }
 
 function supportsPlatformPerfMetrics(session: SessionState): boolean {
@@ -224,15 +294,30 @@ function buildPlatformSamplingMetadata(session: SessionState): Record<string, un
   return buildAppleSamplingMetadata(session.device);
 }
 
+function buildFrameSamplingMetadata(session: SessionState): Record<string, unknown> {
+  if (session.device.platform === 'android') {
+    return {
+      method: ANDROID_FRAME_SAMPLE_METHOD,
+      description: ANDROID_FRAME_SAMPLE_DESCRIPTION,
+      unit: 'percent',
+      primaryField: 'droppedFramePercent',
+      window: 'since previous Android gfxinfo reset or app process start',
+      resetsAfterRead: true,
+      relatedActionsLimit: RELATED_PERF_ACTION_LIMIT,
+    };
+  }
+  return buildAppleFrameSamplingMetadata(session.device);
+}
+
 async function sampleAndroidPerfResults(
   session: SessionState,
+  appBundleId: string,
   options: BuildPerfResponseOptions,
 ): Promise<{
   memory: SettledMetricResult;
   cpu: SettledMetricResult;
   fps: SettledMetricResult;
 }> {
-  const appBundleId = session.appBundleId as string;
   const androidPerfOptions = { adb: options.androidAdb };
   const [memory, cpu, fps] = await Promise.allSettled([
     sampleAndroidMemoryPerf(session.device, appBundleId, androidPerfOptions),
@@ -242,12 +327,14 @@ async function sampleAndroidPerfResults(
   return { memory, cpu, fps };
 }
 
-async function sampleApplePerfResultsForSession(session: SessionState): Promise<{
+async function sampleApplePerfResultsForSession(
+  session: SessionState,
+  appBundleId: string,
+): Promise<{
   memory: SettledMetricResult;
   cpu: SettledMetricResult;
   fps: SettledMetricResult;
 }> {
-  const appBundleId = session.appBundleId as string;
   const fps = await settleMetric(sampleAppleFramePerf(session.device, appBundleId));
   const processSample = await settleMetric(sampleApplePerfMetrics(session.device, appBundleId));
   if (processSample.status === 'fulfilled') {
