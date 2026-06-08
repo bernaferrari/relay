@@ -42,10 +42,7 @@ import {
   type AndroidSnapshotHelperInstallResult,
   type AndroidSnapshotHelperOutput,
 } from './snapshot-helper.ts';
-import {
-  ANDROID_SNAPSHOT_MAX_NODES,
-  type AndroidSnapshotBackendMetadata,
-} from './snapshot-types.ts';
+import type { AndroidSnapshotBackendMetadata } from './snapshot-types.ts';
 
 const UI_HIERARCHY_DUMP_TIMEOUT_MS = 8_000;
 const HELPER_INSTALL_TIMEOUT_MS = 30_000;
@@ -93,7 +90,8 @@ export async function snapshotAndroid(
   const xml = capture.xml;
   const includeHiddenContentHints = options.includeHiddenContentHints !== false;
   if (!options.interactiveOnly) {
-    const parsed = parseUiHierarchy(xml, ANDROID_SNAPSHOT_MAX_NODES, options);
+    const parsed = parseUiHierarchy(xml, undefined, options);
+    const truncated = mergeAndroidSnapshotTruncation(parsed.truncated, capture.metadata);
     if (includeHiddenContentHints) {
       const nativeHints = await deriveScrollableContentHintsIfNeeded(
         device,
@@ -103,11 +101,16 @@ export async function snapshotAndroid(
       );
       applyHiddenContentHintsToNodes(nativeHints, parsed.nodes);
     }
-    return { ...parsed, androidSnapshot: capture.metadata };
+    return {
+      ...parsed,
+      ...androidSnapshotTruncationFields(truncated),
+      androidSnapshot: capture.metadata,
+    };
   }
 
   const tree = parseUiHierarchyTree(xml);
-  const interactiveSnapshot = buildUiHierarchySnapshot(tree, ANDROID_SNAPSHOT_MAX_NODES, options);
+  const interactiveSnapshot = buildUiHierarchySnapshot(tree, undefined, options);
+  const truncated = mergeAndroidSnapshotTruncation(interactiveSnapshot.truncated, capture.metadata);
   if (includeHiddenContentHints) {
     await applyHiddenContentHintsToInteractiveSnapshot({
       device,
@@ -119,7 +122,24 @@ export async function snapshotAndroid(
     });
   }
   const { sourceNodes: _sourceNodes, ...snapshot } = interactiveSnapshot;
-  return { ...snapshot, androidSnapshot: capture.metadata };
+  return {
+    ...snapshot,
+    ...androidSnapshotTruncationFields(truncated),
+    androidSnapshot: capture.metadata,
+  };
+}
+
+function mergeAndroidSnapshotTruncation(
+  snapshotTruncated: boolean | undefined,
+  metadata: AndroidSnapshotBackendMetadata,
+): boolean | undefined {
+  return snapshotTruncated === true || metadata.helperTruncated === true ? true : snapshotTruncated;
+}
+
+function androidSnapshotTruncationFields(
+  truncated: boolean | undefined,
+): { truncated: true } | Record<string, never> {
+  return truncated === true ? { truncated: true } : {};
 }
 
 async function applyHiddenContentHintsToInteractiveSnapshot(params: {
@@ -137,7 +157,7 @@ async function applyHiddenContentHintsToInteractiveSnapshot(params: {
     return;
   }
 
-  const fullSnapshot = buildUiHierarchySnapshot(params.tree, ANDROID_SNAPSHOT_MAX_NODES, {
+  const fullSnapshot = buildUiHierarchySnapshot(params.tree, undefined, {
     ...params.options,
     interactiveOnly: false,
   });

@@ -10,7 +10,6 @@ import type {
 } from '../../daemon/types.ts';
 import type { ReplayVarScope } from '../../replay/vars.ts';
 import type { SnapshotState } from '../../utils/snapshot.ts';
-import { emitDiagnostic } from '../../utils/diagnostics.ts';
 
 export type ReplayBaseRequest = Omit<DaemonRequest, 'command' | 'positionals'>;
 
@@ -23,7 +22,6 @@ export type MaestroReplayInvoker = (params: {
 export type MaestroRuntimeInvoke = (req: DaemonRequest) => Promise<DaemonResponse>;
 
 export type FailedDaemonResponse = Extract<DaemonResponse, { ok: false }>;
-export type MaestroSnapshotMode = 'interactive' | 'raw';
 
 const maestroReferenceFrameCache = new WeakMap<ReplayVarScope, TouchReferenceFrame>();
 const maestroVisibleContextCache = new WeakMap<ReplayVarScope, { selector: string }>();
@@ -43,10 +41,10 @@ export async function captureMaestroSnapshot(params: {
   baseReq: ReplayBaseRequest;
   invoke: MaestroRuntimeInvoke;
   scope?: ReplayVarScope;
-  mode?: MaestroSnapshotMode;
+  raw?: boolean;
 }): Promise<DaemonResponse> {
   const useRawSnapshot =
-    params.mode === 'raw' || process.env.AGENT_DEVICE_MAESTRO_RAW_SNAPSHOTS === '1';
+    params.raw === true || process.env.AGENT_DEVICE_MAESTRO_RAW_SNAPSHOTS === '1';
   const response = await params.invoke({
     ...params.baseReq,
     command: 'snapshot',
@@ -54,9 +52,6 @@ export async function captureMaestroSnapshot(params: {
     flags: {
       ...params.baseReq.flags,
       noRecord: true,
-      ...(params.mode === 'interactive' && !useRawSnapshot
-        ? { snapshotInteractiveOnly: true }
-        : {}),
       ...(useRawSnapshot ? { snapshotRaw: true } : {}),
     },
   });
@@ -66,22 +61,6 @@ export async function captureMaestroSnapshot(params: {
 
 export function readSnapshotState(data: DaemonResponseData | undefined): SnapshotState | undefined {
   return Array.isArray(data?.nodes) ? (data as SnapshotState) : undefined;
-}
-
-export function shouldUseMaestroRawSnapshotFallback(baseReq: ReplayBaseRequest): boolean {
-  return baseReq.flags?.platform === 'ios';
-}
-
-export function emitMaestroRawSnapshotFallbackDiagnostic(command: string, selector: string): void {
-  emitDiagnostic({
-    level: 'debug',
-    phase: 'maestro_raw_snapshot_fallback',
-    data: {
-      command,
-      selector,
-      reason: 'optimized_snapshot_missed',
-    },
-  });
 }
 
 export function readCachedMaestroReferenceFrame(
