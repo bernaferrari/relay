@@ -2,6 +2,9 @@ import XCTest
 
 extension RunnerTests {
   private static let axSnapshotErrorCode = "IOS_AX_SNAPSHOT_FAILED"
+  private static let axSnapshotFailureMessage =
+    "iOS XCTest snapshot failed while serializing the accessibility tree."
+  private static let axSnapshotUnavailableReason = "ax_snapshot_unavailable"
   private static let axSnapshotHint =
     "Snapshot state is unavailable because XCTest could not serialize this iOS accessibility tree. This can be specific to the current screen. Use plain screenshot, not screenshot --overlay-refs, as visual truth; navigate with coordinate commands if needed; then retry snapshot -i after reaching another screen. If you own the app and need full-tree inspection, simplify this screen's accessibility tree and expose stable ids on actionable controls."
   private static let collapsedTabCandidateTypes: Set<XCUIElement.ElementType> = [
@@ -35,6 +38,12 @@ extension RunnerTests {
     let focused: Bool
     let selected: Bool
     let visible: Bool
+  }
+
+  private enum SnapshotTraversalCapture {
+    case context(SnapshotTraversalContext)
+    case fallback(DataPayload)
+    case empty
   }
 
   struct SnapshotCaptureFailure: Error {
@@ -93,14 +102,18 @@ extension RunnerTests {
       return blocking
     }
 
-    let context: SnapshotTraversalContext?
-    do {
-      context = try makeSnapshotTraversalContext(app: app, options: options)
-    } catch let failure as SnapshotCaptureFailure where options.interactiveOnly {
-      return snapshotAccessibilityUnavailable(failure: failure)
-    }
-
-    guard let context else {
+    let capture = try captureSnapshotTraversalContext(
+      app: app,
+      options: options,
+      allowInteractiveUnavailableFallback: true
+    )
+    let context: SnapshotTraversalContext
+    switch capture {
+    case .context(let traversalContext):
+      context = traversalContext
+    case .fallback(let fallback):
+      return fallback
+    case .empty:
       return DataPayload(nodes: [], truncated: false)
     }
 
@@ -211,7 +224,18 @@ extension RunnerTests {
       return blocking
     }
 
-    guard let context = try makeSnapshotTraversalContext(app: app, options: options) else {
+    let capture = try captureSnapshotTraversalContext(
+      app: app,
+      options: options,
+      allowInteractiveUnavailableFallback: false
+    )
+    let context: SnapshotTraversalContext
+    switch capture {
+    case .context(let traversalContext):
+      context = traversalContext
+    case .fallback(let fallback):
+      return fallback
+    case .empty:
       return DataPayload(nodes: [], truncated: false)
     }
 
@@ -270,6 +294,7 @@ extension RunnerTests {
     let deadline = options.interactiveOnly
       ? Date().addingTimeInterval(Self.flatInteractiveFallbackBudget)
       : Date.distantFuture
+    let viewport = safeSnapshotViewport(app: app)
     var seen = Set<String>()
     var candidates: [SnapshotNode] = []
     for element in flatInteractiveElements(app: app, deadline: deadline) {
@@ -281,7 +306,7 @@ extension RunnerTests {
         element: element,
         index: 0,
         parentIndex: 0,
-        viewport: .infinite,
+        viewport: viewport,
         options: options
       ) else {
         continue
@@ -329,13 +354,91 @@ extension RunnerTests {
 
   private func snapshotAccessibilityUnavailable(failure: SnapshotCaptureFailure) -> DataPayload {
     NSLog("AGENT_DEVICE_RUNNER_SNAPSHOT_AX_UNAVAILABLE=%@", failure.message)
-    invalidateCachedTarget(reason: "ax_snapshot_unavailable")
+    invalidateCachedTarget(reason: Self.axSnapshotUnavailableReason)
+    return sparseTruncatedSnapshotPayload(
+      message: recoveredSnapshotMessage(failure),
+      runnerFatal: true,
+      runnerFatalReason: Self.axSnapshotUnavailableReason
+    )
+  }
+
+  private func captureSnapshotTraversalContext(
+    app: XCUIApplication,
+    options: SnapshotOptions,
+    allowInteractiveUnavailableFallback: Bool
+  ) throws -> SnapshotTraversalCapture {
+    do {
+      guard let context = try makeSnapshotTraversalContext(app: app, options: options) else {
+        return .empty
+      }
+      return .context(context)
+    } catch let failure as SnapshotCaptureFailure {
+      if let fallback = snapshotDepthLimitedAccessibilityFallback(
+        app: app,
+        options: options,
+        failure: failure
+      ) {
+        return .fallback(fallback)
+      }
+      if allowInteractiveUnavailableFallback && options.interactiveOnly {
+        return .fallback(snapshotAccessibilityUnavailable(failure: failure))
+      }
+      throw failure
+    }
+  }
+
+  private func snapshotDepthLimitedAccessibilityFallback(
+    app: XCUIApplication,
+    options: SnapshotOptions,
+    failure: SnapshotCaptureFailure
+  ) -> DataPayload? {
+    guard let requestedDepth = options.depth else {
+      return nil
+    }
+
+    NSLog(
+      "AGENT_DEVICE_RUNNER_SNAPSHOT_DEPTH_FALLBACK=%@",
+      failure.message
+    )
+
+    if requestedDepth <= 0 {
+      return sparseTruncatedSnapshotPayload(message: recoveredSnapshotMessage(failure))
+    }
+
+    // Raw depth-limited recovery intentionally falls back to sparse interactive discovery because
+    // the raw AX tree is the failed operation.
+    let fallback = snapshotFlatInteractive(
+      app: app,
+      options: SnapshotOptions(
+        interactiveOnly: true,
+        compact: options.compact,
+        depth: requestedDepth,
+        scope: options.scope,
+        raw: false
+      )
+    )
     return DataPayload(
-      message: failure.message,
+      message: recoveredSnapshotMessage(failure),
+      nodes: fallback.nodes,
+      truncated: true
+    )
+  }
+
+  private func recoveredSnapshotMessage(_ failure: SnapshotCaptureFailure) -> String {
+    return "\(failure.message) Hint: \(failure.hint)"
+  }
+
+  private func sparseTruncatedSnapshotPayload(
+    message: String,
+    runnerFatal: Bool? = nil,
+    runnerFatalReason: String? = nil
+  ) -> DataPayload {
+    return DataPayload(
+      message: message,
       nodes: [compactInteractiveRootNode(rect: .zero)],
       truncated: true,
-      runnerFatal: true,
-      runnerFatalReason: "ax_snapshot_unavailable"
+      runnerFatal: runnerFatal,
+      runnerFatalReason: runnerFatalReason
     )
   }
 
@@ -345,20 +448,66 @@ extension RunnerTests {
 
     let payload = snapshotAccessibilityUnavailable(
       failure: SnapshotCaptureFailure(
-        code: "IOS_AX_SNAPSHOT_FAILED",
-        message: "iOS XCTest snapshot failed while serializing the accessibility tree.",
+        code: Self.axSnapshotErrorCode,
+        message: Self.axSnapshotFailureMessage,
         hint: Self.axSnapshotHint
       )
     )
 
-    XCTAssertEqual(payload.message, "iOS XCTest snapshot failed while serializing the accessibility tree.")
+    XCTAssertEqual(payload.message, "\(Self.axSnapshotFailureMessage) Hint: \(Self.axSnapshotHint)")
     XCTAssertEqual(payload.nodes?.count, 1)
     XCTAssertEqual(payload.nodes?.first?.type, "Application")
     XCTAssertEqual(payload.truncated, true)
     XCTAssertEqual(payload.runnerFatal, true)
-    XCTAssertEqual(payload.runnerFatalReason, "ax_snapshot_unavailable")
+    XCTAssertEqual(payload.runnerFatalReason, Self.axSnapshotUnavailableReason)
     XCTAssertNil(currentApp)
     XCTAssertNil(currentBundleId)
+  }
+
+  func testRecoveredSnapshotMessagePreservesHint() {
+    let message = recoveredSnapshotMessage(
+      SnapshotCaptureFailure(
+        code: Self.axSnapshotErrorCode,
+        message: Self.axSnapshotFailureMessage,
+        hint: Self.axSnapshotHint
+      )
+    )
+
+    XCTAssertTrue(message.contains(Self.axSnapshotFailureMessage))
+    XCTAssertTrue(message.contains(Self.axSnapshotHint))
+  }
+
+  func testDepthLimitedSnapshotFailureReturnsNonFatalFallback() {
+    currentApp = app
+    currentBundleId = "com.example.app"
+
+    let payload = snapshotDepthLimitedAccessibilityFallback(
+      app: app,
+      options: SnapshotOptions(
+        interactiveOnly: false,
+        compact: false,
+        depth: 0,
+        scope: nil,
+        raw: false
+      ),
+      failure: SnapshotCaptureFailure(
+        code: Self.axSnapshotErrorCode,
+        message: "\(Self.axSnapshotFailureMessage) kAXErrorIllegalArgument.",
+        hint: Self.axSnapshotHint
+      )
+    )
+
+    XCTAssertEqual(
+      payload?.message,
+      "\(Self.axSnapshotFailureMessage) kAXErrorIllegalArgument. Hint: \(Self.axSnapshotHint)"
+    )
+    XCTAssertEqual(payload?.nodes?.count, 1)
+    XCTAssertEqual(payload?.nodes?.first?.type, "Application")
+    XCTAssertEqual(payload?.truncated, true)
+    XCTAssertNil(payload?.runnerFatal)
+    XCTAssertNil(payload?.runnerFatalReason)
+    XCTAssertNotNil(currentApp)
+    XCTAssertEqual(currentBundleId, "com.example.app")
   }
 
   private func compactInteractiveRootNode(rect: CGRect) -> SnapshotNode {
@@ -507,11 +656,12 @@ extension RunnerTests {
   }
 
   private func axSnapshotFailure(_ message: String) -> SnapshotCaptureFailure {
+    let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
     let failureMessage: String
-    if Self.hasAxIllegalArgumentCode(message) {
-      failureMessage = "iOS XCTest snapshot failed with kAXErrorIllegalArgument. \(message)"
+    if detail.isEmpty {
+      failureMessage = Self.axSnapshotFailureMessage
     } else {
-      failureMessage = "iOS XCTest snapshot failed while serializing the accessibility tree. \(message)"
+      failureMessage = "\(Self.axSnapshotFailureMessage) \(detail)"
     }
     return SnapshotCaptureFailure(
       code: Self.axSnapshotErrorCode,
@@ -522,12 +672,8 @@ extension RunnerTests {
 
   private static func isAxIllegalArgument(_ message: String) -> Bool {
     let normalized = message.lowercased()
-    return hasAxIllegalArgumentCode(normalized)
+    return normalized.contains("kaxerrorillegalargument")
       || (normalized.contains("illegal argument") && normalized.contains("snapshot"))
-  }
-
-  private static func hasAxIllegalArgumentCode(_ message: String) -> Bool {
-    return message.lowercased().contains("kaxerrorillegalargument")
   }
 
   private func evaluateSnapshot(
@@ -632,8 +778,13 @@ extension RunnerTests {
 
   private func snapshotViewport(app: XCUIApplication) -> CGRect {
     let windows = app.windows.allElementsBoundByIndex
-    if let window = windows.first(where: { $0.exists && !$0.frame.isNull && !$0.frame.isEmpty }) {
-      return window.frame
+    let windowFrames = windows
+      .filter { $0.exists && !$0.frame.isNull && !$0.frame.isEmpty }
+      .map(\.frame)
+    if let largestWindowFrame = windowFrames.max(by: { left, right in
+      left.width * left.height < right.width * right.height
+    }) {
+      return largestWindowFrame
     }
     let appFrame = app.frame
     if !appFrame.isNull && !appFrame.isEmpty {
@@ -872,7 +1023,9 @@ extension RunnerTests {
       app.pickers,
       app.steppers,
       app.tabBars,
-      app.menuItems
+      app.menuItems,
+      app.staticTexts,
+      app.images
     ]
 
     var elements: [XCUIElement] = []
@@ -920,6 +1073,7 @@ extension RunnerTests {
       let frame = element.frame
       if frame.isNull || frame.isEmpty { return }
       let visible = isVisibleInViewport(frame, viewport)
+      if options.interactiveOnly && !visible { return }
       #if os(macOS)
         if !visible { return }
       #endif
@@ -962,13 +1116,6 @@ extension RunnerTests {
       return nil
     }
     return node
-  }
-
-  private func nonEmptyElementText(_ read: () -> String) -> String? {
-    let value = safely("SNAPSHOT_FLAT_TEXT", "") {
-      read()
-    }.trimmingCharacters(in: .whitespacesAndNewlines)
-    return value.isEmpty ? nil : value
   }
 
   private func isScrollableContainer(_ snapshot: XCUIElementSnapshot, visible: Bool) -> Bool {
