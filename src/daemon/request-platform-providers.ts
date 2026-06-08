@@ -280,15 +280,34 @@ async function resolveScopedProviderDevice(
   existingSession: SessionState | undefined,
 ): Promise<DeviceInfo | undefined> {
   if (existingSession) {
-    return shouldPreferExplicitDeviceOverExistingSession(req) &&
-      hasExplicitDeviceSelector(req.flags)
-      ? await resolveTargetDevice(req.flags ?? {})
-      : existingSession.device;
+    return await resolveExistingSessionProviderDevice(req, existingSession);
   }
-  if (!hasExplicitDeviceSelector(req.flags) && !usesSessionlessDefaultProviderDevice(req)) {
-    return undefined;
-  }
+  if (shouldSkipSessionlessProviderDevice(req)) return undefined;
   return await resolveTargetDevice(req.flags ?? {});
+}
+
+async function resolveExistingSessionProviderDevice(
+  req: DaemonRequest,
+  existingSession: SessionState,
+): Promise<DeviceInfo> {
+  if (!shouldResolveExplicitProviderDevice(req)) return existingSession.device;
+  return await resolveTargetDevice(req.flags ?? {});
+}
+
+function shouldResolveExplicitProviderDevice(req: DaemonRequest): boolean {
+  return shouldPreferExplicitDeviceOverExistingSession(req) && hasExplicitDeviceSelector(req.flags);
+}
+
+function shouldSkipSessionlessProviderDevice(req: DaemonRequest): boolean {
+  if (isShardedReplayTestRequest(req)) return true;
+  return !hasExplicitDeviceSelector(req.flags) && !usesSessionlessDefaultProviderDevice(req);
+}
+
+function isShardedReplayTestRequest(req: DaemonRequest): boolean {
+  return (
+    req.command === 'test' &&
+    (typeof req.flags?.shardAll === 'number' || typeof req.flags?.shardSplit === 'number')
+  );
 }
 
 async function requestPlatformProviderScopeWrappers(

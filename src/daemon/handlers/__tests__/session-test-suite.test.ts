@@ -6,6 +6,8 @@ import { handleSessionCommands } from '../session.ts';
 import { SessionStore } from '../../session-store.ts';
 import type { DaemonRequest, DaemonResponse, DaemonResponseData } from '../../types.ts';
 import { type RequestProgressEvent, withRequestProgressSink } from '../../request-progress.ts';
+import { withDeviceInventoryProvider } from '../../../core/dispatch-resolve.ts';
+import type { DeviceInfo } from '../../../utils/device.ts';
 
 function makeSessionStore(): SessionStore {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-session-test-suite-'));
@@ -13,10 +15,26 @@ function makeSessionStore(): SessionStore {
 }
 
 function expectOkData(response: DaemonResponse | null | undefined): DaemonResponseData {
-  expect(response?.ok).toBeTruthy();
+  expect(response?.ok, JSON.stringify(response)).toBeTruthy();
   if (!response || !response.ok) throw new Error('Expected successful daemon response.');
   return response.data ?? {};
 }
+
+const ANDROID_ONE: DeviceInfo = {
+  platform: 'android',
+  id: 'emulator-5554',
+  name: 'Pixel 8',
+  kind: 'emulator',
+  booted: true,
+};
+
+const ANDROID_TWO: DeviceInfo = {
+  platform: 'android',
+  id: 'emulator-5556',
+  name: 'Pixel 8 Pro',
+  kind: 'emulator',
+  booted: true,
+};
 
 test('test does not retry infrastructure startup failures and stops the suite', async () => {
   const sessionStore = makeSessionStore();
@@ -199,4 +217,236 @@ test('test emits skip progress without synthetic duration', async () => {
     message: 'missing platform metadata for --platform android',
   });
   expect(events[0]?.durationMs).toBeUndefined();
+});
+
+test('test --shard-all runs each runnable entry on each selected device', async () => {
+  const sessionStore = makeSessionStore();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-test-suite-shard-all-'));
+  fs.writeFileSync(path.join(root, '01-login.ad'), 'context platform=android\nopen "Demo"\n');
+  fs.writeFileSync(path.join(root, '02-pay.ad'), 'context platform=android\nopen "Demo"\n');
+
+  const invoked: DaemonRequest[] = [];
+  const response = await withDeviceInventoryProvider(
+    async () => [ANDROID_ONE, ANDROID_TWO],
+    async () =>
+      await handleSessionCommands({
+        req: {
+          token: 't',
+          session: 'default',
+          command: 'test',
+          positionals: [root],
+          meta: { cwd: root, requestId: 'suite-shard-all' },
+          flags: {
+            platform: 'android',
+            device: 'emulator-5554,emulator-5556',
+            shardAll: 2,
+          },
+        },
+        sessionName: 'default',
+        logPath: path.join(os.tmpdir(), 'daemon.log'),
+        sessionStore,
+        invoke: async (req) => {
+          invoked.push(req);
+          return { ok: true, data: { replayed: 1, healed: 0 } };
+        },
+      }),
+  );
+
+  const data = expectOkData(response);
+  expect(data.total).toBe(4);
+  expect(data.passed).toBe(4);
+  expect(invoked.map((req) => req.flags?.serial).sort()).toEqual([
+    'emulator-5554',
+    'emulator-5554',
+    'emulator-5556',
+    'emulator-5556',
+  ]);
+  const tests = data.tests as Array<Record<string, unknown>>;
+  expect(tests.map((entry) => entry.deviceId)).toEqual([
+    'emulator-5554',
+    'emulator-5554',
+    'emulator-5556',
+    'emulator-5556',
+  ]);
+  expect(tests.map((entry) => entry.artifactsDir)).toEqual([
+    expect.stringContaining(`${path.sep}shard-1${path.sep}01-login`),
+    expect.stringContaining(`${path.sep}shard-1${path.sep}02-pay`),
+    expect.stringContaining(`${path.sep}shard-2${path.sep}01-login`),
+    expect.stringContaining(`${path.sep}shard-2${path.sep}02-pay`),
+  ]);
+  expect(tests.map((entry) => String(entry.session))).toEqual([
+    expect.stringContaining('default:shard-1:test:'),
+    expect.stringContaining('default:shard-1:test:'),
+    expect.stringContaining('default:shard-2:test:'),
+    expect.stringContaining('default:shard-2:test:'),
+  ]);
+});
+
+test('test --shard-split distributes runnable entries by modulo and keeps skips once', async () => {
+  const sessionStore = makeSessionStore();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-test-suite-shard-split-'));
+  fs.writeFileSync(path.join(root, '01-missing-platform.ad'), 'open "Demo"\n');
+  fs.writeFileSync(path.join(root, '02-a.ad'), 'context platform=android\nopen "Demo"\n');
+  fs.writeFileSync(path.join(root, '03-b.ad'), 'context platform=android\nopen "Demo"\n');
+  fs.writeFileSync(path.join(root, '04-c.ad'), 'context platform=android\nopen "Demo"\n');
+
+  const invoked: DaemonRequest[] = [];
+  const response = await withDeviceInventoryProvider(
+    async () => [ANDROID_TWO, ANDROID_ONE],
+    async () =>
+      await handleSessionCommands({
+        req: {
+          token: 't',
+          session: 'default',
+          command: 'test',
+          positionals: [root],
+          meta: { cwd: root, requestId: 'suite-shard-split' },
+          flags: { platform: 'android', shardSplit: 2 },
+        },
+        sessionName: 'default',
+        logPath: path.join(os.tmpdir(), 'daemon.log'),
+        sessionStore,
+        invoke: async (req) => {
+          invoked.push(req);
+          return { ok: true, data: { replayed: 1, healed: 0 } };
+        },
+      }),
+  );
+
+  const data = expectOkData(response);
+  expect(data.total).toBe(4);
+  expect(data.skipped).toBe(1);
+  expect(data.passed).toBe(3);
+  const tests = data.tests as Array<Record<string, unknown>>;
+  expect(
+    tests
+      .filter((entry) => entry.status === 'passed')
+      .map((entry) => path.basename(String(entry.file))),
+  ).toEqual(['02-a.ad', '04-c.ad', '03-b.ad']);
+  expect(tests.filter((entry) => entry.status === 'passed').map((entry) => entry.deviceId)).toEqual(
+    ['emulator-5554', 'emulator-5554', 'emulator-5556'],
+  );
+  expect(invoked.map((req) => req.flags?.serial).sort()).toEqual([
+    'emulator-5554',
+    'emulator-5554',
+    'emulator-5556',
+  ]);
+  expect(tests.filter((entry) => entry.status === 'skipped')).toHaveLength(1);
+});
+
+test('test sharding rejects mutually exclusive shard modes', async () => {
+  const sessionStore = makeSessionStore();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-test-suite-shard-modes-'));
+  fs.writeFileSync(path.join(root, '01-a.ad'), 'context platform=android\nopen "Demo"\n');
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: 'default',
+      command: 'test',
+      positionals: [root],
+      meta: { cwd: root, requestId: 'suite-shard-modes' },
+      flags: { platform: 'android', shardAll: 2, shardSplit: 2 },
+    },
+    sessionName: 'default',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: async () => ({ ok: true, data: { replayed: 1, healed: 0 } }),
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response?.ok !== false) throw new Error('Expected failed daemon response.');
+  expect(response.error.code).toBe('INVALID_ARGS');
+  expect(response.error.message).toMatch(/mutually exclusive/);
+});
+
+test('test sharding rejects non-positive shard counts', async () => {
+  const sessionStore = makeSessionStore();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-test-suite-shard-count-'));
+  fs.writeFileSync(path.join(root, '01-a.ad'), 'context platform=android\nopen "Demo"\n');
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: 'default',
+      command: 'test',
+      positionals: [root],
+      meta: { cwd: root, requestId: 'suite-shard-count' },
+      flags: { platform: 'android', shardAll: 0 },
+    },
+    sessionName: 'default',
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: async () => ({ ok: true, data: { replayed: 1, healed: 0 } }),
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response?.ok !== false) throw new Error('Expected failed daemon response.');
+  expect(response.error.code).toBe('INVALID_ARGS');
+  expect(response.error.message).toMatch(/positive integer/);
+});
+
+test('test sharding rejects fewer matched devices than requested shards', async () => {
+  const sessionStore = makeSessionStore();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-test-suite-shard-devices-'));
+  fs.writeFileSync(path.join(root, '01-a.ad'), 'context platform=android\nopen "Demo"\n');
+
+  const response = await withDeviceInventoryProvider(
+    async () => [ANDROID_ONE],
+    async () =>
+      await handleSessionCommands({
+        req: {
+          token: 't',
+          session: 'default',
+          command: 'test',
+          positionals: [root],
+          meta: { cwd: root, requestId: 'suite-shard-devices' },
+          flags: { platform: 'android', shardAll: 2 },
+        },
+        sessionName: 'default',
+        logPath: path.join(os.tmpdir(), 'daemon.log'),
+        sessionStore,
+        invoke: async () => ({ ok: true, data: { replayed: 1, healed: 0 } }),
+      }),
+  );
+
+  expect(response?.ok).toBe(false);
+  if (response?.ok !== false) throw new Error('Expected failed daemon response.');
+  expect(response.error.code).toBe('DEVICE_NOT_FOUND');
+  expect(response.error.message).toMatch(/requires 2 devices, but only 1 matched/);
+});
+
+test('test sharding does not require devices when every entry is skipped', async () => {
+  const sessionStore = makeSessionStore();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-test-suite-shard-skipped-'));
+  fs.writeFileSync(path.join(root, '01-missing-platform.ad'), 'open "Demo"\n');
+
+  let inventoryResolved = false;
+  const response = await withDeviceInventoryProvider(
+    async () => {
+      inventoryResolved = true;
+      return [ANDROID_ONE, ANDROID_TWO];
+    },
+    async () =>
+      await handleSessionCommands({
+        req: {
+          token: 't',
+          session: 'default',
+          command: 'test',
+          positionals: [root],
+          meta: { cwd: root, requestId: 'suite-shard-skipped' },
+          flags: { platform: 'android', shardAll: 2 },
+        },
+        sessionName: 'default',
+        logPath: path.join(os.tmpdir(), 'daemon.log'),
+        sessionStore,
+        invoke: async () => ({ ok: true, data: { replayed: 1, healed: 0 } }),
+      }),
+  );
+
+  expect(response?.ok).toBe(false);
+  if (response?.ok !== false) throw new Error('Expected failed daemon response.');
+  expect(response.error.code).toBe('INVALID_ARGS');
+  expect(response.error.message).toBe('No replay tests matched for --platform android.');
+  expect(inventoryResolved).toBe(false);
 });
