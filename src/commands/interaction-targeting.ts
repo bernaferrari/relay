@@ -2,7 +2,12 @@ import type { Rect, SnapshotNode } from '../utils/snapshot.ts';
 import { centerOfRect } from '../utils/snapshot.ts';
 import { containsPoint, pickLargestRect } from '../utils/rect-visibility.ts';
 import { findNearestHittableAncestor, normalizeType } from '../utils/snapshot-processing.ts';
-import { normalizeRect, resolveRectCenter } from '../utils/rect-center.ts';
+import { isSnapshotNodeInteractionBlocked } from '../utils/snapshot-occlusion.ts';
+import {
+  areRectsApproximatelyEqual,
+  normalizeRect,
+  resolveRectCenter,
+} from '../utils/rect-center.ts';
 import { intersectArea } from '../utils/screenshot-geometry.ts';
 
 const SEMANTIC_TOUCH_ROLE_FRAGMENTS = [
@@ -24,7 +29,8 @@ type ActionableTouchResolutionReason =
   | 'semantic-target'
   | 'hittable-ancestor'
   | 'overly-broad-ancestor'
-  | 'original';
+  | 'original'
+  | 'covered';
 
 type ActionableTouchResolution = {
   node: SnapshotNode;
@@ -43,6 +49,9 @@ export function resolveActionableTouchResolution(
   nodes: SnapshotNode[],
   node: SnapshotNode,
 ): ActionableTouchResolution {
+  if (isSnapshotNodeInteractionBlocked(node)) {
+    return { node, reason: 'covered' };
+  }
   const descendant = findPreferredActionableDescendant(nodes, node);
   if (descendant?.rect && resolveRectCenter(descendant.rect)) {
     return { node: descendant, reason: 'same-rect-descendant' };
@@ -51,7 +60,11 @@ export function resolveActionableTouchResolution(
     return { node, reason: 'semantic-target' };
   }
   const ancestor = findNearestHittableAncestor(nodes, node);
-  if (ancestor?.rect && resolveRectCenter(ancestor.rect)) {
+  if (
+    ancestor?.rect &&
+    !isSnapshotNodeInteractionBlocked(ancestor) &&
+    resolveRectCenter(ancestor.rect)
+  ) {
     if (isOverlyBroadAncestor(node, ancestor, nodes)) {
       return { node, reason: 'overly-broad-ancestor' };
     }
@@ -72,7 +85,11 @@ function findPreferredActionableDescendant(
   while (!visited.has(current.ref)) {
     visited.add(current.ref);
     const sameRectChildren = nodes.filter((candidate) => {
-      if (candidate.parentIndex !== current.index || !candidate.hittable) {
+      if (
+        candidate.parentIndex !== current.index ||
+        !candidate.hittable ||
+        isSnapshotNodeInteractionBlocked(candidate)
+      ) {
         return false;
       }
       const candidateRect = normalizeRect(candidate.rect);
@@ -81,9 +98,7 @@ function findPreferredActionableDescendant(
     if (sameRectChildren.length !== 1) {
       break;
     }
-    const child = sameRectChildren[0];
-    if (child === undefined) break;
-    current = child;
+    current = sameRectChildren[0]!;
   }
 
   return current === node ? null : current;
@@ -98,16 +113,6 @@ function isSemanticTouchRole(role: string): boolean {
   // Match Tab exactly so broad roles like Table/TabBar do not become touch targets.
   return (
     role === 'tab' || SEMANTIC_TOUCH_ROLE_FRAGMENTS.some((fragment) => role.includes(fragment))
-  );
-}
-
-function areRectsApproximatelyEqual(left: Rect, right: Rect): boolean {
-  const tolerance = 0.5;
-  return (
-    Math.abs(left.x - right.x) <= tolerance &&
-    Math.abs(left.y - right.y) <= tolerance &&
-    Math.abs(left.width - right.width) <= tolerance &&
-    Math.abs(left.height - right.height) <= tolerance
   );
 }
 
