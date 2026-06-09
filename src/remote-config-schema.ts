@@ -1,8 +1,16 @@
 import { buildPrimaryEnvVarName } from './utils/source-value.ts';
+import type {
+  DaemonServerMode,
+  DaemonTransportPreference,
+  LeaseBackend,
+  SessionIsolationMode,
+} from './contracts.ts';
+import type { DeviceTarget, PlatformSelector } from './utils/device.ts';
+import type { MetroPrepareKind } from './client-metro.ts';
 
 export type RemoteConfigMetroOptions = {
   metroProjectRoot?: string;
-  metroKind?: 'auto' | 'react-native' | 'expo';
+  metroKind?: MetroPrepareKind;
   metroPublicBaseUrl?: string;
   metroProxyBaseUrl?: string;
   metroBearerToken?: string;
@@ -20,15 +28,15 @@ export type RemoteConfigProfile = RemoteConfigMetroOptions & {
   stateDir?: string;
   daemonBaseUrl?: string;
   daemonAuthToken?: string;
-  daemonTransport?: 'auto' | 'socket' | 'http';
-  daemonServerMode?: 'socket' | 'http' | 'dual';
+  daemonTransport?: DaemonTransportPreference;
+  daemonServerMode?: DaemonServerMode;
   tenant?: string;
-  sessionIsolation?: 'none' | 'tenant';
+  sessionIsolation?: SessionIsolationMode;
   runId?: string;
   leaseId?: string;
-  leaseBackend?: 'ios-simulator' | 'ios-instance' | 'android-instance';
-  platform?: 'ios' | 'macos' | 'android' | 'linux' | 'apple';
-  target?: 'mobile' | 'tv' | 'desktop';
+  leaseBackend?: LeaseBackend;
+  platform?: PlatformSelector;
+  target?: DeviceTarget;
   device?: string;
   udid?: string;
   serial?: string;

@@ -1,5 +1,6 @@
+import type { BackMode } from './back-mode.ts';
 import type { DeviceRotation } from './device-rotation.ts';
-import type { ScrollDirection } from './scroll-gesture.ts';
+import type { ScrollDirection, TransformGestureParams } from './scroll-gesture.ts';
 import type { SettingOptions } from '../platforms/permission-utils.ts';
 import type { SessionSurface } from './session-surface.ts';
 import type { BackendSnapshotResult } from '../backend.ts';
@@ -17,7 +18,7 @@ export type RunnerContext = {
   traceLogPath?: string;
 };
 
-export type BackMode = 'in-app' | 'system';
+export type { BackMode };
 
 export type ScreenshotOptions = {
   appBundleId?: string;
@@ -26,8 +27,10 @@ export type ScreenshotOptions = {
   surface?: SessionSurface;
 };
 
+export type ElementSelectorKey = 'id' | 'label' | 'text' | 'value';
+
 export type ElementSelectorTapOptions = {
-  key: 'id' | 'label' | 'text' | 'value';
+  key: ElementSelectorKey;
   value: string;
   allowNonHittableCoordinateFallback?: boolean;
 };
@@ -109,15 +112,7 @@ export type Interactor = {
     y?: number,
     velocity?: number,
   ): Promise<Record<string, unknown> | void>;
-  transformGesture(options: {
-    x: number;
-    y: number;
-    dx: number;
-    dy: number;
-    scale: number;
-    degrees: number;
-    durationMs?: number;
-  }): Promise<Record<string, unknown> | void>;
+  transformGesture(options: TransformGestureParams): Promise<Record<string, unknown> | void>;
   appSwitcher(): Promise<void>;
   readClipboard(): Promise<string>;
   writeClipboard(text: string): Promise<void>;

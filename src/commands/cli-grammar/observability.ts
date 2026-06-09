@@ -6,6 +6,8 @@ import type {
   RecordOptions,
 } from '../../client-types.ts';
 import { AppError } from '../../utils/errors.ts';
+import type { NetworkIncludeMode } from '../../contracts.ts';
+import type { LogAction } from '../log-command-contract.ts';
 import {
   isPerfAction,
   isPerfArea,
@@ -119,9 +121,7 @@ function readPerfAction(
   throw new AppError('INVALID_ARGS', PERF_ACTION_ERROR_MESSAGE);
 }
 
-function readLogsAction(
-  value: string | undefined,
-): 'path' | 'start' | 'stop' | 'doctor' | 'mark' | 'clear' | undefined {
+function readLogsAction(value: string | undefined): LogAction | undefined {
   if (value === undefined) return undefined;
   if (
     value === 'path' ||
@@ -142,9 +142,7 @@ function readNetworkAction(value: string | undefined): 'dump' | 'log' | undefine
   throw new AppError('INVALID_ARGS', 'network requires dump or log');
 }
 
-function readNetworkInclude(
-  value: string | undefined,
-): 'summary' | 'headers' | 'body' | 'all' | undefined {
+function readNetworkInclude(value: string | undefined): NetworkIncludeMode | undefined {
   if (value === undefined) return undefined;
   if (value === 'summary' || value === 'headers' || value === 'body' || value === 'all')
     return value;

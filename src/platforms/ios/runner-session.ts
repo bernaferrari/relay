@@ -3,6 +3,7 @@ import { runCmdBackground, type ExecResult, type ExecBackgroundResult } from '..
 import { withKeyedLock } from '../../utils/keyed-lock.ts';
 import { Deadline } from '../../utils/retry.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
+import type { AppleRunnerLifecycleOptions } from './runner-provider.ts';
 import { emitDiagnostic, withDiagnosticTimer } from '../../utils/diagnostics.ts';
 import { buildSimctlArgsForDevice } from './simctl.ts';
 import { runXcrun } from './tool-provider.ts';
@@ -49,16 +50,7 @@ import type { RunnerSession } from './runner-session-types.ts';
 
 export type { RunnerSession } from './runner-session-types.ts';
 
-export type RunnerSessionOptions = {
-  verbose?: boolean;
-  logPath?: string;
-  traceLogPath?: string;
-  cleanStaleBundles?: boolean;
-  startupTimeoutMs?: number;
-  requestId?: string;
-  buildTimeoutMs?: number;
-  forceRunnerXctestrunRebuild?: boolean;
-};
+export type RunnerSessionOptions = AppleRunnerLifecycleOptions;
 
 const runnerSessions = new Map<string, RunnerSession>();
 const runnerSessionLocks = new Map<string, Promise<unknown>>();

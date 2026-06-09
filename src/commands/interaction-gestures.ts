@@ -4,6 +4,8 @@ import { centerOfRect } from '../utils/snapshot.ts';
 import {
   buildSwipePresetGesturePlan,
   parseSwipePreset,
+  type GestureReferenceFrame,
+  type ScrollDirection,
   type SwipePreset,
 } from '../core/scroll-gesture.ts';
 import type { AgentDeviceRuntime, CommandContext } from '../runtime-contract.ts';
@@ -18,7 +20,11 @@ import {
   type ScrollEdgeState,
   type ScrollEdgeTarget,
 } from '../utils/scroll-edge-state.ts';
-import type { RuntimeCommand } from './runtime-types.ts';
+import {
+  toBackendResult,
+  type BackendResultEnvelope,
+  type RuntimeCommand,
+} from './runtime-types.ts';
 import {
   assertSupportedInteractionSurface,
   captureInteractionSnapshot,
@@ -32,10 +38,7 @@ export type FocusCommandOptions = CommandContext & {
   target: InteractionTarget;
 };
 
-export type FocusCommandResult = ResolvedInteractionTarget & {
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+export type FocusCommandResult = ResolvedInteractionTarget & BackendResultEnvelope;
 
 export type LongPressCommandOptions = CommandContext & {
   target: InteractionTarget;
@@ -44,12 +47,11 @@ export type LongPressCommandOptions = CommandContext & {
 
 export type LongPressCommandResult = ResolvedInteractionTarget & {
   durationMs?: number;
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
-export type GestureDirection = 'up' | 'down' | 'left' | 'right';
-export type ScrollInputDirection = GestureDirection | 'top' | 'bottom';
+export type GestureDirection = ScrollDirection;
+export const SCROLL_INPUT_DIRECTIONS = ['up', 'down', 'left', 'right', 'top', 'bottom'] as const;
+export type ScrollInputDirection = (typeof SCROLL_INPUT_DIRECTIONS)[number];
 
 export type ScrollTarget =
   | InteractionTarget
@@ -107,9 +109,7 @@ export type SwipeCommandResult = {
   distance?: number;
   durationMs?: number;
   fromTarget?: ResolvedInteractionTarget | { kind: 'viewport' };
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
 export type PinchCommandOptions = CommandContext & {
   scale: number;
@@ -121,9 +121,7 @@ export type PinchCommandResult = {
   scale: number;
   center?: Point;
   centerTarget?: ResolvedInteractionTarget;
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
 export const focusCommand: RuntimeCommand<FocusCommandOptions, FocusCommandResult> = async (
   runtime,
@@ -539,10 +537,7 @@ function resolveSnapshotViewport(nodes: SnapshotState['nodes']): Rect {
   };
 }
 
-function resolveSnapshotReferenceFrame(nodes: SnapshotState['nodes']): {
-  referenceWidth: number;
-  referenceHeight: number;
-} {
+function resolveSnapshotReferenceFrame(nodes: SnapshotState['nodes']): GestureReferenceFrame {
   const viewport = resolveSnapshotViewport(nodes);
   return {
     referenceWidth: viewport.width,
@@ -552,8 +547,4 @@ function resolveSnapshotReferenceFrame(nodes: SnapshotState['nodes']): {
 
 function isUsableRect(rect: SnapshotNode['rect']): rect is NonNullable<SnapshotNode['rect']> {
   return Boolean(rect && rect.width > 0 && rect.height > 0);
-}
-
-function toBackendResult(result: unknown): Record<string, unknown> | undefined {
-  return result && typeof result === 'object' ? (result as Record<string, unknown>) : undefined;
 }

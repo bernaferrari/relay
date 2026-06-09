@@ -7,7 +7,12 @@ import { successText } from '../utils/success-text.ts';
 import { findMistargetedTypeRefToken } from '../utils/type-target-warning.ts';
 import type { ResolvedTarget } from './selector-read.ts';
 import { toBackendContext } from './selector-read-utils.ts';
-import type { RuntimeCommand } from './runtime-types.ts';
+import {
+  toBackendResult,
+  type BackendResultEnvelope,
+  type RuntimeCommand,
+} from './runtime-types.ts';
+import type { RepeatedInput } from './command-input.ts';
 import {
   type InteractionTarget,
   type ResolvedInteractionTarget,
@@ -42,15 +47,11 @@ export type {
   ResolvedInteractionTarget,
 } from './interaction-resolution.ts';
 
-export type PressCommandOptions = CommandContext & {
-  target: InteractionTarget;
-  button?: ClickButton;
-  count?: number;
-  intervalMs?: number;
-  holdMs?: number;
-  jitterPx?: number;
-  doubleTap?: boolean;
-};
+export type PressCommandOptions = CommandContext &
+  RepeatedInput & {
+    target: InteractionTarget;
+    button?: ClickButton;
+  };
 
 export type ClickCommandOptions = PressCommandOptions;
 
@@ -79,9 +80,7 @@ export type TypeTextCommandResult = {
   kind: 'text';
   text: string;
   delayMs: number;
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
 export const pressCommand: RuntimeCommand<PressCommandOptions, PressCommandResult> = async (
   runtime,
@@ -189,10 +188,6 @@ async function tapCommand(
     ...resolved,
     ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
   };
-}
-
-function toBackendResult(result: unknown): Record<string, unknown> | undefined {
-  return result && typeof result === 'object' ? (result as Record<string, unknown>) : undefined;
 }
 
 function formatTargetForWarning(result: {

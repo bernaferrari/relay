@@ -7,7 +7,10 @@ import {
   inferGestureReferenceFrame,
   parseScrollDirection,
   parseSwipePreset,
+  type ScrollDirection,
+  type SwipePattern,
   type SwipePreset,
+  type TransformGestureParams,
 } from './scroll-gesture.ts';
 import {
   getClickButtonValidationError,
@@ -766,23 +769,11 @@ export async function handleTransformGestureCommand(
   };
 }
 
-type GestureDirection = 'up' | 'down' | 'left' | 'right';
-
 type RotateGestureParams = {
   degrees: number;
   x?: number;
   y?: number;
   velocity: number;
-};
-
-type TransformGestureParams = {
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  scale: number;
-  degrees: number;
-  durationMs?: number;
 };
 
 function parseRotateGestureParams(positionals: string[]): RotateGestureParams {
@@ -840,7 +831,7 @@ function parseOptionalGestureCenter(
   return { x, y };
 }
 
-function parseGestureDirection(input: string | undefined, field: string): GestureDirection {
+function parseGestureDirection(input: string | undefined, field: string): ScrollDirection {
   if (input === 'up' || input === 'down' || input === 'left' || input === 'right') {
     return input;
   }
@@ -857,7 +848,7 @@ function requireFinitePositiveNumber(value: number, field: string): number {
 function pointOffsetByDirection(
   x: number,
   y: number,
-  direction: GestureDirection,
+  direction: ScrollDirection,
   distance: number,
 ): { x2: number; y2: number } {
   switch (direction) {
@@ -933,7 +924,7 @@ function formatPressMessage(params: { x: number; y: number; button?: ClickButton
   return `Tapped (${params.x}, ${params.y})`;
 }
 
-function formatSwipeMessage(count: number, pattern: 'one-way' | 'ping-pong'): string {
+function formatSwipeMessage(count: number, pattern: SwipePattern): string {
   if (count <= 1) return 'Swiped';
   return pattern === 'ping-pong' ? `Swiped ${count} times (ping-pong)` : `Swiped ${count} times`;
 }
