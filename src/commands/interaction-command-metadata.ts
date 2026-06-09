@@ -1,5 +1,6 @@
 import { requireCommandDescription } from './command-descriptions.ts';
 import { defineCommandMetadata } from './command-contract.ts';
+import { GESTURE_KINDS } from '../command-catalog.ts';
 import {
   booleanField,
   elementTargetField,
@@ -26,11 +27,16 @@ import {
   type PointInput,
 } from './command-input.ts';
 import { defineFieldCommandMetadata } from './field-command-contract.ts';
+import { CLICK_BUTTONS } from '../core/click-button.ts';
+import {
+  SCROLL_DIRECTIONS,
+  SWIPE_PATTERNS,
+  SWIPE_PRESETS,
+  type ScrollDirection,
+  type SwipePreset,
+} from '../core/scroll-gesture.ts';
+import { SCROLL_INPUT_DIRECTIONS } from './interaction-gestures.ts';
 
-const CLICK_BUTTON_VALUES = ['primary', 'secondary', 'middle'] as const;
-const GESTURE_KIND_VALUES = ['pan', 'fling', 'swipe', 'pinch', 'rotate', 'transform'] as const;
-const GESTURE_DIRECTION_VALUES = ['up', 'down', 'left', 'right'] as const;
-const GESTURE_SWIPE_PRESET_VALUES = ['left', 'right', 'left-edge', 'right-edge'] as const;
 const FIND_ACTION_VALUES = [
   'click',
   'focus',
@@ -42,15 +48,10 @@ const FIND_ACTION_VALUES = [
   'type',
 ] as const;
 const FIND_LOCATOR_VALUES = ['any', 'text', 'label', 'value', 'role', 'id'] as const;
-const SCROLL_DIRECTION_VALUES = ['up', 'down', 'left', 'right', 'top', 'bottom'] as const;
-const SWIPE_PATTERN_VALUES = ['one-way', 'ping-pong'] as const;
 
 const clickFields = {
   target: requiredField(interactionTargetField()),
-  button: enumField(
-    CLICK_BUTTON_VALUES,
-    'Pointer button for platforms that support mouse buttons.',
-  ),
+  button: enumField(CLICK_BUTTONS, 'Pointer button for platforms that support mouse buttons.'),
   ...selectorSnapshotFields(),
   ...repeatedFields(),
 };
@@ -80,7 +81,7 @@ const swipeFields = {
   durationMs: integerField('Swipe duration in milliseconds.', { min: 0 }),
   count: integerField('Number of swipe repetitions.', { min: 1 }),
   pauseMs: integerField('Pause between repeated swipes.', { min: 0 }),
-  pattern: enumField(SWIPE_PATTERN_VALUES),
+  pattern: enumField(SWIPE_PATTERNS),
 };
 
 const focusFields = {
@@ -94,7 +95,7 @@ const typeFields = {
 };
 
 const scrollFields = {
-  direction: requiredField(enumField(SCROLL_DIRECTION_VALUES)),
+  direction: requiredField(enumField(SCROLL_INPUT_DIRECTIONS)),
   amount: numberField('Platform scroll amount.'),
   pixels: integerField('Pixel scroll amount.', { min: 0 }),
 };
@@ -127,9 +128,9 @@ const findFields = {
 };
 
 const gestureFields = {
-  kind: requiredField(enumField(GESTURE_KIND_VALUES, 'Gesture variant.')),
-  direction: enumField(GESTURE_DIRECTION_VALUES, 'Fling direction.'),
-  preset: enumField(GESTURE_SWIPE_PRESET_VALUES, 'Swipe preset.'),
+  kind: requiredField(enumField(GESTURE_KINDS, 'Gesture variant.')),
+  direction: enumField(SCROLL_DIRECTIONS, 'Fling direction.'),
+  preset: enumField(SWIPE_PRESETS, 'Swipe preset.'),
   origin: pointField('Gesture origin point.'),
   delta: pointField('Movement delta for pan or transform gestures.'),
   distance: integerField('Fling distance.', { min: 0 }),
@@ -154,7 +155,7 @@ export type PanInput = CommonCommandInput & {
 
 export type FlingInput = CommonCommandInput & {
   kind: 'fling';
-  direction: 'up' | 'down' | 'left' | 'right';
+  direction: ScrollDirection;
   origin: PointInput;
   distance?: number;
   durationMs?: number;
@@ -162,7 +163,7 @@ export type FlingInput = CommonCommandInput & {
 
 export type SwipeGestureInput = CommonCommandInput & {
   kind: 'swipe';
-  preset: 'left' | 'right' | 'left-edge' | 'right-edge';
+  preset: SwipePreset;
   durationMs?: number;
 };
 
@@ -234,7 +235,7 @@ export const interactionCommandMetadata = [
 function readGestureInput(input: unknown): GestureInput {
   const record = readInputRecord(input);
   const common = readCommonInput(record);
-  const kind = requiredEnum(record, 'kind', GESTURE_KIND_VALUES);
+  const kind = requiredEnum(record, 'kind', GESTURE_KINDS);
   if (kind === 'pan') {
     return {
       ...common,
@@ -248,7 +249,7 @@ function readGestureInput(input: unknown): GestureInput {
     return {
       ...common,
       kind,
-      direction: requiredEnum(record, 'direction', GESTURE_DIRECTION_VALUES),
+      direction: requiredEnum(record, 'direction', SCROLL_DIRECTIONS),
       origin: readPoint(record, 'origin'),
       distance: optionalInteger(record, 'distance', { min: 0 }),
       durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
@@ -258,7 +259,7 @@ function readGestureInput(input: unknown): GestureInput {
     return {
       ...common,
       kind,
-      preset: requiredEnum(record, 'preset', GESTURE_SWIPE_PRESET_VALUES),
+      preset: requiredEnum(record, 'preset', SWIPE_PRESETS),
       durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
     };
   }

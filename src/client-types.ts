@@ -4,10 +4,26 @@ import type {
   DaemonLockPolicy,
   DaemonRequest,
   DaemonResponse,
+  DaemonServerMode,
+  DaemonTransportPreference,
   LeaseBackend,
+  NetworkIncludeMode,
+  SessionIsolationMode,
   SessionRuntimeHints,
 } from './contracts.ts';
 import type { DeviceKind, DeviceTarget, Platform, PlatformSelector } from './utils/device.ts';
+import type { BackMode } from './core/back-mode.ts';
+import type { ClickButton } from './core/click-button.ts';
+import type { DeviceRotation } from './core/device-rotation.ts';
+import type {
+  ScrollDirection,
+  SwipePattern,
+  SwipePreset,
+  TransformGestureParams,
+} from './core/scroll-gesture.ts';
+import type { ScrollInputDirection } from './commands/interaction-gestures.ts';
+import type { LogAction } from './commands/log-command-contract.ts';
+import type { SessionSurface } from './core/session-surface.ts';
 import type { FindLocator } from './utils/finders.ts';
 import type { AndroidSnapshotBackendMetadata } from './platforms/android/snapshot-types.ts';
 import type {
@@ -26,16 +42,12 @@ import type { AppsFilter } from './commands/app-inventory-contract.ts';
 import type { ScreenshotRequestFlags } from './commands/capture-screenshot-options.ts';
 import type { PerfAction, PerfArea } from './commands/perf-command-contract.ts';
 import type { DaemonBatchStep } from './core/batch.ts';
-import type { AlertInfo } from './alert-contract.ts';
+import type { AlertAction, AlertInfo } from './alert-contract.ts';
 
 export type { FindLocator } from './utils/finders.ts';
 export type { CompanionTunnelScope, MetroBridgeScope } from './client-companion-tunnel-contract.ts';
 export type { AppsFilter } from './commands/app-inventory-contract.ts';
 export type { AlertAction, AlertInfo, AlertPlatform, AlertSource } from './alert-contract.ts';
-
-type DaemonTransportMode = 'auto' | 'socket' | 'http';
-type DaemonServerMode = 'socket' | 'http' | 'dual';
-type SessionIsolationMode = 'none' | 'tenant';
 
 export type AgentDeviceDaemonTransport = (
   req: Omit<DaemonRequest, 'token'>,
@@ -49,7 +61,7 @@ export type AgentDeviceClientConfig = {
   stateDir?: string;
   daemonBaseUrl?: string;
   daemonAuthToken?: string;
-  daemonTransport?: DaemonTransportMode;
+  daemonTransport?: DaemonTransportPreference;
   daemonServerMode?: DaemonServerMode;
   tenant?: string;
   sessionIsolation?: SessionIsolationMode;
@@ -175,7 +187,7 @@ export type AppOpenOptions = AgentDeviceRequestOverrides &
   AgentDeviceSelectionOptions & {
     app?: string;
     url?: string;
-    surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
+    surface?: SessionSurface;
     activity?: string;
     launchConsole?: string;
     launchArgs?: string[];
@@ -333,7 +345,7 @@ export type CaptureScreenshotOptions = AgentDeviceRequestOverrides & {
   fullscreen?: boolean;
   maxSize?: number;
   stabilize?: boolean;
-  surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
+  surface?: SessionSurface;
 };
 
 export type CaptureScreenshotResult = {
@@ -379,20 +391,20 @@ type WaitCommandTarget =
 export type WaitCommandOptions = DeviceCommandBaseOptions & WaitCommandTarget;
 
 export type AlertCommandOptions = DeviceCommandBaseOptions & {
-  action?: 'get' | 'accept' | 'dismiss' | 'wait';
+  action?: AlertAction;
   timeoutMs?: number;
 };
 
 export type AppStateCommandOptions = DeviceCommandBaseOptions;
 
 export type BackCommandOptions = DeviceCommandBaseOptions & {
-  mode?: 'in-app' | 'system';
+  mode?: BackMode;
 };
 
 export type HomeCommandOptions = DeviceCommandBaseOptions;
 
 export type RotateCommandOptions = DeviceCommandBaseOptions & {
-  orientation: 'portrait' | 'portrait-upside-down' | 'landscape-left' | 'landscape-right';
+  orientation: DeviceRotation;
 };
 
 export type AppSwitcherCommandOptions = DeviceCommandBaseOptions;
@@ -441,11 +453,11 @@ export type AppStateCommandResult = DaemonResponseData & {
   package?: string;
   activity?: string;
   source?: 'session';
-  surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
+  surface?: SessionSurface;
 };
 
 export type BackCommandResult = CommandActionResult<'back'> & {
-  mode?: 'in-app' | 'system';
+  mode?: BackMode;
 };
 
 export type HomeCommandResult = CommandActionResult<'home'>;
@@ -569,7 +581,7 @@ export type ClickOptions = ClientCommandBaseOptions &
   SelectorSnapshotCommandOptions &
   InteractionTarget &
   RepeatedPressOptions & {
-    button?: 'primary' | 'secondary' | 'middle';
+    button?: ClickButton;
   };
 
 export type PressOptions = ClientCommandBaseOptions &
@@ -589,7 +601,7 @@ export type SwipeOptions = ClientCommandBaseOptions & {
   durationMs?: number;
   count?: number;
   pauseMs?: number;
-  pattern?: 'one-way' | 'ping-pong';
+  pattern?: SwipePattern;
 };
 
 export type PanOptions = ClientCommandBaseOptions & {
@@ -601,7 +613,7 @@ export type PanOptions = ClientCommandBaseOptions & {
 };
 
 export type FlingOptions = ClientCommandBaseOptions & {
-  direction: 'up' | 'down' | 'left' | 'right';
+  direction: ScrollDirection;
   x: number;
   y: number;
   distance?: number;
@@ -609,7 +621,7 @@ export type FlingOptions = ClientCommandBaseOptions & {
 };
 
 export type SwipeGestureOptions = ClientCommandBaseOptions & {
-  preset: 'left' | 'right' | 'left-edge' | 'right-edge';
+  preset: SwipePreset;
   durationMs?: number;
 };
 
@@ -631,7 +643,7 @@ export type FillOptions = ClientCommandBaseOptions &
   };
 
 export type ScrollOptions = ClientCommandBaseOptions & {
-  direction: 'up' | 'down' | 'left' | 'right' | 'top' | 'bottom';
+  direction: ScrollInputDirection;
   amount?: number;
   pixels?: number;
 };
@@ -649,15 +661,7 @@ export type RotateGestureOptions = ClientCommandBaseOptions & {
   velocity?: number;
 };
 
-export type TransformGestureOptions = ClientCommandBaseOptions & {
-  x: number;
-  y: number;
-  dx: number;
-  dy: number;
-  scale: number;
-  degrees: number;
-  durationMs?: number;
-};
+export type TransformGestureOptions = ClientCommandBaseOptions & TransformGestureParams;
 
 export type GetOptions = ClientCommandBaseOptions &
   SelectorSnapshotCommandOptions &
@@ -742,7 +746,7 @@ export type PerfOptions = ClientCommandBaseOptions & {
 };
 
 export type LogsOptions = AgentDeviceRequestOverrides & {
-  action?: 'path' | 'start' | 'stop' | 'doctor' | 'mark' | 'clear';
+  action?: LogAction;
   message?: string;
   restart?: boolean;
 };
@@ -750,7 +754,7 @@ export type LogsOptions = AgentDeviceRequestOverrides & {
 export type NetworkOptions = AgentDeviceRequestOverrides & {
   action?: 'dump' | 'log';
   limit?: number;
-  include?: 'summary' | 'headers' | 'body' | 'all';
+  include?: NetworkIncludeMode;
 };
 
 type RecordingQuality = 5 | 6 | 7 | 8 | 9 | 10;
@@ -844,9 +848,9 @@ type CommandExecutionOptions = Partial<ScreenshotRequestFlags> & {
   jitterPx?: number;
   pixels?: number;
   doubleTap?: boolean;
-  clickButton?: 'primary' | 'secondary' | 'middle';
+  clickButton?: ClickButton;
   pauseMs?: number;
-  pattern?: 'one-way' | 'ping-pong';
+  pattern?: SwipePattern;
   headless?: boolean;
   restart?: boolean;
   replayUpdate?: boolean;
@@ -863,7 +867,7 @@ type CommandExecutionOptions = Partial<ScreenshotRequestFlags> & {
   shardSplit?: number;
   findFirst?: boolean;
   findLast?: boolean;
-  networkInclude?: 'summary' | 'headers' | 'body' | 'all';
+  networkInclude?: NetworkIncludeMode;
   batchOnError?: 'stop';
   batchMaxSteps?: number;
   batchSteps?: DaemonBatchStep[];
@@ -874,7 +878,7 @@ export type InternalRequestOptions = AgentDeviceClientConfig &
   CommandExecutionOptions & {
     runtime?: SessionRuntimeHints;
     overlayRefs?: boolean;
-    surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
+    surface?: SessionSurface;
     activity?: string;
     launchConsole?: string;
     launchArgs?: string[];
@@ -882,7 +886,7 @@ export type InternalRequestOptions = AgentDeviceClientConfig &
     shutdown?: boolean;
     saveScript?: boolean | string;
     noRecord?: boolean;
-    backMode?: 'in-app' | 'system';
+    backMode?: BackMode;
     metroHost?: string;
     metroPort?: number;
     bundleUrl?: string;

@@ -1,5 +1,16 @@
-import { SESSION_SURFACES } from '../core/session-surface.ts';
-import type { DaemonInstallSource } from '../contracts.ts';
+import { SESSION_SURFACES, type SessionSurface } from '../core/session-surface.ts';
+import type { BackMode } from '../core/back-mode.ts';
+import type { ClickButton } from '../core/click-button.ts';
+import type { SwipePattern } from '../core/scroll-gesture.ts';
+import type { DeviceTarget, PlatformSelector } from './device.ts';
+import type {
+  DaemonInstallSource,
+  DaemonServerMode,
+  DaemonTransportPreference,
+  LeaseBackend,
+  NetworkIncludeMode,
+  SessionIsolationMode,
+} from '../contracts.ts';
 import type { RemoteConfigMetroOptions } from '../remote-config-schema.ts';
 import {
   SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS,
@@ -18,20 +29,20 @@ export type CliFlags = RemoteConfigMetroOptions &
     stateDir?: string;
     daemonBaseUrl?: string;
     daemonAuthToken?: string;
-    daemonTransport?: 'auto' | 'socket' | 'http';
-    daemonServerMode?: 'socket' | 'http' | 'dual';
+    daemonTransport?: DaemonTransportPreference;
+    daemonServerMode?: DaemonServerMode;
     tenant?: string;
-    sessionIsolation?: 'none' | 'tenant';
+    sessionIsolation?: SessionIsolationMode;
     runId?: string;
     leaseId?: string;
-    leaseBackend?: 'ios-simulator' | 'ios-instance' | 'android-instance';
+    leaseBackend?: LeaseBackend;
     force?: boolean;
     noLogin?: boolean;
     sessionLock?: 'reject' | 'strip';
     sessionLocked?: boolean;
     sessionLockConflicts?: 'reject' | 'strip';
-    platform?: 'ios' | 'macos' | 'android' | 'linux' | 'apple';
-    target?: 'mobile' | 'tv' | 'desktop';
+    platform?: PlatformSelector;
+    target?: DeviceTarget;
     device?: string;
     udid?: string;
     serial?: string;
@@ -50,7 +61,7 @@ export type CliFlags = RemoteConfigMetroOptions &
     snapshotScope?: string;
     snapshotRaw?: boolean;
     snapshotForceFull?: boolean;
-    networkInclude?: 'summary' | 'headers' | 'body' | 'all';
+    networkInclude?: NetworkIncludeMode;
     baseline?: string;
     threshold?: string;
     appsFilter?: 'user-installed' | 'all';
@@ -64,10 +75,10 @@ export type CliFlags = RemoteConfigMetroOptions &
     jitterPx?: number;
     pixels?: number;
     doubleTap?: boolean;
-    clickButton?: 'primary' | 'secondary' | 'middle';
-    backMode?: 'in-app' | 'system';
+    clickButton?: ClickButton;
+    backMode?: BackMode;
     pauseMs?: number;
-    pattern?: 'one-way' | 'ping-pong';
+    pattern?: SwipePattern;
     activity?: string;
     launchConsole?: string;
     launchArgs?: string[];
@@ -77,7 +88,7 @@ export type CliFlags = RemoteConfigMetroOptions &
     saveScript?: boolean | string;
     shutdown?: boolean;
     relaunch?: boolean;
-    surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
+    surface?: SessionSurface;
     headless?: boolean;
     restart?: boolean;
     noRecord?: boolean;

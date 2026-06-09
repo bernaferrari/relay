@@ -1,5 +1,6 @@
 export type { AppErrorCode } from './utils/errors.ts';
 export { defaultHintForCode, normalizeError } from './utils/errors.ts';
+import type { PlatformSelector } from './utils/device.ts';
 
 export type SessionRuntimeHints = {
   platform?: 'ios' | 'android';
@@ -38,6 +39,10 @@ export type DaemonInstallSource =
 
 export type DaemonLockPolicy = 'reject' | 'strip';
 export type LeaseBackend = 'ios-simulator' | 'ios-instance' | 'android-instance';
+export type DaemonServerMode = 'socket' | 'http' | 'dual';
+export type DaemonTransportPreference = 'auto' | 'socket' | 'http';
+export type SessionIsolationMode = 'none' | 'tenant';
+export type NetworkIncludeMode = 'summary' | 'headers' | 'body' | 'all';
 
 export type DaemonRequestMeta = {
   requestId?: string;
@@ -49,7 +54,7 @@ export type DaemonRequestMeta = {
   leaseId?: string;
   leaseTtlMs?: number;
   leaseBackend?: LeaseBackend;
-  sessionIsolation?: 'none' | 'tenant';
+  sessionIsolation?: SessionIsolationMode;
   uploadedArtifactId?: string;
   clientArtifactPaths?: Record<string, string>;
   installSource?: DaemonInstallSource;
@@ -57,7 +62,7 @@ export type DaemonRequestMeta = {
   materializedPathRetentionMs?: number;
   materializationId?: string;
   lockPolicy?: DaemonLockPolicy;
-  lockPlatform?: 'ios' | 'macos' | 'android' | 'linux' | 'apple';
+  lockPlatform?: PlatformSelector;
   requestProgress?: 'replay-test';
 };
 
@@ -357,7 +362,11 @@ export const daemonCommandRequestSchema = schema<DaemonRequest>((input, path) =>
             leaseBackend: optionalEnum(
               meta,
               'leaseBackend',
-              ['ios-simulator', 'ios-instance', 'android-instance'] as const,
+              [
+                'ios-simulator',
+                'ios-instance',
+                'android-instance',
+              ] as const satisfies readonly LeaseBackend[],
               `${path}.meta`,
             ),
             sessionIsolation: optionalEnum(
@@ -395,7 +404,13 @@ export const daemonCommandRequestSchema = schema<DaemonRequest>((input, path) =>
             lockPlatform: optionalEnum(
               meta,
               'lockPlatform',
-              ['ios', 'macos', 'android', 'linux', 'apple'] as const,
+              [
+                'ios',
+                'macos',
+                'android',
+                'linux',
+                'apple',
+              ] as const satisfies readonly PlatformSelector[],
               `${path}.meta`,
             ),
           },

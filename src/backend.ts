@@ -8,8 +8,16 @@ import type {
   SnapshotOptions,
   SnapshotState,
 } from './utils/snapshot.ts';
+import type { NetworkIncludeMode } from './contracts.ts';
+import type { DeviceTarget, Platform, PlatformSelector } from './utils/device.ts';
+import type { BackMode } from './core/back-mode.ts';
+import type { RepeatedInput } from './commands/command-input.ts';
+import type { ClickButton } from './core/click-button.ts';
+import type { DeviceRotation } from './core/device-rotation.ts';
+import type { ScrollDirection } from './core/scroll-gesture.ts';
+import type { SessionSurface } from './core/session-surface.ts';
 
-export type AgentDeviceBackendPlatform = 'ios' | 'android' | 'macos' | 'linux';
+export type AgentDeviceBackendPlatform = Platform;
 
 export const BACKEND_CAPABILITY_NAMES = [
   'android.shell',
@@ -71,7 +79,7 @@ export type BackendScreenshotOptions = {
   fullscreen?: boolean;
   overlayRefs?: boolean;
   stabilize?: boolean;
-  surface?: 'app' | 'frontmost-app' | 'desktop' | 'menubar';
+  surface?: SessionSurface;
 };
 
 export type BackendScreenshotResult = {
@@ -81,14 +89,10 @@ export type BackendScreenshotResult = {
 
 export type BackendActionResult = Record<string, unknown> | void;
 
-export type BackendDeviceOrientation =
-  | 'portrait'
-  | 'portrait-upside-down'
-  | 'landscape-left'
-  | 'landscape-right';
+export type BackendDeviceOrientation = DeviceRotation;
 
 export type BackendBackOptions = {
-  mode?: 'in-app' | 'system';
+  mode?: BackMode;
 };
 
 export type BackendKeyboardOptions = {
@@ -96,7 +100,7 @@ export type BackendKeyboardOptions = {
 };
 
 export type BackendKeyboardResult = {
-  platform?: 'android' | 'ios' | 'macos' | 'linux';
+  platform?: Platform;
   action?: BackendKeyboardOptions['action'];
   visible?: boolean;
   inputType?: string | null;
@@ -133,13 +137,8 @@ export type BackendAlertResult =
       timedOut?: boolean;
     };
 
-export type BackendTapOptions = {
-  button?: 'primary' | 'secondary' | 'middle';
-  count?: number;
-  intervalMs?: number;
-  holdMs?: number;
-  jitterPx?: number;
-  doubleTap?: boolean;
+export type BackendTapOptions = RepeatedInput & {
+  button?: ClickButton;
 };
 
 export type BackendFillOptions = {
@@ -164,7 +163,7 @@ export type BackendScrollTarget =
     };
 
 export type BackendScrollOptions = {
-  direction: 'up' | 'down' | 'left' | 'right';
+  direction: ScrollDirection;
   amount?: number;
   pixels?: number;
 };
@@ -234,8 +233,8 @@ export type BackendAppEvent = {
 };
 
 export type BackendDeviceFilter = {
-  platform?: AgentDeviceBackendPlatform | 'apple';
-  target?: 'mobile' | 'tv' | 'desktop';
+  platform?: PlatformSelector;
+  target?: DeviceTarget;
   kind?: 'simulator' | 'emulator' | 'device' | 'desktop';
 };
 
@@ -340,7 +339,7 @@ export type BackendReadLogsResult = {
   notes?: readonly string[];
 };
 
-export type BackendNetworkIncludeMode = 'summary' | 'headers' | 'body' | 'all';
+export type BackendNetworkIncludeMode = NetworkIncludeMode;
 
 export type BackendNetworkEntry = {
   timestamp?: string;

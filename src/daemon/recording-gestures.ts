@@ -6,7 +6,11 @@ import {
   resolveTapVisualizationOffsetMs,
 } from './recording-timing.ts';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
-import { buildScrollGesturePlan } from '../core/scroll-gesture.ts';
+import {
+  buildScrollGesturePlan,
+  type ScrollDirection,
+  type SwipePattern,
+} from '../core/scroll-gesture.ts';
 import {
   getSnapshotReferenceFrame,
   type TouchReferenceFrame as ReferenceFrame,
@@ -312,7 +316,7 @@ function buildSwipeEvents(
 
 function resolveSwipePathForIndex(
   index: number,
-  pattern: 'one-way' | 'ping-pong',
+  pattern: SwipePattern,
   x1: number,
   y1: number,
   x2: number,
@@ -477,7 +481,7 @@ function resolveEventReferenceFrame(
   return getSnapshotReferenceFrame(snapshot);
 }
 
-function readDirection(value: unknown): 'up' | 'down' | 'left' | 'right' | undefined {
+function readDirection(value: unknown): ScrollDirection | undefined {
   if (typeof value !== 'string') return undefined;
   const normalized = value.trim().toLowerCase();
   switch (normalized) {
@@ -485,7 +489,7 @@ function readDirection(value: unknown): 'up' | 'down' | 'left' | 'right' | undef
     case 'down':
     case 'left':
     case 'right':
-      return normalized as 'up' | 'down' | 'left' | 'right';
+      return normalized as ScrollDirection;
     default:
       return undefined;
   }

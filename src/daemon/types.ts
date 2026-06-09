@@ -5,11 +5,14 @@ import type {
   DaemonResponse as PublicDaemonResponse,
   DaemonResponseData as PublicDaemonResponseData,
   DaemonInstallSource as PublicDaemonInstallSource,
+  DaemonError,
   LeaseBackend,
   SessionRuntimeHints as PublicSessionRuntimeHints,
 } from '../contracts.ts';
 export type { DaemonLockPolicy } from '../contracts.ts';
 import type { CommandFlags } from '../core/dispatch.ts';
+import type { GestureReferenceFrame, ScrollDirection } from '../core/scroll-gesture.ts';
+import type { NetworkLogBackend } from './network-log.ts';
 import type { SessionSurface } from '../core/session-surface.ts';
 import type { DeviceInfo, Platform, PlatformSelector } from '../utils/device.ts';
 import type { ExecBackgroundResult, ExecResult } from '../utils/exec.ts';
@@ -71,14 +74,7 @@ export type ReplaySuiteTestFailed = {
   durationMs: number;
   attempts: number;
   artifactsDir?: string;
-  error: {
-    code: string;
-    message: string;
-    hint?: string;
-    diagnosticId?: string;
-    logPath?: string;
-    details?: Record<string, unknown>;
-  };
+  error: DaemonError;
   shardIndex?: number;
   shardCount?: number;
   deviceId?: string;
@@ -142,7 +138,7 @@ export type RecordingGestureEvent =
     })
   | (RecordingTelemetryTravel & {
       kind: 'scroll';
-      contentDirection: 'up' | 'down' | 'left' | 'right';
+      contentDirection: ScrollDirection;
       amount?: number;
       pixels?: number;
     })
@@ -195,10 +191,7 @@ type SessionRecordingBase = {
   quality?: number;
   showTouches: boolean;
   gestureEvents: RecordingGestureEvent[];
-  touchReferenceFrame?: {
-    referenceWidth: number;
-    referenceHeight: number;
-  };
+  touchReferenceFrame?: GestureReferenceFrame;
   gestureClockOriginAtMs?: number;
   gestureClockOriginUptimeMs?: number;
   runnerSessionId?: string;
@@ -272,7 +265,7 @@ export type SessionState = {
   /** Session-scoped app log stream; logs written to outPath for agent to grep */
   appLog?: {
     platform: Platform;
-    backend: 'ios-simulator' | 'ios-device' | 'android' | 'macos';
+    backend: NetworkLogBackend;
     outPath: string;
     startedAt: number;
     getState: () => AppLogState;

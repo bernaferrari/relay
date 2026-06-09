@@ -6,6 +6,7 @@ import type {
   WaitCommandOptions,
 } from '../../client-types.ts';
 import { parseTimeout } from '../../daemon/handlers/parse-utils.ts';
+import type { AlertAction } from '../../alert-contract.ts';
 import { splitSelectorFromArgs, tryParseSelectorChain } from '../../daemon/selectors.ts';
 import type { CliFlags } from '../../utils/cli-flags.ts';
 import { AppError } from '../../utils/errors.ts';
@@ -174,9 +175,7 @@ function readAlertInput(positionals: string[]): Record<string, unknown> {
   return compactRecord({ action, timeoutMs });
 }
 
-function readAlertAction(
-  value: string | undefined,
-): 'get' | 'accept' | 'dismiss' | 'wait' | undefined {
+function readAlertAction(value: string | undefined): AlertAction | undefined {
   const action = value?.toLowerCase();
   if (
     action === undefined ||

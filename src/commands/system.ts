@@ -6,32 +6,33 @@ import type {
   BackendKeyboardResult,
 } from '../backend.ts';
 import type { CommandContext } from '../runtime-contract.ts';
+import type { BackMode } from '../core/back-mode.ts';
 import { AppError } from '../utils/errors.ts';
 import { successText } from '../utils/success-text.ts';
 import { requireIntInRange } from '../utils/validation.ts';
 import { isKeyboardAction } from '../utils/keyboard-actions.ts';
-import type { RuntimeCommand } from './runtime-types.ts';
+import {
+  toBackendResult,
+  type BackendResultEnvelope,
+  type RuntimeCommand,
+} from './runtime-types.ts';
 import { toBackendContext } from './selector-read-utils.ts';
 import { normalizeOptionalText } from './text.ts';
 
 export type SystemBackCommandOptions = CommandContext & {
-  mode?: 'in-app' | 'system';
+  mode?: BackMode;
 };
 
 export type SystemBackCommandResult = {
   kind: 'systemBack';
-  mode: 'in-app' | 'system';
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+  mode: BackMode;
+} & BackendResultEnvelope;
 
 export type SystemHomeCommandOptions = CommandContext;
 
 export type SystemHomeCommandResult = {
   kind: 'systemHome';
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
 export type SystemRotateCommandOptions = CommandContext & {
   orientation: BackendDeviceOrientation;
@@ -40,9 +41,7 @@ export type SystemRotateCommandOptions = CommandContext & {
 export type SystemRotateCommandResult = {
   kind: 'systemRotated';
   orientation: BackendDeviceOrientation;
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
 export type SystemKeyboardCommandOptions = CommandContext & {
   action?: 'status' | 'get' | 'dismiss' | 'enter' | 'return';
@@ -100,9 +99,7 @@ export type SystemSettingsCommandOptions = CommandContext & {
 export type SystemSettingsCommandResult = {
   kind: 'settingsOpened';
   target?: string;
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
 export type SystemAlertCommandOptions = CommandContext & {
   action?: BackendAlertAction;
@@ -136,9 +133,7 @@ export type SystemAppSwitcherCommandOptions = CommandContext;
 
 export type SystemAppSwitcherCommandResult = {
   kind: 'appSwitcherOpened';
-  backendResult?: Record<string, unknown>;
-  message?: string;
-};
+} & BackendResultEnvelope;
 
 export const backCommand: RuntimeCommand<
   SystemBackCommandOptions | undefined,
@@ -443,8 +438,4 @@ function normalizeAlertHandledResult(
 
 function isKeyboardResult(value: unknown): value is BackendKeyboardResult {
   return Boolean(value && typeof value === 'object');
-}
-
-function toBackendResult(result: unknown): Record<string, unknown> | undefined {
-  return result && typeof result === 'object' ? (result as Record<string, unknown>) : undefined;
 }
