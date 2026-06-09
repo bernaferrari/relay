@@ -98,6 +98,7 @@ vi.mock('../runner-xctestrun.ts', async () => {
 });
 
 import {
+  abortAllIosRunnerSessions,
   ensureRunnerSession,
   executeRunnerCommandWithSession,
   getRunnerSessionSnapshot,
@@ -106,9 +107,19 @@ import {
   stopRunnerSession,
   validateRunnerDevice,
 } from '../runner-session.ts';
+import {
+  RUNNER_OWNER_START_TIME,
+  RUNNER_OWNER_TOKEN,
+  writeRunnerLease,
+  type RunnerLease,
+} from '../runner-lease.ts';
 
-beforeEach(() => {
+beforeEach(async () => {
+  await abortAllIosRunnerSessions();
   vi.resetAllMocks();
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-runner-lease-test-'),
+  );
   mockRunXcrun.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
   mockEnsureXctestrunArtifact.mockResolvedValue({
     xctestrunPath: '/tmp/base-runner.xctestrun',
@@ -577,6 +588,10 @@ test('runner session starts xcodebuild through provider seams and reuses an aliv
   assert.deepEqual(mockPrepareXctestrunWithEnv.mock.calls[0]?.[1], {
     AGENT_DEVICE_RUNNER_PORT: '8123',
   });
+  assert.match(
+    String(mockPrepareXctestrunWithEnv.mock.calls[0]?.[2] ?? ''),
+    /^session-runner-session-start-sim-owner-\d+-[a-f0-9]{8}-8123$/,
+  );
   assert.equal(
     mockRunXcrun.mock.calls.some((call) => call[0]?.includes('bootstatus')),
     false,
@@ -594,24 +609,71 @@ test('runner session starts xcodebuild through provider seams and reuses an aliv
   await stopRunnerSession(session);
 });
 
-test('runner session startup kills stale device-scoped xcodebuild before launching a new runner', async () => {
+test('runner session startup kills legacy ownerless xcodebuild before launching a new runner', async () => {
   const device = { ...IOS_SIMULATOR, id: 'runner-session-startup-stale-sim' };
 
   await ensureRunnerSession(device, {});
 
-  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter((call) => call[0] === 'pkill');
+  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall);
   assert.equal(pkillCalls.length, 2);
   assert.deepEqual(pkillCalls[0]?.[1]?.slice(0, 2), ['-TERM', '-f']);
   assert.deepEqual(pkillCalls[1]?.[1]?.slice(0, 2), ['-KILL', '-f']);
   assert.match(
     String(pkillCalls[0]?.[1]?.[2] ?? ''),
-    /xcodebuild\.\*test-without-building\.\*AgentDeviceRunner\\\.env\\\.session-runner-session-startup-stale-sim-/,
+    /xcodebuild\.\*test-without-building\.\*AgentDeviceRunner\\\.env\\\.session-runner-session-startup-stale-sim-\[0-9\]/,
   );
   const staleCleanupCallOrder = mockRunAppleToolCommand.mock.invocationCallOrder[0];
   const runnerLaunchCallOrder = mockRunCmdBackground.mock.invocationCallOrder[0];
   assert.ok(staleCleanupCallOrder !== undefined);
   assert.ok(runnerLaunchCallOrder !== undefined);
   assert.ok(staleCleanupCallOrder < runnerLaunchCallOrder);
+});
+
+test('runner session startup rejects live foreign runner lease', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-busy-lease-sim' };
+  writeRunnerLease(
+    makeRunnerLease({
+      deviceId: device.id,
+      ownerToken: 'owner-foreign-live',
+      ownerPid: process.pid,
+      ownerStartTime: RUNNER_OWNER_START_TIME,
+    }),
+  );
+
+  await assert.rejects(
+    () => ensureRunnerSession(device, {}),
+    /already owned by another agent-device daemon/,
+  );
+
+  assert.equal(mockRunCmdBackground.mock.calls.length, 0);
+  assert.equal(
+    mockRunAppleToolCommand.mock.calls.some((call) => call[0] === 'pkill'),
+    false,
+  );
+});
+
+test('runner session startup reclaims dead foreign runner lease before launching', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-dead-lease-sim' };
+  mockIsProcessAlive.mockImplementation((pid) => pid !== 999_999_999 && pid !== 999_999_998);
+  writeRunnerLease(
+    makeRunnerLease({
+      deviceId: device.id,
+      ownerToken: 'owner-dead-foreign',
+      ownerPid: 999_999_999,
+      runnerPid: 999_999_998,
+    }),
+  );
+
+  const session = await ensureRunnerSession(device, {});
+
+  assert.equal(session.deviceId, device.id);
+  assert.equal(mockRunCmdBackground.mock.calls.length, 1);
+  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall);
+  assert.ok(pkillCalls.length >= 2);
+  assert.match(
+    String(pkillCalls[0]?.[1]?.[2] ?? ''),
+    /xcodebuild\.\*test-without-building\.\*AgentDeviceRunner\\\.env\\\.session-runner-session-dead-lease-sim-owner-dead-foreign-/,
+  );
 });
 
 test('runner session restarts alive runner when expected xctestrun artifact changes', async () => {
@@ -716,24 +778,49 @@ test('runner session stop sends shutdown, cleans temporary runner files, and rel
   assert.equal(getRunnerSessionSnapshot(device.id), null);
 });
 
-test('runner session stop kills stale device-scoped xcodebuild runner processes without in-memory session', async () => {
+test('runner session stop kills only owned stale xcodebuild runner processes without in-memory session', async () => {
   const deviceId = '11C70358-8331-4872-A0CA-F15B6859B6FC';
+  writeRunnerLease(makeRunnerLease({ deviceId, ownerToken: RUNNER_OWNER_TOKEN }));
 
   await stopIosRunnerSession(deviceId);
 
-  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter((call) => call[0] === 'pkill');
+  const pkillCalls = mockRunAppleToolCommand.mock.calls.filter(isXcodebuildPkillCall);
   assert.equal(pkillCalls.length, 2);
   assert.deepEqual(pkillCalls[0]?.[1]?.slice(0, 2), ['-TERM', '-f']);
   assert.deepEqual(pkillCalls[1]?.[1]?.slice(0, 2), ['-KILL', '-f']);
   assert.match(
     String(pkillCalls[0]?.[1]?.[2] ?? ''),
-    /xcodebuild\.\*test-without-building\.\*AgentDeviceRunner\\\.env\\\.session-11C70358-8331-4872-A0CA-F15B6859B6FC-/,
+    /xcodebuild\.\*test-without-building\.\*AgentDeviceRunner\\\.env\\\.session-11C70358-8331-4872-A0CA-F15B6859B6FC-owner-\d+-/,
   );
   assert.deepEqual(pkillCalls[0]?.[2], {
     allowFailure: true,
     timeoutMs: 2_000,
   });
 });
+
+test('runner session abort removes owned lease for in-memory sessions', async () => {
+  const device = { ...IOS_SIMULATOR, id: 'runner-session-abort-lease-sim' };
+  const session = await ensureRunnerSession(device, {});
+  const leaseDir = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  assert.ok(leaseDir);
+  const leasePath = path.join(leaseDir, `${device.id}.json`);
+  assert.equal(fs.existsSync(leasePath), true);
+
+  await abortAllIosRunnerSessions();
+
+  assert.equal(fs.existsSync(leasePath), false);
+  assert.equal(getRunnerSessionSnapshot(session.deviceId), null);
+  assert.deepEqual(mockCleanupTempFile.mock.calls, [
+    ['/tmp/session-runner.xctestrun'],
+    ['/tmp/session-runner.json'],
+  ]);
+  assert.equal(mockRedirectRelease.mock.calls.length, 1);
+});
+
+function isXcodebuildPkillCall(call: unknown[]): boolean {
+  const args = call[1];
+  return call[0] === 'pkill' && Array.isArray(args) && args.includes('-f');
+}
 
 test('runner session invalidation skips graceful shutdown and removes stale session', async () => {
   const device = { ...IOS_SIMULATOR, id: 'runner-session-invalidate-sim' };
@@ -787,6 +874,26 @@ function makeRunnerSession(overrides: Partial<RunnerSession> = {}): RunnerSessio
     ready: true,
     ...overrides,
   } as RunnerSession;
+}
+
+function makeRunnerLease(
+  overrides: Partial<RunnerLease> & { deviceId: string; ownerToken?: string | undefined },
+): RunnerLease {
+  const ownerToken = overrides.ownerToken ?? `owner-${process.pid}-test`;
+  const lease: RunnerLease = {
+    schemaVersion: 1,
+    deviceId: overrides.deviceId,
+    ownerToken,
+    ownerPid: process.pid,
+    ownerStartTime: RUNNER_OWNER_START_TIME,
+    sessionId: `session-${overrides.deviceId}`,
+    runnerPid: 4242,
+    port: 8123,
+    xctestrunPath: `/tmp/AgentDeviceRunner.env.session-${overrides.deviceId}-${ownerToken}-8123.xctestrun`,
+    jsonPath: `/tmp/AgentDeviceRunner.env.session-${overrides.deviceId}-${ownerToken}-8123.json`,
+    createdAtMs: Date.now(),
+  };
+  return { ...lease, ...overrides, ownerToken };
 }
 
 function makeBackgroundRunner(pid: number) {
