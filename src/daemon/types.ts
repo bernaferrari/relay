@@ -27,11 +27,20 @@ type DaemonRequestMeta = Omit<PublicDaemonRequestMeta, 'installSource' | 'lockPl
   leaseBackend?: LeaseBackend;
 };
 
+export type DaemonOpenLifecycle = {
+  beforeDispatch?: (session: SessionState) => Promise<DaemonResponse | undefined>;
+};
+
+type DaemonRequestInternal = {
+  openLifecycle?: DaemonOpenLifecycle;
+};
+
 export type DaemonRequest = Omit<PublicDaemonRequest, 'token' | 'session' | 'flags' | 'meta'> & {
   token: string;
   session: string;
   flags?: CommandFlags;
   meta?: DaemonRequestMeta;
+  internal?: DaemonRequestInternal;
 };
 
 export type ReplaySuiteTestSkipReason = 'skipped-by-filter';
@@ -47,6 +56,7 @@ export type ReplaySuiteTestPassed = {
   artifactsDir?: string;
   replayed: number;
   healed: number;
+  warnings?: string[];
   attemptFailures?: ReplaySuiteAttemptFailure[];
   shardIndex?: number;
   shardCount?: number;

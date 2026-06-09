@@ -43,6 +43,7 @@ export async function runReplayTestAttempt(
     shard,
     runReplay,
     cleanupSession,
+    finalizeAttempt,
   } = params;
   registerRequestAbort(requestId);
   const artifactPaths = new Set<string>();
@@ -105,7 +106,6 @@ export async function runReplayTestAttempt(
       durationMs: Date.now() - attemptStartedAt,
       errorCode: response.ok ? undefined : response.error.code,
     });
-    return response;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
     if (timedOut) {
@@ -128,6 +128,19 @@ export async function runReplayTestAttempt(
           requestId,
         });
       }
+    }
+    const finalizedResponse = await finalizeReplayTestAttempt({
+      finalizeAttempt,
+      sessionName,
+      artifactPaths,
+      artifactsDir,
+      tracePath,
+    });
+    if (response?.ok && finalizedResponse && !finalizedResponse.ok) {
+      appendReplayTestWarning(
+        response,
+        `Replay test finalization failed: ${finalizedResponse.error.message}`,
+      );
     }
     const cleanupStartedAt = Date.now();
     try {
@@ -164,6 +177,15 @@ export async function runReplayTestAttempt(
       });
     }
   }
+  return (
+    response ?? {
+      ok: false,
+      error: {
+        code: 'COMMAND_FAILED',
+        message: 'Unknown replay test failure',
+      },
+    }
+  );
 }
 
 async function waitForReplayAfterTimeout(replayPromise: Promise<DaemonResponse>): Promise<boolean> {
@@ -200,6 +222,59 @@ async function cleanupSessionAfterLateReplay(params: {
   }
 }
 
+async function finalizeReplayTestAttempt(params: {
+  finalizeAttempt: ReplayTestRuntimeDependencies['finalizeAttempt'];
+  sessionName: string;
+  artifactPaths: Set<string>;
+  artifactsDir?: string;
+  tracePath?: string;
+}): Promise<DaemonResponse | undefined> {
+  const { finalizeAttempt, sessionName, artifactPaths, artifactsDir, tracePath } = params;
+  if (!finalizeAttempt) return undefined;
+  const finalizeStartedAt = Date.now();
+  appendReplayTestTimingEvent(tracePath, {
+    type: 'replay_test_finalize_start',
+    ts: new Date().toISOString(),
+    session: sessionName,
+  });
+  try {
+    const finalized = await finalizeAttempt({
+      sessionName,
+      artifactPaths,
+      artifactsDir,
+      tracePath,
+    });
+    appendReplayTestTimingEvent(tracePath, {
+      type: 'replay_test_finalize_stop',
+      ts: new Date().toISOString(),
+      session: sessionName,
+      ok: finalized?.ok ?? true,
+      durationMs: Date.now() - finalizeStartedAt,
+      errorCode: finalized?.ok === false ? finalized.error.code : undefined,
+    });
+    return finalized;
+  } catch (error) {
+    const appErr = normalizeError(error);
+    appendReplayTestTimingEvent(tracePath, {
+      type: 'replay_test_finalize_stop',
+      ts: new Date().toISOString(),
+      session: sessionName,
+      ok: false,
+      durationMs: Date.now() - finalizeStartedAt,
+      errorCode: appErr.code,
+    });
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'test_finalize_failed',
+      data: {
+        session: sessionName,
+        error: appErr.message,
+      },
+    });
+    return { ok: false, error: appErr };
+  }
+}
+
 function markReplayTimeoutCleanupPending(response: DaemonResponse | undefined): void {
   if (!response || response.ok) return;
   response.error.details = {
@@ -207,6 +282,17 @@ function markReplayTimeoutCleanupPending(response: DaemonResponse | undefined): 
     reason: REPLAY_TIMEOUT_CLEANUP_PENDING_REASON,
     timeoutCleanupPending: true,
   };
+}
+
+function appendReplayTestWarning(
+  response: Extract<DaemonResponse, { ok: true }>,
+  warning: string,
+): void {
+  const data = (response.data ??= {});
+  const warnings = Array.isArray(data.warnings)
+    ? data.warnings.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  data.warnings = [...warnings, warning];
 }
 
 function prepareReplayTestTimingTrace(params: {
@@ -247,7 +333,7 @@ function prepareReplayTestTimingTrace(params: {
   return tracePath;
 }
 
-function appendReplayTestTimingEvent(
+export function appendReplayTestTimingEvent(
   tracePath: string | undefined,
   event: Record<string, unknown>,
 ): void {
