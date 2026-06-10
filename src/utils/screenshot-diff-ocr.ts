@@ -2,13 +2,19 @@ import type { Rect } from './snapshot.ts';
 import { runCmd, whichCmd } from './exec.ts';
 
 export type MovementRange = { min: number; max: number };
-import { rectCenter, squaredDistance, unionRects } from './screenshot-geometry.ts';
+import {
+  rectCenter,
+  squaredDistance,
+  unionRects,
+  type NormalizedPoint,
+  type NormalizedRect,
+} from './screenshot-geometry.ts';
 
 export type ScreenshotOcrBlock = {
   text: string;
   confidence: number;
   rect: Rect;
-  normalizedRect: Rect;
+  normalizedRect: NormalizedRect;
 };
 
 export type ScreenshotOcrTextMatch = {
@@ -240,10 +246,10 @@ function findBestCurrentMatch(
     if (usedCurrent.has(index)) continue;
     const currentBlock = currentBlocks[index]!;
     if (normalizeTextForMatching(currentBlock.text) !== normalizedText) continue;
-    const distance = squaredDistance(
-      rectCenter(baselineBlock.normalizedRect),
-      rectCenter(currentBlock.normalizedRect),
-    );
+    // Centers are in normalized [0..100] space; compare like-for-like.
+    const baselineCenter: NormalizedPoint = rectCenter(baselineBlock.normalizedRect);
+    const currentCenter: NormalizedPoint = rectCenter(currentBlock.normalizedRect);
+    const distance = squaredDistance(baselineCenter, currentCenter);
     if (distance >= bestDistance) continue;
     bestIndex = index;
     bestDistance = distance;
