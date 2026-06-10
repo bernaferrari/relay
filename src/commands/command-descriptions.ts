@@ -3,7 +3,7 @@ const COMMAND_DESCRIPTIONS = {
   boot: 'Boot or prepare a selected device without using CLI positional arguments.',
   shutdown: 'Shutdown a selected simulator or emulator.',
   apps: 'List installed apps.',
-  session: 'List active sessions.',
+  session: 'List active sessions or print daemon state directory.',
   open: 'Open an app, deep link, URL, or platform surface.',
   prepare: 'Prepare platform helper infrastructure.',
   close: 'Close an app or end the active session.',

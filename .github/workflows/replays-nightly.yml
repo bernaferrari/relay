@@ -51,6 +51,7 @@ jobs:
     timeout-minutes: 80
     env:
       IOS_RUNTIME_VERSION: '26.2'
+      AGENT_DEVICE_STATE_DIR: ${{ github.workspace }}/.tmp/agent-device-state
       AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/ios-runner-derived
     steps:
       - name: Checkout
@@ -69,7 +70,6 @@ jobs:
           build-command: sh ./scripts/build-xcuitest-apple.sh
           xcuitest-platform: ios
           xcuitest-destination: generic/platform=iOS Simulator
-          build-on-miss: 'false'
 
       - name: Boot iOS test simulator
         uses: ./.github/actions/boot-ios-test-simulator
@@ -97,13 +97,15 @@ jobs:
         uses: ./.github/actions/upload-agent-device-artifacts
         with:
           artifact-name: replay-nightly-ios-artifacts
-          agent-home-dir: ${{ steps.apple-replay.outputs.agent-home-dir }}
+          agent-home-dir: ${{ env.AGENT_DEVICE_STATE_DIR }}
+          runner-derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
 
   nightly-macos:
     name: macOS Replay Suite
     runs-on: macos-26
     timeout-minutes: 80
     env:
+      AGENT_DEVICE_STATE_DIR: ${{ github.workspace }}/.tmp/agent-device-state
       AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/macos-runner-derived
     steps:
       - name: Checkout
@@ -119,6 +121,8 @@ jobs:
           derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
           cache-key-prefix: macos-runner-prebuilt
           build-command: pnpm build:xcuitest:macos
+          xcuitest-platform: macos
+          xcuitest-destination: platform=macOS,arch=arm64
 
       - name: Build macOS helper
         run: pnpm build:macos-helper
@@ -131,4 +135,5 @@ jobs:
         uses: ./.github/actions/upload-agent-device-artifacts
         with:
           artifact-name: replay-nightly-macos-artifacts
-          agent-home-dir: ${{ steps.apple-replay.outputs.agent-home-dir }}
+          agent-home-dir: ${{ env.AGENT_DEVICE_STATE_DIR }}
+          runner-derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
