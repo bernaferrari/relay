@@ -13,7 +13,7 @@ inputs:
     required: false
     default: ""
   build-command:
-    description: "Command used to build replay artifacts when the cache is cold"
+    description: "Command used to refresh replay artifacts before use"
     required: true
   xcuitest-platform:
     description: "Optional AGENT_DEVICE_XCUITEST_PLATFORM value"
@@ -23,12 +23,8 @@ inputs:
     description: "Optional AGENT_DEVICE_XCUITEST_DESTINATION value"
     required: false
     default: ""
-  clean-derived:
-    description: "Optional AGENT_DEVICE_IOS_CLEAN_DERIVED value"
-    required: false
-    default: ""
-  build-on-miss:
-    description: "Whether this setup action should build replay artifacts on cache miss"
+  build-before-use:
+    description: "Whether this setup action should refresh replay artifacts after restoring the cache"
     required: false
     default: "true"
 
@@ -37,7 +33,7 @@ outputs:
     description: "Resolved agent-device home directory"
     value: ${{ steps.agent-home.outputs.dir }}
   cache-hit:
-    description: "Whether the replay cache was restored"
+    description: "Whether a replay cache was restored before any build refresh"
     value: ${{ steps.restore-prebuilt.outputs.cache-hit }}
 
 runs:
@@ -56,7 +52,7 @@ runs:
       id: source-hash
       run: |
         set -euo pipefail
-        echo "value=${{ hashFiles('ios-runner/**', 'package.json', 'pnpm-lock.yaml') }}" >> "$GITHUB_OUTPUT"
+        echo "value=${{ hashFiles('ios-runner/**', 'scripts/build-xcuitest-apple.sh', 'scripts/patch-xcuitest-runner-icon.ts', 'scripts/write-xcuitest-cache-metadata.mjs', 'src/platforms/ios/apple-runner-platform.ts', 'src/platforms/ios/runner-icon.ts', 'src/platforms/ios/runner-xctestrun.ts', 'src/platforms/ios/runner-xctestrun-products.ts', '.github/actions/setup-apple-replay/action.yml', 'package.json', 'pnpm-lock.yaml') }}" >> "$GITHUB_OUTPUT"
       shell: bash
 
     - name: Cache replay prebuilt
@@ -68,15 +64,14 @@ runs:
 
     - name: Resolve agent-device home
       id: agent-home
-      run: echo "dir=$HOME/.agent-device" >> "$GITHUB_OUTPUT"
+      run: echo "dir=${AGENT_DEVICE_STATE_DIR:-$HOME/.agent-device}" >> "$GITHUB_OUTPUT"
       shell: bash
 
     - name: Build replay artifacts
-      if: inputs.build-on-miss == 'true' && steps.restore-prebuilt.outputs.cache-hit != 'true'
+      if: inputs.build-before-use == 'true'
       run: ${{ inputs.build-command }}
       shell: bash
       env:
         AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ inputs.derived-path }}
         AGENT_DEVICE_XCUITEST_PLATFORM: ${{ inputs.xcuitest-platform }}
         AGENT_DEVICE_XCUITEST_DESTINATION: ${{ inputs.xcuitest-destination }}
-        AGENT_DEVICE_IOS_CLEAN_DERIVED: ${{ inputs.clean-derived }}

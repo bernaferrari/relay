@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const [platform, derivedPath, destination] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const [platform, derivedPath, destination] = args;
 
 if (!platform || !derivedPath || !destination) {
   console.error('Usage: write-xcuitest-cache-metadata.mjs <ios|macos|tvos> <derived> <destination>');
