@@ -18,6 +18,12 @@ export type RunnerContext = {
   traceLogPath?: string;
 };
 
+/** Subset of {@link RunnerContext} forwarded to runner command invocations. */
+export type RunnerCallOptions = Pick<
+  RunnerContext,
+  'verbose' | 'logPath' | 'traceLogPath' | 'requestId'
+>;
+
 export type { BackMode };
 
 export type ScreenshotOptions = {

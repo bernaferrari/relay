@@ -14,6 +14,7 @@ import {
   clearAppLogFiles,
   getAppLogPathMetadata,
   readSessionNetworkCapture,
+  resolveLogBackend,
   runAppLogDoctor,
   startAppLog,
   stopAppLog,
@@ -21,7 +22,7 @@ import {
 import { buildPerfFramesResponseData, buildPerfResponseData } from './session-perf.ts';
 import { errorResponse, type DaemonFailureResponse } from './response.ts';
 import type { NetworkIncludeMode } from '../../contracts.ts';
-import type { NetworkLogBackend } from '../network-log.ts';
+import type { LogBackend } from '../network-log.ts';
 import {
   LOG_ACTION_VALUES as LOG_ACTIONS,
   type LogAction as LogsAction,
@@ -66,17 +67,8 @@ const LOG_ACTION_HANDLERS: Record<
     handleLogsStop(session, sessionName, sessionStore),
 };
 
-function resolveSessionLogBackendLabel(session: SessionState): NetworkLogBackend {
-  if (session.appLog) {
-    return session.appLog.backend;
-  }
-  if (session.device.platform === 'macos') {
-    return 'macos';
-  }
-  if (session.device.platform === 'ios') {
-    return session.device.kind === 'device' ? 'ios-device' : 'ios-simulator';
-  }
-  return 'android';
+function resolveSessionLogBackendLabel(session: SessionState): LogBackend {
+  return session.appLog?.backend ?? resolveLogBackend(session.device);
 }
 
 export async function handleSessionObservabilityCommands(
