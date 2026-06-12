@@ -113,6 +113,48 @@ test('starts and reuses a persistent Android snapshot helper session', async () 
   );
 });
 
+test('allows a persistent session snapshot to use the helper command budget', async () => {
+  const calls: string[][] = [];
+  // The delay must stay above the previous 3s session cap to guard the regression.
+  const provider = createSessionProvider({ calls, responseDelayMs: 3_200 });
+
+  const output = await captureAndroidSnapshotWithHelperSession({
+    adb: provider.exec,
+    adbProvider: provider,
+    deviceKey: 'android:emulator-5554',
+    timeoutMs: 10,
+    commandTimeoutMs: 4_000,
+  });
+
+  assert.match(output?.xml ?? '', /snapshot 1/);
+  assert.equal(output?.metadata.transport, 'persistent-session');
+  assert.equal(output?.metadata.sessionReused, false);
+});
+
+test('caps a persistent session snapshot at the helper command budget', async () => {
+  const calls: string[][] = [];
+  const provider = createSessionProvider({ calls, responseDelayMs: 50 });
+
+  await assert.rejects(
+    () =>
+      captureAndroidSnapshotWithHelperSession({
+        adb: provider.exec,
+        adbProvider: provider,
+        deviceKey: 'android:emulator-5554',
+        timeoutMs: 10,
+        commandTimeoutMs: 20,
+      }),
+    (error) => {
+      assert.equal((error as Error).message, 'Android snapshot helper session request timed out');
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.timeoutMs, 20);
+      assert.match(String(details?.command), /^snapshot snapshot-/);
+      assert.equal(typeof details?.port, 'number');
+      return true;
+    },
+  );
+});
+
 test('restarts the helper session when capture options change', async () => {
   const calls: string[][] = [];
   const spawnArgs: string[][] = [];
@@ -165,6 +207,7 @@ function createSessionProvider(options: {
   calls: string[][];
   spawnArgs?: string[][];
   responseMode?: 'ok' | 'malformed';
+  responseDelayMs?: number;
 }): AndroidAdbProvider {
   return {
     exec: async (args) => {
@@ -191,25 +234,27 @@ function createSessionProvider(options: {
           }
           snapshotCount += 1;
           const body = `<hierarchy><node text="snapshot ${snapshotCount}" /></hierarchy>`;
-          socket.end(
-            sessionResponse({
-              requestId,
-              body,
-              metadata: {
-                waitForIdleTimeoutMs: '25',
-                waitForIdleQuietMs: '25',
-                timeoutMs: '5000',
-                maxDepth: '128',
-                maxNodes: '5000',
-                rootPresent: 'true',
-                captureMode: 'interactive-windows',
-                windowCount: '1',
-                nodeCount: '1',
-                truncated: 'false',
-                elapsedMs: '7',
-              },
-            }),
-          );
+          setTimeout(() => {
+            socket.end(
+              sessionResponse({
+                requestId,
+                body,
+                metadata: {
+                  waitForIdleTimeoutMs: '25',
+                  waitForIdleQuietMs: '25',
+                  timeoutMs: '5000',
+                  maxDepth: '128',
+                  maxNodes: '5000',
+                  rootPresent: 'true',
+                  captureMode: 'interactive-windows',
+                  windowCount: '1',
+                  nodeCount: '1',
+                  truncated: 'false',
+                  elapsedMs: '7',
+                },
+              }),
+            );
+          }, options.responseDelayMs ?? 0);
         });
       });
       server.listen(port, '127.0.0.1', () => {
