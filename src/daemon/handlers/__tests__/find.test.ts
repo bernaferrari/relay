@@ -160,7 +160,141 @@ test('handleFindCommands click prefers on-screen duplicate text matches', async 
   expect(invokeCalls[0]!.positionals?.[0]).toBe('@e3');
 });
 
-test('handleFindCommands click retries full snapshot when iOS compact snapshot is sparse', async () => {
+test('handleFindCommands click tries query-scoped full retry before failing sparse verdict', async () => {
+  const session = makeSession('default');
+  session.snapshot = {
+    nodes: [
+      {
+        index: 0,
+        ref: 'e1',
+        type: 'Application',
+        rect: { x: 0, y: 0, width: 390, height: 844 },
+      },
+      {
+        index: 1,
+        ref: 'e2',
+        type: 'Button',
+        label: 'Previous Search',
+        rect: { x: 80, y: 792, width: 78, height: 48 },
+      },
+    ],
+    createdAt: Date.now(),
+    backend: 'xctest',
+  };
+  mockDispatch.mockImplementation(async (_device, command) => {
+    if (command !== 'snapshot') return {};
+    return {
+      backend: 'xctest',
+      quality: {
+        state: 'sparse',
+        backend: 'private-ax',
+        reason: 'sparse tree',
+        reasonCode: 'sparse-tree',
+      },
+      nodes: [
+        {
+          index: 0,
+          type: 'Application',
+          rect: { x: 0, y: 0, width: 0, height: 0 },
+        },
+      ],
+    };
+  });
+
+  const previousSnapshot = session.snapshot;
+  const { response, invokeCalls } = await runFindClickScenario({
+    positionals: ['Search', 'click'],
+    session,
+  });
+
+  expect(response.ok).toBe(false);
+  expect(session.snapshot).toBe(previousSnapshot);
+  expect(invokeCalls).toHaveLength(0);
+  expect(!response.ok && response.error).toMatchObject({
+    code: 'COMMAND_FAILED',
+    message: 'find could not read the current accessibility tree',
+    details: {
+      reason: 'sparse tree',
+      hint: expect.stringContaining('snapshot quality verdict is sparse'),
+    },
+  });
+  const snapshotCalls = mockDispatch.mock.calls.filter((call) => call[1] === 'snapshot');
+  expect(snapshotCalls).toHaveLength(2);
+  expect(snapshotCalls[0]![4]).toMatchObject({
+    snapshotInteractiveOnly: true,
+    snapshotCompact: true,
+  });
+  expect(snapshotCalls[1]![4]).toMatchObject({
+    snapshotInteractiveOnly: false,
+    snapshotCompact: false,
+    snapshotScope: 'Search',
+  });
+});
+
+test('handleFindCommands click uses query-scoped full retry when sparse verdict recovers', async () => {
+  const snapshotResponses = [
+    {
+      backend: 'xctest',
+      quality: {
+        state: 'sparse',
+        backend: 'private-ax',
+        reason: 'sparse tree',
+        reasonCode: 'sparse-tree',
+      },
+      nodes: [
+        {
+          index: 0,
+          type: 'Application',
+          rect: { x: 0, y: 0, width: 0, height: 0 },
+        },
+      ],
+    },
+    {
+      backend: 'xctest',
+      quality: {
+        state: 'healthy',
+        backend: 'tree',
+      },
+      nodes: [
+        {
+          index: 0,
+          type: 'Application',
+          hittable: false,
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          index: 1,
+          type: 'Button',
+          label: 'Search',
+          hittable: true,
+          rect: { x: 80, y: 792, width: 78, height: 48 },
+          parentIndex: 0,
+        },
+      ],
+    },
+  ];
+  mockDispatch.mockImplementation(async (_device, command) => {
+    if (command !== 'snapshot') return {};
+    return snapshotResponses.shift() ?? { nodes: [] };
+  });
+
+  const { response, invokeCalls } = await runFindClickScenario({
+    positionals: ['Search', 'click'],
+  });
+
+  expect(response.ok).toBe(true);
+  expect(invokeCalls[0]!.positionals?.[0]).toBe('@e1');
+  expect(response.ok ? response.data : undefined).toMatchObject({ x: 119, y: 816 });
+  const snapshotCalls = mockDispatch.mock.calls.filter((call) => call[1] === 'snapshot');
+  expect(snapshotCalls).toHaveLength(2);
+  expect(snapshotCalls[1]![4]).toMatchObject({
+    snapshotInteractiveOnly: false,
+    snapshotCompact: false,
+    snapshotScope: 'Search',
+  });
+});
+
+test('handleFindCommands click retries full snapshot for legacy iOS sparse shape without verdict', async () => {
   const snapshotResponses = [
     {
       backend: 'xctest',
@@ -215,7 +349,7 @@ test('handleFindCommands click retries full snapshot when iOS compact snapshot i
   });
 });
 
-test('handleFindCommands click scopes full retry when unscoped iOS fallback fails', async () => {
+test('handleFindCommands click scopes full retry for legacy sparse shape when unscoped fallback fails', async () => {
   const snapshotResponses = [
     {
       backend: 'xctest',
@@ -505,6 +639,58 @@ test('handleFindCommands wait bypasses snapshot cache while Android freshness re
     expect(response.data?.found).toBe(true);
   }
   expect(mockDispatch).toHaveBeenCalledTimes(2);
+});
+
+test('handleFindCommands wait reports sparse verdict through selector runtime route', async () => {
+  const session = makeSession('default');
+  session.snapshot = {
+    nodes: [
+      {
+        index: 0,
+        ref: 'e1',
+        type: 'Button',
+        label: 'Previous screen action',
+        rect: { x: 24, y: 600, width: 180, height: 52 },
+      },
+    ],
+    createdAt: Date.now(),
+    backend: 'xctest',
+  };
+  const previousSnapshot = session.snapshot;
+  mockDispatch.mockImplementation(async (_device, command) => {
+    if (command !== 'snapshot') return {};
+    return {
+      backend: 'xctest',
+      quality: {
+        state: 'sparse',
+        backend: 'private-ax',
+        reason: 'sparse tree',
+        reasonCode: 'sparse-tree',
+      },
+      nodes: [
+        {
+          index: 0,
+          type: 'Application',
+        },
+      ],
+    };
+  });
+
+  const { response } = await runFindClickScenario({
+    positionals: ['text', 'Never appears', 'wait', '350'],
+    session,
+  });
+
+  expect(response.ok).toBe(false);
+  expect(session.snapshot).toBe(previousSnapshot);
+  expect(!response.ok && response.error).toMatchObject({
+    code: 'COMMAND_FAILED',
+    message: 'find could not read the current accessibility tree',
+    details: {
+      reason: 'sparse tree',
+      hint: expect.stringContaining('snapshot quality verdict is sparse'),
+    },
+  });
 });
 
 test('handleFindCommands wait captures fresh snapshots while polling', async () => {
