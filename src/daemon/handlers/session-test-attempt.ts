@@ -15,6 +15,7 @@ import { isReplayInfrastructureFailure } from './session-test-infrastructure.ts'
 import { runReplayTestAttempt } from './session-test-runtime.ts';
 import type { ReplayTestRuntimeDependencies } from './session-test-types.ts';
 import type { ReplayTestShardContext } from './session-test-sharding.ts';
+import { isRequestCanceled } from '../request-cancel.ts';
 
 type ReplayTestCaseResult = Extract<ReplaySuiteTestResult, { status: 'passed' | 'failed' }>;
 type ReplayTestAttemptFailure = NonNullable<
@@ -82,6 +83,7 @@ async function runReplayTestCaseAttempts(
   params: ReplayTestCaseParams,
   context: ReplayTestCaseContext,
 ): Promise<ReplayTestCaseOutcome> {
+  emitReplayTestStartProgress(params, context);
   const outcome: ReplayTestCaseOutcome = {
     finalSessionName: '',
     attempts: 0,
@@ -90,9 +92,10 @@ async function runReplayTestCaseAttempts(
   };
 
   for (let attemptIndex = 0; attemptIndex <= params.retries; attemptIndex += 1) {
+    if (isRequestCanceled(params.requestId)) break;
     const attempt = await runSingleReplayTestAttempt(params, context, attemptIndex);
     updateReplayTestCaseOutcome(outcome, attempt);
-    if (shouldStopReplayTestAttempts(attempt.response, attemptIndex, params.retries)) break;
+    if (shouldStopReplayTestAttempts(params, attempt.response, attemptIndex)) break;
     emitReplayTestRetryProgress(params, context, attempt);
   }
 
@@ -116,18 +119,20 @@ async function runSingleReplayTestAttempt(
   );
   const attemptArtifactsDir = path.join(context.testArtifactsDir, `attempt-${attempt}`);
   prepareReplayTestAttemptArtifacts(entry.path, attemptArtifactsDir);
+  const attemptRequestId = buildReplayTestAttemptRequestId({
+    requestId,
+    suiteInvocationId,
+    filePath: entry.path,
+    caseIndex,
+    attemptIndex,
+    shardIndex: shard?.shardIndex,
+  });
 
   const response = await runReplayTestAttempt({
     filePath: entry.path,
     sessionName: testSessionName,
-    requestId: buildReplayTestAttemptRequestId({
-      requestId,
-      suiteInvocationId,
-      filePath: entry.path,
-      caseIndex,
-      attemptIndex,
-      shardIndex: shard?.shardIndex,
-    }),
+    requestId: attemptRequestId,
+    parentRequestId: requestId,
     timeoutMs,
     platform: entry.metadata.platform,
     target: entry.metadata.target,
@@ -149,6 +154,26 @@ async function runSingleReplayTestAttempt(
   return { response, sessionName: testSessionName, attempt, durationMs };
 }
 
+function emitReplayTestStartProgress(
+  params: ReplayTestCaseParams,
+  context: ReplayTestCaseContext,
+): void {
+  const { entry, sessionName, suiteInvocationId, caseIndex, suiteIndex, suiteTotal, shard } =
+    params;
+  emitRequestProgress({
+    type: 'replay-test',
+    file: entry.path,
+    title: entry.title,
+    status: 'start',
+    index: suiteIndex,
+    total: suiteTotal,
+    maxAttempts: context.maxAttempts,
+    session: buildReplayTestSessionName(sessionName, suiteInvocationId, entry.path, caseIndex),
+    artifactsDir: context.testArtifactsDir,
+    ...replayTestProgressShardMetadata(shard),
+  });
+}
+
 function updateReplayTestCaseOutcome(
   outcome: ReplayTestCaseOutcome,
   attempt: ReplayTestAttemptResult,
@@ -166,11 +191,16 @@ function updateReplayTestCaseOutcome(
 }
 
 function shouldStopReplayTestAttempts(
+  params: ReplayTestCaseParams,
   response: DaemonResponse,
   attemptIndex: number,
-  retries: number,
 ): boolean {
-  return response.ok || isReplayInfrastructureFailure(response) || attemptIndex >= retries;
+  return (
+    response.ok ||
+    isRequestCanceled(params.requestId) ||
+    isReplayInfrastructureFailure(response) ||
+    attemptIndex >= params.retries
+  );
 }
 
 function emitReplayTestRetryProgress(
@@ -191,6 +221,9 @@ function emitReplayTestRetryProgress(
     durationMs: attempt.durationMs,
     retrying: true,
     message: attempt.response.error.message,
+    session: attempt.sessionName,
+    artifactsDir: context.testArtifactsDir,
+    ...replayTestProgressShardMetadata(params.shard),
   });
 }
 
@@ -225,7 +258,9 @@ function buildReplayTestPassedResult(
     attempt: outcome.attempts,
     maxAttempts: context.maxAttempts,
     durationMs,
+    session: outcome.finalSessionName,
     artifactsDir: context.testArtifactsDir,
+    ...replayTestProgressShardMetadata(shard),
   });
   return {
     file: entry.path,
@@ -262,8 +297,10 @@ function buildReplayTestFailedResult(
     attempt: outcome.attempts,
     maxAttempts: context.maxAttempts,
     durationMs,
+    session: outcome.finalSessionName,
     artifactsDir: context.testArtifactsDir,
     message: error.message,
+    ...replayTestProgressShardMetadata(shard),
   });
   return {
     file: entry.path,
@@ -294,6 +331,12 @@ function replayTestWarningsResultMetadata(
 }
 
 function replayTestShardResultMetadata(
+  shard: ReplayTestShardContext | undefined,
+): Pick<ReplaySuiteTestFailed, 'shardIndex' | 'shardCount' | 'deviceId'> {
+  return replayTestProgressShardMetadata(shard);
+}
+
+function replayTestProgressShardMetadata(
   shard: ReplayTestShardContext | undefined,
 ): Pick<ReplaySuiteTestFailed, 'shardIndex' | 'shardCount' | 'deviceId'> {
   return shard

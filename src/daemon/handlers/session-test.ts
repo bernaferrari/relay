@@ -19,9 +19,27 @@ import {
 import { isReplayInfrastructureFailure } from './session-test-infrastructure.ts';
 import { runReplayTestCase } from './session-test-attempt.ts';
 import type { ReplayTestRuntimeDependencies } from './session-test-types.ts';
-import { buildReplayTestShardPlan, type ReplayTestShardContext } from './session-test-sharding.ts';
+import {
+  buildReplayTestShardPlan,
+  type ReplayTestShardContext,
+  type ReplayTestShardPlan,
+} from './session-test-sharding.ts';
+import { isRequestCanceled } from '../request-cancel.ts';
 
 type ReplayTestEntry = ReturnType<typeof discoverReplayTestEntries>[number];
+type ReplayTestQueuedEntry = {
+  entry: ReplayTestRunEntry;
+  suiteIndex: number;
+};
+
+type ReplayTestSuitePlan = {
+  entries: ReplayTestEntry[];
+  runnable: ReplayTestQueuedEntry[];
+  shardPlan: ReplayTestShardPlan<ReplayTestQueuedEntry> | undefined;
+  suiteArtifactsDir: string;
+  suiteInvocationId: string;
+  total: number;
+};
 
 export async function runReplayTestSuite(
   params: {
@@ -35,42 +53,27 @@ export async function runReplayTestSuite(
   }
 
   try {
-    const entries = discoverReplayTestEntries({
-      inputs: req.positionals,
-      cwd: req.meta?.cwd,
-      platformFilter: req.flags?.platform,
-      replayBackend: req.flags?.replayBackend,
-    });
-    const suiteInvocationId = buildReplayTestInvocationId(req.meta?.requestId);
-    const suiteArtifactsDir = resolveReplayTestArtifactsDir({
-      artifactsDir:
-        typeof req.flags?.artifactsDir === 'string' ? req.flags.artifactsDir : undefined,
-      cwd: req.meta?.cwd,
-      suiteInvocationId,
-    });
-
     const suiteStartedAt = Date.now();
-    const skipped = entries.filter((entry) => entry.kind === 'skip');
-    const runnable = entries.filter((entry): entry is ReplayTestRunEntry => entry.kind === 'run');
-    const shardPlan = await buildReplayTestShardPlan(req.flags, runnable, skipped.length);
-    const results: ReplaySuiteTestResult[] = shardPlan
+    const plan = await prepareReplayTestSuitePlan(req);
+    emitReplayTestSuiteStart(plan);
+    const results: ReplaySuiteTestResult[] = plan.shardPlan
       ? emitSkippedReplayTestResults({
-          entries,
-          total: shardPlan.total,
+          entries: plan.entries,
+          total: plan.total,
         })
       : [];
 
-    if (shardPlan) {
+    if (plan.shardPlan) {
       results.push(
         ...(await runReplayTestShards({
-          shards: shardPlan.shards,
+          shards: plan.shardPlan.shards,
           sessionName,
-          suiteInvocationId,
+          suiteInvocationId: plan.suiteInvocationId,
           cwd: req.meta?.cwd,
           requestId: req.meta?.requestId,
           flags: req.flags,
-          suiteArtifactsDir,
-          suiteTotal: shardPlan.total,
+          suiteArtifactsDir: plan.suiteArtifactsDir,
+          suiteTotal: plan.total,
           runReplay,
           cleanupSession,
           finalizeAttempt,
@@ -79,14 +82,14 @@ export async function runReplayTestSuite(
     } else {
       results.push(
         ...(await runReplayTestEntriesInDiscoveryOrder({
-          discoveryEntries: entries,
+          discoveryEntries: plan.entries,
           sessionName,
-          suiteInvocationId,
+          suiteInvocationId: plan.suiteInvocationId,
           cwd: req.meta?.cwd,
           requestId: req.meta?.requestId,
           flags: req.flags,
-          suiteArtifactsDir,
-          suiteTotal: entries.length,
+          suiteArtifactsDir: plan.suiteArtifactsDir,
+          suiteTotal: plan.total,
           runReplay,
           cleanupSession,
           finalizeAttempt,
@@ -94,16 +97,64 @@ export async function runReplayTestSuite(
       );
     }
 
-    const data = summarizeReplayTestResults(
-      shardPlan?.total ?? entries.length,
-      results,
-      Date.now() - suiteStartedAt,
-    );
+    const data = summarizeReplayTestResults(plan.total, results, Date.now() - suiteStartedAt);
     return { ok: true, data };
   } catch (err) {
     const appErr = asAppError(err);
     return errorResponse(appErr.code, appErr.message);
   }
+}
+
+async function prepareReplayTestSuitePlan(req: DaemonRequest): Promise<ReplayTestSuitePlan> {
+  const entries = discoverReplayTestSuiteEntries(req);
+  const runnable = runnableReplayTestEntries(entries);
+  const skippedCount = entries.length - runnable.length;
+  const suiteInvocationId = buildReplayTestInvocationId(req.meta?.requestId);
+  const shardPlan = await buildReplayTestShardPlan(req.flags, runnable, skippedCount);
+  return {
+    entries,
+    runnable,
+    shardPlan,
+    suiteInvocationId,
+    suiteArtifactsDir: replayTestSuiteArtifactsDir(req, suiteInvocationId),
+    total: shardPlan?.total ?? entries.length,
+  };
+}
+
+function discoverReplayTestSuiteEntries(req: DaemonRequest): ReplayTestEntry[] {
+  return discoverReplayTestEntries({
+    inputs: req.positionals ?? [],
+    cwd: req.meta?.cwd,
+    platformFilter: req.flags?.platform,
+    replayBackend: req.flags?.replayBackend,
+  });
+}
+
+function runnableReplayTestEntries(entries: ReplayTestEntry[]): ReplayTestQueuedEntry[] {
+  return entries.flatMap((entry, entryIndex) =>
+    entry.kind === 'run' ? [{ entry, suiteIndex: entryIndex + 1 }] : [],
+  );
+}
+
+function replayTestSuiteArtifactsDir(req: DaemonRequest, suiteInvocationId: string): string {
+  return resolveReplayTestArtifactsDir({
+    artifactsDir: typeof req.flags?.artifactsDir === 'string' ? req.flags.artifactsDir : undefined,
+    cwd: req.meta?.cwd,
+    suiteInvocationId,
+  });
+}
+
+function emitReplayTestSuiteStart(plan: ReplayTestSuitePlan): void {
+  emitRequestProgress({
+    type: 'replay-test-suite',
+    status: 'start',
+    total: plan.total,
+    runnable: plan.runnable.length,
+    skipped: plan.entries.length - plan.runnable.length,
+    artifactsDir: plan.suiteArtifactsDir,
+    shardMode: plan.shardPlan?.mode,
+    shardCount: plan.shardPlan?.shardCount,
+  });
 }
 
 function emitSkippedReplayTestResults(params: {
@@ -135,7 +186,7 @@ function emitSkippedReplayTestResults(params: {
 
 async function runReplayTestShards(
   params: {
-    shards: Array<ReplayTestShardContext & { entries: ReplayTestRunEntry[] }>;
+    shards: Array<ReplayTestShardContext & { entries: ReplayTestQueuedEntry[] }>;
     sessionName: string;
     suiteInvocationId: string;
     cwd?: string;
@@ -156,13 +207,13 @@ async function runReplayTestShards(
 }
 
 function buildUnexpectedShardFailure(
-  shard: ReplayTestShardContext & { entries: ReplayTestRunEntry[] },
+  shard: ReplayTestShardContext & { entries: ReplayTestQueuedEntry[] },
   sessionName: string,
   reason: unknown,
 ): ReplaySuiteTestFailed {
   const appErr = normalizeError(reason);
   return {
-    file: shard.entries[0]?.path ?? `shard-${shard.shardIndex + 1}`,
+    file: shard.entries[0]?.entry.path ?? `shard-${shard.shardIndex + 1}`,
     session: formatReplayTestShardSessionName(sessionName, shard),
     status: 'failed',
     durationMs: 0,
@@ -183,7 +234,7 @@ function buildUnexpectedShardFailure(
 
 async function runReplayTestShard(
   params: {
-    shard: ReplayTestShardContext & { entries: ReplayTestRunEntry[] };
+    shard: ReplayTestShardContext & { entries: ReplayTestQueuedEntry[] };
     sessionName: string;
     suiteInvocationId: string;
     cwd?: string;
@@ -237,6 +288,7 @@ async function runReplayTestEntriesInDiscoveryOrder(
   const results: ReplaySuiteTestResult[] = [];
   let executed = 0;
   for (const [entryIndex, entry] of discoveryEntries.entries()) {
+    if (isRequestCanceled(requestId)) break;
     if (entry.kind === 'skip') {
       emitRequestProgress({
         type: 'replay-test',
@@ -273,14 +325,14 @@ async function runReplayTestEntriesInDiscoveryOrder(
       finalizeAttempt,
     });
     results.push(result);
-    if (flags?.failFast === true || isReplayInfrastructureFailure(result)) break;
+    if (shouldStopReplayTestExecution(result, flags, requestId)) break;
   }
   return results;
 }
 
 async function runReplayTestEntries(
   params: {
-    entries: ReplayTestRunEntry[];
+    entries: ReplayTestQueuedEntry[];
     sessionName: string;
     suiteInvocationId: string;
     cwd?: string;
@@ -306,7 +358,9 @@ async function runReplayTestEntries(
     finalizeAttempt,
   } = params;
   const results: ReplaySuiteTestResult[] = [];
-  for (const [entryIndex, entry] of entries.entries()) {
+  for (const [entryIndex, queued] of entries.entries()) {
+    if (isRequestCanceled(requestId)) break;
+    const { entry, suiteIndex } = queued;
     const result = await runReplayTestCase({
       entry,
       sessionName,
@@ -317,7 +371,7 @@ async function runReplayTestEntries(
       retries: resolveReplayTestRetries(flags?.retries, entry.metadata.retries),
       timeoutMs: resolveReplayTestTimeout(flags?.timeoutMs, entry.metadata.timeoutMs),
       suiteArtifactsDir,
-      suiteIndex: entryIndex + 1,
+      suiteIndex,
       suiteTotal,
       shard,
       runReplay,
@@ -325,9 +379,21 @@ async function runReplayTestEntries(
       finalizeAttempt,
     });
     results.push(result);
-    if (flags?.failFast === true || isReplayInfrastructureFailure(result)) break;
+    if (shouldStopReplayTestExecution(result, flags, requestId)) break;
   }
   return results;
+}
+
+function shouldStopReplayTestExecution(
+  result: ReplaySuiteTestResult,
+  flags: DaemonRequest['flags'],
+  requestId: string | undefined,
+): boolean {
+  return (
+    isRequestCanceled(requestId) ||
+    flags?.failFast === true ||
+    isReplayInfrastructureFailure(result)
+  );
 }
 
 function summarizeReplayTestResults(
