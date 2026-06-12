@@ -68,7 +68,6 @@ const snapshotCommandMetadata = defineFieldCommandMetadata(
   snapshotCommandDescription,
   {
     interactiveOnly: booleanField(),
-    compact: booleanField(),
     depth: integerField(),
     scope: stringField(),
     raw: booleanField(),
@@ -94,7 +93,6 @@ const diffCommandMetadata = defineFieldCommandMetadata(DIFF_COMMAND_NAME, diffCo
   kind: requiredField(jsonSchemaField<'snapshot'>({ type: 'string', const: 'snapshot' })),
   out: stringField(),
   interactiveOnly: booleanField(),
-  compact: booleanField(),
   depth: integerField(),
   scope: stringField(),
   raw: booleanField(),
@@ -163,7 +161,7 @@ export const captureCommandDefinitions = [
 
 const snapshotCliSchema = {
   usageOverride:
-    'snapshot [--diff] [-i] [-c] [-d <depth>] [-s <scope>] [--raw] [--force-full] [--timeout <ms>]',
+    'snapshot [--diff] [-i] [-d <depth>] [-s <scope>] [--raw] [--force-full] [--timeout <ms>]',
   helpDescription: 'Capture accessibility tree or diff against the previous session baseline',
   allowedFlags: ['snapshotDiff', ...SNAPSHOT_FLAGS, 'snapshotForceFull', 'timeoutMs'],
 } as const satisfies CommandSchemaOverride;
@@ -216,7 +214,6 @@ export const captureCliReaders = {
   snapshot: (_positionals, flags) => ({
     ...commonInputFromFlags(flags),
     interactiveOnly: flags.snapshotInteractiveOnly,
-    compact: flags.snapshotCompact,
     depth: flags.snapshotDepth,
     scope: flags.snapshotScope,
     raw: flags.snapshotRaw,
@@ -237,7 +234,6 @@ export const captureCliReaders = {
       kind: 'snapshot',
       out: flags.out,
       interactiveOnly: flags.snapshotInteractiveOnly,
-      compact: flags.snapshotCompact,
       depth: flags.snapshotDepth,
       scope: flags.snapshotScope,
       raw: flags.snapshotRaw,

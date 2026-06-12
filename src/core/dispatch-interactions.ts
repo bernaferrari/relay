@@ -49,7 +49,7 @@ export async function handleLongPressCommand(
   positionals: string[],
 ): Promise<Record<string, unknown>> {
   const { x, y } = readPoint(positionals, 'longpress requires x y [durationMs]', {
-    hint: 'Direct platform longpress requires coordinates. In an open daemon session, use agent-device longpress @ref|selector [durationMs]; otherwise run snapshot -i -c, use the target rect center as x y, then retry longpress x y durationMs.',
+    hint: 'Direct platform longpress requires coordinates. In an open daemon session, use agent-device longpress @ref|selector [durationMs]; otherwise run snapshot -i, use the target rect center as x y, then retry longpress x y durationMs.',
   });
   const durationMs = positionals[2] ? Number(positionals[2]) : undefined;
   await interactor.longPress(x, y, durationMs);
@@ -564,7 +564,7 @@ export async function handleSwipePresetCommand(
 ): Promise<Record<string, unknown>> {
   const preset = parseSwipePreset(positionals[0]);
   const requestedDurationMs = positionals[1] ? Number(positionals[1]) : 300;
-  const snapshot = await interactor.snapshot({ appBundleId: context?.appBundleId, compact: true });
+  const snapshot = await interactor.snapshot({ appBundleId: context?.appBundleId });
   const frame = inferGestureReferenceFrame(snapshot.nodes ?? []);
   if (!frame) {
     throw new AppError('COMMAND_FAILED', 'Cannot infer viewport for gesture swipe preset');
@@ -786,7 +786,6 @@ async function captureVerifiedScrollEdgeState(
       (
         await snapshot({
           appBundleId: context?.appBundleId,
-          compact: true,
           scope: snapshotScope,
         })
       ).nodes ?? [],

@@ -73,7 +73,7 @@ test('runtime press resolves selector targets to the actionable node center', as
   assert.deepEqual(result.backendResult, { ok: true });
 });
 
-test('runtime selector interactions fall back to a full snapshot when compact interactive misses', async () => {
+test('runtime selector interactions fall back to a full snapshot when interactive refresh misses', async () => {
   const calls: Point[] = [];
   const captureOptions: Array<BackendSnapshotOptions | undefined> = [];
   const device = createInteractionDevice(selectorSnapshot(), {
@@ -106,10 +106,7 @@ test('runtime selector interactions fall back to a full snapshot when compact in
   assert.equal(result.kind, 'selector');
   assert.equal(result.node?.label, 'General');
   assert.deepEqual(calls, [{ x: 160, y: 122 }]);
-  assert.deepEqual(captureOptions, [
-    { interactiveOnly: true, compact: true },
-    { interactiveOnly: false, compact: false },
-  ]);
+  assert.deepEqual(captureOptions, [{ interactiveOnly: true }, { interactiveOnly: false }]);
 });
 
 test('runtime click keeps distinct tab button centers when iOS reports the tab bar as hittable', async () => {
