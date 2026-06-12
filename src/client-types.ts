@@ -43,11 +43,13 @@ import type { ScreenshotRequestFlags } from './contracts/screenshot.ts';
 import type { PerfAction, PerfArea, PerfKind, PerfSubject } from './contracts/perf.ts';
 import type { DaemonBatchStep } from './core/batch.ts';
 import type { AlertAction, AlertInfo } from './alert-contract.ts';
+import type { DebugSymbolsOptions, DebugSymbolsResult } from './debug-symbols.ts';
 
 export type { FindLocator } from './utils/finders.ts';
 export type { CompanionTunnelScope, MetroBridgeScope } from './client-companion-tunnel-contract.ts';
 export type { AppsFilter } from './contracts/app-inventory.ts';
 export type { AlertAction, AlertInfo, AlertPlatform, AlertSource } from './alert-contract.ts';
+export type { DebugSymbolsOptions, DebugSymbolsResult } from './debug-symbols.ts';
 
 export type AgentDeviceDaemonTransport = (
   req: Omit<DaemonRequest, 'token'>,
@@ -835,6 +837,9 @@ type CommandExecutionOptions = Partial<ScreenshotRequestFlags> & {
   positionals?: string[];
   kind?: string;
   out?: string;
+  artifact?: string;
+  dsym?: string;
+  searchPath?: string;
   interactiveOnly?: boolean;
   compact?: boolean;
   depth?: number;
@@ -982,6 +987,9 @@ export type AgentDeviceClient = {
     perf: (options?: PerfOptions) => Promise<CommandRequestResult>;
     logs: (options?: LogsOptions) => Promise<CommandRequestResult>;
     network: (options?: NetworkOptions) => Promise<CommandRequestResult>;
+  };
+  debug: {
+    symbols: (options: DebugSymbolsOptions) => Promise<DebugSymbolsResult>;
   };
   recording: {
     record: (options: RecordOptions) => Promise<CommandRequestResult>;
