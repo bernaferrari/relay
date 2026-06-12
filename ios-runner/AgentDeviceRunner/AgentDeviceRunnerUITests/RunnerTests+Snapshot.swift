@@ -11,6 +11,14 @@ extension RunnerTests {
   private static let rawSnapshotMaxNodes = 5_000
   private static let rawSnapshotTooLargeHint =
     "Raw iOS snapshot exceeded the runner payload guard. Use regular snapshot for visible UI, or scope/depth-limit raw snapshot when inspecting a large accessibility tree."
+  private static let publicQueryRecoveryMessage =
+    "Recovered iOS snapshot through XCTest accessibility element queries after the public snapshot tree was sparse. This usually means the app publishes an unhealthy accessibility tree - fixing the app accessibility is the real cure. The recovered nodes are a flattened view of on-screen controls; treat screenshot as visual truth when this warning appears."
+  private static let structuralOnlyNodeTypes: Set<String> = [
+    "Application",
+    "Window",
+    "Other",
+    "ScrollView"
+  ]
   private static let collapsedTabCandidateTypes: Set<XCUIElement.ElementType> = [
     .button,
     .link,
@@ -18,7 +26,7 @@ extension RunnerTests {
     .other,
     .staticText
   ]
-  private static let scrollContainerTypes: Set<XCUIElement.ElementType> = [
+  static let scrollContainerTypes: Set<XCUIElement.ElementType> = [
     .collectionView,
     .scrollView,
     .table
@@ -99,11 +107,17 @@ extension RunnerTests {
   }
 
   func snapshotFast(app: XCUIApplication, options: SnapshotOptions) throws -> DataPayload {
-    if options.interactiveOnly && options.compact {
-      return snapshotFlatInteractive(app: app, options: options)
-    }
     if let blocking = blockingSystemAlertSnapshot() {
       return blocking
+    }
+    if options.interactiveOnly && options.compact {
+      let payload = snapshotFlatInteractive(app: app, options: options)
+      return snapshotWithPrivateAXFallbackIfSparse(
+        payload,
+        app: app,
+        options: options,
+        reason: "compact interactive XCTest snapshot was sparse"
+      )
     }
 
     let capture = try captureSnapshotTraversalContext(
@@ -243,9 +257,127 @@ extension RunnerTests {
 
     }
 
-    return DataPayload(
+    let payload = DataPayload(
       nodes: applyHiddenContentHints(hiddenContentHintsByNodeIndex, to: nodes),
       truncated: false
+    )
+    return snapshotWithFallbackIfSparse(
+      payload,
+      app: app,
+      options: options,
+      reason: "XCTest snapshot returned a sparse application/window tree"
+    )
+  }
+
+  private func snapshotWithFallbackIfSparse(
+    _ payload: DataPayload,
+    app: XCUIApplication,
+    options: SnapshotOptions,
+    reason: String
+  ) -> DataPayload {
+    guard Self.snapshotPayloadNeedsRecovery(payload) else {
+      return payload
+    }
+    if let fallback = publicQuerySnapshotFallback(
+      app: app,
+      options: options,
+      reason: reason
+    ) {
+      return fallback
+    }
+    return betterSnapshotPayload(
+      payload,
+      recovered: privateAXSnapshotFallback(app: app, options: options, reason: reason)
+    )
+  }
+
+  private func snapshotWithPrivateAXFallbackIfSparse(
+    _ payload: DataPayload,
+    app: XCUIApplication,
+    options: SnapshotOptions,
+    reason: String
+  ) -> DataPayload {
+    guard Self.snapshotPayloadNeedsRecovery(payload) else {
+      return payload
+    }
+    return betterSnapshotPayload(
+      payload,
+      recovered: privateAXSnapshotFallback(app: app, options: options, reason: reason)
+    )
+  }
+
+  /// A payload needs recovery when the tree is structural-only, OR when the capture was cut
+  /// off by a budget/deadline with almost nothing collected. The second condition matters on
+  /// large React Native trees: the typed-query sweep can resolve one or two stray controls
+  /// before its deadline, which defeats an all-structural check while the payload is still
+  /// useless in practice. A legitimately minimal screen finishes the sweep without truncation,
+  /// so it never pays for recovery.
+  static let sparseRecoveryTruncatedNodeThreshold = 8
+
+  static func snapshotPayloadNeedsRecovery(_ payload: DataPayload) -> Bool {
+    guard let nodes = payload.nodes, !nodes.isEmpty else { return false }
+    if isSparseApplicationWindowTree(nodes) { return true }
+    return payload.truncated == true && nodes.count <= sparseRecoveryTruncatedNodeThreshold
+  }
+
+  /// Keeps the original payload unless the recovered tree actually carries more nodes —
+  /// recovery must never replace a partial-but-real capture with something thinner.
+  private func betterSnapshotPayload(
+    _ payload: DataPayload,
+    recovered: DataPayload?
+  ) -> DataPayload {
+    guard let recovered, let recoveredNodes = recovered.nodes,
+      recoveredNodes.count > (payload.nodes?.count ?? 0)
+    else {
+      return payload
+    }
+    return recovered
+  }
+
+  private static func isSparseApplicationWindowTree(_ nodes: [SnapshotNode]) -> Bool {
+    guard !nodes.isEmpty else { return false }
+    return nodes.allSatisfy { node in
+      // Application/Window labels are just the app/window name, and full-screen roots
+      // compute as hittable; neither says anything about tree health, so neither counts
+      // as content for these types (a labeled app+window pair is still a sparse tree).
+      let isRootContainer = node.type == "Application" || node.type == "Window"
+      let hasContent = (!isRootContainer && node.label?.isEmpty == false)
+        || node.identifier?.isEmpty == false
+        || node.value?.isEmpty == false
+      return !hasContent
+        && (isRootContainer || !node.hittable)
+        && Self.structuralOnlyNodeTypes.contains(node.type)
+    }
+  }
+
+  private func publicQuerySnapshotFallback(
+    app: XCUIApplication,
+    options: SnapshotOptions,
+    reason: String
+  ) -> DataPayload? {
+    let fallback = snapshotFlatInteractive(
+      app: app,
+      options: SnapshotOptions(
+        interactiveOnly: false,
+        compact: options.compact,
+        depth: options.depth,
+        scope: options.scope,
+        raw: false
+      )
+    )
+    guard let nodes = fallback.nodes, !Self.isSparseApplicationWindowTree(nodes) else {
+      return nil
+    }
+    NSLog(
+      "AGENT_DEVICE_RUNNER_PUBLIC_QUERY_SNAPSHOT_USED reason=%@ nodes=%ld truncated=%@",
+      reason,
+      nodes.count,
+      fallback.truncated == true ? "true" : "false"
+    )
+    return DataPayload(
+      message: Self.publicQueryRecoveryMessage,
+      nodes: nodes,
+      truncated: true
     )
   }
 
@@ -307,7 +439,12 @@ extension RunnerTests {
     }
 
     try walk(context.rootSnapshot, depth: 0, parentIndex: nil)
-    return DataPayload(nodes: nodes, truncated: false)
+    return snapshotWithPrivateAXFallbackIfSparse(
+      DataPayload(nodes: nodes, truncated: false),
+      app: app,
+      options: options,
+      reason: "XCTest raw snapshot returned a sparse application/window tree"
+    )
   }
 
   private func snapshotFlatInteractive(app: XCUIApplication, options: SnapshotOptions) -> DataPayload {
@@ -401,6 +538,15 @@ extension RunnerTests {
       }
       return .context(context)
     } catch let failure as SnapshotCaptureFailure {
+      if Self.isAxSnapshotFailure(failure),
+        let fallback = privateAXSnapshotFallback(
+          app: app,
+          options: options,
+          reason: failure.message
+        )
+      {
+        return .fallback(fallback)
+      }
       if let fallback = snapshotDepthLimitedAccessibilityFallback(
         app: app,
         options: options,
@@ -511,6 +657,120 @@ extension RunnerTests {
 
     XCTAssertTrue(message.contains(Self.axSnapshotFailureMessage))
     XCTAssertTrue(message.contains(Self.axSnapshotHint))
+  }
+
+  func testSparseApplicationWindowTreeDetectionIsConservative() {
+    let root = compactInteractiveRootNode(rect: .zero)
+    func node(
+      index: Int,
+      type: String,
+      label: String? = nil,
+      identifier: String? = nil,
+      value: String? = nil,
+      hittable: Bool = false
+    ) -> SnapshotNode {
+      SnapshotNode(
+        index: index,
+        type: type,
+        label: label,
+        identifier: identifier,
+        value: value,
+        rect: snapshotRect(from: .zero),
+        enabled: true,
+        focused: nil,
+        selected: nil,
+        hittable: hittable,
+        depth: 1,
+        parentIndex: 0,
+        hiddenContentAbove: nil,
+        hiddenContentBelow: nil
+      )
+    }
+    let window = node(index: 1, type: "Window")
+    let structuralOther = node(index: 2, type: "Other")
+    let structuralScroll = node(index: 3, type: "ScrollView")
+    let labeledOther = node(index: 4, type: "Other", label: "Visible content")
+    let identifiedOther = node(index: 5, type: "Other", identifier: "test-id")
+    let valuedOther = node(index: 6, type: "Other", value: "Selected")
+    let hittableOther = node(index: 7, type: "Other", hittable: true)
+    let button = node(
+      index: 8,
+      type: "Button",
+      label: "Sign in",
+      hittable: true
+    )
+
+    XCTAssertTrue(Self.isSparseApplicationWindowTree([root]))
+    XCTAssertTrue(Self.isSparseApplicationWindowTree([root, window]))
+    XCTAssertTrue(Self.isSparseApplicationWindowTree([root, window, structuralOther, structuralScroll]))
+    XCTAssertFalse(Self.isSparseApplicationWindowTree([root, labeledOther]))
+    XCTAssertFalse(Self.isSparseApplicationWindowTree([root, identifiedOther]))
+    XCTAssertFalse(Self.isSparseApplicationWindowTree([root, valuedOther]))
+    XCTAssertFalse(Self.isSparseApplicationWindowTree([root, hittableOther]))
+    XCTAssertFalse(Self.isSparseApplicationWindowTree([root, button]))
+    XCTAssertFalse(Self.isSparseApplicationWindowTree([root, window, button]))
+    XCTAssertFalse(Self.isSparseApplicationWindowTree([]))
+    // App/window name labels and full-screen-root hittability are not content: a labeled,
+    // hittable Application root over a bare Window is still a sparse tree (a shape seen on
+    // production React Native login screens behind full-screen modal overlays).
+    let labeledHittableRoot = node(
+      index: 0, type: "Application", label: "Example App", hittable: true)
+    XCTAssertTrue(Self.isSparseApplicationWindowTree([labeledHittableRoot, window]))
+    XCTAssertFalse(
+      Self.isSparseApplicationWindowTree([
+        labeledHittableRoot, node(index: 1, type: "Application", identifier: "custom-id"),
+      ])
+    )
+  }
+
+  func testSnapshotPayloadNeedsRecoveryOnDeadlineTruncatedNearEmptySweep() {
+    let root = compactInteractiveRootNode(rect: .zero)
+    func node(index: Int, label: String) -> SnapshotNode {
+      SnapshotNode(
+        index: index,
+        type: "Button",
+        label: label,
+        identifier: nil,
+        value: nil,
+        rect: snapshotRect(from: .zero),
+        enabled: true,
+        focused: nil,
+        selected: nil,
+        hittable: true,
+        depth: 1,
+        parentIndex: 0,
+        hiddenContentAbove: nil,
+        hiddenContentBelow: nil
+      )
+    }
+    let button = node(index: 1, label: "Home")
+
+    // Deadline-truncated sweep with a stray control: still needs recovery.
+    XCTAssertTrue(
+      Self.snapshotPayloadNeedsRecovery(DataPayload(nodes: [root, button], truncated: true))
+    )
+    // Structural-only tree needs recovery regardless of truncation.
+    XCTAssertTrue(
+      Self.snapshotPayloadNeedsRecovery(DataPayload(nodes: [root], truncated: false))
+    )
+    // A completed sweep on a legitimately minimal screen does not.
+    XCTAssertFalse(
+      Self.snapshotPayloadNeedsRecovery(DataPayload(nodes: [root, button], truncated: false))
+    )
+    // A truncated but reasonably populated sweep does not.
+    var populated: [SnapshotNode] = [root]
+    for index in 1...Self.sparseRecoveryTruncatedNodeThreshold {
+      populated.append(node(index: index, label: "b\(index)"))
+    }
+    XCTAssertFalse(
+      Self.snapshotPayloadNeedsRecovery(DataPayload(nodes: populated, truncated: true))
+    )
+    XCTAssertFalse(Self.snapshotPayloadNeedsRecovery(DataPayload(nodes: [], truncated: true)))
+  }
+
+  func testPublicQueryRecoveryMessageExplainsFlattenedFallback() {
+    XCTAssertTrue(Self.publicQueryRecoveryMessage.contains("XCTest accessibility element queries"))
+    XCTAssertTrue(Self.publicQueryRecoveryMessage.contains("flattened"))
   }
 
   func testRawSnapshotTooLargeFailureIsStructured() {
@@ -692,7 +952,7 @@ extension RunnerTests {
     return nil
   }
 
-  private func safeSnapshotViewport(app: XCUIApplication) -> CGRect {
+  func safeSnapshotViewport(app: XCUIApplication) -> CGRect {
     safely("SNAPSHOT_VIEWPORT", CGRect.infinite) { snapshotViewport(app: app) }
   }
 
@@ -723,6 +983,10 @@ extension RunnerTests {
     let normalized = message.lowercased()
     return normalized.contains("kaxerrorillegalargument")
       || (normalized.contains("illegal argument") && normalized.contains("snapshot"))
+  }
+
+  private static func isAxSnapshotFailure(_ failure: SnapshotCaptureFailure) -> Bool {
+    failure.code == Self.axSnapshotErrorCode || isAxIllegalArgument(failure.message)
   }
 
   private func evaluateSnapshot(
@@ -855,7 +1119,7 @@ extension RunnerTests {
     return nil
   }
 
-  private func isVisibleInViewport(_ rect: CGRect, _ viewport: CGRect) -> Bool {
+  func isVisibleInViewport(_ rect: CGRect, _ viewport: CGRect) -> Bool {
     if rect.isNull || rect.isEmpty { return false }
     return rect.intersects(viewport)
   }
