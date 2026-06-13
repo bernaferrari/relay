@@ -151,15 +151,60 @@ function discoverReplayTestFilePaths(
   const files: string[] = [];
   const expandedGroups: string[][] = [];
   for (const input of inputs) {
-    const expanded = expandReplayTestInput(input, cwd, extensions);
+    const expanded = expandMaestroReplayTestInput(input, cwd, extensions);
     if (expanded.source === 'file') {
       files.push(...expanded.paths);
     } else {
-      expandedGroups.push(sortMaestroExpandedReplayTestPaths(expanded.paths));
+      expandedGroups.push(
+        expanded.source === 'directory'
+          ? uniqueNormalizedPaths(expanded.paths)
+          : sortMaestroExpandedReplayTestPaths(expanded.paths),
+      );
     }
   }
 
   return uniqueNormalizedPaths([...files, ...expandedGroups.flat()]);
+}
+
+function expandMaestroReplayTestInput(
+  input: string,
+  cwd: string,
+  extensions: Set<string>,
+): { paths: string[]; source: ReplayTestInputSource } {
+  const expandedInput = SessionStore.expandHome(input, cwd);
+  if (fs.existsSync(expandedInput) && fs.statSync(expandedInput).isDirectory()) {
+    return {
+      paths: readMaestroDirectoryReplayTestPaths(expandedInput, extensions),
+      source: 'directory',
+    };
+  }
+
+  return expandReplayTestInput(input, cwd, extensions);
+}
+
+function readMaestroDirectoryReplayTestPaths(
+  directoryPath: string,
+  extensions: Set<string>,
+): string[] {
+  const paths: string[] = [];
+  // Maestro's Java Files.walk follows native directory iteration order. Keep
+  // this unsorted so folder suites, and sharding derived from them, match
+  // Maestro on the same machine even though order can differ across hosts.
+  const directory = fs.opendirSync(directoryPath);
+  try {
+    let entry: fs.Dirent | null;
+    while ((entry = directory.readSync()) !== null) {
+      const filePath = path.join(directoryPath, entry.name);
+      if (entry.isDirectory()) {
+        paths.push(...readMaestroDirectoryReplayTestPaths(filePath, extensions));
+      } else if (entry.isFile() && extensions.has(path.extname(entry.name))) {
+        paths.push(filePath);
+      }
+    }
+  } finally {
+    directory.closeSync();
+  }
+  return paths;
 }
 
 function expandReplayTestInput(
