@@ -4,20 +4,26 @@ import { getSnapshotReferenceFrame } from '../../daemon/touch-reference-frame.ts
 import type { DaemonResponse } from '../../daemon/types.ts';
 import type { DaemonFailureResponse } from '../../daemon/handlers/response.ts';
 import type { ReplayVarScope } from '../../replay/vars.ts';
-import type { SnapshotState } from '../../utils/snapshot.ts';
+import { emitDiagnostic } from '../../utils/diagnostics.ts';
+import type { Point, SnapshotState } from '../../utils/snapshot.ts';
 import { buildSnapshotDisplayLines } from '../../utils/snapshot-lines.ts';
 import { sleep } from '../../utils/timeouts.ts';
+import { pointForMaestroTapOnTarget } from './runtime-geometry.ts';
 import {
   captureMaestroSnapshot,
+  consumeMaestroRecoverableInteraction,
   errorResponse,
   rememberMaestroVisibleContext,
   readSnapshotState,
+  type MaestroRecoverableSwipe,
+  type MaestroRecoverableTap,
   type MaestroRuntimeInvoke,
   type ReplayBaseRequest,
 } from './runtime-support.ts';
 import {
   extractMaestroVisibleTextQuery,
   readMaestroSelectorPlatform,
+  resolveMaestroNodeFromSnapshot,
   resolveVisibleMaestroNodeFromSnapshot,
 } from './runtime-targets.ts';
 
@@ -25,6 +31,7 @@ const MAESTRO_ASSERTION_POLICY = {
   animationPollMs: 250,
   assertVisibleGraceMs: 1000,
   assertVisiblePollMs: 250,
+  assertVisibleRetryTimeoutMs: 5000,
   assertNotVisiblePollMs: 250,
   defaultAssertNotVisibleTimeoutMs: 3000,
 } as const;
@@ -42,6 +49,10 @@ type MaestroVisibilityAssertionArgs = {
   selector: string;
   timeoutMs: number;
 };
+
+type MaestroRetryTapTarget = { kind: 'point'; point: Point } | { kind: 'text'; query: string };
+
+type MaestroVisibleRecoveryFlag = 'retryTap' | 'retrySwipe';
 
 type MaestroAssertionRuntimeParams = {
   baseReq: ReplayBaseRequest;
@@ -78,6 +89,19 @@ async function invokeNativeMaestroVisibleWaitWithSnapshotFallback(
   const nativeStartedAt = Date.now();
   const nativeResponse = await runNativeVisibleWait(params, args, nativeWaitQuery);
   if (nativeResponse.ok) {
+    if (shouldVerifyNativeVisibleWait(params.baseReq)) {
+      const sample = await readMaestroVisibilitySample(params, args.selector, 'assertVisible');
+      if (!sample.visible) {
+        const failedSample = handleFailedVisibleSample(
+          params.baseReq,
+          args,
+          sample,
+          nativeStartedAt,
+        );
+        if (failedSample.kind === 'return') return failedSample.response;
+        return await invokeSnapshotMaestroAssertVisible(params, args);
+      }
+    }
     rememberMaestroVisibleContext(params.scope, args.selector);
     return visibleAssertionResponse(
       {
@@ -100,6 +124,10 @@ async function invokeNativeMaestroVisibleWaitWithSnapshotFallback(
     nativeResponse,
     nativeStartedAt,
   );
+}
+
+function shouldVerifyNativeVisibleWait(baseReq: ReplayBaseRequest): boolean {
+  return baseReq.flags?.platform === 'android';
 }
 
 async function runNativeVisibleWait(
@@ -154,6 +182,8 @@ async function invokeSnapshotMaestroAssertVisible(
       selector: args.selector,
       timeoutMs: args.timeoutMs,
     });
+  const recoveryResponse = await recoverFromAndroidVisibleMiss(params, args, lastSnapshot);
+  if (recoveryResponse) return recoveryResponse;
   return withMaestroFailureSnapshotArtifacts(response, lastSnapshot, params.baseReq);
 }
 
@@ -167,7 +197,190 @@ async function invokeSingleSnapshotMaestroAssertVisible(
   if (sample.visible) return visibleAssertionResponse(sample.response, args.selector, startedAt);
   const failedSample = handleFailedVisibleSample(params.baseReq, args, sample, startedAt);
   if (failedSample.kind === 'return') return failedSample.response;
+  const recoveryResponse = await recoverFromAndroidVisibleMiss(params, args, sample.snapshot);
+  if (recoveryResponse) return recoveryResponse;
   return withMaestroFailureSnapshotArtifacts(fallbackResponse, sample.snapshot, params.baseReq);
+}
+
+async function recoverFromAndroidVisibleMiss(
+  params: MaestroAssertionRuntimeParams,
+  args: MaestroVisibilityAssertionArgs,
+  snapshot: SnapshotState | undefined,
+): Promise<DaemonResponse | null> {
+  if (params.baseReq.flags?.platform !== 'android') return null;
+
+  const recoverableInteraction = consumeMaestroRecoverableInteraction(params.scope);
+  if (!recoverableInteraction) return null;
+  if (recoverableInteraction.kind === 'tap') {
+    return await retryRecentAndroidTapAfterVisibleMiss(
+      params,
+      args,
+      snapshot,
+      recoverableInteraction,
+    );
+  }
+  return await retryRecentAndroidSwipeAfterVisibleMiss(params, args, recoverableInteraction);
+}
+
+async function retryRecentAndroidTapAfterVisibleMiss(
+  params: MaestroAssertionRuntimeParams,
+  args: MaestroVisibilityAssertionArgs,
+  snapshot: SnapshotState | undefined,
+  recentTap: MaestroRecoverableTap,
+): Promise<DaemonResponse | null> {
+  if (!snapshot) return null;
+
+  const retryTarget = resolveRecentTapTarget(params, snapshot, recentTap);
+  if (!retryTarget.ok) return null;
+
+  emitDiagnostic({
+    level: 'info',
+    phase: 'maestro_assert_visible_retry_tap',
+    data: {
+      selector: args.selector,
+      tapSelector: recentTap.selector,
+      originalPoint: recentTap.point,
+      retryTarget: retryTarget.target,
+      timeoutMs: MAESTRO_ASSERTION_POLICY.assertVisibleRetryTimeoutMs,
+    },
+  });
+
+  const clickResponse = await invokeRecentTapRetry(params, retryTarget.target);
+  if (!clickResponse.ok) return null;
+  return await confirmVisibleAfterAndroidRecovery(params, args, 'retryTap');
+}
+
+async function retryRecentAndroidSwipeAfterVisibleMiss(
+  params: MaestroAssertionRuntimeParams,
+  args: MaestroVisibilityAssertionArgs,
+  recentSwipe: MaestroRecoverableSwipe,
+): Promise<DaemonResponse | null> {
+  emitDiagnostic({
+    level: 'info',
+    phase: 'maestro_assert_visible_retry_swipe',
+    data: {
+      selector: args.selector,
+      swipePositionals: recentSwipe.positionals,
+      timeoutMs: MAESTRO_ASSERTION_POLICY.assertVisibleRetryTimeoutMs,
+    },
+  });
+
+  const swipeResponse = await invokeRecentSwipeRetry(params, recentSwipe);
+  if (!swipeResponse.ok) return null;
+  return await confirmVisibleAfterAndroidRecovery(params, args, 'retrySwipe');
+}
+
+async function confirmVisibleAfterAndroidRecovery(
+  params: MaestroAssertionRuntimeParams,
+  args: MaestroVisibilityAssertionArgs,
+  recoveryFlag: MaestroVisibleRecoveryFlag,
+): Promise<DaemonResponse> {
+  const retryArgs = {
+    ...args,
+    timeoutMs: Math.min(args.timeoutMs, MAESTRO_ASSERTION_POLICY.assertVisibleRetryTimeoutMs),
+  };
+  const nativeWaitQuery = readNativeVisibleWaitQuery(params.baseReq, retryArgs.selector);
+  if (!nativeWaitQuery) return await invokeSnapshotMaestroAssertVisible(params, retryArgs);
+
+  const retryStartedAt = Date.now();
+  const nativeResponse = await runNativeVisibleWait(params, retryArgs, nativeWaitQuery);
+  if (nativeResponse.ok) {
+    rememberMaestroVisibleContext(params.scope, retryArgs.selector);
+    return visibleAssertionResponse(
+      {
+        ok: true,
+        data: {
+          selector: retryArgs.selector,
+          nativeWait: true,
+          [recoveryFlag]: true,
+          query: nativeWaitQuery,
+          response: nativeResponse.data,
+        },
+      },
+      retryArgs.selector,
+      retryStartedAt,
+    );
+  }
+
+  return await invokeSingleSnapshotMaestroAssertVisible(
+    params,
+    retryArgs,
+    nativeResponse,
+    retryStartedAt,
+  );
+}
+
+function resolveRecentTapTarget(
+  params: MaestroAssertionRuntimeParams,
+  snapshot: SnapshotState,
+  tap: MaestroRecoverableTap,
+): { ok: true; target: MaestroRetryTapTarget } | { ok: false } {
+  const platform = readMaestroSelectorPlatform(params.baseReq.flags);
+  const frame = getSnapshotReferenceFrame(snapshot);
+  const tapTarget = resolveMaestroNodeFromSnapshot(
+    snapshot,
+    tap.selector,
+    tap.options ?? {},
+    platform,
+    frame,
+    { promoteTapTarget: true },
+  );
+  if (tapTarget.ok) {
+    return { ok: true, target: { kind: 'point', point: pointForMaestroTapOnTarget(tapTarget) } };
+  }
+
+  const query = extractMaestroVisibleTextQuery(tap.selector);
+  if (!query || !snapshotContainsTextQuery(snapshot, query)) return { ok: false };
+  return { ok: true, target: { kind: 'text', query } };
+}
+
+async function invokeRecentTapRetry(
+  params: MaestroAssertionRuntimeParams,
+  target: MaestroRetryTapTarget,
+): Promise<DaemonResponse> {
+  if (target.kind === 'text') {
+    return await params.invoke({
+      ...params.baseReq,
+      command: 'find',
+      positionals: [target.query, 'click'],
+      flags: {
+        ...params.baseReq.flags,
+        findFirst: true,
+        postGestureStabilization: true,
+      },
+    });
+  }
+
+  return await params.invoke({
+    ...params.baseReq,
+    command: 'click',
+    positionals: [String(target.point.x), String(target.point.y)],
+    flags: {
+      ...params.baseReq.flags,
+      postGestureStabilization: true,
+    },
+  });
+}
+
+async function invokeRecentSwipeRetry(
+  params: MaestroAssertionRuntimeParams,
+  swipe: MaestroRecoverableSwipe,
+): Promise<DaemonResponse> {
+  return await params.invoke({
+    ...params.baseReq,
+    command: 'swipe',
+    positionals: swipe.positionals,
+  });
+}
+
+function snapshotContainsTextQuery(snapshot: SnapshotState, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return false;
+  return snapshot.nodes.some((node) =>
+    [node.label, node.value, node.identifier].some((value) =>
+      value?.trim().toLowerCase().includes(needle),
+    ),
+  );
 }
 
 function handleFailedVisibleSample(
