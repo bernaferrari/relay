@@ -11,7 +11,7 @@ import type {
 import type { DaemonFailureResponse } from '../../daemon/handlers/response.ts';
 import type { ReplayActionBlockInvoker } from '../../replay/control-flow-runtime.ts';
 import type { ReplayVarScope } from '../../replay/vars.ts';
-import type { SnapshotState } from '../../utils/snapshot.ts';
+import type { Point, SnapshotState } from '../../utils/snapshot.ts';
 
 export type ReplayBaseRequest = Omit<DaemonRequest, 'command' | 'positionals'>;
 
@@ -23,6 +23,31 @@ export type FailedDaemonResponse = DaemonFailureResponse;
 
 const maestroReferenceFrameCache = new WeakMap<ReplayVarScope, TouchReferenceFrame>();
 const maestroVisibleContextCache = new WeakMap<ReplayVarScope, { selector: string }>();
+const maestroRecoverableInteractionCache = new WeakMap<
+  ReplayVarScope,
+  MaestroRecoverableInteraction
+>();
+
+export type MaestroRecoverableInteraction =
+  | ({
+      kind: 'tap';
+    } & MaestroRecoverableTap)
+  | ({
+      kind: 'swipe';
+    } & MaestroRecoverableSwipe);
+
+export type MaestroRecoverableTap = {
+  selector: string;
+  point: Point;
+  options?: {
+    childOf?: string;
+    index?: number;
+  };
+};
+
+export type MaestroRecoverableSwipe = {
+  positionals: string[];
+};
 
 export function errorResponse(
   code: string,
@@ -82,6 +107,26 @@ export function readMaestroVisibleContext(
 
 export function clearMaestroVisibleContext(scope: ReplayVarScope | undefined): void {
   if (scope) maestroVisibleContextCache.delete(scope);
+}
+
+export function rememberMaestroRecoverableInteraction(
+  scope: ReplayVarScope | undefined,
+  interaction: MaestroRecoverableInteraction,
+): void {
+  if (scope) maestroRecoverableInteractionCache.set(scope, interaction);
+}
+
+export function consumeMaestroRecoverableInteraction(
+  scope: ReplayVarScope | undefined,
+): MaestroRecoverableInteraction | undefined {
+  if (!scope) return undefined;
+  const interaction = maestroRecoverableInteractionCache.get(scope);
+  maestroRecoverableInteractionCache.delete(scope);
+  return interaction;
+}
+
+export function clearMaestroRecoverableInteraction(scope: ReplayVarScope | undefined): void {
+  if (scope) maestroRecoverableInteractionCache.delete(scope);
 }
 
 function rememberMaestroReferenceFrame(

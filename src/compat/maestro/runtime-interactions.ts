@@ -13,11 +13,13 @@ import { sleep } from '../../utils/timeouts.ts';
 import { pointForMaestroTapOnTarget, swipeCoordinatesFromTarget } from './runtime-geometry.ts';
 import {
   captureMaestroSnapshot,
+  clearMaestroRecoverableInteraction,
   clearMaestroVisibleContext,
   errorResponse,
   readCachedMaestroReferenceFrame,
   readMaestroVisibleContext,
   readSnapshotState,
+  rememberMaestroRecoverableInteraction,
   type FailedDaemonResponse,
   type MaestroRuntimeInvoke,
   type ReplayBaseRequest,
@@ -109,6 +111,7 @@ export async function invokeMaestroTapPointPercent(params: {
   baseReq: ReplayBaseRequest;
   positionals: string[];
   invoke: DaemonInvokeFn;
+  scope?: ReplayVarScope;
 }): Promise<DaemonResponse> {
   const [xValue, yValue] = params.positionals;
   const xPercent = Number(xValue);
@@ -137,7 +140,7 @@ export async function invokeMaestroTapPointPercent(params: {
   }
 
   const point = pointFromPercent(frame, xPercent, yPercent);
-  return await params.invoke({
+  const response = await params.invoke({
     ...params.baseReq,
     command: 'click',
     positionals: [String(point.x), String(point.y)],
@@ -146,6 +149,8 @@ export async function invokeMaestroTapPointPercent(params: {
       postGestureStabilization: true,
     },
   });
+  if (response.ok) clearMaestroRecoverableInteraction(params.scope);
+  return response;
 }
 
 export async function invokeMaestroSwipeScreen(params: {
@@ -169,6 +174,7 @@ async function maybeInvokeMaestroDirectionalSwipePreset(params: {
 }): Promise<DaemonResponse | undefined> {
   const [mode, direction, durationMs] = params.positionals;
   if (mode !== 'direction' || (direction !== 'left' && direction !== 'right')) return undefined;
+  if (readMaestroSelectorPlatform(params.baseReq.flags) === 'android') return undefined;
   return await params.invoke({
     ...params.baseReq,
     command: 'gesture',
@@ -200,6 +206,7 @@ export async function invokeMaestroSwipeOn(params: {
   baseReq: ReplayBaseRequest;
   positionals: string[];
   invoke: MaestroRuntimeInvoke;
+  scope?: ReplayVarScope;
 }): Promise<DaemonResponse> {
   const [selector, direction = 'up', durationMs] = params.positionals;
   if (!selector) return errorResponse('INVALID_ARGS', 'swipe.label requires a label selector.');
@@ -216,6 +223,7 @@ async function invokeSwipeGesture(
   params: {
     baseReq: ReplayBaseRequest;
     invoke: MaestroRuntimeInvoke;
+    scope?: ReplayVarScope;
   },
   swipe: {
     start: { x: number; y: number };
@@ -223,17 +231,25 @@ async function invokeSwipeGesture(
   },
   durationMs: string | undefined,
 ): Promise<DaemonResponse> {
-  return await params.invoke({
+  const responsePositionals = [
+    String(swipe.start.x),
+    String(swipe.start.y),
+    String(swipe.end.x),
+    String(swipe.end.y),
+    ...(durationMs ? [durationMs] : []),
+  ];
+  const response = await params.invoke({
     ...params.baseReq,
     command: 'swipe',
-    positionals: [
-      String(swipe.start.x),
-      String(swipe.start.y),
-      String(swipe.end.x),
-      String(swipe.end.y),
-      ...(durationMs ? [durationMs] : []),
-    ],
+    positionals: responsePositionals,
   });
+  if (response.ok) {
+    rememberMaestroRecoverableInteraction(params.scope, {
+      kind: 'swipe',
+      positionals: responsePositionals,
+    });
+  }
+  return response;
 }
 
 async function resolveMaestroScreenSwipe(params: {
@@ -253,7 +269,11 @@ async function resolveMaestroScreenSwipe(params: {
 
   const [mode, ...args] = params.positionals;
   if (mode === 'direction') {
-    return resolveDirectionalScreenSwipe(args, frame);
+    return resolveDirectionalScreenSwipe(
+      args,
+      frame,
+      readMaestroSelectorPlatform(params.baseReq.flags),
+    );
   }
   if (mode === 'percent') {
     return resolvePercentScreenSwipe(
@@ -282,6 +302,7 @@ async function captureFrameForMaestroScreenSwipe(params: {
 function resolveDirectionalScreenSwipe(
   args: string[],
   frame: GestureReferenceFrame,
+  platform: string,
 ): MaestroScreenSwipeResolution {
   const [direction, durationMs] = args;
   if (!direction) {
@@ -294,6 +315,9 @@ function resolveDirectionalScreenSwipe(
     case 'up':
     case 'down':
       return buildMaestroDirectionalScreenSwipe(direction, frame, durationMs);
+    case 'left':
+    case 'right':
+      return buildMaestroHorizontalDirectionalScreenSwipe(direction, frame, platform, durationMs);
     default:
       return {
         ok: false,
@@ -303,6 +327,23 @@ function resolveDirectionalScreenSwipe(
         ),
       };
   }
+}
+
+function buildMaestroHorizontalDirectionalScreenSwipe(
+  direction: 'left' | 'right',
+  frame: GestureReferenceFrame,
+  platform: string,
+  durationMs: string | undefined,
+): MaestroScreenSwipeResolution {
+  const lane = maestroHorizontalContentSwipeLanePercent(platform, 85, 50, 15, 50);
+  const [startX, endX] = direction === 'left' ? [85, 15] : [15, 85];
+  const marginPx = maestroPercentSwipeMarginPx(platform, frame, startX, 50, endX, 50);
+  return {
+    ok: true,
+    start: pointFromPercent(frame, startX, lane.startY, { marginPx }),
+    end: pointFromPercent(frame, endX, lane.endY, { marginPx }),
+    durationMs,
+  };
 }
 
 function buildMaestroDirectionalScreenSwipe(
@@ -452,13 +493,14 @@ async function invokeMaestroResolvedTapOn(
     promoteTapTarget: true,
   });
   if (!target.ok) return { response: target.response, targetResolved: false };
-  return await clickMaestroResolvedTarget(params, selector, target.target);
+  return await clickMaestroResolvedTarget(params, selector, target.target, options);
 }
 
 async function clickMaestroResolvedTarget(
   params: MaestroTapOnParams,
   selector: string,
   target: ResolvedMaestroInteractionTarget,
+  options: MaestroTapOnOptions,
 ): Promise<{ response: DaemonResponse; targetResolved: true }> {
   const point = pointForMaestroTapOnTarget(target);
   emitDiagnostic({
@@ -487,7 +529,15 @@ async function clickMaestroResolvedTarget(
       postGestureStabilization: true,
     },
   });
-  if (response.ok) clearMaestroVisibleContext(params.scope);
+  if (response.ok) {
+    clearMaestroVisibleContext(params.scope);
+    rememberMaestroRecoverableInteraction(params.scope, {
+      kind: 'tap',
+      selector,
+      point,
+      options: { ...options },
+    });
+  }
   return {
     response,
     targetResolved: true,
@@ -518,7 +568,10 @@ async function invokeMaestroFuzzyTapOn(
       ok: findResponse.ok,
     },
   });
-  if (findResponse.ok) return { retry: false, response: findResponse };
+  if (findResponse.ok) {
+    clearMaestroRecoverableInteraction(params.scope);
+    return { retry: false, response: findResponse };
+  }
   return { retry: true, response: findResponse };
 }
 
