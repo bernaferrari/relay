@@ -940,14 +940,14 @@ const SKILL_GUIDANCE_CASES: Case[] = [
     id: 'install-from-github-artifact-before-open',
     contract: [
       'Platform: Android',
-      'Install source: GitHub Actions artifact callstackincubator/agent-device:agent-device-tester-apk',
+      'Install source: GitHub Actions artifact callstack/agent-device:agent-device-tester-apk',
       'Known package after install: com.callstack.agentdevicetester',
       'Remote daemon can resolve the artifact server-side',
     ],
     task: 'Plan commands to install from the GitHub Actions artifact, then open the installed package in fresh runtime state.',
     outputs: [
       plannedCommand('install-from-source'),
-      /--github-actions-artifact\s+callstackincubator\/agent-device:agent-device-tester-apk/i,
+      /--github-actions-artifact\s+callstack\/agent-device:agent-device-tester-apk/i,
       plannedCommand('open'),
       /com\.callstack\.agentdevicetester/i,
       /--relaunch/i,

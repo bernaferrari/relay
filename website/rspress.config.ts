@@ -8,7 +8,7 @@ export default withCallstackPreset(
       title: 'agent-device',
       description:
         'Agent-native CLI for AI mobile testing, React Native QA, Expo app verification, simulator and emulator automation, app observability, and replayable device workflows.',
-      editUrl: 'https://github.com/callstackincubator/agent-device/edit/main/website',
+      editUrl: 'https://github.com/callstack/agent-device/edit/main/website',
       rootUrl: 'https://oss.callstack.com/agent-device',
       rootDir: 'docs',
       icon: '/logo.svg',
@@ -16,7 +16,7 @@ export default withCallstackPreset(
       logoDark: '/logo-dark.svg',
       ogImage: '/og-image.jpg',
       socials: {
-        github: 'https://github.com/callstackincubator/agent-device',
+        github: 'https://github.com/callstack/agent-device',
         discord: 'https://discord.gg/eYapw6F3',
       },
     },
