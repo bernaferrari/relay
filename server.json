@@ -4,7 +4,7 @@
   "title": "agent-device",
   "description": "Let AI agents inspect, control, and debug real iOS, Android, desktop, and TV apps",
   "repository": {
-    "url": "https://github.com/callstackincubator/agent-device",
+    "url": "https://github.com/callstack/agent-device",
     "source": "github"
   },
   "version": "0.17.5",

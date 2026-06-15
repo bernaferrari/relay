@@ -8,10 +8,10 @@
   "homepage": "https://agent-device.dev/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/callstackincubator/agent-device.git"
+    "url": "git+https://github.com/callstack/agent-device.git"
   },
   "bugs": {
-    "url": "https://github.com/callstackincubator/agent-device/issues"
+    "url": "https://github.com/callstack/agent-device/issues"
   },
   "type": "module",
   "packageManager": "pnpm@11.1.2",
