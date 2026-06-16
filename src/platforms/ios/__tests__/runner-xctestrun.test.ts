@@ -10,7 +10,9 @@ import { withCommandExecutorOverride } from '../../../utils/exec.ts';
 import {
   __resetRunnerToolchainFingerprintCacheForTests,
   acquireXcodebuildSimulatorSetRedirect,
+  ensureXctestrunArtifact,
   findXctestrun,
+  markRunnerXctestrunArtifactBadForRun,
   prepareXctestrunWithEnv,
   resolveExpectedRunnerCacheMetadata,
   resolveXcodebuildSimulatorDeviceSetPath,
@@ -64,6 +66,14 @@ function makeRedirectPaths(root: string): RedirectPaths {
 
 function makeScopedSimulator(paths: RedirectPaths): DeviceInfo {
   return { ...iosSimulator, simulatorSetPath: paths.requestedSetPath };
+}
+
+function restoreEnvVar(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
 }
 
 async function acquireRedirect(
@@ -277,14 +287,6 @@ function writeExecutable(filePath: string, contents: string): void {
   fs.writeFileSync(filePath, `${contents}\n`, { mode: 0o755 });
 }
 
-function restoreEnvVar(name: string, value: string | undefined): void {
-  if (value === undefined) {
-    delete process.env[name];
-    return;
-  }
-  process.env[name] = value;
-}
-
 test('prepareXctestrunWithEnv avoids XCTest screen recordings for nested and legacy targets', async () => {
   await withTempDir('runner-xctestrun-policy-', async (root) => {
     const xctestrunPath = path.join(root, 'AgentDeviceRunner.xctestrun');
@@ -319,6 +321,55 @@ test('prepareXctestrunWithEnv avoids XCTest screen recordings for nested and leg
   });
 });
 
+test('prepareXctestrunWithEnv writes env overlays into configured env dir', async () => {
+  await withTempDir('runner-xctestrun-env-dir-', async (root) => {
+    const xctestrunPath = path.join(root, 'readonly-artifacts', 'AgentDeviceRunner.xctestrun');
+    const envDir = path.join(root, 'writable-env');
+    fs.mkdirSync(path.dirname(xctestrunPath), { recursive: true });
+    fs.writeFileSync(
+      xctestrunPath,
+      JSON.stringify({
+        TestConfigurations: [{ TestTargets: [{ TestBundlePath: 'AgentDeviceRunnerUITests' }] }],
+      }),
+    );
+
+    const prepared = await withCommandExecutorOverride(
+      (cmd, args) => {
+        if (cmd !== 'plutil') return undefined;
+        if (args[0] === '-convert' && args[1] === 'json' && args[2] === '-o' && args[3] === '-') {
+          return Promise.resolve({
+            stdout: fs.readFileSync(String(args[4]), 'utf8'),
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (args[0] === '-convert' && args[1] === 'xml1' && args[2] === '-o') {
+          fs.copyFileSync(String(args[4]), String(args[3]));
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+        return Promise.resolve({
+          stdout: '',
+          stderr: `unexpected plutil args: ${args.join(' ')}`,
+          exitCode: 1,
+        });
+      },
+      () =>
+        prepareXctestrunWithEnv(xctestrunPath, runnerPortEnv, 'aws session', {
+          iosXctestEnvDir: envDir,
+        }),
+    );
+
+    assert.equal(path.dirname(prepared.xctestrunPath), envDir);
+    assert.equal(path.dirname(prepared.jsonPath), envDir);
+    assert.equal(
+      path.basename(prepared.xctestrunPath),
+      'AgentDeviceRunner.env.aws_session.xctestrun',
+    );
+    assert.equal(fs.existsSync(prepared.xctestrunPath), true);
+    assert.equal(fs.existsSync(prepared.jsonPath), true);
+  });
+});
+
 test('prepareXctestrunWithEnv leaves unrelated targets without capture policy', async () => {
   await withTempDir('runner-xctestrun-policy-', async (root) => {
     const xctestrunPath = path.join(root, 'AgentDeviceRunner.xctestrun');
@@ -334,6 +385,67 @@ test('prepareXctestrunWithEnv leaves unrelated targets without capture policy', 
     assert.equal(target?.EnvironmentVariables?.AGENT_DEVICE_RUNNER_PORT, '12345');
     assertNoCapturePolicy(target);
     assert.deepEqual(parsed.ContainerInfo, original.ContainerInfo);
+  });
+});
+
+test('ensureXctestrunArtifact uses configured external xctestrun artifact', async () => {
+  await withTempDir('runner-xctestrun-external-', async (root) => {
+    const xctestrunPath = path.join(root, 'aws', 'AgentDeviceRunner.xctestrun');
+    const derivedPath = path.join(root, 'derived');
+    fs.mkdirSync(path.dirname(xctestrunPath), { recursive: true });
+    fs.writeFileSync(xctestrunPath, '{}');
+
+    const artifact = await ensureXctestrunArtifact(iosDevice, {
+      forceRunnerXctestrunRebuild: true,
+      iosXctestrunFile: xctestrunPath,
+      iosXctestDerivedDataPath: derivedPath,
+    });
+
+    assert.equal(artifact.xctestrunPath, xctestrunPath);
+    assert.equal(artifact.derived, derivedPath);
+    assert.equal(artifact.cache, 'external');
+    assert.equal(artifact.artifact, 'valid');
+    assert.equal(artifact.buildMs, 0);
+    assert.equal(artifact.xctestrunPathSource, 'external');
+  });
+});
+
+test('ensureXctestrunArtifact defaults external derived data to writable temp path', async () => {
+  await withTempDir('runner-xctestrun-external-temp-', async (root) => {
+    const xctestrunPath = path.join(root, 'aws', 'AgentDeviceRunner.xctestrun');
+    fs.mkdirSync(path.dirname(xctestrunPath), { recursive: true });
+    fs.writeFileSync(xctestrunPath, '{}');
+
+    const artifact = await ensureXctestrunArtifact(iosDevice, {
+      iosXctestrunFile: xctestrunPath,
+    });
+
+    const expectedRoot = path.join(os.tmpdir(), 'agent-device-ios-xctest-derived');
+    assert.equal(artifact.derived.startsWith(expectedRoot), true);
+    assert.notEqual(artifact.derived, path.dirname(xctestrunPath));
+  });
+});
+
+test('markRunnerXctestrunArtifactBadForRun preserves configured external artifacts', async () => {
+  await withTempDir('runner-xctestrun-external-bad-', async (root) => {
+    const derivedPath = path.join(root, 'derived');
+    const xctestrunPath = path.join(root, 'aws', 'AgentDeviceRunner.xctestrun');
+    fs.mkdirSync(derivedPath, { recursive: true });
+    fs.mkdirSync(path.dirname(xctestrunPath), { recursive: true });
+    fs.writeFileSync(path.join(derivedPath, 'keep.txt'), 'derived');
+    fs.writeFileSync(xctestrunPath, 'xctestrun');
+
+    await markRunnerXctestrunArtifactBadForRun(
+      {
+        xctestrunPath,
+        derived: derivedPath,
+        cache: 'external',
+      },
+      'runner health failed',
+    );
+
+    assert.equal(fs.existsSync(path.join(derivedPath, 'keep.txt')), true);
+    assert.equal(fs.existsSync(xctestrunPath), true);
   });
 });
 
