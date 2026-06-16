@@ -157,6 +157,7 @@ async function startRunnerSessionWithLease(
         xctestrunArtifact.xctestrunPath,
         { AGENT_DEVICE_RUNNER_PORT: String(port) },
         `session-${device.id}-${RUNNER_OWNER_TOKEN}-${port}`,
+        { iosXctestEnvDir: options.iosXctestEnvDir },
       ),
   );
   const simulatorSetRedirect = await measureRunnerStartupStep(
@@ -166,38 +167,37 @@ async function startRunnerSessionWithLease(
   );
   let child: ExecBackgroundResult['child'] | undefined;
   let testPromise: Promise<ExecResult>;
+  const xcodebuildArgs = [
+    'test-without-building',
+    '-only-testing',
+    'AgentDeviceRunnerUITests/RunnerTests/testCommand',
+    '-parallel-testing-enabled',
+    'NO',
+    '-test-timeouts-enabled',
+    'NO',
+    '-collect-test-diagnostics',
+    'never',
+    resolveRunnerMaxConcurrentDestinationsFlag(device),
+    '1',
+    '-destination-timeout',
+    String(RUNNER_DESTINATION_TIMEOUT_SECONDS),
+    '-xctestrun',
+    xctestrunPath,
+    '-derivedDataPath',
+    xctestrunArtifact.derived,
+    '-destination',
+    resolveRunnerDestination(device),
+  ];
   try {
     ({ child, wait: testPromise } = await measureRunnerStartupStep(
       startupTimings,
       'launch_xcodebuild',
       () =>
-        runCmdBackground(
-          'xcodebuild',
-          [
-            'test-without-building',
-            '-only-testing',
-            'AgentDeviceRunnerUITests/RunnerTests/testCommand',
-            '-parallel-testing-enabled',
-            'NO',
-            '-test-timeouts-enabled',
-            'NO',
-            '-collect-test-diagnostics',
-            'never',
-            resolveRunnerMaxConcurrentDestinationsFlag(device),
-            '1',
-            '-destination-timeout',
-            String(RUNNER_DESTINATION_TIMEOUT_SECONDS),
-            '-xctestrun',
-            xctestrunPath,
-            '-destination',
-            resolveRunnerDestination(device),
-          ],
-          {
-            allowFailure: true,
-            env: { ...process.env, AGENT_DEVICE_RUNNER_PORT: String(port) },
-            detached: true,
-          },
-        ),
+        runCmdBackground('xcodebuild', xcodebuildArgs, {
+          allowFailure: true,
+          env: { ...process.env, AGENT_DEVICE_RUNNER_PORT: String(port) },
+          detached: true,
+        }),
     ));
   } catch (error) {
     await simulatorSetRedirect?.release();
@@ -262,18 +262,33 @@ async function resolveReusableRunnerSession(
     return null;
   }
 
+  const existingArtifact = existing.xctestrunArtifact;
+  if (existingArtifact?.cache === 'external') {
+    emitDiagnostic({
+      level: 'debug',
+      phase: 'ios_runner_session_reuse',
+      data: {
+        deviceId: device.id,
+        sessionId: existing.sessionId,
+        ready: existing.ready,
+        cache: existingArtifact.cache,
+      },
+    });
+    return existing;
+  }
+
   const expectedDerived = resolveRunnerDerivedPath(
     device,
     resolveExpectedRunnerCacheMetadata(device),
   );
-  if (existing.xctestrunArtifact?.derived !== expectedDerived) {
+  if (existingArtifact?.derived !== expectedDerived) {
     emitDiagnostic({
       level: 'debug',
       phase: 'ios_runner_session_artifact_stale',
       data: {
         deviceId: device.id,
         sessionId: existing.sessionId,
-        currentDerived: existing.xctestrunArtifact?.derived,
+        currentDerived: existingArtifact?.derived,
         expectedDerived,
       },
     });

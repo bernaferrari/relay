@@ -110,7 +110,7 @@ export type RunnerXctestrunCacheMetadata = {
   artifacts?: RunnerXctestrunCacheArtifacts;
 };
 
-export type RunnerXctestrunCacheKind = 'exact' | 'restore-key' | 'miss';
+export type RunnerXctestrunCacheKind = 'exact' | 'restore-key' | 'miss' | 'external';
 export type RunnerXctestrunArtifactState = 'valid' | 'rebuilt';
 
 export type RunnerXctestrunArtifact = {
@@ -119,8 +119,14 @@ export type RunnerXctestrunArtifact = {
   cache: RunnerXctestrunCacheKind;
   artifact: RunnerXctestrunArtifactState;
   buildMs: number;
-  xctestrunPathSource: 'manifest' | 'scan' | 'build';
+  xctestrunPathSource: 'manifest' | 'scan' | 'build' | 'external';
   reason?: string;
+};
+
+export type ExternalXctestRunnerOptions = {
+  iosXctestrunFile?: string;
+  iosXctestDerivedDataPath?: string;
+  iosXctestEnvDir?: string;
 };
 
 type RunnerXctestrunCacheArtifacts = {
@@ -421,7 +427,12 @@ function resolveRunnerXctestrunCacheLockPath(derived: string): string {
 
 export async function ensureXctestrun(
   device: DeviceInfo,
-  options: { verbose?: boolean; logPath?: string; traceLogPath?: string; buildTimeoutMs?: number },
+  options: {
+    verbose?: boolean;
+    logPath?: string;
+    traceLogPath?: string;
+    buildTimeoutMs?: number;
+  } & ExternalXctestRunnerOptions,
 ): Promise<string> {
   return (await ensureXctestrunArtifact(device, options)).xctestrunPath;
 }
@@ -434,8 +445,11 @@ export async function ensureXctestrunArtifact(
     traceLogPath?: string;
     buildTimeoutMs?: number;
     forceRunnerXctestrunRebuild?: boolean;
-  },
+  } & ExternalXctestRunnerOptions,
 ): Promise<RunnerXctestrunArtifact> {
+  const external = resolveExternalXctestrunArtifact(options);
+  if (external) return external;
+
   const projectRoot = findProjectRoot();
   const expectedCacheMetadata = resolveExpectedRunnerCacheMetadata(device, projectRoot);
   const derived = resolveRunnerDerivedPath(device, expectedCacheMetadata);
@@ -454,6 +468,49 @@ export async function ensureXctestrunArtifact(
       await releaseCacheLock();
     }
   });
+}
+
+function resolveExternalXctestrunArtifact(
+  options: ExternalXctestRunnerOptions,
+): RunnerXctestrunArtifact | null {
+  const configuredXctestrunPath = options.iosXctestrunFile?.trim();
+  if (!configuredXctestrunPath) {
+    return null;
+  }
+
+  const xctestrunPath = path.resolve(configuredXctestrunPath);
+  if (!fs.existsSync(xctestrunPath)) {
+    throw new AppError('COMMAND_FAILED', 'Configured iOS XCTest runner .xctestrun file not found', {
+      configKey: 'iosXctestrunFile',
+      xctestrunPath,
+    });
+  }
+
+  const configuredDerivedPath = options.iosXctestDerivedDataPath?.trim();
+  const derived = configuredDerivedPath
+    ? path.resolve(configuredDerivedPath)
+    : resolveExternalXctestDerivedDataPath(xctestrunPath);
+
+  emitRunnerXctestrunDecision('reuse', 'external_xctestrun', {
+    derived,
+    xctestrunPath,
+  });
+
+  return {
+    xctestrunPath,
+    derived,
+    cache: 'external',
+    artifact: 'valid',
+    buildMs: 0,
+    xctestrunPathSource: 'external',
+  };
+}
+
+function resolveExternalXctestDerivedDataPath(xctestrunPath: string): string {
+  const hash = crypto.createHash('sha1');
+  hash.update(xctestrunPath);
+  const suffix = hash.digest('hex').slice(0, 12);
+  return path.join(os.tmpdir(), 'agent-device-ios-xctest-derived', suffix);
 }
 
 async function ensureXctestrunUnderCacheLock(params: {
@@ -766,9 +823,18 @@ export function writeRunnerCacheMetadata(
 }
 
 export async function markRunnerXctestrunArtifactBadForRun(
-  artifact: Pick<RunnerXctestrunArtifact, 'derived' | 'xctestrunPath'>,
+  artifact: Pick<RunnerXctestrunArtifact, 'cache' | 'derived' | 'xctestrunPath'>,
   reason: string,
 ): Promise<void> {
+  if (artifact.cache === 'external') {
+    emitRunnerXctestrunDecision('preserve', 'external_bad_artifact', {
+      derived: artifact.derived,
+      xctestrunPath: artifact.xctestrunPath,
+      reason,
+    });
+    return;
+  }
+
   badRunnerArtifactsForRun.add(artifact.derived);
   const releaseCacheLock = await acquireRunnerXctestrunCacheLock(artifact.derived);
   try {
@@ -1149,8 +1215,11 @@ export async function prepareXctestrunWithEnv(
   xctestrunPath: string,
   envVars: Record<string, string>,
   suffix: string,
+  options: Pick<ExternalXctestRunnerOptions, 'iosXctestEnvDir'> = {},
 ): Promise<{ xctestrunPath: string; jsonPath: string }> {
-  const dir = path.dirname(xctestrunPath);
+  const configuredEnvDir = options.iosXctestEnvDir?.trim();
+  const dir = configuredEnvDir ? path.resolve(configuredEnvDir) : path.dirname(xctestrunPath);
+  fs.mkdirSync(dir, { recursive: true });
   const safeSuffix = suffix.replace(/[^a-zA-Z0-9._-]/g, '_');
   const tmpJsonPath = path.join(dir, `AgentDeviceRunner.env.${safeSuffix}.json`);
   const tmpXctestrunPath = path.join(dir, `AgentDeviceRunner.env.${safeSuffix}.xctestrun`);
@@ -1508,7 +1577,7 @@ async function evaluateExistingXctestrun(options: {
 }
 
 function emitRunnerXctestrunDecision(
-  action: 'clean' | 'reuse' | 'rebuild' | 'build',
+  action: 'clean' | 'reuse' | 'rebuild' | 'build' | 'preserve',
   reason:
     | 'forced_clean'
     | 'missing_xctestrun'
@@ -1520,7 +1589,9 @@ function emitRunnerXctestrunDecision(
     | 'reuse_ready'
     | 'forced_rebuild'
     | 'bad_artifact'
-    | 'built_new',
+    | 'built_new'
+    | 'external_xctestrun'
+    | 'external_bad_artifact',
   data: Record<string, unknown>,
 ): void {
   emitDiagnostic({
