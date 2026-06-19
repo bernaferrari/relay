@@ -1,4 +1,5 @@
 import type { RecordOptions } from '../../client-types.ts';
+import { RECORDING_EXPORT_QUALITIES } from '../../core/recording-export-quality.ts';
 import { AppError } from '../../utils/errors.ts';
 import type { CommandSchemaOverride } from '../../utils/cli-command-schema-types.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
@@ -6,8 +7,6 @@ import {
   booleanField,
   enumField,
   integerField,
-  integerSchema,
-  jsonSchemaField,
   requiredField,
   stringField,
 } from '../command-input.ts';
@@ -29,7 +28,8 @@ export const recordCommandMetadata = defineFieldCommandMetadata(
     action: requiredField(enumField(RECORDING_ACTION_VALUES)),
     path: stringField(),
     fps: integerField(),
-    quality: jsonSchemaField<RecordOptions['quality']>(integerSchema()),
+    maxSize: integerField(),
+    quality: enumField(RECORDING_EXPORT_QUALITIES),
     hideTouches: booleanField(),
   },
 );
@@ -62,13 +62,13 @@ export const recordingCommandDefinitions = [
 
 const recordCliSchema = {
   usageOverride:
-    'record start [path] [--fps <n>] [--quality <5-10>] [--hide-touches] | record stop',
+    'record start [path] [--fps <n>] [--max-size <px>] [--quality <medium|high>] [--hide-touches] | record stop',
   listUsageOverride: 'record start [path] | record stop',
   helpDescription:
-    'Start/stop screen recording; Android recordings longer than the 180s adb screenrecord limit are returned as multiple MP4 chunks',
+    'Start/stop screen recording; Android recordings longer than the 180s adb screenrecord limit are returned as multiple MP4 chunks. Use --max-size to limit dimensions and --quality to choose medium or high export quality',
   summary: 'Start or stop screen recording',
   positionalArgs: ['start|stop', 'path?'],
-  allowedFlags: ['fps', 'quality', 'hideTouches'],
+  allowedFlags: ['fps', 'screenshotMaxSize', 'quality', 'hideTouches'],
 } as const satisfies CommandSchemaOverride;
 
 const traceCliSchema = {
@@ -90,6 +90,7 @@ export const recordCliReader: CliReader = (positionals, flags) => ({
   action: readRecordingAction(positionals[0], RECORD_COMMAND_NAME),
   path: positionals[1],
   fps: flags.fps,
+  maxSize: flags.screenshotMaxSize,
   quality: flags.quality as RecordOptions['quality'],
   hideTouches: flags.hideTouches,
 });

@@ -16,6 +16,7 @@ import type {
 import type { DeviceKind, DeviceTarget, Platform, PlatformSelector } from './utils/device.ts';
 import type { BackMode } from './core/back-mode.ts';
 import type { ClickButton } from './core/click-button.ts';
+import type { RecordingExportQuality } from './core/recording-export-quality.ts';
 import type { DeviceRotation } from './core/device-rotation.ts';
 import type {
   ScrollDirection,
@@ -768,13 +769,12 @@ export type NetworkOptions = AgentDeviceRequestOverrides & {
   include?: NetworkIncludeMode;
 };
 
-type RecordingQuality = 5 | 6 | 7 | 8 | 9 | 10;
-
 export type RecordOptions = AgentDeviceRequestOverrides & {
   action: 'start' | 'stop';
   path?: string;
   fps?: number;
-  quality?: RecordingQuality;
+  maxSize?: number;
+  quality?: RecordingExportQuality;
   hideTouches?: boolean;
 };
 
@@ -854,7 +854,8 @@ type CommandExecutionOptions = Partial<ScreenshotRequestFlags> & {
   forceFull?: boolean;
   count?: number;
   fps?: number;
-  quality?: RecordingQuality;
+  maxSize?: number;
+  quality?: RecordingExportQuality;
   hideTouches?: boolean;
   intervalMs?: number;
   delayMs?: number;
