@@ -40,7 +40,13 @@ func run() throws {
     throw ResizeError.missingVideoTrack
   }
 
-  let renderSize = scaledRenderSize(for: sourceVideoTrack, quality: parsedArgs.quality)
+  let sourceRenderSize = resolvedRenderSize(for: sourceVideoTrack)
+  if max(sourceRenderSize.width, sourceRenderSize.height) <= CGFloat(parsedArgs.maxSize) {
+    try FileManager.default.copyItem(at: inputURL, to: outputURL)
+    return
+  }
+
+  let renderSize = scaledRenderSize(sourceRenderSize, maxSize: parsedArgs.maxSize)
   let composition = AVMutableComposition()
   let fullRange = CMTimeRange(start: .zero, duration: asset.duration)
 
@@ -60,7 +66,7 @@ func run() throws {
     try? compositionAudioTrack.insertTimeRange(fullRange, of: sourceAudioTrack, at: .zero)
   }
 
-  let scale = CGFloat(parsedArgs.quality) / 10.0
+  let scale = renderSize.width / sourceRenderSize.width
   let videoComposition = AVMutableVideoComposition()
   videoComposition.renderSize = renderSize
   videoComposition.frameDuration = resolvedFrameDuration(for: sourceVideoTrack)
@@ -74,7 +80,8 @@ func run() throws {
   instruction.layerInstructions = [layerInstruction]
   videoComposition.instructions = [instruction]
 
-  guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+  let presetName = exportPresetName(for: parsedArgs.exportQuality, compatibleWith: composition)
+  guard let exporter = AVAssetExportSession(asset: composition, presetName: presetName) else {
     throw ResizeError.exportFailed("Failed to create export session.")
   }
 
@@ -97,10 +104,20 @@ func run() throws {
   }
 }
 
-func parseArguments(_ arguments: [String]) throws -> (inputPath: String, outputPath: String, quality: Int) {
+enum ExportQuality: String {
+  case medium
+  case high
+}
+
+func parseArguments(
+  _ arguments: [String]
+) throws -> (inputPath: String, outputPath: String, maxSize: Int, exportQuality: ExportQuality) {
   var inputPath: String?
   var outputPath: String?
-  var quality: Int?
+  var maxSize: Int?
+  // Export quality defaults to medium so re-encoded recordings stay fast by default.
+  // Pass --quality high to opt into a slower highest-quality export.
+  var exportQuality: ExportQuality = .medium
   var index = 0
 
   while index < arguments.count {
@@ -115,24 +132,50 @@ func parseArguments(_ arguments: [String]) throws -> (inputPath: String, outputP
       guard nextIndex < arguments.count else { throw ResizeError.invalidArgs("--output requires a value") }
       outputPath = arguments[nextIndex]
       index += 2
-    case "--quality":
-      guard nextIndex < arguments.count else { throw ResizeError.invalidArgs("--quality requires a value") }
-      guard let parsed = Int(arguments[nextIndex]), parsed >= 5, parsed <= 10 else {
-        throw ResizeError.invalidArgs("--quality must be an integer between 5 and 10")
+    case "--max-size":
+      guard nextIndex < arguments.count else { throw ResizeError.invalidArgs("--max-size requires a value") }
+      guard let parsed = Int(arguments[nextIndex]), parsed >= 1 else {
+        throw ResizeError.invalidArgs("--max-size must be a positive integer")
       }
-      quality = parsed
+      maxSize = parsed
+      index += 2
+    case "--quality":
+      guard nextIndex < arguments.count else {
+        throw ResizeError.invalidArgs("--quality requires a value")
+      }
+      guard let parsed = ExportQuality(rawValue: arguments[nextIndex]) else {
+        throw ResizeError.invalidArgs("--quality must be one of: medium, high")
+      }
+      exportQuality = parsed
       index += 2
     default:
       throw ResizeError.invalidArgs("Unknown argument: \(argument)")
     }
   }
 
-  guard let inputPath, let outputPath, let quality else {
+  guard let inputPath, let outputPath, let maxSize else {
     throw ResizeError.invalidArgs(
-      "Usage: recording-resize.swift --input <video> --output <video> --quality <5-10>"
+      "Usage: recording-resize.swift --input <video> --output <video> --max-size <px> [--quality <medium|high>]"
     )
   }
-  return (inputPath, outputPath, quality)
+  return (inputPath, outputPath, maxSize, exportQuality)
+}
+
+func exportPresetName(
+  for exportQuality: ExportQuality,
+  compatibleWith asset: AVAsset
+) -> String {
+  switch exportQuality {
+  case .high:
+    return AVAssetExportPresetHighestQuality
+  case .medium:
+    // Mirror the touch-overlay export: prefer the faster medium preset, falling back to
+    // highest quality only when medium is not available for this composition.
+    let compatible = AVAssetExportSession.exportPresets(compatibleWith: asset)
+    return compatible.contains(AVAssetExportPresetMediumQuality)
+      ? AVAssetExportPresetMediumQuality
+      : AVAssetExportPresetHighestQuality
+  }
 }
 
 func resolvedRenderSize(for track: AVAssetTrack) -> CGSize {
@@ -140,10 +183,10 @@ func resolvedRenderSize(for track: AVAssetTrack) -> CGSize {
   return CGSize(width: abs(transformed.width), height: abs(transformed.height))
 }
 
-func scaledRenderSize(for track: AVAssetTrack, quality: Int) -> CGSize {
-  let renderSize = resolvedRenderSize(for: track)
-  guard quality < 10 else { return renderSize }
-  let scale = CGFloat(quality) / 10.0
+func scaledRenderSize(_ renderSize: CGSize, maxSize: Int) -> CGSize {
+  let longest = max(renderSize.width, renderSize.height)
+  guard longest > CGFloat(maxSize) else { return renderSize }
+  let scale = CGFloat(maxSize) / longest
   return CGSize(
     width: scaledDimension(renderSize.width, scale: scale),
     height: scaledDimension(renderSize.height, scale: scale)

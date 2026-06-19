@@ -8,6 +8,7 @@ import type {
   trimRecordingStart,
 } from '../../recording/overlay.ts';
 import type { RecordingGestureEvent } from '../types.ts';
+import type { RecordingExportQuality } from '../../core/recording-export-quality.ts';
 
 export type RecordTraceDeps = {
   runCmd: typeof runCmd;
@@ -27,7 +28,8 @@ export type RecordingBase = {
   outPath: string;
   clientOutPath?: string;
   startedAt: number;
-  quality?: number;
+  maxSize?: number;
+  exportQuality?: RecordingExportQuality;
   showTouches: boolean;
   gestureEvents: RecordingGestureEvent[];
 };

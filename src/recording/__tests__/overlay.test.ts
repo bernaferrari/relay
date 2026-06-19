@@ -27,9 +27,14 @@ vi.mock('../../utils/video.ts', () => ({
   waitForPlayableVideo: vi.fn(async () => {}),
 }));
 
-import { overlayRecordingTouches } from '../overlay.ts';
+import { overlayRecordingTouches, resizeRecording } from '../overlay.ts';
 import { AppError } from '../../utils/errors.ts';
 import { runCmd } from '../../utils/exec.ts';
+
+function helperScriptArgs(): string[] {
+  const helperCall = mockRunCmd.mock.calls.find(([cmd]) => cmd !== 'xcrun');
+  return (helperCall?.[1] as string[] | undefined) ?? [];
+}
 
 const mockRunCmd = vi.mocked(runCmd);
 
@@ -97,4 +102,52 @@ test('overlay preserves Swift helper compile hints', async () => {
       hint,
     },
   });
+});
+
+test('overlay defaults to the fast medium export preset', async () => {
+  const videoPath = path.join(tmpDir, 'recording.mp4');
+  const telemetryPath = path.join(tmpDir, 'recording.gesture-telemetry.json');
+  fs.writeFileSync(videoPath, 'original');
+  fs.writeFileSync(telemetryPath, '{"events":[]}');
+
+  await overlayRecordingTouches({ videoPath, telemetryPath });
+
+  expect(helperScriptArgs()).toEqual(
+    expect.arrayContaining(['--events', telemetryPath, '--quality', 'medium']),
+  );
+});
+
+test('overlay forwards the requested high export preset', async () => {
+  const videoPath = path.join(tmpDir, 'recording.mp4');
+  const telemetryPath = path.join(tmpDir, 'recording.gesture-telemetry.json');
+  fs.writeFileSync(videoPath, 'original');
+  fs.writeFileSync(telemetryPath, '{"events":[]}');
+
+  await overlayRecordingTouches({ videoPath, telemetryPath, exportQuality: 'high' });
+
+  expect(helperScriptArgs()).toEqual(
+    expect.arrayContaining(['--events', telemetryPath, '--quality', 'high']),
+  );
+});
+
+test('resize forwards max-size and defaults to the fast medium export preset', async () => {
+  const videoPath = path.join(tmpDir, 'recording.mp4');
+  fs.writeFileSync(videoPath, 'original');
+
+  await resizeRecording({ videoPath, maxSize: 1024 });
+
+  expect(helperScriptArgs()).toEqual(
+    expect.arrayContaining(['--max-size', '1024', '--quality', 'medium']),
+  );
+});
+
+test('resize forwards the requested high export preset', async () => {
+  const videoPath = path.join(tmpDir, 'recording.mp4');
+  fs.writeFileSync(videoPath, 'original');
+
+  await resizeRecording({ videoPath, maxSize: 720, exportQuality: 'high' });
+
+  expect(helperScriptArgs()).toEqual(
+    expect.arrayContaining(['--max-size', '720', '--quality', 'high']),
+  );
 });
