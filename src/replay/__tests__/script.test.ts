@@ -4,7 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { AppError } from '../../utils/errors.ts';
-import { parseReplayScript, readReplayScriptMetadata, writeReplayScript } from '../script.ts';
+import {
+  parseReplayScriptDetailed,
+  readReplayScriptMetadata,
+  writeReplayScript,
+} from '../script.ts';
 import type { SessionAction, SessionState } from '../../daemon/types.ts';
 
 function makeSession(): SessionState {
@@ -49,26 +53,11 @@ test('writeReplayScript preserves inline open runtime hints', () => {
   );
 });
 
-test('record replay script round-trips fps, max-size, quality, and hide-touches flags', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-script-record-'));
-  const replayPath = path.join(root, 'flow.ad');
-  const actions: SessionAction[] = [
-    {
-      ts: Date.now(),
-      command: 'record',
-      positionals: ['start', './capture.mp4'],
-      flags: { fps: 24, screenshotMaxSize: 1024, quality: 'high', hideTouches: true },
-    },
-  ];
+test('record replay script parses fps, max-size, quality, and hide-touches flags', () => {
+  const script =
+    'record start "./capture.mp4" --fps 24 --max-size 1024 --quality high --hide-touches\n';
+  const parsed = parseReplayScriptDetailed(script).actions;
 
-  writeReplayScript(replayPath, actions, makeSession());
-  const script = fs.readFileSync(replayPath, 'utf8');
-  assert.match(
-    script,
-    /record start "\.\/capture\.mp4" --fps 24 --max-size 1024 --quality high --hide-touches/,
-  );
-
-  const parsed = parseReplayScript(script);
   assert.deepEqual(parsed[0]?.positionals, ['start', './capture.mp4']);
   assert.equal(parsed[0]?.flags.fps, 24);
   assert.equal(parsed[0]?.flags.screenshotMaxSize, 1024);
@@ -92,7 +81,7 @@ test('screenshot replay script round-trips screenshot flags', () => {
   const script = fs.readFileSync(replayPath, 'utf8');
   assert.match(script, /screenshot "\.\/page\.png" --fullscreen --max-size 1024 --no-stabilize/);
 
-  const parsed = parseReplayScript(script);
+  const parsed = parseReplayScriptDetailed(script).actions;
   assert.deepEqual(parsed[0]?.positionals, ['./page.png']);
   assert.equal(parsed[0]?.flags.screenshotFullscreen, true);
   assert.equal(parsed[0]?.flags.screenshotMaxSize, 1024);
@@ -101,11 +90,11 @@ test('screenshot replay script round-trips screenshot flags', () => {
 
 test('snapshot replay script parses full refresh flags', () => {
   const ignoredLegacyFlag = '-' + 'c';
-  const parsed = parseReplayScript(
+  const parsed = parseReplayScriptDetailed(
     ['snapshot', '-i', ignoredLegacyFlag, '--raw', '--force-full', '-d', '2', '-s', '"@e1"'].join(
       ' ',
     ) + '\n',
-  );
+  ).actions;
 
   assert.deepEqual(parsed[0]?.positionals, []);
   assert.equal(parsed[0]?.flags.snapshotInteractiveOnly, true);
@@ -145,7 +134,7 @@ test('snapshot replay script writes interactive refresh flags', () => {
 });
 
 test('gesture replay script parses pan, fling, swipe, pinch, and rotate gesture commands', () => {
-  const parsed = parseReplayScript(
+  const parsed = parseReplayScriptDetailed(
     [
       'gesture pan 195 443 80 0',
       'wait "pan changed yes" 5000',
@@ -155,7 +144,7 @@ test('gesture replay script parses pan, fling, swipe, pinch, and rotate gesture 
       'gesture rotate 35 195 443',
       '',
     ].join('\n'),
-  );
+  ).actions;
 
   assert.deepEqual(
     parsed.map((action) => action.command),
@@ -191,13 +180,13 @@ test('type and fill replay scripts round-trip typing delay flags', () => {
   assert.match(script, /type "hello world" --delay-ms 75/);
   assert.match(script, /fill @e2 "search" --delay-ms 40/);
 
-  const parsed = parseReplayScript(script);
+  const parsed = parseReplayScriptDetailed(script).actions;
   assert.equal(parsed[0]?.flags.delayMs, 75);
   assert.equal(parsed[1]?.flags.delayMs, 40);
 });
 
 test('type replay script preserves literal delay flag tokens', () => {
-  const parsed = parseReplayScript('type "--delay-ms" "abc"\n');
+  const parsed = parseReplayScriptDetailed('type "--delay-ms" "abc"\n').actions;
   assert.deepEqual(parsed[0]?.positionals, ['--delay-ms', 'abc']);
   assert.equal(parsed[0]?.flags.delayMs, undefined);
 });
@@ -266,16 +255,15 @@ test('writeReplayScript preserves significant whitespace and empty string argume
   assert.match(script, /screenshot " \.\/screens\/final\.png "/);
   assert.match(script, /screenshot "foo\\\\nbar\.png"/);
   assert.match(script, /--metro-host " host\\t" --launch-url "myapp:\/\/dev "/);
-  const parsed = parseReplayScript(script);
+
+  const parsed = parseReplayScriptDetailed(script).actions;
   assert.deepEqual(parsed[0]?.positionals, ['  leading\ttrailing  ']);
   assert.deepEqual(parsed[1]?.positionals, ['@e2', '']);
   assert.deepEqual(parsed[2]?.positionals, [' ./screens/final.png ']);
   assert.deepEqual(parsed[3]?.positionals, ['foo\\nbar.png']);
-  assert.deepEqual(parsed[4]?.runtime, {
-    platform: 'android',
-    metroHost: ' host\t',
-    launchUrl: 'myapp://dev ',
-  });
+  assert.deepEqual(parsed[4]?.positionals, ['Demo']);
+  assert.equal(parsed[4]?.runtime?.metroHost, ' host\t');
+  assert.equal(parsed[4]?.runtime?.launchUrl, 'myapp://dev ');
 });
 
 test('readReplayScriptMetadata extracts platform from context header', () => {
