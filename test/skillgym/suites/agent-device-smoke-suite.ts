@@ -2,11 +2,31 @@ import { assert, commandMatcher, type Case, type CommandMatcher } from 'skillgym
 
 type SessionReport = Parameters<typeof assert.skills.has>[0];
 type AssertionContext = Parameters<Case['assert']>[1];
-type OutputMatcher = string | RegExp | PlannedCommandMatcher;
+type OutputMatcher = string | RegExp | PlannedCommandMatcher | TopLevelPlannedCommandMatcher;
 
 interface PlannedCommandMatcher {
   kind: 'planned-command';
   matchers: CommandMatcher[];
+}
+
+interface TopLevelPlannedCommandMatcher {
+  kind: 'top-level-planned-command';
+  commands: string[];
+}
+
+interface OutputAbsenceContext {
+  output: string;
+  finalOutput: string;
+  plannedReport: SessionReport;
+}
+
+interface CommandEventRecord {
+  type?: unknown;
+  command?: unknown;
+  args?: {
+    command?: unknown;
+    cmd?: unknown;
+  };
 }
 
 const WORKSPACE_ROOT = process.cwd().replaceAll('\\', '/');
@@ -24,6 +44,7 @@ Do not browse the web.
 Use only this prompt plus local CLI help as private reference.
 Do not execute live app/device commands while planning; only local CLI help commands are allowed before final output.
 For local CLI help in this repo, use node bin/agent-device.mjs help or --help; final commands still use agent-device.
+If the app contract names an expected id, selector, or visible text, include that exact target in a final verification command instead of stopping at the action that reaches or reveals it.
 Final output: only commands, one per line. Use agent-device for app/device automation; shell setup commands are allowed only when this prompt explicitly requires them. Any prose or Markdown fails.
 Every final output line must start with agent-device.
 Do not combine final commands with shell operators such as &&, ||, pipes, or semicolons.
@@ -96,12 +117,33 @@ function plannedCommandAlternatives(commands: string[]): PlannedCommandMatcher {
   };
 }
 
+function topLevelPlannedCommand(command: string): TopLevelPlannedCommandMatcher {
+  return topLevelPlannedCommandAlternatives([command]);
+}
+
+function topLevelPlannedCommandAlternatives(commands: string[]): TopLevelPlannedCommandMatcher {
+  return {
+    kind: 'top-level-planned-command',
+    commands: commands.map((command) => {
+      const [executable, ...args] = commandParts(command);
+      assert.ok(executable, 'top-level planned command must not be empty');
+      assert.equal(args.length, 0, 'top-level planned command matches only one command token');
+      return executable;
+    }),
+  };
+}
+
 function assertOutputs(finalOutput: string, matchers: OutputMatcher[]) {
   const output = normalizedFinalOutput(finalOutput);
   const plannedReport = plannedCommandReport(output);
   for (const matcher of matchers) {
     if (isPlannedCommandMatcher(matcher)) {
       assertPlannedCommandIncludes(plannedReport, matcher);
+      continue;
+    }
+
+    if (isTopLevelPlannedCommandMatcher(matcher)) {
+      assertTopLevelPlannedCommandIncludes(output, matcher);
       continue;
     }
 
@@ -112,22 +154,37 @@ function assertOutputs(finalOutput: string, matchers: OutputMatcher[]) {
 function assertNoOutputs(finalOutput: string, matchers: OutputMatcher[]) {
   const output = normalizedFinalOutput(finalOutput);
   const plannedReport = plannedCommandReport(output);
+  const context = { output, finalOutput, plannedReport };
+
   for (const matcher of matchers) {
-    if (isPlannedCommandMatcher(matcher)) {
-      assertPlannedCommandNotIncludes(plannedReport, matcher);
-      continue;
-    }
-
-    if (typeof matcher === 'string') {
-      assert.ok(
-        !output.includes(matcher),
-        `Expected final output not to include ${JSON.stringify(matcher)}. Observed final output: ${finalOutput}`,
-      );
-      continue;
-    }
-
-    assert.doesNotMatch(output, matcher);
+    assertOutputAbsent(context, matcher);
   }
+}
+
+function assertOutputAbsent(context: OutputAbsenceContext, matcher: OutputMatcher) {
+  if (isPlannedCommandMatcher(matcher)) {
+    assertPlannedCommandNotIncludes(context.plannedReport, matcher);
+    return;
+  }
+
+  if (isTopLevelPlannedCommandMatcher(matcher)) {
+    assertTopLevelPlannedCommandNotIncludes(context.output, matcher);
+    return;
+  }
+
+  if (typeof matcher === 'string') {
+    assertStringOutputAbsent(context, matcher);
+    return;
+  }
+
+  assert.doesNotMatch(context.output, matcher);
+}
+
+function assertStringOutputAbsent(context: OutputAbsenceContext, matcher: string) {
+  assert.ok(
+    !context.output.includes(matcher),
+    `Expected final output not to include ${JSON.stringify(matcher)}. Observed final output: ${context.finalOutput}`,
+  );
 }
 
 function isPlannedCommandMatcher(matcher: OutputMatcher): matcher is PlannedCommandMatcher {
@@ -135,6 +192,16 @@ function isPlannedCommandMatcher(matcher: OutputMatcher): matcher is PlannedComm
     typeof matcher === 'object' &&
     !(matcher instanceof RegExp) &&
     matcher.kind === 'planned-command'
+  );
+}
+
+function isTopLevelPlannedCommandMatcher(
+  matcher: OutputMatcher,
+): matcher is TopLevelPlannedCommandMatcher {
+  return (
+    typeof matcher === 'object' &&
+    !(matcher instanceof RegExp) &&
+    matcher.kind === 'top-level-planned-command'
   );
 }
 
@@ -161,6 +228,58 @@ function assertPlannedCommandNotIncludes(report: SessionReport, matcher: Planned
   for (const command of matcher.matchers) {
     assert.commands.notIncludes(report, command);
   }
+}
+
+function assertTopLevelPlannedCommandIncludes(
+  output: string,
+  matcher: TopLevelPlannedCommandMatcher,
+) {
+  const observed = topLevelPlannedCommands(output);
+  assert.ok(
+    observed.some((command) => matcher.commands.includes(command)),
+    `Expected final output to include top-level command ${matcher.commands
+      .map((command) => JSON.stringify(command))
+      .join(' or ')}. Observed top-level commands: ${observed
+      .map((command) => JSON.stringify(command))
+      .join(', ')}`,
+  );
+}
+
+function assertTopLevelPlannedCommandNotIncludes(
+  output: string,
+  matcher: TopLevelPlannedCommandMatcher,
+) {
+  const observed = topLevelPlannedCommands(output);
+  const forbidden = observed.filter((command) => matcher.commands.includes(command));
+  assert.deepEqual(
+    forbidden,
+    [],
+    `Expected final output not to include top-level command ${matcher.commands
+      .map((command) => JSON.stringify(command))
+      .join(' or ')}. Observed top-level commands: ${observed
+      .map((command) => JSON.stringify(command))
+      .join(', ')}`,
+  );
+}
+
+function topLevelPlannedCommands(output: string): string[] {
+  return normalizedFinalOutput(output)
+    .split('\n')
+    .map(topLevelPlannedCommandFromLine)
+    .filter((command): command is string => command !== undefined);
+}
+
+function topLevelPlannedCommandFromLine(line: string): string | undefined {
+  const [executable, firstArg] = commandParts(line.trim());
+  if (executable === undefined) {
+    return undefined;
+  }
+
+  return topLevelCommandToken(executable, firstArg);
+}
+
+function topLevelCommandToken(executable: string, firstArg: string | undefined): string {
+  return executable === 'agent-device' && firstArg !== undefined ? firstArg : executable;
 }
 
 function normalizedFinalOutput(output: string): string {
@@ -240,31 +359,37 @@ function assertOnlyLocalCliHelpCommands(report: SessionReport) {
 
 function extractCommandEvents(report: SessionReport): string[] {
   const events = (report as { events?: unknown[] }).events ?? [];
-  const commands: string[] = [];
+  return events.flatMap(commandFromEvent);
+}
 
-  for (const event of events) {
-    if (!event || typeof event !== 'object') {
-      continue;
-    }
-
-    const record = event as {
-      type?: unknown;
-      command?: unknown;
-      args?: { command?: unknown; cmd?: unknown };
-    };
-
-    if (record.type === 'command' && typeof record.command === 'string') {
-      commands.push(record.command);
-      continue;
-    }
-
-    const toolCommand = record.args?.command ?? record.args?.cmd;
-    if (record.type === 'toolCall' && typeof toolCommand === 'string') {
-      commands.push(toolCommand);
-    }
+function commandFromEvent(event: unknown): string[] {
+  if (!isCommandEventRecord(event)) {
+    return [];
   }
 
-  return commands;
+  const command = directCommandEvent(event) ?? toolCallCommandEvent(event);
+  return command === undefined ? [] : [command];
+}
+
+function isCommandEventRecord(event: unknown): event is CommandEventRecord {
+  return typeof event === 'object' && event !== null;
+}
+
+function directCommandEvent(record: CommandEventRecord): string | undefined {
+  if (record.type === 'command' && typeof record.command === 'string') {
+    return record.command;
+  }
+
+  return undefined;
+}
+
+function toolCallCommandEvent(record: CommandEventRecord): string | undefined {
+  const command = record.args?.command ?? record.args?.cmd;
+  if (record.type === 'toolCall' && typeof command === 'string') {
+    return command;
+  }
+
+  return undefined;
 }
 
 function isLocalCliHelpCommand(command: string) {
@@ -273,8 +398,24 @@ function isLocalCliHelpCommand(command: string) {
     .replace(/^\/bin\/zsh\s+-lc\s+'(.+)'$/, '$1')
     .trim();
 
-  return /^(?:node\s+bin\/agent-device\.mjs|agent-device)\s+(?:(?:help(?:\s+\S+)?)|(?:\S+\s+)?--help)(?:\s+2>&1)?$/.test(
-    strippedCommand,
+  return splitShellHelpProbe(strippedCommand).every(isLocalCliHelpSegment);
+}
+
+function splitShellHelpProbe(command: string): string[] {
+  return command
+    .split(/\s*(?:&&|\|\||[;|])\s*/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function isLocalCliHelpSegment(command: string) {
+  const helpToken = '[^\\s;&|]+';
+  return (
+    new RegExp(
+      `^(?:node\\s+bin\\/agent-device\\.mjs|agent-device)\\s+(?:(?:help(?:\\s+${helpToken})*)|(?:${helpToken}\\s+)?--help)(?:\\s+2>&1)?$`,
+    ).test(command) ||
+    /^printf\s+["'][^"']*["']$/.test(command) ||
+    command === 'cat'
   );
 }
 
@@ -1691,10 +1832,10 @@ const SKILL_GUIDANCE_CASES: Case[] = [
     ],
     forbiddenOutputs: [
       plannedCommand('swipe'),
-      plannedCommand('pan'),
-      plannedCommand('fling'),
-      plannedCommand('rotate'),
-      plannedCommand('rotate-gesture'),
+      topLevelPlannedCommand('pan'),
+      topLevelPlannedCommand('fling'),
+      topLevelPlannedCommand('rotate'),
+      topLevelPlannedCommand('rotate-gesture'),
       /--duration-ms/i,
     ],
   }),
