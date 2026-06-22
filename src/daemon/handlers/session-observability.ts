@@ -13,6 +13,7 @@ import {
   type PerfKind,
 } from '../../contracts/perf.ts';
 import { AppError, normalizeError } from '../../utils/errors.ts';
+import { resolveWebProvider } from '../../platforms/web/provider.ts';
 import type { AndroidAdbExecutor } from '../../platforms/android/adb-executor.ts';
 import type { DaemonRequest, DaemonResponse, DaemonResponseData, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
@@ -494,6 +495,10 @@ async function handleNetworkCommand(params: ObservabilityParams): Promise<Daemon
   if (!request.ok) return request;
   const { include, maxEntries, session } = request;
 
+  if (session.device.platform === 'web') {
+    return await handleWebNetworkCommand({ include, maxEntries });
+  }
+
   const capture = await readSessionNetworkCapture({
     device: session.device,
     appBundleId: session.appBundleId,
@@ -516,6 +521,42 @@ async function handleNetworkCommand(params: ObservabilityParams): Promise<Daemon
       notes: capture.notes,
     },
   };
+}
+
+async function handleWebNetworkCommand(params: {
+  include: NetworkIncludeMode;
+  maxEntries: number;
+}): Promise<DaemonResponse> {
+  const provider = resolveWebProvider();
+  if (!provider.dumpNetwork) {
+    return errorResponse('UNSUPPORTED_OPERATION', 'network is not supported by this web provider');
+  }
+  try {
+    const result = await provider.dumpNetwork({
+      include: params.include,
+      limit: params.maxEntries,
+    });
+    return {
+      ok: true,
+      data: {
+        entries: result.entries,
+        active: true,
+        state: 'active',
+        backend: result.backend ?? 'agent-browser',
+        include: params.include,
+        matchedLines: result.entries.length,
+        scannedLines: result.entries.length,
+        limits: {
+          maxEntries: params.maxEntries,
+          maxPayloadChars: 2048,
+          maxScanLines: result.entries.length,
+        },
+        notes: result.notes,
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: normalizeError(error) };
+  }
 }
 
 function resolveNetworkCommandRequest(

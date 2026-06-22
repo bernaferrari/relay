@@ -74,6 +74,14 @@ test('network dump prints parsed entries and metadata', async () => {
           requestBody: '{"email":"u@example.com"}',
           responseBody: '{"error":"denied"}',
         },
+        {
+          timestamp: '2026-06-22T09:08:19.500Z',
+          method: 'GET',
+          url: 'https://example.test/api',
+          status: 200,
+          requestHeaders: { Accept: 'application/json' },
+          responseHeaders: { 'content-type': 'application/json' },
+        },
       ],
       notes: ['best-effort parser'],
     },
@@ -93,6 +101,8 @@ test('network dump prints parsed entries and metadata', async () => {
   assert.match(result.stdout, /headers:/);
   assert.match(result.stdout, /request:/);
   assert.match(result.stdout, /response:/);
+  assert.match(result.stdout, /request headers: \{"Accept":"application\/json"\}/);
+  assert.match(result.stdout, /response headers: \{"content-type":"application\/json"\}/);
   assert.match(result.stderr, /active=true/);
   assert.match(result.stderr, /include=all/);
   assert.match(result.stderr, /matchedLines=2/);
