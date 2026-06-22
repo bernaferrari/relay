@@ -19,7 +19,7 @@ A device automation CLI for real apps on iOS, Android, TV, and desktop. Agents g
 
 `agent-device` lets coding agents open apps, inspect the current UI, interact with visible elements, and collect debugging evidence through one CLI. Use it when an agent needs to verify what actually happens on a device, not just reason about code.
 
-If you know Vercel's [agent-browser](https://github.com/vercel-labs/agent-browser), `agent-device` is the same idea for mobile, TV, and desktop apps.
+If you know Vercel's [agent-browser](https://github.com/vercel-labs/agent-browser), `agent-device` is the same idea for mobile, TV, and desktop apps. Minimal `--platform web` support reuses `agent-browser` when a browser session needs to fit into the same command/session/replay loop.
 
 It works with native iOS and Android apps, plus apps built with Expo, Flutter, and React Native, as long as the target can run on a supported device, simulator, emulator, or desktop environment.
 
@@ -56,7 +56,7 @@ agent-device help workflow
 
 The installed CLI help is the source of truth for agents. Start with `agent-device help workflow`, then follow the topic-specific help when a task needs dogfooding, debugging, replay, or React Native profiling.
 
-Prerequisites depend on the target platform: Node.js 22+, Xcode for iOS/tvOS/macOS targets, Android SDK + ADB for Android, and macOS Accessibility permission for desktop automation. See [Installation](https://oss.callstack.com/agent-device/docs/installation) for platform setup.
+Prerequisites depend on the target platform: Node.js 22+, Xcode for iOS/tvOS/macOS targets, Android SDK + ADB for Android, and macOS Accessibility permission for desktop automation. Web automation requires Node 24+. See [Installation](https://oss.callstack.com/agent-device/docs/installation) for platform setup.
 
 Try the basic loop:
 
