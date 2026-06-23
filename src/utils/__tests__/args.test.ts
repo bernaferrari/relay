@@ -384,6 +384,7 @@ test('usageForCommand documents open --launch-args', () => {
   assert.match(help, /--launch-args <arg>/);
   assert.match(help, /forwarded verbatim/);
   assert.match(help, /Linux and macOS reject the flag/);
+  assert.match(help, /--launch-console artifacts\/launch-console\.log/);
 });
 
 test('parseArgs accepts install-from-source GitHub Actions artifact flag', () => {
@@ -559,6 +560,36 @@ test('parseArgs recognizes daemon transport/state/tenant isolation flags', () =>
   assert.equal(parsed.flags.sessionIsolation, 'tenant');
   assert.equal(parsed.flags.runId, 'run_42');
   assert.equal(parsed.flags.leaseId, 'abcd1234ef567890');
+});
+
+test('parseArgs scopes daemon and device flags to supported commands', () => {
+  const open = parseArgs(['open', 'settings', '--ios-xctestrun-file', './runner.xctestrun'], {
+    strictFlags: true,
+  });
+  assert.equal(open.flags.iosXctestrunFile, './runner.xctestrun');
+
+  assert.throws(
+    () =>
+      parseArgs(['auth', 'status', '--ios-xctestrun-file', './runner.xctestrun'], {
+        strictFlags: true,
+      }),
+    /not supported for command auth/,
+  );
+
+  assert.throws(
+    () => parseArgs(['auth', 'status', '--platform', 'ios'], { strictFlags: true }),
+    /not supported for command auth/,
+  );
+});
+
+test('parseArgs keeps no-record accepted on recordable commands', () => {
+  const press = parseArgs(['press', '10', '10', '--no-record'], { strictFlags: true });
+  assert.equal(press.flags.noRecord, true);
+
+  const swipe = parseArgs(['swipe', '0', '0', '10', '10', '--no-record'], {
+    strictFlags: true,
+  });
+  assert.equal(swipe.flags.noRecord, true);
 });
 
 test('parseArgs recognizes connect lease backend force and no-login flags', () => {
@@ -913,10 +944,20 @@ test('usageForCommand supports legacy long-press alias', () => {
   assert.doesNotMatch(help ?? '', /agent-device long-press/);
 });
 
+test('usageForCommand documents keyboard dismissal flow', () => {
+  const help = usageForCommand('keyboard');
+  assert.equal(help === null, false);
+  assert.match(help ?? '', /focus the field by id\/ref first/);
+  assert.match(help ?? '', /keyboard dismiss reports unsupported/);
+});
+
 test('usageForCommand supports metrics alias', () => {
   const help = usageForCommand('metrics');
   assert.equal(help === null, false);
   assert.match(help ?? '', /agent-device perf/);
+  assert.match(help ?? '', /report --kind xctrace --out <report\.json>/);
+  assert.match(help ?? '', /profile report --kind simpleperf --out <cpu-report\.json>/);
+  assert.match(help ?? '', /report writes a compact \.json summary/);
   assert.match(help ?? '', /Native perf output is agent evidence/);
   assert.match(help ?? '', /raw profiles\/traces stay on disk/);
 });
@@ -943,16 +984,27 @@ test('usage includes concise top-level commands', () => {
   const usageText = usage();
   assert.match(
     usageText,
-    /install-from-source <url> \| install-from-source --github-actions-artifact/,
+    /install-from-source\s{2,}Install app builds from URLs, remote source specs, or CI artifacts/,
   );
-  assert.match(usageText, /prepare ios-runner --platform ios\|macos/);
-  assert.match(usageText, /metro prepare --public-base-url <url>/);
+  assert.match(usageText, /prepare\s{2,}Pre-warm platform helpers/);
+  assert.match(
+    usageText,
+    /metro\s{2,}Prepare Metro reachability for React Native\/Expo apps or trigger app reloads/,
+  );
   assert.match(usageText, /batch --steps <json> \| --steps-file <path>/);
-  assert.match(usageText, /network dump/);
+  assert.match(usageText, /network\s{2,}Inspect HTTP\(S\) traffic parsed from session app logs/);
   assert.match(usageText, /clipboard read \| clipboard write <text>/);
   assert.match(usageText, /keyboard \[action\]/);
-  assert.match(usageText, /trigger-app-event <event> \[payloadJson\]/);
+  assert.match(usageText, /trigger-app-event\s{2,}Invoke app-defined automation\/test events/);
   assert.match(usageText, /gesture <pan\|fling\|swipe\|pinch\|rotate\|transform> \.\.\./);
+  assert.doesNotMatch(
+    usageText,
+    /install-from-source <url> \| install-from-source --github-actions-artifact/,
+  );
+  assert.doesNotMatch(usageText, /prepare ios-runner --platform ios\|macos/);
+  assert.doesNotMatch(usageText, /metro prepare --public-base-url <url>/);
+  assert.doesNotMatch(usageText, /^  network dump/m);
+  assert.doesNotMatch(usageText, /trigger-app-event <event> \[payloadJson\]/);
   assert.doesNotMatch(usageText, /^  pan <x> <y> <dx> <dy> \[durationMs\]/m);
   assert.doesNotMatch(usageText, /^  fling <up\|down\|left\|right>/m);
   assert.doesNotMatch(usageText, /^  pinch <scale> \[x\] \[y\]/m);
@@ -962,23 +1014,32 @@ test('usage includes concise top-level commands', () => {
   assert.match(usageText, /trace start <path> \| trace stop <path>/);
 });
 
-test('usage includes only global flags in the top-level flags section', () => {
+test('usage includes only global flags in the top-level global flags section', () => {
   const usageText = usage();
   const flagsSection = usageText.slice(
-    usageText.indexOf('Flags:'),
+    usageText.indexOf('Global Flags:'),
     usageText.indexOf('Agent Quickstart:'),
   );
-  assert.match(flagsSection, /--target mobile\|tv/);
-  assert.match(flagsSection, /--ios-simulator-device-set <path>/);
-  assert.match(flagsSection, /--android-device-allowlist <serials>/);
-  assert.match(flagsSection, /--state-dir <path>/);
-  assert.match(flagsSection, /--daemon-transport auto\|socket\|http/);
-  assert.match(flagsSection, /--daemon-server-mode socket\|http\|dual/);
-  assert.match(flagsSection, /--tenant <id>/);
-  assert.match(flagsSection, /--session-isolation none\|tenant/);
-  assert.match(flagsSection, /--run-id <id>/);
-  assert.match(flagsSection, /--lease-id <id>/);
-  assert.match(flagsSection, /--lease-backend ios-simulator\|ios-instance\|android-instance/);
+  assert.match(flagsSection, /^Global Flags:/);
+  assert.match(flagsSection, /--config <path>/);
+  assert.match(flagsSection, /--json/);
+  assert.match(flagsSection, /--help, -h/);
+  assert.match(flagsSection, /--version, -V/);
+  assert.match(flagsSection, /test --verbose prints per-test step timings without debug logs/);
+  assert.doesNotMatch(flagsSection, /--target mobile\|tv/);
+  assert.doesNotMatch(flagsSection, /--ios-simulator-device-set <path>/);
+  assert.doesNotMatch(flagsSection, /--android-device-allowlist <serials>/);
+  assert.doesNotMatch(flagsSection, /--state-dir <path>/);
+  assert.doesNotMatch(flagsSection, /--daemon-transport auto\|socket\|http/);
+  assert.doesNotMatch(flagsSection, /--daemon-server-mode socket\|http\|dual/);
+  assert.doesNotMatch(flagsSection, /--tenant <id>/);
+  assert.doesNotMatch(flagsSection, /--session-isolation none\|tenant/);
+  assert.doesNotMatch(flagsSection, /--run-id <id>/);
+  assert.doesNotMatch(flagsSection, /--lease-id <id>/);
+  assert.doesNotMatch(
+    flagsSection,
+    /--lease-backend ios-simulator\|ios-instance\|android-instance/,
+  );
   assert.doesNotMatch(flagsSection, /--relaunch/);
   assert.doesNotMatch(flagsSection, /--header <name:value>/);
   assert.doesNotMatch(flagsSection, /--restart/);
@@ -1002,15 +1063,21 @@ test('usage includes agent workflows, config, environment, and examples footers'
   assert.match(usageText, /React Native apps: read help react-native/);
   assert.match(usageText, /localhost URL opens with a port auto-configure host reachability/);
   assert.match(usageText, /Expo Go\/dev clients: use the provided URL when given/);
-  assert.match(usageText, /on iOS prefer open "Expo Go" <url>/);
+  assert.match(usageText, /open "Expo Go" <url> --platform ios/);
+  assert.match(usageText, /Do not use plain snapshot or snapshot --diff for this recovery check/);
   assert.match(usageText, /Install flows: install\/install-from-source first/);
   assert.match(usageText, /fill 'id="field-email"' "qa@example\.com" replaces/);
   assert.match(usageText, /do not use fill <target> ""/);
   assert.match(usageText, /Android IME capture: if fill says input was captured/);
   assert.match(usageText, /Implicit default sessions are scoped to the current worktree/);
+  assert.match(usageText, /if a prompt names a Session, include --session <name>/);
   assert.match(usageText, /Run mutating commands serially within one session/);
   assert.match(usageText, /After mutation: refs are stale/);
   assert.match(usageText, /use its selector directly; otherwise refresh with snapshot -i/);
+  assert.match(usageText, /verify the action with diff snapshot -i or snapshot --diff/);
+  assert.match(usageText, /Sparse or AX-unavailable snapshot/);
+  assert.match(usageText, /macOS context menus use click <ref> --button secondary/);
+  assert.match(usageText, /Remote workflow profiles use --remote-config/);
   assert.match(usageText, /app-owned back uses back/);
   assert.match(usageText, /Web browser sessions: read help web/);
   assert.match(
@@ -1099,8 +1166,8 @@ test('command help keeps scroll and gesture planning guidance', () => {
 
   const gestureHelp = usageForCommand('gesture');
   if (gestureHelp === null) throw new Error('Expected gesture help text');
-  assert.match(gestureHelp, /Android transform verification should assert/);
-  assert.match(gestureHelp, /app-observable gesture effects/);
+  assert.match(gestureHelp, /Android transform verification should use all app-observable effects/);
+  assert.match(gestureHelp, /wait text "pan changed yes"/);
 });
 
 test('parseArgs recognizes test --record-video flag', () => {
@@ -1336,6 +1403,7 @@ test('usageForCommand resolves remote help topic', () => {
   assert.match(help, /disconnect --remote-config \.\/remote-config\.json/);
   assert.match(help, /Script flow, per-command config/);
   assert.match(help, /same --remote-config to every operational command/);
+  assert.match(help, /Do not use --config as a remote profile flag/);
   assert.match(help, /install-from-source --github-actions-artifact org\/repo:artifact/);
 });
 
@@ -1391,6 +1459,9 @@ test('usageForCommand resolves react-devtools help topic', () => {
     /agent-device react-devtools profile diff before\.json after\.json --limit 10/,
   );
   assert.match(help, /render causes and changed props\/state\/hooks/);
+  assert.match(help, /Run agent-device react-devtools status first/);
+  assert.match(help, /start is not a connection check/);
+  assert.match(help, /Always run agent-device react-devtools wait --connected after status/);
   assert.match(help, /logs clear --restart before the first logs mark/);
   assert.match(help, /one bounded first-pass survey/);
   assert.match(help, /profile slow --limit 5 once/);
@@ -1401,6 +1472,7 @@ test('usageForCommand resolves react-devtools help topic', () => {
   assert.match(help, /agent-device logs mark "before catalog search"/);
   assert.match(help, /agent-device react-devtools profile timeline --limit 20/);
   assert.match(help, /Do not write agent-devtools/);
+  assert.match(help, /Every profiling and survey line must begin with agent-device react-devtools/);
   assert.match(help, /agent-device network dump --include headers/);
   assert.match(help, /@c refs reset after reload\/remount/);
   assert.match(help, /use separate sessions\/devices/);
@@ -1428,9 +1500,16 @@ test('usageForCommand resolves react-native help topic', () => {
   assert.match(help, /Use help react-devtools for status\/wait/);
   assert.match(help, /logs clear --restart/);
   assert.match(help, /network dump --include headers/);
+  assert.match(help, /agent-device open "Agent Device Tester" --platform android/);
+  assert.match(help, /Start React Native slow-flow plans with this ordered scaffold/);
+  assert.match(help, /include the open command even when it also describes the current screen/);
+  assert.match(help, /agent-device react-devtools status/);
+  assert.match(help, /Profiling plans need both status and wait --connected before profile start/);
+  assert.match(help, /Do not substitute react-devtools start for status/);
   assert.match(help, /If snapshot reports a React Native warning\/error overlay/);
   assert.match(help, /agent-device react-native dismiss-overlay/);
-  assert.match(help, /verifies the overlay is gone with a fresh post-dismiss snapshot/);
+  assert.match(help, /verifies the overlay is gone with a fresh post-dismiss snapshot -i/);
+  assert.match(help, /Do not use a plain snapshot after dismiss-overlay/);
   assert.match(help, /When overlay evidence and React diagnostics are required/);
   assert.match(help, /agent-device react-devtools errors/);
   assert.match(help, /overlay is still visible/);
@@ -1657,17 +1736,38 @@ test('usage renders concise commands inline with descriptions', () => {
   const help = usage();
   assert.match(help, /Commands:[\s\S]*\n  boot\s{2,}Boot target device\/simulator/);
   assert.match(help, /Commands:[\s\S]*\n  shutdown\s{2,}Shutdown target simulator\/emulator/);
-  assert.match(help, /  prepare ios-runner --platform ios\|macos\s{2,}Prepare platform helpers/);
-  assert.match(
-    help,
-    /  metro prepare --public-base-url <url> \| --proxy-base-url <url>; metro reload\s{2,}Prepare Metro or reload apps/,
-  );
+  assert.match(help, /  prepare\s{2,}Pre-warm platform helpers/);
+  assert.match(help, /  metro\s{2,}Prepare Metro reachability for React Native\/Expo apps/);
+  assert.match(help, /  perf\s{2,}Check runtime metrics, frames, memory, CPU profiles/);
+  assert.match(help, /  react-devtools\s{2,}Inspect React Native components, props, hooks/);
   assert.match(help, /  batch --steps <json> \| --steps-file <path>\s{2,}Run multiple commands/);
   assert.match(help, /  test <path-or-glob>\.\.\.\s{2,}Run replay test suites/);
-  assert.match(help, /  session list\s{2,}List active sessions/);
+  assert.match(help, /  screenshot \[path\]\s{2,}Capture screenshot with optional desktop/);
+  assert.match(
+    help,
+    /  session\s{2,}List active sessions or print the effective daemon state directory/,
+  );
   assert.doesNotMatch(help, /  metro prepare[^\n]*--project-root/);
   assert.doesNotMatch(help, /\n  batch\s{2,}Run multiple commands/);
   assert.doesNotMatch(help, /agent-device-proxy/);
+});
+
+test('connect command help lists lease id in usage and flags', () => {
+  const help = usageForCommand('connect');
+  if (help === null) throw new Error('Expected command help text');
+  assert.match(help, /Usage:\s+agent-device connect .*--daemon-base-url <url>/);
+  assert.match(help, /--daemon-base-url <url>\s+Explicit remote HTTP daemon base URL/);
+  assert.match(help, /Usage:\s+agent-device connect .*--lease-id <id>/);
+  assert.match(help, /--lease-id <id>\s+Lease identifier bound to tenant\/run admission scope/);
+  assert.doesNotMatch(help, /--project-root <path>/);
+  assert.doesNotMatch(help, /--public-base-url <url>/);
+  assert.doesNotMatch(help, /--launch-url <url>/);
+});
+
+test('install-from-source command help describes all source types', () => {
+  const help = usageForCommand('install-from-source');
+  if (help === null) throw new Error('Expected command help text');
+  assert.match(help, /Install app builds from URLs, remote source specs, or CI artifacts/);
 });
 
 test('session command help includes daemon state directory discovery', () => {
@@ -1703,7 +1803,7 @@ test('command usage describes test suite flags', () => {
   assert.match(help, /--retries <n>/);
   assert.match(help, /--record-video/);
   assert.match(help, /--artifacts-dir <path>/);
-  assert.match(help, /test --verbose prints per-test step timings without debug logs/);
+  assert.doesNotMatch(help, /test --verbose prints per-test step timings without debug logs/);
 });
 
 test('command usage describes delayed typing flags', () => {
@@ -1722,6 +1822,8 @@ test('snapshot command usage documents diff alias', () => {
   assert.match(help, /agent-device snapshot \[--diff\]/);
   assert.match(help, /--timeout <ms>/);
   assert.match(help, /Capture accessibility tree or diff against the previous session baseline/);
+  assert.match(help, /inspect rects with snapshot -i --json/);
+  assert.match(help, /verify with diff snapshot -i or snapshot --diff/);
 });
 
 test('network command usage documents include flag', () => {
@@ -1730,14 +1832,15 @@ test('network command usage documents include flag', () => {
   assert.match(help, /--include summary\|headers\|body\|all/);
 });
 
-test('command usage shows command and global flags separately', () => {
+test('command usage shows command flags without global flags', () => {
   const help = usageForCommand('swipe');
   if (help === null) throw new Error('Expected command help text');
   assert.match(help, /Swipe coordinates with optional repeat pattern/);
   assert.match(help, /Command flags:/);
   assert.match(help, /--pattern one-way\|ping-pong/);
-  assert.match(help, /Global flags:/);
-  assert.match(help, /--platform ios\|macos\|android\|linux\|web\|apple/);
+  assert.doesNotMatch(help, /Global flags:/);
+  assert.doesNotMatch(help, /Global Flags:/);
+  assert.doesNotMatch(help, /--platform ios\|macos\|android\|linux\|web\|apple/);
 });
 
 test('back command usage documents explicit mode flags', () => {
@@ -1757,6 +1860,16 @@ test('open command usage documents surface and console log flags', () => {
   assert.match(help, /iOS simulator launch console/);
   assert.match(help, /--device-hub/);
   assert.match(help, /use Xcode Device Hub/);
+  assert.match(help, /Use --platform to bind URL\/deep-link opens/);
+  assert.match(help, /agent-device open "Expo Go" exp:\/\/127\.0\.0\.1:8081 --platform ios/);
+});
+
+test('replay command usage keeps Maestro target binding guidance', () => {
+  const help = usageForCommand('replay');
+  if (help === null) throw new Error('Expected command help text');
+  assert.match(help, /For Maestro YAML compatibility flows/);
+  assert.match(help, /replay <flow\.yaml> --maestro/);
+  assert.match(help, /--platform ios/);
 });
 
 test('command usage shows record touch-overlay opt-out flag', () => {
@@ -1787,7 +1900,8 @@ test('command usage shows no command flags when unsupported', () => {
   if (help === null) throw new Error('Expected command help text');
   assert.match(help, /Show foreground app\/activity/);
   assert.doesNotMatch(help, /Command flags:/);
-  assert.match(help, /Global flags:/);
+  assert.doesNotMatch(help, /Global flags:/);
+  assert.doesNotMatch(help, /Global Flags:/);
 });
 
 test('clipboard command usage is documented', () => {

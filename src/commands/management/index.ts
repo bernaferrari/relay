@@ -170,16 +170,17 @@ export const managementCliSchemas = {
   },
   prepare: {
     usageOverride: 'prepare ios-runner --platform ios|macos [--timeout <ms>]',
-    listUsageOverride: 'prepare ios-runner --platform ios|macos',
+    listUsageOverride: 'prepare',
     helpDescription:
       'Prepare platform helper infrastructure. ios-runner builds/reuses, starts, and health-checks the XCTest runner so later Apple snapshots and interactions do not pay first-use startup cost. In CI, run it after boot/install and before replay/test; if replay/test starts a separate daemon, run clean:daemon after prepare to release the prepared runner lease. Runner build/start output is written to the session runner.log; daemon.log is for daemon lifecycle/startup issues.',
-    summary: 'Prepare platform helpers',
+    summary:
+      'Pre-warm platform helpers, especially the iOS/macOS XCTest runner before Apple automation',
     positionalArgs: ['ios-runner'],
     allowedFlags: ['timeoutMs'],
   },
   open: {
     helpDescription:
-      'Boot device/simulator; optionally launch app or deep link URL (macOS also supports --surface app|frontmost-app|desktop|menubar)',
+      'Boot device/simulator; optionally launch app or deep link URL. Use --platform to bind URL/deep-link opens to the target platform. For iOS simulator initial stdout/stderr, put --launch-console <path> on this open command, for example agent-device open "Agent Device Tester" --platform ios --launch-console artifacts/launch-console.log. Expo Go/dev-client shells accept host + URL, for example agent-device open "Expo Go" exp://127.0.0.1:8081 --platform ios. macOS also supports --surface app|frontmost-app|desktop|menubar.',
     summary: 'Open an app, deep link or URL, save replays',
     positionalArgs: ['appOrUrl?', 'url?'],
     allowedFlags: [
@@ -188,6 +189,7 @@ export const managementCliSchemas = {
       'launchArgs',
       'deviceHub',
       'saveScript',
+      'noRecord',
       'relaunch',
       'surface',
     ],
@@ -205,9 +207,10 @@ export const managementCliSchemas = {
   'install-from-source': {
     usageOverride:
       'install-from-source <url> | install-from-source --github-actions-artifact <owner/repo:artifact>',
-    listUsageOverride: 'install-from-source <url> | install-from-source --github-actions-artifact',
-    helpDescription: 'Install app from a URL or remote-resolved source',
-    summary: 'Install app from a source',
+    listUsageOverride: 'install-from-source',
+    helpDescription:
+      'Install app builds from URLs, remote source specs, or CI artifacts resolved by a remote daemon.',
+    summary: 'Install app builds from URLs, remote source specs, or CI artifacts',
     positionalArgs: ['url?'],
     allowedFlags: [
       'header',
@@ -224,15 +227,22 @@ export const managementCliSchemas = {
     defaults: { appsFilter: DEFAULT_APPS_FILTER },
   },
   push: {
+    listUsageOverride: 'push',
+    helpDescription: 'Deliver push notification payloads to an installed app.',
+    summary: 'Deliver push notification payloads to an installed app',
     positionalArgs: ['bundleOrPackage', 'payloadOrJson'],
   },
   'trigger-app-event': {
     usageOverride: 'trigger-app-event <event> [payloadJson]',
+    listUsageOverride: 'trigger-app-event',
+    helpDescription:
+      'Invoke app-defined automation or test events with an optional structured payload.',
+    summary: 'Invoke app-defined automation/test events with optional structured payloads',
     positionalArgs: ['event', 'payloadJson?'],
   },
   session: {
     usageOverride: 'session list | session state-dir',
-    listUsageOverride: 'session list',
+    listUsageOverride: 'session',
     helpDescription: 'List active sessions or print the effective daemon state directory',
     positionalArgs: ['list|state-dir?'],
   },
