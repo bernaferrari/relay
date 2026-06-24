@@ -42,6 +42,9 @@ export function createAgentBrowserWebProvider(
     async screenshot(outPath, screenshotOptions) {
       await runJson(['screenshot', ...(screenshotOptions?.fullscreen ? ['--full'] : []), outPath]);
     },
+    async setViewport(width, height) {
+      await runJson(['set', 'viewport', String(width), String(height)]);
+    },
     async click(x, y) {
       await clickCoordinates(runJson, x, y);
     },

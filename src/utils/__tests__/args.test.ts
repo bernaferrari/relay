@@ -892,7 +892,16 @@ test('parseArgs recognizes record --hide-touches flag', () => {
 
 test('parseArgs recognizes screenshot flags', () => {
   const parsed = parseArgs(
-    ['screenshot', 'page.png', '--fullscreen', '--max-size', '1024', '--no-stabilize'],
+    [
+      'screenshot',
+      'page.png',
+      '--full',
+      '-f',
+      '--fullscreen',
+      '--max-size',
+      '1024',
+      '--no-stabilize',
+    ],
     {
       strictFlags: true,
     },
@@ -904,11 +913,22 @@ test('parseArgs recognizes screenshot flags', () => {
   assert.equal(parsed.flags.screenshotNoStabilize, true);
 });
 
-test('usageForCommand documents screenshot stabilization tradeoff', () => {
+test('usageForCommand documents screenshot web aliases and stabilization flags', () => {
   const help = usageForCommand('screenshot');
   if (help === null) throw new Error('Expected screenshot help text');
+  assert.match(help, /--fullscreen, --full, -f/);
+  assert.match(help, /entire page/i);
   assert.match(help, /--no-stabilize/);
   assert.match(help, /low-latency Android capture loops/);
+});
+
+test('parseArgs recognizes viewport command', () => {
+  const parsed = parseArgs(['viewport', '1280', '900', '--platform', 'web'], {
+    strictFlags: true,
+  });
+  assert.equal(parsed.command, 'viewport');
+  assert.deepEqual(parsed.positionals, ['1280', '900']);
+  assert.equal(parsed.flags.platform, 'web');
 });
 
 test('parseArgs rejects invalid record --fps range', () => {
@@ -1775,7 +1795,10 @@ test('usage renders concise commands inline with descriptions', () => {
   assert.match(help, /  proxy\s{2,}Expose a local daemon through cloudflared, ngrok/);
   assert.match(help, /  batch --steps <json> \| --steps-file <path>\s{2,}Run multiple commands/);
   assert.match(help, /  test <path-or-glob>\.\.\.\s{2,}Run replay test suites/);
-  assert.match(help, /  screenshot \[path\]\s{2,}Capture screenshot with optional desktop/);
+  assert.match(
+    help,
+    /  screenshot \[path\]\s{2,}Capture screenshot with optional web full-page, desktop/,
+  );
   assert.match(
     help,
     /  session\s{2,}List active sessions or print the effective daemon state directory/,

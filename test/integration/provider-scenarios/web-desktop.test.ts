@@ -105,7 +105,13 @@ test('Provider-backed integration web desktop flow uses semantic web provider ca
           expectData: { pixels: 240 },
         },
         {
-          name: 'capture web screenshot artifact',
+          name: 'resize viewport',
+          command: 'viewport',
+          positionals: ['1280', '900'],
+          expectData: { width: 1280, height: 900 },
+        },
+        {
+          name: 'capture full-page web screenshot artifact',
           command: 'screenshot',
           positionals: [screenshotPath],
           flags: {
@@ -157,6 +163,7 @@ test('Provider-backed integration web desktop flow uses semantic web provider ca
       assertFlatToolCall(semanticCalls, ['web', 'fillRef', '@e3', 'qa@example.test', '1']);
       assertFlatToolCall(semanticCalls, ['web', 'type', ' ok', '0']);
       assertFlatToolCall(semanticCalls, ['web', 'scroll', 'down', '', '240']);
+      assertFlatToolCall(semanticCalls, ['web', 'viewport', '1280', '900']);
       assertFlatToolCall(semanticCalls, [
         'web',
         'screenshot',
