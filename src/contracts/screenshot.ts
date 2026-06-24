@@ -28,10 +28,11 @@ type ScreenshotSpecificFlagDefinition = {
 export const SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS: readonly ScreenshotSpecificFlagDefinition[] = [
   {
     key: 'screenshotFullscreen',
-    names: ['--fullscreen'],
+    names: ['--fullscreen', '--full', '-f'],
     type: 'boolean',
-    usageLabel: '--fullscreen',
-    usageDescription: 'Screenshot: capture the full screen instead of the app window',
+    usageLabel: '--fullscreen, --full, -f',
+    usageDescription:
+      'Screenshot: on web capture the full page; on macOS app sessions capture the full desktop instead of the app window',
   },
   {
     key: 'screenshotMaxSize',
@@ -124,7 +125,7 @@ export function readScreenshotScriptFlag(params: {
 }): { handled: true; nextIndex: number } | { handled: false } {
   const { args, flags, index } = params;
   const token = args[index];
-  if (token === '--fullscreen') {
+  if (token === '--fullscreen' || token === '--full' || token === '-f') {
     flags.screenshotFullscreen = true;
     return { handled: true, nextIndex: index };
   }

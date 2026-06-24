@@ -24,6 +24,9 @@ test('web interactor delegates first-slice operations to the scoped provider', a
     async screenshot(outPath, options) {
       calls.push(`screenshot:${outPath}:${options?.fullscreen === true}`);
     },
+    async setViewport(width, height) {
+      calls.push(`viewport:${width}:${height}`);
+    },
     async click(x, y) {
       calls.push(`click:${x}:${y}`);
     },
@@ -48,6 +51,7 @@ test('web interactor delegates first-slice operations to the scoped provider', a
     await interactor.type('world', 6);
     await interactor.scroll('down', { pixels: 400 });
     await interactor.screenshot('/tmp/web.png', { fullscreen: true });
+    await interactor.setViewport?.(1280, 900);
     return await interactor.snapshot({ scope: 'main' });
   });
 
@@ -61,6 +65,7 @@ test('web interactor delegates first-slice operations to the scoped provider', a
     'type:world:6',
     'scroll:down:400',
     'screenshot:/tmp/web.png:true',
+    'viewport:1280:900',
     'snapshot:main',
   ]);
   assert.equal(snapshot.backend, 'web');
@@ -86,6 +91,7 @@ function makeWebProvider(overrides: Partial<WebProvider> = {}): WebProvider {
     close: async () => {},
     snapshot: async () => ({ nodes: [] }),
     screenshot: async () => {},
+    setViewport: async () => {},
     click: async () => {},
     fill: async () => {},
     typeText: async () => {},

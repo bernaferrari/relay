@@ -118,6 +118,7 @@ export type Interactor = {
   ): Promise<Record<string, unknown> | void>;
   pinch(scale: number, x?: number, y?: number): Promise<Record<string, unknown> | void>;
   screenshot(outPath: string, options?: ScreenshotOptions): Promise<void>;
+  setViewport?(width: number, height: number): Promise<Record<string, unknown> | void>;
   snapshot(options?: SnapshotOptions): Promise<SnapshotResult>;
   back(mode?: BackMode): Promise<void>;
   home(): Promise<void>;

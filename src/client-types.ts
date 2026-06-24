@@ -509,6 +509,16 @@ export type PrepareCommandOptions = DeviceCommandBaseOptions & {
   timeoutMs?: number;
 };
 
+export type ViewportCommandOptions = DeviceCommandBaseOptions & {
+  width: number;
+  height: number;
+};
+
+export type ViewportCommandResult = CommandRequestResult & {
+  width: number;
+  height: number;
+};
+
 export type AgentDeviceCommandClient = {
   wait: (options: WaitCommandOptions) => Promise<WaitCommandResult>;
   alert: (options?: AlertCommandOptions) => Promise<AlertCommandResult>;
@@ -521,6 +531,7 @@ export type AgentDeviceCommandClient = {
   clipboard: (options: ClipboardCommandOptions) => Promise<ClipboardCommandResult>;
   reactNative: (options: ReactNativeCommandOptions) => Promise<CommandRequestResult>;
   prepare: (options: PrepareCommandOptions) => Promise<CommandRequestResult>;
+  viewport: (options: ViewportCommandOptions) => Promise<ViewportCommandResult>;
 };
 
 type SelectorSnapshotCommandOptions = Pick<CaptureSnapshotOptions, 'depth' | 'scope' | 'raw'>;

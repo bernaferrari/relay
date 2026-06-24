@@ -31,13 +31,13 @@ test('screenshot flag projection maps public options to request flags', () => {
   assert.deepEqual(
     screenshotFlagsFromOptions({
       overlayRefs: true,
-      fullscreen: false,
+      fullscreen: true,
       maxSize: 512,
       stabilize: false,
     }),
     {
       overlayRefs: true,
-      screenshotFullscreen: false,
+      screenshotFullscreen: true,
       screenshotMaxSize: 512,
       screenshotNoStabilize: true,
     },
@@ -48,7 +48,11 @@ test('screenshot script flags use the shared recorded flag contract', () => {
   const parts: string[] = [];
   const flags = {};
 
-  let result = readScreenshotScriptFlag({ args: ['--fullscreen'], index: 0, flags });
+  let result = readScreenshotScriptFlag({ args: ['--full'], index: 0, flags });
+  assert.deepEqual(result, { handled: true, nextIndex: 0 });
+  result = readScreenshotScriptFlag({ args: ['-f'], index: 0, flags });
+  assert.deepEqual(result, { handled: true, nextIndex: 0 });
+  result = readScreenshotScriptFlag({ args: ['--fullscreen'], index: 0, flags });
   assert.deepEqual(result, { handled: true, nextIndex: 0 });
   result = readScreenshotScriptFlag({ args: ['--max-size', '640'], index: 0, flags });
   assert.deepEqual(result, { handled: true, nextIndex: 1 });
