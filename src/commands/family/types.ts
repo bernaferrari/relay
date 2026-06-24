@@ -31,6 +31,7 @@ export type CommandFacet<TCommandName extends string = string> = {
   cliSchema?: CommandSchemaOverride;
   cliReader: CliReader;
   daemonWriter?: DaemonWriter;
+  extraDaemonWriters?: Readonly<Record<string, DaemonWriter>>;
   cliOutputFormatter?: CliOutputFormatter;
 };
 
@@ -43,20 +44,6 @@ type CommandFacetDefinitions<TCommands extends readonly CommandFacet[]> = {
 };
 
 type CommandFacetName<TCommands extends readonly CommandFacet[]> = TCommands[number]['name'];
-
-type CommandFamilyMetadataName<TMetadata extends readonly AnyCommandMetadata[]> =
-  TMetadata[number]['name'];
-
-export function defineCommandFamily<
-  const TMetadata extends readonly AnyCommandMetadata[],
-  const TDefinitions extends readonly AnyCommandDefinition<CommandFamilyMetadataName<TMetadata>>[],
-  const TFamily extends CommandFamilyFacet<CommandFamilyMetadataName<TMetadata>> & {
-    metadata: TMetadata;
-    definitions: TDefinitions;
-  },
->(family: TFamily): TFamily {
-  return family;
-}
 
 export function defineCommandFacet<
   const TCommandName extends string,
@@ -75,24 +62,55 @@ export function defineCommandFamilyFromFacets<
   const cliOutputFormatters: Record<string, CliOutputFormatter> = {};
 
   for (const command of family.commands) {
-    if (command.cliSchema) cliSchemas[command.name] = command.cliSchema;
-    cliReaders[command.name] = command.cliReader;
-    if (command.daemonWriter) daemonWriters[command.name] = command.daemonWriter;
+    if (command.cliSchema) {
+      addRecordEntry(cliSchemas, 'CLI schema', command.name, command.cliSchema);
+    }
+    addRecordEntry(cliReaders, 'CLI reader', command.name, command.cliReader);
+    if (command.daemonWriter) {
+      addRecordEntry(daemonWriters, 'daemon writer', command.name, command.daemonWriter);
+    }
+    if (command.extraDaemonWriters) {
+      for (const [name, writer] of Object.entries(command.extraDaemonWriters)) {
+        addRecordEntry(daemonWriters, 'daemon writer', name, writer);
+      }
+    }
     if (command.cliOutputFormatter) {
-      cliOutputFormatters[command.name] = command.cliOutputFormatter;
+      addRecordEntry(
+        cliOutputFormatters,
+        'CLI output formatter',
+        command.name,
+        command.cliOutputFormatter,
+      );
     }
   }
 
-  return defineCommandFamily({
+  return {
     name: family.name,
     clientSurface: family.clientSurface,
     metadata: family.commands.map((command) => command.metadata) as CommandFacetMetadata<TCommands>,
     definitions: family.commands.map(
       (command) => command.definition,
     ) as CommandFacetDefinitions<TCommands>,
-    cliSchemas,
+    cliSchemas: cliSchemas as Partial<Record<CommandFacetName<TCommands>, CommandSchemaOverride>>,
     cliReaders: cliReaders as Record<CommandFacetName<TCommands>, CliReader>,
     daemonWriters,
-    cliOutputFormatters,
-  });
+    cliOutputFormatters: cliOutputFormatters as Partial<
+      Record<CommandFacetName<TCommands>, CliOutputFormatter>
+    >,
+  } satisfies CommandFamilyFacet<CommandFacetName<TCommands>> & {
+    metadata: CommandFacetMetadata<TCommands>;
+    definitions: CommandFacetDefinitions<TCommands>;
+  };
+}
+
+function addRecordEntry<TValue>(
+  record: Record<string, TValue>,
+  label: string,
+  name: string,
+  value: TValue,
+): void {
+  if (Object.hasOwn(record, name)) {
+    throw new Error(`Duplicate command family ${label}: ${name}`);
+  }
+  record[name] = value;
 }
