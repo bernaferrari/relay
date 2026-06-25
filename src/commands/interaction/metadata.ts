@@ -27,8 +27,8 @@ import {
 } from '../command-input.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import { CLICK_BUTTONS } from '../../core/click-button.ts';
+import { SCROLL_DURATION_MAX_MS } from '../../core/scroll-command.ts';
 import {
-  SCROLL_DURATION_MAX_MS,
   SCROLL_DIRECTIONS,
   SWIPE_PATTERNS,
   SWIPE_PRESETS,
@@ -115,7 +115,7 @@ const scrollFields = {
   direction: requiredField(enumField(SCROLL_INPUT_DIRECTIONS)),
   amount: numberField('Platform scroll amount.'),
   pixels: integerField('Pixel scroll amount.', { min: 0 }),
-  durationMs: integerField('Desktop scroll duration in milliseconds.', {
+  durationMs: integerField('Scroll duration in milliseconds when the backend supports pacing.', {
     min: 0,
     max: SCROLL_DURATION_MAX_MS,
   }),
