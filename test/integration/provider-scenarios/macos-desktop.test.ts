@@ -63,6 +63,19 @@ test('Provider-backed integration macOS desktop flow uses semantic host and help
       request: { command: 'uptime' },
       result: { uptimeMs: 84 },
     },
+    {
+      command: 'macos.runner.desktopScroll',
+      deviceId: PROVIDER_SCENARIO_MACOS.id,
+      platform: 'macos',
+      request: {
+        command: 'desktopScroll',
+        direction: 'down',
+        pixels: 200,
+        durationMs: 50,
+        appBundleId: 'com.apple.systempreferences',
+      },
+      result: { x: 737.5, y: 476.5, referenceWidth: 400, referenceHeight: 800 },
+    },
   ]);
   const appleRunnerProvider = createAppleRunnerProviderFromTranscript(
     runnerTranscript,
@@ -122,6 +135,20 @@ test('Provider-backed integration macOS desktop flow uses semantic host and help
               appBundleId: 'com.apple.systempreferences',
               source: 'session',
               surface: 'app',
+            },
+          },
+          {
+            name: 'scroll app session with desktop wheel event',
+            command: 'scroll',
+            positionals: ['down'],
+            flags: { pixels: 200, durationMs: 50 },
+            expectData: {
+              x1: 737.5,
+              y1: 476.5,
+              referenceWidth: 400,
+              referenceHeight: 800,
+              pixels: 200,
+              durationMs: 50,
             },
           },
           {

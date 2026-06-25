@@ -7,6 +7,7 @@ import {
   inferGestureReferenceFrame,
   parseScrollDirection,
   parseSwipePreset,
+  SCROLL_DURATION_MAX_MS,
   SCROLL_DIRECTIONS,
   SWIPE_PATTERNS,
   type ScrollDirection,
@@ -43,6 +44,17 @@ import {
 import type { RunnerSequenceStep } from '../platforms/ios/runner-contract.ts';
 import type { DispatchContext } from './dispatch-context.ts';
 import type { Interactor, RunnerCallOptions } from './interactor-types.ts';
+
+type ScrollTarget = {
+  direction: ScrollDirection;
+  edge?: ScrollEdge;
+};
+
+type ScrollCommandOptions = {
+  amount?: number;
+  pixels?: number;
+  durationMs?: number;
+};
 
 export async function handleLongPressCommand(
   interactor: Interactor,
@@ -735,50 +747,106 @@ export async function handleScrollCommand(
   const directionInput = positionals[0];
   const amount = positionals[1] ? Number(positionals[1]) : undefined;
   const pixels = context?.pixels;
+  const durationMs = context?.durationMs;
   if (!directionInput) throw new AppError('INVALID_ARGS', 'scroll requires direction');
+  assertScrollCommandInputs(amount, pixels, durationMs);
+
+  const target = parseScrollTarget(directionInput);
+  const options = { amount, pixels, durationMs };
+  const { interactionResult, completedPasses } = await runDispatchedScroll(
+    interactor,
+    context,
+    target,
+    options,
+  );
+
+  const result = buildDispatchedScrollResult(target, options, completedPasses, interactionResult);
+  return withSuccessText(
+    result,
+    formatScrollEdgeMessage(target.direction, target.edge, completedPasses, amount, pixels),
+  );
+}
+
+function assertScrollCommandInputs(
+  amount: number | undefined,
+  pixels: number | undefined,
+  durationMs: number | undefined,
+): void {
+  assertScrollAmountInput(amount);
+  assertScrollDurationInput(durationMs);
+  assertExclusiveScrollDistanceInputs(amount, pixels);
+}
+
+function assertScrollAmountInput(amount: number | undefined): void {
   if (amount !== undefined && !Number.isFinite(amount)) {
     throw new AppError('INVALID_ARGS', 'scroll amount must be a number');
   }
+}
+
+function assertScrollDurationInput(durationMs: number | undefined): void {
+  if (durationMs === undefined) return;
+  if (!Number.isFinite(durationMs) || !Number.isInteger(durationMs) || durationMs < 0) {
+    throw new AppError('INVALID_ARGS', 'scroll durationMs must be a non-negative integer');
+  }
+  if (durationMs > SCROLL_DURATION_MAX_MS) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `scroll durationMs must be a non-negative integer at most ${SCROLL_DURATION_MAX_MS}`,
+    );
+  }
+}
+
+function assertExclusiveScrollDistanceInputs(
+  amount: number | undefined,
+  pixels: number | undefined,
+): void {
   if (amount !== undefined && pixels !== undefined) {
     throw new AppError(
       'INVALID_ARGS',
       'scroll accepts either a relative amount or --pixels, not both',
     );
   }
-  const target = parseScrollTarget(directionInput);
-  let interactionResult: Record<string, unknown> | void = {};
-  let completedPasses = 0;
+}
 
+async function runDispatchedScroll(
+  interactor: Interactor,
+  context: DispatchContext | undefined,
+  target: ScrollTarget,
+  options: ScrollCommandOptions,
+): Promise<{ interactionResult: Record<string, unknown>; completedPasses: number }> {
   if (target.edge) {
     const edge = target.edge;
     const edgeResult = await runScrollEdgePasses({
       edge,
       captureState: async (scope) =>
         await captureVerifiedScrollEdgeState(interactor, context, edge, scope),
-      scroll: async () => await interactor.scroll(target.direction, { amount, pixels }),
+      scroll: async () => await interactor.scroll(target.direction, options),
     });
-    interactionResult = edgeResult.result ?? {};
-    completedPasses = edgeResult.passes;
-  } else {
-    interactionResult = await interactor.scroll(target.direction, { amount, pixels });
-    completedPasses = 1;
+    return {
+      interactionResult: edgeResult.result ?? {},
+      completedPasses: edgeResult.passes,
+    };
   }
 
-  return withSuccessText(
-    {
-      direction: target.direction,
-      ...(target.edge
-        ? {
-            edge: target.edge,
-            passes: completedPasses,
-          }
-        : {}),
-      ...(amount !== undefined ? { amount } : {}),
-      ...(pixels !== undefined ? { pixels } : {}),
-      ...interactionResult,
-    },
-    formatScrollEdgeMessage(target.direction, target.edge, completedPasses, amount, pixels),
-  );
+  return {
+    interactionResult: (await interactor.scroll(target.direction, options)) ?? {},
+    completedPasses: 1,
+  };
+}
+
+function buildDispatchedScrollResult(
+  target: ScrollTarget,
+  options: ScrollCommandOptions,
+  completedPasses: number,
+  interactionResult: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    direction: target.direction,
+    ...(target.edge ? { edge: target.edge, passes: completedPasses } : {}),
+    ...(options.amount !== undefined ? { amount: options.amount } : {}),
+    ...(options.pixels !== undefined ? { pixels: options.pixels } : {}),
+    ...interactionResult,
+  };
 }
 
 async function captureVerifiedScrollEdgeState(

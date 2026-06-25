@@ -341,37 +341,104 @@ for (const [name, device] of [
   });
 }
 
-for (const [name, device] of [
-  ['iOS', IOS_TEST_SIMULATOR],
-  ['macOS', MACOS_TEST_DEVICE],
-] as const) {
-  test(`iosRunnerOverrides maps ${name} scroll to a single fused scroll command`, async () => {
-    // The fused scroll resolves the frame and performs the drag in one runner lifecycle command;
-    // no separate interactionFrame request and no durationMs (the runner pins the non-synthesized
-    // drag path that ignores it).
-    mockRunIosRunnerCommand.mockResolvedValueOnce({
-      x: 200,
-      y: 640,
-      x2: 200,
-      y2: 160,
-      referenceWidth: 400,
-      referenceHeight: 800,
-    });
-
-    const { overrides } = iosRunnerOverrides(device, {
-      appBundleId: 'com.example.App',
-    });
-
-    await overrides.scroll('down');
-
-    assert.equal(mockRunIosRunnerCommand.mock.calls.length, 1);
-    assert.deepEqual(mockRunIosRunnerCommand.mock.calls[0]?.[1], {
-      command: 'scroll',
-      direction: 'down',
-      appBundleId: 'com.example.App',
-    });
+test('iosRunnerOverrides maps iOS scroll to a single fused scroll command', async () => {
+  // The fused scroll resolves the frame and performs the drag in one runner lifecycle command;
+  // no separate interactionFrame request and no durationMs (the runner pins the non-synthesized
+  // drag path that ignores it).
+  mockRunIosRunnerCommand.mockResolvedValueOnce({
+    x: 200,
+    y: 640,
+    x2: 200,
+    y2: 160,
+    referenceWidth: 400,
+    referenceHeight: 800,
   });
-}
+
+  const { overrides } = iosRunnerOverrides(IOS_TEST_SIMULATOR, {
+    appBundleId: 'com.example.App',
+  });
+
+  const result = await overrides.scroll('down', { durationMs: 50 });
+
+  assert.equal(mockRunIosRunnerCommand.mock.calls.length, 1);
+  assert.deepEqual(mockRunIosRunnerCommand.mock.calls[0]?.[1], {
+    command: 'scroll',
+    direction: 'down',
+    appBundleId: 'com.example.App',
+  });
+  assert.deepEqual(result, {
+    x1: 200,
+    y1: 640,
+    x2: 200,
+    y2: 160,
+    referenceWidth: 400,
+    referenceHeight: 800,
+    pixels: 480,
+  });
+});
+
+test('iosRunnerOverrides does not report duration for tvOS remote scroll', async () => {
+  mockRunIosRunnerCommand.mockResolvedValueOnce({
+    ok: true,
+  });
+
+  const { overrides } = iosRunnerOverrides(TVOS_TEST_SIMULATOR, {
+    appBundleId: 'com.example.App',
+  });
+
+  const result = await overrides.scroll('down', { durationMs: 50 });
+
+  assert.equal(mockRunIosRunnerCommand.mock.calls.length, 1);
+  assert.deepEqual(mockRunIosRunnerCommand.mock.calls[0]?.[1], {
+    command: 'remotePress',
+    remoteButton: 'down',
+    appBundleId: 'com.example.App',
+  });
+  assert.deepEqual(result, {});
+});
+
+test('iosRunnerOverrides maps macOS desktop scroll to a desktop wheel command', async () => {
+  mockRunIosRunnerCommand.mockResolvedValueOnce({
+    x: 737.5,
+    y: 476.5,
+    referenceWidth: 400,
+    referenceHeight: 800,
+  });
+
+  const { overrides } = iosRunnerOverrides(MACOS_TEST_DEVICE, {
+    appBundleId: 'com.example.App',
+  });
+
+  const result = await overrides.scroll('down', { pixels: 200, durationMs: 50 });
+
+  assert.equal(mockRunIosRunnerCommand.mock.calls.length, 1);
+  assert.deepEqual(mockRunIosRunnerCommand.mock.calls[0]?.[1], {
+    command: 'desktopScroll',
+    direction: 'down',
+    pixels: 200,
+    durationMs: 50,
+    appBundleId: 'com.example.App',
+  });
+  assert.deepEqual(result, {
+    x1: 737.5,
+    y1: 476.5,
+    referenceWidth: 400,
+    referenceHeight: 800,
+    pixels: 200,
+    durationMs: 50,
+  });
+});
+
+test('iosRunnerOverrides rejects macOS desktop scroll duration above the shared cap', async () => {
+  const { overrides } = iosRunnerOverrides(MACOS_TEST_DEVICE, {
+    appBundleId: 'com.example.App',
+  });
+
+  await assert.rejects(() => overrides.scroll('down', { pixels: 200, durationMs: 10_001 }), {
+    code: 'INVALID_ARGS',
+  });
+  assert.equal(mockRunIosRunnerCommand.mock.calls.length, 0);
+});
 
 test('AGENT_DEVICE_MACOS_HELPER_BIN rejects relative override paths', async () => {
   const previousHelperPath = process.env.AGENT_DEVICE_MACOS_HELPER_BIN;

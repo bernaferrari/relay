@@ -16,6 +16,60 @@ test('dispatch scroll rejects mixing amount and --pixels', async () => {
   );
 });
 
+test('dispatch scroll forwards pixels and duration without reporting ignored duration', async () => {
+  const calls: Array<{ direction: string; options: unknown }> = [];
+  const interactor = {
+    scroll: async (direction: any, options: unknown) => {
+      calls.push({ direction, options });
+      return { ok: true };
+    },
+  } as unknown as Interactor;
+
+  const result = await handleScrollCommand(interactor, ['down'], {
+    pixels: 200,
+    durationMs: 50,
+  });
+
+  assert.deepEqual(calls, [
+    {
+      direction: 'down',
+      options: { amount: undefined, pixels: 200, durationMs: 50 },
+    },
+  ]);
+  assert.equal(result.pixels, 200);
+  assert.equal(result.durationMs, undefined);
+});
+
+test('dispatch scroll reports duration when the interactor honored it', async () => {
+  const interactor = {
+    scroll: async () => ({ pixels: 200, durationMs: 50 }),
+  } as unknown as Interactor;
+
+  const result = await handleScrollCommand(interactor, ['down'], {
+    pixels: 200,
+    durationMs: 50,
+  });
+
+  assert.equal(result.pixels, 200);
+  assert.equal(result.durationMs, 50);
+});
+
+test('dispatch scroll rejects duration above the shared cap', async () => {
+  const interactor = {
+    scroll: async () => {
+      throw new Error('scroll should be rejected before backend call');
+    },
+  } as unknown as Interactor;
+
+  await assert.rejects(
+    () => handleScrollCommand(interactor, ['down'], { pixels: 200, durationMs: 10_001 }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'INVALID_ARGS' &&
+      /durationMs.*at most 10000/i.test(error.message),
+  );
+});
+
 test('dispatch scroll bottom rejects blind scrolling without snapshot support', async () => {
   const calls: Array<{ direction: string; options: unknown }> = [];
   const interactor = {
@@ -93,7 +147,7 @@ test('dispatch scroll bottom scrolls only while scoped snapshot confirms hidden 
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], {
     direction: 'down',
-    options: { amount: undefined, pixels: undefined },
+    options: { amount: undefined, pixels: undefined, durationMs: undefined },
   });
   assert.equal(result.passes, 1);
   assert.equal(result.lastPass, 1);
