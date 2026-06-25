@@ -479,6 +479,34 @@ test('parseUiHierarchy keeps lower siblings covered only by non-agent-visible ov
   );
 });
 
+test('parseUiHierarchy keeps React Native content under a transparent Expo tools overlay', () => {
+  const xml = `<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.TextView" text="Agent Device Tester" bounds="[24,80][280,140]" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.Button" text="Gesture lab" bounds="[24,180][280,240]" clickable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    </node>
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.ImageView" content-desc="Tools" bounds="[320,80][360,120]" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+  </node>
+</hierarchy>`;
+
+  const result = parseUiHierarchy(xml, 800, { raw: true });
+  assert.equal(
+    result.nodes.some((node) => node.label === 'Agent Device Tester'),
+    true,
+  );
+  assert.equal(
+    result.nodes.some((node) => node.label === 'Gesture lab'),
+    true,
+  );
+  assert.equal(
+    result.nodes.some((node) => node.label === 'Tools'),
+    true,
+  );
+});
+
 test('parseUiHierarchy ignores attribute-name prefix spoofing', () => {
   const xml =
     "<hierarchy><node class='android.widget.TextView' hint-text='Spoofed' text='Actual' bounds='[10,20][110,60]'/></hierarchy>";
