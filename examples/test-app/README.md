@@ -45,18 +45,29 @@ These are the main case families this app can support without adding more screen
 
 ## Run locally
 
+This fixture uses an Expo development build, not Expo Go. Expo's development-build
+workflow installs `expo-dev-client`, builds the native app with `expo run:ios` or
+`expo run:android`, and then serves JavaScript from Metro with `expo start`.
+The app declares `@expo/dom-webview` directly to keep Expo's development runtime
+on the SDK 56 native module; Android verification failed when the dev client
+resolved an older transitive copy.
+
 From the repo root:
 
 ```bash
 pnpm test-app:install
-pnpm test-app:ios
+pnpm test-app:ios -- --device "iPhone 17 Pro"
 ```
+
+`expo run:*` keeps Metro in the foreground after launching the app. Leave that
+terminal running, then use a separate terminal for `agent-device` or Maestro
+commands.
 
 Or on Android:
 
 ```bash
 pnpm test-app:install
-pnpm test-app:android
+pnpm test-app:android -- --device "$ANDROID_DEVICE"
 ```
 
 If you prefer to work from inside the app folder:
@@ -75,7 +86,10 @@ pnpm install --ignore-workspace
 pnpm android
 ```
 
-Once the app is running, use `agent-device` against `Agent Device Tester` like any other target app.
+After the first native build is installed, use `pnpm test-app:start` when you only
+need to restart Metro for JavaScript or TypeScript changes. Once the app is
+running, use `agent-device` against `Agent Device Tester` like any other target
+app.
 
 ## Local Agent Device suites
 
@@ -102,13 +116,13 @@ underlying command directly so global flags stay before replay inputs:
 node bin/agent-device.mjs test examples/test-app/replays \
   --platform ios \
   --device "iPhone 17 Pro" \
-  --env APP_TARGET=dev.expo.easagentdevice \
+  --env APP_TARGET=com.callstack.agentdevicelab \
   --env APP_URL=<project-url> \
   --artifacts-dir .tmp/test-app-replay/ios
 ```
 
-Use `APP_TARGET=com.callstack.agentdevicelab` when the standalone fixture app is
-installed instead of an Expo development shell.
+Omit `APP_URL` when the installed development build can discover the local Metro
+server from its launcher.
 
 The Maestro prototype suite lives in `examples/test-app/maestro` and runs through
 `agent-device replay --maestro`:
@@ -118,11 +132,11 @@ pnpm test-app:maestro:ios -- --open "Agent Device Tester"
 pnpm test-app:maestro:android -- --open "Agent Device Tester"
 ```
 
-When running through Expo Go, start the project first and pass the shell that is already showing
-the app, for example:
+When the development build is already open and connected to Metro, omit
+`--open` and run the suite against the existing session:
 
 ```bash
-pnpm test-app:maestro:ios -- --open "Expo Go"
+pnpm test-app:maestro:ios
 ```
 
 The suite intentionally covers the compat layer syntax used by public Maestro suites:
