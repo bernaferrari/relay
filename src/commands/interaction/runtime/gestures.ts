@@ -4,6 +4,7 @@ import { centerOfRect } from '../../../utils/snapshot.ts';
 import {
   buildSwipePresetGesturePlan,
   parseSwipePreset,
+  SCROLL_DURATION_MAX_MS,
   type GestureReferenceFrame,
   type ScrollDirection,
   type SwipePreset,
@@ -64,6 +65,7 @@ export type ScrollCommandOptions = CommandContext & {
   direction: ScrollInputDirection;
   amount?: number;
   pixels?: number;
+  durationMs?: number;
 };
 
 export type ScrollCommandResult =
@@ -74,6 +76,7 @@ export type ScrollCommandResult =
       passes?: number;
       amount?: number;
       pixels?: number;
+      durationMs?: number;
     }>
   | BackendResultVariant<
       ResolvedInteractionTarget & {
@@ -82,6 +85,7 @@ export type ScrollCommandResult =
         passes?: number;
         amount?: number;
         pixels?: number;
+        durationMs?: number;
       }
     >;
 
@@ -182,6 +186,11 @@ export const scrollCommand: RuntimeCommand<ScrollCommandOptions, ScrollCommandRe
   const target = resolveScrollDirection(options.direction);
   const amount = normalizeOptionalPositiveNumber(options.amount, 'scroll amount');
   const pixels = normalizeOptionalPositiveInteger(options.pixels, 'scroll pixels');
+  const durationMs = normalizeOptionalNonNegativeInteger(
+    options.durationMs,
+    'scroll durationMs',
+    SCROLL_DURATION_MAX_MS,
+  );
   if (amount !== undefined && pixels !== undefined) {
     throw new AppError('INVALID_ARGS', 'scroll accepts either amount or pixels, not both');
   }
@@ -197,6 +206,7 @@ export const scrollCommand: RuntimeCommand<ScrollCommandOptions, ScrollCommandRe
       direction: target.direction,
       ...(amount !== undefined ? { amount } : {}),
       ...(pixels !== undefined ? { pixels } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
     });
   let backendResult: Awaited<ReturnType<NonNullable<typeof runtime.backend.scroll>>> | undefined;
   let completedPasses = 0;
@@ -216,18 +226,26 @@ export const scrollCommand: RuntimeCommand<ScrollCommandOptions, ScrollCommandRe
     completedPasses = 1;
   }
   const formattedBackendResult = toBackendResult(backendResult);
+  const reportedDurationMs = honoredScrollDurationMs(formattedBackendResult);
   return {
     ...resolved,
     direction: target.direction,
     ...(target.edge ? { edge: target.edge, passes: completedPasses } : {}),
     ...(amount !== undefined ? { amount } : {}),
     ...(pixels !== undefined ? { pixels } : {}),
+    ...(reportedDurationMs !== undefined ? { durationMs: reportedDurationMs } : {}),
     ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
     ...successText(
       formatScrollEdgeMessage(target.direction, target.edge, completedPasses, amount, pixels),
     ),
   };
 };
+
+function honoredScrollDurationMs(
+  backendResult: Record<string, unknown> | undefined,
+): number | undefined {
+  return typeof backendResult?.durationMs === 'number' ? backendResult.durationMs : undefined;
+}
 
 export const swipeCommand: RuntimeCommand<SwipeCommandOptions, SwipeCommandResult> = async (
   runtime,
@@ -512,6 +530,21 @@ function normalizeOptionalPositiveInteger(
   if (value === undefined) return undefined;
   if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
     throw new AppError('INVALID_ARGS', `${field} must be a positive integer`);
+  }
+  return value;
+}
+
+function normalizeOptionalNonNegativeInteger(
+  value: number | undefined,
+  field: string,
+  max?: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    throw new AppError('INVALID_ARGS', `${field} must be a non-negative integer`);
+  }
+  if (max !== undefined && value > max) {
+    throw new AppError('INVALID_ARGS', `${field} must be at most ${max}`);
   }
   return value;
 }

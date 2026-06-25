@@ -2,8 +2,10 @@ import type { DeviceInfo } from '../../utils/device.ts';
 import {
   assertScrollGestureInput,
   buildScrollGesturePlan,
+  SCROLL_DURATION_MAX_MS,
   type ScrollDirection,
 } from '../../core/scroll-gesture.ts';
+import { AppError } from '../../utils/errors.ts';
 import { runIosRunnerCommand } from './runner-client.ts';
 import { buildRunnerSequenceCommand, parseRunnerSequenceResult } from './runner-sequence.ts';
 import type { RunnerCommand } from './runner-contract.ts';
@@ -26,8 +28,11 @@ const IOS_SWIPE_MAX_DURATION_MS = 10_000;
 type NormalizedScrollOptions = {
   amount?: number;
   pixels?: number;
+  durationMs?: number;
   preferProvidedPixels?: boolean;
 };
+
+type AppleScrollOptions = Omit<NormalizedScrollOptions, 'preferProvidedPixels'>;
 
 type IosDragCommandOptions = {
   defaultDurationMs: number;
@@ -322,7 +327,7 @@ async function runAppleScroll(
   ctx: RunnerContext,
   runnerOpts: RunnerOpts,
   direction: ScrollDirection,
-  options?: { amount?: number; pixels?: number },
+  options?: AppleScrollOptions,
 ): Promise<Record<string, unknown>> {
   if (device.target === 'tv') {
     const runnerResult = await runRunnerCommand(
@@ -330,13 +335,30 @@ async function runAppleScroll(
       appleRemotePressCommand(direction, ctx.appBundleId),
       runnerOpts,
     );
-    return normalizeIosScrollResult(runnerResult, options);
+    return normalizeIosScrollResult(runnerResult, { amount: options?.amount });
   }
 
   // Validate amount/pixels up front so bad inputs throw INVALID_ARGS before any runner command
   // is sent (previously validation ran between the frame request and the drag, so a bad amount
   // could cost one runner request first).
   assertScrollGestureInput(options ?? {});
+  assertScrollDurationInput(options?.durationMs);
+
+  if (device.platform === 'macos') {
+    const runnerResult = await runRunnerCommand(
+      device,
+      {
+        command: 'desktopScroll',
+        direction,
+        ...scrollRunnerFields(options, { includeDuration: true }),
+        appBundleId: ctx.appBundleId,
+      },
+      runnerOpts,
+    );
+    return normalizeScrollResultWithResolvedFrame(runnerResult, direction, options, {
+      includeDuration: true,
+    });
+  }
 
   // Single fused lifecycle command: the runner resolves the interaction frame and runs the drag.
   // durationMs is intentionally not sent — scroll's drag used 250ms today, but the runner's
@@ -347,8 +369,7 @@ async function runAppleScroll(
     {
       command: 'scroll',
       direction,
-      ...(options?.amount !== undefined ? { amount: options.amount } : {}),
-      ...(options?.pixels !== undefined ? { pixels: options.pixels } : {}),
+      ...scrollRunnerFields(options),
       appBundleId: ctx.appBundleId,
     },
     runnerOpts,
@@ -356,24 +377,68 @@ async function runAppleScroll(
 
   const referenceWidth = readFiniteNumber(runnerResult.referenceWidth);
   const referenceHeight = readFiniteNumber(runnerResult.referenceHeight);
-  if (referenceWidth !== undefined && referenceHeight !== undefined) {
-    // Recompute the plan from the runner's resolved frame so reported pixels match the planned
-    // travel (TS keeps buildScrollGesturePlan for Android and recording anyway).
-    const plan = buildScrollGesturePlan({
-      direction,
-      amount: options?.amount,
-      pixels: options?.pixels,
-      referenceWidth,
-      referenceHeight,
-    });
-    return normalizeIosScrollResult(runnerResult, {
-      amount: options?.amount,
-      pixels: plan.pixels,
-      preferProvidedPixels: true,
-    });
-  }
+  if (referenceWidth !== undefined && referenceHeight !== undefined)
+    return normalizeScrollResultWithResolvedFrame(runnerResult, direction, options);
+
   // Missing frame dims: derive pixels from endpoint travel instead of throwing.
   return normalizeIosScrollResult(runnerResult, { amount: options?.amount });
+}
+
+function assertScrollDurationInput(durationMs: number | undefined): void {
+  if (durationMs === undefined) return;
+  if (
+    !Number.isFinite(durationMs) ||
+    !Number.isInteger(durationMs) ||
+    durationMs < 0 ||
+    durationMs > SCROLL_DURATION_MAX_MS
+  ) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `scroll durationMs must be a non-negative integer at most ${SCROLL_DURATION_MAX_MS}`,
+    );
+  }
+}
+
+function normalizeScrollResultWithResolvedFrame(
+  runnerResult: Record<string, unknown>,
+  direction: ScrollDirection,
+  options?: AppleScrollOptions,
+  config?: { includeDuration?: boolean },
+): Record<string, unknown> {
+  const referenceWidth = readFiniteNumber(runnerResult.referenceWidth);
+  const referenceHeight = readFiniteNumber(runnerResult.referenceHeight);
+  if (referenceWidth === undefined || referenceHeight === undefined) {
+    return normalizeIosScrollResult(runnerResult, { amount: options?.amount });
+  }
+
+  // Recompute the plan from the runner's resolved frame so reported pixels match the planned
+  // travel (TS keeps buildScrollGesturePlan for Android and recording anyway).
+  const plan = buildScrollGesturePlan({
+    direction,
+    amount: options?.amount,
+    pixels: options?.pixels,
+    referenceWidth,
+    referenceHeight,
+  });
+  return normalizeIosScrollResult(runnerResult, {
+    amount: options?.amount,
+    pixels: plan.pixels,
+    durationMs: config?.includeDuration ? options?.durationMs : undefined,
+    preferProvidedPixels: true,
+  });
+}
+
+function scrollRunnerFields(
+  options: AppleScrollOptions | undefined,
+  config?: { includeDuration?: boolean },
+): Record<string, number> {
+  return {
+    ...(options?.amount !== undefined ? { amount: options.amount } : {}),
+    ...(options?.pixels !== undefined ? { pixels: options.pixels } : {}),
+    ...(config?.includeDuration && options?.durationMs !== undefined
+      ? { durationMs: options.durationMs }
+      : {}),
+  };
 }
 
 function readFiniteNumber(value: unknown): number | undefined {
@@ -391,25 +456,38 @@ function normalizeIosScrollResult(
     x1 !== undefined && x2 !== undefined ? Math.round(Math.abs(x2 - x1)) : undefined;
   const verticalTravel =
     y1 !== undefined && y2 !== undefined ? Math.round(Math.abs(y2 - y1)) : undefined;
-  const travelPixels =
-    options?.preferProvidedPixels && options.pixels !== undefined
-      ? options.pixels
-      : horizontalTravel && horizontalTravel > 0
-        ? horizontalTravel
-        : verticalTravel && verticalTravel > 0
-          ? verticalTravel
-          : undefined;
+  const travelPixels = selectScrollTravelPixels(options, horizontalTravel, verticalTravel);
 
-  return {
-    ...(x1 !== undefined ? { x1 } : {}),
-    ...(y1 !== undefined ? { y1 } : {}),
-    ...(x2 !== undefined ? { x2 } : {}),
-    ...(y2 !== undefined ? { y2 } : {}),
-    ...(referenceWidth !== undefined ? { referenceWidth } : {}),
-    ...(referenceHeight !== undefined ? { referenceHeight } : {}),
-    ...(options?.amount !== undefined ? { amount: options.amount } : {}),
-    ...(travelPixels !== undefined ? { pixels: travelPixels } : {}),
-  };
+  const result: Record<string, unknown> = {};
+  setDefinedNumber(result, 'x1', x1);
+  setDefinedNumber(result, 'y1', y1);
+  setDefinedNumber(result, 'x2', x2);
+  setDefinedNumber(result, 'y2', y2);
+  setDefinedNumber(result, 'referenceWidth', referenceWidth);
+  setDefinedNumber(result, 'referenceHeight', referenceHeight);
+  setDefinedNumber(result, 'amount', options?.amount);
+  setDefinedNumber(result, 'pixels', travelPixels);
+  setDefinedNumber(result, 'durationMs', options?.durationMs);
+  return result;
+}
+
+function setDefinedNumber(
+  result: Record<string, unknown>,
+  key: string,
+  value: number | undefined,
+): void {
+  if (value !== undefined) result[key] = value;
+}
+
+function selectScrollTravelPixels(
+  options: NormalizedScrollOptions | undefined,
+  horizontalTravel: number | undefined,
+  verticalTravel: number | undefined,
+): number | undefined {
+  if (options?.preferProvidedPixels && options.pixels !== undefined) return options.pixels;
+  if (horizontalTravel !== undefined && horizontalTravel > 0) return horizontalTravel;
+  if (verticalTravel !== undefined && verticalTravel > 0) return verticalTravel;
+  return undefined;
 }
 
 function remapRunnerCoordinates(runnerResult: Record<string, unknown>): {

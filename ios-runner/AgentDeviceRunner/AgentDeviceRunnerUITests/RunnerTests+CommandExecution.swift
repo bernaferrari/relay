@@ -635,6 +635,84 @@ extension RunnerTests {
         synthesized: false,
         message: "scrolled"
       )
+    case .desktopScroll:
+      guard let direction = command.direction,
+        direction == "up" || direction == "down" || direction == "left" || direction == "right"
+      else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "desktopScroll requires direction up|down|left|right"
+          )
+        )
+      }
+      let appFrame = activeApp.frame
+      let frame = resolvedTouchReferenceFrame(app: activeApp, appFrame: appFrame)
+      guard frame.width > 0, frame.height > 0 else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(message: "desktopScroll could not resolve a usable interaction frame")
+        )
+      }
+      guard let plan = runnerScrollGesturePlan(
+        direction: direction,
+        amount: command.amount,
+        pixels: command.pixels,
+        referenceWidth: frame.width,
+        referenceHeight: frame.height
+      ) else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "desktopScroll could not compute a wheel plan"
+          )
+        )
+      }
+      let x = frame.midX
+      let y = frame.midY
+      let localX = x - (appFrame.isEmpty ? frame.minX : appFrame.minX)
+      let localY = y - (appFrame.isEmpty ? frame.minY : appFrame.minY)
+      if let durationMs = command.durationMs,
+        durationMs.isFinite == false || durationMs < 0 || durationMs > 10000
+      {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "desktopScroll durationMs must be between 0 and 10000"
+          )
+        )
+      }
+      let touchFrame = resolvedTouchVisualizationFrame(
+        app: activeApp,
+        x: localX,
+        y: localY
+      )
+      do {
+        var scrollError: Error?
+        let timing = measureGesture {
+          do {
+            try desktopScrollAt(
+              app: activeApp,
+              x: x,
+              y: y,
+              direction: direction,
+              pixels: plan.travelPixels,
+              durationMs: command.durationMs
+            )
+          } catch {
+            scrollError = error
+          }
+        }
+        if let scrollError {
+          throw scrollError
+        }
+        return gestureResponse(message: "scrolled", timing: timing, frame: .touch(touchFrame))
+      } catch {
+        return Response(ok: false, error: ErrorPayload(message: error.localizedDescription))
+      }
     case .remotePress:
       guard let button = tvRemoteButton(from: command.remoteButton) else {
         return Response(ok: false, error: ErrorPayload(message: "remotePress requires remoteButton"))
