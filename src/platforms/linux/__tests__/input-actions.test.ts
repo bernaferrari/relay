@@ -61,6 +61,21 @@ test('typeLinux omits --delay when delayMs is 0', async () => {
   assert.ok(!typeCall[1].includes('--delay'));
 });
 
+test('scrollLinux preserves xdotool repeat count for non-paced scroll', async () => {
+  setupXdotool();
+  await scrollLinux('down', { pixels: 75 });
+  const c = calls();
+  assert.ok(
+    c.some(
+      ([cmd, args]) =>
+        cmd === 'xdotool' &&
+        args.includes('click') &&
+        args.includes('--repeat') &&
+        args.includes('5'),
+    ),
+  );
+});
+
 // ── ydotool tests ────────────────────────────────────────────────────────
 
 test('pressLinux uses ydotool mousemove + click on Wayland', async () => {
@@ -98,7 +113,7 @@ test('typeLinux uses ydotool type', async () => {
 
 test('scrollLinux uses ydotool mousemove --wheel for vertical scroll', async () => {
   setupYdotool();
-  await scrollLinux('up');
+  const result = await scrollLinux('up', { pixels: 80, durationMs: 1 });
   const c = calls();
   assert.ok(
     c.some(
@@ -109,4 +124,5 @@ test('scrollLinux uses ydotool mousemove --wheel for vertical scroll', async () 
         args.includes('-y'),
     ),
   );
+  assert.equal(result.durationMs, 1);
 });

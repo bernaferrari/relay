@@ -1,5 +1,6 @@
 import { runCmd } from '../../utils/exec.ts';
 import { AppError } from '../../utils/errors.ts';
+import { sleep } from '../../utils/timeouts.ts';
 import type { Rect } from '../../utils/snapshot.ts';
 import { normalizeAgentBrowserNetworkRequests } from './agent-browser-network.ts';
 import { normalizeAgentBrowserSnapshot } from './agent-browser-snapshot.ts';
@@ -65,13 +66,72 @@ export function createAgentBrowserWebProvider(
       await runJson(['keyboard', 'type', text]);
     },
     async scroll(direction, scrollOptions) {
-      const distance = scrollOptions?.pixels ?? scrollOptions?.amount;
-      await runJson(['scroll', direction, ...(distance === undefined ? [] : [String(distance)])]);
+      await runPacedScroll(runJson, direction, scrollOptions);
+      return scrollOptions?.durationMs !== undefined
+        ? { durationMs: scrollOptions.durationMs }
+        : {};
     },
     async dumpNetwork(options) {
       return normalizeAgentBrowserNetworkRequests(await runJson(['network', 'requests']), options);
     },
   };
+}
+
+async function runPacedScroll(
+  runJson: (args: string[]) => Promise<unknown>,
+  direction: string,
+  scrollOptions: { amount?: number; pixels?: number; durationMs?: number } | undefined,
+): Promise<void> {
+  const steps = buildPacedScrollSteps(scrollOptions);
+  for (const step of steps) {
+    await runJson(buildScrollArgs(direction, step.distance));
+    if (step.delayAfterMs > 0) await sleep(step.delayAfterMs);
+  }
+}
+
+type ScrollStep = {
+  distance?: number;
+  delayAfterMs: number;
+};
+
+function buildPacedScrollSteps(
+  scrollOptions: { amount?: number; pixels?: number; durationMs?: number } | undefined,
+): ScrollStep[] {
+  const requestedDistance = scrollOptions?.pixels ?? scrollOptions?.amount;
+  const durationMs = scrollOptions?.durationMs;
+  if (durationMs === undefined || durationMs <= 0) {
+    return [{ distance: requestedDistance, delayAfterMs: 0 }];
+  }
+
+  const stepCount = Math.max(1, Math.min(20, Math.ceil(durationMs / 50)));
+  const intervalMs = durationMs / Math.max(1, stepCount - 1);
+  return scrollStepDistances(scrollOptions, stepCount).map((distance, index) => ({
+    distance,
+    delayAfterMs: index < stepCount - 1 ? intervalMs : 0,
+  }));
+}
+
+function scrollStepDistances(
+  scrollOptions: { amount?: number; pixels?: number } | undefined,
+  stepCount: number,
+): number[] {
+  const totalDistance = scrollOptions?.pixels ?? scrollOptions?.amount ?? 300;
+  if (scrollOptions?.amount !== undefined && scrollOptions.pixels === undefined) {
+    return Array.from({ length: stepCount }, () => totalDistance / stepCount);
+  }
+  return distributeIntegerDistance(Math.round(totalDistance), stepCount);
+}
+
+function distributeIntegerDistance(totalDistance: number, stepCount: number): number[] {
+  const baseDistance = Math.floor(totalDistance / stepCount);
+  const remainder = totalDistance - baseDistance * stepCount;
+  return Array.from({ length: stepCount }, (_, index) =>
+    index < remainder ? baseDistance + 1 : baseDistance,
+  );
+}
+
+function buildScrollArgs(direction: string, distance: number | undefined): string[] {
+  return ['scroll', direction, ...(distance === undefined ? [] : [String(distance)])];
 }
 
 async function clickCoordinates(
