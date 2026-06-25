@@ -7,6 +7,17 @@ import { COMMON_COMMAND_SUPPORTED_FLAG_KEYS, METRO_PREPARE_FLAGS } from './cli-f
 type SchemaOnlyCliCommandName = Exclude<LocalCliCommandName, CommandName>;
 
 const SCHEMA_ONLY_CLI_COMMAND_SCHEMAS = {
+  cdp: {
+    usageOverride: 'cdp [...args]',
+    listUsageOverride: 'cdp',
+    helpDescription:
+      'Run CDP commands for React Native diagnostics, JS heap usage, heap snapshots, and leak analysis',
+    summary:
+      'Inspect React Native CDP targets, JS heap growth, heap snapshots, retainers, and leak signals',
+    positionalArgs: ['args?'],
+    allowsExtraPositionals: true,
+    supportedFlags: COMMON_COMMAND_SUPPORTED_FLAG_KEYS,
+  },
   auth: {
     usageOverride: 'auth status|login|logout',
     listUsageOverride: 'auth',

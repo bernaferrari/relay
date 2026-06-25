@@ -59,6 +59,10 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
       else positionals.push(arg);
       continue;
     }
+    if (shouldPreservePostCommandArgs(command)) {
+      positionals.push(arg);
+      continue;
+    }
     const isLongFlag = arg.startsWith('--');
     const isShortFlag = arg.startsWith('-') && arg.length > 1;
     if (!isLongFlag && !isShortFlag) {
@@ -72,7 +76,7 @@ export function parseRawArgs(argv: string[]): RawParsedArgs {
       continue;
     }
     const definition = resolveFlagDefinition(token, command);
-    if (shouldPassThroughReactDevtoolsFlag(command, definition)) {
+    if (shouldPassThroughLocalToolFlag(command, definition)) {
       positionals.push(arg);
       continue;
     }
@@ -108,13 +112,17 @@ function isLegacyIgnoredSnapshotShortFlag(command: string | null, token: string)
   return token === '-c' && (command === 'snapshot' || command === 'diff');
 }
 
-function shouldPassThroughReactDevtoolsFlag(
+function shouldPassThroughLocalToolFlag(
   command: string | null,
   definition: FlagDefinition | undefined,
 ): boolean {
   if (command !== 'react-devtools') return false;
   if (!definition) return true;
   return !isFlagSupportedForCommand(definition.key, command);
+}
+
+function shouldPreservePostCommandArgs(command: string | null): boolean {
+  return command === 'cdp';
 }
 
 function resolveFlagDefinition(token: string, command: string | null): FlagDefinition | undefined {
