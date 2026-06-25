@@ -32,7 +32,12 @@ import {
   type DaemonInfo,
   type DaemonStartupCleanupResult,
 } from './daemon-client-metadata.ts';
-import { canConnect, readRemoteDaemonHealth } from './daemon-client-transport.ts';
+import {
+  canConnect,
+  DAEMON_HTTP_ENDPOINT_UNAVAILABLE_MESSAGE,
+  DAEMON_SOCKET_ENDPOINT_UNAVAILABLE_MESSAGE,
+  readRemoteDaemonHealth,
+} from './daemon-client-transport.ts';
 
 export type DaemonClientSettings = {
   paths: DaemonPaths;
@@ -166,13 +171,34 @@ async function readReusableLocalDaemon(settings: DaemonClientSettings): Promise<
   const existing = readDaemonInfo(settings.paths.infoPath);
   if (!existing) return null;
 
-  const existingReachable = await canConnect(existing, settings.transportPreference);
+  const existingReachable = await canConnectReusableDaemon(existing, settings.transportPreference);
   if (isReusableDaemonInfo(existing, existingReachable)) return existing;
 
   emitDaemonTakeoverNotice(existing, existingReachable, settings.paths.baseDir);
   await stopDaemonProcessForTakeover(existing);
   removeDaemonInfo(settings.paths.infoPath);
   return null;
+}
+
+async function canConnectReusableDaemon(
+  info: DaemonInfo,
+  preference: DaemonTransportPreference,
+): Promise<boolean> {
+  try {
+    return await canConnect(info, preference);
+  } catch (error) {
+    if (isDaemonTransportUnavailableError(error)) return false;
+    throw error;
+  }
+}
+
+function isDaemonTransportUnavailableError(error: unknown): boolean {
+  return (
+    error instanceof AppError &&
+    error.code === 'COMMAND_FAILED' &&
+    (error.message === DAEMON_HTTP_ENDPOINT_UNAVAILABLE_MESSAGE ||
+      error.message === DAEMON_SOCKET_ENDPOINT_UNAVAILABLE_MESSAGE)
+  );
 }
 
 function isReusableDaemonInfo(info: DaemonInfo, reachable: boolean): boolean {
