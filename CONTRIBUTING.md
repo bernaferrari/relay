@@ -82,14 +82,23 @@ pnpm exec vitest run src/compat/maestro/__tests__/replay-flow.test.ts src/compat
 Run the Expo test-app flow on iOS:
 
 ```bash
-pnpm test-app:start
-pnpm ad --session test-app-maestro open "Expo Go" exp://127.0.0.1:8081 --platform ios --device "iPhone 17 Pro"
+pnpm test-app:ios -- --device "iPhone 17 Pro"
+pnpm ad --session test-app-maestro open "Agent Device Tester" --platform ios --device "iPhone 17 Pro"
 pnpm ad --session test-app-maestro wait "Agent Device Tester" 30000 --platform ios --device "iPhone 17 Pro"
 pnpm test-app:maestro:ios -- --session test-app-maestro -- --device "iPhone 17 Pro"
 ```
 
-Use `pnpm test-app:maestro:android` for Android, passing the same extra
-`agent-device` flags after `--`.
+`pnpm test-app:ios` keeps Metro in the foreground after launching the app. Leave
+that terminal running and run the `agent-device` and Maestro commands from a
+separate terminal.
+
+When targeting a specific Android emulator or device, build and install the
+development client on that same target before running Maestro:
+
+```bash
+pnpm test-app:android -- --device "$ANDROID_DEVICE"
+pnpm test-app:maestro:android -- --session test-app-maestro -- --device "$ANDROID_DEVICE"
+```
 
 ## Guidelines
 
