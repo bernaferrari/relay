@@ -460,7 +460,7 @@ type AndroidNodeInclusionInfo = {
 };
 
 type AndroidTreePruneState = {
-  agentVisibleContentMemo: WeakMap<AndroidNode, boolean>;
+  actionableContentMemo: WeakMap<AndroidNode, boolean>;
 };
 
 type AndroidCoveringCandidate = AndroidNode & {
@@ -528,7 +528,7 @@ export function parseUiHierarchyTree(xml: string): AndroidUiHierarchy {
   discardInactiveAndroidApplicationWindows(root);
   // UiAutomation can expose covered React Native navigation surfaces in the same accessibility
   // window. If a higher drawing-order sibling covers them, agents should see the foreground surface.
-  pruneAndroidCoveredSubtrees(root, { agentVisibleContentMemo: new WeakMap() });
+  pruneAndroidCoveredSubtrees(root, { actionableContentMemo: new WeakMap() });
   applyAndroidScrollActionHints(root);
   return root;
 }
@@ -588,27 +588,31 @@ function canCoverSibling(
     node.visibleToUser !== false &&
     node.drawingOrder !== undefined &&
     hasPositiveRect(node) &&
-    hasAgentVisibleContent(node, state)
+    (hasOwnAgentVisibleContent(node) || hasActionableDescendant(node, state))
   );
 }
 
-function hasAgentVisibleContent(node: AndroidNode, state: AndroidTreePruneState): boolean {
-  const cached = state.agentVisibleContentMemo.get(node);
-  if (cached !== undefined) return cached;
-
-  const result = computeHasAgentVisibleContent(node, state);
-  state.agentVisibleContentMemo.set(node, result);
-  return result;
-}
-
-function computeHasAgentVisibleContent(node: AndroidNode, state: AndroidTreePruneState): boolean {
+function hasOwnAgentVisibleContent(node: AndroidNode): boolean {
   if (node.visibleToUser === false) return false;
   if (node.hittable) return true;
   const label = node.label?.trim() ?? '';
   if (label && !isGenericAndroidId(label)) return true;
   const identifier = node.identifier?.trim() ?? '';
   if (identifier && !isGenericAndroidId(identifier)) return true;
-  return node.children.some((child) => hasAgentVisibleContent(child, state));
+  return false;
+}
+
+function hasActionableDescendant(node: AndroidNode, state: AndroidTreePruneState): boolean {
+  const cached = state.actionableContentMemo.get(node);
+  if (cached !== undefined) return cached;
+
+  const result = node.children.some(
+    (child) =>
+      child.visibleToUser !== false &&
+      (Boolean(child.hittable) || hasActionableDescendant(child, state)),
+  );
+  state.actionableContentMemo.set(node, result);
+  return result;
 }
 
 function hasPositiveRect(node: AndroidNode): node is AndroidNode & { rect: Rect } {
