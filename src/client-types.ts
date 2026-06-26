@@ -6,8 +6,6 @@ import type {
   DaemonLockPolicy,
   DaemonRequest,
   DaemonResponse,
-  DaemonServerMode,
-  DaemonTransportPreference,
   LeaseBackend,
   NetworkIncludeMode,
   SessionIsolationMode,
@@ -45,6 +43,7 @@ export type { TargetShutdownResult } from './target-shutdown-contract.ts';
 import type { PerfAction, PerfArea, PerfKind, PerfSubject } from './contracts/perf.ts';
 import type { AlertAction, AlertInfo } from './alert-contract.ts';
 import type { DebugSymbolsOptions, DebugSymbolsResult } from './contracts/debug-symbols.ts';
+import type { RemoteConnectionProfileFields } from './remote-config-schema.ts';
 
 export type { FindLocator } from './utils/finders.ts';
 export type { CompanionTunnelScope, MetroBridgeScope } from './client-companion-tunnel-contract.ts';
@@ -56,21 +55,14 @@ export type AgentDeviceDaemonTransport = (
   req: Omit<DaemonRequest, 'token'>,
 ) => Promise<DaemonResponse>;
 
-export type AgentDeviceClientConfig = {
+export type AgentDeviceClientConfig = RemoteConnectionProfileFields & {
   session?: string;
   lockPolicy?: DaemonLockPolicy;
   lockPlatform?: PlatformSelector;
   requestId?: string;
-  stateDir?: string;
-  daemonBaseUrl?: string;
-  daemonAuthToken?: string;
-  daemonTransport?: DaemonTransportPreference;
-  daemonServerMode?: DaemonServerMode;
-  tenant?: string;
   sessionIsolation?: SessionIsolationMode;
-  runId?: string;
-  leaseId?: string;
   leaseBackend?: LeaseBackend;
+  leaseTtlMs?: number;
   runtime?: SessionRuntimeHints;
   cwd?: string;
   debug?: boolean;
@@ -94,6 +86,10 @@ export type AgentDeviceRequestOverrides = Pick<
   | 'runId'
   | 'leaseId'
   | 'leaseBackend'
+  | 'leaseProvider'
+  | 'deviceKey'
+  | 'clientId'
+  | 'leaseTtlMs'
   | 'cwd'
   | 'debug'
   | 'iosXctestrunFile'
@@ -273,6 +269,9 @@ export type Lease = {
   tenantId: string;
   runId: string;
   backend: LeaseBackend;
+  leaseProvider?: string;
+  deviceKey?: string;
+  clientId?: string;
   createdAt?: number;
   heartbeatAt?: number;
   expiresAt?: number;
@@ -286,12 +285,21 @@ export type LeaseAllocateOptions = LeaseOptions & {
   tenant: string;
   runId: string;
   leaseBackend?: LeaseBackend;
+  leaseProvider?: string;
+  provider?: string;
+  deviceKey?: string;
+  clientId?: string;
 };
 
 export type LeaseScopedOptions = LeaseOptions & {
   tenant?: string;
   runId?: string;
   leaseId: string;
+  leaseBackend?: LeaseBackend;
+  leaseProvider?: string;
+  provider?: string;
+  deviceKey?: string;
+  clientId?: string;
 };
 
 export type MetroPrepareOptions = {

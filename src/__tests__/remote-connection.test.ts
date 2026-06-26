@@ -17,9 +17,11 @@ import {
   connectionCommand,
   disconnectCommand,
 } from '../cli/commands/connection.ts';
+import { writeGeneratedRemoteConfig } from '../cli/generated-remote-config.ts';
 import {
   hasDeferredMetroConfig,
   materializeRemoteConnectionForCommand,
+  PROXY_REMOTE_LEASE_TTL_MS,
 } from '../cli/commands/connection-runtime.ts';
 import { stopMetroCompanion } from '../client-metro-companion.ts';
 import { AppError } from '../utils/errors.ts';
@@ -74,11 +76,27 @@ function createTestClient(
     release?: AgentDeviceClient['leases']['release'];
     prepare?: AgentDeviceClient['metro']['prepare'];
     closeSession?: AgentDeviceClient['sessions']['close'];
+    listDevices?: AgentDeviceClient['devices']['list'];
   } = {},
 ): AgentDeviceClient {
   return {
     command: createThrowingMethodGroup<AgentDeviceClient['command']>(),
-    devices: createThrowingMethodGroup<AgentDeviceClient['devices']>(),
+    devices: createThrowingMethodGroup<AgentDeviceClient['devices']>({
+      list:
+        options.listDevices ??
+        (async () => [
+          {
+            platform: 'android',
+            target: 'mobile',
+            kind: 'emulator',
+            id: 'emulator-5554',
+            name: 'Android Emulator',
+            booted: true,
+            identifiers: { serial: 'emulator-5554' },
+            android: { serial: 'emulator-5554' },
+          },
+        ]),
+    }),
     sessions: createThrowingMethodGroup<AgentDeviceClient['sessions']>({
       close:
         options.closeSession ??
@@ -179,6 +197,209 @@ test('connect auto-generates a local session and writes minimal remote state', a
   });
   assert.equal(state?.metro, undefined);
   assert.equal(state?.runtime, undefined);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('connect proxy writes normal remote state with generated non-secret profile', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-'));
+  const stateDir = path.join(tempRoot, '.state');
+
+  await captureStdout(async () => {
+    await connectCommand({
+      positionals: ['proxy'],
+      flags: {
+        json: true,
+        help: false,
+        version: false,
+        stateDir,
+        daemonBaseUrl: 'http://proxy.example.test/agent-device',
+        daemonAuthToken: 'proxy-secret',
+        metroBearerToken: 'metro-bearer-secret',
+        platform: 'android',
+      },
+      client: createTestClient(),
+    });
+  });
+
+  const state = readActiveConnectionState({ stateDir });
+  assert.ok(state);
+  assert.match(state.session, /^adc-[a-z0-9]+$/);
+  assert.equal(state.tenant, 'proxy');
+  assert.match(state.runId, /^proxy-[a-f0-9]{16}$/);
+  assert.equal(state.leaseProvider, 'proxy');
+  assert.match(state.clientId ?? '', /^[a-f0-9]{16}$/);
+  assert.equal(state.leaseBackend, 'android-instance');
+  assert.equal(state.leaseId, undefined);
+  assert.deepEqual(state.daemon, {
+    baseUrl: 'http://proxy.example.test/agent-device',
+    authToken: 'proxy-secret',
+    transport: 'http',
+  });
+  assert.match(state.remoteConfigPath, /remote-connections\/generated\/proxy-[a-f0-9]{16}\.json$/);
+  const generated = JSON.parse(fs.readFileSync(state.remoteConfigPath, 'utf8')) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(generated.daemonBaseUrl, 'http://proxy.example.test/agent-device');
+  assert.equal(generated.daemonAuthToken, undefined);
+  assert.equal(generated.metroBearerToken, undefined);
+  assert.equal(generated.leaseProvider, 'proxy');
+  assert.equal(generated.leaseTtlMs, undefined);
+  assert.equal(JSON.stringify(generated).includes('proxy-secret'), false);
+  assert.equal(JSON.stringify(generated).includes('metro-bearer-secret'), false);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('connect daemon-base-url shortcut uses proxy profile for direct proxy URLs', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-shortcut-'));
+  const stateDir = path.join(tempRoot, '.state');
+
+  await captureStdout(async () => {
+    await connectCommand({
+      positionals: [],
+      flags: {
+        json: true,
+        help: false,
+        version: false,
+        stateDir,
+        daemonBaseUrl: 'http://127.0.0.1:4310/agent-device',
+        daemonAuthToken: 'proxy-secret',
+      },
+      client: createTestClient(),
+    });
+  });
+
+  const state = readActiveConnectionState({ stateDir });
+  assert.ok(state);
+  assert.equal(state.tenant, 'proxy');
+  assert.equal(state.leaseProvider, 'proxy');
+  assert.match(state.clientId ?? '', /^[a-f0-9]{16}$/);
+  assert.deepEqual(state.daemon, {
+    baseUrl: 'http://127.0.0.1:4310/agent-device',
+    authToken: 'proxy-secret',
+    transport: 'http',
+  });
+  assert.equal(state.leaseId, undefined);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('connect proxy scopes generated client identity by explicit session', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-sessions-'));
+  const stateDir = path.join(tempRoot, '.state');
+
+  for (const session of ['agent-a', 'agent-b']) {
+    await captureStdout(async () => {
+      await connectCommand({
+        positionals: ['proxy'],
+        flags: {
+          json: true,
+          help: false,
+          version: false,
+          stateDir,
+          daemonBaseUrl: 'http://proxy.example.test/agent-device',
+          platform: 'android',
+          session,
+        },
+        client: createTestClient(),
+      });
+    });
+  }
+
+  const first = readRemoteConnectionState({ stateDir, session: 'agent-a' });
+  const second = readRemoteConnectionState({ stateDir, session: 'agent-b' });
+  assert.ok(first);
+  assert.ok(second);
+  assert.notEqual(first.clientId, second.clientId);
+  assert.notEqual(first.runId, second.runId);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('connect proxy notice only advertises open as the lease allocator', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-notice-'));
+  const stateDir = path.join(tempRoot, '.state');
+
+  const stdout = await captureStdout(async () => {
+    await connectCommand({
+      positionals: ['proxy'],
+      flags: {
+        json: false,
+        help: false,
+        version: false,
+        stateDir,
+        daemonBaseUrl: 'http://proxy.example.test/agent-device',
+        platform: 'android',
+      },
+      client: createTestClient(),
+    });
+  });
+
+  assert.match(stdout, /Proxy lease allocation is pending/);
+  assert.match(stdout, /run open when ready/);
+  assert.doesNotMatch(stdout, /snapshot/);
+  assert.doesNotMatch(stdout, /install-from-source/);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('generated remote config writer strips secret fields', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-generated-profile-'));
+  const configPath = writeGeneratedRemoteConfig({
+    stateDir: path.join(tempRoot, '.state'),
+    provider: 'proxy',
+    profile: {
+      daemonBaseUrl: 'http://proxy.example.test/agent-device',
+      daemonAuthToken: 'proxy-secret',
+      metroBearerToken: 'metro-bearer-secret',
+      leaseProvider: 'proxy',
+      clientId: 'client-a',
+    },
+  });
+
+  const generated = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+  assert.equal(generated.daemonBaseUrl, 'http://proxy.example.test/agent-device');
+  assert.equal(generated.daemonAuthToken, undefined);
+  assert.equal(generated.metroBearerToken, undefined);
+  assert.equal(generated.leaseProvider, 'proxy');
+  assert.equal(JSON.stringify(generated).includes('proxy-secret'), false);
+  assert.equal(JSON.stringify(generated).includes('metro-bearer-secret'), false);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('connect proxy rejects remote-config and unknown provider combinations', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-errors-'));
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  fs.writeFileSync(remoteConfigPath, '{}');
+
+  await assert.rejects(
+    async () =>
+      await connectCommand({
+        positionals: ['proxy'],
+        flags: {
+          json: true,
+          help: false,
+          version: false,
+          stateDir,
+          remoteConfig: remoteConfigPath,
+        },
+        client: createTestClient(),
+      }),
+    /mutually exclusive/,
+  );
+
+  await assert.rejects(
+    async () =>
+      await connectCommand({
+        positionals: ['wat'],
+        flags: {
+          json: true,
+          help: false,
+          version: false,
+          stateDir,
+        },
+        client: createTestClient(),
+      }),
+    /Supported providers: proxy/,
+  );
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
@@ -395,6 +616,135 @@ test('deferred materialization allocates lease and prepares Metro for open', asy
   assert.equal(
     readRemoteConnectionState({ stateDir, session: 'adc-android' })?.leaseId,
     'lease-new',
+  );
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+// fallow-ignore-next-line complexity
+test('proxy open resolves device key before allocating lease', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-open-'));
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  fs.writeFileSync(remoteConfigPath, JSON.stringify({ daemonBaseUrl: 'https://daemon.example' }));
+  writeRemoteConnectionState({
+    stateDir,
+    state: {
+      version: 1,
+      session: 'adc-proxy',
+      remoteConfigPath,
+      remoteConfigHash: hashRemoteConfigFile(remoteConfigPath),
+      daemon: { baseUrl: 'https://daemon.example' },
+      tenant: 'proxy',
+      runId: 'proxy-client-1',
+      leaseProvider: 'proxy',
+      clientId: 'client-1',
+      connectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  let allocateRequest: Parameters<AgentDeviceClient['leases']['allocate']>[0] | undefined;
+
+  const materialized = await materializeRemoteConnectionForCommand({
+    command: 'open',
+    flags: {
+      json: true,
+      help: false,
+      version: false,
+      stateDir,
+      remoteConfig: remoteConfigPath,
+      daemonBaseUrl: 'https://daemon.example',
+      tenant: 'proxy',
+      runId: 'proxy-client-1',
+      session: 'adc-proxy',
+      platform: 'ios',
+    },
+    client: createTestClient({
+      listDevices: async () => [
+        {
+          platform: 'ios',
+          target: 'mobile',
+          kind: 'simulator',
+          id: 'SIM-001',
+          name: 'iPhone 16',
+          booted: true,
+          identifiers: { udid: 'SIM-001' },
+          ios: { udid: 'SIM-001' },
+        },
+      ],
+      allocate: async (request) => {
+        allocateRequest = request;
+        return {
+          leaseId: 'abc123abc123abc1',
+          tenantId: request.tenant,
+          runId: request.runId,
+          backend: request.leaseBackend ?? 'ios-instance',
+          leaseProvider: request.leaseProvider,
+          clientId: request.clientId,
+          deviceKey: request.deviceKey,
+        };
+      },
+    }),
+  });
+
+  assert.equal(allocateRequest?.leaseProvider, 'proxy');
+  assert.equal(allocateRequest?.clientId, 'client-1');
+  assert.equal(allocateRequest?.deviceKey, 'ios:mobile:SIM-001');
+  assert.equal(allocateRequest?.ttlMs, PROXY_REMOTE_LEASE_TTL_MS);
+  assert.equal(allocateRequest?.leaseBackend, 'ios-instance');
+  assert.equal(materialized.flags.leaseId, 'abc123abc123abc1');
+  assert.equal(materialized.flags.udid, 'SIM-001');
+  assert.equal(materialized.connection?.deviceKey, 'ios:mobile:SIM-001');
+  const state = readRemoteConnectionState({ stateDir, session: 'adc-proxy' });
+  assert.equal(state?.leaseId, 'abc123abc123abc1');
+  assert.equal(state?.deviceKey, 'ios:mobile:SIM-001');
+  assert.equal(state?.leaseProvider, 'proxy');
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('proxy commands without active device lease fail before allocation', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-proxy-closed-'));
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  fs.writeFileSync(remoteConfigPath, JSON.stringify({ daemonBaseUrl: 'https://daemon.example' }));
+  writeRemoteConnectionState({
+    stateDir,
+    state: {
+      version: 1,
+      session: 'adc-proxy',
+      remoteConfigPath,
+      remoteConfigHash: hashRemoteConfigFile(remoteConfigPath),
+      tenant: 'proxy',
+      runId: 'proxy-client-1',
+      leaseProvider: 'proxy',
+      clientId: 'client-1',
+      leaseBackend: 'ios-instance',
+      connectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
+  await assert.rejects(
+    async () =>
+      await materializeRemoteConnectionForCommand({
+        command: 'snapshot',
+        flags: {
+          json: true,
+          help: false,
+          version: false,
+          stateDir,
+          remoteConfig: remoteConfigPath,
+          tenant: 'proxy',
+          runId: 'proxy-client-1',
+          session: 'adc-proxy',
+          platform: 'ios',
+        },
+        client: createTestClient({
+          allocate: async () => {
+            throw new Error('snapshot should not allocate without proxy device lease');
+          },
+        }),
+      }),
+    /No active proxy device lease for this session; run open first/,
   );
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
@@ -1084,6 +1434,7 @@ test('deferred materialization stops the new Metro companion if state persistenc
   const stateDir = path.join(tempRoot, '.state');
   const remoteConfigPath = path.join(tempRoot, 'remote.json');
   fs.writeFileSync(remoteConfigPath, JSON.stringify({ daemonBaseUrl: 'https://daemon.example' }));
+  let releaseRequest: Parameters<AgentDeviceClient['leases']['release']>[0] | undefined;
   writeRemoteConnectionState({
     stateDir,
     state: {
@@ -1136,7 +1487,12 @@ test('deferred materialization stops the new Metro companion if state persistenc
           metroPublicBaseUrl: 'https://sandbox.example.test',
           metroProxyBaseUrl: 'https://proxy.example.test',
         },
-        client: createTestClient(),
+        client: createTestClient({
+          release: async (request) => {
+            releaseRequest = request;
+            return { released: true };
+          },
+        }),
       }),
     writeFailure,
   );
@@ -1147,6 +1503,10 @@ test('deferred materialization stops the new Metro companion if state persistenc
     profileKey: remoteConfigPath,
     consumerKey: 'adc-android',
   });
+  assert.equal(releaseRequest?.leaseId, 'lease-1');
+  assert.equal(releaseRequest?.tenant, 'acme');
+  assert.equal(releaseRequest?.runId, 'run-123');
+  assert.equal(releaseRequest?.leaseBackend, 'android-instance');
 
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
@@ -1483,6 +1843,65 @@ test('disconnect without a session uses active connection state', async () => {
   });
 
   assert.equal(readRemoteConnectionState({ stateDir, session: 'adc-android' }), null);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('disconnect releases proxy lease with provider client and device metadata', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-disconnect-proxy-'));
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  fs.writeFileSync(remoteConfigPath, '{}');
+  writeRemoteConnectionState({
+    stateDir,
+    state: {
+      version: 1,
+      session: 'adc-proxy',
+      remoteConfigPath,
+      remoteConfigHash: hashRemoteConfigFile(remoteConfigPath),
+      tenant: 'proxy',
+      runId: 'proxy-client-1',
+      leaseId: 'abc123abc123abc1',
+      daemon: {
+        baseUrl: 'http://proxy.example.test/agent-device',
+        authToken: 'proxy-secret',
+      },
+      leaseBackend: 'ios-instance',
+      leaseProvider: 'proxy',
+      clientId: 'client-1',
+      deviceKey: 'ios:mobile:SIM-001',
+      connectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  let releaseRequest: Parameters<AgentDeviceClient['leases']['release']>[0] | undefined;
+
+  await captureStdout(async () => {
+    await disconnectCommand({
+      positionals: [],
+      flags: {
+        json: true,
+        help: false,
+        version: false,
+        stateDir,
+        shutdown: true,
+      },
+      client: createTestClient({
+        release: async (request) => {
+          releaseRequest = request;
+          return { released: true };
+        },
+      }),
+    });
+  });
+
+  assert.equal(releaseRequest?.leaseProvider, 'proxy');
+  assert.equal(releaseRequest?.clientId, 'client-1');
+  assert.equal(releaseRequest?.deviceKey, 'ios:mobile:SIM-001');
+  assert.equal(releaseRequest?.leaseId, 'abc123abc123abc1');
+  assert.equal(releaseRequest?.leaseBackend, 'ios-instance');
+  assert.equal(releaseRequest?.daemonBaseUrl, 'http://proxy.example.test/agent-device');
+  assert.equal(releaseRequest?.daemonAuthToken, 'proxy-secret');
+  assert.equal(readRemoteConnectionState({ stateDir, session: 'adc-proxy' }), null);
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 

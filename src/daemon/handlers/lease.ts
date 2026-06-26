@@ -1,6 +1,11 @@
 import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import type { LeaseRegistry } from '../lease-registry.ts';
 import { resolveLeaseScope } from '../lease-context.ts';
+import {
+  leaseScopeToAllocateRequest,
+  leaseScopeToHeartbeatRequest,
+  leaseScopeToReleaseRequest,
+} from '../../core/lease-scope.ts';
 
 type LeaseHandlerArgs = {
   req: DaemonRequest;
@@ -12,35 +17,21 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
   const leaseScope = resolveLeaseScope(req);
   switch (req.command) {
     case 'lease_allocate': {
-      const lease = leaseRegistry.allocateLease({
-        tenantId: leaseScope.tenantId ?? '',
-        runId: leaseScope.runId ?? '',
-        backend: leaseScope.leaseBackend,
-        ttlMs: leaseScope.leaseTtlMs,
-      });
+      const lease = leaseRegistry.allocateLease(leaseScopeToAllocateRequest(leaseScope));
       return {
         ok: true,
         data: { lease },
       };
     }
     case 'lease_heartbeat': {
-      const lease = leaseRegistry.heartbeatLease({
-        leaseId: leaseScope.leaseId ?? '',
-        tenantId: leaseScope.tenantId,
-        runId: leaseScope.runId,
-        ttlMs: leaseScope.leaseTtlMs,
-      });
+      const lease = leaseRegistry.heartbeatLease(leaseScopeToHeartbeatRequest(leaseScope));
       return {
         ok: true,
         data: { lease },
       };
     }
     case 'lease_release': {
-      const result = leaseRegistry.releaseLease({
-        leaseId: leaseScope.leaseId ?? '',
-        tenantId: leaseScope.tenantId,
-        runId: leaseScope.runId,
-      });
+      const result = leaseRegistry.releaseLease(leaseScopeToReleaseRequest(leaseScope));
       return {
         ok: true,
         data: result,
