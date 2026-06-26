@@ -1,28 +1,72 @@
-import type { CommandRequestResult } from '../../client-types.ts';
+import type { BackendNetworkEntry } from '../../backend.ts';
+import type { NetworkIncludeMode } from '../../contracts.ts';
+import type { NetworkEntry } from '../../daemon/network-log.ts';
 import type { CliOutput } from '../command-contract.ts';
-import { readRecord, resultOutput, type CliOutputFormatter } from '../output-common.ts';
+import { resultOutput, type CliOutputFormatter } from '../output-common.ts';
 
-function logsCliOutput(result: CommandRequestResult): CliOutput {
-  const data = result as Record<string, unknown>;
-  const pathOut = typeof data.path === 'string' ? data.path : '';
+type LogsActionFields = {
+  started?: true;
+  stopped?: true;
+  marked?: true;
+  cleared?: true;
+  restarted?: true;
+  removedRotatedFiles?: number;
+};
+
+type LogsCliResult = LogsActionFields & {
+  path: string;
+  active?: boolean;
+  state?: string;
+  backend?: string;
+  sizeBytes?: number;
+  hint?: string;
+  notes?: readonly string[];
+};
+
+const LOG_ACTION_FIELD_KEYS = [
+  'started',
+  'stopped',
+  'marked',
+  'cleared',
+  'restarted',
+  'removedRotatedFiles',
+] as const satisfies readonly (keyof LogsActionFields)[];
+
+type NetworkCliEntry = (BackendNetworkEntry | NetworkEntry) & {
+  headers?: string;
+  requestHeaders?: Record<string, string>;
+  responseHeaders?: Record<string, string>;
+};
+
+type NetworkCliResult = {
+  path?: string;
+  active?: boolean;
+  state?: string;
+  backend?: string;
+  include?: NetworkIncludeMode;
+  scannedLines?: number;
+  matchedLines?: number;
+  entries?: readonly NetworkCliEntry[];
+  notes?: readonly string[];
+};
+
+function logsCliOutput(data: LogsCliResult): CliOutput {
   return {
     data,
-    text: pathOut,
+    text: data.path,
     stderr: joinDefinedLines([
-      formatKeyValueFields(data, ['active', 'state', 'backend', 'sizeBytes']),
+      formatKeyValueFields(data, ['active', 'state', 'backend', 'sizeBytes'] as const),
       formatActionFields(data),
-      typeof data.hint === 'string' ? data.hint : undefined,
+      data.hint,
       formatNotes(data.notes),
     ]),
   };
 }
 
-function networkCliOutput(result: CommandRequestResult): CliOutput {
-  const data = result as Record<string, unknown>;
+function networkCliOutput(data: NetworkCliResult): CliOutput {
   const lines: string[] = [];
-  const pathOut = typeof data.path === 'string' ? data.path : '';
-  if (pathOut) lines.push(pathOut);
-  const entries = Array.isArray(data.entries) ? data.entries : [];
+  const entries = data.entries ?? [];
+  if (data.path) lines.push(data.path);
   if (entries.length === 0) {
     lines.push('No recent HTTP(s) entries found.');
   } else {
@@ -41,62 +85,64 @@ function networkCliOutput(result: CommandRequestResult): CliOutput {
         'include',
         'scannedLines',
         'matchedLines',
-      ]),
+      ] as const),
       formatNotes(data.notes),
     ]),
   };
 }
 
 export const observabilityCliOutputFormatters = {
-  logs: resultOutput(logsCliOutput),
-  network: resultOutput(networkCliOutput),
+  logs: resultOutput<LogsCliResult>(logsCliOutput),
+  network: resultOutput<NetworkCliResult>(networkCliOutput),
 } as const satisfies Record<string, CliOutputFormatter>;
 
-function formatActionFields(data: Record<string, unknown>): string | undefined {
+function formatActionFields(data: LogsActionFields): string | undefined {
   return (
-    ['started', 'stopped', 'marked', 'cleared', 'restarted', 'removedRotatedFiles']
-      .map((key) => formatActionField(key, data[key]))
+    LOG_ACTION_FIELD_KEYS.map((key) => formatActionField(key, data[key]))
       .filter(Boolean)
       .join(' ') || undefined
   );
 }
 
-function formatActionField(key: string, value: unknown): string {
-  if (value === true) return `${key}=true`;
-  return typeof value === 'number' ? `${key}=${value}` : '';
+function formatActionField(key: string, value: true | number | null | undefined): string {
+  return value == null ? '' : `${key}=${value}`;
 }
 
-function formatNetworkEntry(entry: unknown): string[] {
-  const record = readRecord(entry) ?? {};
-  const method = typeof record.method === 'string' ? record.method : 'HTTP';
-  const url = typeof record.url === 'string' ? record.url : '<unknown-url>';
-  const status = typeof record.status === 'number' ? ` status=${record.status}` : '';
-  const timestamp = typeof record.timestamp === 'string' ? `${record.timestamp} ` : '';
-  const durationMs =
-    typeof record.durationMs === 'number' ? ` durationMs=${record.durationMs}` : '';
+function formatNetworkEntry(entry: NetworkCliEntry): string[] {
+  const method = entry.method ?? 'HTTP';
+  const url = entry.url ?? '<unknown-url>';
+  const status = entry.status !== undefined ? ` status=${entry.status}` : '';
+  const timestamp = entry.timestamp ? `${entry.timestamp} ` : '';
+  const durationMs = entry.durationMs !== undefined ? ` durationMs=${entry.durationMs}` : '';
   const lines = [`${timestamp}${method} ${url}${status}${durationMs}`];
-  const hasFormattedHeaders = typeof record.headers === 'string';
-  appendNetworkEntryBody(lines, 'headers', record.headers);
-  if (!hasFormattedHeaders) {
-    appendNetworkEntryHeaders(lines, 'request headers', record.requestHeaders);
-    appendNetworkEntryHeaders(lines, 'response headers', record.responseHeaders);
+  if (entry.headers) {
+    appendNetworkEntryBody(lines, 'headers', entry.headers);
+  } else {
+    appendNetworkEntryHeaders(lines, 'request headers', entry.requestHeaders);
+    appendNetworkEntryHeaders(lines, 'response headers', entry.responseHeaders);
   }
-  appendNetworkEntryBody(lines, 'request', record.requestBody);
-  appendNetworkEntryBody(lines, 'response', record.responseBody);
+  appendNetworkEntryBody(lines, 'request', entry.requestBody);
+  appendNetworkEntryBody(lines, 'response', entry.responseBody);
   return lines;
 }
 
-function appendNetworkEntryHeaders(lines: string[], label: string, value: unknown): void {
-  const headers = readRecord(value);
+function appendNetworkEntryHeaders(
+  lines: string[],
+  label: string,
+  headers: Record<string, string> | undefined,
+): void {
   if (!headers || Object.keys(headers).length === 0) return;
   lines.push(`  ${label}: ${JSON.stringify(headers)}`);
 }
 
-function appendNetworkEntryBody(lines: string[], label: string, value: unknown): void {
-  if (typeof value === 'string') lines.push(`  ${label}: ${value}`);
+function appendNetworkEntryBody(lines: string[], label: string, value: string | undefined): void {
+  if (value !== undefined) lines.push(`  ${label}: ${value}`);
 }
 
-function formatKeyValueFields(data: Record<string, unknown>, fields: string[]): string | undefined {
+function formatKeyValueFields<T extends object, K extends Extract<keyof T, string>>(
+  data: T,
+  fields: readonly K[],
+): string | undefined {
   const text = fields
     .map((key) => (data[key] !== undefined && data[key] !== null ? `${key}=${data[key]}` : ''))
     .filter(Boolean)
@@ -104,9 +150,8 @@ function formatKeyValueFields(data: Record<string, unknown>, fields: string[]): 
   return text || undefined;
 }
 
-function formatNotes(notes: unknown): string | undefined {
-  if (!Array.isArray(notes)) return undefined;
-  const lines = notes.filter((note): note is string => typeof note === 'string' && note.length > 0);
+function formatNotes(notes: readonly string[] | undefined): string | undefined {
+  const lines = notes?.filter((note) => note.length > 0) ?? [];
   return lines.length > 0 ? lines.join('\n') : undefined;
 }
 

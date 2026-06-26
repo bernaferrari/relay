@@ -7,6 +7,7 @@ import type {
   SymbolicatedAddress,
   TextFrameMatch,
 } from './types.ts';
+import { isRecord } from '../../../utils/parsing.ts';
 import {
   addressKey,
   compactJoin,
@@ -14,7 +15,6 @@ import {
   hex,
   readNumber,
   readJsonRecord,
-  readRecord,
   readString,
 } from './utils.ts';
 
@@ -74,17 +74,16 @@ function readIpsBundleId(
   payload: Record<string, unknown>,
   header: Record<string, unknown> | null,
 ): string | undefined {
-  return firstString(readRecord(payload.bundleInfo)?.CFBundleIdentifier, header?.bundleID);
+  const bundleInfo = isRecord(payload.bundleInfo) ? payload.bundleInfo : undefined;
+  return firstString(bundleInfo?.CFBundleIdentifier, header?.bundleID);
 }
 
 function readIpsVersion(
   payload: Record<string, unknown>,
   header: Record<string, unknown> | null,
 ): string | undefined {
-  return firstString(
-    readRecord(payload.bundleInfo)?.CFBundleShortVersionString,
-    header?.app_version,
-  );
+  const bundleInfo = isRecord(payload.bundleInfo) ? payload.bundleInfo : undefined;
+  return firstString(bundleInfo?.CFBundleShortVersionString, header?.app_version);
 }
 
 function readIpsIncident(
@@ -102,7 +101,7 @@ function readIpsTimestamp(
 }
 
 function readIpsExceptionType(exception: unknown): string | undefined {
-  return readString(readRecord(exception)?.type);
+  return isRecord(exception) ? readString(exception.type) : undefined;
 }
 
 function readIpsHeader(header: string | undefined): Record<string, unknown> | null {
@@ -113,23 +112,22 @@ function readIpsCrashedThread(payload: Record<string, unknown>): number | undefi
   const faultingThread = readNumber(payload.faultingThread);
   if (faultingThread !== undefined) return faultingThread;
   const threads = Array.isArray(payload.threads) ? payload.threads : [];
-  const triggeredIndex = threads.findIndex((thread) => readRecord(thread)?.triggered === true);
+  const triggeredIndex = threads.findIndex(
+    (thread) => isRecord(thread) && thread.triggered === true,
+  );
   return triggeredIndex === -1 ? undefined : triggeredIndex;
 }
 
 function readIpsExceptionCodes(exception: unknown): string | undefined {
-  const record = readRecord(exception);
-  if (!record) return undefined;
-  return firstString(record.codes, record.rawCodes);
+  return isRecord(exception) ? firstString(exception.codes, exception.rawCodes) : undefined;
 }
 
 function readIpsTerminationReason(termination: unknown): string | undefined {
-  const record = readRecord(termination);
-  if (!record) return undefined;
+  if (!isRecord(termination)) return undefined;
   return compactJoin([
-    readString(record.namespace),
-    readString(record.code),
-    readString(record.reason),
+    readString(termination.namespace),
+    readString(termination.code),
+    readString(termination.reason),
   ]);
 }
 
