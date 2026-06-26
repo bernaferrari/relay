@@ -1,11 +1,7 @@
 import type { CommandRequestResult } from '../../client-types.ts';
+import { isRecord } from '../../utils/parsing.ts';
 import type { CliOutput } from '../command-contract.ts';
-import {
-  readRecord,
-  readRecordArray,
-  resultOutput,
-  type CliOutputFormatter,
-} from '../output-common.ts';
+import { resultOutput, type CliOutputFormatter } from '../output-common.ts';
 
 function perfCliOutput(result: CommandRequestResult): CliOutput {
   const data = result as Record<string, unknown>;
@@ -19,12 +15,16 @@ export const perfCliOutputFormatters = {
 function formatPerfCliOutput(data: Record<string, unknown>): string {
   const nativeOutput = formatNativePerfOutput(data);
   if (nativeOutput) return nativeOutput;
-  const artifact = readRecord(data.artifact);
+  const artifact = isRecord(data.artifact) ? data.artifact : undefined;
   if (artifact) {
     return formatMemoryArtifactSummary(artifact);
   }
-  const metrics = readRecord(data.metrics);
-  const fps = readRecord(metrics?.fps);
+  const metrics = isRecord(data.metrics) ? data.metrics : undefined;
+  return formatFramePerfOutput(metrics);
+}
+
+function formatFramePerfOutput(metrics: Record<string, unknown> | undefined): string {
+  const fps = isRecord(metrics?.fps) ? metrics.fps : undefined;
   const resourceSummary = buildResourcePerfSummary(metrics);
   if (!fps) {
     return formatPerfUnavailable(resourceSummary, 'missing frame metric');
@@ -37,6 +37,10 @@ function formatPerfCliOutput(data: Record<string, unknown>): string {
   const frameSummary = formatFrameHealthSummary(fps);
   if (!frameSummary) return formatPerfUnavailable(resourceSummary, 'missing dropped-frame summary');
 
+  return formatFrameHealthOutput(fps, frameSummary);
+}
+
+function formatFrameHealthOutput(fps: Record<string, unknown>, frameSummary: string): string {
   const lines = [`Frame health: ${frameSummary}`];
   const worstWindows = formatWorstFrameWindows(fps);
   if (worstWindows.length > 0) {
@@ -125,8 +129,8 @@ function readString(value: unknown): string | undefined {
 }
 
 function formatNativePerfFrameHealth(data: Record<string, unknown>): string {
-  const summary = readRecord(data.summary);
-  const frameHealth = readRecord(summary?.frameHealth);
+  const summary = isRecord(data.summary) ? data.summary : undefined;
+  const frameHealth = isRecord(summary?.frameHealth) ? summary.frameHealth : undefined;
   if (!frameHealth || frameHealth.available !== true) return '';
   const droppedFramePercent = readFiniteNumber(frameHealth.droppedFramePercent);
   const droppedFrameCount = readFiniteNumber(frameHealth.droppedFrameCount);
@@ -177,8 +181,10 @@ function formatSampleWindow(sampleWindowMs: number | undefined): string {
 }
 
 function formatWorstFrameWindows(fps: Record<string, unknown>): string[] {
-  return readRecordArray(fps.worstWindows).flatMap((window) => {
-    const line = formatWorstFrameWindow(window);
+  if (!Array.isArray(fps.worstWindows)) return [];
+  return fps.worstWindows.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const line = formatWorstFrameWindow(entry);
     return line ? [line] : [];
   });
 }
@@ -199,10 +205,11 @@ function formatWorstFrameWindow(window: Record<string, unknown>): string | undef
 function buildResourcePerfSummary(
   metrics: Record<string, unknown> | undefined,
 ): string | undefined {
-  const parts = [
-    formatCpuPerfSummary(readRecord(metrics?.cpu)),
-    formatMemoryPerfSummary(readRecord(metrics?.memory)),
-  ].filter((part): part is string => Boolean(part));
+  const cpu = isRecord(metrics?.cpu) ? metrics.cpu : undefined;
+  const memory = isRecord(metrics?.memory) ? metrics.memory : undefined;
+  const parts = [formatCpuPerfSummary(cpu), formatMemoryPerfSummary(memory)].filter(
+    (part): part is string => Boolean(part),
+  );
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 

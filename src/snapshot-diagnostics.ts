@@ -1,5 +1,6 @@
 import type { SnapshotBackend } from './utils/snapshot.ts';
 import type { Platform } from './utils/device.ts';
+import { isRecord } from './utils/parsing.ts';
 
 const SLOW_SNAPSHOT_P95_WARNING_MS = 1_500;
 
@@ -78,11 +79,10 @@ export function mergeSnapshotDiagnostics(
 export function readSnapshotDiagnosticsSummary(
   value: unknown,
 ): SnapshotDiagnosticsSummary | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const stats = readSnapshotTimingStats(record.stats);
+  if (!isRecord(value)) return undefined;
+  const stats = readSnapshotTimingStats(value.stats);
   if (!stats) return undefined;
-  const warning = typeof record.warning === 'string' ? record.warning : undefined;
+  const warning = typeof value.warning === 'string' ? value.warning : undefined;
   return { stats, ...(warning ? { warning } : {}) };
 }
 
@@ -128,20 +128,13 @@ function formatSlowSnapshotWarning(stats: SnapshotTimingStats): string {
 }
 
 function readSnapshotTimingStats(value: unknown): SnapshotTimingStats | undefined {
-  const record = readRecord(value);
-  if (!record) return undefined;
-  const required = readRequiredSnapshotTimingStats(record);
+  if (!isRecord(value)) return undefined;
+  const required = readRequiredSnapshotTimingStats(value);
   if (!required) return undefined;
   return {
     ...required,
-    ...readOptionalSnapshotTimingStats(record),
+    ...readOptionalSnapshotTimingStats(value),
   };
-}
-
-function readRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
 }
 
 function readRequiredSnapshotTimingStats(
@@ -174,8 +167,7 @@ function readOptionalSnapshotTimingStats(
   record: Record<string, unknown>,
 ): Pick<SnapshotTimingStats, 'platform' | 'backends'> {
   const platform = typeof record.platform === 'string' ? record.platform : undefined;
-  const backendRecord = readRecord(record.backends);
-  const backends = backendRecord ? readBackendCounts(backendRecord) : undefined;
+  const backends = isRecord(record.backends) ? readBackendCounts(record.backends) : undefined;
   return {
     ...(platform ? { platform: platform as SnapshotTimingStats['platform'] } : {}),
     ...(backends ? { backends } : {}),

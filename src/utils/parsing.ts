@@ -71,8 +71,7 @@ export function readDeviceTarget(record: Record<string, unknown>, key: string): 
   return readOptional(record, key, parseDeviceTarget) ?? 'mobile';
 }
 
-export function readRect(record: Record<string, unknown>, key: string): Rect | undefined {
-  const value = record[key];
+export function parseRect(value: unknown): Rect | undefined {
   if (!isRecord(value)) return undefined;
   const x = readNumberField(value, 'x');
   const y = readNumberField(value, 'y');
@@ -84,8 +83,7 @@ export function readRect(record: Record<string, unknown>, key: string): Rect | u
   return { x, y, width, height };
 }
 
-export function readPoint(record: Record<string, unknown>, key: string): Point | undefined {
-  const value = record[key];
+export function parsePoint(value: unknown): Point | undefined {
   if (!isRecord(value)) return undefined;
   const x = readNumberField(value, 'x');
   const y = readNumberField(value, 'y');
@@ -136,7 +134,7 @@ export function asRecord(value: unknown): Record<string, unknown> {
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function stripUndefined<T extends Record<string, unknown>>(value: T): T {

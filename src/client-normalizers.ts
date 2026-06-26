@@ -1,8 +1,8 @@
 import type { CommandFlags } from './core/dispatch.ts';
 import { screenshotFlagsFromOptions } from './contracts/screenshot.ts';
 import type { DaemonRequest, SessionRuntimeHints } from './daemon/types.ts';
-import { AppError } from './utils/errors.ts';
-import type { ScreenshotOverlayRef, SnapshotNode } from './utils/snapshot.ts';
+import { AppError, type NormalizedError } from './utils/errors.ts';
+import type { SnapshotNode } from './utils/snapshot.ts';
 import { buildAppIdentifiers, buildDeviceIdentifiers } from './client-shared.ts';
 import type {
   AgentDeviceDevice,
@@ -13,6 +13,7 @@ import type {
   InternalRequestOptions,
   MaterializationReleaseResult,
   StartupPerfSample,
+  TargetShutdownResult,
 } from './client-types.ts';
 import {
   asRecord,
@@ -20,8 +21,6 @@ import {
   readDeviceTarget,
   readNullableString,
   readOptionalString,
-  readPoint,
-  readRect,
   readRequiredDeviceKind,
   readRequiredNumber,
   readRequiredPlatform,
@@ -228,33 +227,42 @@ export function normalizeStartupSample(value: unknown): StartupPerfSample | unde
   };
 }
 
+export function normalizeTargetShutdownResult(value: unknown): TargetShutdownResult | undefined {
+  if (!isRecord(value)) return undefined;
+  if (
+    typeof value.success !== 'boolean' ||
+    typeof value.exitCode !== 'number' ||
+    typeof value.stdout !== 'string' ||
+    typeof value.stderr !== 'string'
+  ) {
+    return undefined;
+  }
+  const error = normalizeTargetShutdownError(value.error);
+  return {
+    success: value.success,
+    exitCode: value.exitCode,
+    stdout: value.stdout,
+    stderr: value.stderr,
+    ...(error ? { error } : {}),
+  };
+}
+
+function normalizeTargetShutdownError(value: unknown): NormalizedError | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.code !== 'string' || typeof value.message !== 'string') return undefined;
+  return {
+    code: value.code,
+    message: value.message,
+    ...(typeof value.hint === 'string' ? { hint: value.hint } : {}),
+    ...(typeof value.diagnosticId === 'string' ? { diagnosticId: value.diagnosticId } : {}),
+    ...(typeof value.logPath === 'string' ? { logPath: value.logPath } : {}),
+    ...(isRecord(value.details) ? { details: value.details } : {}),
+  };
+}
+
 export function readSnapshotNodes(value: unknown): SnapshotNode[] {
   // Snapshot nodes are produced by the daemon snapshot pipeline and treated as trusted here.
   return Array.isArray(value) ? (value as SnapshotNode[]) : [];
-}
-
-export function readScreenshotOverlayRefs(
-  record: Record<string, unknown>,
-): ScreenshotOverlayRef[] | undefined {
-  const value = record.overlayRefs;
-  if (!Array.isArray(value)) return undefined;
-  const refs: ScreenshotOverlayRef[] = [];
-  for (const entry of value) {
-    if (!isRecord(entry)) continue;
-    const ref = readOptionalString(entry, 'ref');
-    const rect = readRect(entry, 'rect');
-    const overlayRect = readRect(entry, 'overlayRect');
-    const center = readPoint(entry, 'center');
-    if (!ref || !rect || !overlayRect || !center) continue;
-    refs.push({
-      ref,
-      label: readOptionalString(entry, 'label'),
-      rect,
-      overlayRect,
-      center,
-    });
-  }
-  return refs;
 }
 
 export function buildFlags(options: InternalRequestOptions): CommandFlags {

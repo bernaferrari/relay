@@ -362,7 +362,9 @@ function collectConfiguredTestTargets(parsed) {
   if (!Array.isArray(testConfigurations)) return [];
   const targets = [];
   for (const config of testConfigurations) {
-    if (!isRecord(config) || !Array.isArray(config.TestTargets)) continue;
+    if (!isRecord(config) || !Array.isArray(config.TestTargets)) {
+      continue;
+    }
     targets.push(...config.TestTargets.filter(isRecord));
   }
   return targets;
@@ -371,6 +373,10 @@ function collectConfiguredTestTargets(parsed) {
 function collectLegacyTestTargets(parsed) {
   if (!isRecord(parsed)) return [];
   return Object.values(parsed).filter((value) => isRecord(value) && 'TestBundlePath' in value);
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function collectXctestrunProductReferenceValuesFromTarget(target) {
@@ -451,8 +457,4 @@ function readFileSize(filePath) {
   } catch {
     return null;
   }
-}
-
-function isRecord(value) {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

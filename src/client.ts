@@ -16,15 +16,17 @@ import {
   normalizeInstallFromSourceResult,
   normalizeMaterializationReleaseResult,
   normalizeOpenDevice,
-  readScreenshotOverlayRefs,
   normalizeRuntimeHints,
   normalizeSession,
   normalizeStartupSample,
+  normalizeTargetShutdownResult,
   readOptionalString,
   readRequiredString,
   readSnapshotNodes,
   resolveSessionName,
 } from './client-normalizers.ts';
+import { readScreenshotResultData } from './utils/screenshot-result.ts';
+import { isRecord } from './utils/parsing.ts';
 import type {
   AgentDeviceClient,
   AgentDeviceClientConfig,
@@ -130,13 +132,9 @@ export function createAgentDeviceClient(
       close: async (options = {}) => {
         const session = resolveRequestSession(options);
         const data = await executeCommand<Record<string, unknown>>('close', options);
-        const shutdown = data.shutdown;
         return {
           session,
-          shutdown:
-            typeof shutdown === 'object' && shutdown !== null
-              ? (shutdown as Record<string, unknown>)
-              : undefined,
+          shutdown: normalizeTargetShutdownResult(data.shutdown),
           identifiers: { session },
         };
       },
@@ -192,14 +190,10 @@ export function createAgentDeviceClient(
       close: async (options: AppCloseOptions = {}) => {
         const session = resolveRequestSession(options);
         const data = await executeCommand<Record<string, unknown>>('close', options);
-        const shutdown = data.shutdown;
         return {
           session,
           closedApp: options.app,
-          shutdown:
-            typeof shutdown === 'object' && shutdown !== null
-              ? (shutdown as Record<string, unknown>)
-              : undefined,
+          shutdown: normalizeTargetShutdownResult(data.shutdown),
           identifiers: { session },
         };
       },
@@ -276,9 +270,10 @@ export function createAgentDeviceClient(
       screenshot: async (options: CaptureScreenshotOptions = {}) => {
         const session = resolveRequestSession(options);
         const data = await executeCommand<Record<string, unknown>>('screenshot', options);
+        const screenshot = readScreenshotResultData(data);
         return {
           path: readRequiredString(data, 'path'),
-          overlayRefs: readScreenshotOverlayRefs(data),
+          overlayRefs: screenshot?.overlayRefs,
           identifiers: { session },
         };
       },
@@ -373,9 +368,7 @@ function optionalSnapshotResponseFields(
 }
 
 function readObject(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null
-    ? (value as Record<string, unknown>)
-    : undefined;
+  return isRecord(value) ? value : undefined;
 }
 
 function mergeClientOptions(
@@ -387,18 +380,17 @@ function mergeClientOptions(
 
 function normalizeLease(data: Record<string, unknown>): Lease {
   const rawLease = data.lease;
-  if (!rawLease || typeof rawLease !== 'object' || Array.isArray(rawLease)) {
+  if (!isRecord(rawLease)) {
     throw new Error('Invalid lease response from daemon');
   }
-  const lease = rawLease as Record<string, unknown>;
   return {
-    leaseId: readRequiredString(lease, 'leaseId'),
-    tenantId: readRequiredString(lease, 'tenantId'),
-    runId: readRequiredString(lease, 'runId'),
-    backend: readRequiredString(lease, 'backend') as Lease['backend'],
-    createdAt: typeof lease.createdAt === 'number' ? lease.createdAt : undefined,
-    heartbeatAt: typeof lease.heartbeatAt === 'number' ? lease.heartbeatAt : undefined,
-    expiresAt: typeof lease.expiresAt === 'number' ? lease.expiresAt : undefined,
+    leaseId: readRequiredString(rawLease, 'leaseId'),
+    tenantId: readRequiredString(rawLease, 'tenantId'),
+    runId: readRequiredString(rawLease, 'runId'),
+    backend: readRequiredString(rawLease, 'backend') as Lease['backend'],
+    createdAt: typeof rawLease.createdAt === 'number' ? rawLease.createdAt : undefined,
+    heartbeatAt: typeof rawLease.heartbeatAt === 'number' ? rawLease.heartbeatAt : undefined,
+    expiresAt: typeof rawLease.expiresAt === 'number' ? rawLease.expiresAt : undefined,
   };
 }
 

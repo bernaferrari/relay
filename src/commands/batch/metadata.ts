@@ -1,4 +1,5 @@
 import { DEFAULT_BATCH_MAX_STEPS } from '../../batch-contract.ts';
+import { daemonRuntimeSchema, type SessionRuntimeHints } from '../../contracts.ts';
 import {
   STRUCTURED_BATCH_COMMAND_NAMES,
   readStructuredBatchCommandName,
@@ -20,11 +21,12 @@ import {
   type CommandFieldMap,
   type InferCommandInput,
 } from '../command-input.ts';
+import { isRecord } from '../../utils/parsing.ts';
 
 export type BatchCommandStep = {
   command: string;
   input: Record<string, unknown>;
-  runtime?: unknown;
+  runtime?: SessionRuntimeHints;
 };
 
 export type BatchInput = InferCommandInput<CommandFieldMap> & {
@@ -145,18 +147,18 @@ function readBatchStepCommand(
 }
 
 function readBatchStepRecord(step: unknown, stepNumber: number): Record<string, unknown> {
-  if (!step || typeof step !== 'object' || Array.isArray(step)) {
+  if (!isRecord(step)) {
     throw new Error(`Invalid batch step ${stepNumber}.`);
   }
-  return step as Record<string, unknown>;
+  return step;
 }
 
 function readBatchStepInput(record: Record<string, unknown>, stepNumber: number) {
   const input = record.input;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+  if (!isRecord(input)) {
     throw new Error(`Batch step ${stepNumber} input must be an object.`);
   }
-  return input as Record<string, unknown>;
+  return input;
 }
 
 function readBatchStepRuntimeProperty(
@@ -164,11 +166,12 @@ function readBatchStepRuntimeProperty(
   stepNumber: number,
 ): Pick<BatchCommandStep, 'runtime'> {
   const runtime = record.runtime;
-  if (
-    runtime !== undefined &&
-    (!runtime || typeof runtime !== 'object' || Array.isArray(runtime))
-  ) {
-    throw new Error(`Batch step ${stepNumber} runtime must be an object.`);
+  if (runtime === undefined) return {};
+  try {
+    return { runtime: daemonRuntimeSchema.parse(runtime) };
+  } catch (error) {
+    throw new Error(
+      `Batch step ${stepNumber} runtime is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  return runtime === undefined ? {} : { runtime };
 }

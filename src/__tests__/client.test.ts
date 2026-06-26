@@ -121,6 +121,47 @@ test('apps.open forwards explicit runtime hints through the daemon request', asy
   });
 });
 
+test('client close normalizes target shutdown results', async () => {
+  const setup = createTransport(async () => ({
+    ok: true,
+    data:
+      setup.calls.length === 1
+        ? {
+            shutdown: {
+              success: false,
+              exitCode: -1,
+              stdout: '',
+              stderr: 'simctl shutdown failed',
+              error: {
+                code: 'COMMAND_FAILED',
+                message: 'simctl shutdown failed',
+                details: { retryable: false },
+              },
+            },
+          }
+        : {
+            shutdown: { success: true },
+          },
+  }));
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const sessionClose = await client.sessions.close({ shutdown: true });
+  const appClose = await client.apps.close({ shutdown: true });
+
+  assert.deepEqual(sessionClose.shutdown, {
+    success: false,
+    exitCode: -1,
+    stdout: '',
+    stderr: 'simctl shutdown failed',
+    error: {
+      code: 'COMMAND_FAILED',
+      message: 'simctl shutdown failed',
+      details: { retryable: false },
+    },
+  });
+  assert.equal(appClose.shutdown, undefined);
+});
+
 test('observability.perf projects structured frame area to daemon positionals', async () => {
   const setup = createTransport(async (req) => {
     if (req.command === 'perf') {
@@ -699,6 +740,53 @@ test('client capture.snapshot forwards force-full as snapshotForceFull flag', as
 
   assert.equal(setup.calls[0]?.command, 'snapshot');
   assert.equal(setup.calls[0]?.flags?.snapshotForceFull, true);
+});
+
+test('client capture.screenshot normalizes overlay refs from daemon response data', async () => {
+  const setup = createTransport(async () => ({
+    ok: true,
+    data: {
+      path: '/tmp/screenshot.png',
+      overlayRefs: [
+        {
+          ref: '@e1',
+          label: 'Continue',
+          rect: { x: 10, y: 20, width: 30, height: 40 },
+          overlayRect: { x: 12, y: 22, width: 34, height: 44 },
+          center: { x: 25, y: 40 },
+        },
+        {
+          ref: '@missing-center',
+          rect: { x: 1, y: 2, width: 3, height: 4 },
+          overlayRect: { x: 1, y: 2, width: 3, height: 4 },
+        },
+        {
+          ref: '@array-rect',
+          rect: [],
+          overlayRect: { x: 1, y: 2, width: 3, height: 4 },
+          center: { x: 2, y: 3 },
+        },
+        'not-an-overlay-ref',
+      ],
+    },
+  }));
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const result = await client.capture.screenshot({ overlayRefs: true });
+
+  assert.deepEqual(result, {
+    path: '/tmp/screenshot.png',
+    overlayRefs: [
+      {
+        ref: '@e1',
+        label: 'Continue',
+        rect: { x: 10, y: 20, width: 30, height: 40 },
+        overlayRect: { x: 12, y: 22, width: 34, height: 44 },
+        center: { x: 25, y: 40 },
+      },
+    ],
+    identifiers: { session: 'qa' },
+  });
 });
 
 test('sessions.stateDir resolves locally without contacting the daemon', async () => {

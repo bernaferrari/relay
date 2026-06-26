@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readApplePlistJson } from './tool-provider.ts';
 import { parseXmlDocumentSync, visitXmlPlistEntries, type XmlNode } from './xml.ts';
+import { isRecord } from '../../utils/parsing.ts';
 
 const XCTESTRUN_PRODUCT_REFERENCE_KEYS = new Set([
   'ProductPaths',
@@ -108,19 +109,17 @@ async function resolveXctestrunProductReferences(xctestrunPath: string): Promise
 function resolveXctestrunProductReferencesFromJson(parsed: Record<string, unknown>): string[] {
   const values = new Set<string>();
 
-  for (const target of collectXctestrunProductReferenceTargets(parsed)) {
+  for (const target of [
+    parsed,
+    ...collectConfiguredTestTargets(parsed),
+    ...collectLegacyTestTargets(parsed),
+  ]) {
     for (const value of collectXctestrunProductReferenceValuesFromTarget(target)) {
       values.add(value);
     }
   }
 
   return Array.from(values);
-}
-
-function collectXctestrunProductReferenceTargets(
-  parsed: Record<string, unknown>,
-): Record<string, unknown>[] {
-  return [parsed, ...collectConfiguredTestTargets(parsed), ...collectLegacyTestTargets(parsed)];
 }
 
 function collectConfiguredTestTargets(parsed: Record<string, unknown>): Record<string, unknown>[] {
@@ -131,9 +130,7 @@ function collectConfiguredTestTargets(parsed: Record<string, unknown>): Record<s
 
   const targets: Record<string, unknown>[] = [];
   for (const config of testConfigurations) {
-    if (!isRecord(config)) {
-      continue;
-    }
+    if (!isRecord(config)) continue;
     const testTargets = config.TestTargets;
     if (Array.isArray(testTargets)) {
       targets.push(...testTargets.filter(isRecord));
@@ -146,10 +143,6 @@ function collectLegacyTestTargets(parsed: Record<string, unknown>): Record<strin
   return Object.values(parsed).filter(
     (value): value is Record<string, unknown> => isRecord(value) && 'TestBundlePath' in value,
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object';
 }
 
 function collectXctestrunProductReferenceValuesFromTarget(
