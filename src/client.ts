@@ -215,16 +215,10 @@ export function createAgentDeviceClient(
           await execute(INTERNAL_COMMANDS.leaseAllocate, [], {
             ...options,
             leaseId: undefined,
-            leaseTtlMs: options.ttlMs,
           }),
         ),
       heartbeat: async (options) =>
-        normalizeLease(
-          await execute(INTERNAL_COMMANDS.leaseHeartbeat, [], {
-            ...options,
-            leaseTtlMs: options.ttlMs,
-          }),
-        ),
+        normalizeLease(await execute(INTERNAL_COMMANDS.leaseHeartbeat, [], options)),
       release: async (options) => {
         const data = await execute(INTERNAL_COMMANDS.leaseRelease, [], options);
         return { released: data.released === true };
@@ -388,6 +382,9 @@ function normalizeLease(data: Record<string, unknown>): Lease {
     tenantId: readRequiredString(rawLease, 'tenantId'),
     runId: readRequiredString(rawLease, 'runId'),
     backend: readRequiredString(rawLease, 'backend') as Lease['backend'],
+    leaseProvider: readOptionalString(rawLease, 'leaseProvider'),
+    clientId: readOptionalString(rawLease, 'clientId'),
+    deviceKey: readOptionalString(rawLease, 'deviceKey'),
     createdAt: typeof rawLease.createdAt === 'number' ? rawLease.createdAt : undefined,
     heartbeatAt: typeof rawLease.heartbeatAt === 'number' ? rawLease.heartbeatAt : undefined,
     expiresAt: typeof rawLease.expiresAt === 'number' ? rawLease.expiresAt : undefined,

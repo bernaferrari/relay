@@ -2,14 +2,17 @@ import { resolveDaemonPaths } from '../../daemon/config.ts';
 import { stopReactDevtoolsCompanion } from '../../client-react-devtools-companion.ts';
 import { stopMetroTunnel } from '../../metro.ts';
 import { resolveRemoteConfigProfile } from '../../remote-config.ts';
+import { resolveDevice, type DeviceInfo } from '../../utils/device.ts';
 import { shouldAgentCdpUseRemoteBridgeUrl } from './agent-cdp.ts';
 import type { MetroBridgeScope } from '../../client-companion-tunnel-contract.ts';
 import {
   buildRemoteConnectionDaemonState,
+  buildRemoteConnectionRequestMetadata,
   hashRemoteConfigFile,
   readRemoteConnectionState,
   writeRemoteConnectionState,
   type RemoteConnectionState,
+  type RemoteConnectionRequestMetadata,
 } from '../../remote-connection-state.ts';
 import { profileToCliFlags } from '../../utils/remote-config.ts';
 import type { BatchStep } from '../../client-types.ts';
@@ -28,6 +31,7 @@ const leaseDeferredCommands = new Set([
   'session',
 ]);
 const runtimeDeferredCommands = new Set(['open']);
+export const PROXY_REMOTE_LEASE_TTL_MS = 5 * 60 * 1000;
 
 export async function materializeRemoteConnectionForCommand(options: {
   command: string;
@@ -37,7 +41,11 @@ export async function materializeRemoteConnectionForCommand(options: {
   positionals?: string[];
   batchSteps?: BatchStep[];
   forceRuntimePrepare?: boolean;
-}): Promise<{ flags: CliFlags; runtime?: SessionRuntimeHints }> {
+}): Promise<{
+  flags: CliFlags;
+  runtime?: SessionRuntimeHints;
+  connection?: RemoteConnectionRequestMetadata;
+}> {
   const { command, flags, client } = options;
   if (!flags.remoteConfig) {
     return { flags, runtime: options.runtime };
@@ -72,91 +80,56 @@ export async function materializeRemoteConnectionForCommand(options: {
   }
 
   const state =
-    existingState ?? createRemoteConnectionStateFromFlags(mergedFlags, remoteConfig.resolvedPath);
+    existingState ??
+    createRemoteConnectionStateFromFlags(
+      mergedFlags,
+      remoteConfig.resolvedPath,
+      remoteConfig.profile,
+    );
   const nextFlags = { ...mergedFlags, session: state.session };
   let nextRuntime = selectCompatibleRuntime(state.runtime, nextFlags.platform) ?? options.runtime;
   let nextState = state;
   let changed = !existingState;
-  let metroCleanupToStop: RemoteConnectionState['metro'] | undefined;
-  let preparedMetroCleanupOnFailure: RemoteConnectionState['metro'] | undefined;
+  let acquiredLeaseForCleanup: Lease | undefined;
 
-  if (shouldAllocateLeaseForCommand(command)) {
-    const leaseBackend = state.leaseBackend ?? requireRequestedLeaseBackend(flags, command);
-    assertRequestedConnectionScope(state, flags, leaseBackend);
-    const lease = await allocateOrReuseLease(client, nextState, leaseBackend);
-    nextFlags.leaseId = lease.leaseId;
-    nextFlags.leaseBackend = leaseBackend;
-    nextFlags.platform = nextState.platform ?? nextFlags.platform;
-    nextFlags.target = nextState.target ?? nextFlags.target;
-    if (nextState.leaseId !== lease.leaseId || nextState.leaseBackend !== leaseBackend) {
-      nextState = {
-        ...nextState,
-        leaseId: lease.leaseId,
-        leaseBackend,
-        platform: nextState.platform ?? flags.platform,
-        target: nextState.target ?? flags.target,
-        updatedAt: new Date().toISOString(),
-      };
-      changed = true;
-    }
+  const leasePolicy = connectionLeasePolicyForState(nextState);
+  if (leasePolicy.shouldAllocate(command)) {
+    const materializedLease = await materializeLeaseForCommand({
+      command,
+      client,
+      state,
+      nextState,
+      nextFlags,
+      policy: leasePolicy,
+    });
+    nextState = materializedLease.state;
+    changed = changed || materializedLease.changed;
+    acquiredLeaseForCleanup = materializedLease.acquiredLeaseForCleanup;
   }
 
-  if (
-    shouldPrepareRuntimeForCommand(command, nextFlags, options.batchSteps, options.positionals) &&
-    hasDeferredMetroConfig(nextFlags)
-  ) {
-    if (!nextState.leaseId && nextFlags.leaseId) {
-      nextState = {
-        ...nextState,
-        leaseId: nextFlags.leaseId,
-        leaseBackend: nextFlags.leaseBackend,
-      };
-    }
-    const requiresPreparedRuntime =
-      options.forceRuntimePrepare ||
-      !nextRuntime ||
-      !isRuntimeCompatibleWithPlatform(nextRuntime, nextFlags.platform);
-    if (requiresPreparedRuntime) {
-      if (!nextState.leaseId) {
-        throw new AppError(
-          'INVALID_ARGS',
-          `${command} requires a resolved remote lease before Metro runtime can be prepared.`,
-        );
-      }
-      const prepared = await prepareConnectedMetro(
-        nextFlags,
-        client,
-        state.remoteConfigPath,
-        state.session,
-        {
-          tenantId: state.tenant,
-          runId: state.runId,
-          leaseId: nextState.leaseId,
-        },
-      );
-      nextRuntime = prepared.runtime;
-      const replacesExistingMetroCleanup = !isSameMetroCleanup(nextState.metro, prepared.cleanup);
-      metroCleanupToStop = replacesExistingMetroCleanup ? nextState.metro : undefined;
-      preparedMetroCleanupOnFailure = replacesExistingMetroCleanup ? prepared.cleanup : undefined;
-      nextState = {
-        ...nextState,
-        runtime: prepared.runtime,
-        metro: prepared.cleanup,
-        updatedAt: new Date().toISOString(),
-      };
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    try {
-      writeRemoteConnectionState({ stateDir, state: nextState });
-    } catch (error) {
-      await stopMetroCleanup(preparedMetroCleanupOnFailure);
-      throw error;
-    }
-  }
-  await stopMetroCleanup(metroCleanupToStop);
+  const runtimePreparation = await prepareRuntimeForCommand({
+    command,
+    flags: nextFlags,
+    client,
+    state,
+    nextState,
+    runtime: nextRuntime,
+    positionals: options.positionals,
+    batchSteps: options.batchSteps,
+    forceRuntimePrepare: options.forceRuntimePrepare,
+  });
+  nextState = runtimePreparation.state;
+  nextRuntime = runtimePreparation.runtime;
+  changed = changed || runtimePreparation.changed;
+  await persistMaterializedConnection({
+    changed,
+    stateDir,
+    state: nextState,
+    client,
+    acquiredLeaseForCleanup,
+    preparedMetroCleanupOnFailure: runtimePreparation.preparedMetroCleanupOnFailure,
+    metroCleanupToStop: runtimePreparation.metroCleanupToStop,
+  });
 
   return {
     flags: {
@@ -168,8 +141,228 @@ export async function materializeRemoteConnectionForCommand(options: {
       target: nextState.target ?? nextFlags.target,
     },
     runtime: nextRuntime,
+    connection: buildRemoteConnectionRequestMetadata(nextState),
   };
 }
+
+async function prepareRuntimeForCommand(options: {
+  command: string;
+  flags: CliFlags;
+  client: AgentDeviceClient;
+  state: RemoteConnectionState;
+  nextState: RemoteConnectionState;
+  runtime?: SessionRuntimeHints;
+  positionals?: string[];
+  batchSteps?: BatchStep[];
+  forceRuntimePrepare?: boolean;
+}): Promise<{
+  state: RemoteConnectionState;
+  runtime?: SessionRuntimeHints;
+  changed: boolean;
+  metroCleanupToStop?: RemoteConnectionState['metro'];
+  preparedMetroCleanupOnFailure?: RemoteConnectionState['metro'];
+}> {
+  const { command, flags, state, client } = options;
+  let nextState = ensureRuntimeLeaseState(options.nextState, flags);
+  const nextRuntime = options.runtime;
+  if (
+    !shouldPrepareRuntimeForCommand(command, flags, options.batchSteps, options.positionals) ||
+    !hasDeferredMetroConfig(flags) ||
+    !shouldPrepareRuntime(options.forceRuntimePrepare, nextRuntime, flags.platform)
+  ) {
+    return { state: nextState, runtime: nextRuntime, changed: false };
+  }
+  if (!nextState.leaseId) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `${command} requires a resolved remote lease before Metro runtime can be prepared.`,
+    );
+  }
+  const prepared = await prepareConnectedMetro(
+    flags,
+    client,
+    state.remoteConfigPath,
+    state.session,
+    {
+      tenantId: state.tenant,
+      runId: state.runId,
+      leaseId: nextState.leaseId,
+    },
+  );
+  const replacesExistingMetroCleanup = !isSameMetroCleanup(nextState.metro, prepared.cleanup);
+  nextState = {
+    ...nextState,
+    runtime: prepared.runtime,
+    metro: prepared.cleanup,
+    updatedAt: new Date().toISOString(),
+  };
+  return {
+    state: nextState,
+    runtime: prepared.runtime,
+    changed: true,
+    metroCleanupToStop: replacesExistingMetroCleanup ? options.nextState.metro : undefined,
+    preparedMetroCleanupOnFailure: replacesExistingMetroCleanup ? prepared.cleanup : undefined,
+  };
+}
+
+function ensureRuntimeLeaseState(
+  state: RemoteConnectionState,
+  flags: CliFlags,
+): RemoteConnectionState {
+  if (state.leaseId || !flags.leaseId) return state;
+  return {
+    ...state,
+    leaseId: flags.leaseId,
+    leaseBackend: flags.leaseBackend,
+  };
+}
+
+function shouldPrepareRuntime(
+  forceRuntimePrepare: boolean | undefined,
+  runtime: SessionRuntimeHints | undefined,
+  platform: CliFlags['platform'],
+): boolean {
+  return (
+    forceRuntimePrepare === true || !runtime || !isRuntimeCompatibleWithPlatform(runtime, platform)
+  );
+}
+
+async function persistMaterializedConnection(options: {
+  changed: boolean;
+  stateDir: string;
+  state: RemoteConnectionState;
+  client: AgentDeviceClient;
+  acquiredLeaseForCleanup?: Lease;
+  preparedMetroCleanupOnFailure?: RemoteConnectionState['metro'];
+  metroCleanupToStop?: RemoteConnectionState['metro'];
+}): Promise<void> {
+  if (options.changed) {
+    try {
+      writeRemoteConnectionState({ stateDir: options.stateDir, state: options.state });
+    } catch (error) {
+      await stopMetroCleanup(options.preparedMetroCleanupOnFailure);
+      await releaseAcquiredLeaseOnWriteFailure(
+        options.client,
+        options.state,
+        options.acquiredLeaseForCleanup,
+      );
+      throw error;
+    }
+  }
+  await stopMetroCleanup(options.metroCleanupToStop);
+}
+
+async function materializeLeaseForCommand(options: {
+  command: string;
+  client: AgentDeviceClient;
+  state: RemoteConnectionState;
+  nextState: RemoteConnectionState;
+  nextFlags: CliFlags;
+  policy: ConnectionLeasePolicy;
+}): Promise<{
+  state: RemoteConnectionState;
+  changed: boolean;
+  acquiredLeaseForCleanup?: Lease;
+}> {
+  const { command, client, state, nextFlags, policy } = options;
+  const preliminaryLeaseBackend = state.leaseBackend ?? resolveRequestedLeaseBackend(nextFlags);
+  let nextState = options.nextState;
+  const resolvedLeaseState = await policy.resolveLeaseState({
+    command,
+    client,
+    state: nextState,
+    flags: nextFlags,
+    leaseBackend: preliminaryLeaseBackend,
+  });
+  nextState = resolvedLeaseState.state;
+  if (resolvedLeaseState.device) {
+    applyResolvedDeviceSelector(nextFlags, resolvedLeaseState.device);
+  }
+  const leaseBackend =
+    nextState.leaseBackend ??
+    preliminaryLeaseBackend ??
+    requireRequestedLeaseBackend(nextFlags, command);
+  assertRequestedConnectionScope(state, nextFlags, leaseBackend);
+  const materializedLease = await allocateOrReuseLease(client, nextState, leaseBackend, policy);
+  const lease = materializedLease.lease;
+  nextFlags.leaseId = lease.leaseId;
+  nextFlags.leaseBackend = leaseBackend;
+  nextFlags.platform = nextState.platform ?? nextFlags.platform;
+  nextFlags.target = nextState.target ?? nextFlags.target;
+  if (leaseStateMatches(nextState, lease, leaseBackend)) {
+    return {
+      state: nextState,
+      changed: false,
+      acquiredLeaseForCleanup: materializedLease.acquired ? lease : undefined,
+    };
+  }
+  return {
+    state: buildMaterializedLeaseState(nextState, lease, leaseBackend, nextFlags),
+    changed: true,
+    acquiredLeaseForCleanup: materializedLease.acquired ? lease : undefined,
+  };
+}
+
+function leaseStateMatches(
+  state: RemoteConnectionState,
+  lease: Lease,
+  leaseBackend: LeaseBackend,
+): boolean {
+  return (
+    state.leaseId === lease.leaseId &&
+    state.leaseBackend === leaseBackend &&
+    state.deviceKey === (lease.deviceKey ?? state.deviceKey)
+  );
+}
+
+function buildMaterializedLeaseState(
+  state: RemoteConnectionState,
+  lease: Lease,
+  leaseBackend: LeaseBackend,
+  flags: CliFlags,
+): RemoteConnectionState {
+  return {
+    ...state,
+    leaseId: lease.leaseId,
+    leaseBackend,
+    leaseProvider: lease.leaseProvider ?? state.leaseProvider,
+    clientId: lease.clientId ?? state.clientId,
+    deviceKey: lease.deviceKey ?? state.deviceKey,
+    platform: state.platform ?? flags.platform,
+    target: state.target ?? flags.target,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+type ConnectionLeasePolicy = {
+  shouldAllocate(command: string): boolean;
+  ttlMs(state: RemoteConnectionState): number | undefined;
+  resolveLeaseState(options: {
+    command: string;
+    client: AgentDeviceClient;
+    state: RemoteConnectionState;
+    flags: CliFlags;
+    leaseBackend?: LeaseBackend;
+  }): Promise<{ state: RemoteConnectionState; device?: DeviceInfo }>;
+};
+
+function connectionLeasePolicyForState(state: RemoteConnectionState): ConnectionLeasePolicy {
+  return state.leaseProvider === 'proxy'
+    ? PROXY_CONNECTION_LEASE_POLICY
+    : DEFAULT_CONNECTION_LEASE_POLICY;
+}
+
+const DEFAULT_CONNECTION_LEASE_POLICY: ConnectionLeasePolicy = {
+  shouldAllocate: (command) => !leaseDeferredCommands.has(command),
+  ttlMs: () => undefined,
+  resolveLeaseState: async (options) => ({ state: options.state }),
+};
+
+const PROXY_CONNECTION_LEASE_POLICY: ConnectionLeasePolicy = {
+  shouldAllocate: (command) => command !== 'devices' && !leaseDeferredCommands.has(command),
+  ttlMs: () => PROXY_REMOTE_LEASE_TTL_MS,
+  resolveLeaseState: resolveProxyLeaseState,
+};
 
 async function prepareConnectedMetro(
   flags: CliFlags,
@@ -254,22 +447,57 @@ export async function stopReactDevtoolsCleanup(options: {
   }
 }
 
+export async function releaseRemoteConnectionLease(
+  client: AgentDeviceClient,
+  state: RemoteConnectionState,
+): Promise<boolean> {
+  if (!state.leaseId) return false;
+  const result = await client.leases.release({
+    tenant: state.tenant,
+    runId: state.runId,
+    leaseId: state.leaseId,
+    leaseBackend: state.leaseBackend,
+    daemonBaseUrl: state.daemon?.baseUrl,
+    daemonAuthToken: state.daemon?.authToken,
+    daemonTransport: state.daemon?.transport,
+    daemonServerMode: state.daemon?.serverMode,
+    leaseProvider: state.leaseProvider,
+    clientId: state.clientId,
+    deviceKey: state.deviceKey,
+  });
+  return result.released;
+}
+
 export async function releasePreviousLease(
   client: AgentDeviceClient,
   previous: RemoteConnectionState,
 ): Promise<void> {
   if (!previous.leaseId) return;
   try {
-    await client.leases.release({
-      tenant: previous.tenant,
-      runId: previous.runId,
-      leaseId: previous.leaseId,
-      daemonBaseUrl: previous.daemon?.baseUrl,
-      daemonTransport: previous.daemon?.transport,
-      daemonServerMode: previous.daemon?.serverMode,
-    });
+    await releaseRemoteConnectionLease(client, previous);
   } catch {
     // Reconnect must succeed even if the old lease was already released.
+  }
+}
+
+async function releaseAcquiredLeaseOnWriteFailure(
+  client: AgentDeviceClient,
+  state: RemoteConnectionState,
+  lease: Lease | undefined,
+): Promise<void> {
+  if (!lease) return;
+  try {
+    await client.leases.release({
+      tenant: state.tenant,
+      runId: state.runId,
+      leaseId: lease.leaseId,
+      leaseBackend: state.leaseBackend ?? lease.backend,
+      leaseProvider: state.leaseProvider ?? lease.leaseProvider,
+      clientId: state.clientId ?? lease.clientId,
+      deviceKey: state.deviceKey ?? lease.deviceKey,
+    });
+  } catch {
+    // Preserve the state-write failure; cleanup is best-effort.
   }
 }
 
@@ -287,10 +515,6 @@ function requireRequestedLeaseBackend(flags: CliFlags, command: string): LeaseBa
     'INVALID_ARGS',
     `${command} requires --platform ios|android or --lease-backend when the remote connection has not resolved a lease yet.`,
   );
-}
-
-function shouldAllocateLeaseForCommand(command: string): boolean {
-  return !leaseDeferredCommands.has(command);
 }
 
 function shouldPrepareRuntimeForCommand(
@@ -359,6 +583,7 @@ function selectCompatibleRuntime(
 function createRemoteConnectionStateFromFlags(
   flags: CliFlags,
   remoteConfigPath: string,
+  profile: Pick<RemoteConnectionState, 'leaseProvider' | 'clientId' | 'deviceKey'> = {},
 ): RemoteConnectionState {
   if (!flags.tenant) {
     throw new AppError(
@@ -389,6 +614,9 @@ function createRemoteConnectionStateFromFlags(
     runId: flags.runId,
     leaseId: flags.leaseId,
     leaseBackend: flags.leaseBackend ?? resolveRequestedLeaseBackend(flags),
+    leaseProvider: profile.leaseProvider,
+    clientId: profile.clientId,
+    deviceKey: profile.deviceKey,
     platform: flags.platform,
     target: flags.target,
     connectedAt: now,
@@ -400,20 +628,114 @@ async function allocateOrReuseLease(
   client: AgentDeviceClient,
   state: RemoteConnectionState,
   leaseBackend: LeaseBackend,
-): Promise<Lease> {
+  policy: ConnectionLeasePolicy,
+): Promise<{ lease: Lease; acquired: boolean }> {
   if (state.leaseId && state.leaseBackend === leaseBackend) {
     const existing = await heartbeatOrAllocateLease(client, state.leaseId, {
       tenant: state.tenant,
       runId: state.runId,
       leaseBackend,
+      leaseProvider: state.leaseProvider,
+      clientId: state.clientId,
+      deviceKey: state.deviceKey,
+      ttlMs: policy.ttlMs(state),
     });
-    if (existing) return existing;
+    if (existing) return { lease: existing, acquired: false };
   }
-  return await client.leases.allocate({
+  const lease = await client.leases.allocate({
     tenant: state.tenant,
     runId: state.runId,
     leaseBackend,
+    leaseProvider: state.leaseProvider,
+    clientId: state.clientId,
+    deviceKey: state.deviceKey,
+    ttlMs: policy.ttlMs(state),
   });
+  return { lease, acquired: true };
+}
+
+async function resolveProxyLeaseState(options: {
+  command: string;
+  client: AgentDeviceClient;
+  state: RemoteConnectionState;
+  flags: CliFlags;
+  leaseBackend?: LeaseBackend;
+}): Promise<{ state: RemoteConnectionState; device?: DeviceInfo }> {
+  if (options.command !== 'open') {
+    if (options.state.leaseId && options.state.deviceKey) return { state: options.state };
+    throw new AppError(
+      'INVALID_ARGS',
+      'No active proxy device lease for this session; run open first.',
+    );
+  }
+  const device = await resolveSelectedDevice(options.client, options.flags);
+  const deviceKey = buildProxyDeviceKey(device);
+  return {
+    state: {
+      ...options.state,
+      deviceKey,
+      leaseBackend:
+        options.state.leaseBackend ?? options.leaseBackend ?? leaseBackendForDevice(device),
+      platform: options.state.platform ?? device.platform,
+      target: options.state.target ?? device.target,
+      updatedAt: new Date().toISOString(),
+    },
+    device,
+  };
+}
+
+function applyResolvedDeviceSelector(flags: CliFlags, device: DeviceInfo): void {
+  flags.platform = device.platform;
+  flags.target = device.target ?? flags.target;
+  if (device.platform === 'ios') {
+    flags.udid = device.id;
+    return;
+  }
+  if (device.platform === 'android') {
+    flags.serial = device.id;
+  }
+}
+
+async function resolveSelectedDevice(
+  client: AgentDeviceClient,
+  flags: CliFlags,
+): Promise<DeviceInfo> {
+  const devices = await client.devices.list({
+    platform: flags.platform,
+    target: flags.target,
+    device: flags.device,
+    udid: flags.udid,
+    serial: flags.serial,
+    iosSimulatorDeviceSet: flags.iosSimulatorDeviceSet,
+    androidDeviceAllowlist: flags.androidDeviceAllowlist,
+  });
+  return await resolveDevice(
+    devices.map((device) => ({
+      platform: device.platform,
+      id: device.id,
+      name: device.name,
+      kind: device.kind,
+      target: device.target,
+      booted: device.booted,
+    })),
+    {
+      platform: flags.platform,
+      target: flags.target,
+      deviceName: flags.device,
+      udid: flags.udid,
+      serial: flags.serial,
+    },
+  );
+}
+
+function buildProxyDeviceKey(device: DeviceInfo): string {
+  return `${device.platform}:${device.target ?? 'mobile'}:${device.id}`;
+}
+
+function leaseBackendForDevice(device: DeviceInfo): LeaseBackend | undefined {
+  if (device.platform === 'ios') return 'ios-instance';
+  if (device.platform === 'android') return 'android-instance';
+  return undefined;
 }
 
 function assertRequestedConnectionScope(
@@ -447,7 +769,15 @@ function assertRequestedConnectionScope(
 async function heartbeatOrAllocateLease(
   client: AgentDeviceClient,
   leaseId: string,
-  scope: { tenant: string; runId: string; leaseBackend: LeaseBackend },
+  scope: {
+    tenant: string;
+    runId: string;
+    leaseBackend: LeaseBackend;
+    leaseProvider?: RemoteConnectionState['leaseProvider'];
+    clientId?: string;
+    deviceKey?: string;
+    ttlMs?: number;
+  },
 ): Promise<Lease | undefined> {
   try {
     return await client.leases.heartbeat({
@@ -455,6 +785,10 @@ async function heartbeatOrAllocateLease(
       runId: scope.runId,
       leaseId,
       leaseBackend: scope.leaseBackend,
+      leaseProvider: scope.leaseProvider,
+      clientId: scope.clientId,
+      deviceKey: scope.deviceKey,
+      ttlMs: scope.ttlMs,
     });
   } catch (error) {
     if (isInactiveLeaseError(error)) return undefined;

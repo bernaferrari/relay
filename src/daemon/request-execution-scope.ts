@@ -10,7 +10,12 @@ import type { DaemonCommandContext } from './context.ts';
 import { contextFromFlags as contextFromFlagsWithLog } from './context.ts';
 import { assertSessionSelectorMatches } from './session-selector.ts';
 import { resolveEffectiveSessionName } from './session-routing.ts';
-import { assertRequestLeaseAdmission, scopeRequestSession } from './request-admission.ts';
+import { scopeRequestSession } from './request-admission.ts';
+import {
+  admitRequestLeaseForLockedScope,
+  assertLockedLeaseAdmissionPreflight,
+  cleanupExpiredLeasedSession,
+} from './lease-lifecycle.ts';
 import {
   prepareLockedRequestBinding,
   resolveRequestExecutionLockKeys,
@@ -31,6 +36,7 @@ import {
   type SessionStore,
 } from './session-store.ts';
 import type { DaemonRequest, DaemonResponse, SessionState } from './types.ts';
+import { teardownSessionResources } from './session-teardown.ts';
 
 // Production daemon wiring owns one LeaseRegistry per process; scoping locks by registry keeps
 // test and embedded routers isolated without changing process-level serialization there.
@@ -42,6 +48,7 @@ export type RequestExecutionScope = {
   sessionName: string;
   requestLogPath: string;
   runnerLogPath: string;
+  runAdmitted<T>(task: () => Promise<T>): Promise<T>;
   runLocked<T>(task: () => Promise<T>): Promise<T>;
   throwIfCanceled(): void;
 };
@@ -74,7 +81,7 @@ export async function createRequestExecutionScope(params: {
   leaseRegistry: LeaseRegistry;
 }): Promise<RequestExecutionScope> {
   const { sessionStore, leaseRegistry } = params;
-  const scopedReq = applyRequestCommandDefaults(scopeRequestSession(params.req));
+  let scopedReq = applyRequestCommandDefaults(scopeRequestSession(params.req));
 
   const command = scopedReq.command;
   const sessionName = resolveEffectiveSessionName(scopedReq, sessionStore);
@@ -102,7 +109,7 @@ export async function createRequestExecutionScope(params: {
       runnerLogPath,
     },
   });
-  assertRequestLeaseAdmission(scopedReq, leaseRegistry);
+  assertLockedLeaseAdmissionPreflight(scopedReq);
   const executionLockKeys = shouldLockSessionExecution(command)
     ? await resolveRequestExecutionLockKeys({ req: scopedReq, sessionName, sessionStore })
     : [];
@@ -115,13 +122,31 @@ export async function createRequestExecutionScope(params: {
     requestLogPath,
     runnerLogPath,
     throwIfCanceled: () => throwIfRequestCanceled(scopedReq.meta?.requestId),
+    runAdmitted: async (task) => {
+      throwIfRequestCanceled(scopedReq.meta?.requestId);
+      await cleanupExpiredLeasedSession({
+        sessionName,
+        sessionStore,
+        leaseRegistry,
+        teardownSession: teardownSessionResources,
+      });
+      scopedReq = admitRequestLeaseForLockedScope({
+        req: scopedReq,
+        sessionName,
+        sessionStore,
+        leaseRegistry,
+      });
+      scope.req = scopedReq;
+      return await task();
+    },
     runLocked: async (task) => {
       throwIfRequestCanceled(scopedReq.meta?.requestId);
-      if (executionLockKeys.length === 0) return await task();
-      return await withRequestExecutionLocks(executionLocks, executionLockKeys, async () => {
-        throwIfRequestCanceled(scopedReq.meta?.requestId);
-        return await task();
-      });
+      if (executionLockKeys.length === 0) return await scope.runAdmitted(task);
+      return await withRequestExecutionLocks(
+        executionLocks,
+        executionLockKeys,
+        async () => await scope.runAdmitted(task),
+      );
     },
   };
   return scope;
@@ -207,7 +232,8 @@ export function prepareLockedRequestScope(params: {
     flags: CommandFlags | undefined,
     appBundleId?: string,
     traceLogPath?: string,
-  ): DaemonCommandContext => contextFromRequestFlags(logPath, flags, appBundleId, traceLogPath);
+  ): DaemonCommandContext =>
+    contextFromRequestFlags(logPath, flags, appBundleId, traceLogPath, lockedReq.meta);
 
   return {
     type: 'scope',
@@ -233,10 +259,11 @@ function contextFromRequestFlags(
   flags: CommandFlags | undefined,
   appBundleId?: string,
   traceLogPath?: string,
+  meta?: DaemonRequest['meta'],
 ): DaemonCommandContext {
   const requestId = getDiagnosticsMeta().requestId;
   return {
-    ...contextFromFlagsWithLog(logPath, flags, appBundleId, traceLogPath, requestId),
+    ...contextFromFlagsWithLog(logPath, flags, appBundleId, traceLogPath, requestId, meta),
     requestId,
   };
 }

@@ -4,6 +4,11 @@ import type { DaemonRequest, SessionRuntimeHints } from './daemon/types.ts';
 import { AppError, type NormalizedError } from './utils/errors.ts';
 import type { SnapshotNode } from './utils/snapshot.ts';
 import { buildAppIdentifiers, buildDeviceIdentifiers } from './client-shared.ts';
+import {
+  leaseScopeFromOptions,
+  leaseScopeToCommandFlags,
+  leaseScopeToRequestMeta,
+} from './core/lease-scope.ts';
 import type {
   AgentDeviceDevice,
   AgentDeviceSession,
@@ -266,17 +271,15 @@ export function readSnapshotNodes(value: unknown): SnapshotNode[] {
 }
 
 export function buildFlags(options: InternalRequestOptions): CommandFlags {
+  const leaseScope = leaseScopeFromOptions(options);
   return stripUndefined({
     stateDir: options.stateDir,
     daemonBaseUrl: options.daemonBaseUrl,
     daemonAuthToken: options.daemonAuthToken,
     daemonTransport: options.daemonTransport,
     daemonServerMode: options.daemonServerMode,
-    tenant: options.tenant,
+    ...leaseScopeToCommandFlags(leaseScope),
     sessionIsolation: options.sessionIsolation,
-    runId: options.runId,
-    leaseId: options.leaseId,
-    leaseBackend: options.leaseBackend,
     platform: options.platform,
     target: options.target,
     device: options.device,
@@ -350,6 +353,7 @@ export function buildFlags(options: InternalRequestOptions): CommandFlags {
 }
 
 export function buildMeta(options: InternalRequestOptions): DaemonRequest['meta'] {
+  const leaseScope = leaseScopeFromOptions(options);
   return stripUndefined({
     requestId: options.requestId,
     cwd: options.cwd,
@@ -357,11 +361,7 @@ export function buildMeta(options: InternalRequestOptions): DaemonRequest['meta'
     debug: options.debug,
     lockPolicy: options.lockPolicy,
     lockPlatform: options.lockPlatform,
-    tenantId: options.tenant,
-    runId: options.runId,
-    leaseId: options.leaseId,
-    leaseBackend: options.leaseBackend,
-    leaseTtlMs: options.leaseTtlMs,
+    ...leaseScopeToRequestMeta(leaseScope),
     sessionIsolation: options.sessionIsolation,
     installSource: options.installSource,
     retainMaterializedPaths: options.retainMaterializedPaths,

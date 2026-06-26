@@ -43,6 +43,7 @@ import {
   resolveImplicitSessionScope,
   resolvePublicSessionName,
 } from '../session-routing.ts';
+import { resolveSessionLeaseForRequest } from '../lease-lifecycle.ts';
 
 const firstSessionOpenLocks = new Map<string, Promise<unknown>>();
 
@@ -188,6 +189,14 @@ async function completeOpenCommand(params: {
     logPath,
     traceLogPath,
     requestId: req.meta?.requestId,
+    runnerLeaseContext: contextFromFlags(
+      logPath,
+      req.flags,
+      sessionAppBundleId,
+      traceLogPath,
+      req.meta?.requestId,
+      req.meta,
+    ).runnerLeaseContext,
     iosXctestrunFile: req.flags?.iosXctestrunFile,
     iosXctestDerivedDataPath: req.flags?.iosXctestDerivedDataPath,
     iosXctestEnvDir: req.flags?.iosXctestEnvDir,
@@ -279,6 +288,10 @@ async function completeOpenCommand(params: {
     appName,
     saveScript: Boolean(req.flags?.saveScript),
   });
+  nextSession.lease = resolveSessionLeaseForRequest({
+    req,
+    existingLease: existingSession?.lease,
+  });
   if (req.runtime !== undefined) {
     setSessionRuntimeHintsForOpen(sessionStore, sessionName, runtime);
   }
@@ -346,6 +359,10 @@ async function prepareOpenDispatchSession(params: {
     appBundleId: sessionAppBundleId,
     appName,
     saveScript: Boolean(req.flags?.saveScript),
+  });
+  provisionalSession.lease = resolveSessionLeaseForRequest({
+    req,
+    existingLease: existingSession?.lease,
   });
   sessionStore.set(sessionName, provisionalSession);
   const lifecycleResponse = await beforeDispatch(provisionalSession);

@@ -3,6 +3,7 @@ import { createDaemonProxyServer } from '../../daemon-proxy.ts';
 import { buildDaemonHttpBaseUrl } from '../../daemon/http-contract.ts';
 import { ensureDaemon, resolveClientSettings } from '../../daemon-client-lifecycle.ts';
 import { AppError } from '../../utils/errors.ts';
+import { colorize, supportsColor } from '../../utils/output.ts';
 import type { CliFlags } from '../../utils/cli-flags.ts';
 import { writeCommandOutput } from './shared.ts';
 import type { ClientCommandHandler } from './router-types.ts';
@@ -89,18 +90,31 @@ function formatHostForUrl(host: string): string {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
-function renderProxyStartup(startup: ProxyStartup): string {
+export function renderProxyStartup(
+  startup: ProxyStartup,
+  options: { useColor?: boolean } = {},
+): string {
+  const useColor = options.useColor ?? supportsColor();
+  const checkmark = formatProxyOutputValue('✓', 'green', useColor);
+  const proxyBaseUrl = formatProxyOutputValue(startup.proxyBaseUrl, 'cyan', useColor);
+  const daemonBaseUrl = formatProxyOutputValue('<tunnel URL>', 'cyan', useColor);
+  const token = formatProxyOutputValue(startup.token, 'yellow', useColor);
   return [
-    `agent-device proxy listening on ${startup.proxyBaseUrl}`,
-    `daemon base URL: ${startup.agentDeviceBaseUrl}`,
-    `daemon auth token: ${startup.token}`,
-    'treat the daemon auth token as a secret; anyone with it can control the proxied daemon',
-    `upstream local daemon: ${startup.upstreamBaseUrl}`,
-    `state dir: ${startup.stateDir}`,
+    `${checkmark} Proxy listening at ${proxyBaseUrl}`,
     '',
-    'Remote client example:',
-    `agent-device devices --daemon-base-url ${startup.agentDeviceBaseUrl} --daemon-auth-token ${startup.token}`,
+    'Provide this to the agent-device instance connecting:',
+    '',
+    `Daemon base URL: ${daemonBaseUrl}`,
+    `Daemon auth token: ${token}`,
   ].join('\n');
+}
+
+function formatProxyOutputValue(
+  value: string,
+  format: Parameters<typeof colorize>[1],
+  useColor: boolean,
+): string {
+  return useColor ? colorize(value, format, { validateStream: false }) : value;
 }
 
 function waitForever(): Promise<never> {

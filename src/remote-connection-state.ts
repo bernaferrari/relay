@@ -6,6 +6,11 @@ import { AppError } from './utils/errors.ts';
 import { emitDiagnostic } from './utils/diagnostics.ts';
 import type { CliFlags } from './utils/cli-flags.ts';
 import type { LeaseBackend, SessionRuntimeHints } from './contracts.ts';
+import {
+  leaseScopeFromOptions,
+  leaseScopeToCommandFlags,
+  leaseScopeToConnectionMetadata,
+} from './core/lease-scope.ts';
 
 export type RemoteConnectionState = {
   version: 1;
@@ -14,6 +19,7 @@ export type RemoteConnectionState = {
   remoteConfigHash: string;
   daemon?: {
     baseUrl?: string;
+    authToken?: string;
     transport?: CliFlags['daemonTransport'];
     serverMode?: CliFlags['daemonServerMode'];
   };
@@ -21,6 +27,9 @@ export type RemoteConnectionState = {
   runId: string;
   leaseId?: string;
   leaseBackend?: LeaseBackend;
+  leaseProvider?: string;
+  deviceKey?: string;
+  clientId?: string;
   platform?: CliFlags['platform'];
   target?: CliFlags['target'];
   runtime?: SessionRuntimeHints;
@@ -33,9 +42,15 @@ export type RemoteConnectionState = {
   updatedAt: string;
 };
 
+export type RemoteConnectionRequestMetadata = Pick<
+  RemoteConnectionState,
+  'leaseProvider' | 'deviceKey' | 'clientId'
+>;
+
 type RemoteConnectionDefaults = {
   flags: Partial<CliFlags>;
   runtime?: SessionRuntimeHints;
+  connection?: RemoteConnectionRequestMetadata;
 };
 
 export function readRemoteConnectionState(options: {
@@ -72,10 +87,14 @@ export function writeRemoteConnectionState(options: {
 }
 
 export function buildRemoteConnectionDaemonState(
-  flags: Pick<CliFlags, 'daemonBaseUrl' | 'daemonTransport' | 'daemonServerMode'>,
+  flags: Pick<
+    CliFlags,
+    'daemonBaseUrl' | 'daemonAuthToken' | 'daemonTransport' | 'daemonServerMode'
+  >,
 ): RemoteConnectionState['daemon'] {
   return {
     baseUrl: sanitizeDaemonBaseUrl(flags.daemonBaseUrl),
+    authToken: flags.daemonAuthToken,
     transport: flags.daemonTransport,
     serverMode: flags.daemonServerMode,
   };
@@ -127,24 +146,30 @@ export function resolveRemoteConnectionDefaults(options: {
     );
   }
   const profile = resolveConnectionProfile(state, options);
+  const leaseScope = leaseScopeFromOptions(state);
   return {
     runtime: state.runtime,
+    connection: leaseScopeToConnectionMetadata(leaseScope),
     flags: {
       ...profile,
       remoteConfig: state.remoteConfigPath,
       daemonBaseUrl: state.daemon?.baseUrl ?? profile.daemonBaseUrl,
+      daemonAuthToken: state.daemon?.authToken ?? profile.daemonAuthToken,
       daemonTransport: state.daemon?.transport ?? profile.daemonTransport,
       daemonServerMode: state.daemon?.serverMode ?? profile.daemonServerMode,
-      tenant: state.tenant,
+      ...leaseScopeToCommandFlags(leaseScope),
       sessionIsolation: 'tenant',
-      runId: state.runId,
-      leaseId: state.leaseId,
-      leaseBackend: state.leaseBackend,
       session: state.session,
       platform: state.platform ?? profile.platform,
       target: state.target ?? profile.target,
     },
   };
+}
+
+export function buildRemoteConnectionRequestMetadata(
+  state: RemoteConnectionState,
+): RemoteConnectionRequestMetadata | undefined {
+  return leaseScopeToConnectionMetadata(leaseScopeFromOptions(state));
 }
 
 export function hashRemoteConfigFile(configPath: string): string {
@@ -269,18 +294,46 @@ function isRemoteConnectionState(value: unknown): value is RemoteConnectionState
   const record = value as Record<string, unknown>;
   return (
     record.version === 1 &&
-    typeof record.session === 'string' &&
-    typeof record.remoteConfigPath === 'string' &&
-    typeof record.remoteConfigHash === 'string' &&
-    (record.daemon === undefined ||
-      (typeof record.daemon === 'object' &&
-        record.daemon !== null &&
-        !Array.isArray(record.daemon))) &&
-    typeof record.tenant === 'string' &&
-    typeof record.runId === 'string' &&
-    (record.leaseId === undefined || typeof record.leaseId === 'string') &&
-    (record.leaseBackend === undefined || typeof record.leaseBackend === 'string') &&
-    typeof record.connectedAt === 'string' &&
-    typeof record.updatedAt === 'string'
+    hasStringFields(record, [
+      'session',
+      'remoteConfigPath',
+      'remoteConfigHash',
+      'tenant',
+      'runId',
+      'connectedAt',
+      'updatedAt',
+    ]) &&
+    hasOptionalStringFields(record, [
+      'leaseId',
+      'leaseBackend',
+      'leaseProvider',
+      'deviceKey',
+      'clientId',
+    ]) &&
+    isOptionalRemoteConnectionDaemonState(record.daemon)
+  );
+}
+
+function hasStringFields(record: Record<string, unknown>, fields: string[]): boolean {
+  return fields.every((field) => typeof record[field] === 'string');
+}
+
+function hasOptionalStringFields(record: Record<string, unknown>, fields: string[]): boolean {
+  return fields.every((field) => record[field] === undefined || typeof record[field] === 'string');
+}
+
+function isOptionalRemoteConnectionDaemonState(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return isRemoteConnectionDaemonState(value);
+}
+
+function isRemoteConnectionDaemonState(value: object): boolean {
+  const record = value as Record<string, unknown>;
+  return (
+    (record.baseUrl === undefined || typeof record.baseUrl === 'string') &&
+    (record.authToken === undefined || typeof record.authToken === 'string') &&
+    (record.transport === undefined || typeof record.transport === 'string') &&
+    (record.serverMode === undefined || typeof record.serverMode === 'string')
   );
 }
