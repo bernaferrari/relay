@@ -1,6 +1,9 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { formatReplayTestProgressEvent } from '../cli-test-progress.ts';
+import {
+  createReplayTestProgressRenderer,
+  formatReplayTestProgressEvent,
+} from '../cli-test-progress.ts';
 import type { RequestProgressEvent } from '../daemon/request-progress.ts';
 
 function withStreamTty<T>(stream: NodeJS.WriteStream, isTTY: boolean, run: () => T): T {
@@ -70,7 +73,7 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
         maxAttempts: 2,
         durationMs: 12_345,
       },
-      expected: /^✓ 01-login\.ad \(12\.3s\)$/,
+      expected: /^✓ 01-login\.ad 12\.3s$/,
     },
     {
       event: {
@@ -91,6 +94,7 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
       event: {
         type: 'replay-test',
         file: '/tmp/03-payment.ad',
+        title: 'Payment flow',
         status: 'fail',
         index: 3,
         total: 3,
@@ -98,11 +102,29 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
         maxAttempts: 2,
         durationMs: 9_876,
         message: 'assertVisible failed',
+        hint: 'Stop the owning daemon and retry',
         session: 'maestro-test:test:suite:3:attempt-2',
         artifactsDir: '/tmp/replay-suite/payment',
       },
       expected:
-        /^⨯ 03-payment\.ad \(9\.88s\)\n    failed at: assertVisible failed\n    session: maestro-test:test:suite:3:attempt-2\n    artifacts: \/tmp\/replay-suite\/payment$/,
+        /^⨯ Payment flow 9\.88s\n    file: 03-payment\.ad\n    failed at: assertVisible failed\n    hint: Stop the owning daemon and retry\n    session: maestro-test:test:suite:3:attempt-2\n    artifacts: \/tmp\/replay-suite\/payment$/,
+    },
+    {
+      event: {
+        type: 'replay-test',
+        file: '/tmp/05-sharded.ad',
+        title: 'Sharded flow',
+        status: 'pass',
+        index: 5,
+        total: 6,
+        attempt: 1,
+        durationMs: 100,
+        shardIndex: 0,
+        shardCount: 2,
+        deviceId: 'emulator-5554',
+        deviceName: 'Pixel 8',
+      },
+      expected: /^✓ Sharded flow \[1\/2 Pixel 8\] 0\.1s$/,
     },
     {
       event: {
@@ -142,7 +164,37 @@ test('formatReplayTestProgressEvent colors stderr progress rows when stdout is p
       ),
     );
 
-    assert.equal(line, '\u001B[32m✓\u001B[39m 01-pass.ad (0.01s)');
+    assert.equal(line, '\u001B[32m✓\u001B[39m 01-pass.ad \u001B[33m0.01s\u001B[39m');
+  } finally {
+    if (typeof originalForceColor === 'string') process.env.FORCE_COLOR = originalForceColor;
+    else delete process.env.FORCE_COLOR;
+    if (typeof originalNoColor === 'string') process.env.NO_COLOR = originalNoColor;
+    else delete process.env.NO_COLOR;
+  }
+});
+
+test('createReplayTestProgressRenderer dims live step progress when color is enabled', () => {
+  const originalForceColor = process.env.FORCE_COLOR;
+  const originalNoColor = process.env.NO_COLOR;
+  process.env.FORCE_COLOR = '1';
+  delete process.env.NO_COLOR;
+  try {
+    const renderer = createReplayTestProgressRenderer({ liveProgress: true });
+    const rendered = renderer.render({
+      type: 'replay-test',
+      file: '/tmp/checkout.yaml',
+      title: 'Checkout flow',
+      status: 'progress',
+      index: 1,
+      total: 1,
+      stepIndex: 3,
+      stepTotal: 20,
+    });
+
+    assert.deepEqual(rendered, {
+      text: '\r\u001B[2K⊙ Checkout flow\u001B[2m [3/20]\u001B[22m',
+      newline: false,
+    });
   } finally {
     if (typeof originalForceColor === 'string') process.env.FORCE_COLOR = originalForceColor;
     else delete process.env.FORCE_COLOR;
@@ -175,7 +227,7 @@ test('formatReplayTestProgressEvent colors completed result markers when color i
         attempt: 1,
         durationMs: 10,
       }),
-      '\u001B[32m✓\u001B[39m 01-pass.ad (0.01s)',
+      '\u001B[32m✓\u001B[39m 01-pass.ad \u001B[33m0.01s\u001B[39m',
     );
     assert.equal(
       formatReplayTestProgressEvent({
@@ -188,7 +240,7 @@ test('formatReplayTestProgressEvent colors completed result markers when color i
         attempt: 2,
         durationMs: 30,
       }),
-      '\u001B[33m✓\u001B[39m "Retry flow" in 02-flaky.yml (0.03s)',
+      '\u001B[33m✓\u001B[39m Retry flow \u001B[33m0.03s\u001B[39m',
     );
     const failedLine = formatReplayTestProgressEvent({
       type: 'replay-test',
@@ -201,7 +253,7 @@ test('formatReplayTestProgressEvent colors completed result markers when color i
       durationMs: 5,
       message: 'boom',
     });
-    assert.ok(failedLine?.startsWith('\u001B[31m⨯\u001B[39m "Checkout failure" in 03-fail.ad'));
+    assert.ok(failedLine?.startsWith('\u001B[31m⨯\u001B[39m Checkout failure'));
   } finally {
     if (typeof originalForceColor === 'string') process.env.FORCE_COLOR = originalForceColor;
     else delete process.env.FORCE_COLOR;

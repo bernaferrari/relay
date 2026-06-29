@@ -774,7 +774,23 @@ test('runner session startup rejects live foreign runner lease', async () => {
     );
     assert.match(
       String((thrown as { details?: Record<string, unknown> }).details?.hint),
+      /^If it is stuck, stop the owning agent-device daemon for AGENT_DEVICE_STATE_DIR='\/tmp\/agent-device-owner' and retry/,
+    );
+    assert.doesNotMatch(
+      String((thrown as { details?: Record<string, unknown> }).details?.hint),
+      /pnpm|clean:daemon/,
+    );
+    assert.match(
+      String((thrown as { details?: Record<string, unknown> }).details?.hint),
       /PID \d+ with AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner/,
+    );
+    assert.doesNotMatch(
+      String((thrown as { details?: Record<string, unknown> }).details?.hint),
+      /AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner\./,
+    );
+    assert.doesNotMatch(
+      String((thrown as { details?: Record<string, unknown> }).details?.hint),
+      /Current daemon state dir/,
     );
     assert.equal(mockRunCmdBackground.mock.calls.length, 0);
     assert.equal(
@@ -827,7 +843,16 @@ test('runner session busy error includes logical lease context after admission',
   assert.match(String(thrown.details?.hint), /five-minute inactivity lease expires/);
   assert.match(
     String(thrown.details?.hint),
+    /^If it is stuck, stop the owning agent-device daemon for AGENT_DEVICE_STATE_DIR='\/tmp\/agent-device-owner' and retry/,
+  );
+  assert.doesNotMatch(String(thrown.details?.hint), /pnpm|clean:daemon/);
+  assert.match(
+    String(thrown.details?.hint),
     /Runner owner: PID \d+ with AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner/,
+  );
+  assert.doesNotMatch(
+    String(thrown.details?.hint),
+    /AGENT_DEVICE_STATE_DIR=\/tmp\/agent-device-owner\./,
   );
   assert.equal(mockRunCmdBackground.mock.calls.length, 0);
 });
