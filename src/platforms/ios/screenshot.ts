@@ -40,6 +40,14 @@ type SimulatorScreenshotFlowDeps = {
   shouldFallbackToRunner: (error: unknown) => boolean;
 };
 
+type SimulatorScreenshotFlowOptions = {
+  appBundleId?: string;
+  fullscreen?: boolean;
+  runnerOptions?: AppleRunnerCommandOptions;
+  skipBootCheck?: boolean;
+  deps?: SimulatorScreenshotFlowDeps;
+};
+
 const defaultSimulatorScreenshotFlowDeps: SimulatorScreenshotFlowDeps = {
   ensureBooted: ensureBootedSimulator,
   prepareStatusBarForScreenshot: prepareSimulatorStatusBarForScreenshot,
@@ -50,23 +58,20 @@ const defaultSimulatorScreenshotFlowDeps: SimulatorScreenshotFlowDeps = {
 export async function screenshotIos(
   device: DeviceInfo,
   outPath: string,
-  appBundleId?: string,
-  fullscreen?: boolean,
-  runnerOptions?: AppleRunnerCommandOptions,
+  options: Omit<SimulatorScreenshotFlowOptions, 'deps'> = {},
 ): Promise<void> {
   if (device.platform === 'macos') {
-    await captureScreenshotViaRunner(device, outPath, appBundleId, fullscreen, runnerOptions);
+    await captureScreenshotViaRunner(
+      device,
+      outPath,
+      options.appBundleId,
+      options.fullscreen,
+      options.runnerOptions,
+    );
     return;
   }
   if (device.kind === 'simulator') {
-    await captureSimulatorScreenshotWithFallback(
-      device,
-      outPath,
-      appBundleId,
-      fullscreen,
-      undefined,
-      runnerOptions,
-    );
+    await captureSimulatorScreenshotWithFallback(device, outPath, options);
     return;
   }
 
@@ -83,16 +88,19 @@ export async function screenshotIos(
     emitScreenshotFallbackDiagnostic(device, 'devicectl_screenshot', error);
   }
 
-  await captureScreenshotViaRunner(device, outPath, appBundleId, fullscreen, runnerOptions);
+  await captureScreenshotViaRunner(
+    device,
+    outPath,
+    options.appBundleId,
+    options.fullscreen,
+    options.runnerOptions,
+  );
 }
 
 export async function captureSimulatorScreenshotWithFallback(
   device: DeviceInfo,
   outPath: string,
-  appBundleId?: string,
-  fullscreenOrDeps?: boolean | SimulatorScreenshotFlowDeps,
-  deps: SimulatorScreenshotFlowDeps = defaultSimulatorScreenshotFlowDeps,
-  runnerOptions?: AppleRunnerCommandOptions,
+  options: SimulatorScreenshotFlowOptions = {},
 ): Promise<void> {
   if (device.kind !== 'simulator') {
     throw new AppError(
@@ -101,28 +109,44 @@ export async function captureSimulatorScreenshotWithFallback(
     );
   }
 
-  const fullscreen = typeof fullscreenOrDeps === 'boolean' ? fullscreenOrDeps : undefined;
-  const effectiveDeps =
-    typeof fullscreenOrDeps === 'object' && fullscreenOrDeps !== null ? fullscreenOrDeps : deps;
+  const deps = options.deps ?? defaultSimulatorScreenshotFlowDeps;
 
-  await effectiveDeps.ensureBooted(device);
+  if (!options.skipBootCheck) {
+    await deps.ensureBooted(device);
+  }
   let restoreStatusBar = async () => {};
   try {
-    restoreStatusBar = await effectiveDeps.prepareStatusBarForScreenshot(device);
+    restoreStatusBar = await deps.prepareStatusBarForScreenshot(device);
   } catch (error) {
     emitStatusBarDiagnostic(device, 'prepare_failed', error);
   }
   try {
     try {
-      await effectiveDeps.captureWithRetry(device, outPath);
+      await deps.captureWithRetry(device, outPath);
       return;
     } catch (error) {
-      if (!effectiveDeps.shouldFallbackToRunner(error)) {
-        throw error;
+      let screenshotError = error;
+      if (options.skipBootCheck && shouldEnsureBootedAfterSimulatorScreenshotFailure(error)) {
+        await deps.ensureBooted(device);
+        try {
+          await deps.captureWithRetry(device, outPath);
+          return;
+        } catch (retryError) {
+          screenshotError = retryError;
+        }
       }
-      emitScreenshotFallbackDiagnostic(device, 'simctl_screenshot', error);
+      if (!deps.shouldFallbackToRunner(screenshotError)) {
+        throw screenshotError;
+      }
+      emitScreenshotFallbackDiagnostic(device, 'simctl_screenshot', screenshotError);
     }
-    await effectiveDeps.captureWithRunner(device, outPath, appBundleId, fullscreen, runnerOptions);
+    await deps.captureWithRunner(
+      device,
+      outPath,
+      options.appBundleId,
+      options.fullscreen,
+      options.runnerOptions,
+    );
   } finally {
     await restoreStatusBar().catch((error) =>
       emitStatusBarDiagnostic(device, 'restore_failed', error),
@@ -380,10 +404,7 @@ export function resolveSimulatorRunnerScreenshotCandidatePaths(
 export function shouldFallbackToRunnerForIosScreenshot(error: unknown): boolean {
   if (!(error instanceof AppError)) return false;
   if (error.code !== 'COMMAND_FAILED') return false;
-  const details = (error.details ?? {}) as { stdout?: unknown; stderr?: unknown };
-  const stdout = typeof details.stdout === 'string' ? details.stdout : '';
-  const stderr = typeof details.stderr === 'string' ? details.stderr : '';
-  const combined = `${error.message}\n${stdout}\n${stderr}`.toLowerCase();
+  const combined = commandFailureText(error);
   return (
     combined.includes("unknown option '--device'") ||
     (combined.includes('unknown subcommand') && combined.includes('screenshot')) ||
@@ -394,13 +415,7 @@ export function shouldFallbackToRunnerForIosScreenshot(error: unknown): boolean 
 export function shouldRetryIosSimulatorScreenshot(error: unknown): boolean {
   if (!(error instanceof AppError)) return false;
   if (error.code !== 'COMMAND_FAILED') return false;
-  const details = (error.details ?? {}) as { stdout?: unknown; stderr?: unknown; args?: unknown };
-  const stdout = typeof details.stdout === 'string' ? details.stdout : '';
-  const stderr = typeof details.stderr === 'string' ? details.stderr : '';
-  const args = Array.isArray(details.args)
-    ? details.args.filter((value): value is string => typeof value === 'string').join(' ')
-    : '';
-  const combined = `${error.message}\n${stdout}\n${stderr}\n${args}`.toLowerCase();
+  const combined = commandFailureText(error);
   return (
     combined.includes('timeout waiting for screen surfaces') ||
     (combined.includes('nsposixerrordomain') &&
@@ -408,6 +423,30 @@ export function shouldRetryIosSimulatorScreenshot(error: unknown): boolean {
       combined.includes('screenshot')) ||
     (combined.includes('timed out') && combined.includes('screenshot'))
   );
+}
+
+function shouldEnsureBootedAfterSimulatorScreenshotFailure(error: unknown): boolean {
+  if (!(error instanceof AppError)) return false;
+  if (error.code !== 'COMMAND_FAILED') return false;
+  const combined = commandFailureText(error);
+  return (
+    combined.includes('not booted') ||
+    combined.includes('current state: shutdown') ||
+    combined.includes('current state is shutdown') ||
+    combined.includes('current state=shutdown') ||
+    combined.includes('state: shutdown') ||
+    combined.includes('state=shutdown')
+  );
+}
+
+function commandFailureText(error: AppError): string {
+  const details = (error.details ?? {}) as { stdout?: unknown; stderr?: unknown; args?: unknown };
+  const stdout = typeof details.stdout === 'string' ? details.stdout : '';
+  const stderr = typeof details.stderr === 'string' ? details.stderr : '';
+  const args = Array.isArray(details.args)
+    ? details.args.filter((value): value is string => typeof value === 'string').join(' ')
+    : '';
+  return `${error.message}\n${stdout}\n${stderr}\n${args}`.toLowerCase();
 }
 
 export { prepareSimulatorStatusBarForScreenshot } from './screenshot-status-bar.ts';
