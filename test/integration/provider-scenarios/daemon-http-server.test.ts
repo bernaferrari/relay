@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
 import { AppError } from '../../../src/utils/errors.ts';
-import { trackDownloadableArtifact } from '../../../src/daemon/artifact-tracking.ts';
+import {
+  cleanupUploadedArtifact,
+  prepareUploadedArtifact,
+  trackDownloadableArtifact,
+} from '../../../src/daemon/artifact-tracking.ts';
 import { DAEMON_RPC_PROTOCOL_VERSION } from '../../../src/daemon/http-health.ts';
 import { createDaemonHttpServer } from '../../../src/daemon/http-server.ts';
 import { emitRequestProgress } from '../../../src/daemon/request-progress.ts';
@@ -519,6 +524,181 @@ test('Provider-backed integration daemon HTTP server accepts uploads and streams
   }
 });
 
+test('Provider-backed integration daemon HTTP server resumes direct uploads before finalize', async (t) => {
+  if (await skipWhenLoopbackUnavailable(t, 'daemon HTTP integration coverage')) {
+    return;
+  }
+
+  const content = Buffer.from('fake-apk-resumable-content');
+  const server = await createDaemonHttpServer({
+    token: 'provider-scenario-token',
+    handleRequest: async (): Promise<DaemonResponse> => ({ ok: true, data: {} }),
+  });
+  let trackedUploadId = '';
+
+  try {
+    const port = await listenOnLoopback(server);
+    const preflight = await fetch(`http://127.0.0.1:${port}/upload/preflight`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer provider-scenario-token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        uploadAttemptId: 'resume-before-finalize',
+        sha256: crypto.createHash('sha256').update(content).digest('hex'),
+        fileName: 'demo.apk',
+        sizeBytes: content.length,
+        artifactType: 'file',
+        platform: 'android',
+        contentType: 'application/octet-stream',
+      }),
+    });
+    assert.equal(preflight.status, 200);
+    const preflightBody = (await preflight.json()) as {
+      uploadId?: string;
+      upload?: { url?: string; headers?: Record<string, string> };
+    };
+    assert.equal(typeof preflightBody.uploadId, 'string');
+    assert.equal(typeof preflightBody.upload?.url, 'string');
+    if (!preflightBody.upload?.url) throw new Error('missing upload url');
+    const uploadUrl = preflightBody.upload.url;
+    const uploadHeaders = preflightBody.upload.headers ?? {};
+
+    const firstChunk = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: uploadHeaders,
+      body: content.subarray(0, 9),
+    });
+    assert.equal(firstChunk.status, 308);
+    assert.equal(firstChunk.headers.get('x-upload-offset'), '9');
+
+    const restartFromZero = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: uploadHeaders,
+      body: content,
+    });
+    assert.equal(restartFromZero.status, 308);
+    assert.equal(restartFromZero.headers.get('x-upload-offset'), '9');
+
+    const resumed = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        ...uploadHeaders,
+        'content-range': `bytes 9-${content.length - 1}/${content.length}`,
+      },
+      body: content.subarray(9),
+    });
+    assert.equal(resumed.status, 200);
+
+    const finalize = await fetch(`http://127.0.0.1:${port}/upload/finalize`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer provider-scenario-token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ uploadId: preflightBody.uploadId }),
+    });
+    assert.equal(finalize.status, 200);
+    const finalizeBody = (await finalize.json()) as { uploadId?: string };
+    trackedUploadId = finalizeBody.uploadId ?? '';
+    assert.equal(typeof trackedUploadId, 'string');
+    assert.deepEqual(fs.readFileSync(prepareUploadedArtifact(trackedUploadId)), content);
+  } finally {
+    if (trackedUploadId) cleanupUploadedArtifact(trackedUploadId);
+    await closeLoopbackServer(server);
+  }
+});
+
+test('Provider-backed integration daemon HTTP server isolates same-artifact upload attempts', async (t) => {
+  if (await skipWhenLoopbackUnavailable(t, 'daemon HTTP integration coverage')) {
+    return;
+  }
+
+  const content = Buffer.from('same-apk-content');
+  const server = await createDaemonHttpServer({
+    token: 'provider-scenario-token',
+    handleRequest: async (): Promise<DaemonResponse> => ({ ok: true, data: {} }),
+  });
+  const trackedUploadIds: string[] = [];
+
+  try {
+    const port = await listenOnLoopback(server);
+    const requestPreflight = async (uploadAttemptId: string) => {
+      const response = await fetch(`http://127.0.0.1:${port}/upload/preflight`, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer provider-scenario-token',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          uploadAttemptId,
+          sha256: crypto.createHash('sha256').update(content).digest('hex'),
+          fileName: 'demo.apk',
+          sizeBytes: content.length,
+          artifactType: 'file',
+          platform: 'android',
+          contentType: 'application/octet-stream',
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = (await response.json()) as {
+        uploadId?: string;
+        upload?: { url?: string; headers?: Record<string, string> };
+      };
+      assert.equal(typeof body.uploadId, 'string');
+      assert.equal(typeof body.upload?.url, 'string');
+      if (!body.uploadId || !body.upload?.url) throw new Error('missing upload ticket');
+      return {
+        uploadId: body.uploadId,
+        uploadUrl: body.upload.url,
+        uploadHeaders: body.upload.headers ?? {},
+      };
+    };
+
+    const first = await requestPreflight('same-artifact-first');
+    const second = await requestPreflight('same-artifact-second');
+    assert.notEqual(first.uploadId, second.uploadId);
+    assert.notEqual(first.uploadUrl, second.uploadUrl);
+
+    const firstChunk = await fetch(first.uploadUrl, {
+      method: 'PUT',
+      headers: first.uploadHeaders,
+      body: content.subarray(0, 5),
+    });
+    assert.equal(firstChunk.status, 308);
+    assert.equal(firstChunk.headers.get('x-upload-offset'), '5');
+
+    const secondComplete = await fetch(second.uploadUrl, {
+      method: 'PUT',
+      headers: second.uploadHeaders,
+      body: content,
+    });
+    assert.equal(secondComplete.status, 200);
+
+    const secondFinalize = await finalizeUpload(port, second.uploadId);
+    trackedUploadIds.push(secondFinalize);
+    assert.deepEqual(fs.readFileSync(prepareUploadedArtifact(secondFinalize)), content);
+
+    const firstComplete = await fetch(first.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        ...first.uploadHeaders,
+        'content-range': `bytes 5-${content.length - 1}/${content.length}`,
+      },
+      body: content.subarray(5),
+    });
+    assert.equal(firstComplete.status, 200);
+
+    const firstFinalize = await finalizeUpload(port, first.uploadId);
+    trackedUploadIds.push(firstFinalize);
+    assert.deepEqual(fs.readFileSync(prepareUploadedArtifact(firstFinalize)), content);
+  } finally {
+    for (const uploadId of trackedUploadIds) cleanupUploadedArtifact(uploadId);
+    await closeLoopbackServer(server);
+  }
+});
+
 test('Provider-backed integration daemon HTTP auth hook can scope tenants and reject requests', async (t) => {
   if (await skipWhenLoopbackUnavailable(t, 'daemon HTTP integration coverage')) {
     return;
@@ -604,6 +784,22 @@ async function callRpc(
     status: response.status,
     body: (await response.json()) as RpcResponse['body'],
   };
+}
+
+async function finalizeUpload(port: number, uploadId: string): Promise<string> {
+  const response = await fetch(`http://127.0.0.1:${port}/upload/finalize`, {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer provider-scenario-token',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ uploadId }),
+  });
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as { uploadId?: string };
+  const finalizedUploadId = body.uploadId;
+  if (typeof finalizedUploadId !== 'string') throw new Error('missing finalized upload id');
+  return finalizedUploadId;
 }
 
 async function callRawRpc(port: number, body: string): Promise<RpcResponse> {

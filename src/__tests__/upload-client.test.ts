@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { uploadArtifact } from '../upload-client.ts';
+import type { UploadProgressEvent } from '../upload-progress.ts';
 import { runCmdSync, withCommandExecutorOverride } from '../utils/exec.ts';
 
 const TEST_TOKEN = 'agent-device-upload-test-token';
@@ -30,6 +31,7 @@ test('uploadArtifact returns preflight uploadId without uploading bytes on cache
       assert.equal(req.headers.authorization, `Bearer ${TEST_TOKEN}`);
       assert.equal(req.headers['x-agent-device-token'], TEST_TOKEN);
       const body = JSON.parse((await readRequestBody(req)).toString('utf8')) as {
+        uploadAttemptId: string;
         sha256: string;
         fileName: string;
         sizeBytes: number;
@@ -37,6 +39,7 @@ test('uploadArtifact returns preflight uploadId without uploading bytes on cache
         platform: string;
         contentType: string;
       };
+      assert.equal(typeof body.uploadAttemptId, 'string');
       assert.equal(body.sha256, expectedHash);
       assert.equal(body.fileName, 'app.apk');
       assert.equal(body.sizeBytes, Buffer.byteLength(content));
@@ -117,6 +120,7 @@ test('uploadArtifact falls back to upload when preflight is unsupported', async 
   const artifactPath = createTempFile('app.apk', content);
   const expectedHash = sha256(content);
   const requests: string[] = [];
+  const progressEvents: UploadProgressEvent[] = [];
 
   const server = await startServer(async (req, res) => {
     requests.push(`${req.method} ${req.url}`);
@@ -142,9 +146,28 @@ test('uploadArtifact falls back to upload when preflight is unsupported', async 
       localPath: artifactPath,
       baseUrl: server.baseUrl,
       token: TEST_TOKEN,
+      onProgress: (event) => progressEvents.push(event),
     });
     assert.equal(uploadId, 'upload-legacy');
     assert.deepEqual(requests, ['POST /upload/preflight', 'POST /upload']);
+    assert.deepEqual(
+      progressEvents.map((event) => event.type),
+      ['start', 'progress'],
+    );
+    assert.deepEqual(progressEvents[0], {
+      type: 'start',
+      stage: 'legacy',
+      fileName: 'app.apk',
+      transferredBytes: 0,
+      totalBytes: Buffer.byteLength(content),
+    });
+    assert.deepEqual(progressEvents[1], {
+      type: 'progress',
+      stage: 'legacy',
+      fileName: 'app.apk',
+      transferredBytes: Buffer.byteLength(content),
+      totalBytes: Buffer.byteLength(content),
+    });
   } finally {
     await server.close();
   }
@@ -377,17 +400,20 @@ test('uploadArtifact uses direct upload ticket and finalize flow', async () => {
   const expectedHash = sha256(content);
   const requests: string[] = [];
   let directUploadBody = '';
+  const progressEvents: UploadProgressEvent[] = [];
 
   const server = await startServer(async (req, res) => {
     requests.push(`${req.method} ${req.url}`);
     if (req.method === 'POST' && req.url === '/upload/preflight') {
       const body = JSON.parse((await readRequestBody(req)).toString('utf8')) as {
+        uploadAttemptId: string;
         sha256: string;
         fileName: string;
         artifactType: string;
         platform: string;
         contentType: string;
       };
+      assert.equal(typeof body.uploadAttemptId, 'string');
       assert.equal(body.sha256, expectedHash);
       assert.equal(body.fileName, 'app.apk');
       assert.equal(body.artifactType, 'file');
@@ -433,9 +459,28 @@ test('uploadArtifact uses direct upload ticket and finalize flow', async () => {
       localPath: artifactPath,
       baseUrl: server.baseUrl,
       token: TEST_TOKEN,
+      onProgress: (event) => progressEvents.push(event),
     });
     assert.equal(uploadId, 'upload-finalized');
     assert.equal(directUploadBody, content);
+    assert.deepEqual(
+      progressEvents.map((event) => event.type),
+      ['start', 'progress'],
+    );
+    assert.deepEqual(progressEvents[0], {
+      type: 'start',
+      stage: 'direct',
+      fileName: 'app.apk',
+      transferredBytes: 0,
+      totalBytes: Buffer.byteLength(content),
+    });
+    assert.deepEqual(progressEvents[1], {
+      type: 'progress',
+      stage: 'direct',
+      fileName: 'app.apk',
+      transferredBytes: Buffer.byteLength(content),
+      totalBytes: Buffer.byteLength(content),
+    });
     assert.deepEqual(requests, [
       'POST /upload/preflight',
       'PUT /signed-upload',
@@ -533,6 +578,7 @@ test('uploadArtifact resumes a direct upload from the server-reported offset', a
   let uploadAttempts = 0;
   let firstUploadBody = '';
   let resumedUploadBody = '';
+  const progressEvents: UploadProgressEvent[] = [];
 
   const server = await startServer(async (req, res) => {
     requests.push(`${req.method} ${req.url}`);
@@ -592,14 +638,120 @@ test('uploadArtifact resumes a direct upload from the server-reported offset', a
       localPath: artifactPath,
       baseUrl: server.baseUrl,
       token: TEST_TOKEN,
+      onProgress: (event) => progressEvents.push(event),
     });
     assert.equal(uploadId, 'upload-resumed');
     assert.equal(firstUploadBody, content);
     assert.equal(resumedUploadBody, content.slice(resumeOffset));
+    assert.deepEqual(
+      progressEvents.map((event) => event.type),
+      ['start', 'progress', 'resume', 'progress'],
+    );
+    assert.deepEqual(progressEvents[0], {
+      type: 'start',
+      stage: 'direct',
+      fileName: 'app.apk',
+      transferredBytes: 0,
+      totalBytes: Buffer.byteLength(content),
+    });
+    assert.deepEqual(progressEvents[2], {
+      type: 'resume',
+      stage: 'direct',
+      fileName: 'app.apk',
+      transferredBytes: resumeOffset,
+      totalBytes: Buffer.byteLength(content),
+    });
     assert.deepEqual(requests, [
       'POST /upload/preflight',
       'PUT /resumable-upload',
       'PUT /resumable-upload',
+      'POST /upload/finalize',
+    ]);
+  } finally {
+    await server.close();
+  }
+});
+
+test('uploadArtifact re-preflights and resumes after an interrupted direct upload', async () => {
+  const content = 'direct-upload-interrupted-payload';
+  const artifactPath = createTempFile('app.apk', content);
+  const resumeOffset = 8;
+  const requests: string[] = [];
+  let preflightAttempts = 0;
+  const uploadAttemptIds: string[] = [];
+  let uploadAttempts = 0;
+  let resumedUploadBody = '';
+
+  const server = await startServer(async (req, res) => {
+    requests.push(`${req.method} ${req.url}`);
+    if (req.method === 'POST' && req.url === '/upload/preflight') {
+      preflightAttempts += 1;
+      const body = JSON.parse((await readRequestBody(req)).toString('utf8')) as {
+        uploadAttemptId: string;
+      };
+      uploadAttemptIds.push(body.uploadAttemptId);
+      sendJson(res, {
+        ok: true,
+        cacheHit: false,
+        uploadId: 'resume-after-error-ticket',
+        upload: {
+          url: `${server.baseUrl}/resumable-upload-after-error`,
+          headers: {
+            'x-signed-ticket': 'resume-after-error-ticket-header',
+          },
+        },
+      });
+      return;
+    }
+    if (req.method === 'PUT' && req.url === '/resumable-upload-after-error') {
+      uploadAttempts += 1;
+      if (uploadAttempts === 1) {
+        req.destroy(new Error('simulated low-connectivity interruption'));
+        return;
+      }
+      if (uploadAttempts === 2) {
+        assert.equal(req.headers['content-range'], undefined);
+        res.statusCode = 308;
+        res.setHeader('x-upload-offset', String(resumeOffset));
+        res.end();
+        return;
+      }
+
+      assert.equal(
+        req.headers['content-range'],
+        `bytes ${resumeOffset}-${Buffer.byteLength(content) - 1}/${Buffer.byteLength(content)}`,
+      );
+      resumedUploadBody = (await readRequestBody(req)).toString('utf8');
+      res.statusCode = 200;
+      res.end('ok');
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/upload/finalize') {
+      sendJson(res, { ok: true, uploadId: 'upload-resumed-after-error' });
+      return;
+    }
+    res.statusCode = 404;
+    res.end('not found');
+  });
+
+  try {
+    const uploadId = await uploadArtifact({
+      localPath: artifactPath,
+      baseUrl: server.baseUrl,
+      token: TEST_TOKEN,
+    });
+    assert.equal(uploadId, 'upload-resumed-after-error');
+    assert.equal(preflightAttempts, 2);
+    assert.equal(uploadAttemptIds.length, 2);
+    assert.equal(typeof uploadAttemptIds[0], 'string');
+    assert.equal(uploadAttemptIds[0], uploadAttemptIds[1]);
+    assert.equal(resumedUploadBody, content.slice(resumeOffset));
+    assert.deepEqual(requests, [
+      'POST /upload/preflight',
+      'PUT /resumable-upload-after-error',
+      'POST /upload/preflight',
+      'PUT /resumable-upload-after-error',
+      'PUT /resumable-upload-after-error',
       'POST /upload/finalize',
     ]);
   } finally {
