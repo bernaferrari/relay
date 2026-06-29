@@ -147,6 +147,10 @@ test('parseArgs recognizes command-specific flag combinations', async () => {
         '2',
         '--artifacts-dir',
         '.agent-device/test-artifacts',
+        '--reporter',
+        'default',
+        '--reporter',
+        'junit:.agent-device/test-artifacts/junit.xml',
       ],
       strictFlags: true,
       assertParsed: (parsed) => {
@@ -158,6 +162,10 @@ test('parseArgs recognizes command-specific flag combinations', async () => {
         assert.equal(parsed.flags.timeoutMs, 60000);
         assert.equal(parsed.flags.retries, 2);
         assert.equal(parsed.flags.artifactsDir, '.agent-device/test-artifacts');
+        assert.deepEqual(parsed.flags.reporter, [
+          'default',
+          'junit:.agent-device/test-artifacts/junit.xml',
+        ]);
       },
     },
     {
@@ -2063,6 +2071,10 @@ test('command usage describes test suite flags', () => {
   assert.match(help, /--retries <n>/);
   assert.match(help, /--record-video/);
   assert.match(help, /--artifacts-dir <path>/);
+  assert.match(help, /--reporter <name-or-path>/);
+  assert.match(help, /custom reporter path/);
+  assert.match(help, /--report-junit <path>/);
+  assert.match(help, /compatibility alias for --reporter junit:<path>/);
   assert.doesNotMatch(help, /test --verbose prints per-test step timings without debug logs/);
 });
 
