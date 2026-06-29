@@ -30,6 +30,10 @@ vi.mock('../runner-macos-products.ts', async () => {
 });
 
 import type { DeviceInfo } from '../../../utils/device.ts';
+import {
+  type RequestProgressEvent,
+  withRequestProgressSink,
+} from '../../../daemon/request-progress.ts';
 import { flushDiagnosticsToSessionFile, withDiagnosticsScope } from '../../../utils/diagnostics.ts';
 import { AppError } from '../../../utils/errors.ts';
 import { isReadOnlyRunnerCommand } from '../runner-command-traits.ts';
@@ -507,6 +511,25 @@ test('resolveRunnerSandboxBuildArgs disables nested Xcode and Swift sandboxing',
   ]);
 });
 
+test('resolveRunnerSandboxBuildArgs includes Swift runner unit tests only when requested', () => {
+  const previous = process.env.AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS;
+  try {
+    process.env.AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS = '1';
+    assert.deepEqual(resolveRunnerSandboxBuildArgs(), [
+      '-IDEPackageSupportDisableManifestSandbox=1',
+      '-IDEPackageSupportDisablePluginExecutionSandbox=1',
+      'ENABLE_USER_SCRIPT_SANDBOXING=NO',
+      'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_UNIT_TESTS',
+    ]);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS;
+    } else {
+      process.env.AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS = previous;
+    }
+  }
+});
+
 test('resolveRunnerBundleBuildSettings returns default bundle identifiers', () => {
   assert.deepEqual(resolveRunnerBundleBuildSettings({}), [
     'AGENT_DEVICE_IOS_RUNNER_APP_BUNDLE_ID=com.callstack.agentdevice.runner',
@@ -886,15 +909,19 @@ test('resolveRunnerDerivedPath keys default cache by runner metadata', () => {
     target: 'desktop',
     buildDestinationFamily: 'macos',
   });
-  const staleVersionPath = resolveRunnerDerivedPath(iosSimulator, {
+  const unitTestPath = resolveRunnerDerivedPath(iosSimulator, {
     ...metadata,
-    packageVersion: '0.0.0-stale',
+    runnerSandboxBuildArgs: metadata.runnerSandboxBuildArgs.map((arg) =>
+      arg.startsWith('OTHER_SWIFT_FLAGS=')
+        ? 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_UNIT_TESTS'
+        : arg,
+    ),
   });
 
   assert.match(iosPath, /\/ios-runner\/derived\/ios-simulator\/cache-[a-f0-9]{16}$/);
   assert.match(tvPath, /\/ios-runner\/derived\/tvos-simulator\/cache-[a-f0-9]{16}$/);
   assert.match(macPath, /\/ios-runner\/derived\/macos\/cache-[a-f0-9]{16}$/);
-  assert.notEqual(iosPath, staleVersionPath);
+  assert.notEqual(iosPath, unitTestPath);
 });
 
 test('resolveRunnerDerivedPath reuses cache path for identical runner source fingerprints', async () => {
@@ -1006,7 +1033,11 @@ test('ensureXctestrun rebuilds foreign artifacts when metadata does not match', 
   });
   const metadataPath = resolveRunnerCacheMetadataPath(derivedPath);
   const staleMetadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-  staleMetadata.packageVersion = '0.0.0-stale';
+  staleMetadata.runnerSandboxBuildArgs = staleMetadata.runnerSandboxBuildArgs.map((arg: string) =>
+    arg.startsWith('OTHER_SWIFT_FLAGS=')
+      ? 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_UNIT_TESTS'
+      : arg,
+  );
   fs.writeFileSync(metadataPath, JSON.stringify(staleMetadata, null, 2));
   withRunnerDerivedPathEnv(derivedPath);
 
@@ -1192,13 +1223,18 @@ test('ensureXctestrun falls back to scan when cache manifest is stale', async ()
   assert.deepEqual(mockRepairMacOsRunnerProductsIfNeeded.mock.calls[0]?.[1], [newerProductPath]);
 });
 
-test('ensureXctestrun rebuilds cached runner when metadata package version mismatches', async () => {
+test('ensureXctestrun rebuilds cached runner when Swift build flags mismatch', async () => {
   const projectRoot = repoRoot;
   const { derivedPath, existingXctestrunPath } = await makeCachedRunnerXctestrun();
   const metadataPath = resolveRunnerCacheMetadataPath(derivedPath);
+  const expectedMetadata = resolveExpectedRunnerCacheMetadata(macOsDevice, repoRoot);
   const staleMetadata = {
-    ...resolveExpectedRunnerCacheMetadata(macOsDevice, repoRoot),
-    packageVersion: '0.0.0-stale',
+    ...expectedMetadata,
+    runnerSandboxBuildArgs: expectedMetadata.runnerSandboxBuildArgs.map((arg) =>
+      arg.startsWith('OTHER_SWIFT_FLAGS=')
+        ? 'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_UNIT_TESTS'
+        : arg,
+    ),
   };
   fs.writeFileSync(metadataPath, JSON.stringify(staleMetadata, null, 2));
 
@@ -1256,6 +1292,43 @@ test('ensureXctestrunArtifact passes sandbox-disabling settings to xcodebuild', 
   assert.equal(args.includes('-IDEPackageSupportDisablePluginExecutionSandbox=1'), true);
   assert.equal(args.includes('ENABLE_USER_SCRIPT_SANDBOXING=NO'), true);
   assert.equal(args.includes('OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox'), true);
+});
+
+test('ensureXctestrunArtifact emits build progress on cache miss', async () => {
+  const projectRoot = repoRoot;
+  const tmpDir = await makeProjectTmpDir();
+  const derivedPath = path.join(tmpDir, 'custom-derived');
+  const rebuiltXctestrunPath = path.join(derivedPath, 'Build', 'Products', 'rebuilt.xctestrun');
+  const events: RequestProgressEvent[] = [];
+
+  withRunnerDerivedPathEnv(derivedPath);
+
+  mockRunCmdStreaming.mockImplementationOnce(async () => {
+    await fs.promises.mkdir(path.join(derivedPath, 'Build', 'Products', 'Runner.app'), {
+      recursive: true,
+    });
+    writeXctestrunFixture(rebuiltXctestrunPath, {
+      projectRoot,
+      productRelativePaths: ['Runner.app'],
+    });
+  });
+
+  const result = await withRequestProgressSink(
+    (event) => events.push(event),
+    async () =>
+      await ensureXctestrunArtifact(iosSimulator, {
+        forceRunnerXctestrunRebuild: true,
+      }),
+  );
+
+  assert.equal(result.xctestrunPath, rebuiltXctestrunPath);
+  assert.deepEqual(events, [
+    {
+      type: 'command',
+      status: 'progress',
+      message: 'Building Apple runner...',
+    },
+  ]);
 });
 
 test('ensureXctestrunArtifact stress-recovers after a bad restored artifact', async () => {

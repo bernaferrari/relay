@@ -7,6 +7,10 @@ import {
   prewarmIosRunnerSession,
   stopIosRunnerSession,
 } from '../../platforms/ios/runner-client.ts';
+import {
+  buildAppleRunnerSessionOptions,
+  createIosRunnerCacheColdBootPrewarmForOpen,
+} from '../apple-runner-options.ts';
 import { applyRuntimeHintsToApp } from '../runtime-hints.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import type { DaemonRequest, DaemonResponse, SessionRuntimeHints, SessionState } from '../types.ts';
@@ -184,23 +188,12 @@ async function completeOpenCommand(params: {
   timing.runtimeHintsDurationMs = Math.max(0, Date.now() - runtimeHintsStartedAtMs);
   const shouldPrewarmIosRunner =
     device.platform === 'ios' && surface === 'app' && openPositionals.length > 0;
-  const runnerPrewarmOptions = {
-    verbose: req.flags?.verbose,
+  const runnerPrewarmOptions = buildAppleRunnerSessionOptions({
+    req,
     logPath,
+    appBundleId: sessionAppBundleId,
     traceLogPath,
-    requestId: req.meta?.requestId,
-    runnerLeaseContext: contextFromFlags(
-      logPath,
-      req.flags,
-      sessionAppBundleId,
-      traceLogPath,
-      req.meta?.requestId,
-      req.meta,
-    ).runnerLeaseContext,
-    iosXctestrunFile: req.flags?.iosXctestrunFile,
-    iosXctestDerivedDataPath: req.flags?.iosXctestDerivedDataPath,
-    iosXctestEnvDir: req.flags?.iosXctestEnvDir,
-  };
+  });
   const shouldPrewarmRunnerBeforeOpen = req.flags?.maestro?.prewarmRunnerBeforeOpen === true;
   let runnerPrewarm: Promise<void> | undefined;
   if (shouldPrewarmIosRunner && sessionAppBundleId) {
@@ -372,6 +365,7 @@ async function prepareOpenDispatchSession(params: {
   return { type: 'session', session: sessionStore.get(sessionName) ?? provisionalSession };
 }
 
+// fallow-ignore-next-line complexity
 export async function handleOpenCommand(params: {
   req: DaemonRequest;
   sessionName: string;
@@ -419,6 +413,14 @@ export async function handleOpenCommand(params: {
       surface: surfaceResult,
       openTarget,
       existingSession: session,
+      onIosSimulatorColdBootStart: createIosRunnerCacheColdBootPrewarmForOpen({
+        req,
+        logPath,
+        device,
+        surface: surfaceResult,
+        openTarget,
+        traceLogPath: session.trace?.outPath,
+      }),
     });
     if (details.type === 'response') {
       return details.response;
@@ -510,6 +512,13 @@ export async function handleOpenCommand(params: {
       device,
       surface: surfaceResult,
       openTarget,
+      onIosSimulatorColdBootStart: createIosRunnerCacheColdBootPrewarmForOpen({
+        req,
+        logPath,
+        device,
+        surface: surfaceResult,
+        openTarget,
+      }),
     });
     if (details.type === 'response') {
       return details.response;

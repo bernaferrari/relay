@@ -7,10 +7,6 @@ struct FlatSnapshotFilterNode {
   let valueText: String?
   let visible: Bool
 
-  var hasContent: Bool {
-    return !label.isEmpty || !identifier.isEmpty || valueText != nil
-  }
-
   func matchesScope(_ scope: String) -> Bool {
     let haystack = [label, identifier, valueText ?? ""].joined(separator: "\n")
     return haystack.localizedCaseInsensitiveContains(scope)
@@ -68,6 +64,7 @@ extension RunnerTests {
     return type
   }
 
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS
   func testFlatSnapshotFilterDecisionMatrixCoversOptions() {
     let visibleContent = FlatSnapshotFilterNode(
       isRoot: false,
@@ -168,4 +165,5 @@ extension RunnerTests {
       "private AX marks scroll containers as interactive candidates"
     )
   }
+#endif
 }
