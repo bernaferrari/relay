@@ -11,6 +11,7 @@ import { isEnvTruthy } from '../../utils/retry.ts';
 import type { DeviceInfo } from '../../utils/device.ts';
 import type { DefinedEnvMap as EnvMap } from '../../utils/env-map.ts';
 import { withKeyedLock } from '../../utils/keyed-lock.ts';
+import { emitRequestProgress } from '../../daemon/request-progress.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { findProjectRoot, readVersion } from '../../utils/version.ts';
 import { resolveRunnerBuildFailureHint } from './runner-contract.ts';
@@ -56,8 +57,10 @@ const RUNNER_SANDBOX_BUILD_ARGS = [
   '-IDEPackageSupportDisableManifestSandbox=1',
   '-IDEPackageSupportDisablePluginExecutionSandbox=1',
   'ENABLE_USER_SCRIPT_SANDBOXING=NO',
-  'OTHER_SWIFT_FLAGS=$(inherited) -disable-sandbox',
 ] as const;
+const RUNNER_RUNTIME_SWIFT_FLAGS = '$(inherited) -disable-sandbox';
+const RUNNER_UNIT_TEST_SWIFT_FLAGS =
+  '$(inherited) -disable-sandbox -D AGENT_DEVICE_RUNNER_UNIT_TESTS';
 
 const runnerXctestrunBuildLocks = new Map<string, Promise<unknown>>();
 const badRunnerArtifactsForRun = new Set<string>();
@@ -629,6 +632,11 @@ async function buildXctestrunArtifact(params: {
   }
 
   const buildStartedAt = Date.now();
+  emitRequestProgress({
+    type: 'command',
+    status: 'progress',
+    message: 'Building Apple runner...',
+  });
   await buildRunnerXctestrun(device, projectPath, derived, options);
   const buildMs = Math.max(0, Date.now() - buildStartedAt);
 
@@ -893,8 +901,8 @@ function evaluateRunnerCacheMetadata(
 
 function comparableRunnerCacheMetadata(
   metadata: RunnerXctestrunCacheMetadata,
-): RunnerXctestrunCacheMetadata {
-  const { artifacts: _artifacts, ...comparable } = metadata;
+): Omit<RunnerXctestrunCacheMetadata, 'artifacts' | 'packageVersion'> {
+  const { artifacts: _artifacts, packageVersion: _packageVersion, ...comparable } = metadata;
   return comparable;
 }
 
@@ -1503,7 +1511,16 @@ export function resolveRunnerPerformanceBuildSettings(): string[] {
 }
 
 export function resolveRunnerSandboxBuildArgs(): string[] {
-  return [...RUNNER_SANDBOX_BUILD_ARGS];
+  return [
+    ...RUNNER_SANDBOX_BUILD_ARGS,
+    `OTHER_SWIFT_FLAGS=${resolveRunnerSwiftFlags(process.env)}`,
+  ];
+}
+
+function resolveRunnerSwiftFlags(env: NodeJS.ProcessEnv): string {
+  return isEnvTruthy(env.AGENT_DEVICE_XCUITEST_INCLUDE_UNIT_TESTS)
+    ? RUNNER_UNIT_TEST_SWIFT_FLAGS
+    : RUNNER_RUNTIME_SWIFT_FLAGS;
 }
 
 function shouldCleanDerived(): boolean {
