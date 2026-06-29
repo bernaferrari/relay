@@ -11,7 +11,6 @@ const options = {
   platform: 'ios',
   session: 'test-app-maestro',
   flowDir: path.join(repoRoot, 'examples', 'test-app', 'maestro'),
-  openTarget: '',
   close: false,
   passthrough: [],
 };
@@ -34,11 +33,6 @@ for (let index = 2; index < process.argv.length; index += 1) {
   }
   if (arg === '--flow-dir' && process.argv[index + 1]) {
     options.flowDir = path.resolve(process.argv[index + 1]);
-    index += 1;
-    continue;
-  }
-  if (arg === '--open' && process.argv[index + 1]) {
-    options.openTarget = process.argv[index + 1];
     index += 1;
     continue;
   }
@@ -67,14 +61,9 @@ function runAgentDevice(args) {
   });
 }
 
-if (options.openTarget) {
-  runAgentDevice(['open', options.openTarget, '--platform', options.platform, ...options.passthrough]);
-  runAgentDevice(['wait', 'Agent Device Tester', '30000', '--platform', options.platform, ...options.passthrough]);
-}
-
 runAgentDevice([
   'test',
-  options.flowDir,
+  ...flows,
   '--maestro',
   '--platform',
   options.platform,

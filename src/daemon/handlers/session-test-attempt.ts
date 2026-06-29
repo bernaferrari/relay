@@ -243,6 +243,7 @@ function emitReplayTestRetryProgress(
     durationMs: attempt.durationMs,
     retrying: true,
     message: attempt.response.error.message,
+    hint: attempt.response.error.hint,
     session: attempt.sessionName,
     artifactsDir: context.testArtifactsDir,
     ...replayTestProgressShardMetadata(params.shard),
@@ -322,6 +323,7 @@ function buildReplayTestFailedResult(
     session: outcome.finalSessionName,
     artifactsDir: context.testArtifactsDir,
     message: error.message,
+    hint: error.hint,
     ...replayTestProgressShardMetadata(shard),
   });
   return {
@@ -379,18 +381,19 @@ function readReplayResponseSnapshotDiagnostics(response: DaemonResponse | undefi
 
 function replayTestShardResultMetadata(
   shard: ReplayTestShardContext | undefined,
-): Pick<ReplaySuiteTestFailed, 'shardIndex' | 'shardCount' | 'deviceId'> {
+): Pick<ReplaySuiteTestFailed, 'shardIndex' | 'shardCount' | 'deviceId' | 'deviceName'> {
   return replayTestProgressShardMetadata(shard);
 }
 
 function replayTestProgressShardMetadata(
   shard: ReplayTestShardContext | undefined,
-): Pick<ReplaySuiteTestFailed, 'shardIndex' | 'shardCount' | 'deviceId'> {
+): Pick<ReplaySuiteTestFailed, 'shardIndex' | 'shardCount' | 'deviceId' | 'deviceName'> {
   return shard
     ? {
         shardIndex: shard.shardIndex,
         shardCount: shard.shardCount,
         deviceId: shard.device.id,
+        deviceName: shard.device.name,
       }
     : {};
 }

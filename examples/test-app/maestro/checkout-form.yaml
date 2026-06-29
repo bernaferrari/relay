@@ -2,8 +2,10 @@ appId: com.callstack.agentdevicelab
 env:
   CHECKOUT_NAME: Ada Lovelace
   CHECKOUT_EMAIL: ada@example.com
-  PICKUP_TAPS: "2"
+  PICKUP_TAPS: '2'
 onFlowStart:
+  - launchApp:
+      clearState: true
   - assertVisible: Agent Device Tester
 onFlowComplete:
   - assertVisible: Delivery choices

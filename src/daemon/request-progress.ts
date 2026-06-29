@@ -25,11 +25,13 @@ export type ReplayTestProgressEvent = {
   durationMs?: number;
   retrying?: boolean;
   message?: string;
+  hint?: string;
   session?: string;
   artifactsDir?: string;
   shardIndex?: number;
   shardCount?: number;
   deviceId?: string;
+  deviceName?: string;
 };
 
 export type CommandProgressEvent = {
