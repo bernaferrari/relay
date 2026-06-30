@@ -1,8 +1,13 @@
-import type { ReplaySuiteResult } from '../daemon/types.ts';
-import { replayTestFailureStepLines } from '../cli-test-trace.ts';
-import { formatDurationSeconds } from '../utils/duration-format.ts';
-import { colorize, supportsColor } from '../utils/output.ts';
-import type { ReplayTestReporter, ReplayTestReporterContext } from './types.ts';
+import type { ReplaySuiteResult } from '../../../daemon/types.ts';
+import { replayTestFailureStepLines } from '../trace.ts';
+import { createReplayTestProgressRenderer } from '../progress.ts';
+import { formatDurationSeconds } from '../../../utils/duration-format.ts';
+import { colorize, supportsColor } from '../../../utils/output.ts';
+import type {
+  ReplayTestReporter,
+  ReplayTestReporterContext,
+  ReplayTestReporterProgressEvent,
+} from './types.ts';
 import {
   getReplayTestExitCode,
   isDefinedString,
@@ -19,8 +24,31 @@ import {
 } from './format.ts';
 
 export function createDefaultReplayTestReporter(): ReplayTestReporter {
+  let progressRenderer: ReturnType<typeof createReplayTestProgressRenderer> | undefined;
+  const renderProgress = (
+    event: ReplayTestReporterProgressEvent,
+    context: ReplayTestReporterContext,
+  ) => {
+    progressRenderer ??= createReplayTestProgressRenderer({
+      verbose: context.verbose,
+      liveProgress: context.stderr.isTTY && !process.env.CI,
+      columns: context.stderr.columns,
+    });
+    const output = progressRenderer.render(event);
+    if (!output) return;
+    context.stderr.write(output.newline ? `${output.text}\n` : output.text);
+  };
   return {
     name: 'default',
+    onSuiteStart: (suite, context) => {
+      renderProgress({ type: 'suite-start', suite }, context);
+    },
+    onTestStep: (test, context) => {
+      renderProgress({ type: 'test-step', test }, context);
+    },
+    onTestResult: (test, context) => {
+      renderProgress({ type: 'test-result', test }, context);
+    },
     onSuiteEnd: (suite, context) => renderReplayTestSummary(suite, context),
     getExitCode: getReplayTestExitCode,
   };
@@ -31,7 +59,7 @@ function renderReplayTestSummary(
   context: ReplayTestReporterContext,
 ): void {
   const flaky = data.tests.filter(isFlakyReplayTestResult);
-  context.writeStdout(`${formatReplayTestSummaryLine(data, flaky.length)}\n`);
+  context.stdout.write(`${formatReplayTestSummaryLine(data, flaky.length)}\n`);
   renderFailureDetails(data.tests.filter(isFailedReplayTestResult), context);
   renderFlakyTestSummary(flaky, context);
 }
@@ -82,10 +110,10 @@ function renderFlakyTestSummary(
   context: ReplayTestReporterContext,
 ): void {
   if (results.length === 0) return;
-  context.writeStdout('\n');
-  context.writeStdout('Flaky tests:\n');
+  context.stdout.write('\n');
+  context.stdout.write('Flaky tests:\n');
   for (const result of results) {
-    context.writeStdout(
+    context.stdout.write(
       `  ${replayFlakyStatusIcon()} ${replayTestDisplayNameWithFile(result)} after ${result.attempts} attempts${formatFlakyReplayDurationSuffix(result)}\n`,
     );
     for (const failure of result.attemptFailures ?? []) {
@@ -93,7 +121,7 @@ function renderFlakyTestSummary(
         typeof failure.durationMs === 'number'
           ? ` (${formatDurationSeconds(failure.durationMs)})`
           : '';
-      context.writeStdout(
+      context.stdout.write(
         `    attempt ${failure.attempt} failed${attemptDuration}: ${failure.message}\n`,
       );
     }
@@ -105,10 +133,10 @@ function renderFailureDetails(
   context: ReplayTestReporterContext,
 ): void {
   if (results.length === 0) return;
-  context.writeStdout('\n');
-  context.writeStdout('Failures:\n');
+  context.stdout.write('\n');
+  context.stdout.write('Failures:\n');
   for (const result of results) {
-    context.writeStdout(`  ${replayTestDisplayNameWithFile(result)}\n`);
+    context.stdout.write(`  ${replayTestDisplayNameWithFile(result)}\n`);
     renderReplayFailureBody(result, context, '    ');
   }
 }
@@ -119,14 +147,14 @@ function renderReplayFailureBody(
   indent: string,
 ): void {
   const fileLine = replayTestFailureFileLine(result);
-  if (fileLine) context.writeStdout(`${indent}${fileLine}\n`);
-  context.writeStdout(`${indent}${result.error?.message ?? 'Unknown test failure'}\n`);
+  if (fileLine) context.stdout.write(`${indent}${fileLine}\n`);
+  context.stdout.write(`${indent}${result.error?.message ?? 'Unknown test failure'}\n`);
   for (const line of replayFailureConsoleLines(result)) {
-    context.writeStdout(`${indent}${line}\n`);
+    context.stdout.write(`${indent}${line}\n`);
   }
   if (!context.debug) return;
   for (const line of replayTestFailureStepLines(result)) {
-    context.writeStdout(`${indent}${line}\n`);
+    context.stdout.write(`${indent}${line}\n`);
   }
 }
 
