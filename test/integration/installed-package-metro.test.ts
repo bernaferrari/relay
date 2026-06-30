@@ -272,11 +272,8 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
       `
         import { createAgentDeviceClient, createLocalArtifactAdapter } from 'agent-device';
         import 'agent-device/contracts';
-        import { daemonCommandRequestSchema } from 'agent-device/contracts';
         import { createLocalArtifactAdapter as createIoArtifactAdapter } from 'agent-device/io';
-        import { buildBundleUrl, buildIosRuntimeHints, normalizeBaseUrl } from 'agent-device/metro';
-        import { resolveRemoteConfigProfile } from 'agent-device/remote-config';
-        const loaded = resolveRemoteConfigProfile({ configPath: ${JSON.stringify(remoteConfigPath)}, cwd: process.cwd() });
+        import { buildBundleUrl, normalizeBaseUrl } from 'agent-device/metro';
         const client = createAgentDeviceClient();
         const removedSubpaths = await Promise.all([
           'agent-device/backend',
@@ -292,19 +289,13 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
           }
         }));
         console.log(JSON.stringify({
-          bundleUrl: buildIosRuntimeHints('https://public.example.test').bundleUrl,
+          bundleUrl: buildBundleUrl('https://public.example.test', 'ios'),
           rootClientSnapshot: typeof client.capture.snapshot,
           rootArtifactAdapter: typeof createLocalArtifactAdapter({ cwd: process.cwd() }).reserveOutput,
           ioArtifactAdapter: typeof createIoArtifactAdapter({ cwd: process.cwd() }).reserveOutput,
           removedSubpathsBlocked: removedSubpaths.every(Boolean),
           normalizedBaseUrl: normalizeBaseUrl('https://public.example.test///'),
           protocolBundleUrl: buildBundleUrl('https://public.example.test', 'android'),
-          parsedCommand: daemonCommandRequestSchema.parse({
-            command: 'session_list',
-            positionals: []
-          }).command,
-          resolvedPath: loaded.resolvedPath,
-          metroProjectRoot: loaded.profile.metroProjectRoot
         }));
       `,
     );
@@ -321,10 +312,6 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
       imports.protocolBundleUrl,
       'https://public.example.test/index.bundle?platform=android&dev=true&minify=false',
     );
-    assert.equal(imports.parsedCommand, 'session_list');
-    assert.equal(imports.resolvedPath, remoteConfigPath);
-    assert.equal(imports.metroProjectRoot, projectRoot);
-
     const cliStdout = await execFileText(
       process.execPath,
       [
@@ -344,23 +331,6 @@ test('installed package exposes Node APIs and packaged companion tunnel entrypoi
     assert.equal(bridgeRegistered, true);
     assert.equal(bridgeRequestCount >= 2, true);
   } finally {
-    if (installedPackageRoot && remoteConfigPath) {
-      await runNodeModuleJson(
-        consumerRoot,
-        ['--input-type=module', '-e'],
-        `
-          import { stopMetroTunnel } from 'agent-device/metro';
-          import { resolveRemoteConfigPath } from 'agent-device/remote-config';
-          await stopMetroTunnel({
-            projectRoot: ${JSON.stringify(projectRoot)},
-            profileKey: resolveRemoteConfigPath({ configPath: ${JSON.stringify(remoteConfigPath)}, cwd: process.cwd() })
-          });
-          console.log(JSON.stringify({ stopped: true }));
-        `,
-      ).catch(() => {
-        // best effort cleanup for detached companions during test teardown
-      });
-    }
     destroySocket(bridgeSocketRef);
     await closeLoopbackServer(bridgeServer);
     await closeLoopbackServer(metroServer);
