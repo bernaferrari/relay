@@ -1,10 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import {
-  createReplayTestProgressRenderer,
-  formatReplayTestProgressEvent,
-} from '../cli-test-progress.ts';
-import type { RequestProgressEvent } from '../daemon/request-progress.ts';
+import { createReplayTestProgressRenderer } from '../progress.ts';
+import type { ReplayTestResult } from '../reporters/types.ts';
 
 function withStreamTty<T>(stream: NodeJS.WriteStream, isTTY: boolean, run: () => T): T {
   const descriptor = Object.getOwnPropertyDescriptor(stream, 'isTTY');
@@ -18,53 +15,18 @@ function withStreamTty<T>(stream: NodeJS.WriteStream, isTTY: boolean, run: () =>
   }
 }
 
-test('formatReplayTestProgressEvent suppresses replay suite start context', () => {
-  const line = formatReplayTestProgressEvent({
-    type: 'replay-test-suite',
-    status: 'start',
-    total: 4,
-    runnable: 3,
-    skipped: 1,
-    artifactsDir: '/tmp/replay-suite',
-    shardMode: 'split',
-    shardCount: 2,
-  });
+function renderTestResult(
+  event: ReplayTestResult,
+  options?: Parameters<typeof createReplayTestProgressRenderer>[0],
+): string | undefined {
+  return createReplayTestProgressRenderer(options).render({ type: 'test-result', test: event })
+    ?.text;
+}
 
-  assert.equal(line, undefined);
-});
-
-test('formatReplayTestProgressEvent suppresses replay test start context', () => {
-  const line = formatReplayTestProgressEvent({
-    type: 'replay-test',
-    file: '/tmp/auth-flow.yml',
-    title: 'Authentication flow',
-    status: 'start',
-    index: 2,
-    total: 5,
-    session: 'maestro-test:test:suite:2:attempt-1',
-    artifactsDir: '/tmp/replay-suite/auth-flow',
-    shardIndex: 1,
-    shardCount: 2,
-    deviceId: 'E140A942-965C-4A92-AC63-F3B23756BE02',
-  });
-
-  assert.equal(line, undefined);
-});
-
-test('formatReplayTestProgressEvent ignores unknown progress event types', () => {
-  const line = formatReplayTestProgressEvent({
-    type: 'future-progress-event',
-    status: 'start',
-  } as unknown as RequestProgressEvent);
-
-  assert.equal(line, undefined);
-});
-
-test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', () => {
-  const cases: Array<{ event: RequestProgressEvent; expected: RegExp }> = [
+test('createReplayTestProgressRenderer renders pass, retry, fail, and skip cases', () => {
+  const cases: Array<{ event: ReplayTestResult; expected: RegExp }> = [
     {
       event: {
-        type: 'replay-test',
         file: '/tmp/01-login.ad',
         status: 'pass',
         index: 1,
@@ -77,7 +39,6 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
     },
     {
       event: {
-        type: 'replay-test',
         file: '/tmp/02-checkout.ad',
         status: 'fail',
         index: 2,
@@ -92,7 +53,6 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
     },
     {
       event: {
-        type: 'replay-test',
         file: '/tmp/03-payment.ad',
         title: 'Payment flow',
         status: 'fail',
@@ -111,7 +71,6 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
     },
     {
       event: {
-        type: 'replay-test',
         file: '/tmp/05-sharded.ad',
         title: 'Sharded flow',
         status: 'pass',
@@ -128,7 +87,6 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
     },
     {
       event: {
-        type: 'replay-test',
         file: '/tmp/04-skip.ad',
         status: 'skip',
         index: 4,
@@ -140,11 +98,11 @@ test('formatReplayTestProgressEvent renders pass, retry, fail, and skip cases', 
   ];
 
   for (const { event, expected } of cases) {
-    assert.match(formatReplayTestProgressEvent(event) ?? '', expected);
+    assert.match(renderTestResult(event) ?? '', expected);
   }
 });
 
-test('formatReplayTestProgressEvent colors stderr progress rows when stdout is piped', () => {
+test('createReplayTestProgressRenderer colors stderr progress rows when stdout is piped', () => {
   const originalForceColor = process.env.FORCE_COLOR;
   const originalNoColor = process.env.NO_COLOR;
   delete process.env.FORCE_COLOR;
@@ -152,8 +110,7 @@ test('formatReplayTestProgressEvent colors stderr progress rows when stdout is p
   try {
     const line = withStreamTty(process.stdout, false, () =>
       withStreamTty(process.stderr, true, () =>
-        formatReplayTestProgressEvent({
-          type: 'replay-test',
+        renderTestResult({
           file: '/tmp/01-pass.ad',
           status: 'pass',
           index: 1,
@@ -181,14 +138,15 @@ test('createReplayTestProgressRenderer dims live step progress when color is ena
   try {
     const renderer = createReplayTestProgressRenderer({ liveProgress: true });
     const rendered = renderer.render({
-      type: 'replay-test',
-      file: '/tmp/checkout.yaml',
-      title: 'Checkout flow',
-      status: 'progress',
-      index: 1,
-      total: 1,
-      stepIndex: 3,
-      stepTotal: 20,
+      type: 'test-step',
+      test: {
+        file: '/tmp/checkout.yaml',
+        title: 'Checkout flow',
+        index: 1,
+        total: 1,
+        stepIndex: 3,
+        stepTotal: 20,
+      },
     });
 
     assert.deepEqual(rendered, {
@@ -203,23 +161,14 @@ test('createReplayTestProgressRenderer dims live step progress when color is ena
   }
 });
 
-test('formatReplayTestProgressEvent colors completed result markers when color is enabled', () => {
+test('createReplayTestProgressRenderer colors completed result markers when color is enabled', () => {
   const originalForceColor = process.env.FORCE_COLOR;
   const originalNoColor = process.env.NO_COLOR;
   process.env.FORCE_COLOR = '1';
   delete process.env.NO_COLOR;
   try {
-    formatReplayTestProgressEvent({
-      type: 'replay-test-suite',
-      status: 'start',
-      total: 3,
-      runnable: 3,
-      skipped: 0,
-      artifactsDir: '/tmp/replay-suite',
-    });
     assert.equal(
-      formatReplayTestProgressEvent({
-        type: 'replay-test',
+      renderTestResult({
         file: '/tmp/01-pass.ad',
         status: 'pass',
         index: 1,
@@ -230,8 +179,7 @@ test('formatReplayTestProgressEvent colors completed result markers when color i
       '\u001B[32m✓\u001B[39m 01-pass.ad \u001B[33m0.01s\u001B[39m',
     );
     assert.equal(
-      formatReplayTestProgressEvent({
-        type: 'replay-test',
+      renderTestResult({
         file: '/tmp/02-flaky.yml',
         title: 'Retry flow',
         status: 'pass',
@@ -242,8 +190,7 @@ test('formatReplayTestProgressEvent colors completed result markers when color i
       }),
       '\u001B[33m✓\u001B[39m Retry flow \u001B[33m0.03s\u001B[39m',
     );
-    const failedLine = formatReplayTestProgressEvent({
-      type: 'replay-test',
+    const failedLine = renderTestResult({
       file: '/tmp/03-fail.ad',
       title: 'Checkout failure',
       status: 'fail',

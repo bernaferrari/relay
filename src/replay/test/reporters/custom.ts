@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { AppError } from '../kernel/errors.ts';
+import { AppError } from '../../../kernel/errors.ts';
 import type { ReplayTestReporter, ReplayTestReporterFactory } from './types.ts';
 import type { ReplayTestReporterSpec } from './spec.ts';
 
@@ -12,7 +12,10 @@ type CustomReporterModule = {
 };
 
 const OPTIONAL_REPORTER_HOOKS = [
-  'onProgress',
+  'onSuiteStart',
+  'onTestStart',
+  'onTestStep',
+  'onTestResult',
   'onSuiteEnd',
   'getExitCode',
 ] as const satisfies readonly (keyof ReplayTestReporter)[];
