@@ -38,6 +38,7 @@ import type {
   AppListOptions,
   AppOpenOptions,
   CaptureScreenshotOptions,
+  CaptureScreenshotResult,
   CaptureSnapshotOptions,
   CaptureSnapshotResult,
   InternalRequestOptions,
@@ -46,6 +47,7 @@ import type {
   MetroPrepareOptions,
 } from './client-types.ts';
 import type { CommandResult } from './core/command-descriptor/command-result.ts';
+import { isNonDefaultResponseLevel, type ResponseLevel } from './contracts.ts';
 import { readSerializedSnapshotCaptureAnnotations } from './snapshot-capture-annotations.ts';
 import { readSnapshotDiagnosticsSummary } from './snapshot-diagnostics.ts';
 import type { CommandFlags } from './core/dispatch-context.ts';
@@ -55,6 +57,12 @@ export function createAgentDeviceClient(
   deps: { transport?: AgentDeviceDaemonTransport } = {},
 ): AgentDeviceClient {
   const transport = deps.transport ?? sendToDaemon;
+
+  // A non-default responseLevel (digest/full) makes the daemon return a leveled
+  // shape; the per-command client normalizers assume the default shape, so the
+  // capture methods pass the leveled payload through unnormalized instead.
+  const isLeveledResponse = (options: { responseLevel?: ResponseLevel }): boolean =>
+    isNonDefaultResponseLevel(options.responseLevel ?? config.responseLevel);
 
   const execute = async (
     command: string,
@@ -266,11 +274,23 @@ export function createAgentDeviceClient(
       snapshot: async (options: CaptureSnapshotOptions = {}) => {
         const session = resolveRequestSession(options);
         const data = await executeCommand<Record<string, unknown>>('snapshot', options);
+        // A non-default responseLevel returns the leveled snapshot digest
+        // ({ nodeCount, refs, … }); normalizeSnapshotResult expects the full
+        // `nodes` tree and would collapse it to an empty snapshot. Pass the
+        // leveled payload through verbatim. (Mirrors capture.screenshot; the
+        // caller opted into the level, so the runtime value is the leveled shape.)
+        if (isLeveledResponse(options)) return data as unknown as CaptureSnapshotResult;
         return normalizeSnapshotResult(data, session);
       },
       screenshot: async (options: CaptureScreenshotOptions = {}) => {
         const session = resolveRequestSession(options);
         const data = await executeCommand<Record<string, unknown>>('screenshot', options);
+        // A non-default responseLevel returns a leveled (digest) screenshot shape
+        // — `overlayCount`, leveled `overlayRefs`, `artifacts` — that the default
+        // normalizer below would drop. Pass the leveled payload through verbatim.
+        // (The caller opted into a non-default level, so the static type is the
+        // default shape; the runtime value is the leveled payload.)
+        if (isLeveledResponse(options)) return data as unknown as CaptureScreenshotResult;
         const screenshot = readScreenshotResultData(data);
         return {
           path: readRequiredString(data, 'path'),

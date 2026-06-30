@@ -807,3 +807,72 @@ test('sessions.stateDir resolves locally without contacting the daemon', async (
   assert.equal(fromOverride, '/tmp/agent-device-override-state');
   assert.equal(setup.calls.length, 0);
 });
+
+test('capture.screenshot passes a digest (non-default level) payload through unnormalized', async () => {
+  const digest = {
+    path: '/tmp/shot.png',
+    overlayCount: 2,
+    overlayRefs: [{ ref: 'e1', label: 'Login' }],
+    artifacts: [{ field: 'path', artifactId: 'a1' }],
+  };
+  const setup = createTransport(async (req) => {
+    assert.equal(req.command, 'screenshot');
+    assert.equal(req.meta?.responseLevel, 'digest'); // the level reached the daemon
+    return { ok: true, data: digest };
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const result = await client.capture.screenshot({ responseLevel: 'digest' });
+
+  // The digest SURVIVES the shipped client path: overlayCount, the leveled
+  // overlayRefs ({ref,label}), and artifacts are not dropped, and the default
+  // normalizer (which would add `identifiers` and strip those fields) is skipped.
+  const asRecord = result as Record<string, unknown>;
+  assert.deepEqual(asRecord, digest);
+  assert.equal(asRecord.overlayCount, 2);
+  assert.ok(!('identifiers' in asRecord));
+});
+
+test('capture.screenshot normalizes the default-level result (unchanged)', async () => {
+  const setup = createTransport(async (req) => {
+    assert.equal(req.command, 'screenshot');
+    assert.equal(req.meta?.responseLevel, undefined);
+    return {
+      ok: true,
+      data: {
+        path: '/tmp/shot.png',
+        overlayRefs: [{ ref: 'e1', label: 'Login', x: 0, y: 0, width: 10, height: 10 }],
+      },
+    };
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const result = await client.capture.screenshot();
+
+  assert.equal(result.path, '/tmp/shot.png');
+  assert.deepEqual(result.identifiers, { session: 'qa' });
+});
+
+test('capture.snapshot passes a digest (non-default level) payload through unnormalized', async () => {
+  const digest = {
+    nodeCount: 3,
+    refs: [{ ref: 'e1', label: 'Login' }],
+    truncated: false,
+  };
+  const setup = createTransport(async (req) => {
+    assert.equal(req.command, 'snapshot');
+    assert.equal(req.meta?.responseLevel, 'digest'); // the level reached the daemon
+    return { ok: true, data: digest };
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const result = await client.capture.snapshot({ responseLevel: 'digest' });
+
+  // The digest SURVIVES the client path: nodeCount/refs are preserved and the
+  // default normalizer (which expects `nodes` and would yield an empty snapshot
+  // plus `identifiers`) is skipped.
+  const asRecord = result as Record<string, unknown>;
+  assert.deepEqual(asRecord, digest);
+  assert.equal(asRecord.nodeCount, 3);
+  assert.ok(!('identifiers' in asRecord));
+});
