@@ -2,27 +2,26 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { AppError } from '../index.ts';
+import type { CommandResult } from '../core/command-descriptor/command-result.ts';
+import type { AppStateCommandResult } from '../contracts/app-state.ts';
+import type { ClipboardCommandResult } from '../contracts/clipboard.ts';
+import type { BootCommandResult, ShutdownCommandResult } from '../contracts/device.ts';
+import type {
+  AppSwitcherCommandResult,
+  BackCommandResult,
+  HomeCommandResult,
+  RotateCommandResult,
+} from '../contracts/navigation.ts';
+import type { ViewportCommandResult } from '../contracts/viewport.ts';
+import { centerOfRect, defaultHintForCode, normalizeError } from '../contracts.ts';
 import {
-  AppError,
-  type AppStateCommandResult,
-  type BackCommandResult,
-  type BootCommandResult,
-  type ClipboardCommandResult,
-  type CommandResult,
-  type RotateCommandResult,
-  type ShutdownCommandResult,
-  type ViewportCommandResult,
-} from '../index.ts';
-import {
-  defaultHintForCode,
   daemonCommandRequestSchema,
   daemonRuntimeSchema,
-  centerOfRect,
   jsonRpcRequestSchema,
   leaseAllocateSchema,
   leaseHeartbeatSchema,
   leaseReleaseSchema,
-  normalizeError,
   type AppErrorCode,
   type Rect,
   type SnapshotNode,
@@ -48,7 +47,18 @@ test('public contracts error helpers do not load diagnostics module', () => {
   assert.doesNotMatch(errorsSource, /node:/);
 });
 
-test('public contract schemas validate daemon requests and lease payloads', () => {
+test('public contract facade does not expose parser schemas', async () => {
+  const publicContracts = (await import('../contracts.ts')) as Record<string, unknown>;
+
+  assert.equal(publicContracts.daemonCommandRequestSchema, undefined);
+  assert.equal(publicContracts.daemonRuntimeSchema, undefined);
+  assert.equal(publicContracts.jsonRpcRequestSchema, undefined);
+  assert.equal(publicContracts.leaseAllocateSchema, undefined);
+  assert.equal(publicContracts.leaseHeartbeatSchema, undefined);
+  assert.equal(publicContracts.leaseReleaseSchema, undefined);
+});
+
+test('internal contract schemas validate daemon requests and lease payloads', () => {
   const runtime = daemonRuntimeSchema.parse({
     platform: 'ios',
     metroHost: '127.0.0.1',
@@ -97,7 +107,7 @@ test('public contract schemas validate daemon requests and lease payloads', () =
   assert.equal(node.ref, 'e1');
 });
 
-test('public root exports typed command result contracts', () => {
+test('command result contracts are assignable to command result map', () => {
   const boot = {
     platform: 'ios',
     target: 'mobile',
@@ -137,6 +147,18 @@ test('public root exports typed command result contracts', () => {
   } satisfies BackCommandResult;
   const backFromMap: CommandResult<'back'> = back;
 
+  const home = {
+    action: 'home',
+    message: 'Home',
+  } satisfies HomeCommandResult;
+  const homeFromMap: CommandResult<'home'> = home;
+
+  const appSwitcher = {
+    action: 'app-switcher',
+    message: 'App switcher opened',
+  } satisfies AppSwitcherCommandResult;
+  const appSwitcherFromMap: CommandResult<'app-switcher'> = appSwitcher;
+
   const rotate = {
     action: 'rotate',
     orientation: 'portrait',
@@ -162,6 +184,8 @@ test('public root exports typed command result contracts', () => {
   assert.equal(shutdownFromMap.shutdown.success, true);
   assert.equal(viewportFromMap.width, 390);
   assert.equal(backFromMap.mode, 'in-app');
+  assert.equal(homeFromMap.action, 'home');
+  assert.equal(appSwitcherFromMap.action, 'app-switcher');
   assert.equal(rotateFromMap.orientation, 'portrait');
   assert.equal(clipboardFromMap.action === 'write' ? clipboardFromMap.textLength : -1, 11);
   assert.equal(
@@ -170,7 +194,7 @@ test('public root exports typed command result contracts', () => {
   );
 });
 
-test('public daemon request schema accepts GitHub Actions artifact install sources', () => {
+test('internal daemon request schema accepts GitHub Actions artifact install sources', () => {
   const artifactIdRequest = daemonCommandRequestSchema.parse({
     command: 'install_source',
     positionals: [],
@@ -277,7 +301,7 @@ test('public contract exports normalize and hint app errors', () => {
   );
 });
 
-test('public contract schemas reject invalid payloads', () => {
+test('internal contract schemas reject invalid payloads', () => {
   assert.throws(
     () =>
       daemonCommandRequestSchema.parse({
