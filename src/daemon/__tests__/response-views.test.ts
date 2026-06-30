@@ -4,6 +4,8 @@ import type { DaemonResponseData } from '../types.ts';
 
 const snapshotView = RESPONSE_VIEWS.snapshot;
 const screenshotView = RESPONSE_VIEWS.screenshot;
+const findView = RESPONSE_VIEWS.find;
+const getView = RESPONSE_VIEWS.get;
 
 const SNAPSHOT_DATA: DaemonResponseData = {
   nodes: [
@@ -102,4 +104,132 @@ test('screenshot default and full return today’s shape unchanged (same referen
 test('screenshot digest tolerates a path-only result with no overlay refs', () => {
   const digest = screenshotView!({ path: '/tmp/s.png' }, 'digest');
   expect(digest).toEqual({ path: '/tmp/s.png', overlayCount: 0, overlayRefs: [] });
+});
+
+// A verbose matched node as it appears on the `find`/`get` wire: the semantic
+// attributes (kept) plus the geometry/index/process plumbing (the token sink).
+const MATCHED_NODE = {
+  ref: 'e7',
+  role: 'AXButton',
+  type: 'Button',
+  label: 'Sign in',
+  value: 'enabled',
+  identifier: 'login-button',
+  enabled: true,
+  selected: false,
+  focused: false,
+  hittable: true,
+  // verbose framing the digest intentionally drops:
+  rect: { x: 10, y: 20, width: 100, height: 44 },
+  index: 7,
+  parentIndex: 3,
+  depth: 4,
+  pid: 1234,
+  bundleId: 'com.demo.app',
+  appName: 'Demo',
+  windowTitle: 'Demo',
+  surface: 'app',
+  visibleToUser: true,
+};
+
+const COMPACT_NODE = {
+  ref: 'e7',
+  role: 'AXButton',
+  type: 'Button',
+  label: 'Sign in',
+  value: 'enabled',
+  identifier: 'login-button',
+  enabled: true,
+  selected: false,
+  focused: false,
+  hittable: true,
+};
+
+test('find and get views are registered (shared selector-read view)', () => {
+  expect(typeof findView).toBe('function');
+  expect(typeof getView).toBe('function');
+  expect(findView).toBe(getView);
+});
+
+test('find get-text digest keeps ref + text, drops the verbose node', () => {
+  const digest = findView!({ ref: '@e7', text: 'Sign in', node: MATCHED_NODE }, 'digest');
+  expect(digest).toEqual({ ref: '@e7', text: 'Sign in' });
+  expect('node' in digest).toBe(false);
+});
+
+test('a text read keeps every OTHER cheap field (e.g. warning) while dropping the node', () => {
+  const digest = findView!(
+    {
+      ref: '@e7',
+      text: 'Sign in',
+      warning: 'recovered from a blocking dialog',
+      node: MATCHED_NODE,
+    },
+    'digest',
+  );
+  expect(digest).toEqual({
+    ref: '@e7',
+    text: 'Sign in',
+    warning: 'recovered from a blocking dialog',
+  });
+});
+
+test('find get-attrs digest compacts the node to semantic attributes only', () => {
+  const digest = findView!({ ref: '@e7', node: MATCHED_NODE }, 'digest');
+  expect(digest).toEqual({ ref: '@e7', node: COMPACT_NODE });
+  // The geometry/index/process plumbing (the token sink) is dropped from the node.
+  expect('rect' in (digest.node as Record<string, unknown>)).toBe(false);
+  expect('parentIndex' in (digest.node as Record<string, unknown>)).toBe(false);
+});
+
+test('an attrs read compacts the node but keeps every other cheap field (e.g. warning)', () => {
+  const digest = getView!({ ref: 'e7', warning: 'partial tree', node: MATCHED_NODE }, 'digest');
+  expect(digest).toEqual({ ref: 'e7', warning: 'partial tree', node: COMPACT_NODE });
+});
+
+// REGRESSION: `find` is registered command-wide, but `find fill/focus/type` return
+// the underlying INTERACTION response (carrying cheap, agent-critical signals like
+// `warning`/`message`), which has no verbose snapshot node. The conservative view
+// must return such a node-less shape UNCHANGED — never allowlist-narrow it.
+test('find fill/focus/type interaction responses pass through UNCHANGED (warning kept)', () => {
+  const fillResponse: DaemonResponseData = {
+    ref: 'e3',
+    text: 'hello',
+    message: 'Filled 5 chars',
+    warning: 'Recovered from a blocking system dialog',
+  };
+  const digest = findView!(fillResponse, 'digest');
+  expect(digest).toBe(fillResponse); // same reference — not narrowed at all
+  expect(digest).toEqual(fillResponse);
+});
+
+test('find exists/wait/click digests pass through the cheap actionable signals', () => {
+  // No verbose node → returned UNCHANGED (same reference).
+  const exists: DaemonResponseData = { found: true };
+  const wait: DaemonResponseData = { found: true, waitedMs: 320 };
+  const click: DaemonResponseData = { ref: '@e7', locator: 'text', query: 'Sign in', x: 60, y: 42 };
+  expect(findView!(exists, 'digest')).toBe(exists);
+  expect(findView!(wait, 'digest')).toBe(wait);
+  expect(findView!(click, 'digest')).toBe(click);
+});
+
+test('get text digest keeps selector + text and drops the node', () => {
+  const digest = getView!(
+    { selector: 'text=Sign in', text: 'Sign in', node: MATCHED_NODE },
+    'digest',
+  );
+  expect(digest).toEqual({ selector: 'text=Sign in', text: 'Sign in' });
+});
+
+test('get attrs digest compacts the node under a ref target', () => {
+  const digest = getView!({ ref: 'e7', node: MATCHED_NODE }, 'digest');
+  expect(digest).toEqual({ ref: 'e7', node: COMPACT_NODE });
+});
+
+test('find/get default and full return today’s shape unchanged (same reference)', () => {
+  const data: DaemonResponseData = { ref: '@e7', text: 'Sign in', node: MATCHED_NODE };
+  expect(findView!(data, 'default')).toBe(data);
+  expect(findView!(data, 'full')).toBe(data);
+  expect(getView!(data, 'default')).toBe(data);
+  expect(getView!(data, 'full')).toBe(data);
 });
