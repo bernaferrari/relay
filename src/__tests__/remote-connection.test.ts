@@ -17,7 +17,7 @@ import {
   connectionCommand,
   disconnectCommand,
 } from '../cli/commands/connection.ts';
-import { writeGeneratedRemoteConfig } from '../cli/generated-remote-config.ts';
+import { writeGeneratedRemoteConfig } from '../cli/connection/generated-config.ts';
 import {
   hasDeferredMetroConfig,
   materializeRemoteConnectionForCommand,
@@ -398,7 +398,7 @@ test('connect proxy rejects remote-config and unknown provider combinations', as
         },
         client: createTestClient(),
       }),
-    /Supported providers: proxy/,
+    /Supported providers: cloud, proxy, browserstack, aws-device-farm/,
   );
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
@@ -1335,6 +1335,89 @@ test('deferred materialization allocates pending lease for devices', async () =>
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
+test('deferred provider materialization forwards provider profile fields to lease allocation', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-provider-lease-flags-'));
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'browserstack.json');
+  fs.writeFileSync(
+    remoteConfigPath,
+    JSON.stringify({
+      tenant: 'browserstack',
+      runId: 'browserstack-run',
+      leaseProvider: 'browserstack',
+      leaseBackend: 'android-instance',
+      platform: 'android',
+      device: 'Google Pixel 8',
+      providerOsVersion: '14.0',
+      providerApp: '/tmp/WikipediaSample.apk',
+      providerProject: 'agent-device',
+      providerBuild: 'live-smoke',
+    }),
+  );
+  writeRemoteConnectionState({
+    stateDir,
+    state: {
+      version: 1,
+      session: 'adc-browserstack',
+      remoteConfigPath,
+      remoteConfigHash: hashRemoteConfigFile(remoteConfigPath),
+      tenant: 'browserstack',
+      runId: 'browserstack-run',
+      leaseBackend: 'android-instance',
+      leaseProvider: 'browserstack',
+      platform: 'android',
+      connectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  let allocateRequest: Parameters<AgentDeviceClient['leases']['allocate']>[0] | undefined;
+
+  const materialized = await materializeRemoteConnectionForCommand({
+    command: 'open',
+    flags: {
+      json: true,
+      help: false,
+      version: false,
+      stateDir,
+      remoteConfig: remoteConfigPath,
+      tenant: 'browserstack',
+      runId: 'browserstack-run',
+      session: 'adc-browserstack',
+      leaseBackend: 'android-instance',
+      platform: 'android',
+      device: 'Google Pixel 8',
+      providerOsVersion: '14.0',
+      providerApp: '/tmp/WikipediaSample.apk',
+      providerProject: 'agent-device',
+      providerBuild: 'live-smoke',
+    },
+    client: createTestClient({
+      allocate: async (request) => {
+        allocateRequest = request;
+        return {
+          leaseId: 'lease-browserstack',
+          tenantId: request.tenant,
+          runId: request.runId,
+          backend: request.leaseBackend ?? 'android-instance',
+          leaseProvider: request.leaseProvider,
+          clientId: request.clientId,
+          deviceKey: request.deviceKey,
+        };
+      },
+    }),
+  });
+
+  assert.equal(materialized.flags.leaseId, 'lease-browserstack');
+  assert.equal(allocateRequest?.platform, 'android');
+  assert.equal(allocateRequest?.device, 'Google Pixel 8');
+  assert.equal(allocateRequest?.providerApp, '/tmp/WikipediaSample.apk');
+  assert.equal(allocateRequest?.providerOsVersion, '14.0');
+  assert.equal(allocateRequest?.providerProject, 'agent-device');
+  assert.equal(allocateRequest?.providerBuild, 'live-smoke');
+
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
 test('deferred materialization reallocates when the persisted lease is inactive', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-connect-stale-lease-'));
   const stateDir = path.join(tempRoot, '.state');
@@ -1878,6 +1961,7 @@ test('disconnect without a session uses active connection state', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-disconnect-active-'));
   const stateDir = path.join(tempRoot, '.state');
   const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  const closedSessions: Array<{ session: string | undefined; shutdown: boolean | undefined }> = [];
   fs.writeFileSync(remoteConfigPath, '{}');
   writeRemoteConnectionState({
     stateDir,
@@ -1905,11 +1989,96 @@ test('disconnect without a session uses active connection state', async () => {
         stateDir,
         shutdown: true,
       },
-      client: createTestClient(),
+      client: createTestClient({
+        closeSession: async (options) => {
+          closedSessions.push({ session: options?.session, shutdown: options?.shutdown });
+          return {
+            session: options?.session ?? 'default',
+            identifiers: { session: options?.session ?? 'default' },
+          };
+        },
+      }),
     });
   });
 
+  assert.deepEqual(closedSessions, [{ session: 'adc-android', shutdown: true }]);
   assert.equal(readRemoteConnectionState({ stateDir, session: 'adc-android' }), null);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('disconnect human output surfaces provider release warnings and artifact links', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-disconnect-provider-'));
+  const stateDir = path.join(tempRoot, '.state');
+  const remoteConfigPath = path.join(tempRoot, 'remote.json');
+  fs.writeFileSync(remoteConfigPath, '{}');
+  writeRemoteConnectionState({
+    stateDir,
+    state: {
+      version: 1,
+      session: 'adc-browserstack',
+      remoteConfigPath,
+      remoteConfigHash: hashRemoteConfigFile(remoteConfigPath),
+      tenant: 'browserstack',
+      runId: 'run-123',
+      leaseId: 'lease-1',
+      leaseBackend: 'android-instance',
+      leaseProvider: 'browserstack',
+      connectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
+  const output = await captureStdout(async () => {
+    await disconnectCommand({
+      positionals: [],
+      flags: {
+        json: false,
+        help: false,
+        version: false,
+        stateDir,
+        session: 'adc-browserstack',
+      },
+      client: createTestClient({
+        closeSession: async () => ({
+          session: 'adc-browserstack',
+          identifiers: { session: 'adc-browserstack' },
+          provider: {
+            provider: 'browserstack',
+            providerSessionId: 'wd-1',
+            warnings: [
+              {
+                code: 'WEBDRIVER_SESSION_DELETE_FAILED',
+                message: 'stale webdriver session',
+              },
+            ],
+            cloudArtifacts: {
+              provider: 'browserstack',
+              providerSessionId: 'wd-1',
+              status: 'ready',
+              cloudArtifacts: [
+                {
+                  provider: 'browserstack',
+                  providerSessionId: 'wd-1',
+                  kind: 'video',
+                  name: 'Session video',
+                  url: 'https://provider.example/video.mp4',
+                  availability: 'ready',
+                },
+              ],
+            },
+          },
+        }),
+      }),
+    });
+  });
+
+  assert.match(output, /Disconnected remote session "adc-browserstack"\./);
+  assert.match(
+    output,
+    /Provider release warning \(WEBDRIVER_SESSION_DELETE_FAILED\): stale webdriver session/,
+  );
+  assert.match(output, /Session video: https:\/\/provider\.example\/video\.mp4/);
+  assert.equal(readRemoteConnectionState({ stateDir, session: 'adc-browserstack' }), null);
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 

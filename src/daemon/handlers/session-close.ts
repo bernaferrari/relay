@@ -22,6 +22,7 @@ import { errorResponse } from './response.ts';
 import { recordSessionAction } from './handler-utils.ts';
 import type { LeaseRegistry } from '../lease-registry.ts';
 import { releaseSessionLease } from '../lease-lifecycle.ts';
+import type { LeaseLifecycleProvider } from './lease.ts';
 import {
   stopAppleRunnerForClose,
   stopSessionAndroidNativePerfCapture,
@@ -54,12 +55,14 @@ export async function handleCloseCommand(params: {
   logPath: string;
   sessionStore: SessionStore;
   leaseRegistry: LeaseRegistry;
+  leaseLifecycleProvider?: LeaseLifecycleProvider;
 }): Promise<DaemonResponse> {
-  const { req, sessionName, logPath, sessionStore, leaseRegistry } = params;
+  const { req, sessionName, logPath, sessionStore, leaseRegistry, leaseLifecycleProvider } = params;
   const session = sessionStore.get(sessionName);
   if (!session) {
     return await closeWithoutSession(req, logPath);
   }
+  let providerData: Record<string, unknown> | undefined;
   try {
     await stopSessionAppLog(session);
     await stopSessionApplePerfCapture(session);
@@ -108,11 +111,13 @@ export async function handleCloseCommand(params: {
     sessionStore.writeSessionLog(session);
     await cleanupRetainedMaterializedPathsForSession(sessionName).catch(() => {});
   } finally {
-    // Always release the device lease and drop the session, even if teardown
-    // above threw: a failed close must not strand device ownership until the
-    // inactivity expiry. The original error still propagates after finally.
-    releaseSessionLease({ session, leaseRegistry });
-    sessionStore.delete(sessionName);
+    // Always drop the local session, even if provider-side release fails:
+    // a failed close must not strand device ownership until inactivity expiry.
+    try {
+      providerData = await releaseSessionLease({ session, leaseRegistry, leaseLifecycleProvider });
+    } finally {
+      sessionStore.delete(sessionName);
+    }
   }
   const shutdownResult = await maybeShutdownSessionTarget({
     device: session.device,
@@ -122,12 +127,23 @@ export async function handleCloseCommand(params: {
     return {
       ok: true,
       data: withSuccessText(
-        { session: session.name, shutdown: shutdownResult },
+        {
+          session: session.name,
+          shutdown: shutdownResult,
+          ...(providerData ? { provider: providerData } : {}),
+        },
         `Closed: ${session.name}`,
       ),
     };
   }
-  return { ok: true, data: { session: session.name, ...successText(`Closed: ${session.name}`) } };
+  return {
+    ok: true,
+    data: {
+      session: session.name,
+      ...successText(`Closed: ${session.name}`),
+      ...(providerData ? { provider: providerData } : {}),
+    },
+  };
 }
 
 function shouldDispatchPlatformClose(req: DaemonRequest, session: SessionState): boolean {
