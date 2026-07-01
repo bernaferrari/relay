@@ -504,6 +504,11 @@ export type PrepareCommandOptions = DeviceCommandBaseOptions & {
   timeoutMs?: number;
 };
 
+export type DoctorCommandOptions = DeviceCommandBaseOptions & {
+  targetApp?: string;
+  remote?: boolean;
+};
+
 export type ViewportCommandOptions = DeviceCommandBaseOptions & {
   width: number;
   height: number;
@@ -520,6 +525,7 @@ export type AgentDeviceCommandClient = {
   keyboard: (options?: KeyboardCommandOptions) => Promise<CommandResult<'keyboard'>>;
   clipboard: (options: ClipboardCommandOptions) => Promise<CommandResult<'clipboard'>>;
   reactNative: (options: ReactNativeCommandOptions) => Promise<CommandRequestResult>;
+  doctor: (options?: DoctorCommandOptions) => Promise<CommandRequestResult>;
   prepare: (options: PrepareCommandOptions) => Promise<CommandRequestResult>;
   viewport: (options: ViewportCommandOptions) => Promise<CommandResult<'viewport'>>;
 };

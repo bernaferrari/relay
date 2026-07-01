@@ -27,7 +27,7 @@ export type DeviceInfo = {
   simulatorSetPath?: string;
 };
 
-type DeviceSelector = {
+export type DeviceSelector = {
   platform?: PlatformSelector;
   target?: DeviceTarget;
   deviceName?: string;
@@ -37,6 +37,7 @@ type DeviceSelector = {
 
 type DeviceSelectionContext = {
   simulatorSetPath?: string;
+  allowStoppedAndroidAvdPlaceholders?: boolean;
 };
 
 export function isApplePlatform(
@@ -124,6 +125,15 @@ export function resolveAppleSimulatorSetPathForSelector(params: {
   return simulatorSetPath;
 }
 
+export function sortAppleDevicesForSelection<TDevice extends DeviceInfo>(
+  devices: TDevice[],
+): TDevice[] {
+  return devices
+    .map((device, index) => ({ device, index }))
+    .sort((left, right) => compareAppleDevicesForSelection(left, right))
+    .map(({ device }) => device);
+}
+
 function supportsAppleSimulatorSelection(platform: PlatformSelector | undefined): boolean {
   return !platform || platform === 'apple' || platform === 'ios';
 }
@@ -133,72 +143,153 @@ export async function resolveDevice(
   selector: DeviceSelector,
   context: DeviceSelectionContext = {},
 ): Promise<DeviceInfo> {
-  let candidates = devices;
-  const normalize = (value: string): string =>
-    value.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-
-  if (selector.platform) {
-    candidates = candidates.filter((d) => matchesPlatformSelector(d.platform, selector.platform));
-  }
-  if (selector.target) {
-    candidates = candidates.filter((d) => (d.target ?? 'mobile') === selector.target);
-  }
+  let candidates = devices.filter((device) => matchesDeviceSelector(device, selector));
 
   if (selector.udid) {
-    const match = candidates.find((d) => d.id === selector.udid && isApplePlatform(d.platform));
-    if (!match) {
+    const match = candidates.find(
+      (device) => device.id === selector.udid && isApplePlatform(device.platform),
+    );
+    if (!match)
       throw new AppError('DEVICE_NOT_FOUND', `No Apple device with UDID ${selector.udid}`);
-    }
     return match;
   }
 
   if (selector.serial) {
-    const match = candidates.find((d) => d.id === selector.serial && d.platform === 'android');
+    const match = candidates.find(
+      (device) => device.id === selector.serial && device.platform === 'android',
+    );
     if (!match)
       throw new AppError('DEVICE_NOT_FOUND', `No Android device with serial ${selector.serial}`);
     return match;
   }
 
+  if (context.allowStoppedAndroidAvdPlaceholders !== true) {
+    candidates = candidates.filter((device) => !isStoppedAndroidAvdPlaceholder(device));
+  }
+
   if (selector.deviceName) {
-    const target = normalize(selector.deviceName);
-    const match = candidates.find((d) => normalize(d.name) === target);
-    if (!match) {
-      throw new AppError('DEVICE_NOT_FOUND', `No device named ${selector.deviceName}`);
-    }
+    const normalizedName = normalizeDeviceName(selector.deviceName);
+    const match = candidates.find((device) => normalizeDeviceName(device.name) === normalizedName);
+    if (!match) throw new AppError('DEVICE_NOT_FOUND', `No device named ${selector.deviceName}`);
     return match;
+  }
+
+  if (isAppleDeviceCandidateSet(candidates)) {
+    candidates = sortAppleDevicesForSelection(candidates);
   }
 
   const onlyCandidate = candidates[0];
   if (onlyCandidate !== undefined && candidates.length === 1) return onlyCandidate;
 
   if (candidates.length === 0) {
-    const simulatorSetPath = context.simulatorSetPath;
-    if (simulatorSetPath && supportsAppleSimulatorSelection(selector.platform)) {
-      throw new AppError('DEVICE_NOT_FOUND', 'No devices found in the scoped simulator set', {
-        simulatorSetPath,
-        hint: `The simulator set at "${simulatorSetPath}" appears to be empty. Create a simulator first:\n  xcrun simctl --set "${simulatorSetPath}" create "iPhone 16" com.apple.CoreSimulator.SimDeviceType.iPhone-16 com.apple.CoreSimulator.SimRuntime.iOS-18-0`,
-        selector,
-      });
-    }
-    throw new AppError('DEVICE_NOT_FOUND', 'No devices found', { selector });
+    throwNoDevicesFound(selector, context);
   }
 
-  // Prefer virtual devices (simulators/emulators) over physical devices unless
-  // a physical device was explicitly requested via --device/--udid/--serial.
-  const virtual = candidates.filter((d) => d.kind !== 'device');
-  if (virtual.length > 0) {
-    candidates = virtual;
-  }
-
-  const booted = candidates.filter((d) => d.booted);
+  const virtual = candidates.filter((device) => device.kind !== 'device');
+  const selectable = virtual.length > 0 ? virtual : candidates;
+  const booted = selectable.filter((device) => device.booted);
   const onlyBooted = booted[0];
-  if (onlyBooted !== undefined && booted.length === 1) return onlyBooted;
-
-  // When multiple candidates remain equally valid, preserve discovery order from
-  // the underlying platform tools rather than introducing another tie-breaker here.
-  const selected = booted[0] ?? candidates[0];
-  if (selected === undefined) {
-    throw new AppError('DEVICE_NOT_FOUND', 'No devices found', { selector });
+  if (onlyBooted && booted.length === 1 && !isAppleDeviceCandidateSet(selectable)) {
+    return onlyBooted;
   }
+  const selected = isAppleDeviceCandidateSet(selectable)
+    ? selectable[0]
+    : (booted[0] ?? selectable[0]);
+  if (!selected) throwNoDevicesFound(selector, context);
   return selected;
+}
+
+function isStoppedAndroidAvdPlaceholder(device: DeviceInfo): boolean {
+  return (
+    device.platform === 'android' &&
+    device.kind === 'emulator' &&
+    device.booted === false &&
+    !/^emulator-\d+$/.test(device.id)
+  );
+}
+
+export function matchesDeviceSelector(
+  device: DeviceInfo,
+  selector: DeviceSelector,
+  options: { includeExplicitSelectors?: boolean } = {},
+): boolean {
+  return (
+    matchesPlatformSelector(device.platform, selector.platform) &&
+    (!selector.target || (device.target ?? 'mobile') === selector.target) &&
+    (!options.includeExplicitSelectors || matchesExplicitDeviceSelector(device, selector))
+  );
+}
+
+function matchesExplicitDeviceSelector(device: DeviceInfo, selector: DeviceSelector): boolean {
+  if (selector.udid && !(device.id === selector.udid && isApplePlatform(device.platform))) {
+    return false;
+  }
+  if (selector.serial && !(device.id === selector.serial && device.platform === 'android')) {
+    return false;
+  }
+  if (
+    selector.deviceName &&
+    normalizeDeviceName(device.name) !== normalizeDeviceName(selector.deviceName)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function throwNoDevicesFound(selector: DeviceSelector, context: DeviceSelectionContext): never {
+  const simulatorSetPath = context.simulatorSetPath;
+  if (simulatorSetPath && supportsAppleSimulatorSelection(selector.platform)) {
+    throw new AppError('DEVICE_NOT_FOUND', 'No devices found in the scoped simulator set', {
+      simulatorSetPath,
+      hint: `The simulator set at "${simulatorSetPath}" appears to be empty. Create a compatible simulator first with xcrun simctl --set "${simulatorSetPath}" create, or remove the scoped simulator set.`,
+      selector,
+    });
+  }
+  throw new AppError('DEVICE_NOT_FOUND', 'No devices found', { selector });
+}
+
+function normalizeDeviceName(value: string): string {
+  return value.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function compareAppleDevicesForSelection<TDevice extends DeviceInfo>(
+  left: { device: TDevice; index: number },
+  right: { device: TDevice; index: number },
+): number {
+  return (
+    appleDeviceSelectionRank(left.device) - appleDeviceSelectionRank(right.device) ||
+    Number(right.device.booted === true) - Number(left.device.booted === true) ||
+    left.device.name.localeCompare(right.device.name) ||
+    left.index - right.index
+  );
+}
+
+function appleDeviceSelectionRank(device: DeviceInfo): number {
+  if (device.kind === 'simulator') return appleTargetSelectionRank(device, 0, 1, 2, 3);
+  if (device.kind === 'device' && device.platform === 'ios')
+    return appleTargetSelectionRank(device, 10, 11, 12, 13);
+  return 14;
+}
+
+function appleTargetSelectionRank(
+  device: DeviceInfo,
+  phoneRank: number,
+  ipadRank: number,
+  tvRank: number,
+  fallbackRank: number,
+): number {
+  const targetRanks: Record<DeviceTarget, number> = {
+    mobile: isIpadDeviceName(device.name) ? ipadRank : phoneRank,
+    tv: tvRank,
+    desktop: fallbackRank,
+  };
+  return targetRanks[device.target ?? 'mobile'];
+}
+
+function isAppleDeviceCandidateSet(devices: DeviceInfo[]): boolean {
+  return devices.length > 0 && devices.every((device) => isApplePlatform(device.platform));
+}
+
+function isIpadDeviceName(name: string): boolean {
+  return /\bipad\b/i.test(name);
 }
