@@ -39,11 +39,10 @@ import { registerBuiltinPlatformPlugins } from '../platform-plugin/register-buil
 //   (b.2) the per-command `supports()` / `unsupportedHint()` device closures were
 //         RELOCATED VERBATIM off the command-descriptor facet onto the owning
 //         PlatformPlugin's `capability.supportsByDefault` / `unsupportedHintByDefault`
-//         (perfect-shape §7: relocate, never flatten). This is faithful because every
-//         such closure is a no-op (returns `true` / `undefined`) on non-Apple devices,
-//         so consulting it only for the Apple family — the family that owns the
-//         relocated map — leaves admission unchanged. The independent VERBATIM copies
-//         below are the oracle: they pin (a) that production admission (`isCommand
+//         (perfect-shape §7: relocate, never flatten). Most such closures are Apple
+//         family gates; audio is also an Android gate because Android emulator capture
+//         depends on the macOS host backend. The independent VERBATIM copies below
+//         are the oracle: they pin (a) that production admission (`isCommand
 //         SupportedOnDevice`) and hint output (`unsupportedHintForDevice`) are unchanged
 //         across the full {platform x command x device-kind x target} matrix, and (b)
 //         that the closures now living on the Apple plugin are byte-for-byte behaviorally
@@ -104,6 +103,12 @@ const supportsSynthesisGesture = (device: DeviceInfo): boolean =>
   device.platform === 'android' || isIosMobileSimulator(device);
 const supportsAndroidOrIosNonTv = (device: DeviceInfo): boolean =>
   device.platform === 'android' || (device.platform === 'ios' && device.target !== 'tv');
+const supportsHostAudioProbe = (device: DeviceInfo): boolean =>
+  device.platform === 'web' ||
+  (process.platform === 'darwin' &&
+    (device.platform === 'macos' ||
+      (device.platform === 'ios' && device.kind === 'simulator') ||
+      (device.platform === 'android' && device.kind === 'emulator')));
 const synthesisGestureUnsupportedHint = (device: DeviceInfo): string | undefined => {
   if (device.platform === 'macos')
     return 'macOS automation has no multi-touch input — this gesture is supported on Android and the iOS simulator only.';
@@ -135,6 +140,7 @@ const SUPPORTS_REF: Record<string, (device: DeviceInfo) => boolean> = {
   alert: (device) => device.platform === 'android' || isMacOsOrAppleSimulator(device),
   settings: (device) =>
     device.platform === 'android' || device.platform === 'macos' || device.kind === 'simulator',
+  audio: supportsHostAudioProbe,
   pinch: supportsSynthesisGesture,
   'rotate-gesture': supportsSynthesisGesture,
   'transform-gesture': supportsSynthesisGesture,
@@ -258,11 +264,13 @@ test('(b.2) the relocated Apple closures are byte-for-byte the verbatim original
   }
 });
 
-test('(b.2) no non-Apple family carries a relocated supports/hint closure', () => {
-  // The relocation is faithful only because the closures are no-ops off the Apple
-  // family; guard that no other plugin accidentally grew a per-command gate (which
-  // would change admission for android/linux/web).
-  for (const platform of ['android', 'linux', 'web'] as const) {
+test('(b.2) non-Apple families only carry their own non-portable support gates', () => {
+  // Most relocated closures are Apple-only. Audio is the one host-dependent command
+  // that also gates Android emulator support on macOS hosts, so Android carries only
+  // that command-specific predicate.
+  assert.deepEqual(Object.keys(getPlugin('android').capability.supportsByDefault ?? {}), ['audio']);
+  assert.equal(getPlugin('android').capability.unsupportedHintByDefault, undefined);
+  for (const platform of ['linux', 'web'] as const) {
     const capability = getPlugin(platform).capability;
     assert.equal(capability.supportsByDefault, undefined, `${platform} has no supportsByDefault`);
     assert.equal(

@@ -15,7 +15,7 @@ import { AppError, normalizeError } from '../../kernel/errors.ts';
 import { resolveWebProvider } from '../../platforms/web/provider.ts';
 import type { AndroidAdbExecutor } from '../../platforms/android/adb-executor.ts';
 import type { DaemonRequest, DaemonResponse, DaemonResponseData, SessionState } from '../types.ts';
-import { SessionStore } from '../session-store.ts';
+import type { SessionStore } from '../session-store.ts';
 import {
   appendAppLogMarker,
   clearAppLogFiles,
@@ -33,6 +33,7 @@ import {
 } from './session-perf.ts';
 import { handleNativePerfCommand as handleAndroidNativePerfCommand } from './session-native-perf.ts';
 import { errorResponse, requireCommandSupported, type DaemonFailureResponse } from './response.ts';
+import { handleAudioCommand } from './session-audio.ts';
 import { handleNativePerfCommand as handleAppleNativePerfCommand } from './session-perf-xctrace.ts';
 import { NETWORK_INCLUDE_MODES, type NetworkIncludeMode } from '../../kernel/contracts.ts';
 import type { LogBackend } from '../network-log.ts';
@@ -91,6 +92,9 @@ export async function handleSessionObservabilityCommands(
   }
   if (req.command === 'network') {
     return handleNetworkCommand(params);
+  }
+  if (req.command === 'audio') {
+    return await handleAudioCommand(params);
   }
 
   return null;
