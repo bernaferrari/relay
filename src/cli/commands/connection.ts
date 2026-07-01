@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import type { CloudArtifact, CloudProviderSessionResult } from '../../cloud-artifacts.ts';
 import { resolveDaemonPaths } from '../../daemon/config.ts';
 import { resolveRemoteConfigProfile } from '../../remote/remote-config.ts';
 import {
@@ -13,8 +14,17 @@ import {
   type RemoteConnectionRequestMetadata,
 } from '../../remote/remote-connection-state.ts';
 import { AppError } from '../../kernel/errors.ts';
-import { resolveCloudConnectProfile } from '../cloud-connection-profile.ts';
-import { resolveProxyConnectProfile } from '../proxy-connection-profile.ts';
+import { resolveCloudConnectProfile } from '../connection/cloud-profile.ts';
+import {
+  connectProviderNamesForError,
+  connectionProviderLeaseKind,
+  connectionProviderRequiresRemoteDaemon,
+  isConnectProviderName,
+  isDirectDeviceConnectProvider,
+  type ConnectProvider,
+} from '../connection/provider-policy.ts';
+import { resolveCloudWebDriverConnectProfile } from '../connection/cloud-webdriver-profile.ts';
+import { resolveProxyConnectProfile } from '../connection/proxy-profile.ts';
 import {
   hasDeferredMetroConfig,
   releaseRemoteConnectionLease,
@@ -35,7 +45,7 @@ export const connectCommand: ClientCommandHandler = async ({ positionals, flags,
   const resolved = await resolveConnectProfile({ provider, flags, stateDir });
   const connectFlags = resolved.flags;
   const connectionMetadata = readRemoteConfigConnectionMetadata(resolved.remoteConfigPath);
-  const scope = readRequiredConnectScope(connectFlags);
+  const scope = readRequiredConnectScope(connectFlags, connectionMetadata);
   const context = resolveConnectContext({
     stateDir,
     flags: connectFlags,
@@ -77,13 +87,22 @@ export const connectCommand: ClientCommandHandler = async ({ positionals, flags,
 };
 
 async function resolveConnectProfile(options: {
-  provider?: 'proxy';
+  provider?: ConnectProvider;
   flags: CliFlags;
   stateDir: string;
 }): Promise<{ flags: CliFlags; remoteConfigPath: string }> {
   const { provider, flags, stateDir } = options;
   if (flags.remoteConfig) return resolveRemoteConnectFlags(flags);
-  if (provider === 'proxy' || shouldUseProxyConnectShortcut(flags)) {
+  if (isDirectDeviceConnectProvider(provider)) {
+    return resolveCloudWebDriverConnectProfile({
+      provider,
+      flags,
+      stateDir,
+      cwd: process.cwd(),
+      env: process.env,
+    });
+  }
+  if (provider === 'proxy' || (!provider && shouldUseProxyConnectShortcut(flags))) {
     return resolveProxyConnectProfile({
       flags,
       stateDir,
@@ -99,7 +118,7 @@ async function resolveConnectProfile(options: {
   });
 }
 
-function assertConnectProviderUsage(provider: 'proxy' | undefined, flags: CliFlags): void {
+function assertConnectProviderUsage(provider: ConnectProvider | undefined, flags: CliFlags): void {
   if (!provider || !flags.remoteConfig) return;
   throw new AppError(
     'INVALID_ARGS',
@@ -107,7 +126,10 @@ function assertConnectProviderUsage(provider: 'proxy' | undefined, flags: CliFla
   );
 }
 
-function readRequiredConnectScope(flags: CliFlags): { tenant: string; runId: string } {
+function readRequiredConnectScope(
+  flags: CliFlags,
+  connectionMetadata: RemoteConnectionRequestMetadata | undefined,
+): { tenant: string; runId: string } {
   if (!flags.tenant) {
     throw new AppError(
       'INVALID_ARGS',
@@ -120,7 +142,10 @@ function readRequiredConnectScope(flags: CliFlags): { tenant: string; runId: str
       'connect requires runId in remote config or via --run-id <id>.',
     );
   }
-  if (!flags.daemonBaseUrl) {
+  if (
+    !flags.daemonBaseUrl &&
+    connectionProviderRequiresRemoteDaemon(connectionMetadata?.leaseProvider)
+  ) {
     throw new AppError(
       'INVALID_ARGS',
       'connect requires daemonBaseUrl in remote config, config, env, or --daemon-base-url.',
@@ -289,8 +314,11 @@ export const disconnectCommand: ClientCommandHandler = async ({ flags, client })
   }
   const connectedSession = state.session;
 
+  let providerData: CloudProviderSessionResult | undefined;
   try {
-    await client.sessions.close({ shutdown: flags.shutdown });
+    providerData = (
+      await client.sessions.close({ session: connectedSession, shutdown: flags.shutdown })
+    ).provider;
   } catch {
     // Disconnect is idempotent; the session may already be closed.
   }
@@ -299,7 +327,9 @@ export const disconnectCommand: ClientCommandHandler = async ({ flags, client })
   let released = false;
   if (state.leaseId) {
     try {
-      released = await releaseRemoteConnectionLease(client, state);
+      const release = await releaseRemoteConnectionLease(client, state);
+      released = release.released;
+      providerData ??= release.provider;
     } catch {
       // Bridges may release on close or be unreachable; local state still needs cleanup.
     }
@@ -307,8 +337,13 @@ export const disconnectCommand: ClientCommandHandler = async ({ flags, client })
   removeRemoteConnectionState({ stateDir, session: connectedSession });
   writeCommandOutput(
     flags,
-    { connected: false, session: connectedSession, released },
-    () => `Disconnected remote session "${connectedSession}".`,
+    {
+      connected: false,
+      session: connectedSession,
+      released,
+      ...(providerData ? { provider: providerData } : {}),
+    },
+    () => renderDisconnectOutput(connectedSession, providerData),
   );
   return true;
 };
@@ -349,16 +384,54 @@ function createRemoteSessionName(stateDir: string): string {
   return `adc-${Date.now().toString(36)}-${crypto.randomBytes(2).toString('hex')}`;
 }
 
-function readConnectProvider(positionals: string[]): 'proxy' | undefined {
+function renderDisconnectOutput(
+  session: string,
+  providerData: CloudProviderSessionResult | undefined,
+): string {
+  return [
+    `Disconnected remote session "${session}".`,
+    ...formatProviderReleaseWarnings(providerData),
+    ...formatReadyArtifactLinks(providerData?.cloudArtifacts?.cloudArtifacts),
+  ].join('\n');
+}
+
+function formatProviderReleaseWarnings(
+  providerData: CloudProviderSessionResult | undefined,
+): string[] {
+  const warnings = Array.isArray(providerData?.warnings) ? providerData.warnings : [];
+  return warnings.flatMap((warning) => {
+    const formatted = formatProviderReleaseWarning(warning);
+    return formatted ? [formatted] : [];
+  });
+}
+
+function formatProviderReleaseWarning(warning: unknown): string | undefined {
+  if (!warning || typeof warning !== 'object') return undefined;
+  const entry = warning as { code?: unknown; message?: unknown };
+  if (typeof entry.message !== 'string' || entry.message.length === 0) return undefined;
+  const code = typeof entry.code === 'string' && entry.code.length > 0 ? ` (${entry.code})` : '';
+  return `Provider release warning${code}: ${entry.message}`;
+}
+
+function formatReadyArtifactLinks(artifacts: CloudArtifact[] | undefined): string[] {
+  return (artifacts ?? [])
+    .filter((artifact) => (artifact.availability ?? 'ready') === 'ready' && artifact.url)
+    .slice(0, 3)
+    .map((artifact) => `${artifact.name}: ${artifact.url}`);
+}
+
+function readConnectProvider(positionals: string[]): ConnectProvider | undefined {
   const provider = positionals[0];
   if (provider === undefined) return undefined;
   if (positionals.length > 1) {
     throw new AppError('INVALID_ARGS', 'connect accepts at most one provider positional.');
   }
-  if (provider === 'proxy') return provider;
+  if (isConnectProviderName(provider)) {
+    return provider;
+  }
   throw new AppError(
     'INVALID_ARGS',
-    `Unknown connect provider: ${provider}. Supported providers: proxy.`,
+    `Unknown connect provider: ${provider}. Supported providers: ${connectProviderNamesForError()}.`,
   );
 }
 
@@ -494,12 +567,28 @@ function buildLeasePreparationNotice(
   state: RemoteConnectionState,
 ): LeasePreparationNotice | undefined {
   if (state.leaseId) return undefined;
-  if (state.leaseProvider === 'proxy') {
+  const leaseKind = connectionProviderLeaseKind(state.leaseProvider);
+  if (leaseKind === 'proxy') {
     return {
       status: 'deferred',
       nextSteps: ['agent-device open <app-id> --relaunch', 'agent-device devices'],
       message:
         'Proxy lease allocation is pending; run open when ready to allocate or refresh the device lease. Devices can inspect inventory but do not allocate a proxy lease.',
+    };
+  }
+  if (leaseKind === 'direct-device-provider') {
+    const nextSteps = [
+      'agent-device open <app-id> --relaunch',
+      'agent-device snapshot -i',
+      'agent-device artifacts --json',
+      'agent-device close',
+    ];
+    return {
+      status: 'deferred',
+      nextSteps,
+      message:
+        `Hosted ${state.leaseProvider} lease allocation is pending; run open when ready to create the provider session. ` +
+        `After close, run "agent-device artifacts --json" to fetch provider video/log links when available.`,
     };
   }
   const needsPlatform =
@@ -564,6 +653,7 @@ function serializeConnectionState(
     leaseAllocated: Boolean(state.leaseId),
     leaseId: state.leaseId,
     leaseBackend: state.leaseBackend,
+    leaseProvider: state.leaseProvider,
     platform: state.platform,
     target: state.target,
     remoteConfig: state.remoteConfigPath,

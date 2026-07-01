@@ -20,8 +20,10 @@ import { AppError } from '../../kernel/errors.ts';
 import type { LeaseBackend, SessionRuntimeHints } from '../../kernel/contracts.ts';
 import type { CliFlags } from '../parser/cli-flags.ts';
 import type { AgentDeviceClient, Lease } from '../../client/client.ts';
+import type { CloudProviderSessionResult } from '../../cloud-artifacts.ts';
 import type { MetroPrepareKind } from '../../metro/client-metro.ts';
 import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { connectionProviderRequiresRemoteDaemon } from '../connection/provider-policy.ts';
 
 const leaseDeferredCommands = new Set([
   'connect',
@@ -290,7 +292,13 @@ async function materializeLeaseForCommand(options: {
     preliminaryLeaseBackend ??
     requireRequestedLeaseBackend(nextFlags, command);
   assertRequestedConnectionScope(state, nextFlags, leaseBackend);
-  const materializedLease = await allocateOrReuseLease(client, nextState, leaseBackend, policy);
+  const materializedLease = await allocateOrReuseLease(
+    client,
+    nextState,
+    leaseBackend,
+    policy,
+    nextFlags,
+  );
   const lease = materializedLease.lease;
   nextFlags.leaseId = lease.leaseId;
   nextFlags.leaseBackend = leaseBackend;
@@ -457,8 +465,8 @@ export async function stopReactDevtoolsCleanup(options: {
 export async function releaseRemoteConnectionLease(
   client: AgentDeviceClient,
   state: RemoteConnectionState,
-): Promise<boolean> {
-  if (!state.leaseId) return false;
+): Promise<{ released: boolean; provider?: CloudProviderSessionResult }> {
+  if (!state.leaseId) return { released: false };
   const result = await client.leases.release({
     tenant: state.tenant,
     runId: state.runId,
@@ -472,7 +480,7 @@ export async function releaseRemoteConnectionLease(
     clientId: state.clientId,
     deviceKey: state.deviceKey,
   });
-  return result.released;
+  return result;
 }
 
 export async function releasePreviousLease(
@@ -604,7 +612,7 @@ function createRemoteConnectionStateFromFlags(
       'remote command requires runId in remote config or via --run-id <id>.',
     );
   }
-  if (!flags.daemonBaseUrl) {
+  if (!flags.daemonBaseUrl && connectionProviderRequiresRemoteDaemon(profile.leaseProvider)) {
     throw new AppError(
       'INVALID_ARGS',
       'remote command requires daemonBaseUrl in remote config, config, env, or --daemon-base-url.',
@@ -636,6 +644,7 @@ async function allocateOrReuseLease(
   state: RemoteConnectionState,
   leaseBackend: LeaseBackend,
   policy: ConnectionLeasePolicy,
+  flags: CliFlags,
 ): Promise<{ lease: Lease; acquired: boolean }> {
   if (state.leaseId && state.leaseBackend === leaseBackend) {
     const existing = await heartbeatOrAllocateLease(client, state.leaseId, {
@@ -657,6 +666,21 @@ async function allocateOrReuseLease(
     clientId: state.clientId,
     deviceKey: state.deviceKey,
     ttlMs: policy.ttlMs(state),
+    platform: state.platform ?? flags.platform,
+    target: state.target ?? flags.target,
+    device: flags.device,
+    udid: flags.udid,
+    serial: flags.serial,
+    providerApp: flags.providerApp,
+    providerOsVersion: flags.providerOsVersion,
+    providerProject: flags.providerProject,
+    providerBuild: flags.providerBuild,
+    providerSessionName: flags.providerSessionName,
+    awsProjectArn: flags.awsProjectArn,
+    awsDeviceArn: flags.awsDeviceArn,
+    awsAppArn: flags.awsAppArn,
+    awsRegion: flags.awsRegion,
+    awsInteractionMode: flags.awsInteractionMode,
   });
   return { lease, acquired: true };
 }
