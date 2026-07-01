@@ -1,6 +1,9 @@
 import type { ReplaySuiteResult } from '../../../daemon/types.ts';
 import { replayTestFailureStepLines } from '../trace.ts';
-import { createReplayTestProgressRenderer } from '../progress.ts';
+import {
+  createReplayTestProgressRenderer,
+  REPLAY_TEST_PROGRESS_SPINNER_INTERVAL_MS,
+} from '../progress.ts';
 import { formatDurationSeconds } from '../../../utils/duration-format.ts';
 import { colorize, supportsColor } from '../../../utils/output.ts';
 import type {
@@ -23,24 +26,61 @@ import {
   type PassedReplayTestResult,
 } from './format.ts';
 
+const ANSI_ESCAPE_PREFIX = `${String.fromCharCode(27)}[`;
+const HIDE_CURSOR = `${ANSI_ESCAPE_PREFIX}?25l`;
+const SHOW_CURSOR = `${ANSI_ESCAPE_PREFIX}?25h`;
+
 export function createDefaultReplayTestReporter(): ReplayTestReporter {
   let progressRenderer: ReturnType<typeof createReplayTestProgressRenderer> | undefined;
+  let latestLiveProgressEvent: ReplayTestReporterProgressEvent | undefined;
+  let progressInterval: ReturnType<typeof setInterval> | undefined;
+  let cursorHidden = false;
   const renderProgress = (
     event: ReplayTestReporterProgressEvent,
     context: ReplayTestReporterContext,
   ) => {
+    stopLiveProgressInterval();
+    latestLiveProgressEvent = event.type === 'test-step' ? event : undefined;
     progressRenderer ??= createReplayTestProgressRenderer({
       verbose: context.verbose,
-      liveProgress: context.stderr.isTTY && !process.env.CI,
+      liveProgress: shouldUseLiveProgress(context),
       columns: context.stderr.columns,
     });
     const output = progressRenderer.render(event);
     if (!output) return;
     context.stderr.write(output.newline ? `${output.text}\n` : output.text);
+    if (event.type === 'test-step' && shouldUseLiveProgress(context)) {
+      startLiveProgressInterval(context);
+    }
+  };
+  const startLiveProgressInterval = (context: ReplayTestReporterContext) => {
+    if (progressInterval || !latestLiveProgressEvent) return;
+    progressInterval = setInterval(() => {
+      if (!latestLiveProgressEvent) return;
+      const output = progressRenderer?.render(latestLiveProgressEvent);
+      if (output) context.stderr.write(output.newline ? `${output.text}\n` : output.text);
+    }, REPLAY_TEST_PROGRESS_SPINNER_INTERVAL_MS);
+    progressInterval.unref?.();
+  };
+  const stopLiveProgressInterval = () => {
+    if (!progressInterval) return;
+    clearInterval(progressInterval);
+    progressInterval = undefined;
+  };
+  const hideCursor = (context: ReplayTestReporterContext) => {
+    if (cursorHidden || !shouldUseLiveProgress(context)) return;
+    context.stderr.write(HIDE_CURSOR);
+    cursorHidden = true;
+  };
+  const showCursor = (context: ReplayTestReporterContext) => {
+    if (!cursorHidden) return;
+    context.stderr.write(SHOW_CURSOR);
+    cursorHidden = false;
   };
   return {
     name: 'default',
     onSuiteStart: (suite, context) => {
+      hideCursor(context);
       renderProgress({ type: 'suite-start', suite }, context);
     },
     onTestStep: (test, context) => {
@@ -49,9 +89,18 @@ export function createDefaultReplayTestReporter(): ReplayTestReporter {
     onTestResult: (test, context) => {
       renderProgress({ type: 'test-result', test }, context);
     },
-    onSuiteEnd: (suite, context) => renderReplayTestSummary(suite, context),
+    onSuiteEnd: (suite, context) => {
+      stopLiveProgressInterval();
+      latestLiveProgressEvent = undefined;
+      showCursor(context);
+      renderReplayTestSummary(suite, context);
+    },
     getExitCode: getReplayTestExitCode,
   };
+}
+
+function shouldUseLiveProgress(context: ReplayTestReporterContext): boolean {
+  return context.stderr.isTTY && !process.env.CI;
 }
 
 function renderReplayTestSummary(
