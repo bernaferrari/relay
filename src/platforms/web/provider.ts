@@ -3,6 +3,7 @@ import type { SessionSurface } from '../../core/session-surface.ts';
 import { createScopedProvider } from '../../utils/scoped-provider.ts';
 import type { RawSnapshotNode } from '../../kernel/snapshot.ts';
 import type { BackendDumpNetworkOptions, BackendDumpNetworkResult } from '../../backend.ts';
+import type { AudioProbeResult } from '../../audio-probe-result.ts';
 import { createAgentBrowserWebProvider } from './agent-browser-provider.ts';
 
 export type WebOpenOptions = {
@@ -29,6 +30,19 @@ export type WebSnapshotResult = {
   truncated?: boolean;
 };
 
+export type WebAudioProbeAction = 'start' | 'status' | 'stop';
+
+export type WebAudioProbeOptions = {
+  action: WebAudioProbeAction;
+  durationMs?: number;
+  bucketMs?: number;
+};
+
+export type WebAudioProbeResult = AudioProbeResult & {
+  source: 'media-elements';
+  mediaElementCount: number;
+};
+
 export type WebProvider = {
   open(target: string, options?: WebOpenOptions): Promise<void>;
   close(target?: string): Promise<void>;
@@ -48,6 +62,7 @@ export type WebProvider = {
   ): Promise<Record<string, unknown> | void>;
   readText?(x: number, y: number): Promise<string>;
   dumpNetwork?(options?: BackendDumpNetworkOptions): Promise<BackendDumpNetworkResult>;
+  probeAudio?(options: WebAudioProbeOptions): Promise<WebAudioProbeResult>;
 };
 
 const localWebProvider: WebProvider = createAgentBrowserWebProvider();

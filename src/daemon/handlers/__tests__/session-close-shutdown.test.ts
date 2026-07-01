@@ -396,6 +396,58 @@ test('close stops active Android native perf capture before deleting session', a
   expect(sessionStore.get(sessionName)).toBeUndefined();
 });
 
+test('close stops active host audio probe before deleting session', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'macos-active-audio-probe-session';
+  const kill = vi.fn();
+  const session = {
+    ...makeSession(sessionName, {
+      platform: 'macos',
+      id: 'macos',
+      name: 'Mac',
+      kind: 'device',
+      booted: true,
+    }),
+    audioProbe: {
+      platform: 'host-system-audio',
+      source: 'system-audio',
+      backend: 'macos-screencapturekit',
+      sourceCount: 1,
+      notes: [
+        'Audio probe samples host system audio through ScreenCaptureKit for this macOS session; it is not app-instrumented audio.',
+        'Screen Recording permission is required for host system audio capture.',
+        'Other audible host apps can contribute to the measured buckets.',
+      ],
+      child: { kill, pid: 1234 },
+      wait: Promise.resolve({ stdout: '', stderr: '', exitCode: 0 }),
+      statusPath: path.join(os.tmpdir(), 'missing-audio-probe.json'),
+      startedAt: Date.now() - 2000,
+      durationMs: 10000,
+      bucketMs: 1000,
+    },
+  } as SessionState;
+  sessionStore.set(sessionName, session);
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'close',
+      positionals: [],
+      flags: {},
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(kill).toHaveBeenCalledWith('SIGTERM');
+  expect(session.audioProbe).toBeUndefined();
+  expect(sessionStore.get(sessionName)).toBeUndefined();
+});
+
 test('close dispatches web session cleanup without a positional target', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'web-close-session';

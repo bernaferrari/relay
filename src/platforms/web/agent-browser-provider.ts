@@ -2,6 +2,10 @@ import { runCmd } from '../../utils/exec.ts';
 import { AppError } from '../../kernel/errors.ts';
 import { sleep } from '../../utils/timeouts.ts';
 import type { Rect } from '../../kernel/snapshot.ts';
+import {
+  buildAudioProbeEvalScript,
+  normalizeAgentBrowserAudioProbeResult,
+} from './agent-browser-audio-probe.ts';
 import { normalizeAgentBrowserNetworkRequests } from './agent-browser-network.ts';
 import { normalizeAgentBrowserSnapshot } from './agent-browser-snapshot.ts';
 import {
@@ -79,6 +83,11 @@ export function createAgentBrowserWebProvider(
     },
     async dumpNetwork(options) {
       return normalizeAgentBrowserNetworkRequests(await runJson(['network', 'requests']), options);
+    },
+    async probeAudio(options) {
+      return normalizeAgentBrowserAudioProbeResult(
+        await runJson(['eval', buildAudioProbeEvalScript(options)]),
+      );
     },
   };
 }

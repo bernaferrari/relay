@@ -16,7 +16,8 @@ const AGENT_WORKFLOWS = [
   },
   {
     label: 'agent-device help debugging',
-    description: 'Use when logs, network, perf memory, traces, alerts, or diagnostics matter',
+    description:
+      'Use when logs, network, audio, perf memory, traces, alerts, or diagnostics matter',
   },
   {
     label: 'agent-device help react-native',
@@ -270,7 +271,7 @@ Validation and evidence:
   Remote lifecycle: cloud, remote-config, direct proxy, and limrun use the same flow: connect, open, commands, close, disconnect.
   Remote config profile: agent-device connect --remote-config ./remote-config.json; then run normal commands and disconnect.
   Direct proxy to a Mac you control: cloud/Linux clients can use local/proxy iOS devices through the proxied Mac. Run agent-device connect proxy --daemon-base-url <proxy-agent-device-url> first. Device leases are automatic on open and expire after five minutes of inactivity.
-  Web: agent-device uses a managed, pinned agent-browser backend as an implementation detail. Use --platform web when a browser step belongs inside an agent-device session, replay, batch, MCP, or typed-client flow; use agent-browser directly for standalone web automation. Run agent-device web setup before first use, then agent-device web doctor for backend health checks. Web automation requires Node 24+.
+  Web: agent-device uses a managed, pinned agent-browser backend as an implementation detail. Use --platform web when a browser step belongs inside an agent-device session, replay, batch, MCP, or typed-client flow; use agent-browser directly for standalone web automation. Run agent-device web setup before first use, then agent-device web doctor for backend health checks. Web automation requires Node 24+. For audio probe start, the first timing positional is duration in seconds and the second is bucket size in milliseconds. On web, audio probe samples HTML media elements, and URL-backed media may be routed through the probe AudioContext while observed. On macOS hosts, audio probe samples host system audio through ScreenCaptureKit for macOS sessions, iOS simulators, and Android emulators; Screen Recording permission is required.
     agent-device web setup
     agent-device web doctor
     agent-device open https://example.com --platform web
@@ -283,13 +284,15 @@ Validation and evidence:
     agent-device wait text "Welcome" 3000 --platform web
     agent-device record start ./artifacts/web-flow.webm --platform web
     agent-device network dump 25 --include headers --platform web
+    agent-device audio probe start 10 1000 --platform web
     agent-device screenshot ./artifacts/web-home.png --platform web
     agent-device screenshot ./artifacts/web-full.png --platform web --fullscreen
     agent-device viewport 1280 900 --platform web
     agent-device record stop --platform web
     agent-device close --platform web
-  Minimal web support is for browser sessions with open, snapshot, find, get, is, click/press, fill/type, wait, network dump, screenshot, record start/stop with WebM output, close, and replay over those commands. Use agent-browser directly for browser-specific features that agent-device does not surface, such as tab/devtools management, advanced page scripting, network routing/HAR, or raw browser debugging.
+  Minimal web support is for browser sessions with open, snapshot, find, get, is, click/press, fill/type, wait, network dump, audio probe, screenshot, record start/stop with WebM output, close, and replay over those commands. Use agent-browser directly for browser-specific features that agent-device does not surface, such as tab/devtools management, advanced page scripting, network routing/HAR, or raw browser debugging.
   macOS menu bar: open ... --platform macos --surface menubar; snapshot -i --platform macos --surface menubar.
+  Host audio: audio probe start 10 1000 --platform macos|ios|android samples host system audio through ScreenCaptureKit for macOS sessions, iOS simulators, and Android emulators on macOS hosts; grant Screen Recording permission first.
   Maestro full-suite validation on explicit connected devices uses one test command with a comma-separated --device list and --shard-all. Use --shard-split only when splitting suite entries across devices:
     agent-device test ./e2e/maestro --maestro --device udid1,emulator-5554 --shard-all 2
 
@@ -347,6 +350,18 @@ Network:
   Use this instead of logs path when the question is request/response metadata.
   network log is a supported alias, but network dump --include headers is the clearest plan form. Do not write network log headers.
 
+Audio:
+  Use audio probe when the question is whether a browser page, macOS session, iOS simulator, or Android emulator produced audible output during a short observation window.
+    agent-device audio probe start 10 1000 --platform web
+    agent-device audio probe status --platform web
+    agent-device audio probe stop --platform web
+    agent-device audio probe start 10 1000 --platform macos
+    agent-device audio probe start 10 1000 --platform ios
+    agent-device audio probe start 10 1000 --platform android
+  audio probe start uses duration seconds first, then bucket milliseconds. Results are compact rmsDbfs and peakDbfs arrays so agents can correlate audible moments with screenshots, actions, network entries, or frame samples.
+  On web, audio probe samples HTML media elements and URL-backed media may be routed through the probe AudioContext while observed.
+  On macOS hosts, audio probe samples host system audio through ScreenCaptureKit for macOS sessions, iOS simulators, and Android emulators. It requires Screen Recording permission and is system-audio evidence, not app-instrumented audio. Physical iOS and Android devices are not supported.
+
 Crash symbolication:
   Crash routing:
     Use logs when you need the lead-up timeline before a failure.
@@ -355,7 +370,7 @@ Crash symbolication:
   Use debug symbols when you already have an Apple crash artifact and local dSYMs and need the failing code path, not a full log dump:
     agent-device debug symbols --artifact crash.log --dsym MyApp.dSYM --out crash-symbolicated.log
     agent-device debug symbols --artifact crash.ips --search-path ./build --out crash-symbolicated.ips
-  debug is intentionally narrow. Do not use it for logs, network evidence, performance samples, recordings, traces, or React Native internals.
+  debug is intentionally narrow. Do not use it for logs, network/audio evidence, performance samples, recordings, traces, or React Native internals.
   Apple support matches crash Binary Images / IPS usedImages UUIDs against dwarfdump --uuid output from .dSYM bundles, then writes a symbolicated artifact path and compact crash report: app/thread, exception or termination, top symbolicated frames, and first-frame finding. This is better than pasting crash logs because it keeps agent context small while preserving the artifact on disk for inspection.
   Android Java/R8 mapping.txt and native ndk-stack/addr2line symbolication are not in this first debug symbols workflow; capture crash evidence with logs and use the Android toolchain externally for now.
 
@@ -783,6 +798,7 @@ Planning rule:
   For web command plans, output only agent-device command lines. Do not add prose, numbering, Markdown fences, shell pipes, or agent-browser commands unless the task is explicitly standalone browser automation outside agent-device.
 
 First-slice loop:
+  Audio probe start uses duration seconds first, then bucket milliseconds.
   agent-device web setup
   agent-device web doctor
   agent-device open https://example.com --platform web
@@ -795,6 +811,7 @@ First-slice loop:
   agent-device wait text "Welcome" 3000 --platform web
   agent-device record start ./artifacts/web-flow.webm --platform web
   agent-device network dump 25 --include headers --platform web
+  agent-device audio probe start 10 1000 --platform web
   agent-device screenshot ./artifacts/web-home.png --platform web
   agent-device screenshot ./artifacts/web-full.png --platform web --fullscreen
   agent-device viewport 1280 900 --platform web
@@ -802,7 +819,7 @@ First-slice loop:
   agent-device close --platform web
 
 Supported in agent-device web sessions:
-  open <url>, snapshot -i, get text/attrs, is visible/exists/text, find text/selector, click/press @ref or selector, fill/type @ref or selector, wait text/selector, network dump, screenshot, record start/stop with WebM output, close, and replay scripts made from those commands.
+  open <url>, snapshot -i, get text/attrs, is visible/exists/text, find text/selector, click/press @ref or selector, fill/type @ref or selector, wait text/selector, network dump, audio probe, screenshot, record start/stop with WebM output, close, and replay scripts made from those commands.
 
 Out of scope for agent-device web support:
   Browser runtime debugging, tabs/windows/devtools control, network routing/interception/HAR, storage/cookie management, arbitrary page scripting, downloads/uploads, multi-page orchestration, and agent-browser-specific diagnostics. Use agent-browser directly for those browser-specific workflows.
