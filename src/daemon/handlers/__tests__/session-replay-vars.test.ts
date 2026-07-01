@@ -2276,7 +2276,7 @@ test('runReplayScriptFile writes per-action timing events to active trace', asyn
   sessionStore.set('s', {
     name: 's',
     device: {
-      platform: 'ios',
+      platform: 'apple',
       id: 'sim-1',
       name: 'iPhone',
       kind: 'simulator',

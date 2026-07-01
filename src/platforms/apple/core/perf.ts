@@ -2,7 +2,13 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { DeviceInfo } from '../../../kernel/device.ts';
+import {
+  isIosFamily,
+  isMacOs,
+  publicPlatformString,
+  type DeviceInfo,
+  type PublicPlatform,
+} from '../../../kernel/device.ts';
 import { AppError } from '../../../kernel/errors.ts';
 import type { ExecResult } from '../../../utils/exec.ts';
 import { splitNonEmptyTrimmedLines } from '../../../utils/parsing.ts';
@@ -127,7 +133,7 @@ export async function sampleApplePerfMetrics(
   device: DeviceInfo,
   appBundleId: string,
 ): Promise<{ cpu: AppleCpuPerfSample; memory: AppleMemoryPerfSample }> {
-  if (device.platform === 'ios' && device.kind === 'device') {
+  if (isIosFamily(device) && device.kind === 'device') {
     return await sampleIosDevicePerfMetrics(device, appBundleId);
   }
 
@@ -226,7 +232,7 @@ async function runAppleMemorySnapshotTool(
   outPath: string,
   pid: number,
 ): Promise<ExecResult> {
-  if (device.platform === 'macos') {
+  if (isMacOs(device)) {
     return await runAppleToolCommand('leaks', [`--outputGraph=${outPath}`, String(pid)], {
       allowFailure: true,
       timeoutMs: APPLE_MEMORY_SNAPSHOT_TIMEOUT_MS,
@@ -306,13 +312,13 @@ export async function sampleAppleFramePerf(
   device: DeviceInfo,
   appBundleId: string,
 ): Promise<AppleFramePerfSample> {
-  if (device.platform !== 'ios' || device.kind !== 'device') {
+  if (!isIosFamily(device) || device.kind !== 'device') {
     throw new AppError(
       'COMMAND_FAILED',
       'Apple frame-health sampling is currently available only on connected iOS devices.',
       {
         metric: 'fps',
-        platform: device.platform,
+        platform: publicPlatformString(device),
         deviceKind: device.kind,
       },
     );
@@ -335,7 +341,7 @@ export async function sampleAppleFramePerf(
 }
 
 export function buildAppleFrameSamplingMetadata(device: DeviceInfo): Record<string, unknown> {
-  return device.platform === 'ios' && device.kind === 'device'
+  return isIosFamily(device) && device.kind === 'device'
     ? {
         method: APPLE_FRAME_SAMPLE_METHOD,
         description: APPLE_FRAME_SAMPLE_DESCRIPTION,
@@ -355,7 +361,7 @@ export function buildAppleFrameSamplingMetadata(device: DeviceInfo): Record<stri
 
 export function buildAppleSamplingMetadata(device: DeviceInfo): Record<string, unknown> {
   const fps = buildAppleFrameSamplingMetadata(device);
-  if (device.platform === 'ios' && device.kind === 'device') {
+  if (isIosFamily(device) && device.kind === 'device') {
     return {
       fps,
       memory: {
@@ -373,10 +379,9 @@ export function buildAppleSamplingMetadata(device: DeviceInfo): Record<string, u
     };
   }
 
-  const source =
-    device.platform === 'macos'
-      ? 'host ps for the running macOS app executable resolved from the bundle ID.'
-      : 'xcrun simctl spawn ps, with host ps fallback, for the running iOS simulator app executable resolved from the bundle ID.';
+  const source = isMacOs(device)
+    ? 'host ps for the running macOS app executable resolved from the bundle ID.'
+    : 'xcrun simctl spawn ps, with host ps fallback, for the running iOS simulator app executable resolved from the bundle ID.';
   return {
     fps,
     memory: {
@@ -393,16 +398,17 @@ export function buildAppleSamplingMetadata(device: DeviceInfo): Record<string, u
 }
 
 export function buildAppleMemorySnapshotSupport(device: DeviceInfo): {
-  platform: DeviceInfo['platform'];
+  // approach (b): emit the PUBLIC leaf platform (ios/macos), never the internal `apple`.
+  platform: PublicPlatform;
   deviceKind: DeviceInfo['kind'];
   memgraph: boolean;
   method: typeof APPLE_MEMGRAPH_SNAPSHOT_METHOD;
   reason: string;
   hint: string;
 } {
-  if (device.platform === 'ios' && device.kind === 'device') {
+  if (isIosFamily(device) && device.kind === 'device') {
     return {
-      platform: device.platform,
+      platform: publicPlatformString(device),
       deviceKind: device.kind,
       memgraph: false,
       method: APPLE_MEMGRAPH_SNAPSHOT_METHOD,
@@ -411,9 +417,9 @@ export function buildAppleMemorySnapshotSupport(device: DeviceInfo): {
       hint: 'Use perf memory sample for a compact resident-memory reading, or reproduce on an iOS simulator/macOS target for memgraph capture.',
     };
   }
-  if (device.platform === 'ios' && device.kind === 'simulator') {
+  if (isIosFamily(device) && device.kind === 'simulator') {
     return {
-      platform: device.platform,
+      platform: publicPlatformString(device),
       deviceKind: device.kind,
       memgraph: true,
       method: APPLE_MEMGRAPH_SNAPSHOT_METHOD,
@@ -421,9 +427,9 @@ export function buildAppleMemorySnapshotSupport(device: DeviceInfo): {
       hint: 'Keep the simulator app running in the foreground while the memgraph is captured.',
     };
   }
-  if (device.platform === 'macos') {
+  if (isMacOs(device)) {
     return {
-      platform: device.platform,
+      platform: publicPlatformString(device),
       deviceKind: device.kind,
       memgraph: true,
       method: APPLE_MEMGRAPH_SNAPSHOT_METHOD,
@@ -432,7 +438,7 @@ export function buildAppleMemorySnapshotSupport(device: DeviceInfo): {
     };
   }
   return {
-    platform: device.platform,
+    platform: publicPlatformString(device),
     deviceKind: device.kind,
     memgraph: false,
     method: APPLE_MEMGRAPH_SNAPSHOT_METHOD,
@@ -757,14 +763,12 @@ export async function resolveAppleExecutable(
   device: DeviceInfo,
   appBundleId: string,
 ): Promise<{ executableName: string; executablePath?: string }> {
-  const appPath =
-    device.platform === 'macos'
-      ? await resolveMacOsBundlePath(appBundleId)
-      : await resolveIosSimulatorAppContainer(device, appBundleId);
-  const infoPlistPath =
-    device.platform === 'macos'
-      ? path.join(appPath, 'Contents', 'Info.plist')
-      : path.join(appPath, 'Info.plist');
+  const appPath = isMacOs(device)
+    ? await resolveMacOsBundlePath(appBundleId)
+    : await resolveIosSimulatorAppContainer(device, appBundleId);
+  const infoPlistPath = isMacOs(device)
+    ? path.join(appPath, 'Contents', 'Info.plist')
+    : path.join(appPath, 'Info.plist');
   const executableName = await readInfoPlistString(infoPlistPath, 'CFBundleExecutable');
   if (!executableName) {
     throw new AppError('COMMAND_FAILED', `Failed to resolve executable for ${appBundleId}`, {
@@ -775,10 +779,9 @@ export async function resolveAppleExecutable(
 
   return {
     executableName,
-    executablePath:
-      device.platform === 'macos'
-        ? path.join(appPath, 'Contents', 'MacOS', executableName)
-        : path.join(appPath, executableName),
+    executablePath: isMacOs(device)
+      ? path.join(appPath, 'Contents', 'MacOS', executableName)
+      : path.join(appPath, executableName),
   };
 }
 
@@ -1039,20 +1042,18 @@ export async function readAppleProcessSamples(
   device: DeviceInfo,
   executable: { executableName: string; executablePath?: string },
 ): Promise<AppleProcessSample[]> {
-  const args =
-    device.platform === 'macos'
-      ? ['-axo', 'pid=,%cpu=,rss=,command=']
-      : buildSimctlArgsForDevice(device, [
-          'spawn',
-          device.id,
-          'ps',
-          '-axo',
-          'pid=,%cpu=,rss=,command=',
-        ]);
-  const result =
-    device.platform === 'macos'
-      ? await runAppleToolCommand('ps', args, { timeoutMs: APPLE_PERF_TIMEOUT_MS })
-      : await runAppleSimulatorProcessCommand(args);
+  const args = isMacOs(device)
+    ? ['-axo', 'pid=,%cpu=,rss=,command=']
+    : buildSimctlArgsForDevice(device, [
+        'spawn',
+        device.id,
+        'ps',
+        '-axo',
+        'pid=,%cpu=,rss=,command=',
+      ]);
+  const result = isMacOs(device)
+    ? await runAppleToolCommand('ps', args, { timeoutMs: APPLE_PERF_TIMEOUT_MS })
+    : await runAppleSimulatorProcessCommand(args);
   return parseApplePsOutput(result.stdout).filter((process) =>
     matchesAppleExecutableProcess(process.command, executable),
   );
@@ -1103,7 +1104,7 @@ async function resolveAppleMemorySnapshotTarget(
 }
 
 function isMissingIosSimulatorProcessToolError(device: DeviceInfo, error: unknown): boolean {
-  if (device.platform !== 'ios' || device.kind !== 'simulator') return false;
+  if (!isIosFamily(device) || device.kind !== 'simulator') return false;
   if (!(error instanceof AppError)) return false;
   const details = error.details ?? {};
   const args = Array.isArray(details.args) ? details.args.join(' ') : '';
@@ -1125,7 +1126,7 @@ function resolveAppleMemorySnapshotHint(
     return 'Install Xcode command line tools and ensure leaks is available, then retry.';
   }
   if (text.includes('permission') || text.includes('denied') || text.includes('not authorized')) {
-    return device.platform === 'macos'
+    return isMacOs(device)
       ? 'Grant the agent terminal process permission to inspect this macOS app, then retry.'
       : 'Keep the simulator booted and app running; if inspection is denied, retry with a debug simulator build.';
   }
