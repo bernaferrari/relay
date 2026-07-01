@@ -93,6 +93,27 @@ test('parseArgs recognizes command-specific flag combinations', async () => {
       },
     },
     {
+      label: 'doctor android',
+      argv: ['doctor', '--platform', 'android', '--app', 'com.example.demo'],
+      strictFlags: true,
+      assertParsed: (parsed) => {
+        assert.equal(parsed.command, 'doctor');
+        assert.equal(parsed.flags.platform, 'android');
+        assert.equal(parsed.flags.targetApp, 'com.example.demo');
+      },
+    },
+    {
+      label: 'doctor remote session',
+      argv: ['doctor', '--remote', '--session', 'remote-ios', '--remote-config', './remote.json'],
+      strictFlags: true,
+      assertParsed: (parsed) => {
+        assert.equal(parsed.command, 'doctor');
+        assert.equal(parsed.flags.remote, true);
+        assert.equal(parsed.flags.session, 'remote-ios');
+        assert.equal(parsed.flags.remoteConfig, './remote.json');
+      },
+    },
+    {
       label: 'open --platform apple alias',
       argv: ['open', 'Settings', '--platform', 'apple', '--target', 'tv'],
       strictFlags: true,
@@ -1831,6 +1852,10 @@ test('usageForCommand resolves react-native help topic', () => {
   assert.match(help, /help react-devtools/);
   assert.match(help, /Help workflow owns the full Expo URL command shapes/);
   assert.match(help, /For app\/package launches, run metro prepare/);
+  assert.match(help, /agent-device doctor --platform android/);
+  assert.match(help, /agent-device doctor --platform android --app com\.example\.app/);
+  assert.match(help, /agent-device doctor --platform ios/);
+  assert.match(help, /agent-device doctor --remote --remote-config \.\/remote\.json/);
   assert.match(help, /same host context that owns Metro/);
   assert.match(help, /sandbox probe is not authoritative/);
   assert.match(help, /adb reverse only affects Android device-to-host traffic/);
@@ -1927,6 +1952,16 @@ test('strict mode rejects unsupported pilot-command flags', () => {
       error instanceof AppError &&
       error.code === 'INVALID_ARGS' &&
       error.message.includes('not supported for command press'),
+  );
+});
+
+test('strict mode rejects Metro override flags on doctor', () => {
+  assert.throws(
+    () => parseArgs(['doctor', '--metro-port', '9090'], { strictFlags: true }),
+    (error) =>
+      error instanceof AppError &&
+      error.code === 'INVALID_ARGS' &&
+      error.message.includes('not supported for command doctor'),
   );
 });
 

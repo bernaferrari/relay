@@ -15,7 +15,7 @@ import {
 } from '../utils/device-isolation.ts';
 import type { CliFlags } from '../cli/parser/cli-flags.ts';
 import { listLocalDeviceInventory, type DeviceInventoryRequest } from './platform-inventory.ts';
-type ResolveDeviceFlags = Pick<
+export type ResolveDeviceFlags = Pick<
   CliFlags,
   | 'platform'
   | 'target'
@@ -46,6 +46,10 @@ type AppleDeviceSelector = {
   deviceName?: string;
   udid?: string;
   serial?: string;
+};
+
+type ResolveTargetDeviceOptions = {
+  allowStoppedAndroidAvdPlaceholders?: boolean;
 };
 
 /**
@@ -115,22 +119,19 @@ function hasExplicitAppleDeviceSelector(selector: AppleDeviceSelector): boolean 
   return Boolean(selector.udid || selector.serial || selector.deviceName);
 }
 
-export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<DeviceInfo> {
-  const normalizedPlatform = flags.platform;
-  const iosSimulatorSetPath = resolveAppleSimulatorSetPathForSelector({
-    simulatorSetPath: resolveIosSimulatorDeviceSetPath(flags.iosSimulatorDeviceSet),
-    platform: normalizedPlatform,
-    target: flags.target,
-  });
-  const androidSerialAllowlist = resolveAndroidSerialAllowlist(flags.androidDeviceAllowlist);
-  const cacheKey = buildResolveTargetDeviceCacheKey({
-    flags,
-    normalizedPlatform,
-    iosSimulatorSetPath,
-    androidSerialAllowlist,
-  });
+export async function resolveTargetDevice(
+  flags: ResolveDeviceFlags,
+  options: ResolveTargetDeviceOptions = {},
+): Promise<DeviceInfo> {
+  const inventoryRequest = buildDeviceInventoryRequestFromFlags(flags);
+  const { iosSimulatorSetPath, ...selector } = inventoryRequest;
+  const cacheKey = buildResolveTargetDeviceCacheKey(inventoryRequest, options);
+  const selectionContext = {
+    simulatorSetPath: iosSimulatorSetPath,
+    allowStoppedAndroidAvdPlaceholders: options.allowStoppedAndroidAvdPlaceholders,
+  };
   const diagnosticData = {
-    platform: normalizedPlatform,
+    platform: inventoryRequest.platform,
     target: flags.target,
     cacheHit: false,
   };
@@ -142,34 +143,7 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
         diagnosticData.cacheHit = true;
         return cached;
       }
-      const selector = {
-        platform: normalizedPlatform,
-        target: flags.target,
-        deviceName: flags.device,
-        udid: flags.udid,
-        serial: flags.serial,
-      };
-      const leaseScope = {
-        leaseId: flags.leaseId,
-        leaseProvider: flags.leaseProvider,
-        deviceKey: flags.deviceKey,
-        clientId: flags.clientId,
-      };
-      if (selector.target && !selector.platform) {
-        throw new AppError(
-          'INVALID_ARGS',
-          'Device target selector requires --platform. Use --platform ios|macos|android|linux|apple with --target mobile|tv|desktop.',
-        );
-      }
-
-      const injectedDevices = await readInjectedDeviceInventory({
-        ...selector,
-        ...leaseScope,
-        iosSimulatorSetPath,
-        androidSerialAllowlist: androidSerialAllowlist
-          ? Array.from(androidSerialAllowlist).sort()
-          : undefined,
-      });
+      const injectedDevices = await readInjectedDeviceInventory(inventoryRequest);
       if (injectedDevices) {
         if (isAppleResolutionSelector(selector)) {
           return cacheResolvedTargetDevice(
@@ -181,18 +155,11 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
         }
         return cacheResolvedTargetDevice(
           cacheKey,
-          await resolveDevice(injectedDevices, selector, { simulatorSetPath: iosSimulatorSetPath }),
+          await resolveDevice(injectedDevices, selector, selectionContext),
         );
       }
 
-      const devices = await listLocalDeviceInventory({
-        ...selector,
-        ...leaseScope,
-        iosSimulatorSetPath,
-        androidSerialAllowlist: androidSerialAllowlist
-          ? Array.from(androidSerialAllowlist).sort()
-          : undefined,
-      });
+      const devices = await listLocalDeviceInventory(inventoryRequest);
 
       if (isAppleResolutionSelector(selector)) {
         return cacheResolvedTargetDevice(
@@ -205,11 +172,44 @@ export async function resolveTargetDevice(flags: ResolveDeviceFlags): Promise<De
 
       return cacheResolvedTargetDevice(
         cacheKey,
-        await resolveDevice(devices, selector, { simulatorSetPath: iosSimulatorSetPath }),
+        await resolveDevice(devices, selector, selectionContext),
       );
     },
     diagnosticData,
   );
+}
+
+export function buildDeviceInventoryRequestFromFlags(
+  flags: ResolveDeviceFlags,
+): DeviceInventoryRequest {
+  const platform = flags.platform;
+  if (flags.target && !platform) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'Device target selector requires --platform. Use --platform ios|macos|android|linux|apple with --target mobile|tv|desktop.',
+    );
+  }
+  const iosSimulatorSetPath = resolveAppleSimulatorSetPathForSelector({
+    simulatorSetPath: resolveIosSimulatorDeviceSetPath(flags.iosSimulatorDeviceSet),
+    platform,
+    target: flags.target,
+  });
+  const androidSerialAllowlist = resolveAndroidSerialAllowlist(flags.androidDeviceAllowlist);
+  return {
+    platform,
+    target: flags.target,
+    deviceName: flags.device,
+    udid: flags.udid,
+    serial: flags.serial,
+    leaseId: flags.leaseId,
+    leaseProvider: flags.leaseProvider,
+    deviceKey: flags.deviceKey,
+    clientId: flags.clientId,
+    iosSimulatorSetPath,
+    androidSerialAllowlist: androidSerialAllowlist
+      ? Array.from(androidSerialAllowlist).sort()
+      : undefined,
+  };
 }
 
 export async function withResolveTargetDeviceCacheScope<T>(task: () => Promise<T>): Promise<T> {
@@ -268,26 +268,9 @@ function cacheResolvedTargetDevice(cacheKey: string, device: DeviceInfo): Device
   return device;
 }
 
-function buildResolveTargetDeviceCacheKey(params: {
-  flags: ResolveDeviceFlags;
-  normalizedPlatform?: PlatformSelector;
-  iosSimulatorSetPath?: string;
-  androidSerialAllowlist?: ReadonlySet<string>;
-}): string {
-  const { flags, normalizedPlatform, iosSimulatorSetPath, androidSerialAllowlist } = params;
-  return JSON.stringify({
-    platform: normalizedPlatform,
-    target: flags.target,
-    device: flags.device,
-    udid: flags.udid,
-    serial: flags.serial,
-    leaseId: flags.leaseId,
-    leaseProvider: flags.leaseProvider,
-    deviceKey: flags.deviceKey,
-    clientId: flags.clientId,
-    iosSimulatorSetPath,
-    androidSerialAllowlist: androidSerialAllowlist
-      ? Array.from(androidSerialAllowlist).sort()
-      : undefined,
-  });
+function buildResolveTargetDeviceCacheKey(
+  request: DeviceInventoryRequest,
+  options: ResolveTargetDeviceOptions,
+): string {
+  return JSON.stringify({ request, options });
 }

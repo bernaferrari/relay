@@ -113,6 +113,7 @@ test('resolveDevice throws DEVICE_NOT_FOUND with scoped set guidance when simula
   assert.ok(typeof err.details?.hint === 'string');
   assert.match(err.details.hint as string, /simctl --set/);
   assert.match(err.details.hint as string, /create/);
+  assert.doesNotMatch(err.details.hint as string, /iPhone 16|SimRuntime\.iOS-18-0/);
 });
 
 test('resolveDevice throws generic DEVICE_NOT_FOUND when no simulatorSetPath and no devices found', async () => {
@@ -132,6 +133,43 @@ test('resolveDevice does not apply scoped set guidance for non-iOS platform with
   assert.equal(err.code, 'DEVICE_NOT_FOUND');
   assert.equal(err.message, 'No devices found');
   assert.equal(err.details?.simulatorSetPath, undefined);
+});
+
+test('resolveDevice ignores stopped Android AVD placeholders for adb-backed selection', async () => {
+  const stoppedAvd: DeviceInfo = {
+    platform: 'android',
+    id: 'Pixel_9_Pro_XL',
+    name: 'Pixel_9_Pro_XL',
+    kind: 'emulator',
+    target: 'mobile',
+    booted: false,
+  };
+  const bootingEmulator: DeviceInfo = {
+    platform: 'android',
+    id: 'emulator-5554',
+    name: 'Pixel_8',
+    kind: 'emulator',
+    target: 'mobile',
+    booted: false,
+  };
+
+  const implicit = await resolveDevice([stoppedAvd, bootingEmulator], { platform: 'android' });
+  assert.equal(implicit.id, 'emulator-5554');
+
+  const explicit = await resolveDevice([stoppedAvd], {
+    platform: 'android',
+    deviceName: 'Pixel_9_Pro_XL',
+  }).catch((e) => e);
+  assert.ok(explicit instanceof AppError);
+  assert.equal(explicit.code, 'DEVICE_NOT_FOUND');
+  assert.equal(explicit.message, 'No device named Pixel_9_Pro_XL');
+
+  const bootSelection = await resolveDevice(
+    [stoppedAvd],
+    { platform: 'android', deviceName: 'Pixel_9_Pro_XL' },
+    { allowStoppedAndroidAvdPlaceholders: true },
+  );
+  assert.equal(bootSelection.id, 'Pixel_9_Pro_XL');
 });
 
 test('resolveDevice applies scoped set guidance when no platform selector specified and simulatorSetPath is set', async () => {
@@ -187,6 +225,52 @@ test('resolveDevice prefers booted simulator over physical device', async () => 
   };
   const result = await resolveDevice([physical, sim1, sim2], { platform: 'ios' });
   assert.equal(result.id, 'sim-1');
+});
+
+test('resolveDevice keeps Apple simulator family priority ahead of boot state', async () => {
+  const tvSimulator: DeviceInfo = {
+    platform: 'ios',
+    id: 'tv-sim',
+    name: 'Apple TV 4K',
+    kind: 'simulator',
+    target: 'tv',
+    booted: true,
+  };
+  const iphoneSimulator: DeviceInfo = {
+    platform: 'ios',
+    id: 'iphone-sim',
+    name: 'iPhone 16',
+    kind: 'simulator',
+    target: 'mobile',
+    booted: false,
+  };
+
+  const result = await resolveDevice([tvSimulator, iphoneSimulator], { platform: 'ios' });
+
+  assert.equal(result.id, 'iphone-sim');
+});
+
+test('resolveDevice prefers booted Apple simulator within the same family', async () => {
+  const shutdownIphone: DeviceInfo = {
+    platform: 'ios',
+    id: 'iphone-shutdown',
+    name: 'iPhone 16',
+    kind: 'simulator',
+    target: 'mobile',
+    booted: false,
+  };
+  const bootedIphone: DeviceInfo = {
+    platform: 'ios',
+    id: 'iphone-booted',
+    name: 'iPhone 17',
+    kind: 'simulator',
+    target: 'mobile',
+    booted: true,
+  };
+
+  const result = await resolveDevice([shutdownIphone, bootedIphone], { platform: 'ios' });
+
+  assert.equal(result.id, 'iphone-booted');
 });
 
 test('resolveDevice returns physical device when explicitly selected by deviceName', async () => {

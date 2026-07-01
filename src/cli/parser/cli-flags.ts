@@ -71,7 +71,9 @@ export type CliFlags = CloudProviderProfileFields &
     iosXctestEnvDir?: string;
     deviceHub?: boolean;
     androidDeviceAllowlist?: string;
+    remote?: boolean;
     session?: string;
+    targetApp?: string;
     metroHost?: string;
     metroPort?: number;
     bundleUrl?: string;
@@ -494,6 +496,13 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     usageDescription: 'Boot: launch Android emulator without a GUI window',
   },
   {
+    key: 'targetApp',
+    names: ['--app', '--target-app'],
+    type: 'string',
+    usageLabel: '--app <id-or-name>',
+    usageDescription: 'Doctor: verify an installed target app without opening a session',
+  },
+  {
     key: 'metroHost',
     names: ['--metro-host'],
     type: 'string',
@@ -677,6 +686,13 @@ const FLAG_DEFINITIONS: readonly FlagDefinition[] = [
     type: 'string',
     usageLabel: '--android-device-allowlist <serials>',
     usageDescription: 'Comma/space separated Android serial allowlist for discovery/selection',
+  },
+  {
+    key: 'remote',
+    names: ['--remote'],
+    type: 'boolean',
+    usageLabel: '--remote',
+    usageDescription: 'Doctor: check remote connection setup instead of local device inventory',
   },
   {
     key: 'activity',
