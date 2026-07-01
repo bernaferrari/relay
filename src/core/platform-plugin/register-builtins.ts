@@ -100,6 +100,9 @@ const applePlugin = {
           ? 'ios-device'
           : 'ios-simulator',
   },
+  // Wraps the Apple arm of `supportsPlatformPerfMetrics`: every Apple device
+  // (ios/macos, any kind/target) reports perf-metrics support.
+  perf: { supportsMetrics: () => true },
   createInteractor: async (device: DeviceInfo, runner: RunnerContext) => {
     const { createAppleInteractor } = await import('../interactors/apple.ts');
     return createAppleInteractor(device, runner);
@@ -128,6 +131,9 @@ const androidPlugin = {
   },
   // Wraps the Android arm of `resolveLogBackend`: every Android device -> 'android'.
   appLog: { resolveBackend: () => 'android' },
+  // Wraps the Android arm of `supportsPlatformPerfMetrics`: every Android device
+  // reports perf-metrics support.
+  perf: { supportsMetrics: () => true },
   createInteractor: async (device: DeviceInfo) => {
     const { createAndroidInteractor } = await import('../interactors/android.ts');
     return createAndroidInteractor(device);
