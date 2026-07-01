@@ -14,6 +14,7 @@ vi.mock('../../../../utils/exec.ts', async (importOriginal) => {
 });
 
 import {
+  buildAppleMemorySnapshotSupport,
   captureAppleMemorySnapshot,
   parseApplePsOutput,
   sampleAppleFramePerf,
@@ -36,7 +37,7 @@ type MockRunCmdResult = Awaited<ReturnType<typeof runCmd>>;
 type XcrunMockHandler = (args: string[]) => Promise<MockRunCmdResult | null>;
 
 const IOS_SIMULATOR: DeviceInfo = {
-  platform: 'ios',
+  platform: 'apple',
   id: 'sim-1',
   name: 'iPhone 17 Pro',
   kind: 'simulator',
@@ -44,7 +45,8 @@ const IOS_SIMULATOR: DeviceInfo = {
 };
 
 const MACOS_DEVICE: DeviceInfo = {
-  platform: 'macos',
+  platform: 'apple',
+  appleOs: 'macos',
   id: 'host-mac',
   name: 'Host Mac',
   kind: 'device',
@@ -53,7 +55,7 @@ const MACOS_DEVICE: DeviceInfo = {
 };
 
 const IOS_DEVICE: DeviceInfo = {
-  platform: 'ios',
+  platform: 'apple',
   id: 'ios-device-1',
   name: 'iPhone Device',
   kind: 'device',
@@ -64,6 +66,42 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockRunCmdBackground.mockImplementation(() => mockBackgroundXctrace());
   vi.useRealTimers();
+});
+
+function collectPlatformValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap((entry) => collectPlatformValues(entry));
+  if (value && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, entry]) =>
+      key === 'platform' && typeof entry === 'string'
+        ? [entry, ...collectPlatformValues(entry)]
+        : collectPlatformValues(entry),
+    );
+  }
+  return [];
+}
+
+test('buildAppleMemorySnapshotSupport projects support.platform to the macOS leaf', () => {
+  // approach (b): response.support.platform must be the PUBLIC leaf, never the internal `apple`.
+  const support = buildAppleMemorySnapshotSupport(MACOS_DEVICE);
+  assert.equal(support.platform, 'macos');
+  assert.equal(support.memgraph, true);
+});
+
+test('buildAppleMemorySnapshotSupport projects support.platform to the iOS leaf', () => {
+  assert.equal(buildAppleMemorySnapshotSupport(IOS_SIMULATOR).platform, 'ios');
+  assert.equal(buildAppleMemorySnapshotSupport(IOS_DEVICE).platform, 'ios');
+});
+
+test('buildAppleMemorySnapshotSupport never emits the internal apple platform', () => {
+  // Guard: no emitted `platform` field on a representative Apple perf response may equal `apple`.
+  for (const device of [MACOS_DEVICE, IOS_SIMULATOR, IOS_DEVICE]) {
+    const platforms = collectPlatformValues(buildAppleMemorySnapshotSupport(device));
+    assert.ok(platforms.length > 0, 'expected at least one platform field');
+    assert.ok(
+      !platforms.includes('apple'),
+      `apple leaked in support for ${device.name}: ${platforms.join(', ')}`,
+    );
+  }
 });
 
 test('parseApplePsOutput reads pid cpu rss and command columns', () => {

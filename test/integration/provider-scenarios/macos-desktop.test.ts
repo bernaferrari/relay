@@ -51,7 +51,9 @@ test('Provider-backed integration prepare uses the Apple runner lifecycle provid
     },
   );
 
-  assert.deepEqual(lifecycleCalls, ['prepare:macos:desktop']);
+  // The provider receives the internal collapsed DeviceInfo (platform:'apple',
+  // appleOs:'macos'); the macOS distinction is carried by appleOs/target.
+  assert.deepEqual(lifecycleCalls, ['prepare:apple:desktop']);
 });
 
 test('Provider-backed integration macOS desktop flow uses semantic host and helper providers', async () => {
@@ -59,14 +61,14 @@ test('Provider-backed integration macOS desktop flow uses semantic host and help
     {
       command: 'macos.runner.uptime',
       deviceId: PROVIDER_SCENARIO_MACOS.id,
-      platform: 'macos',
+      platform: 'apple',
       request: { command: 'uptime' },
       result: { uptimeMs: 84 },
     },
     {
       command: 'macos.runner.desktopScroll',
       deviceId: PROVIDER_SCENARIO_MACOS.id,
-      platform: 'macos',
+      platform: 'apple',
       request: {
         command: 'desktopScroll',
         direction: 'down',
