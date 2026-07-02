@@ -25,6 +25,9 @@ import {
   runAppLogDoctor,
   startAppLog,
   stopAppLog,
+  type AppLogFailure,
+  type AppLogResult,
+  type AppLogState,
 } from '../app-log.ts';
 import {
   buildPerfFramesResponseData,
@@ -37,6 +40,7 @@ import { handleAudioCommand } from './session-audio.ts';
 import { handleNativePerfCommand as handleAppleNativePerfCommand } from './session-perf-xctrace.ts';
 import { NETWORK_INCLUDE_MODES, type NetworkIncludeMode } from '../../kernel/contracts.ts';
 import type { LogBackend } from '../network-log.ts';
+import { uniqueStrings } from '../action-utils.ts';
 import {
   LOG_ACTION_VALUES as LOG_ACTIONS,
   type LogAction as LogsAction,
@@ -57,6 +61,16 @@ type LogsHandlerParams = ObservabilityParams & {
   session: SessionState;
   restart: boolean;
 };
+type SessionLogStatus = {
+  active: boolean;
+  state: AppLogState | 'inactive';
+  backend: LogBackend;
+  startedAt?: number;
+  failureCode?: string;
+  failureMessage?: string;
+  hint?: string;
+  notes?: string[];
+};
 
 const LOG_ACTION_HANDLERS: Record<
   LogsAction,
@@ -75,8 +89,98 @@ const LOG_ACTION_HANDLERS: Record<
     handleLogsStop(session, sessionName, sessionStore),
 };
 
-function resolveSessionLogBackendLabel(session: SessionState): LogBackend {
-  return session.appLog?.backend ?? resolveLogBackend(session.device);
+function resolveSessionLogStatus(session: SessionState): SessionLogStatus {
+  if (session.appLog) {
+    const state = session.appLog.getState();
+    const active = state === 'active' || state === 'recovering';
+    return {
+      active,
+      state,
+      backend: session.appLog.backend,
+      startedAt: session.appLog.startedAt,
+      notes: buildAppLogStateNotes(state),
+    };
+  }
+  if (session.appLogFailure) {
+    return {
+      active: false,
+      state: 'failed',
+      backend: session.appLogFailure.backend,
+      failureCode: session.appLogFailure.code,
+      failureMessage: session.appLogFailure.message,
+      hint: session.appLogFailure.hint,
+      notes: [buildAppLogFailureNote(session.appLogFailure)],
+    };
+  }
+  return {
+    active: false,
+    state: 'inactive',
+    backend: resolveLogBackend(session.device),
+  };
+}
+
+function buildAppLogFailure(
+  normalized: ReturnType<typeof normalizeError>,
+  backend: LogBackend,
+): AppLogFailure {
+  return {
+    backend,
+    code: normalized.code,
+    message: normalized.message,
+    hint: normalized.hint,
+  };
+}
+
+function buildAppLogFailureNote(failure: AppLogFailure): string {
+  return failure.hint ? `${failure.message} ${failure.hint}` : failure.message;
+}
+
+function buildAppLogStateNotes(state: AppLogState): string[] | undefined {
+  if (state === 'failed') {
+    return [
+      'The app log stream process exited with an error. Run logs doctor for backend diagnostics.',
+    ];
+  }
+  if (state === 'ended') {
+    return [
+      'The app log stream process ended. Run logs clear --restart before the next capture window.',
+    ];
+  }
+  return undefined;
+}
+
+function mergeLogDoctorNotes(
+  doctorNotes: string[],
+  status: Pick<SessionLogStatus, 'notes'>,
+): string[] {
+  return uniqueStrings([...doctorNotes, ...(status.notes ?? [])]);
+}
+
+function buildSessionAppLog(
+  session: SessionState,
+  outPath: string,
+  appLog: AppLogResult,
+): NonNullable<SessionState['appLog']> {
+  return {
+    ...appLog,
+    platform: session.device.platform,
+    outPath,
+  };
+}
+
+function storeAppLogStartFailure(
+  sessionStore: SessionStore,
+  sessionName: string,
+  session: SessionState,
+  error: unknown,
+): DaemonFailureResponse {
+  const normalized = normalizeError(error);
+  sessionStore.set(sessionName, {
+    ...session,
+    appLog: undefined,
+    appLogFailure: buildAppLogFailure(normalized, resolveLogBackend(session.device)),
+  });
+  return { ok: false, error: normalized };
 }
 
 export async function handleSessionObservabilityCommands(
@@ -335,19 +439,23 @@ function handleLogsPath(
 ): DaemonResponse {
   const logPath = sessionStore.resolveAppLogPath(sessionName);
   const metadata = getAppLogPathMetadata(logPath);
+  const status = resolveSessionLogStatus(session);
   return {
     ok: true,
     data: {
       path: logPath,
-      active: Boolean(session.appLog),
-      state: session.appLog?.getState() ?? 'inactive',
-      backend: resolveSessionLogBackendLabel(session),
+      active: status.active,
+      state: status.state,
+      backend: status.backend,
       sizeBytes: metadata.sizeBytes,
       modifiedAt: metadata.modifiedAt,
-      startedAt: session.appLog?.startedAt
-        ? new Date(session.appLog.startedAt).toISOString()
-        : undefined,
-      hint: 'Grep the file for token-efficient debugging, e.g. grep -n "Error\\|Exception" <path>',
+      startedAt: status.startedAt ? new Date(status.startedAt).toISOString() : undefined,
+      failureCode: status.failureCode,
+      failureMessage: status.failureMessage,
+      hint:
+        status.hint ??
+        'Grep the file for token-efficient debugging, e.g. grep -n "Error\\|Exception" <path>',
+      notes: status.notes,
     },
   };
 }
@@ -359,14 +467,19 @@ async function handleLogsDoctor(
 ): Promise<DaemonResponse> {
   const logPath = sessionStore.resolveAppLogPath(sessionName);
   const doctor = await runAppLogDoctor(session.device, session.appBundleId);
+  const status = resolveSessionLogStatus(session);
   return {
     ok: true,
     data: {
       path: logPath,
-      active: Boolean(session.appLog),
-      state: session.appLog?.getState() ?? 'inactive',
+      active: status.active,
+      state: status.state,
+      backend: status.backend,
       checks: doctor.checks,
-      notes: doctor.notes,
+      failureCode: status.failureCode,
+      failureMessage: status.failureMessage,
+      hint: status.hint,
+      notes: mergeLogDoctorNotes(doctor.notes, status),
     },
   };
 }
@@ -396,7 +509,9 @@ async function handleLogsClear(
   }
   const logPath = sessionStore.resolveAppLogPath(sessionName);
   if (!restart) {
-    return { ok: true, data: clearAppLogFiles(logPath) };
+    const cleared = clearAppLogFiles(logPath);
+    sessionStore.set(sessionName, { ...session, appLogFailure: undefined });
+    return { ok: true, data: cleared };
   }
   const appBundleId = session.appBundleId;
   if (!appBundleId) {
@@ -415,20 +530,12 @@ async function handleLogsClear(
     const appLogStream = await startAppLog(session.device, appBundleId, logPath, appLogPidPath);
     sessionStore.set(sessionName, {
       ...session,
-      appLog: {
-        platform: session.device.platform,
-        backend: appLogStream.backend,
-        outPath: logPath,
-        startedAt: appLogStream.startedAt,
-        getState: appLogStream.getState,
-        stop: appLogStream.stop,
-        wait: appLogStream.wait,
-      },
+      appLog: buildSessionAppLog(session, logPath, appLogStream),
+      appLogFailure: undefined,
     });
     return { ok: true, data: { ...cleared, restarted: true } };
   } catch (err) {
-    sessionStore.set(sessionName, { ...session, appLog: undefined });
-    return { ok: false, error: normalizeError(err) };
+    return storeAppLogStartFailure(sessionStore, sessionName, session, err);
   }
 }
 
@@ -458,19 +565,12 @@ async function handleLogsStart(
     );
     sessionStore.set(sessionName, {
       ...session,
-      appLog: {
-        platform: session.device.platform,
-        backend: appLogStream.backend,
-        outPath: appLogPath,
-        startedAt: appLogStream.startedAt,
-        getState: appLogStream.getState,
-        stop: appLogStream.stop,
-        wait: appLogStream.wait,
-      },
+      appLog: buildSessionAppLog(session, appLogPath, appLogStream),
+      appLogFailure: undefined,
     });
     return { ok: true, data: { path: appLogPath, started: true } };
   } catch (err) {
-    return { ok: false, error: normalizeError(err) };
+    return storeAppLogStartFailure(sessionStore, sessionName, session, err);
   }
 }
 
@@ -484,7 +584,7 @@ async function handleLogsStop(
   }
   const outPath = session.appLog.outPath;
   await stopAppLog(session.appLog);
-  sessionStore.set(sessionName, { ...session, appLog: undefined });
+  sessionStore.set(sessionName, { ...session, appLog: undefined, appLogFailure: undefined });
   return { ok: true, data: { path: outPath, stopped: true } };
 }
 
