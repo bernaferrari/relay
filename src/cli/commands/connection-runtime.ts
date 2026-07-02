@@ -33,6 +33,7 @@ import { connectionProviderRequiresRemoteDaemon } from '../connection/provider-p
 import { isCloudWebDriverProviderName } from '../../cloud-webdriver/providers.ts';
 
 const leaseDeferredCommands = new Set([
+  'artifacts',
   'connect',
   'connection',
   'close',
