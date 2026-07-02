@@ -38,12 +38,14 @@ import {
   isRunnerReadinessProbeCommand,
 } from './runner-command-traits.ts';
 import {
+  buildDetachedRunnerLease,
   buildRunnerLease,
   prepareRunnerLeaseForStartup,
   RUNNER_OWNER_TOKEN,
   withRunnerLeaseLock,
   writeRunnerLease,
 } from './runner-lease.ts';
+import { isIosRunnerDetachEnabled, tryAdoptRunnerSessionFromLease } from './runner-adoption.ts';
 import {
   abortRunnerSessionsAndPrepProcesses,
   cleanupOwnedIosRunnerLease,
@@ -54,7 +56,11 @@ import {
   stopRunnerPrepProcesses,
 } from './runner-disposal.ts';
 import { enrichRunnerFailureFromLog } from './runner-failure-diagnostics.ts';
-import type { RunnerSession } from './runner-session-types.ts';
+import {
+  buildRunnerSessionId,
+  normalizeRunnerStartupTimeoutMs,
+  type RunnerSession,
+} from './runner-session-types.ts';
 
 export type { RunnerSession } from './runner-session-types.ts';
 
@@ -126,6 +132,20 @@ async function startRunnerSessionWithLease(
       logicalLeaseContext,
     },
   });
+  const adopted = await measureRunnerStartupStep(
+    startupTimings,
+    'adopt_detached_runner',
+    async () =>
+      await tryAdoptRunnerSessionFromLease(device, {
+        startupTimeoutMs: options.startupTimeoutMs,
+      }),
+  );
+  if (adopted) {
+    adopted.startupTimings = startupTimings;
+    adopted.logicalLeaseContext = logicalLeaseContext;
+    runnerSessions.set(device.id, adopted);
+    return adopted;
+  }
   await measureRunnerStartupStep(startupTimings, 'cleanup_stale_xcodebuild', async () => {
     await prepareRunnerLeaseForStartup(device.id, runnerLeaseCleanupAdapter, logicalLeaseContext);
   });
@@ -225,7 +245,7 @@ async function startRunnerSessionWithLease(
     logChunk(chunk, options.logPath, options.traceLogPath, options.verbose);
   });
 
-  const sessionId = `${device.id}:${port}:${Date.now()}`;
+  const sessionId = buildRunnerSessionId(device.id, port);
   const lease = buildRunnerLease({
     deviceId: device.id,
     sessionId,
@@ -441,6 +461,46 @@ export async function abortAllIosRunnerSessions(): Promise<void> {
       runnerSessions.delete(session.deviceId);
     }
   }
+}
+
+// Graceful daemon shutdown hands healthy simulator runners off to the next
+// daemon instead of paying the ~5s xcodebuild ramp again: the lease token is
+// rewritten to a detached form (so this daemon's own teardown paths no longer
+// classify it as owned) and the session simply leaves the in-memory map. Once
+// this process exits the lease is stale and the adoption path picks it up.
+// Explicit cleanup still works: clean:daemon kills by the lease's runnerPid,
+// and the runner's XCTWaiter self-expires after 24h.
+export async function detachIosSimulatorRunnerSessionsForShutdown(): Promise<number> {
+  if (!isIosRunnerDetachEnabled()) return 0;
+  let detached = 0;
+  for (const [deviceId, session] of runnerSessions) {
+    if (session.device.kind !== 'simulator') continue;
+    // A held device-set redirect means this runner depends on the global
+    // XCTestDevices symlink pointing at a custom simulator set for its whole
+    // lifetime. Handing it off would either restore the symlink under a live
+    // runner or leak the redirect lock, so scoped-set runners keep the normal
+    // dispose-and-restore path.
+    if (session.simulatorSetRedirect) continue;
+    if (!session.lease || !isRunnerProcessAlive(session.child.pid)) continue;
+    try {
+      writeRunnerLease(buildDetachedRunnerLease(session.lease));
+    } catch {
+      continue; // Could not mark the handoff; leave it for the kill path.
+    }
+    runnerSessions.delete(deviceId);
+    detached += 1;
+    emitDiagnostic({
+      level: 'info',
+      phase: 'ios_runner_session_detached',
+      data: {
+        deviceId,
+        sessionId: session.sessionId,
+        runnerPid: session.child.pid,
+        port: session.port,
+      },
+    });
+  }
+  return detached;
 }
 
 export async function stopAllIosRunnerSessions(): Promise<void> {
@@ -878,12 +938,6 @@ export function readRunnerStartupTimeoutMs(
   session: Pick<RunnerSession, 'startupTimeoutMs'>,
 ): number {
   return session.startupTimeoutMs ?? RUNNER_STARTUP_TIMEOUT_MS;
-}
-
-function normalizeRunnerStartupTimeoutMs(value: number | undefined): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? Math.floor(value)
-    : undefined;
 }
 
 async function measureRunnerStartupStep<T>(
