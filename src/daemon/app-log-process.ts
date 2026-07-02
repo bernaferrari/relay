@@ -6,7 +6,14 @@ import type { ExecResult } from '../utils/exec.ts';
 
 export const APP_LOG_PID_FILENAME = 'app-log.pid';
 
-export type AppLogState = 'active' | 'recovering' | 'failed';
+export type AppLogState = 'active' | 'recovering' | 'ended' | 'failed';
+
+export type AppLogFailure = {
+  backend: LogBackend;
+  code: string;
+  message: string;
+  hint?: string;
+};
 
 export type AppLogResult = {
   backend: LogBackend;
@@ -42,7 +49,7 @@ function isManagedAppLogCommand(command: string): boolean {
   return (
     normalized.includes('log stream') ||
     normalized.includes('logcat') ||
-    normalized.includes('devicectl device log stream')
+    normalized.includes('devicectl device process launch')
   );
 }
 

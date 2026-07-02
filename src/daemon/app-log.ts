@@ -4,9 +4,6 @@ import { isIosFamily, isMacOs, type DeviceInfo } from '../kernel/device.ts';
 import { AppError } from '../kernel/errors.ts';
 import { tryGetPlugin } from '../core/platform-plugin/plugin.ts';
 import { registerBuiltinPlatformPlugins } from '../core/interactors/register-builtins.ts';
-import { runCmd } from '../utils/exec.ts';
-import { runXcrun } from '../platforms/apple/core/tool-provider.ts';
-import { runAndroidAdb } from '../platforms/android/adb.ts';
 import { createScopedProvider } from '../utils/scoped-provider.ts';
 import {
   assertAndroidPackageArgSafe,
@@ -40,6 +37,7 @@ registerBuiltinPlatformPlugins();
 
 export type { AppLogResult } from './app-log-process.ts';
 export type { AppLogState } from './app-log-process.ts';
+export type { AppLogFailure } from './app-log-process.ts';
 export { APP_LOG_PID_FILENAME, cleanupStaleAppLogProcesses } from './app-log-process.ts';
 export {
   assertAndroidPackageArgSafe,
@@ -47,14 +45,10 @@ export {
 } from './app-log-android.ts';
 export {
   buildAppleLogPredicate,
-  buildIosDeviceLogStreamArgs,
+  buildIosDeviceConsoleLaunchArgs,
   buildIosSimulatorLogStreamArgs,
 } from './app-log-ios.ts';
-
-export type AppLogDoctorResult = {
-  checks: Record<string, boolean>;
-  notes: string[];
-};
+export { runAppLogDoctor, type AppLogDoctorResult } from './app-log-doctor.ts';
 
 export type SessionNetworkCapture = {
   backend: LogBackend;
@@ -77,6 +71,18 @@ export type AppLogStartRequest = {
   appBundleId: string;
   outPath: string;
   pidPath?: string;
+};
+
+type SessionNetworkCaptureParams = {
+  device: DeviceInfo;
+  appBundleId?: string;
+  appLogState?: AppLogState;
+  appLogStartedAt?: number;
+  appLogPath: string;
+  maxEntries: number;
+  include: NetworkIncludeMode;
+  maxPayloadChars: number;
+  maxScanLines: number;
 };
 
 export type AppLogProvider = {
@@ -192,17 +198,9 @@ export function resolveLogBackend(device: DeviceInfo): LogBackend {
   return tryGetPlugin(device.platform)?.appLog?.resolveBackend(device) ?? 'android';
 }
 
-export async function readSessionNetworkCapture(params: {
-  device: DeviceInfo;
-  appBundleId?: string;
-  appLogState?: AppLogState;
-  appLogStartedAt?: number;
-  appLogPath: string;
-  maxEntries: number;
-  include: NetworkIncludeMode;
-  maxPayloadChars: number;
-  maxScanLines: number;
-}): Promise<SessionNetworkCapture> {
+export async function readSessionNetworkCapture(
+  params: SessionNetworkCaptureParams,
+): Promise<SessionNetworkCapture> {
   const {
     device,
     appBundleId,
@@ -247,6 +245,7 @@ export async function readSessionNetworkCapture(params: {
       }
     }
   }
+
   const canRecoverIosSimulatorLogShow =
     isIosFamily(device) && device.kind === 'simulator' && Boolean(appBundleId);
   if (canRecoverIosSimulatorLogShow && dump.entries.length === 0) {
@@ -360,7 +359,7 @@ async function startLocalAppLog({
   const redactionPatterns = getAppLogRedactionPatterns();
   if (isIosFamily(device)) {
     if (device.kind === 'device') {
-      return await startIosDeviceAppLog(device.id, stream, redactionPatterns, pidPath);
+      return await startIosDeviceAppLog(device.id, appBundleId, stream, redactionPatterns, pidPath);
     }
     return await startIosSimulatorAppLog(
       device.id,
@@ -428,66 +427,6 @@ function buildNoHttpEntriesNote(device: DeviceInfo): string {
 export async function stopAppLog(appLog: AppLogResult): Promise<void> {
   await appLog.stop();
   await waitForChildExit(appLog.wait);
-}
-
-export async function runAppLogDoctor(
-  device: DeviceInfo,
-  appBundleId?: string,
-): Promise<AppLogDoctorResult> {
-  const checks: Record<string, boolean> = {};
-  const notes: string[] = [];
-  if (!appBundleId) {
-    notes.push(
-      'No app bundle is tracked in this session. Run open <app> first for app-scoped logs.',
-    );
-  }
-  if (device.platform === 'android') {
-    try {
-      const adb = await runAndroidAdb(device, ['shell', 'echo', 'ok'], {
-        allowFailure: true,
-        timeoutMs: 1_000,
-      });
-      checks.adbAvailable = adb.exitCode === 0;
-    } catch {
-      checks.adbAvailable = false;
-    }
-    if (appBundleId) {
-      try {
-        const pidof = await runAndroidAdb(device, ['shell', 'pidof', appBundleId], {
-          allowFailure: true,
-          timeoutMs: 1_000,
-        });
-        checks.androidPidVisible = pidof.stdout.trim().length > 0;
-      } catch {
-        checks.androidPidVisible = false;
-      }
-    }
-  }
-  if (isIosFamily(device) && device.kind === 'simulator') {
-    try {
-      const simctl = await runXcrun(['simctl', 'help'], { allowFailure: true });
-      checks.simctlAvailable = simctl.exitCode === 0;
-    } catch {
-      checks.simctlAvailable = false;
-    }
-  }
-  if (isIosFamily(device) && device.kind === 'device') {
-    try {
-      const devicectl = await runXcrun(['devicectl', '--version'], { allowFailure: true });
-      checks.devicectlAvailable = devicectl.exitCode === 0;
-    } catch {
-      checks.devicectlAvailable = false;
-    }
-  }
-  if (isMacOs(device)) {
-    try {
-      const log = await runCmd('log', ['help'], { allowFailure: true });
-      checks.logAvailable = log.exitCode === 0;
-    } catch {
-      checks.logAvailable = false;
-    }
-  }
-  return { checks, notes };
 }
 
 export function appendAppLogMarker(outPath: string, marker: string): void {

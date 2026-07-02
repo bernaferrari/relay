@@ -52,7 +52,10 @@ The app declares `@expo/dom-webview` directly to keep Expo's development runtime
 on the SDK 56 native module; Android verification failed when the dev client
 resolved an older transitive copy.
 
-From the repo root:
+### iOS simulator
+
+From the repo root, install dependencies and run the development build on the
+target simulator:
 
 ```bash
 pnpm test-app:install
@@ -63,12 +66,50 @@ pnpm test-app:ios -- --device "iPhone 17 Pro"
 terminal running, then use a separate terminal for `agent-device` or Maestro
 commands.
 
-Or on Android:
+### iOS physical device
+
+Use the physical device name from `agent-device devices --platform ios` or
+`xcrun devicectl list devices`. Keep the `expo run:ios` terminal running so
+Metro stays visible to the development build:
+
+```bash
+pnpm test-app:install
+pnpm test-app:ios -- --device "<physical device name>"
+```
+
+Then verify the installed development build from another terminal with the same
+physical device identifier:
+
+```bash
+agent-device open com.callstack.agentdevicelab --platform ios --udid "<physical udid>" --session test-app-physical
+agent-device snapshot -i --platform ios --udid "<physical udid>" --session test-app-physical
+```
+
+The snapshot should show the `Agent Device Tester` home screen, for example the
+`Agent Device Tester` heading and tab bar. An already installed
+`com.callstack.agentdevicelab` is not enough evidence by itself: confirm Metro
+is running for the development build and verify the visible app surface before
+using the session for manual logs, network, replay, or interaction checks. Close
+the same session when verification is complete:
+
+```bash
+agent-device close --platform ios --udid "<physical udid>" --session test-app-physical
+```
+
+### Android emulator or device
+
+Install dependencies and run the development build on the target Android
+emulator or device:
 
 ```bash
 pnpm test-app:install
 pnpm test-app:android -- --device "$ANDROID_DEVICE"
 ```
+
+For Android app/package launches connected to local Metro, run `adb reverse`
+for the Metro port when needed before opening the app with `agent-device`.
+
+### Running from the app folder
 
 If you prefer to work from inside the app folder:
 
@@ -87,9 +128,44 @@ pnpm android
 ```
 
 After the first native build is installed, use `pnpm test-app:start` when you only
-need to restart Metro for JavaScript or TypeScript changes. Once the app is
-running, use `agent-device` against `Agent Device Tester` like any other target
-app.
+need to restart Metro for JavaScript or TypeScript changes. `test-app:start`
+starts Metro only; it does not build, install, or prove a physical device is
+running the development build. Once the app is running and verified with
+`snapshot -i`, use `agent-device` against `Agent Device Tester` like any other
+target app.
+
+### Non-default Metro ports
+
+If the default Metro port is already in use, start Metro on another port. Do not
+reinstall the native development build just to change the JavaScript server port:
+
+```bash
+pnpm test-app:start -- --port 8082
+```
+
+If you are building and installing for the first time in that terminal, Expo's
+`run:ios` and `run:android` commands also accept `--port`:
+
+```bash
+pnpm test-app:ios -- --device "<device name>" --port 8082
+pnpm test-app:android -- --device "$ANDROID_DEVICE" --port 8082
+```
+
+After the development build is installed, keep using the same native app. The
+current `agent-device open` CLI does not accept `--metro-host` or `--metro-port`;
+open the app normally, then use the Metro command surface for Metro-specific
+actions:
+
+```bash
+agent-device metro prepare --project-root examples/test-app --kind expo --port 8082 --public-base-url http://127.0.0.1:8082
+agent-device metro reload --metro-host 127.0.0.1 --metro-port 8082
+```
+
+Use `metro prepare` when you want `agent-device` to start or reuse Metro and
+print the runtime URLs. Use `metro reload` when Metro is already running and the
+installed development build is connected to that server. For Android local
+device/emulator runs, also run `adb reverse tcp:8082 tcp:8082` when the device
+needs host port forwarding.
 
 ## Local Agent Device suites
 

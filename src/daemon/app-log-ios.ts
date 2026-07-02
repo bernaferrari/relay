@@ -1,10 +1,37 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { buildSimctlArgs } from '../platforms/apple/core/simctl.ts';
-import { runCmd, runCmdBackground } from '../utils/exec.ts';
+import { AppError } from '../kernel/errors.ts';
+import { runCmd, runCmdBackground, type ExecResult } from '../utils/exec.ts';
 import { runXcrun } from '../platforms/apple/core/tool-provider.ts';
-import { clearPidFile, writePidFile, type AppLogResult } from './app-log-process.ts';
+import {
+  clearPidFile,
+  writePidFile,
+  type AppLogResult,
+  type AppLogState,
+} from './app-log-process.ts';
 import { attachChildToStream, createLineWriter, waitForChildExit } from './app-log-stream.ts';
+
+export const IOS_DEVICE_CONSOLE_CAPTURE_UNSUPPORTED = {
+  message: 'iOS physical-device app console capture is not supported by the installed devicectl.',
+  hint: 'This devicectl does not expose process launch --console. Markers can still be written to app.log, but app output is not being captured. Use an iOS simulator for agent-device app logs or inspect physical-device logs in Console.app/Xcode until this Xcode toolchain exposes scriptable console capture.',
+} as const;
+const IOS_DEVICE_CONSOLE_CAPTURE_PROBE_FAILED = {
+  message: 'Could not verify iOS physical-device app console capture support.',
+  hint: 'Retry logs clear --restart. If the probe keeps failing, run logs doctor and inspect the request diagnostics for the devicectl help command.',
+} as const;
+export const IOS_DEVICE_CONSOLE_CAPTURE_UNSUPPORTED_NOTE = formatIosDeviceConsoleCaptureNote(
+  IOS_DEVICE_CONSOLE_CAPTURE_UNSUPPORTED,
+);
+export const IOS_DEVICE_CONSOLE_CAPTURE_PROBE_FAILED_NOTE = formatIosDeviceConsoleCaptureNote(
+  IOS_DEVICE_CONSOLE_CAPTURE_PROBE_FAILED,
+);
+
+export type IosDeviceConsoleCaptureSupport =
+  | { supported: true; stderr?: string }
+  | { supported: false; reason: 'unsupported' | 'probe-failed'; stderr?: string };
+
+let cachedSupportedIosDeviceConsoleCapture: IosDeviceConsoleCaptureSupport | undefined;
 
 export function buildAppleLogPredicate(
   appBundleId: string,
@@ -55,8 +82,61 @@ export function buildIosSimulatorLogStreamArgs(params: {
   );
 }
 
-export function buildIosDeviceLogStreamArgs(deviceId: string): string[] {
-  return ['devicectl', 'device', 'log', 'stream', '--device', deviceId];
+export function buildIosDeviceConsoleLaunchArgs(deviceId: string, appBundleId: string): string[] {
+  return [
+    'devicectl',
+    'device',
+    'process',
+    'launch',
+    '--device',
+    deviceId,
+    '--console',
+    '--terminate-existing',
+    appBundleId,
+  ];
+}
+
+export async function checkIosDeviceConsoleCaptureSupport(): Promise<IosDeviceConsoleCaptureSupport> {
+  if (cachedSupportedIosDeviceConsoleCapture) return cachedSupportedIosDeviceConsoleCapture;
+  try {
+    const result = await runXcrun(['devicectl', 'device', 'process', 'launch', '--help'], {
+      allowFailure: true,
+      timeoutMs: 5_000,
+    });
+    const support = readIosDeviceConsoleCaptureSupport(result);
+    if (support.supported) cachedSupportedIosDeviceConsoleCapture = support;
+    return support;
+  } catch (error) {
+    return {
+      supported: false,
+      reason: 'probe-failed',
+      stderr: error instanceof Error ? error.message : undefined,
+    };
+  }
+}
+
+function readIosDeviceConsoleCaptureSupport(result: ExecResult): IosDeviceConsoleCaptureSupport {
+  const stderr = result.stderr.trim() || undefined;
+  if (result.exitCode !== 0) {
+    return { supported: false, reason: 'probe-failed', stderr };
+  }
+  if (!isIosDeviceConsoleCaptureHelp(result.stdout, result.stderr)) {
+    return { supported: false, reason: 'unsupported', stderr };
+  }
+  return { supported: true, stderr };
+}
+
+function formatIosDeviceConsoleCaptureNote(message: { message: string; hint: string }): string {
+  return `${message.message} ${message.hint}`;
+}
+
+function isIosDeviceConsoleCaptureHelp(stdout: string, stderr: string): boolean {
+  const help = `${stdout}\n${stderr}`;
+  return (
+    /\bUSAGE:\s+devicectl device process launch\b/i.test(help) &&
+    /--console\b/.test(help) &&
+    /--terminate-existing\b/.test(help)
+  );
 }
 
 export async function readRecentIosSimulatorLogShowForBundle(params: {
@@ -181,17 +261,41 @@ export async function startMacOsAppLog(
 
 export async function startIosDeviceAppLog(
   deviceId: string,
+  appBundleId: string,
   stream: fs.WriteStream,
   redactionPatterns: RegExp[],
   pidPath?: string,
 ): Promise<AppLogResult> {
+  const support = await checkIosDeviceConsoleCaptureSupport();
+  if (!support.supported) {
+    stream.end();
+    throw buildIosDeviceConsoleCaptureError(support);
+  }
   return startAppleAppLogStream({
     backend: 'ios-device',
     cmd: 'xcrun',
-    args: buildIosDeviceLogStreamArgs(deviceId),
+    args: buildIosDeviceConsoleLaunchArgs(deviceId, appBundleId),
     stream,
     redactionPatterns,
     pidPath,
+    stopSignals: ['SIGKILL'],
+  });
+}
+
+function buildIosDeviceConsoleCaptureError(
+  support: Extract<IosDeviceConsoleCaptureSupport, { supported: false }>,
+): AppError {
+  if (support.reason === 'probe-failed') {
+    return new AppError('COMMAND_FAILED', IOS_DEVICE_CONSOLE_CAPTURE_PROBE_FAILED.message, {
+      backend: 'ios-device',
+      hint: IOS_DEVICE_CONSOLE_CAPTURE_PROBE_FAILED.hint,
+      stderr: support.stderr,
+    });
+  }
+  return new AppError('UNSUPPORTED_OPERATION', IOS_DEVICE_CONSOLE_CAPTURE_UNSUPPORTED.message, {
+    backend: 'ios-device',
+    hint: IOS_DEVICE_CONSOLE_CAPTURE_UNSUPPORTED.hint,
+    stderr: support.stderr,
   });
 }
 
@@ -202,8 +306,9 @@ function startAppleAppLogStream(params: {
   stream: fs.WriteStream;
   redactionPatterns: RegExp[];
   pidPath?: string;
+  stopSignals?: NodeJS.Signals[];
 }): AppLogResult {
-  let state: 'active' | 'failed' = 'active';
+  let state: AppLogState = 'active';
   const background = runCmdBackground(params.cmd, params.args, {
     allowFailure: true,
     captureOutput: false,
@@ -219,7 +324,7 @@ function startAppleAppLogStream(params: {
     writer,
   }).then(
     (result) => {
-      if (result.exitCode !== 0) state = 'failed';
+      state = result.exitCode === 0 ? 'ended' : 'failed';
       clearPidFile(params.pidPath);
       return result;
     },
@@ -235,10 +340,10 @@ function startAppleAppLogStream(params: {
     startedAt: Date.now(),
     wait,
     stop: async () => {
-      if (!child.killed) child.kill('SIGINT');
-      await waitForChildExit(wait);
-      if (!child.killed) child.kill('SIGKILL');
-      await waitForChildExit(wait);
+      for (const signal of params.stopSignals ?? ['SIGINT', 'SIGKILL']) {
+        child.kill(signal);
+        await waitForChildExit(wait);
+      }
       clearPidFile(params.pidPath);
     },
   };
