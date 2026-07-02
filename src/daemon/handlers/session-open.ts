@@ -208,7 +208,20 @@ async function completeOpenCommand(params: {
     schedulePrewarm();
   }
 
-  if (shouldRelaunch && openTarget) {
+  // iOS simulators relaunch with one `simctl launch --terminate-running-process`
+  // instead of terminate + settle + launch (~1s per relaunch). Runtime hints
+  // written below are user-defaults reads at that launch, so ordering holds.
+  // Only the single app-launch form collapses: `open <app> <url>` dispatches
+  // through the URL path, where a deep-link open never launches the app and
+  // so cannot carry the terminate; those keep the close-first ordering, as
+  // does --clear-app-state, which must never mutate a running app's container.
+  const collapseSimulatorRelaunch =
+    shouldRelaunch &&
+    Boolean(openTarget) &&
+    openPositionals.length === 1 &&
+    isIosSimulator(device) &&
+    req.flags?.clearAppState !== true;
+  if (shouldRelaunch && openTarget && !collapseSimulatorRelaunch) {
     const closeTarget = sessionAppBundleId ?? openTarget;
     const closeStartedAtMs = Date.now();
     await relaunchCloseApp({
@@ -255,6 +268,7 @@ async function completeOpenCommand(params: {
   const openDispatchSession = provisionalSession.session ?? existingSession;
   await dispatchCommand(device, 'open', openPositionals, req.flags?.out, {
     ...contextFromFlags(logPath, req.flags, sessionAppBundleId),
+    ...(collapseSimulatorRelaunch ? { terminateRunningApp: true } : {}),
   });
   timing.openDispatchDurationMs = Math.max(0, Date.now() - openStartedAtMs);
   const launchUrlStartedAtMs = Date.now();
