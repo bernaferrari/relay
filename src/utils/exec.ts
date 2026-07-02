@@ -6,6 +6,8 @@ import { spawn, spawnSync, type ChildProcess, type StdioOptions } from 'node:chi
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { AppError } from '../kernel/errors.ts';
+import { emitDiagnostic, getDiagnosticsMeta, updateDiagnosticsScope } from './diagnostics.ts';
+import { parseBooleanLiteral } from './source-value.ts';
 
 export type ExecResult = {
   stdout: string;
@@ -65,6 +67,7 @@ export type ExecBackgroundOptions = ExecOptions & {
 
 const BARE_COMMAND_RE = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
 const WINDOWS_PATH_EXTENSIONS = ['.com', '.exe', '.bat', '.cmd'];
+const EXEC_DIAGNOSTIC_ARG_LIMIT = 6;
 export type CommandExecutorOverride = (
   cmd: string,
   args: string[],
@@ -112,6 +115,7 @@ function runSpawnedCommand(
   options: ExecStreamOptions = {},
 ): Promise<ExecResult> {
   const executable = normalizeExecutableCommand(cmd);
+  const execTrace = createExecTraceContext();
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: options.cwd,
@@ -165,12 +169,14 @@ function runSpawnedCommand(
     child.on('error', (err) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       abort.dispose();
+      execTrace.emitForegroundCompletion(cmd, args);
       reject(spawnRejectionError(abort, executable, cmd, args, err));
     });
 
     child.on('close', (code) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       abort.dispose();
+      execTrace.emitForegroundCompletion(cmd, args);
       const exitCode = code ?? 1;
       if (!abort.didAbort && didTimeout && timeoutMs) {
         reject(createTimeoutError(executable, cmd, args, timeoutMs, exitCode, stdout, stderr));
@@ -356,6 +362,7 @@ export function runCmdBackground(
   options: ExecBackgroundOptions = {},
 ): ExecBackgroundResult {
   const executable = normalizeExecutableCommand(cmd);
+  const execTrace = createExecTraceContext();
   const child = spawn(executable, args, {
     cwd: options.cwd,
     env: options.env,
@@ -364,6 +371,7 @@ export function runCmdBackground(
     windowsHide: true,
     shell: false,
   });
+  execTrace.emitBackgroundSpawn(cmd, args);
 
   let stdout = '';
   let stderr = '';
@@ -385,10 +393,12 @@ export function runCmdBackground(
   const wait = new Promise<ExecResult>((resolve, reject) => {
     child.on('error', (err) => {
       abort.dispose();
+      execTrace.emitBackgroundCompletion(cmd, args, 'error');
       reject(spawnRejectionError(abort, executable, cmd, args, err));
     });
     child.on('close', (code) => {
       abort.dispose();
+      execTrace.emitBackgroundCompletion(cmd, args, 'exit');
       const exitCode = code ?? 1;
       const failure = commandCloseFailure(
         abort,
@@ -409,6 +419,85 @@ export function runCmdBackground(
   });
 
   return { child, wait };
+}
+
+type ExecTraceContext = {
+  emitBackgroundCompletion: (cmd: string, args: string[], event: 'error' | 'exit') => void;
+  emitBackgroundSpawn: (cmd: string, args: string[]) => void;
+  emitForegroundCompletion: (cmd: string, args: string[]) => void;
+};
+
+function createExecTraceContext(): ExecTraceContext {
+  const diagnosticsMeta = getDiagnosticsMeta();
+  const diagnosticsDebugEnabled = diagnosticsMeta.debug === true;
+  const envTraceEnabled = parseBooleanLiteral(process.env.AGENT_DEVICE_EXEC_TRACE ?? '') === true;
+  if (!diagnosticsDebugEnabled && !envTraceEnabled) {
+    return createDisabledExecTraceContext();
+  }
+  if (envTraceEnabled && diagnosticsMeta.flushOnSuccess !== true) {
+    updateDiagnosticsScope({ flushOnSuccess: true });
+  }
+  const startedAtMs = Date.now();
+  let completionEmitted = false;
+  return {
+    emitForegroundCompletion: (cmd, args) => {
+      if (completionEmitted) return;
+      completionEmitted = true;
+      emitExecCommandDiagnostic({
+        cmd,
+        args,
+        startedAtMs,
+      });
+    },
+    emitBackgroundSpawn: (cmd, args) => {
+      emitExecCommandDiagnostic({
+        cmd,
+        args,
+        data: { event: 'spawn' },
+      });
+    },
+    emitBackgroundCompletion: (cmd, args, event) => {
+      if (completionEmitted) return;
+      completionEmitted = true;
+      emitExecCommandDiagnostic({
+        cmd,
+        args,
+        startedAtMs,
+        data: { event },
+      });
+    },
+  };
+}
+
+function createDisabledExecTraceContext(): ExecTraceContext {
+  return {
+    emitForegroundCompletion: () => {},
+    emitBackgroundSpawn: () => {},
+    emitBackgroundCompletion: () => {},
+  };
+}
+
+function emitExecCommandDiagnostic(params: {
+  cmd: string;
+  args: string[];
+  startedAtMs?: number;
+  data?: Record<string, unknown>;
+}): void {
+  const argsPrefix = params.args.slice(0, EXEC_DIAGNOSTIC_ARG_LIMIT);
+  emitDiagnostic({
+    level: 'debug',
+    phase: 'exec_command',
+    durationMs:
+      params.startedAtMs === undefined ? undefined : Math.max(0, Date.now() - params.startedAtMs),
+    data: {
+      command: params.cmd,
+      argsPrefix,
+      ...(params.args.length > argsPrefix.length
+        ? { omittedArgCount: params.args.length - argsPrefix.length }
+        : {}),
+      ...(params.data ?? {}),
+    },
+  });
 }
 
 function normalizeExecutableCommand(cmd: string): string {

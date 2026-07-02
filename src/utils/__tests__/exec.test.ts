@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { flushDiagnosticsToSessionFile, withDiagnosticsScope } from '../diagnostics.ts';
 import {
   runCmd,
   runCmdBackground,
@@ -52,6 +53,34 @@ test('runCmd abort keeps cancellation details while writing stdin', async () => 
   await assertRejectsRequestCanceled(promise);
 });
 
+test('runCmd emits exec_command diagnostics when the scope is debug-enabled', async () => {
+  const logPath = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-exec-debug-')),
+    'diag.ndjson',
+  );
+  const diagnosticsPath = await withDiagnosticsScope(
+    {
+      session: 'exec-debug',
+      requestId: 'exec-debug-1',
+      command: 'debug',
+      debug: true,
+      logPath,
+    },
+    async () => {
+      await runCmd(process.execPath, ['-e', 'process.stdout.write("ok")']);
+      return flushDiagnosticsToSessionFile();
+    },
+  );
+
+  const execEvent = readExecDiagnosticEvent(diagnosticsPath);
+  assert.equal(execEvent?.level, 'debug');
+  assert.equal(execEvent?.phase, 'exec_command');
+  assert.equal(execEvent?.data?.command, process.execPath);
+  assert.deepEqual(execEvent?.data?.argsPrefix, ['-e', 'process.stdout.write("ok")']);
+  assert.equal(execEvent?.data?.omittedArgCount, undefined);
+  assert.equal(typeof execEvent?.durationMs, 'number');
+});
+
 test('runCmd writes stdin through pipeline', async () => {
   const stdin = Buffer.alloc(256_000, 'a');
   const result = await runCmd(
@@ -68,6 +97,35 @@ test('runCmd writes stdin through pipeline', async () => {
   );
 
   assert.equal(result.stdout, String(stdin.length));
+});
+
+test.sequential('runCmdBackground emits bounded exec_command diagnostics when AGENT_DEVICE_EXEC_TRACE is enabled', async () => {
+  const diagnosticsPath = await withExecTraceEnv(
+    async () =>
+      await withDiagnosticsScope(
+        {
+          session: 'exec-trace',
+          requestId: 'exec-trace-1',
+          command: 'background',
+        },
+        async () => {
+          const { wait } = runCmdBackground(process.execPath, [
+            '-e',
+            'process.stdout.write("ok")',
+            'a',
+            'b',
+            'c',
+            'd',
+            'e',
+            'f',
+          ]);
+          await wait;
+          return flushDiagnosticsToSessionFile();
+        },
+      ),
+  );
+
+  assertBackgroundExecTraceEvents(readExecDiagnosticEvents(diagnosticsPath));
 });
 
 test('runCmdBackground can leave output streams to the caller', async () => {
@@ -93,6 +151,31 @@ test('runCmdBackground can leave output streams to the caller', async () => {
   assert.equal(result.stderr, '');
   assert.equal(stdout, 'out');
   assert.equal(stderr, 'err');
+});
+
+test.sequential('runCmd stays silent when exec tracing is not enabled', async () => {
+  const previousTraceEnv = process.env.AGENT_DEVICE_EXEC_TRACE;
+  delete process.env.AGENT_DEVICE_EXEC_TRACE;
+
+  try {
+    const diagnosticsPath = await withDiagnosticsScope(
+      {
+        session: 'exec-silent',
+        requestId: 'exec-silent-1',
+        command: 'home',
+      },
+      async () => {
+        await runCmd(process.execPath, ['-e', 'process.stdout.write("ok")']);
+        return flushDiagnosticsToSessionFile();
+      },
+    );
+
+    assert.equal(diagnosticsPath, null);
+  } finally {
+    if (previousTraceEnv !== undefined) {
+      process.env.AGENT_DEVICE_EXEC_TRACE = previousTraceEnv;
+    }
+  }
 });
 
 test('runCmdBackground aborts with request cancellation details', async () => {
@@ -209,3 +292,96 @@ test.sequential('whichCmd ignores directories that match a command name in PATH'
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+function readExecDiagnosticEvents(diagnosticsPath: string | null): Array<{
+  level?: string;
+  phase?: string;
+  durationMs?: number;
+  data?: Record<string, unknown>;
+}> {
+  if (!diagnosticsPath) return [];
+  const rows = fs
+    .readFileSync(diagnosticsPath, 'utf8')
+    .trim()
+    .split('\n')
+    .map(
+      (line) =>
+        JSON.parse(line) as {
+          level?: string;
+          phase?: string;
+          durationMs?: number;
+          data?: Record<string, unknown>;
+        },
+    );
+  return rows.filter((row) => row.phase === 'exec_command');
+}
+
+function readExecDiagnosticEvent(diagnosticsPath: string | null): {
+  level?: string;
+  phase?: string;
+  durationMs?: number;
+  data?: Record<string, unknown>;
+} | null {
+  return readExecDiagnosticEvents(diagnosticsPath)[0] ?? null;
+}
+
+async function withExecTraceEnv<T>(fn: () => Promise<T>): Promise<T> {
+  const previousTraceEnv = process.env.AGENT_DEVICE_EXEC_TRACE;
+  process.env.AGENT_DEVICE_EXEC_TRACE = '1';
+  try {
+    return await fn();
+  } finally {
+    restoreOptionalEnv('AGENT_DEVICE_EXEC_TRACE', previousTraceEnv);
+  }
+}
+
+function restoreOptionalEnv(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+  process.env[key] = value;
+}
+
+function assertBackgroundExecTraceEvents(
+  execEvents: Array<{
+    level?: string;
+    phase?: string;
+    durationMs?: number;
+    data?: Record<string, unknown>;
+  }>,
+): void {
+  assert.deepEqual(execEvents.map(summarizeExecEvent), [
+    {
+      phase: 'exec_command',
+      command: process.execPath,
+      event: 'spawn',
+      durationType: 'undefined',
+      argsPrefix: ['-e', 'process.stdout.write("ok")', 'a', 'b', 'c', 'd'],
+      omittedArgCount: 2,
+    },
+    {
+      phase: 'exec_command',
+      command: process.execPath,
+      event: 'exit',
+      durationType: 'number',
+      argsPrefix: ['-e', 'process.stdout.write("ok")', 'a', 'b', 'c', 'd'],
+      omittedArgCount: 2,
+    },
+  ]);
+}
+
+function summarizeExecEvent(event: {
+  phase?: string;
+  durationMs?: number;
+  data?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    phase: event.phase,
+    command: event.data?.command,
+    event: event.data?.event,
+    durationType: typeof event.durationMs,
+    argsPrefix: event.data?.argsPrefix,
+    omittedArgCount: event.data?.omittedArgCount,
+  };
+}

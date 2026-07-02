@@ -23,6 +23,7 @@ type DiagnosticsScopeOptions = {
   requestId?: string;
   command?: string;
   debug?: boolean;
+  flushOnSuccess?: boolean;
   logPath?: string;
   traceLogPath?: string;
 };
@@ -74,6 +75,7 @@ export function getDiagnosticsMeta(): {
   session?: string;
   command?: string;
   debug?: boolean;
+  flushOnSuccess?: boolean;
 } {
   const scope = diagnosticsStorage.getStore();
   if (!scope) return {};
@@ -83,6 +85,7 @@ export function getDiagnosticsMeta(): {
     session: scope.session,
     command: scope.command,
     debug: scope.debug,
+    flushOnSuccess: scope.flushOnSuccess,
   };
 }
 
@@ -172,7 +175,7 @@ export async function withDiagnosticTimer<T>(
 export function flushDiagnosticsToSessionFile(options: { force?: boolean } = {}): string | null {
   const scope = diagnosticsStorage.getStore();
   if (!scope) return null;
-  if (!options.force && !scope.debug) return null;
+  if (!options.force && !scope.debug && !scope.flushOnSuccess) return null;
   if (scope.events.length === 0) return null;
 
   try {
