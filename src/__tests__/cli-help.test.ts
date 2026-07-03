@@ -150,18 +150,38 @@ test('help rejects multiple positional commands and skips daemon dispatch', asyn
   assert.match(result.stderr, /Error \(INVALID_ARGS\): help accepts at most one command/);
 });
 
-test('unknown command with flags reports unknown command before flag validation', async () => {
+test('tap dispatches as press with positionals and flags preserved', async () => {
+  const result = await runCliCapture(['tap', '@e3', '--json']);
+  assert.doesNotMatch(result.stderr, /Unknown command/);
+  // Canonicalization: the daemon call must record press, never tap.
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.calls[0]?.command, 'press');
+  assert.deepEqual(result.calls[0]?.positionals, ['@e3']);
+});
+
+// From #1052 (credit: @vku2018): the alias must compose with the bare-ref
+// hint — `tap e3` normalizes to press, then gets the @e3 suggestion.
+test('tap with a bare ref gets the @ref hint, not an unknown-command error', async () => {
   const result = await runCliCapture(['tap', 'e3', '--session', 'foo']);
   assert.equal(result.code, 1);
   assert.equal(result.calls.length, 0);
-  assert.match(result.stderr, /Error \(INVALID_ARGS\): Unknown command: tap/);
-  assert.match(result.stderr, /Did you mean press or click/);
+  assert.match(result.stderr, /Did you mean "@e3"\?/);
+  assert.doesNotMatch(result.stderr, /Unknown command: tap/);
 });
 
-test('unknown command without flags reports unknown command with alias suggestion', async () => {
-  const result = await runCliCapture(['tap', 'e3']);
+// Regression coverage for #1036 (moved off `tap` when it became an alias):
+// unknown commands must be reported before per-command flag validation.
+test('unknown command with flags reports unknown command before flag validation', async () => {
+  const result = await runCliCapture(['bogus-cmd', 'e3', '--session', 'foo']);
   assert.equal(result.code, 1);
   assert.equal(result.calls.length, 0);
-  assert.match(result.stderr, /Error \(INVALID_ARGS\): Unknown command: tap/);
-  assert.match(result.stderr, /Did you mean press or click/);
+  assert.match(result.stderr, /Error \(INVALID_ARGS\): Unknown command: bogus-cmd/);
+  assert.doesNotMatch(result.stderr, /not supported for command/);
+});
+
+test('unknown command without flags reports unknown command', async () => {
+  const result = await runCliCapture(['bogus-cmd', 'e3']);
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 0);
+  assert.match(result.stderr, /Error \(INVALID_ARGS\): Unknown command: bogus-cmd/);
 });
