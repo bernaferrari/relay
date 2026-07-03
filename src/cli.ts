@@ -37,6 +37,7 @@ import {
 import { resolveRemoteAuthForCli } from './cli/auth-session.ts';
 import type { CliFlags, FlagKey } from './cli/parser/cli-flags.ts';
 import type { SessionRuntimeHints } from './kernel/contracts.ts';
+import { isKnownCliCommandName } from './command-catalog.ts';
 
 type CliDeps = {
   sendToDaemon: typeof sendToDaemon;
@@ -405,7 +406,7 @@ export async function runCli(argv: string[], deps: CliDeps = DEFAULT_CLI_DEPS): 
           return;
         }
 
-        throw new AppError('INVALID_ARGS', `Unknown command: ${command}`);
+        throw new AppError('INVALID_ARGS', formatUnhandledCommandMessage(command));
       } catch (err) {
         const appErr = asAppError(err);
         const normalized = normalizeError(appErr, {
@@ -455,6 +456,20 @@ function isDebugRequested(argv: string[]): boolean {
   } catch {
     return argv.includes('--debug') || argv.includes('-v') || argv.includes('--verbose');
   }
+}
+
+function formatUnhandledCommandMessage(command: string): string {
+  if (isKnownCliCommandName(command)) {
+    // Registered-but-unhandled means catalog/dispatch drift — make it visible
+    // in telemetry too, not just the thrown message (from #1055).
+    emitDiagnostic({
+      level: 'error',
+      phase: 'cli_known_command_unhandled',
+      data: { command },
+    });
+    return `Command is registered but no CLI handler accepted it: ${command}`;
+  }
+  return `Unknown command: ${command}`;
 }
 
 function isParsedDebugRequested(
