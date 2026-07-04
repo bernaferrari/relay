@@ -260,6 +260,21 @@ export type SessionState = {
    * `setSessionSnapshot` (src/daemon/session-snapshot.ts).
    */
   snapshotRefsStale?: boolean;
+  /**
+   * Monotonically increasing generation of the stored session snapshot (#1076
+   * versioned refs). Incremented every time the stored tree is REPLACED — at
+   * the `setSessionSnapshot` choke point and in the snapshot/diff command path
+   * (`buildNextSnapshotSession`). Ref-issuing responses (snapshot command, find
+   * ref outputs) report it once as the additive `refsGeneration` field;
+   * consumers may pin refs as `@e12~s3` and get a precise staleness warning
+   * when the pinned generation no longer matches the stored tree. Plain number
+   * with per-session lifetime — no persistence. The first bump of a lifetime
+   * seeds at a random 6-digit base (`nextSnapshotGeneration`), so a pin from a
+   * previous lifetime of a reopened same-named session collides only with
+   * ~1e-6 probability instead of commonly: cross-lifetime protection is
+   * probabilistic (seeded), NOT identity-based.
+   */
+  snapshotGeneration?: number;
   /** Source snapshot used to resolve repeated `snapshot -s @ref` after scoped output replaces refs. */
   snapshotScopeSource?: SnapshotState;
   /** Last broad snapshot safe for Android route-freshness comparisons after interactive snapshots. */
