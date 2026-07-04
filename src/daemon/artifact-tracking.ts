@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { AppError } from '../kernel/errors.ts';
+import type { DaemonArtifactType } from '../kernel/contracts.ts';
 import { runCmd } from '../utils/exec.ts';
 import {
   expiredTenantOwnedEntryError,
@@ -31,6 +32,7 @@ type DirectoryArchive = {
 type ArtifactEntry = {
   artifactPath: string;
   tenantId?: string;
+  artifactType: DaemonArtifactType | undefined;
   fileName?: string;
   deleteAfterDownload: boolean;
   createdAt: number;
@@ -43,6 +45,8 @@ const pendingArtifacts = new Map<string, ArtifactEntry>();
 
 export type DownloadableArtifactInventoryEntry = {
   id: string;
+  // Optional on the wire (see DaemonArtifact.artifactType).
+  artifactType?: DaemonArtifactType;
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -60,6 +64,7 @@ export type PreparedDownloadableArtifact = {
 export function trackDownloadableArtifact(params: {
   artifactPath: string;
   tenantId?: string;
+  artifactType: DaemonArtifactType | undefined;
   fileName?: string;
   deleteAfterDownload?: boolean;
 }): string {
@@ -72,6 +77,7 @@ export function trackDownloadableArtifact(params: {
   pendingArtifacts.set(artifactId, {
     artifactPath: params.artifactPath,
     tenantId: params.tenantId,
+    artifactType: params.artifactType,
     fileName: params.fileName,
     deleteAfterDownload: params.deleteAfterDownload !== false,
     createdAt,
@@ -112,6 +118,7 @@ export async function listDownloadableArtifacts(
     if (!payload) continue;
     artifacts.push({
       id,
+      ...(entry.artifactType !== undefined ? { artifactType: entry.artifactType } : {}),
       filename: payload.fileName ?? id,
       mimeType: payload.mimeType,
       sizeBytes: payload.sizeBytes,

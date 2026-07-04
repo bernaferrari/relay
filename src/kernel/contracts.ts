@@ -110,8 +110,23 @@ export type DaemonRequest = {
   meta?: DaemonRequestMeta;
 };
 
+export type DaemonArtifactKnownType =
+  | 'screenshot'
+  | 'screenshot-diff'
+  | 'screen-recording'
+  | 'screen-recording-chunk'
+  | 'screen-recording-telemetry'
+  | 'trace-log';
+
+export type DaemonArtifactType = DaemonArtifactKnownType | (string & {});
+
 export type DaemonArtifact = {
   field: string;
+  // Optional on the wire: missing metadata is valid, JSON drops undefined, and
+  // remote/older daemons may omit the field entirely. Producer-owned APIs
+  // (reserveOutput, trackDownloadableArtifact) keep the required
+  // `DaemonArtifactType | undefined` form so artifact owners must decide.
+  artifactType?: DaemonArtifactType;
   artifactId?: string;
   fileName?: string;
   localPath?: string;
