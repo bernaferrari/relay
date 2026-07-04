@@ -4,7 +4,12 @@ import { findNodeByRef, normalizeRef } from '../../../kernel/snapshot.ts';
 import { resolveRectCenter } from '../../../utils/rect-center.ts';
 import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
 import { parseSelectorChain } from '../../../utils/selectors-parse.ts';
-import { formatSelectorFailure, resolveSelectorChain } from '../../../daemon/selectors.ts';
+import {
+  formatSelectorFailure,
+  resolveSelectorChain,
+  selectorFailureHint,
+  STALE_REF_HINT,
+} from '../../../daemon/selectors.ts';
 import { buildSelectorChainForNode } from '../../../utils/selector-build.ts';
 import { findNodeByLabel, resolveRefLabel } from '../../../snapshot/snapshot-processing.ts';
 import {
@@ -122,13 +127,7 @@ async function resolveRefInteractionTarget(
     kind: 'ref',
     point,
     target: { kind: 'ref', ref: `@${resolved.ref}` },
-    node,
-    selectorChain: buildSelectorChainForNode(node, runtime.backend.platform, {
-      action: params.action === 'fill' ? 'fill' : 'click',
-    }),
-    refLabel: resolveRefLabel(node, capture.snapshot.nodes),
-    ...describeNonHittableTarget(node, params.action),
-    preActionNodes: capture.snapshot.nodes,
+    ...describeResolvedNode(runtime, capture.snapshot.nodes, node, params.action),
   };
 }
 
@@ -173,6 +172,7 @@ async function resolveSelectorInteractionTarget(
     throw new AppError(
       'COMMAND_FAILED',
       formatSelectorFailure(chain, resolved?.diagnostics ?? [], { unique: true }),
+      { hint: selectorFailureHint(resolved?.diagnostics ?? []) },
     );
   }
   const node = params.promoteToHittableAncestor
@@ -190,13 +190,31 @@ async function resolveSelectorInteractionTarget(
     kind: 'selector',
     point,
     target: { kind: 'selector', selector: resolved.selector.raw },
+    ...describeResolvedNode(runtime, capture.snapshot.nodes, node, params.action),
+  };
+}
+
+function describeResolvedNode(
+  runtime: AgentDeviceRuntime,
+  nodes: SnapshotState['nodes'],
+  node: SnapshotNode,
+  action: InteractionAction,
+): {
+  node: SnapshotNode;
+  selectorChain: string[];
+  refLabel?: string;
+  targetHittable?: boolean;
+  hint?: string;
+  preActionNodes: SnapshotNode[];
+} {
+  return {
     node,
     selectorChain: buildSelectorChainForNode(node, runtime.backend.platform, {
-      action: params.action === 'fill' ? 'fill' : 'click',
+      action: action === 'fill' ? 'fill' : 'click',
     }),
-    refLabel: resolveRefLabel(node, capture.snapshot.nodes),
-    ...describeNonHittableTarget(node, params.action),
-    preActionNodes: capture.snapshot.nodes,
+    refLabel: resolveRefLabel(node, nodes),
+    ...describeNonHittableTarget(node, action),
+    preActionNodes: nodes,
   };
 }
 
@@ -355,7 +373,9 @@ async function resolveSnapshotForRef(
     fallbackLabel,
   });
   if (!refreshed) {
-    throw new AppError('COMMAND_FAILED', `Ref ${target.ref} not found or has no bounds`);
+    throw new AppError('COMMAND_FAILED', `Ref ${target.ref} not found or has no bounds`, {
+      hint: STALE_REF_HINT,
+    });
   }
   return { ...capture, resolved: refreshed };
 }
