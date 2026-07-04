@@ -11,7 +11,10 @@ import { now } from "./events.js";
 export type PersistedRun = {
   id: string;
   action: string;
+  title?: string;
   serial?: string;
+  deviceName?: string;
+  platform?: string;
   status: string;
   healed?: boolean;
   healMessage?: string;
@@ -22,9 +25,12 @@ export type PersistedRun = {
   durationMs?: number;
   result?: unknown;
   error?: string;
+  errorCode?: string;
+  appVersion?: string;
   logs: string[];
   steps: TraceStep[];
   frames: TraceFrameRef[];
+  frameCount?: number;
   dir: string;
   writtenAt: number;
 };
@@ -118,7 +124,10 @@ export async function persistRun(job: TestJob): Promise<PersistedRun> {
   const payload: PersistedRun = {
     id: job.id,
     action: job.action,
+    title: job.title,
     serial: job.serial,
+    deviceName: job.deviceName,
+    platform: job.platform ?? "android",
     status: job.status,
     healed: job.healed,
     healMessage: job.healMessage,
@@ -129,9 +138,12 @@ export async function persistRun(job: TestJob): Promise<PersistedRun> {
     durationMs,
     result: job.result,
     error: job.error,
+    errorCode: job.errorCode,
+    appVersion: job.appVersion,
     logs: job.logs,
     steps,
     frames,
+    frameCount: frames.length,
     dir,
     writtenAt: now(),
   };

@@ -25,8 +25,12 @@ import {
   runsRoot,
   selectDevice,
   subscribe,
+  runDoctor,
+  toJobReport,
+  toJunitXml,
   type DeviceEvent,
   type InteractInput,
+  type JobReport,
 } from "@grok-device/core";
 
 export type StartServerOptions = {
@@ -64,6 +68,26 @@ function json(res: http.ServerResponse, status: number, body: unknown): void {
     ...CORS_HEADERS,
   });
   res.end(payload);
+}
+
+function text(res: http.ServerResponse, status: number, body: string, contentType: string): void {
+  res.writeHead(status, {
+    "Content-Type": contentType,
+    "Content-Length": Buffer.byteLength(body),
+    ...CORS_HEADERS,
+  });
+  res.end(body);
+}
+
+function parseLimit(raw: string | null, fallback: number, max = 200): number {
+  const n = Number(raw ?? fallback);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
+/** In-memory job reports, newest first. Falls back empty when none. */
+function collectReports(limit: number): JobReport[] {
+  return listJobs(limit).map(toJobReport);
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -137,6 +161,9 @@ function broadcast(event: DeviceEvent): void {
 
 subscribe((event) => broadcast(event));
 
+const serverStartedAt = Date.now();
+const PRODUCT_VERSION = "0.1.0";
+
 function attachSse(req: http.IncomingMessage, res: http.ServerResponse): void {
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
@@ -179,13 +206,32 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   try {
     if (method === "GET" && pathname === "/health") {
+      let deviceCount: number | null = null;
+      try {
+        deviceCount = (await listDevices()).length;
+      } catch {
+        deviceCount = null;
+      }
+      const active = getActiveJob();
       json(res, 200, {
         ok: true,
         product: "grok-device",
+        version: PRODUCT_VERSION,
         mode: "app-testing",
         at: now(),
-        activeJob: getActiveJob()?.id ?? null,
-        jobs: listJobs(5).length,
+        uptimeMs: now() - serverStartedAt,
+        activeJob: active
+          ? {
+              id: active.id,
+              action: active.action,
+              status: active.status,
+              serial: active.serial ?? null,
+              deviceName: active.deviceName ?? null,
+              startedAt: active.startedAt ?? null,
+            }
+          : null,
+        jobs: listJobs(50).length,
+        deviceCount,
         sseClients: sseClients.size,
         runsDir: runsRoot(),
       });
@@ -370,13 +416,45 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    if (method === "GET" && pathname === "/doctor") {
+      const result = await runDoctor();
+      json(res, result.ok ? 200 : 503, result);
+      return;
+    }
+
+    // Must be registered before /report/:jobId so "junit" is not treated as an id.
+    if (method === "GET" && pathname === "/report/junit") {
+      const limit = parseLimit(url.searchParams.get("limit"), 50);
+      text(res, 200, toJunitXml(collectReports(limit)), "text/xml; charset=utf-8");
+      return;
+    }
+
+    if (method === "GET" && pathname === "/report") {
+      const limit = parseLimit(url.searchParams.get("limit"), 20);
+      json(res, 200, { reports: collectReports(limit) });
+      return;
+    }
+
+    const reportMatch = matchPath(pathname, "/report/:jobId");
+    if (method === "GET" && reportMatch) {
+      const job = getJob(reportMatch.jobId!);
+      if (!job) throw new HttpError(404, "Job not found");
+      json(res, 200, toJobReport(job));
+      return;
+    }
+
     if (method === "GET" && pathname === "/meta") {
       json(res, 200, {
         name: "grok-device",
         description: "App testing shell for Grok Android (agent-device)",
+        version: PRODUCT_VERSION,
         runsDir: runsRoot(),
         endpoints: [
           "GET /health",
+          "GET /doctor",
+          "GET /report",
+          "GET /report/:jobId",
+          "GET /report/junit",
           "GET /events (SSE)",
           "GET /actions",
           "GET /devices",

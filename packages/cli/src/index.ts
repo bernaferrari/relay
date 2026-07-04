@@ -1,21 +1,28 @@
 #!/usr/bin/env tsx
 /**
- * grok-device CLI
+ * grok-device CLI — app testing host (PostHog/Uber bar).
  *
- * Interactive:  grok-device
- * Direct:       grok-device <action> [--skip-account-switch] [--skip-restore-home]
- * Server:       grok-device serve [--port 8787]
- * TUI:          grok-device tui
+ *   grok-device                              # TTY → TUI workspace
+ *   grok-device doctor
+ *   grok-device run <action> [flags]
+ *   grok-device <action> [flags]             # direct (compat)
+ *   grok-device serve | tui | interactive
  */
 import path from "node:path";
+import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import {
   ACTIONS,
   HOME_ACCOUNT_MATCH,
   WORK_ACCOUNT_MATCH,
   createDevice,
+  formatJsonReport,
   isActionId,
   runAction,
+  runDoctor,
+  runJobSync,
+  toJobReport,
+  toJunitXml,
   type ActionId,
 } from "@grok-device/core";
 import { runInteractive } from "./interactive.js";
@@ -25,32 +32,42 @@ const DEFAULT_SERVE_PORT = 8787;
 function usage(exitCode = 2): never {
   const actionLines = ACTIONS.map((a) => `  ${a.id.padEnd(22)} ${a.description}`).join("\n");
 
-  console.log(`Usage:
-  grok-device                              # TTY → testing TUI workspace (OpenCode-style)
-  grok-device interactive | i               # classic readline picker
-  grok-device tui [--server url]            # explicit TUI
-  grok-device <action> [flags]              # run action on default/env device
-  grok-device serve [--port <n>] [--host <h>]
+  console.log(`grok-device — Grok Android app testing
+
+Usage:
+  grok-device                              TTY → testing TUI (OpenCode-style)
+  grok-device doctor                       Environment checks (exit 1 if any fail)
+  grok-device run <action> [flags]         Run via job session (JSON / JUnit)
+  grok-device <action> [flags]             Direct action (compat)
+  grok-device serve [--port n] [--host h]  HTTP API
+  grok-device tui [--server url]           Explicit TUI
+  grok-device interactive | i              Classic readline picker
   grok-device help | -h | --help
 
 Actions:
 ${actionLines}
 
-Flags (direct action mode):
-  --skip-account-switch   Do not ensure/switch Play account before op
-  --skip-restore-home     After alpha, do not restore gmail/home
+run flags:
+  --json                     Print JobReport JSON (with summary) to stdout
+  --junit <path>             Write JUnit XML to path
+  --serial <s>               Target device serial
+  --skip-account-switch      Skip Play account ensure/switch
+  --skip-restore-home        After alpha flows, do not restore home account
 
-Subcommands:
-  serve                   Start local HTTP API (@grok-device/server)
-    --port <n>            Listen port (default ${DEFAULT_SERVE_PORT})
-    --host <h>            Bind host (default 127.0.0.1)
-  tui                     Launch @grok-device/tui if available
+Direct action flags (compat):
+  --skip-account-switch
+  --skip-restore-home
+
+serve:
+  --port <n>                 Listen port (default ${DEFAULT_SERVE_PORT})
+  --host <h>                 Bind host (default 127.0.0.1)
 
 Env:
   WORK_ACCOUNT_MATCH=${WORK_ACCOUNT_MATCH}
   HOME_ACCOUNT_MATCH=${HOME_ACCOUNT_MATCH}
-  PROD_ACCOUNT_MATCH      required for *-prod
-  AGENT_DEVICE_SERIAL     set by interactive picker / serve body
+  PROD_ACCOUNT_MATCH         required for *-prod actions
+  AGENT_DEVICE_SERIAL        default device serial
+  GROK_DEVICE_RUNS_DIR       override runs/ directory
 `);
   process.exit(exitCode);
 }
@@ -61,6 +78,67 @@ function parseFlagValue(argv: string[], name: string): string | undefined {
   const idx = argv.indexOf(name);
   if (idx >= 0) return argv[idx + 1];
   return undefined;
+}
+
+function hasFlag(argv: string[], name: string): boolean {
+  return argv.includes(name);
+}
+
+async function runDoctorCmd(): Promise<void> {
+  const result = await runDoctor();
+  for (const check of result.checks) {
+    const mark = check.ok ? "ok  " : "FAIL";
+    console.log(`[${mark}] ${check.id.padEnd(10)} ${check.message}`);
+  }
+  console.log(result.ok ? "\ndoctor: all checks passed" : "\ndoctor: one or more checks failed");
+  process.exit(result.ok ? 0 : 1);
+}
+
+async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> {
+  const serial = parseFlagValue(argv, "--serial");
+  const junitPath = parseFlagValue(argv, "--junit");
+  const asJson = hasFlag(argv, "--json");
+  const skipAccountSwitch = hasFlag(argv, "--skip-account-switch");
+  const skipRestoreHome = hasFlag(argv, "--skip-restore-home");
+
+  if (!asJson) {
+    console.log(`→ run ${action}${serial ? ` @ ${serial}` : ""}`);
+  }
+
+  const job = await runJobSync({
+    action,
+    serial,
+    skipAccountSwitch,
+    skipRestoreHome,
+  });
+  const report = toJobReport(job);
+
+  if (junitPath) {
+    await writeFile(junitPath, toJunitXml([report]), "utf8");
+    if (!asJson) console.log(`wrote junit → ${junitPath}`);
+  }
+
+  if (asJson) {
+    process.stdout.write(formatJsonReport([report]));
+  } else {
+    const dur = report.durationMs != null ? `${(report.durationMs / 1000).toFixed(1)}s` : "?";
+    const device =
+      report.deviceName || report.serial ? ` · ${report.deviceName ?? report.serial}` : "";
+    if (report.ok) {
+      const tag = report.healed ? "HEALED" : "OK";
+      console.log(`✓ ${tag} ${report.action}${device} (${dur})`);
+      if (report.healMessage) console.log(`  ${report.healMessage}`);
+      if (report.runDir) console.log(`  run → ${report.runDir}`);
+    } else {
+      console.error(
+        `✗ FAIL ${report.action}${device} (${dur})${report.errorCode ? ` [${report.errorCode}]` : ""}`,
+      );
+      if (report.error) console.error(`  ${report.error}`);
+      if (report.runDir) console.error(`  run → ${report.runDir}`);
+    }
+  }
+
+  process.exit(report.ok ? 0 : 1);
 }
 
 async function runDirect(action: ActionId, argv: string[]): Promise<void> {
@@ -85,8 +163,9 @@ async function runServe(argv: string[]): Promise<void> {
   const { startServer } = await import("@grok-device/server");
   const server = await startServer({ port, host });
   console.log(`grok-device server listening on http://${server.host}:${server.port}`);
-  console.log("  GET  /health  /meta  /events(SSE)");
-  console.log("  GET  /devices  /actions  /jobs  /snapshot  /screenshot");
+  console.log("  GET  /health  /doctor  /meta  /events(SSE)");
+  console.log("  GET  /report  /report/:id  /report/junit");
+  console.log("  GET  /devices  /actions  /jobs  /snapshot  /screenshot  /runs");
   console.log("  POST /jobs  /actions/:id/run  /interact  /device/select");
   console.log("Press Ctrl+C to stop.");
 
@@ -151,6 +230,21 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const cmd = argv[0]!;
   if (cmd === "-h" || cmd === "--help" || cmd === "help") usage(0);
 
+  if (cmd === "doctor") {
+    await runDoctorCmd();
+    return;
+  }
+
+  if (cmd === "run") {
+    const action = argv[1];
+    if (!action || !isActionId(action)) {
+      console.error(action ? `error: unknown action "${action}"` : "error: run requires <action>");
+      usage(2);
+    }
+    await runActionViaJob(action, argv.slice(2));
+    return;
+  }
+
   if (cmd === "interactive" || cmd === "i") {
     await runInteractive();
     return;
@@ -186,9 +280,7 @@ if (isDirectRun()) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`error: ${message}`);
     if (err instanceof Error && err.stack) console.error(err.stack);
-    console.error(
-      "\nHint: agent-device devices --platform android && agent-device snapshot -i --platform android",
-    );
+    console.error("\nHint: grok-device doctor && agent-device devices --platform android");
     process.exit(1);
   });
 }

@@ -3,6 +3,7 @@ import { useServer } from "../context/server";
 import { useCommand, CommandPalette } from "../context/command";
 import { useTheme } from "@grok-device/ui/theme/context";
 import { Topbar } from "./topbar";
+import { ErrorBanner } from "./error-banner";
 
 export type AppView = "workspace" | "settings";
 
@@ -133,6 +134,12 @@ export function Layout(props: {
         group: "Workspace",
         run: () => server.setPanelTab("artifacts"),
       },
+      {
+        id: "server.retry",
+        title: "Retry server connection",
+        group: "Server",
+        run: () => void server.retryConnection(),
+      },
     ]);
     onCleanup(unsub);
   });
@@ -142,6 +149,7 @@ export function Layout(props: {
       <Topbar
         onSettings={() => props.onNavigate(props.view === "settings" ? "workspace" : "settings")}
       />
+      <ErrorBanner />
       <div class="qa__body">{props.children}</div>
       <CommandPalette />
     </div>

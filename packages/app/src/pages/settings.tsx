@@ -22,23 +22,13 @@ export function SettingsPage() {
 
   async function saveServerUrl() {
     await server.setServerUrl(urlDraft().trim());
-    await Promise.all([
-      server.pollHealth(),
-      server.refreshDevices(),
-      server.refreshActions(),
-      server.refreshJobs(),
-    ]);
+    await server.retryConnection();
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
 
   async function refreshNow() {
-    await Promise.all([
-      server.pollHealth(),
-      server.refreshDevices(),
-      server.refreshActions(),
-      server.refreshJobs(),
-    ]);
+    await server.retryConnection();
   }
 
   const filteredThemes = () => {
@@ -51,12 +41,20 @@ export function SettingsPage() {
     });
   };
 
+  const healthLabel = () => {
+    if (server.health() === "online") {
+      return server.sseConnected() ? "Live (SSE)" : "Online";
+    }
+    if (server.health() === "offline") return "Offline";
+    return "Connecting…";
+  };
+
   return (
     <main class="settings-page">
       <Card>
         <CardHeader
           title="Appearance"
-          description="OpenCode-derived themes with light, dark, or system color scheme. Preference is saved for this app (including Electron)."
+          description="OpenCode themes with light, dark, or system color scheme. Preference is saved for this app."
         />
 
         <div class="appearance-block">
@@ -85,7 +83,7 @@ export function SettingsPage() {
           </p>
         </div>
 
-        <div class="appearance-block" style={{ "margin-top": "1.1rem" }}>
+        <div class="appearance-block appearance-block--spaced">
           <div class="appearance-label-row">
             <div class="appearance-label">Theme</div>
             <input
@@ -97,7 +95,7 @@ export function SettingsPage() {
             />
           </div>
           <p class="appearance-hint">
-            {filteredThemes().length} themes · sourced from OpenCode (+ Grok product default)
+            {filteredThemes().length} themes · OpenCode library + Grok product default
           </p>
           <div class="theme-grid">
             <For each={filteredThemes()}>
@@ -140,10 +138,27 @@ export function SettingsPage() {
       <Card>
         <CardHeader
           title="Server"
-          description="HTTP API used for devices, actions, and runs. Desktop can inject a different default."
+          description="HTTP API for devices, actions, and runs. Desktop may inject a different default."
         />
+        <div class="settings-status">
+          <span class="settings-status__label">Status</span>
+          <span
+            class="conn"
+            classList={{
+              "conn--live": server.health() === "online" && server.sseConnected(),
+              "conn--on": server.health() === "online" && !server.sseConnected(),
+              "conn--off": server.health() === "offline",
+              "conn--dim": server.health() === "unknown",
+            }}
+          >
+            <span class="conn__dot" />
+            {healthLabel()}
+          </span>
+        </div>
         <div class="settings-row">
-          <label for="server-url">Server URL</label>
+          <label class="settings-field-label" for="server-url">
+            Server URL
+          </label>
           <input
             id="server-url"
             type="url"
@@ -153,7 +168,7 @@ export function SettingsPage() {
             spellcheck={false}
           />
         </div>
-        <div class="settings-actions" style={{ "margin-top": "0.85rem" }}>
+        <div class="settings-actions">
           <Button variant="primary" size="sm" onClick={() => void saveServerUrl()}>
             Save & reconnect
           </Button>
@@ -161,23 +176,26 @@ export function SettingsPage() {
             Refresh now
           </Button>
           <Show when={saved()}>
-            <span class="appearance-hint">Saved</span>
+            <span class="appearance-hint appearance-hint--ok">Saved</span>
           </Show>
         </div>
         <Show when={server.error()}>
-          <p
-            class="appearance-hint"
-            style={{ "margin-top": "0.75rem", color: "var(--text-critical-base)" }}
-          >
-            {server.error()}
-          </p>
+          <div class="settings-error" role="alert">
+            <span>{server.error()}</span>
+            <button type="button" class="btn btn-ghost" onClick={() => server.dismissError()}>
+              Dismiss
+            </button>
+          </div>
         </Show>
+        <p class="appearance-hint appearance-hint--foot">
+          Local API: <span class="mono">pnpm dev:serve</span>
+        </p>
       </Card>
 
       <Card>
         <CardHeader title="About" description="Runtime platform information." />
-        <p class="appearance-hint" style={{ margin: 0 }}>
-          Platform: <strong style={{ color: "var(--text-strong)" }}>{platform.platform}</strong>
+        <p class="appearance-hint appearance-hint--about">
+          Platform: <strong class="settings-strong">{platform.platform}</strong>
           {platform.version ? ` · v${platform.version}` : ""}
           {" · "}
           Theme <span class="mono">{theme.themeId()}</span> / {theme.mode()}

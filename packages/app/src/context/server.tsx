@@ -305,7 +305,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return (await res.json()) as T;
     }
 
+    function dismissError() {
+      setError(null);
+    }
+
+    const isOffline = () => health() === "offline";
+    const isEmptyDevices = () => devices().length === 0;
+
     async function refreshDevices() {
+      if (health() === "offline") return;
       try {
         const data = await request<{ devices: DeviceInfo[] }>("/devices");
         const list = asArray<DeviceInfo>(data, "devices").map((d) => ({
@@ -314,24 +322,30 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         }));
         setDevices(list);
         if (!selectedDevice() && list[0]) setSelectedDevice(list[0].serial);
-        setError(null);
+        // clear only network-ish noise; keep explicit action errors
+        if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
       } catch (err) {
+        // calm when known offline — OfflineGate owns that UX
+        if (health() === "offline") return;
         setError(err instanceof Error ? err.message : String(err));
       }
     }
 
     async function refreshActions() {
+      if (health() === "offline") return;
       try {
         const data = await request<{ actions: ActionInfo[] }>("/actions");
         const list = asArray<ActionInfo>(data, "actions");
         setActions(list);
         if (!selectedAction() && list[0]) setSelectedAction(list[0].id);
       } catch (err) {
+        if (health() === "offline") return;
         setError(err instanceof Error ? err.message : String(err));
       }
     }
 
     async function refreshJobs() {
+      if (health() === "offline") return;
       try {
         const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs?full=0");
         setJobs(asArray<JobInfo>(data, "jobs"));
@@ -343,6 +357,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     async function refreshRuns() {
+      if (health() === "offline") return;
       try {
         const data = await request<{ runs: PersistedRun[]; root: string }>("/runs");
         setPersistedRuns(asArray<PersistedRun>(data, "runs"));
@@ -355,12 +370,23 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function pollHealth() {
       try {
         const h = await request<{ runsDir?: string }>("/health");
+        const wasOffline = health() === "offline" || health() === "unknown";
         setHealth("online");
         if (h.runsDir) setRunsRoot(h.runsDir);
-        setError(null);
+        // clear stale connectivity errors when we recover
+        if (wasOffline) setError(null);
       } catch {
         setHealth("offline");
+        // do not setError — OfflineGate is the calm signal
       }
+    }
+
+    /** Retry connectivity + core lists after offline or user action. */
+    async function retryConnection() {
+      await pollHealth();
+      if (health() !== "online") return;
+      await Promise.all([refreshDevices(), refreshActions(), refreshJobs(), refreshRuns()]);
+      connectSse();
     }
 
     function handleBusEvent(raw: unknown) {
@@ -652,16 +678,25 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     void (async () => {
       await resolveUrl();
       await pollHealth();
-      await Promise.all([refreshDevices(), refreshActions(), refreshJobs(), refreshRuns()]);
-      connectSse();
+      if (health() === "online") {
+        await Promise.all([refreshDevices(), refreshActions(), refreshJobs(), refreshRuns()]);
+        connectSse();
+      }
     })();
 
     const poll = setInterval(() => {
       void (async () => {
+        const prev = health();
         await pollHealth();
         if (health() === "online") {
           void refreshDevices();
           void refreshJobs();
+          // re-attach bus when we come back online
+          if (prev !== "online") {
+            void refreshActions();
+            void refreshRuns();
+            connectSse();
+          }
         }
       })();
     }, pollMs);
@@ -676,6 +711,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       serverUrl,
       setServerUrl,
       health,
+      isOffline,
+      isEmptyDevices,
       sseConnected,
       devices,
       actions,
@@ -690,6 +727,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSelectedJobId,
       running,
       error,
+      dismissError,
       logs,
       appendLog,
       clearLogs,
@@ -698,6 +736,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshJobs,
       refreshRuns,
       pollHealth,
+      retryConnection,
       runSelected,
       retrySelectedJob,
       panelTab,

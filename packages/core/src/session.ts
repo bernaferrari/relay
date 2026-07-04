@@ -22,13 +22,46 @@ import {
   type StepTone,
 } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir } from "./runs.js";
+import { PLATFORM } from "./device.js";
+import { classifyJobError } from "./report.js";
+
+function classifyError(message: string): JobErrorCode {
+  return classifyJobError(message) as JobErrorCode;
+}
+
+/** Avoid importing workspace (session↔workspace cycle). */
+async function resolveDeviceMeta(serial?: string): Promise<{ deviceName?: string }> {
+  if (!serial) return {};
+  try {
+    const client = createDevice();
+    const devices = await client.devices.list({ platform: PLATFORM });
+    const match = devices.find((d) => {
+      const s = d.android?.serial ?? d.identifiers?.serial ?? d.id;
+      return s === serial || d.id === serial;
+    });
+    return { deviceName: match?.name };
+  } catch {
+    return {};
+  }
+}
 
 export type JobStatus = "queued" | "running" | "ok" | "error" | "healed";
+
+export type JobErrorCode =
+  | "ACTION_FAILED"
+  | "DEVICE_MISSING"
+  | "UNKNOWN_ACTION"
+  | "TIMEOUT"
+  | "ACCOUNT_SWITCH_FAILED"
+  | "INTERNAL";
 
 export type TestJob = {
   id: string;
   action: ActionId;
   serial?: string;
+  /** Human device name from agent-device list */
+  deviceName?: string;
+  platform: "android";
   status: JobStatus;
   queuedAt: number;
   startedAt?: number;
@@ -36,6 +69,9 @@ export type TestJob = {
   logs: string[];
   result?: unknown;
   error?: string;
+  errorCode?: JobErrorCode;
+  /** Optional app-under-test version if known from the action result. */
+  appVersion?: string;
   /** prior failure message if this run self-healed via retry */
   previousError?: string;
   healed?: boolean;
@@ -113,6 +149,8 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     id: randomUUID(),
     action: input.action,
     serial: input.serial?.trim() || parent?.serial || undefined,
+    deviceName: parent?.deviceName,
+    platform: "android",
     status: "queued",
     queuedAt: now(),
     logs: [],
@@ -231,6 +269,8 @@ async function executeJob(id: string): Promise<void> {
   activeJobId = id;
   job.status = "running";
   job.startedAt = now();
+  const meta = await resolveDeviceMeta(job.serial);
+  if (meta.deviceName) job.deviceName = meta.deviceName;
   await ensureRunDir(job).catch(() => undefined);
 
   publish({
@@ -259,7 +299,7 @@ async function executeJob(id: string): Promise<void> {
     status: "running",
     log: job.retryOf
       ? `retry of ${job.retryOf.slice(0, 8)} · attempt ${job.attempts}`
-      : `start ${job.action}`,
+      : `start ${job.action}${job.deviceName ? ` · ${job.deviceName}` : ""}${job.serial ? ` (${job.serial})` : ""}`,
   });
 
   // optional planned sub-notes in log
@@ -313,9 +353,11 @@ async function executeJob(id: string): Promise<void> {
       }
       job.result = result.result;
       job.error = undefined;
+      job.errorCode = undefined;
     } else {
       job.status = "error";
       job.error = result.error;
+      job.errorCode = classifyError(result.error ?? "failed");
       finishStep(primary, "error", `✗ ${result.error}`);
     }
 
@@ -339,6 +381,7 @@ async function executeJob(id: string): Promise<void> {
     job.finishedAt = now();
     job.status = "error";
     job.error = message;
+    job.errorCode = classifyError(message);
     finishStep(primary, "error", `✗ ${message}`);
     pushLog(`==> FAIL: ${message}`);
     publish({

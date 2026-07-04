@@ -16,7 +16,9 @@
     "lint": "vp lint",
     "typecheck": "pnpm -r --if-present run typecheck",
     "pack": "vp pack",
-    "prepare": "vp config"
+    "prepare": "vp config",
+    "doctor": "pnpm --filter @grok-device/cli exec tsx src/index.ts doctor",
+    "test": "pnpm --filter @grok-device/core test"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

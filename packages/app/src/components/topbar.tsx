@@ -26,22 +26,35 @@ export function Topbar(props: { onSettings: () => void }) {
 
   const deviceLabel = () => {
     const s = server.selectedDevice();
-    if (!s) return "No device";
+    if (!s) return server.isEmptyDevices() ? "No device" : "Select device";
     const d = server.devices().find((x) => x.serial === s);
     return d?.name ?? s;
   };
 
-  const runStatus = () => {
-    if (server.running()) return { cls: "b-run", label: "Running" };
-    const jobs = server.jobs();
-    if (jobs.length === 0) return { cls: "b-dim", label: "Idle" };
-    if (jobs.some((j) => j.status === "error")) return { cls: "b-fail", label: "Failed" };
-    if (jobs.some((j) => j.status === "healed" || j.healed))
-      return { cls: "b-heal", label: "Healed" };
-    if (jobs.length > 0 && jobs.every((j) => j.status === "ok" || j.status === "healed"))
-      return { cls: "b-pass", label: "Passed" };
-    return { cls: "b-run", label: "Active" };
+  /** Connection: Offline / Live (SSE) / Online (HTTP only). */
+  const connection = () => {
+    if (server.health() === "offline") {
+      return { cls: "conn--off", label: "Offline", title: "API unreachable" };
+    }
+    if (server.health() === "unknown") {
+      return { cls: "conn--dim", label: "Connecting", title: "Checking API health…" };
+    }
+    if (server.sseConnected()) {
+      return { cls: "conn--live", label: "Live", title: "SSE connected" };
+    }
+    return { cls: "conn--on", label: "Online", title: "HTTP connected (no SSE)" };
   };
+
+  const runDisabledReason = () => {
+    if (server.health() !== "online") return "Server is offline — start with pnpm dev:serve";
+    if (server.running()) return "A job is already running";
+    if (!server.selectedAction()) return "Select a recipe first";
+    if (server.isEmptyDevices()) return "No device connected — run adb devices";
+    return "Run selected recipe";
+  };
+
+  const canRun = () =>
+    !server.running() && Boolean(server.selectedAction()) && server.health() === "online";
 
   const popular = () => {
     const prefer = [
@@ -78,6 +91,7 @@ export function Topbar(props: { onSettings: () => void }) {
         <button
           type="button"
           class="pick"
+          classList={{ "pick--empty": server.isEmptyDevices() || !server.selectedDevice() }}
           aria-haspopup="listbox"
           aria-expanded={deviceOpen()}
           onClick={() => {
@@ -85,6 +99,14 @@ export function Topbar(props: { onSettings: () => void }) {
             setAppearOpen(false);
           }}
         >
+          <span
+            class="pick-status"
+            classList={{
+              on: Boolean(server.selectedDevice()) && !server.isEmptyDevices(),
+              warn: server.isEmptyDevices(),
+            }}
+            aria-hidden="true"
+          />
           <span class="mono pick__label">{deviceLabel()}</span>
           <span class="pick__chev">▾</span>
         </button>
@@ -92,7 +114,13 @@ export function Topbar(props: { onSettings: () => void }) {
           <div class="pick-menu" role="listbox">
             <Show
               when={server.devices().length > 0}
-              fallback={<div class="pick-empty">No devices — connect via adb</div>}
+              fallback={
+                <div class="pick-empty">
+                  <p class="pick-empty__title">No devices</p>
+                  <p class="pick-empty__hint">Connect a phone, then refresh.</p>
+                  <code class="mono pick-empty__code">adb devices</code>
+                </div>
+              }
             >
               <For each={server.devices()}>
                 {(d) => (
@@ -120,7 +148,10 @@ export function Topbar(props: { onSettings: () => void }) {
               type="button"
               class="pick-item pick-item--action"
               onClick={() => {
-                void server.refreshDevices();
+                void (async () => {
+                  await server.pollHealth();
+                  if (server.health() === "online") await server.refreshDevices();
+                })();
                 setDeviceOpen(false);
               }}
             >
@@ -130,19 +161,15 @@ export function Topbar(props: { onSettings: () => void }) {
         </Show>
       </div>
 
-      <span class={`badge ${runStatus().cls}`}>
-        <span class="badge__dot" />
-        {runStatus().label}
+      <span class={`conn ${connection().cls}`} title={connection().title}>
+        <span class="conn__dot" />
+        {connection().label}
       </span>
 
-      <Show when={server.health() === "online"}>
-        <span class="mono top__meta">
-          {server.sseConnected() ? "live" : "http"} ·{" "}
+      <Show when={server.health() === "online" && server.serverUrl()}>
+        <span class="mono top__host" title={server.serverUrl()}>
           {server.serverUrl().replace(/^https?:\/\//, "")}
         </span>
-      </Show>
-      <Show when={server.health() !== "online"}>
-        <span class="mono top__meta top__meta--bad">server offline</span>
       </Show>
 
       <span class="top__spacer" />
@@ -150,7 +177,7 @@ export function Topbar(props: { onSettings: () => void }) {
       <div class="appear-wrap">
         <button
           type="button"
-          class="btn btn-ghost"
+          class="btn btn-ghost top__theme-btn"
           aria-haspopup="dialog"
           aria-expanded={appearOpen()}
           title="Theme & color scheme"
@@ -161,7 +188,7 @@ export function Topbar(props: { onSettings: () => void }) {
           }}
         >
           Theme
-          <span class="mono" style={{ "font-size": "11px", color: "var(--text-weak)" }}>
+          <span class="mono top__theme-meta">
             {theme.name(theme.themeId())} · {theme.mode()}
           </span>
         </button>
@@ -205,9 +232,7 @@ export function Topbar(props: { onSettings: () => void }) {
                           class="appear-menu__swatch"
                           style={{ background: sw()?.primary ?? "var(--button-primary-base)" }}
                         />
-                        <span style={{ overflow: "hidden", "text-overflow": "ellipsis" }}>
-                          {theme.name(id)}
-                        </span>
+                        <span class="appear-menu__theme-name">{theme.name(id)}</span>
                       </button>
                     );
                   }}
@@ -217,8 +242,7 @@ export function Topbar(props: { onSettings: () => void }) {
             <div class="appear-menu__footer">
               <button
                 type="button"
-                class="btn btn-ghost"
-                style={{ "font-size": "12px" }}
+                class="btn btn-ghost appear-menu__more"
                 onClick={() => {
                   setAppearOpen(false);
                   props.onSettings();
@@ -235,17 +259,18 @@ export function Topbar(props: { onSettings: () => void }) {
         type="button"
         class="btn btn-ghost"
         onClick={() => cmd.setOpen(true)}
-        title="Command palette"
+        title="Command palette (⌘K)"
       >
         ⌘K
       </button>
-      <button type="button" class="btn btn-ghost" onClick={props.onSettings}>
+      <button type="button" class="btn btn-ghost" onClick={props.onSettings} title="Settings">
         Settings
       </button>
       <button
         type="button"
         class="btn btn-acc"
-        disabled={server.running() || !server.selectedAction() || server.health() !== "online"}
+        disabled={!canRun()}
+        title={runDisabledReason()}
         onClick={() => void server.runSelected()}
       >
         {server.running() ? "Running…" : "Run"}

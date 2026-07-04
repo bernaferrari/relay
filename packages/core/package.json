@@ -13,10 +13,13 @@
     "./session": "./src/session.ts",
     "./workspace": "./src/workspace.ts",
     "./trace": "./src/trace.ts",
-    "./runs": "./src/runs.ts"
+    "./runs": "./src/runs.ts",
+    "./report": "./src/report.ts",
+    "./doctor": "./src/doctor.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "agent-device": "^0.18.3"
