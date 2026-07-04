@@ -19,7 +19,10 @@ export function Topbar(props: { onSettings: () => void }) {
     const jobs = server.jobs();
     if (jobs.length === 0) return { cls: "b-dim", label: "Idle" };
     if (jobs.some((j) => j.status === "error")) return { cls: "b-fail", label: "Failed" };
-    if (jobs.every((j) => j.status === "ok")) return { cls: "b-pass", label: "Passed" };
+    if (jobs.some((j) => j.status === "healed" || j.healed))
+      return { cls: "b-heal", label: "Healed" };
+    if (jobs.length > 0 && jobs.every((j) => j.status === "ok" || j.status === "healed"))
+      return { cls: "b-pass", label: "Passed" };
     return { cls: "b-run", label: "Active" };
   };
 
@@ -27,9 +30,9 @@ export function Topbar(props: { onSettings: () => void }) {
     <header class="top">
       <div class="top__brand">
         <span class="top__mark" aria-hidden="true">
-          ▣
+          G
         </span>
-        <span class="top__name">grok-device</span>
+        <span class="top__name">Grok Device</span>
       </div>
 
       <div class="pick-wrap">

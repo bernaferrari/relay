@@ -1,30 +1,30 @@
 {
   "id": "grok",
-  "name": "Grok Stage",
+  "name": "Grok (PostHog-ish)",
   "light": {
     "palette": {
-      "bg": "#F4F5F8",
+      "bg": "#F6F7F9",
       "surface": "#FFFFFF",
-      "text": "#0F1219",
-      "textMuted": "#585F70",
-      "primary": "#6C55E8",
-      "success": "#1FA86A",
-      "warning": "#C4841F",
-      "error": "#D64550",
-      "border": "#D8DCE6"
+      "text": "#1D1F27",
+      "textMuted": "#6A6C75",
+      "primary": "#1D4AFF",
+      "success": "#2F9E6B",
+      "warning": "#C47E00",
+      "error": "#D4430F",
+      "border": "#D7D9E0"
     }
   },
   "dark": {
     "palette": {
-      "bg": "#0A0C10",
-      "surface": "#0F1219",
-      "text": "#EEF1F7",
-      "textMuted": "#8C94A6",
-      "primary": "#8F7BFF",
-      "success": "#3FD68F",
-      "warning": "#E5A43B",
-      "error": "#F26D76",
-      "border": "#2A2F3D"
+      "bg": "#1D1F27",
+      "surface": "#23252E",
+      "text": "#EEEFE9",
+      "textMuted": "#C0C1C3",
+      "primary": "#1D4AFF",
+      "success": "#42D392",
+      "warning": "#F7A501",
+      "error": "#F54E00",
+      "border": "#2F323C"
     }
   }
 }
