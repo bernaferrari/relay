@@ -60,3 +60,15 @@ Inspired by OpenCode v2, adapted for **Android app testing** (not a coding agent
 3. Renderer never imports `electron`.
 4. `ui` has zero host knowledge.
 5. `vendor/opencode` is reference-only.
+
+## Traces, heal, runs/, overlays
+
+| Concern                | Module                                               |
+| ---------------------- | ---------------------------------------------------- |
+| Glyph plans per recipe | `core/trace.ts` → `RECIPE_TRACE_PLANS`               |
+| Job steps + heal retry | `core/session.ts` → `retryJob`, status `healed`      |
+| Disk layout            | `core/runs.ts` → `runs/<ts>_<action>_<device>_<id>/` |
+| Snapshot bounds        | `core/workspace.ts` → `captureSnapshot().bounds`     |
+| Stage overlays         | `app/components/stage.tsx` → `.hit-rect`             |
+
+SSE events include `job.step`, `job.frame`, `job.healed` in addition to queue lifecycle events.
