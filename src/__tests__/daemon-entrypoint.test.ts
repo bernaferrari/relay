@@ -64,7 +64,11 @@ test('daemon runtime starts HTTP transport in-process and shuts down cleanly', a
   const paths = resolveDaemonPaths(stateDir);
   const artifactPath = path.join(stateDir, 'runtime-artifact.txt');
   fs.writeFileSync(artifactPath, 'runtime-artifact');
-  const artifactId = trackDownloadableArtifact({ artifactPath, fileName: 'runtime-artifact.txt' });
+  const artifactId = trackDownloadableArtifact({
+    artifactPath,
+    artifactType: 'runtime-artifact',
+    fileName: 'runtime-artifact.txt',
+  });
   const stdout: string[] = [];
   const stderr: string[] = [];
   let exitCode: number | undefined;
