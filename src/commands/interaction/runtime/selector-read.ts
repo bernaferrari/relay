@@ -111,13 +111,21 @@ export type WaitCommandOptions = CommandContext &
       | { kind: 'sleep'; durationMs: number }
       | { kind: 'text'; text: string; timeoutMs?: number | null }
       | { kind: 'ref'; ref: string; timeoutMs?: number | null }
-      | { kind: 'selector'; selector: string; timeoutMs?: number | null };
+      | { kind: 'selector'; selector: string; timeoutMs?: number | null }
+      | { kind: 'stable'; quietMs?: number | null; timeoutMs?: number | null };
   };
 
 export type WaitCommandResult =
   | { kind: 'sleep'; waitedMs: number }
   | { kind: 'text'; waitedMs: number; text: string }
-  | { kind: 'selector'; waitedMs: number; selector: string };
+  | { kind: 'selector'; waitedMs: number; selector: string }
+  | {
+      kind: 'stable';
+      waitedMs: number;
+      settledAfterMs: number;
+      captures: number;
+      nodeCount: number;
+    };
 
 export type WaitForTextCommandOptions = CommandContext &
   SelectorSnapshotOptions & {
@@ -144,6 +152,7 @@ export function ref(refInput: string, options: { fallbackLabel?: string } = {}):
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const POLL_INTERVAL_MS = 300;
+const DEFAULT_QUIET_MS = 500;
 
 export const findCommand: RuntimeCommand<FindReadCommandOptions, FindReadCommandResult> = async (
   runtime,
@@ -372,6 +381,9 @@ export const waitCommand: RuntimeCommand<WaitCommandOptions, WaitCommandResult> 
       options.target.timeoutMs,
     );
   }
+  if (options.target.kind === 'stable') {
+    return await waitForStable(runtime, options, options.target.quietMs, options.target.timeoutMs);
+  }
   if (!options.target.text) throw new AppError('INVALID_ARGS', 'wait requires text');
   return await waitForText(runtime, options, options.target.text, options.target.timeoutMs);
 };
@@ -500,6 +512,113 @@ async function snapshotContainsText(
 ): Promise<boolean> {
   const capture = await captureSelectorSnapshot(runtime, options, { updateSession: true });
   return Boolean(findNodeByLabel(capture.snapshot.nodes, text));
+}
+
+async function waitForStable(
+  runtime: AgentDeviceRuntime,
+  options: WaitCommandOptions,
+  quietMs: number | null | undefined,
+  timeoutMs: number | null | undefined,
+): Promise<Extract<WaitCommandResult, { kind: 'stable' }>> {
+  const timeout = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const quiet = quietMs ?? DEFAULT_QUIET_MS;
+  const start = now(runtime);
+  let captures = 0;
+  let lastDigest: string | undefined;
+  let lastNodeCount = 0;
+  let quietSinceMs = start;
+  while (now(runtime) - start < timeout) {
+    const capture = await captureStableSignalWithinDeadline(
+      runtime,
+      options,
+      timeout - (now(runtime) - start),
+    );
+    if (!capture) {
+      throw new AppError('COMMAND_FAILED', 'wait timed out waiting for a stable UI', {
+        reason: 'wait_stable_timeout',
+        captureStalled: true,
+        quietMs: quiet,
+        timeoutMs: timeout,
+        captures,
+        nodeCount: lastNodeCount,
+        hint: 'A snapshot capture stalled past the wait timeout, so no settle verdict is available. The UI may still be readable: retry, or use screenshot to inspect the surface.',
+      });
+    }
+    captures += 1;
+    const digest = digestSnapshotNodes(capture.snapshot.nodes);
+    const nowMs = now(runtime);
+    if (digest !== lastDigest) {
+      lastDigest = digest;
+      lastNodeCount = capture.snapshot.nodes.length;
+      quietSinceMs = nowMs;
+    } else if (captures >= 2 && nowMs - quietSinceMs >= quiet) {
+      return {
+        kind: 'stable',
+        waitedMs: nowMs - start,
+        settledAfterMs: nowMs - start,
+        captures,
+        nodeCount: lastNodeCount,
+      };
+    }
+    await sleep(runtime, POLL_INTERVAL_MS);
+  }
+  throw new AppError('COMMAND_FAILED', 'wait timed out waiting for a stable UI', {
+    reason: 'wait_stable_timeout',
+    quietMs: quiet,
+    timeoutMs: timeout,
+    captures,
+    nodeCount: lastNodeCount,
+  });
+}
+
+// Intentionally does not update the session snapshot: the stable loop captures
+// an interactive-only tree purely as a settle signal, and overwriting the
+// session's richer cached snapshot with the filtered tree would degrade
+// subsequent ref/get/find lookups against the same session.
+//
+// Resolves undefined when the capture does not return within remainingMs. A
+// stalled backend capture (observed with macOS AX captures) must not push the
+// stable wait past the user-supplied timeout into the daemon request timeout.
+// The deadline uses a real timer even when runtime.clock is injected: test
+// clocks advance synthetic time synchronously and cannot represent a hung
+// backend call.
+async function captureStableSignalWithinDeadline(
+  runtime: AgentDeviceRuntime,
+  options: WaitCommandOptions,
+  remainingMs: number,
+): Promise<CapturedSnapshot | undefined> {
+  const capture = captureSelectorSnapshot(runtime, options, {
+    updateSession: false,
+    interactiveOnly: true,
+  });
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const result = await Promise.race([
+      capture,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), remainingMs);
+      }),
+    ]);
+    if (result === undefined) {
+      // The abandoned capture settles (or fails) on its own; swallow it so it
+      // cannot surface as an unhandled rejection after the wait already threw.
+      capture.catch(() => {});
+    }
+    return result;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function digestSnapshotNodes(nodes: SnapshotNode[]): string {
+  return nodes.map(digestSnapshotNode).join('|');
+}
+
+function digestSnapshotNode(node: SnapshotNode): string {
+  const rect = node.rect
+    ? `${Math.round(node.rect.x)},${Math.round(node.rect.y)},${Math.round(node.rect.width)},${Math.round(node.rect.height)}`
+    : '';
+  return `${node.type ?? ''}#${node.label ?? ''}#${node.identifier ?? ''}#${rect}`;
 }
 
 async function resolveSelectorNode(
