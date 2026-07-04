@@ -634,12 +634,20 @@ export type ClickOptions = DeviceCommandBaseOptions &
   InteractionTarget &
   RepeatedPressOptions & {
     button?: ClickButton;
+    /**
+     * Opt-in (#1047): return cheap post-action evidence (AX digest, node counts,
+     * changedFromBefore) in the response instead of requiring a follow-up
+     * snapshot to confirm the action had an effect.
+     */
+    verify?: boolean;
   };
 
 export type PressOptions = DeviceCommandBaseOptions &
   SelectorSnapshotCommandOptions &
   InteractionTarget &
-  RepeatedPressOptions;
+  RepeatedPressOptions & {
+    verify?: boolean;
+  };
 
 export type LongPressOptions = DeviceCommandBaseOptions &
   SelectorSnapshotCommandOptions &
@@ -692,6 +700,7 @@ export type FillOptions = DeviceCommandBaseOptions &
   InteractionTarget & {
     text: string;
     delayMs?: number;
+    verify?: boolean;
   };
 
 export type ScrollOptions = DeviceCommandBaseOptions & {
@@ -918,6 +927,7 @@ type CommandExecutionOptions = Partial<ScreenshotRequestFlags> & {
   jitterPx?: number;
   pixels?: number;
   doubleTap?: boolean;
+  verify?: boolean;
   clickButton?: ClickButton;
   pauseMs?: number;
   pattern?: SwipePattern;

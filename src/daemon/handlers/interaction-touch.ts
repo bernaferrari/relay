@@ -208,6 +208,7 @@ async function runTargetedTouchInteraction(params: {
     holdMs: flags?.holdMs,
     jitterPx: flags?.jitterPx,
     doubleTap: flags?.doubleTap,
+    verify: flags?.verify,
   };
   return command === 'click'
     ? await runtime.interactions.click(target, options)
@@ -259,6 +260,7 @@ function readDirectIosSelectorTapTarget(params: {
   if (commandLabel !== 'click') return null;
   if (target.kind !== 'selector') return null;
   if (hasNonDefaultClickOptions(flags)) return null;
+  if (flags?.verify === true) return null;
   const selector = readSimpleIosSelectorTarget({ session, selectorExpression: target.selector });
   if (!selector) return null;
   return {
@@ -443,6 +445,7 @@ async function dispatchFillViaRuntime(
         session: sessionName,
         requestId: req.meta?.requestId,
         delayMs: req.flags?.delayMs,
+        verify: req.flags?.verify,
       }),
     buildPayloads: (result) => {
       const referenceFrame =
@@ -468,6 +471,10 @@ async function dispatchFillViaRuntime(
                 ref: stripAtPrefix(result.target?.kind === 'ref' ? result.target.ref : undefined),
                 ...(result.point ? { x: result.point.x, y: result.point.y } : {}),
               }),
+              // Same extras press @ref already returns — without this the ref
+              // branch rebuilt the response from backendResult and dropped
+              // evidence, so fill @ref --verify returned none (PR #1064 review).
+              ...interactionResultExtra(result),
             }
           : recordedResult;
       if (result.warning) responseData.warning = result.warning;
@@ -483,6 +490,7 @@ function readDirectIosSelectorFillTarget(params: {
 }): DirectIosSelectorTarget | null {
   const { session, target, flags } = params;
   if (target.kind !== 'selector') return null;
+  if (flags?.verify === true) return null;
   const selector = readSimpleIosSelectorTarget({ session, selectorExpression: target.selector });
   if (!selector) return null;
   return {
