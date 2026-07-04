@@ -266,6 +266,39 @@ export function Topbar(props: { onSettings: () => void }) {
       <button type="button" class="btn btn-ghost" onClick={props.onSettings} title="Settings">
         Settings
       </button>
+      <Show when={server.activeJob?.()}>
+        <Show
+          when={server.isPaused?.()}
+          fallback={
+            <button
+              type="button"
+              class="btn btn-ghost"
+              title="Pause job (Space)"
+              onClick={() => void server.pauseJob()}
+            >
+              Pause
+            </button>
+          }
+        >
+          <button
+            type="button"
+            class="btn btn-ghost"
+            title="Resume job (Space)"
+            onClick={() => void server.resumeJob()}
+          >
+            Resume
+          </button>
+        </Show>
+        <button
+          type="button"
+          class="btn btn-ghost"
+          title="Cancel job (Esc)"
+          onClick={() => void server.cancelJob()}
+          style={{ color: "var(--text-critical-base)" }}
+        >
+          Cancel
+        </button>
+      </Show>
       <button
         type="button"
         class="btn btn-acc"
@@ -273,7 +306,7 @@ export function Topbar(props: { onSettings: () => void }) {
         title={runDisabledReason()}
         onClick={() => void server.runSelected()}
       >
-        {server.running() ? "Running…" : "Run"}
+        {server.isPaused?.() ? "Paused" : server.running() ? "Running…" : "Run"}
       </button>
     </header>
   );

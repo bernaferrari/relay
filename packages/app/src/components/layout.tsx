@@ -17,6 +17,34 @@ export function Layout(props: {
   const theme = useTheme();
 
   onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Esc: close palette first, else cancel active job
+      if (e.key === "Escape") {
+        if (cmd.open()) return; // palette handler owns it
+        const active = server.activeJob?.();
+        if (active && (active.status === "running" || active.status === "paused")) {
+          e.preventDefault();
+          void server.cancelJob(active.id);
+        }
+      }
+      // Space while running toggles pause/resume (not when typing in inputs)
+      if (
+        e.key === " " &&
+        !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+      ) {
+        const active = server.activeJob?.();
+        if (!active) return;
+        if (active.status === "running") {
+          e.preventDefault();
+          void server.pauseJob(active.id);
+        } else if (active.status === "paused") {
+          e.preventDefault();
+          void server.resumeJob(active.id);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
     const unsub = cmd.register([
       {
         id: "nav.workspace",
@@ -81,6 +109,25 @@ export function Layout(props: {
         run: () => void server.retrySelectedJob(),
       },
       {
+        id: "job.cancel",
+        title: "Cancel running job",
+        group: "Jobs",
+        keybind: "Esc",
+        run: () => void server.cancelJob(),
+      },
+      {
+        id: "job.pause",
+        title: "Pause running job",
+        group: "Jobs",
+        run: () => void server.pauseJob(),
+      },
+      {
+        id: "job.resume",
+        title: "Resume paused job",
+        group: "Jobs",
+        run: () => void server.resumeJob(),
+      },
+      {
         id: "device.overlays",
         title: "Toggle rect overlays on stage",
         group: "Device",
@@ -141,7 +188,10 @@ export function Layout(props: {
         run: () => void server.retryConnection(),
       },
     ]);
-    onCleanup(unsub);
+    onCleanup(() => {
+      unsub();
+      window.removeEventListener("keydown", onKey);
+    });
   });
 
   return (

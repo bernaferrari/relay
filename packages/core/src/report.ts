@@ -57,7 +57,7 @@ export function toJobReport(job: TestJob): JobReport {
   const startedAt = job.startedAt ?? job.queuedAt;
   const durationMs = job.finishedAt != null ? job.finishedAt - startedAt : undefined;
   const healed = Boolean(job.healed || job.status === "healed");
-  const ok = job.status === "ok" || healed;
+  const ok = (job.status === "ok" || healed) && job.status !== "cancelled";
 
   return {
     id: job.id,

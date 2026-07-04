@@ -15,10 +15,13 @@ import {
   ACTIONS,
   HOME_ACCOUNT_MATCH,
   WORK_ACCOUNT_MATCH,
-  createDevice,
+  cancelActiveJob,
+  cancelJob,
   formatJsonReport,
+  getActiveJob,
   isActionId,
-  runAction,
+  pauseJob,
+  resumeJob,
   runDoctor,
   runJobSync,
   toJobReport,
@@ -37,6 +40,9 @@ function usage(exitCode = 2): never {
 Usage:
   grok-device                              TTY → testing TUI (OpenCode-style)
   grok-device doctor                       Environment checks (exit 1 if any fail)
+  grok-device cancel [jobId]               Cancel active or specific job
+  grok-device pause [jobId]                Pause running job
+  grok-device resume [jobId]               Resume paused job
   grok-device run <action> [flags]         Run via job session (JSON / JUnit)
   grok-device <action> [flags]             Direct action (compat)
   grok-device serve [--port n] [--host h]  HTTP API
@@ -84,6 +90,37 @@ function hasFlag(argv: string[], name: string): boolean {
   return argv.includes(name);
 }
 
+async function resolveJobId(argv: string[]): Promise<string> {
+  const id = argv[0]?.trim();
+  if (id) return id;
+  const active = getActiveJob();
+  if (!active) throw new Error("No active job — pass a job id");
+  return active.id;
+}
+
+async function cmdCancel(argv: string[]): Promise<void> {
+  const id = argv[0]?.trim();
+  const job = id ? cancelJob(id) : cancelActiveJob();
+  if (!job) {
+    console.error("No job to cancel");
+    process.exit(1);
+  }
+  console.log(`cancelled ${job.id.slice(0, 8)}  ${job.action}  (${job.status})`);
+  process.exit(0);
+}
+
+async function cmdPause(argv: string[]): Promise<void> {
+  const id = await resolveJobId(argv);
+  const job = pauseJob(id);
+  console.log(`paused ${job.id.slice(0, 8)}  ${job.action}`);
+}
+
+async function cmdResume(argv: string[]): Promise<void> {
+  const id = await resolveJobId(argv);
+  const job = resumeJob(id);
+  console.log(`resumed ${job.id.slice(0, 8)}  ${job.action}`);
+}
+
 async function runDoctorCmd(): Promise<void> {
   const result = await runDoctor();
   for (const check of result.checks) {
@@ -105,12 +142,29 @@ async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> 
     console.log(`→ run ${action}${serial ? ` @ ${serial}` : ""}`);
   }
 
-  const job = await runJobSync({
-    action,
-    serial,
-    skipAccountSwitch,
-    skipRestoreHome,
-  });
+  const onSigInt = () => {
+    console.error("\n→ cancel (Ctrl+C)…");
+    try {
+      cancelActiveJob();
+    } catch {
+      /* ignore */
+    }
+  };
+  process.on("SIGINT", onSigInt);
+  process.on("SIGTERM", onSigInt);
+
+  let job;
+  try {
+    job = await runJobSync({
+      action,
+      serial,
+      skipAccountSwitch,
+      skipRestoreHome,
+    });
+  } finally {
+    process.off("SIGINT", onSigInt);
+    process.off("SIGTERM", onSigInt);
+  }
   const report = toJobReport(job);
 
   if (junitPath) {
@@ -142,14 +196,8 @@ async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> 
 }
 
 async function runDirect(action: ActionId, argv: string[]): Promise<void> {
-  const device = createDevice();
-  const result = await runAction(device, action, {
-    skipAccountSwitch: argv.includes("--skip-account-switch"),
-    skipRestoreHome: argv.includes("--skip-restore-home"),
-  });
-  if (!result.ok) {
-    throw new Error(result.error);
-  }
+  // Compat path — same as `run` without requiring the subcommand name
+  await runActionViaJob(action, argv);
 }
 
 async function runServe(argv: string[]): Promise<void> {
@@ -232,6 +280,18 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 
   if (cmd === "doctor") {
     await runDoctorCmd();
+    return;
+  }
+  if (cmd === "cancel") {
+    await cmdCancel(argv.slice(1));
+    return;
+  }
+  if (cmd === "pause") {
+    await cmdPause(argv.slice(1));
+    return;
+  }
+  if (cmd === "resume") {
+    await cmdResume(argv.slice(1));
     return;
   }
 

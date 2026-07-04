@@ -7,6 +7,8 @@ function statusTone(status: JobInfo["status"] | "idle") {
   if (status === "ok") return "pass";
   if (status === "healed") return "heal";
   if (status === "error") return "fail";
+  if (status === "cancelled") return "fail";
+  if (status === "paused") return "heal";
   if (status === "running" || status === "queued") return "run";
   return "dim";
 }

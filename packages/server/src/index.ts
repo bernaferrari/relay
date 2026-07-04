@@ -22,6 +22,10 @@ import {
   readPersistedRun,
   recentEvents,
   retryJob,
+  cancelJob,
+  pauseJob,
+  resumeJob,
+  cancelActiveJob,
   runsRoot,
   selectDevice,
   subscribe,
@@ -283,6 +287,34 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (method === "POST" && retryMatch) {
       const job = retryJob(retryMatch.id!);
       json(res, 202, { job: slimJob(job, false) });
+      return;
+    }
+
+    const cancelMatch = matchPath(pathname, "/jobs/:id/cancel");
+    if (method === "POST" && cancelMatch) {
+      const job = cancelJob(cancelMatch.id!);
+      json(res, 200, { job: slimJob(job, false) });
+      return;
+    }
+
+    const pauseMatch = matchPath(pathname, "/jobs/:id/pause");
+    if (method === "POST" && pauseMatch) {
+      const job = pauseJob(pauseMatch.id!);
+      json(res, 200, { job: slimJob(job, false) });
+      return;
+    }
+
+    const resumeMatch = matchPath(pathname, "/jobs/:id/resume");
+    if (method === "POST" && resumeMatch) {
+      const job = resumeJob(resumeMatch.id!);
+      json(res, 200, { job: slimJob(job, false) });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/jobs/active/cancel") {
+      const job = cancelActiveJob();
+      if (!job) throw new HttpError(404, "No active job");
+      json(res, 200, { job: slimJob(job, false) });
       return;
     }
 

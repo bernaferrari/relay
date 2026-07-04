@@ -9,3 +9,4 @@ export * from "./trace.js";
 export * from "./runs.js";
 export * from "./report.js";
 export * from "./doctor.js";
+export * from "./control.js";

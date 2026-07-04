@@ -24,6 +24,17 @@ import {
 import { persistRun, writeFramePng, ensureRunDir } from "./runs.js";
 import { PLATFORM } from "./device.js";
 import { classifyJobError } from "./report.js";
+import {
+  JobCancelledError,
+  clearControl,
+  ensureControl,
+  requestCancel,
+  requestPause,
+  requestResume,
+  setExecutingJobId,
+  cooperativeCheckpoint,
+  throwIfCancelled,
+} from "./control.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -45,7 +56,7 @@ async function resolveDeviceMeta(serial?: string): Promise<{ deviceName?: string
   }
 }
 
-export type JobStatus = "queued" | "running" | "ok" | "error" | "healed";
+export type JobStatus = "queued" | "running" | "paused" | "ok" | "error" | "healed" | "cancelled";
 
 export type JobErrorCode =
   | "ACTION_FAILED"
@@ -53,6 +64,7 @@ export type JobErrorCode =
   | "UNKNOWN_ACTION"
   | "TIMEOUT"
   | "ACCOUNT_SWITCH_FAILED"
+  | "CANCELLED"
   | "INTERNAL";
 
 export type TestJob = {
@@ -255,6 +267,9 @@ async function drainQueue(): Promise<void> {
   try {
     while (queue.length > 0) {
       const id = queue.shift()!;
+      const job = jobs.get(id);
+      // skipped if cancelled while still queued
+      if (!job || job.status === "cancelled") continue;
       await executeJob(id);
     }
   } finally {
@@ -262,10 +277,125 @@ async function drainQueue(): Promise<void> {
   }
 }
 
+function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
+  job.finishedAt = now();
+  job.status = "cancelled";
+  job.error = "Cancelled by user";
+  job.errorCode = "CANCELLED";
+  if (primary) finishStep(primary, "error", "✗ cancelled");
+  publish({
+    type: "job.cancelled",
+    at: job.finishedAt,
+    jobId: job.id,
+    action: job.action,
+  });
+  publish({
+    type: "job.finished",
+    at: job.finishedAt,
+    jobId: job.id,
+    action: job.action,
+    ok: false,
+    error: job.error,
+    durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),
+    cancelled: true,
+  });
+  void persistRun(job).catch(() => undefined);
+}
+
+/** Cancel a queued or in-flight job (cooperative). */
+export function cancelJob(id: string): TestJob {
+  const job = jobs.get(id);
+  if (!job) throw new Error(`Unknown job: ${id}`);
+
+  if (
+    job.status === "ok" ||
+    job.status === "error" ||
+    job.status === "healed" ||
+    job.status === "cancelled"
+  ) {
+    return job;
+  }
+
+  requestCancel(id);
+
+  if (job.status === "queued") {
+    // remove from queue
+    const idx = queue.indexOf(id);
+    if (idx >= 0) queue.splice(idx, 1);
+    job.startedAt = job.startedAt ?? now();
+    finalizeCancelled(job);
+    clearControl(id);
+    return job;
+  }
+
+  // running / paused — executeJob will observe cancel at next checkpoint
+  job.logs.push("==> cancel requested");
+  publish({
+    type: "job.log",
+    at: now(),
+    jobId: job.id,
+    line: "==> cancel requested",
+    level: "info",
+  });
+  return job;
+}
+
+/** Pause a running job (cooperative — takes effect at next sleep/checkpoint). */
+export function pauseJob(id: string): TestJob {
+  const job = jobs.get(id);
+  if (!job) throw new Error(`Unknown job: ${id}`);
+  if (job.status !== "running") {
+    throw new Error(`Cannot pause job in status ${job.status}`);
+  }
+  requestPause(id);
+  job.status = "paused";
+  job.logs.push("==> paused");
+  publish({ type: "job.paused", at: now(), jobId: job.id, action: job.action });
+  publish({
+    type: "job.log",
+    at: now(),
+    jobId: job.id,
+    line: "==> paused (Esc/Cancel still works)",
+    level: "info",
+  });
+  return job;
+}
+
+/** Resume a paused job. */
+export function resumeJob(id: string): TestJob {
+  const job = jobs.get(id);
+  if (!job) throw new Error(`Unknown job: ${id}`);
+  if (job.status !== "paused") {
+    throw new Error(`Cannot resume job in status ${job.status}`);
+  }
+  requestResume(id);
+  job.status = "running";
+  job.logs.push("==> resumed");
+  publish({ type: "job.resumed", at: now(), jobId: job.id, action: job.action });
+  publish({
+    type: "job.log",
+    at: now(),
+    jobId: job.id,
+    line: "==> resumed",
+    level: "info",
+  });
+  return job;
+}
+
+/** Cancel the active job if any. */
+export function cancelActiveJob(): TestJob | null {
+  const active = getActiveJob();
+  if (!active) return null;
+  return cancelJob(active.id);
+}
+
 async function executeJob(id: string): Promise<void> {
   const job = jobs.get(id);
   if (!job) return;
+  if (job.status === "cancelled") return;
 
+  ensureControl(id);
+  setExecutingJobId(id);
   activeJobId = id;
   job.status = "running";
   job.startedAt = now();
@@ -290,7 +420,6 @@ async function executeJob(id: string): Promise<void> {
   }
 
   const plan = planForAction(job.action);
-  // seed planned micro-steps as a single running recipe step (collapses to one primary)
   const primary = openStep(job, {
     kind: job.retryOf ? "Healed" : plan.kind,
     tone: job.retryOf ? "heal" : plan.tone,
@@ -302,7 +431,6 @@ async function executeJob(id: string): Promise<void> {
       : `start ${job.action}${job.deviceName ? ` · ${job.deviceName}` : ""}${job.serial ? ` (${job.serial})` : ""}`,
   });
 
-  // optional planned sub-notes in log
   for (const p of plan.planned) {
     appendStepLog(primary, `· plan: ${p.title} [${p.glyphs.join(",")}]`);
   }
@@ -310,22 +438,31 @@ async function executeJob(id: string): Promise<void> {
   const pushLog = (line: string) => {
     job.logs.push(line);
     appendStepLog(primary, line);
-    const level = /FAIL|error|Error/i.test(line)
+    const level = /FAIL|error|Error|cancel/i.test(line)
       ? ("error" as const)
-      : /DONE|success/i.test(line)
+      : /DONE|success|resumed|paused/i.test(line)
         ? ("success" as const)
         : ("info" as const);
     publish({ type: "job.log", at: now(), jobId: job.id, line, level });
   };
 
   try {
+    await cooperativeCheckpoint(id);
+
     const device = createDevice();
     const opts: RunActionOptions = {
       skipAccountSwitch: job.options?.skipAccountSwitch,
       skipRestoreHome: job.options?.skipRestoreHome,
-      onLog: pushLog,
+      onLog: (line) => {
+        throwIfCancelled(id);
+        pushLog(line);
+      },
     };
+
+    // Race: run action, but also poll for cancel so we surface sooner after long device calls
     const result: RunActionResult = await runAction(device, job.action, opts);
+    await cooperativeCheckpoint(id);
+
     job.finishedAt = now();
 
     if (result.ok) {
@@ -377,6 +514,14 @@ async function executeJob(id: string): Promise<void> {
       pushLog(`warn: persist run failed: ${err instanceof Error ? err.message : String(err)}`),
     );
   } catch (err) {
+    if (
+      err instanceof JobCancelledError ||
+      (err instanceof Error && err.name === "JobCancelledError")
+    ) {
+      pushLog("==> CANCELLED");
+      finalizeCancelled(job, primary);
+      return;
+    }
     const message = err instanceof Error ? err.message : String(err);
     job.finishedAt = now();
     job.status = "error";
@@ -395,7 +540,9 @@ async function executeJob(id: string): Promise<void> {
     });
     await persistRun(job).catch(() => undefined);
   } finally {
+    setExecutingJobId(null);
     activeJobId = null;
+    clearControl(id);
   }
 }
 
@@ -433,7 +580,12 @@ export async function runJobSync(input: EnqueueJobInput): Promise<TestJob> {
   for (;;) {
     const current = getJob(job.id);
     if (!current) throw new Error("job vanished");
-    if (current.status === "ok" || current.status === "error" || current.status === "healed") {
+    if (
+      current.status === "ok" ||
+      current.status === "error" ||
+      current.status === "healed" ||
+      current.status === "cancelled"
+    ) {
       return current;
     }
     await new Promise((r) => setTimeout(r, 50));

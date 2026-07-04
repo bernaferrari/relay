@@ -3,6 +3,7 @@
  * Pattern: open → snapshot/find → press → re-check. Failures throw.
  */
 import { createAgentDeviceClient } from "agent-device";
+import { cooperativeCheckpoint } from "./control.js";
 
 export const PLATFORM = "android" as const;
 export const GROK_PACKAGE = "ai.x.grok";
@@ -39,7 +40,16 @@ export function base() {
 }
 
 export async function sleep(ms: number, device: Device = createDevice()): Promise<void> {
-  await device.command.wait({ ...base(), durationMs: ms });
+  // Chunk waits so cancel/pause can interrupt long sleeps.
+  const chunk = 250;
+  let left = Math.max(0, ms);
+  while (left > 0) {
+    await cooperativeCheckpoint();
+    const step = Math.min(chunk, left);
+    await device.command.wait({ ...base(), durationMs: step });
+    left -= step;
+  }
+  await cooperativeCheckpoint();
 }
 
 export async function snapshot(

@@ -51,7 +51,7 @@ export type JobInfo = {
   id: string;
   action: string;
   serial?: string;
-  status: "queued" | "running" | "ok" | "error" | "healed";
+  status: "queued" | "running" | "paused" | "ok" | "error" | "healed" | "cancelled";
   queuedAt: number;
   startedAt?: number;
   finishedAt?: number;
@@ -350,7 +350,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs?full=0");
         setJobs(asArray<JobInfo>(data, "jobs"));
         const active = data.active;
-        setRunning(Boolean(active && active.status === "running"));
+        setRunning(Boolean(active && (active.status === "running" || active.status === "paused")));
       } catch {
         /* ignore */
       }
@@ -410,6 +410,22 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           break;
         case "job.healed":
           appendLog(`healed ${ev.action}: ${ev.healMessage}`, "success", ev.jobId as string);
+          void refreshJobs();
+          void refreshRuns();
+          break;
+        case "job.paused":
+          appendLog(`paused ${ev.action}`, "info", ev.jobId as string);
+          setRunning(true);
+          void refreshJobs();
+          break;
+        case "job.resumed":
+          appendLog(`resumed ${ev.action}`, "info", ev.jobId as string);
+          setRunning(true);
+          void refreshJobs();
+          break;
+        case "job.cancelled":
+          appendLog(`cancelled ${ev.action}`, "error", ev.jobId as string);
+          setRunning(false);
           void refreshJobs();
           void refreshRuns();
           break;
@@ -475,6 +491,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         "job.started",
         "job.log",
         "job.finished",
+        "job.cancelled",
+        "job.resumed",
+        "job.paused",
         "job.healed",
         "job.step",
         "job.frame",
@@ -707,6 +726,55 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       es?.close();
     });
 
+    async function cancelJobRemote(jobId?: string) {
+      const id = jobId ?? selectedJobId() ?? undefined;
+      try {
+        if (id) {
+          await request(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
+        } else {
+          await request(`/jobs/active/cancel`, { method: "POST", body: "{}" });
+        }
+        appendLog("cancel requested", "info", id);
+        void refreshJobs();
+      } catch (err) {
+        appendLog(err instanceof Error ? err.message : String(err), "error");
+      }
+    }
+
+    async function pauseJobRemote(jobId?: string) {
+      const id = jobId ?? selectedJobId();
+      if (!id) {
+        appendLog("No job to pause", "error");
+        return;
+      }
+      try {
+        await request(`/jobs/${encodeURIComponent(id)}/pause`, { method: "POST", body: "{}" });
+        appendLog("paused", "info", id);
+        void refreshJobs();
+      } catch (err) {
+        appendLog(err instanceof Error ? err.message : String(err), "error");
+      }
+    }
+
+    async function resumeJobRemote(jobId?: string) {
+      const id = jobId ?? selectedJobId();
+      if (!id) {
+        appendLog("No job to resume", "error");
+        return;
+      }
+      try {
+        await request(`/jobs/${encodeURIComponent(id)}/resume`, { method: "POST", body: "{}" });
+        appendLog("resumed", "info", id);
+        void refreshJobs();
+      } catch (err) {
+        appendLog(err instanceof Error ? err.message : String(err), "error");
+      }
+    }
+
+    const activeJob = () =>
+      jobs().find((j) => j.status === "running" || j.status === "paused") ?? null;
+    const isPaused = () => activeJob()?.status === "paused";
+
     return {
       serverUrl,
       setServerUrl,
@@ -738,6 +806,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       pollHealth,
       retryConnection,
       runSelected,
+      cancelJob: cancelJobRemote,
+      pauseJob: pauseJobRemote,
+      resumeJob: resumeJobRemote,
+      activeJob,
+      isPaused,
       retrySelectedJob,
       panelTab,
       setPanelTab,

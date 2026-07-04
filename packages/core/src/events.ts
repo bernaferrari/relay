@@ -26,8 +26,12 @@ export type DeviceEvent =
       error?: string;
       durationMs: number;
       healed?: boolean;
+      cancelled?: boolean;
     }
   | { type: "job.healed"; at: number; jobId: string; action: string; healMessage: string }
+  | { type: "job.paused"; at: number; jobId: string; action: string }
+  | { type: "job.resumed"; at: number; jobId: string; action: string }
+  | { type: "job.cancelled"; at: number; jobId: string; action: string }
   | { type: "job.step"; at: number; jobId: string; step: unknown }
   | { type: "job.frame"; at: number; jobId: string; frame: unknown }
   | { type: "snapshot.captured"; at: number; serial?: string; nodeCount: number }
