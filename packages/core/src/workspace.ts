@@ -19,6 +19,7 @@ import {
   type SnapshotNode,
 } from "./device.js";
 import { now, publish } from "./events.js";
+import { attachJobFrame, getActiveJob } from "./session.js";
 
 export type ListedDevice = {
   id: string;
@@ -63,7 +64,21 @@ export type SnapshotPayload = {
   capturedAt: number;
   nodes: SnapshotNode[];
   interactive: SnapshotNode[];
+  /** rough screen bounds from max rect extents (for overlay scaling) */
+  bounds?: { width: number; height: number };
 };
+
+function inferBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
+  let maxX = 0;
+  let maxY = 0;
+  for (const n of nodes) {
+    if (!n.rect) continue;
+    maxX = Math.max(maxX, n.rect.x + n.rect.width);
+    maxY = Math.max(maxY, n.rect.y + n.rect.height);
+  }
+  if (maxX < 100 || maxY < 100) return undefined;
+  return { width: Math.round(maxX), height: Math.round(maxY) };
+}
 
 export async function captureSnapshot(opts?: {
   serial?: string;
@@ -74,6 +89,7 @@ export async function captureSnapshot(opts?: {
   const device = opts?.device ?? createDevice();
   const nodes = await snapshot(device, { interactiveOnly: opts?.interactiveOnly ?? false });
   const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
+  const bounds = inferBounds(nodes);
   publish({
     type: "snapshot.captured",
     at: now(),
@@ -85,6 +101,7 @@ export async function captureSnapshot(opts?: {
     capturedAt: now(),
     nodes,
     interactive,
+    bounds,
   };
 }
 
@@ -92,15 +109,20 @@ export type ScreenshotPayload = {
   serial?: string;
   capturedAt: number;
   mime: "image/png";
-  /** base64-encoded PNG */
   base64: string;
   path: string;
   bytes: number;
+  jobId?: string;
+  framePath?: string;
 };
 
 export async function captureScreenshot(opts?: {
   serial?: string;
   device?: Device;
+  caption?: string;
+  jobId?: string;
+  /** skip attaching to job */
+  ephemeral?: boolean;
 }): Promise<ScreenshotPayload> {
   if (opts?.serial) selectDevice(opts.serial);
   const device = opts?.device ?? createDevice();
@@ -110,19 +132,38 @@ export async function captureScreenshot(opts?: {
   await device.capture.screenshot({ ...base(), path });
   const { readFile } = await import("node:fs/promises");
   const buf = await readFile(path);
+  const base64 = buf.toString("base64");
   publish({
     type: "screenshot.captured",
     at: now(),
     serial: process.env.AGENT_DEVICE_SERIAL,
     bytes: buf.byteLength,
   });
+
+  let framePath: string | undefined;
+  let jobId = opts?.jobId;
+  if (!opts?.ephemeral) {
+    const active = opts?.jobId ? { id: opts.jobId } : getActiveJob();
+    if (active) {
+      const frame = await attachJobFrame({
+        jobId: active.id,
+        base64,
+        caption: opts?.caption ?? `screenshot · ${new Date().toISOString()}`,
+      });
+      framePath = frame?.path;
+      jobId = active.id;
+    }
+  }
+
   return {
     serial: process.env.AGENT_DEVICE_SERIAL,
     capturedAt: now(),
     mime: "image/png",
-    base64: buf.toString("base64"),
+    base64,
     path,
     bytes: buf.byteLength,
+    jobId,
+    framePath,
   };
 }
 
@@ -157,7 +198,6 @@ export async function interact(input: InteractInput, opts?: { serial?: string })
   }
 }
 
-/** Compact text tree for TUI / logs. */
 export function formatSnapshotTree(nodes: SnapshotNode[], limit = 80): string {
   const lines: string[] = [];
   for (const n of nodes.slice(0, limit)) {

@@ -11,7 +11,9 @@
     "./actions": "./src/actions.ts",
     "./events": "./src/events.ts",
     "./session": "./src/session.ts",
-    "./workspace": "./src/workspace.ts"
+    "./workspace": "./src/workspace.ts",
+    "./trace": "./src/trace.ts",
+    "./runs": "./src/runs.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"

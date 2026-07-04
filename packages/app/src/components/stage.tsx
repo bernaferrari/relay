@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js";
 import { useServer } from "../context/server";
 
-/** Device-as-hero stage: phone bezel + frame scrubber (qa-viewer Stage). */
+/** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
 export function DeviceStage() {
   const server = useServer();
   const frame = () => server.currentFrame();
@@ -9,17 +9,45 @@ export function DeviceStage() {
   const actionMeta = () =>
     server.actions().find((a) => a.id === (server.selectedAction() ?? job()?.action));
 
+  const overlays = () => {
+    if (!server.showOverlays()) return [];
+    const snap = server.snapshot();
+    if (!snap?.nodes?.length || !snap.bounds) return [];
+    // only hittable-ish nodes with rects, capped
+    return snap.nodes
+      .filter((n) => n.rect && (n.hittable || n.label || n.ref))
+      .slice(0, 80)
+      .map((n) => {
+        const r = n.rect!;
+        const bw = snap.bounds!.width;
+        const bh = snap.bounds!.height;
+        return {
+          node: n,
+          left: `${(r.x / bw) * 100}%`,
+          top: `${(r.y / bh) * 100}%`,
+          width: `${(r.width / bw) * 100}%`,
+          height: `${(r.height / bh) * 100}%`,
+          label: (n.label ?? n.value ?? n.identifier ?? "").trim(),
+        };
+      });
+  };
+
   return (
     <section class="stage" aria-label="Device stage">
       <div class="stage__meta">
         <span class="mono stage__step">
           {server.selectedAction()
-            ? server.actions().findIndex((a) => a.id === server.selectedAction()) + 1
+            ? String(
+                server.actions().findIndex((a) => a.id === server.selectedAction()) + 1,
+              ).padStart(2, "0")
             : "—"}
           /{String(server.actions().length).padStart(2, "0")}
         </span>
         <span class="stage__divider" />
         <span class="stage__title">{actionMeta()?.title ?? "Select an action"}</span>
+        <Show when={job()?.healed || job()?.status === "healed"}>
+          <span class="badge b-heal">Healed</span>
+        </Show>
       </div>
 
       <div class="bezel" data-empty={!frame() ? "1" : "0"}>
@@ -42,6 +70,26 @@ export function DeviceStage() {
               alt={frame()!.caption}
               src={`data:${frame()!.mime};base64,${frame()!.base64}`}
             />
+            <Show when={server.showOverlays() && overlays().length > 0}>
+              <div class="glass__overlays">
+                <For each={overlays()}>
+                  {(o) => (
+                    <button
+                      type="button"
+                      class="hit-rect"
+                      style={{
+                        left: o.left,
+                        top: o.top,
+                        width: o.width,
+                        height: o.height,
+                      }}
+                      title={o.label || "press"}
+                      onClick={() => void server.pressNode(o.node)}
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
           </Show>
         </div>
       </div>
@@ -113,6 +161,16 @@ export function DeviceStage() {
           onClick={() => void server.captureUiSnapshot()}
         >
           Snapshot
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost"
+          classList={{ "btn-ghost--on": server.showOverlays() }}
+          disabled={!server.snapshot()?.bounds}
+          title="Toggle accessibility rect overlays on the phone glass"
+          onClick={() => server.setShowOverlays(!server.showOverlays())}
+        >
+          Overlays {server.showOverlays() ? "on" : "off"}
         </button>
         <Show when={server.frames().length > 0}>
           <button type="button" class="btn btn-ghost" onClick={() => server.clearFrames()}>

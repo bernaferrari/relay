@@ -25,7 +25,11 @@ export type DeviceEvent =
       result?: unknown;
       error?: string;
       durationMs: number;
+      healed?: boolean;
     }
+  | { type: "job.healed"; at: number; jobId: string; action: string; healMessage: string }
+  | { type: "job.step"; at: number; jobId: string; step: unknown }
+  | { type: "job.frame"; at: number; jobId: string; frame: unknown }
   | { type: "snapshot.captured"; at: number; serial?: string; nodeCount: number }
   | { type: "screenshot.captured"; at: number; serial?: string; bytes: number }
   | { type: "error"; at: number; message: string; where?: string };

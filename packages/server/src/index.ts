@@ -1,11 +1,10 @@
 /**
  * HTTP + SSE API over @grok-device/core.
- * OpenCode-style: long-lived server, UI clients subscribe to events.
+ * Jobs, traces, heal retries, persisted runs/, live capture.
  */
 import http from "node:http";
 import { URL } from "node:url";
 import {
-  ACTIONS,
   captureScreenshot,
   captureSnapshot,
   enqueueJob,
@@ -13,11 +12,17 @@ import {
   getActiveJob,
   getJob,
   interact,
+  listActionsWithTrace,
   listDevices,
   listJobs,
+  listPersistedRuns,
   now,
   publish,
+  readFrameFile,
+  readPersistedRun,
   recentEvents,
+  retryJob,
+  runsRoot,
   selectDevice,
   subscribe,
   type DeviceEvent,
@@ -94,6 +99,23 @@ function matchPath(pathname: string, pattern: string): Record<string, string> | 
   return params;
 }
 
+/** Strip heavy base64 from jobs for list responses (keep for single job optional). */
+function slimJob(job: ReturnType<typeof getJob> | null, keepBase64 = false) {
+  if (!job) return null;
+  return {
+    ...job,
+    frames: job.frames.map((f) =>
+      keepBase64 ? f : { ...f, base64: f.base64 ? "[omitted]" : undefined },
+    ),
+    steps: job.steps.map((s) => ({
+      ...s,
+      frames: s.frames.map((f) =>
+        keepBase64 ? f : { ...f, base64: f.base64 ? "[omitted]" : undefined },
+      ),
+    })),
+  };
+}
+
 type SseClient = { res: http.ServerResponse; id: number };
 const sseClients = new Set<SseClient>();
 let sseSeq = 0;
@@ -113,7 +135,6 @@ function broadcast(event: DeviceEvent): void {
   }
 }
 
-// Bridge core bus → SSE
 subscribe((event) => broadcast(event));
 
 function attachSse(req: http.IncomingMessage, res: http.ServerResponse): void {
@@ -124,7 +145,6 @@ function attachSse(req: http.IncomingMessage, res: http.ServerResponse): void {
     ...CORS_HEADERS,
   });
   res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, at: now() })}\n\n`);
-  // replay recent
   for (const ev of recentEvents(30)) writeSse(res, ev);
 
   const client: SseClient = { res, id: ++sseSeq };
@@ -167,6 +187,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         activeJob: getActiveJob()?.id ?? null,
         jobs: listJobs(5).length,
         sseClients: sseClients.size,
+        runsDir: runsRoot(),
       });
       return;
     }
@@ -177,7 +198,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     if (method === "GET" && pathname === "/actions") {
-      json(res, 200, { actions: ACTIONS });
+      json(res, 200, { actions: listActionsWithTrace() });
       return;
     }
 
@@ -196,7 +217,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (method === "GET" && pathname === "/jobs") {
       const limit = Number(url.searchParams.get("limit") ?? 50);
-      json(res, 200, { jobs: listJobs(limit), active: getActiveJob() });
+      const full = url.searchParams.get("full") === "1";
+      json(res, 200, {
+        jobs: listJobs(limit).map((j) => slimJob(j, full)),
+        active: slimJob(getActiveJob(), full),
+      });
       return;
     }
 
@@ -204,7 +229,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (method === "GET" && jobMatch) {
       const job = getJob(jobMatch.id!);
       if (!job) throw new HttpError(404, "Job not found");
-      json(res, 200, { job });
+      json(res, 200, { job: slimJob(job, url.searchParams.get("full") === "1") });
+      return;
+    }
+
+    const retryMatch = matchPath(pathname, "/jobs/:id/retry");
+    if (method === "POST" && retryMatch) {
+      const job = retryJob(retryMatch.id!);
+      json(res, 202, { job: slimJob(job, false) });
       return;
     }
 
@@ -215,20 +247,22 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         skipAccountSwitch?: boolean;
         skipRestoreHome?: boolean;
         prodAccountMatch?: string;
+        retryOf?: string;
       };
-      if (!body.action) throw new HttpError(400, "action is required");
-      const job = enqueueJob({
-        action: body.action,
-        serial: body.serial,
-        skipAccountSwitch: body.skipAccountSwitch,
-        skipRestoreHome: body.skipRestoreHome,
-        prodAccountMatch: body.prodAccountMatch,
-      });
-      json(res, 202, { job });
+      if (!body.action && !body.retryOf) throw new HttpError(400, "action is required");
+      const job = body.retryOf
+        ? retryJob(body.retryOf)
+        : enqueueJob({
+            action: body.action!,
+            serial: body.serial,
+            skipAccountSwitch: body.skipAccountSwitch,
+            skipRestoreHome: body.skipRestoreHome,
+            prodAccountMatch: body.prodAccountMatch,
+          });
+      json(res, 202, { job: slimJob(job, false) });
       return;
     }
 
-    // Back-compat: sync-style run (still async job under the hood, wait optional)
     const runMatch = matchPath(pathname, "/actions/:id/run");
     if (method === "POST" && runMatch) {
       const body = (await parseJsonBody(req)) as {
@@ -246,19 +280,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         prodAccountMatch: body.prodAccountMatch,
       });
       if (body.wait === false) {
-        json(res, 202, { job });
+        json(res, 202, { job: slimJob(job, false) });
         return;
       }
-      // wait for completion
       for (;;) {
         const current = getJob(job.id)!;
-        if (current.status === "ok" || current.status === "error") {
+        if (current.status === "ok" || current.status === "error" || current.status === "healed") {
           json(res, 200, {
-            ok: current.status === "ok",
+            ok: current.status === "ok" || current.status === "healed",
             action: current.action,
             result: current.result,
             error: current.error,
-            job: current,
+            healed: current.healed,
+            healMessage: current.healMessage,
+            job: slimJob(current, false),
             logs: current.logs,
           });
           return;
@@ -278,7 +313,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (method === "GET" && pathname === "/screenshot") {
       const serial = url.searchParams.get("serial") ?? undefined;
-      const shot = await captureScreenshot({ serial });
+      const caption = url.searchParams.get("caption") ?? undefined;
+      const jobId = url.searchParams.get("jobId") ?? undefined;
+      const ephemeral = url.searchParams.get("ephemeral") === "1";
+      const shot = await captureScreenshot({
+        serial,
+        caption: caption ?? undefined,
+        jobId,
+        ephemeral,
+      });
       json(res, 200, shot);
       return;
     }
@@ -294,10 +337,44 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    // persisted runs
+    if (method === "GET" && pathname === "/runs") {
+      const limit = Number(url.searchParams.get("limit") ?? 40);
+      const runs = await listPersistedRuns(limit);
+      json(res, 200, { runs, root: runsRoot() });
+      return;
+    }
+
+    const persistedMatch = matchPath(pathname, "/runs/:id");
+    if (method === "GET" && persistedMatch) {
+      const run = await readPersistedRun(persistedMatch.id!);
+      if (!run) throw new HttpError(404, "Run not found");
+      json(res, 200, { run });
+      return;
+    }
+
+    // GET /runs/:id/frames/:file
+    const frameMatch = matchPath(pathname, "/runs/:id/frames/:file");
+    if (method === "GET" && frameMatch) {
+      const run = await readPersistedRun(frameMatch.id!);
+      if (!run) throw new HttpError(404, "Run not found");
+      const buf = await readFrameFile(run.dir, frameMatch.file!);
+      if (!buf) throw new HttpError(404, "Frame not found");
+      res.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": buf.byteLength,
+        "Cache-Control": "private, max-age=3600",
+        ...CORS_HEADERS,
+      });
+      res.end(buf);
+      return;
+    }
+
     if (method === "GET" && pathname === "/meta") {
       json(res, 200, {
         name: "grok-device",
         description: "App testing shell for Grok Android (agent-device)",
+        runsDir: runsRoot(),
         endpoints: [
           "GET /health",
           "GET /events (SSE)",
@@ -307,10 +384,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           "GET /jobs",
           "GET /jobs/:id",
           "POST /jobs",
+          "POST /jobs/:id/retry",
           "POST /actions/:id/run",
           "GET /snapshot",
           "GET /screenshot",
           "POST /interact",
+          "GET /runs",
+          "GET /runs/:id",
+          "GET /runs/:id/frames/:file",
         ],
       });
       return;
@@ -374,9 +455,7 @@ async function main(): Promise<void> {
   const host = hostIdx >= 0 ? (argv[hostIdx + 1] ?? "127.0.0.1") : "127.0.0.1";
   const started = await startServer({ port, host });
   console.log(`@grok-device/server listening on http://${started.host}:${started.port}`);
-  console.log("  SSE  GET /events");
-  console.log("  jobs POST /jobs  GET /jobs");
-  console.log("  live GET /snapshot  GET /screenshot  POST /interact");
+  console.log(`  runs → ${runsRoot()}`);
 }
 
 const invokedDirectly =

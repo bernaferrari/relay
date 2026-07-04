@@ -13,6 +13,7 @@ import {
   type GrokListingAction,
 } from "./play-store.js";
 import { loginEmail, loginGoogle, loginX, logout } from "./grok.js";
+import { planForAction } from "./trace.js";
 
 export const ACTION_IDS = [
   "update-last-alpha",
@@ -39,6 +40,8 @@ export type ActionMeta = {
   requiresProdMatch?: boolean;
   /** Alpha flow with restore-home options */
   isAlpha?: boolean;
+  /** default trace glyphs (from RECIPE_TRACE_PLANS) */
+  glyphs?: string[];
 };
 
 export const ACTIONS: readonly ActionMeta[] = [
@@ -174,4 +177,12 @@ export async function runAction(
     log(`==> FAIL: ${action} — ${error}`);
     return { ok: false, action, error };
   }
+}
+
+/** ACTIONS with default trace glyphs attached. */
+export function listActionsWithTrace(): ActionMeta[] {
+  return ACTIONS.map((a) => ({
+    ...a,
+    glyphs: planForAction(a.id).glyphs,
+  }));
 }

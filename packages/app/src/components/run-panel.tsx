@@ -1,8 +1,10 @@
 import { For, Show, createMemo } from "solid-js";
 import { useServer, type ActionInfo, type JobInfo } from "../context/server";
+import { Glyphs } from "./glyphs";
 
 function statusTone(status: JobInfo["status"] | "idle") {
   if (status === "ok") return "pass";
+  if (status === "healed") return "heal";
   if (status === "error") return "fail";
   if (status === "running" || status === "queued") return "run";
   return "dim";
@@ -14,7 +16,8 @@ function fmtDur(job: JobInfo) {
   const start = job.startedAt ?? job.queuedAt;
   const ms = Math.max(0, end - start);
   if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
 }
 
 export function RunPanel() {
@@ -30,10 +33,15 @@ export function RunPanel() {
 
   const jobLogs = createMemo(() => {
     const j = selectedJob();
+    if (j?.steps?.length) {
+      const step = j.steps[j.steps.length - 1];
+      if (step?.log) return step.log;
+    }
     if (j?.logs?.length) return j.logs.join("\n");
     const id = server.selectedJobId();
-    const lines = server.logs().filter((l) => !id || l.jobId === id || !l.jobId);
-    return lines
+    return server
+      .logs()
+      .filter((l) => !id || l.jobId === id || !l.jobId)
       .slice(-40)
       .map((l) => l.text)
       .join("\n");
@@ -43,8 +51,9 @@ export function RunPanel() {
     const jobs = server.jobs();
     const ok = jobs.filter((j) => j.status === "ok").length;
     const fail = jobs.filter((j) => j.status === "error").length;
+    const healed = jobs.filter((j) => j.status === "healed" || j.healed).length;
     const run = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
-    return { total: jobs.length, ok, fail, run, frames: server.frames().length };
+    return { total: jobs.length, ok, fail, healed, run, frames: server.frames().length };
   });
 
   const groups = createMemo(() => {
@@ -64,6 +73,9 @@ export function RunPanel() {
           <h1 class="mono panel__flow">{server.selectedAction() ?? "ready"}</h1>
           <span class="panel__stats">
             {stats().ok} passed · {stats().fail} failed
+            {stats().healed ? (
+              <span style={{ color: "var(--heal)" }}> · {stats().healed} healed</span>
+            ) : null}
             {stats().run ? ` · ${stats().run} active` : ""}
             {stats().frames ? ` · ${stats().frames} frames` : ""}
           </span>
@@ -119,6 +131,10 @@ export function RunPanel() {
                             </span>
                             <span>·</span>
                             <span class="mono">{a.id}</span>
+                            <span
+                              style={{ width: "1px", height: "10px", background: "var(--line)" }}
+                            />
+                            <Glyphs glyphs={a.glyphs} />
                             <Show when={job()}>
                               <span>·</span>
                               <span class={`tone tone--${statusTone(job()!.status)}`}>
@@ -157,24 +173,62 @@ export function RunPanel() {
                   </span>
                   <span class="srow__body">
                     <span class="smeta">
-                      <span class={`tone tone--${statusTone(j.status)}`}>{j.status}</span>
+                      <span class={`tone tone--${statusTone(j.status)}`}>
+                        {j.kind ?? (j.healed ? "Healed" : "Replay")}
+                      </span>
                       <span>·</span>
                       <span class="mono">{fmtDur(j)}</span>
-                      <Show when={j.serial}>
-                        <span>·</span>
-                        <span class="mono">{j.serial}</span>
+                      <span style={{ width: "1px", height: "10px", background: "var(--line)" }} />
+                      <Glyphs glyphs={j.glyphs ?? j.steps?.[0]?.glyphs} />
+                      <Show when={(j.attempts ?? 1) > 1}>
+                        <span class="mono">×{j.attempts}</span>
                       </Show>
                     </span>
-                    <span class="stitle">{j.action}</span>
-                    <Show when={j.error && server.selectedJobId() === j.id}>
+                    <span class="stitle">{j.title ?? j.action}</span>
+
+                    <Show
+                      when={
+                        (j.healed || j.status === "healed" || j.healMessage) &&
+                        server.selectedJobId() === j.id
+                      }
+                    >
                       <span class="heal-box">
+                        <span class="heal-box__icon">⚠</span>
+                        <span>
+                          {j.healMessage ?? "Step self-healed on retry."}{" "}
+                          <span class="mono" style={{ color: "var(--heal)" }}>
+                            attempt {j.attempts}
+                          </span>
+                        </span>
+                      </span>
+                    </Show>
+
+                    <Show when={j.status === "error" && server.selectedJobId() === j.id}>
+                      <span class="heal-box heal-box--fail">
                         <span class="heal-box__icon">!</span>
-                        <span>{j.error}</span>
+                        <span>
+                          {j.error}
+                          <div style={{ "margin-top": "8px", display: "flex", gap: "12px" }}>
+                            <button
+                              type="button"
+                              class="mono link-heal"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void server.retrySelectedJob(j.id);
+                              }}
+                            >
+                              Retry / heal →
+                            </button>
+                          </div>
+                        </span>
                       </span>
                     </Show>
                   </span>
                   <span class="srow__frames mono">
-                    {server.frames().filter((f) => f.jobId === j.id).length || "·"}
+                    {j.frames?.length ||
+                      server.frames().filter((f) => f.jobId === j.id).length ||
+                      "·"}
+                    <span style={{ "margin-left": "4px", opacity: 0.7 }}>🎞</span>
                   </span>
                 </button>
               )}
@@ -185,7 +239,7 @@ export function RunPanel() {
         <div class="console">
           <div class="console__label mono">
             {selectedJob()
-              ? `JOB ${selectedJob()!.id.slice(0, 8)} · LOG`
+              ? `STEP ${String(selectedJob()!.steps?.length ?? 1).padStart(2, "0")} · LOG`
               : selectedMeta()
                 ? `ACTION · ${selectedMeta()!.id}`
                 : "ACTIVITY"}
@@ -214,28 +268,44 @@ export function RunPanel() {
               </b>
             </div>
             <div class="tile">
+              <span class="tile__label">Healed</span>
+              <b class="mono" style={{ color: "var(--heal)" }}>
+                {stats().healed}
+              </b>
+            </div>
+            <div class="tile">
               <span class="tile__label">Frames</span>
               <b class="mono">{stats().frames}</b>
             </div>
             <div class="tile">
-              <span class="tile__label">Server</span>
-              <b
-                class="mono"
-                style={{ color: server.health() === "online" ? "var(--pass)" : "var(--fail)" }}
-              >
-                {server.health()}
-              </b>
-            </div>
-            <div class="tile">
-              <span class="tile__label">SSE</span>
-              <b class="mono">{server.sseConnected() ? "live" : "off"}</b>
+              <span class="tile__label">Disk runs</span>
+              <b class="mono">{server.persistedRuns().length}</b>
             </div>
           </div>
+
+          <Show when={stats().healed > 0}>
+            <div class="tile tile--wide" style={{ "border-color": "rgba(229,164,59,.3)" }}>
+              <div style={{ display: "flex", gap: "9px" }}>
+                <span style={{ color: "var(--heal)" }}>✦</span>
+                <div style={{ "font-size": "12px", "line-height": "1.55", color: "var(--dim)" }}>
+                  <span style={{ color: "var(--text)", "font-weight": 600 }}>
+                    {stats().healed} step{stats().healed === 1 ? "" : "s"} self-healed on this
+                    session.
+                  </span>{" "}
+                  Failures were re-run via Retry / heal; successful retries re-record evidence under{" "}
+                  <span class="mono">runs/</span>.
+                </div>
+              </div>
+            </div>
+          </Show>
 
           <div class="tile tile--wide">
             <span class="tile__label">Selected recipe</span>
             <div class="mono" style={{ "margin-top": "0.35rem", color: "var(--text)" }}>
               {selectedMeta()?.id ?? "—"}
+            </div>
+            <div style={{ "margin-top": "0.45rem" }}>
+              <Glyphs glyphs={selectedMeta()?.glyphs} size="md" />
             </div>
             <div
               style={{
@@ -254,10 +324,15 @@ export function RunPanel() {
             <div class="mono" style={{ "margin-top": "0.35rem", color: "var(--text)" }}>
               {server.selectedDevice() ?? "no device"}
             </div>
-            <div style={{ "margin-top": "0.35rem", color: "var(--dim)", "font-size": "12px" }}>
-              {server.devices().find((d) => d.serial === server.selectedDevice())?.name ?? "—"}
-              {" · "}
-              Android via agent-device
+          </div>
+
+          <div class="tile tile--wide">
+            <span class="tile__label">Runs directory</span>
+            <div
+              class="mono"
+              style={{ "margin-top": "0.35rem", "font-size": "11.5px", color: "var(--text)" }}
+            >
+              {server.runsRoot() || "runs/"}
             </div>
           </div>
 
@@ -286,25 +361,22 @@ export function RunPanel() {
 
       <Show when={server.panelTab() === "artifacts"}>
         <div class="panel__scroll panel__pad">
+          <div class="section-label" style={{ padding: 0 }}>
+            Session
+          </div>
           <For
             each={[
+              { name: "frames (live)", meta: `${server.frames().length} captures` },
+              { name: "jobs (live)", meta: `${server.jobs().length} runs` },
               {
-                name: "frames (session)",
-                meta: `${server.frames().length} captures`,
-              },
-              {
-                name: "jobs (session)",
-                meta: `${server.jobs().length} runs`,
-              },
-              {
-                name: "latest screenshot",
-                meta: server.currentFrame()
-                  ? `${Math.round(server.currentFrame()!.bytes / 1024)} KB`
+                name: "ui snapshot",
+                meta: server.snapshot()
+                  ? `${server.snapshot()!.nodes.length} nodes · ${server.snapshot()!.bounds?.width ?? "?"}×${server.snapshot()!.bounds?.height ?? "?"}`
                   : "none",
               },
               {
-                name: "ui snapshot",
-                meta: server.snapshot() ? `${server.snapshot()!.nodes.length} nodes` : "none",
+                name: "overlays",
+                meta: server.showOverlays() && server.snapshot()?.bounds ? "enabled" : "off",
               },
             ]}
           >
@@ -319,9 +391,67 @@ export function RunPanel() {
               </div>
             )}
           </For>
+
+          <div class="section-label" style={{ padding: "12px 0 0" }}>
+            Disk · runs/
+          </div>
+          <button
+            type="button"
+            class="btn btn-ghost"
+            style={{ "align-self": "flex-start" }}
+            onClick={() => void server.refreshRuns()}
+          >
+            Refresh disk runs
+          </button>
+
+          <Show
+            when={server.persistedRuns().length > 0}
+            fallback={
+              <p class="artifacts-note">
+                No persisted runs yet. Finish a job to write run.json + frames.
+              </p>
+            }
+          >
+            <For each={server.persistedRuns()}>
+              {(run) => (
+                <button
+                  type="button"
+                  class="tile tile--row"
+                  style={{ width: "100%" }}
+                  onClick={() => {
+                    // load first frame into stage if available via URL is hard without base64;
+                    // jump to matching live job if present
+                    const live = server.jobs().find((j) => j.id === run.id);
+                    if (live) server.jumpToJob(live.id);
+                    server.appendLog(`disk run ${run.dir}`, "info");
+                  }}
+                >
+                  <span style={{ flex: 1, "min-width": 0, "text-align": "left" }}>
+                    <span class="mono" style={{ "font-size": "12px", display: "block" }}>
+                      {run.action}
+                    </span>
+                    <span class="mono" style={{ "font-size": "10.5px", color: "var(--faint)" }}>
+                      {run.status}
+                      {run.healed ? " · healed" : ""}
+                      {" · "}
+                      {run.frames?.length ?? 0} frames
+                      {" · "}
+                      {run.id.slice(0, 8)}
+                    </span>
+                  </span>
+                  <span class={`tone tone--${statusTone(run.status as JobInfo["status"])}`}>
+                    {run.healed ? "healed" : run.status}
+                  </span>
+                </button>
+              )}
+            </For>
+          </Show>
+
           <p class="artifacts-note">
-            Evidence lives in this session (frames + job logs). Server also writes PNG files under
-            the OS temp <span class="mono">grok-device/</span> folder when capturing.
+            Everything above is plain files under{" "}
+            <span class="mono">{server.runsRoot() || "runs/<ts>_<action>_<device>_<id>/"}</span>—{" "}
+            <span class="mono">run.json</span>, <span class="mono">log.txt</span>,{" "}
+            <span class="mono">frames/*.png</span>. Same layout the QA viewer mock used for triage.
           </p>
         </div>
       </Show>
@@ -335,7 +465,7 @@ function InspectorBody() {
 
   return (
     <div class="panel__scroll">
-      <div class="panel__pad" style={{ "padding-bottom": "0.4rem" }}>
+      <div class="panel__pad" style={{ "padding-bottom": "0.4rem", gap: "8px" }}>
         <button
           type="button"
           class="btn btn-acc"
@@ -345,13 +475,21 @@ function InspectorBody() {
         >
           {server.busyCapture() ? "Capturing…" : "Capture UI snapshot"}
         </button>
+        <label class="check-row">
+          <input
+            type="checkbox"
+            checked={server.showOverlays()}
+            onChange={(e) => server.setShowOverlays(e.currentTarget.checked)}
+          />
+          Show rect overlays on phone glass
+        </label>
       </div>
       <Show
         when={server.snapshot()}
         fallback={
           <div class="empty-pad">
-            Capture a snapshot to inspect the accessibility tree. Click a node to press it
-            on-device.
+            Capture a snapshot to inspect the accessibility tree and draw hit-rects on the stage.
+            Click a node to press it on-device.
           </div>
         }
       >

@@ -53,6 +53,24 @@ export function Layout(props: {
         run: () => void server.runSelected(),
       },
       {
+        id: "job.retry",
+        title: "Retry / heal selected job",
+        group: "Jobs",
+        run: () => void server.retrySelectedJob(),
+      },
+      {
+        id: "device.overlays",
+        title: "Toggle rect overlays on stage",
+        group: "Device",
+        run: () => server.setShowOverlays(!server.showOverlays()),
+      },
+      {
+        id: "runs.refresh",
+        title: "Refresh disk runs",
+        group: "Artifacts",
+        run: () => void server.refreshRuns(),
+      },
+      {
         id: "frames.play",
         title: "Play / pause frame scrubber",
         group: "Stage",

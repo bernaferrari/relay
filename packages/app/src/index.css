@@ -995,3 +995,88 @@
     transition: none;
   }
 }
+
+/* glyphs */
+.gly {
+  display: inline-flex;
+  gap: 6px;
+  color: var(--faint);
+  align-items: center;
+}
+.gly--md .gly__i {
+  font-size: 14px;
+}
+.gly__i {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.9;
+}
+
+.b-heal {
+  color: var(--heal);
+  background: var(--heal-soft);
+}
+
+.heal-box--fail {
+  background: var(--fail-soft);
+}
+.heal-box--fail .heal-box__icon {
+  color: var(--fail);
+}
+
+.link-heal {
+  color: var(--heal);
+  font-weight: 500;
+  font-size: 11.5px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.link-heal:hover {
+  text-decoration: underline;
+}
+
+.btn-ghost--on {
+  color: var(--text) !important;
+  border-color: var(--acc-line) !important;
+  background: var(--acc-soft);
+}
+
+/* snapshot rect overlays on glass */
+.glass__overlays {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.hit-rect {
+  position: absolute;
+  pointer-events: auto;
+  border: 1px solid rgba(143, 123, 255, 0.55);
+  background: rgba(143, 123, 255, 0.08);
+  border-radius: 3px;
+  padding: 0 !important;
+  box-sizing: border-box;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
+}
+.hit-rect:hover {
+  background: rgba(143, 123, 255, 0.22);
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px rgba(143, 123, 255, 0.35);
+}
+.hit-rect:focus-visible {
+  outline: 1px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.tone--heal {
+  color: var(--heal);
+  font-weight: 550;
+}
+.snum--heal {
+  color: var(--heal);
+  border-color: rgba(229, 164, 59, 0.4);
+}

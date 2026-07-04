@@ -18,20 +18,77 @@ export type ActionInfo = {
   category: string;
   requiresProdMatch?: boolean;
   isAlpha?: boolean;
+  glyphs?: string[];
   [key: string]: unknown;
+};
+
+export type TraceFrameRef = {
+  path: string;
+  caption: string;
+  capturedAt: number;
+  bytes?: number;
+  base64?: string;
+  mime?: string;
+};
+
+export type TraceStep = {
+  id: string;
+  index: number;
+  kind: string;
+  tone: string;
+  title: string;
+  glyphs: string[];
+  startedAt: number;
+  finishedAt?: number;
+  durationMs?: number;
+  frames: TraceFrameRef[];
+  log: string;
+  heal?: string;
+  status?: string;
 };
 
 export type JobInfo = {
   id: string;
   action: string;
   serial?: string;
-  status: "queued" | "running" | "ok" | "error";
+  status: "queued" | "running" | "ok" | "error" | "healed";
   queuedAt: number;
   startedAt?: number;
   finishedAt?: number;
   logs: string[];
   result?: unknown;
   error?: string;
+  previousError?: string;
+  healed?: boolean;
+  healMessage?: string;
+  attempts?: number;
+  retryOf?: string;
+  retriedBy?: string;
+  steps?: TraceStep[];
+  frames?: TraceFrameRef[];
+  glyphs?: string[];
+  kind?: string;
+  tone?: string;
+  title?: string;
+  runDir?: string;
+  persisted?: boolean;
+};
+
+export type PersistedRun = {
+  id: string;
+  action: string;
+  serial?: string;
+  status: string;
+  healed?: boolean;
+  healMessage?: string;
+  attempts: number;
+  dir: string;
+  frames: TraceFrameRef[];
+  steps: TraceStep[];
+  logs: string[];
+  durationMs?: number;
+  error?: string;
+  writtenAt: number;
 };
 
 export type HealthState = "unknown" | "online" | "offline";
@@ -60,6 +117,7 @@ export type SnapshotState = {
   nodes: SnapshotNode[];
   interactive: SnapshotNode[];
   tree?: string;
+  bounds?: { width: number; height: number };
 } | null;
 
 export type Frame = {
@@ -69,11 +127,10 @@ export type Frame = {
   base64: string;
   bytes: number;
   serial?: string;
-  /** caption under the phone */
   caption: string;
-  /** which job this frame belongs to, if any */
   jobId?: string;
   actionId?: string;
+  path?: string;
 };
 
 export type PanelTab = "summary" | "steps" | "inspector" | "artifacts";
@@ -97,7 +154,7 @@ function asArray<T>(value: unknown, key?: string): T[] {
 
 function levelFromLine(text: string): LogLine["level"] {
   if (/FAIL|error|Error|ERR/i.test(text)) return "error";
-  if (/DONE|ok|success/i.test(text)) return "success";
+  if (/DONE|ok|success|healed/i.test(text)) return "success";
   if (/^==>|^\[|health|poll|job\./i.test(text)) return "info";
   return "default";
 }
@@ -118,6 +175,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
+    const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
+    const [runsRoot, setRunsRoot] = createSignal("");
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
     const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
@@ -133,6 +192,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [sseConnected, setSseConnected] = createSignal(false);
     const [skipAccountSwitch, setSkipAccountSwitch] = createSignal(false);
     const [skipRestoreHome, setSkipRestoreHome] = createSignal(false);
+    const [showOverlays, setShowOverlays] = createSignal(true);
 
     let logSeq = 0;
     let es: EventSource | null = null;
@@ -162,14 +222,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     function appendLog(text: string, level?: LogLine["level"], jobId?: string) {
       logSeq += 1;
-      const line: LogLine = {
-        id: logSeq,
-        text,
-        level: level ?? levelFromLine(text),
-        at: Date.now(),
-        jobId,
-      };
-      setLogs((prev) => [...prev.slice(-400), line]);
+      setLogs((prev) => [
+        ...prev.slice(-400),
+        {
+          id: logSeq,
+          text,
+          level: level ?? levelFromLine(text),
+          at: Date.now(),
+          jobId,
+        },
+      ]);
     }
 
     function clearLogs() {
@@ -271,7 +333,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function refreshJobs() {
       try {
-        const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs");
+        const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs?full=0");
         setJobs(asArray<JobInfo>(data, "jobs"));
         const active = data.active;
         setRunning(Boolean(active && active.status === "running"));
@@ -280,10 +342,21 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function refreshRuns() {
+      try {
+        const data = await request<{ runs: PersistedRun[]; root: string }>("/runs");
+        setPersistedRuns(asArray<PersistedRun>(data, "runs"));
+        setRunsRoot(data.root ?? "");
+      } catch {
+        /* ignore */
+      }
+    }
+
     async function pollHealth() {
       try {
-        await request("/health");
+        const h = await request<{ runsDir?: string }>("/health");
         setHealth("online");
+        if (h.runsDir) setRunsRoot(h.runsDir);
         setError(null);
       } catch {
         setHealth("offline");
@@ -292,54 +365,65 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     function handleBusEvent(raw: unknown) {
       if (!raw || typeof raw !== "object") return;
-      const ev = raw as {
-        type?: string;
-        line?: string;
-        level?: LogLine["level"];
-        jobId?: string;
-        action?: string;
-        ok?: boolean;
-        error?: string;
-        serial?: string | null;
-        durationMs?: number;
-        nodeCount?: number;
-        bytes?: number;
-        message?: string;
-      };
-      switch (ev.type) {
+      const ev = raw as Record<string, unknown>;
+      const type = String(ev.type ?? "");
+      switch (type) {
         case "job.queued":
-          appendLog(`queued ${ev.action}`, "info", ev.jobId);
+          appendLog(`queued ${ev.action}`, "info", ev.jobId as string);
           void refreshJobs();
           break;
         case "job.started":
-          appendLog(`started ${ev.action}`, "info", ev.jobId);
+          appendLog(`started ${ev.action}`, "info", ev.jobId as string);
           setRunning(true);
-          setSelectedJobId(ev.jobId ?? null);
+          setSelectedJobId((ev.jobId as string) ?? null);
           setPanelTab("steps");
           void refreshJobs();
           break;
         case "job.log":
-          if (ev.line) appendLog(ev.line, ev.level, ev.jobId);
+          if (ev.line) appendLog(String(ev.line), ev.level as LogLine["level"], ev.jobId as string);
+          break;
+        case "job.healed":
+          appendLog(`healed ${ev.action}: ${ev.healMessage}`, "success", ev.jobId as string);
+          void refreshJobs();
+          void refreshRuns();
           break;
         case "job.finished":
           appendLog(
-            ev.ok
-              ? `finished ${ev.action} (${ev.durationMs ?? "?"}ms)`
-              : `failed ${ev.action}: ${ev.error ?? "?"}`,
-            ev.ok ? "success" : "error",
-            ev.jobId,
+            ev.healed
+              ? `healed ${ev.action} (${ev.durationMs ?? "?"}ms)`
+              : ev.ok
+                ? `finished ${ev.action} (${ev.durationMs ?? "?"}ms)`
+                : `failed ${ev.action}: ${ev.error ?? "?"}`,
+            ev.ok || ev.healed ? "success" : "error",
+            ev.jobId as string,
           );
           setRunning(false);
           void refreshJobs();
-          // auto-shot after job so stage has evidence
+          void refreshRuns();
           void captureUiScreenshot(
-            ev.ok ? `${ev.action} · done` : `${ev.action} · failed`,
-            ev.jobId,
-            ev.action,
+            ev.ok || ev.healed ? `${ev.action} · done` : `${ev.action} · failed`,
+            ev.jobId as string,
+            ev.action as string,
           ).catch(() => undefined);
           break;
+        case "job.frame": {
+          const frame = ev.frame as TraceFrameRef | undefined;
+          if (frame?.base64) {
+            pushFrame({
+              capturedAt: frame.capturedAt,
+              mime: frame.mime ?? "image/png",
+              base64: frame.base64,
+              bytes: frame.bytes ?? 0,
+              caption: frame.caption,
+              jobId: ev.jobId as string,
+              path: frame.path,
+            });
+          }
+          void refreshJobs();
+          break;
+        }
         case "device.selected":
-          if (ev.serial) setSelectedDevice(ev.serial);
+          if (ev.serial) setSelectedDevice(String(ev.serial));
           break;
         case "error":
           appendLog(String(ev.message ?? "error"), "error");
@@ -360,19 +444,21 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       es = new EventSource(`${url}/events`);
       es.onopen = () => setSseConnected(true);
       es.onerror = () => setSseConnected(false);
-      const types = [
+      for (const t of [
         "job.queued",
         "job.started",
         "job.log",
         "job.finished",
+        "job.healed",
+        "job.step",
+        "job.frame",
         "device.selected",
         "snapshot.captured",
         "screenshot.captured",
         "error",
         "server.ready",
         "hello",
-      ];
-      for (const t of types) {
+      ]) {
         es.addEventListener(t, (e) => {
           try {
             handleBusEvent(JSON.parse((e as MessageEvent).data));
@@ -406,7 +492,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setRunning(true);
       setPanelTab("steps");
       try {
-        // pre-shot for stage evidence
         await captureUiScreenshot(`before · ${action}`, undefined, action).catch(() => undefined);
         const data = await request<{ job: JobInfo }>("/jobs", {
           method: "POST",
@@ -428,6 +513,28 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function retrySelectedJob(jobId?: string) {
+      const id = jobId ?? selectedJobId();
+      if (!id) {
+        appendLog("No job to retry", "error");
+        return;
+      }
+      appendLog(`retry / heal ${id.slice(0, 8)}…`, "info");
+      setRunning(true);
+      try {
+        const data = await request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}/retry`, {
+          method: "POST",
+          body: "{}",
+        });
+        setSelectedJobId(data.job.id);
+        setSelectedAction(data.job.action);
+        void refreshJobs();
+      } catch (err) {
+        setRunning(false);
+        appendLog(err instanceof Error ? err.message : String(err), "error");
+      }
+    }
+
     async function captureUiSnapshot() {
       setBusyCapture(true);
       try {
@@ -435,8 +542,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
         const data = await request<NonNullable<SnapshotState> & { tree?: string }>(`/snapshot${q}`);
         setSnapshot(data);
+        setShowOverlays(true);
         setPanelTab("inspector");
-        appendLog(`snapshot ${data.nodes.length} nodes`, "info");
+        appendLog(
+          `snapshot ${data.nodes.length} nodes · bounds ${data.bounds?.width ?? "?"}×${data.bounds?.height ?? "?"}`,
+          "info",
+        );
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
       } finally {
@@ -448,13 +559,19 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setBusyCapture(true);
       try {
         const serial = selectedDevice() ?? undefined;
-        const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
+        const params = new URLSearchParams();
+        if (serial) params.set("serial", serial);
+        if (caption) params.set("caption", caption);
+        if (jobId) params.set("jobId", jobId);
+        const q = params.toString() ? `?${params}` : "";
         const data = await request<{
           serial?: string;
           capturedAt: number;
           mime: string;
           base64: string;
           bytes: number;
+          jobId?: string;
+          framePath?: string;
         }>(`/screenshot${q}`);
         pushFrame({
           capturedAt: data.capturedAt,
@@ -465,10 +582,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           caption:
             caption ??
             `screenshot · ${new Date().toLocaleTimeString(undefined, { hour12: false })}`,
-          jobId,
+          jobId: data.jobId ?? jobId,
           actionId: actionId ?? selectedAction() ?? undefined,
+          path: data.framePath,
         });
-        appendLog(`screenshot ${data.bytes} bytes`, "info", jobId);
+        appendLog(`screenshot ${data.bytes} bytes`, "info", data.jobId ?? jobId);
         return data;
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
@@ -504,6 +622,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         await captureUiScreenshot(node.label ? `after tap · ${node.label}` : "after tap").catch(
           () => undefined,
         );
+        // refresh snapshot after tap for updated overlays
+        void captureUiSnapshot().catch(() => undefined);
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
       }
@@ -513,7 +633,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSelectedJobId(jobId);
       const job = jobs().find((j) => j.id === jobId);
       if (job) setSelectedAction(job.action);
-      // jump scrubber to last frame for this job if any
       const list = frames();
       const idx = list
         .map((f, i) => ({ f, i }))
@@ -524,10 +643,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       stopPlayback();
     }
 
+    function frameUrlForPersisted(run: PersistedRun, frame: TraceFrameRef) {
+      const base = serverUrl();
+      const file = frame.path.split("/").pop() ?? frame.path;
+      return `${base}/runs/${encodeURIComponent(run.id)}/frames/${encodeURIComponent(file)}`;
+    }
+
     void (async () => {
       await resolveUrl();
       await pollHealth();
-      await Promise.all([refreshDevices(), refreshActions(), refreshJobs()]);
+      await Promise.all([refreshDevices(), refreshActions(), refreshJobs(), refreshRuns()]);
       connectSse();
     })();
 
@@ -555,6 +680,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       devices,
       actions,
       jobs,
+      persistedRuns,
+      runsRoot,
       selectedDevice,
       setSelectedDevice: selectDeviceRemote,
       selectedAction,
@@ -569,8 +696,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshDevices,
       refreshActions,
       refreshJobs,
+      refreshRuns,
       pollHealth,
       runSelected,
+      retrySelectedJob,
       panelTab,
       setPanelTab,
       snapshot,
@@ -591,6 +720,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSkipAccountSwitch,
       skipRestoreHome,
       setSkipRestoreHome,
+      showOverlays,
+      setShowOverlays,
+      frameUrlForPersisted,
     };
   },
 });
