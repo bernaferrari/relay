@@ -62,13 +62,21 @@ export type SnapshotState = {
   tree?: string;
 } | null;
 
-export type ScreenshotState = {
-  serial?: string;
+export type Frame = {
+  id: string;
   capturedAt: number;
   mime: string;
   base64: string;
   bytes: number;
-} | null;
+  serial?: string;
+  /** caption under the phone */
+  caption: string;
+  /** which job this frame belongs to, if any */
+  jobId?: string;
+  actionId?: string;
+};
+
+export type PanelTab = "summary" | "steps" | "inspector" | "artifacts";
 
 function normalizeBase(url: string) {
   return url.replace(/\/+$/, "");
@@ -94,7 +102,9 @@ function levelFromLine(text: string): LogLine["level"] {
   return "default";
 }
 
-export type WorkspaceTab = "actions" | "inspector" | "screen";
+function uid() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
   name: "Server",
@@ -114,9 +124,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [running, setRunning] = createSignal(false);
     const [error, setError] = createSignal<string | null>(null);
     const [logs, setLogs] = createSignal<LogLine[]>([]);
-    const [tab, setTab] = createSignal<WorkspaceTab>("actions");
+    const [panelTab, setPanelTab] = createSignal<PanelTab>("steps");
     const [snapshot, setSnapshot] = createSignal<SnapshotState>(null);
-    const [screenshot, setScreenshot] = createSignal<ScreenshotState>(null);
+    const [frames, setFrames] = createSignal<Frame[]>([]);
+    const [frameIndex, setFrameIndex] = createSignal(0);
+    const [playing, setPlaying] = createSignal(false);
     const [busyCapture, setBusyCapture] = createSignal(false);
     const [sseConnected, setSseConnected] = createSignal(false);
     const [skipAccountSwitch, setSkipAccountSwitch] = createSignal(false);
@@ -124,8 +136,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     let logSeq = 0;
     let es: EventSource | null = null;
+    let playTimer: ReturnType<typeof setInterval> | null = null;
 
     const fetcher = () => platform.fetch ?? fetch;
+
+    const currentFrame = () => {
+      const list = frames();
+      if (list.length === 0) return null;
+      const i = Math.min(Math.max(frameIndex(), 0), list.length - 1);
+      return list[i] ?? null;
+    };
 
     async function resolveUrl() {
       const url = await platform.getServerUrl();
@@ -155,6 +175,49 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     function clearLogs() {
       logSeq = 0;
       setLogs([]);
+    }
+
+    function pushFrame(frame: Omit<Frame, "id">) {
+      const full: Frame = { ...frame, id: uid() };
+      setFrames((prev) => {
+        const next = [...prev, full].slice(-80);
+        setFrameIndex(next.length - 1);
+        return next;
+      });
+      return full;
+    }
+
+    function clearFrames() {
+      setFrames([]);
+      setFrameIndex(0);
+      setPlaying(false);
+    }
+
+    function stopPlayback() {
+      setPlaying(false);
+      if (playTimer) {
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+    }
+
+    function togglePlayback() {
+      if (playing()) {
+        stopPlayback();
+        return;
+      }
+      if (frames().length === 0) return;
+      setPlaying(true);
+      playTimer = setInterval(() => {
+        setFrameIndex((i) => {
+          const max = frames().length - 1;
+          if (i >= max) {
+            stopPlayback();
+            return i;
+          }
+          return i + 1;
+        });
+      }, 900);
     }
 
     async function request<T = unknown>(path: string, init?: RequestInit): Promise<T> {
@@ -241,16 +304,18 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         durationMs?: number;
         nodeCount?: number;
         bytes?: number;
+        message?: string;
       };
       switch (ev.type) {
         case "job.queued":
-          appendLog(`queued ${ev.action} (${ev.jobId?.slice(0, 8)})`, "info", ev.jobId);
+          appendLog(`queued ${ev.action}`, "info", ev.jobId);
           void refreshJobs();
           break;
         case "job.started":
           appendLog(`started ${ev.action}`, "info", ev.jobId);
           setRunning(true);
           setSelectedJobId(ev.jobId ?? null);
+          setPanelTab("steps");
           void refreshJobs();
           break;
         case "job.log":
@@ -266,18 +331,18 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           );
           setRunning(false);
           void refreshJobs();
+          // auto-shot after job so stage has evidence
+          void captureUiScreenshot(
+            ev.ok ? `${ev.action} · done` : `${ev.action} · failed`,
+            ev.jobId,
+            ev.action,
+          ).catch(() => undefined);
           break;
         case "device.selected":
           if (ev.serial) setSelectedDevice(ev.serial);
           break;
-        case "snapshot.captured":
-          appendLog(`snapshot ${ev.nodeCount ?? "?"} nodes`, "info");
-          break;
-        case "screenshot.captured":
-          appendLog(`screenshot ${ev.bytes ?? "?"} bytes`, "info");
-          break;
         case "error":
-          appendLog(String((raw as { message?: string }).message ?? "error"), "error");
+          appendLog(String(ev.message ?? "error"), "error");
           break;
         default:
           break;
@@ -301,7 +366,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         "job.log",
         "job.finished",
         "device.selected",
-        "device.list",
         "snapshot.captured",
         "screenshot.captured",
         "error",
@@ -317,13 +381,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           }
         });
       }
-      es.onmessage = (e) => {
-        try {
-          handleBusEvent(JSON.parse(e.data));
-        } catch {
-          /* ignore */
-        }
-      };
     }
 
     async function selectDeviceRemote(serial: string | null) {
@@ -347,7 +404,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const serial = selectedDevice() ?? undefined;
       appendLog(`enqueue ${action}${serial ? ` on ${serial}` : ""}…`, "info");
       setRunning(true);
+      setPanelTab("steps");
       try {
+        // pre-shot for stage evidence
+        await captureUiScreenshot(`before · ${action}`, undefined, action).catch(() => undefined);
         const data = await request<{ job: JobInfo }>("/jobs", {
           method: "POST",
           body: JSON.stringify({
@@ -375,7 +435,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
         const data = await request<NonNullable<SnapshotState> & { tree?: string }>(`/snapshot${q}`);
         setSnapshot(data);
-        setTab("inspector");
+        setPanelTab("inspector");
+        appendLog(`snapshot ${data.nodes.length} nodes`, "info");
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
       } finally {
@@ -383,16 +444,35 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function captureUiScreenshot() {
+    async function captureUiScreenshot(caption?: string, jobId?: string, actionId?: string) {
       setBusyCapture(true);
       try {
         const serial = selectedDevice() ?? undefined;
         const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-        const data = await request<NonNullable<ScreenshotState>>(`/screenshot${q}`);
-        setScreenshot(data);
-        setTab("screen");
+        const data = await request<{
+          serial?: string;
+          capturedAt: number;
+          mime: string;
+          base64: string;
+          bytes: number;
+        }>(`/screenshot${q}`);
+        pushFrame({
+          capturedAt: data.capturedAt,
+          mime: data.mime,
+          base64: data.base64,
+          bytes: data.bytes,
+          serial: data.serial ?? serial,
+          caption:
+            caption ??
+            `screenshot · ${new Date().toLocaleTimeString(undefined, { hour12: false })}`,
+          jobId,
+          actionId: actionId ?? selectedAction() ?? undefined,
+        });
+        appendLog(`screenshot ${data.bytes} bytes`, "info", jobId);
+        return data;
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
+        throw err;
       } finally {
         setBusyCapture(false);
       }
@@ -421,12 +501,29 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           });
           appendLog(`pressed point ${x},${y}`, "success");
         }
+        await captureUiScreenshot(node.label ? `after tap · ${node.label}` : "after tap").catch(
+          () => undefined,
+        );
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
       }
     }
 
-    // bootstrap once
+    function jumpToJob(jobId: string) {
+      setSelectedJobId(jobId);
+      const job = jobs().find((j) => j.id === jobId);
+      if (job) setSelectedAction(job.action);
+      // jump scrubber to last frame for this job if any
+      const list = frames();
+      const idx = list
+        .map((f, i) => ({ f, i }))
+        .reverse()
+        .find((x) => x.f.jobId === jobId)?.i;
+      if (idx !== undefined) setFrameIndex(idx);
+      setPanelTab("steps");
+      stopPlayback();
+    }
+
     void (async () => {
       await resolveUrl();
       await pollHealth();
@@ -446,6 +543,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     onCleanup(() => {
       clearInterval(poll);
+      stopPlayback();
       es?.close();
     });
 
@@ -473,14 +571,22 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshJobs,
       pollHealth,
       runSelected,
-      tab,
-      setTab,
+      panelTab,
+      setPanelTab,
       snapshot,
-      screenshot,
+      frames,
+      frameIndex,
+      setFrameIndex,
+      currentFrame,
+      playing,
+      togglePlayback,
+      stopPlayback,
+      clearFrames,
       busyCapture,
       captureUiSnapshot,
       captureUiScreenshot,
       pressNode,
+      jumpToJob,
       skipAccountSwitch,
       setSkipAccountSwitch,
       skipRestoreHome,

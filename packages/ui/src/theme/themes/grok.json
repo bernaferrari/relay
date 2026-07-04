@@ -1,30 +1,30 @@
 {
   "id": "grok",
-  "name": "Grok",
+  "name": "Grok Stage",
   "light": {
     "palette": {
-      "bg": "#f6f6f8",
-      "surface": "#ffffff",
-      "text": "#0a0a0c",
-      "textMuted": "#5c5c6a",
-      "primary": "#6d5efc",
-      "success": "#1f9d63",
-      "warning": "#c47b16",
-      "error": "#d14343",
-      "border": "#e2e2ea"
+      "bg": "#F4F5F8",
+      "surface": "#FFFFFF",
+      "text": "#0F1219",
+      "textMuted": "#585F70",
+      "primary": "#6C55E8",
+      "success": "#1FA86A",
+      "warning": "#C4841F",
+      "error": "#D64550",
+      "border": "#D8DCE6"
     }
   },
   "dark": {
     "palette": {
-      "bg": "#050507",
-      "surface": "#121218",
-      "text": "#f4f4f7",
-      "textMuted": "#9a9aad",
-      "primary": "#8b7cff",
-      "success": "#3dd68c",
-      "warning": "#f0b429",
-      "error": "#ff6b6b",
-      "border": "#2a2a36"
+      "bg": "#0A0C10",
+      "surface": "#0F1219",
+      "text": "#EEF1F7",
+      "textMuted": "#8C94A6",
+      "primary": "#8F7BFF",
+      "success": "#3FD68F",
+      "warning": "#E5A43B",
+      "error": "#F26D76",
+      "border": "#2A2F3D"
     }
   }
 }
