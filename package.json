@@ -1,0 +1,42 @@
+{
+  "name": "grok-device-actions",
+  "private": true,
+  "bin": {
+    "grok-device": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "start": "tsx src/cli.ts",
+    "check": "vp check",
+    "fmt": "vp fmt",
+    "lint": "vp lint",
+    "pack": "vp pack",
+    "typecheck": "tsc --noEmit",
+    "prepare": "vp config"
+  },
+  "dependencies": {
+    "agent-device": "^0.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.9.0",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=22.19"
+  }
+}
