@@ -1,12 +1,13 @@
-import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js";
+import { createSignal, onCleanup } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
 import { usePlatform } from "./platform";
 
 export type DeviceInfo = {
+  id?: string;
   serial: string;
   name?: string;
-  model?: string;
-  state?: string;
+  kind?: string | null;
+  booted?: boolean | null;
   [key: string]: unknown;
 };
 
@@ -20,22 +21,54 @@ export type ActionInfo = {
   [key: string]: unknown;
 };
 
-export type HealthState = "unknown" | "online" | "offline";
-
-export type RunActionResult = {
-  ok: boolean;
-  action?: string;
-  error?: string;
+export type JobInfo = {
+  id: string;
+  action: string;
+  serial?: string;
+  status: "queued" | "running" | "ok" | "error";
+  queuedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  logs: string[];
   result?: unknown;
-  logs?: string[];
+  error?: string;
 };
+
+export type HealthState = "unknown" | "online" | "offline";
 
 export type LogLine = {
   id: number;
   text: string;
   level: "info" | "success" | "error" | "default";
   at: number;
+  jobId?: string;
 };
+
+export type SnapshotNode = {
+  label?: string;
+  value?: string;
+  identifier?: string;
+  enabled?: boolean;
+  hittable?: boolean;
+  rect?: { x: number; y: number; width: number; height: number };
+  ref?: string;
+};
+
+export type SnapshotState = {
+  serial?: string;
+  capturedAt: number;
+  nodes: SnapshotNode[];
+  interactive: SnapshotNode[];
+  tree?: string;
+} | null;
+
+export type ScreenshotState = {
+  serial?: string;
+  capturedAt: number;
+  mime: string;
+  base64: string;
+  bytes: number;
+} | null;
 
 function normalizeBase(url: string) {
   return url.replace(/\/+$/, "");
@@ -57,27 +90,40 @@ function asArray<T>(value: unknown, key?: string): T[] {
 function levelFromLine(text: string): LogLine["level"] {
   if (/FAIL|error|Error|ERR/i.test(text)) return "error";
   if (/DONE|ok|success/i.test(text)) return "success";
-  if (/^==>|^\[|health|poll/i.test(text)) return "info";
+  if (/^==>|^\[|health|poll|job\./i.test(text)) return "info";
   return "default";
 }
+
+export type WorkspaceTab = "actions" | "inspector" | "screen";
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
   name: "Server",
   gate: false,
   init: (props: { pollMs?: number } = {}) => {
     const platform = usePlatform();
-    const pollMs = props.pollMs ?? 4000;
+    const pollMs = props.pollMs ?? 5000;
 
     const [serverUrl, setServerUrlState] = createSignal("");
     const [health, setHealth] = createSignal<HealthState>("unknown");
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
+    const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
+    const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
     const [running, setRunning] = createSignal(false);
     const [error, setError] = createSignal<string | null>(null);
     const [logs, setLogs] = createSignal<LogLine[]>([]);
+    const [tab, setTab] = createSignal<WorkspaceTab>("actions");
+    const [snapshot, setSnapshot] = createSignal<SnapshotState>(null);
+    const [screenshot, setScreenshot] = createSignal<ScreenshotState>(null);
+    const [busyCapture, setBusyCapture] = createSignal(false);
+    const [sseConnected, setSseConnected] = createSignal(false);
+    const [skipAccountSwitch, setSkipAccountSwitch] = createSignal(false);
+    const [skipRestoreHome, setSkipRestoreHome] = createSignal(false);
+
     let logSeq = 0;
+    let es: EventSource | null = null;
 
     const fetcher = () => platform.fetch ?? fetch;
 
@@ -91,17 +137,19 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const next = normalizeBase(url);
       setServerUrlState(next);
       await platform.setServerUrl?.(next);
+      connectSse(next);
     }
 
-    function appendLog(text: string, level?: LogLine["level"]) {
+    function appendLog(text: string, level?: LogLine["level"], jobId?: string) {
       logSeq += 1;
       const line: LogLine = {
         id: logSeq,
         text,
         level: level ?? levelFromLine(text),
         at: Date.now(),
+        jobId,
       };
-      setLogs((prev) => [...prev, line]);
+      setLogs((prev) => [...prev.slice(-400), line]);
     }
 
     function clearLogs() {
@@ -120,163 +168,323 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         },
       });
       if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(body || `${res.status} ${res.statusText}`);
+        let msg = `${res.status} ${res.statusText}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body.error) msg = body.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(msg);
       }
-      if (res.status === 204) return undefined as T;
-      const ct = res.headers.get("content-type") ?? "";
-      if (ct.includes("application/json")) return (await res.json()) as T;
-      return (await res.text()) as T;
-    }
-
-    async function checkHealth() {
-      try {
-        await request("/health");
-        setHealth("online");
-        setError(null);
-        return true;
-      } catch (err) {
-        setHealth("offline");
-        setError(err instanceof Error ? err.message : String(err));
-        return false;
-      }
+      return (await res.json()) as T;
     }
 
     async function refreshDevices() {
       try {
-        const data = await request<unknown>("/devices");
+        const data = await request<{ devices: DeviceInfo[] }>("/devices");
         const list = asArray<DeviceInfo>(data, "devices").map((d) => ({
           ...d,
           serial: String(d.serial ?? d.id ?? ""),
-          name: d.name ?? d.model ?? String(d.serial ?? d.id ?? "device"),
         }));
-        setDevices(list.filter((d) => d.serial));
-        const current = selectedDevice();
-        if (current && !list.some((d) => d.serial === current)) {
-          setSelectedDevice(list[0]?.serial ?? null);
-        } else if (!current && list[0]) {
-          setSelectedDevice(list[0].serial);
-        }
-        setHealth("online");
+        setDevices(list);
+        if (!selectedDevice() && list[0]) setSelectedDevice(list[0].serial);
+        setError(null);
       } catch (err) {
-        setHealth("offline");
         setError(err instanceof Error ? err.message : String(err));
       }
     }
 
     async function refreshActions() {
       try {
-        const data = await request<unknown>("/actions");
-        const list = asArray<ActionInfo>(data, "actions").map((a) => ({
-          ...a,
-          id: String(a.id),
-          title: a.title ?? String(a.id),
-          category: a.category ?? "other",
-        }));
+        const data = await request<{ actions: ActionInfo[] }>("/actions");
+        const list = asArray<ActionInfo>(data, "actions");
         setActions(list);
-        const current = selectedAction();
-        if (current && !list.some((a) => a.id === current)) {
-          setSelectedAction(list[0]?.id ?? null);
-        } else if (!current && list[0]) {
-          setSelectedAction(list[0].id);
-        }
+        if (!selectedAction() && list[0]) setSelectedAction(list[0].id);
       } catch (err) {
-        // actions may fail independently; surface but keep devices
         setError(err instanceof Error ? err.message : String(err));
       }
     }
 
-    async function refreshAll() {
-      const ok = await checkHealth();
-      if (!ok) {
-        setDevices([]);
+    async function refreshJobs() {
+      try {
+        const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs");
+        setJobs(asArray<JobInfo>(data, "jobs"));
+        const active = data.active;
+        setRunning(Boolean(active && active.status === "running"));
+      } catch {
+        /* ignore */
+      }
+    }
+
+    async function pollHealth() {
+      try {
+        await request("/health");
+        setHealth("online");
+        setError(null);
+      } catch {
+        setHealth("offline");
+      }
+    }
+
+    function handleBusEvent(raw: unknown) {
+      if (!raw || typeof raw !== "object") return;
+      const ev = raw as {
+        type?: string;
+        line?: string;
+        level?: LogLine["level"];
+        jobId?: string;
+        action?: string;
+        ok?: boolean;
+        error?: string;
+        serial?: string | null;
+        durationMs?: number;
+        nodeCount?: number;
+        bytes?: number;
+      };
+      switch (ev.type) {
+        case "job.queued":
+          appendLog(`queued ${ev.action} (${ev.jobId?.slice(0, 8)})`, "info", ev.jobId);
+          void refreshJobs();
+          break;
+        case "job.started":
+          appendLog(`started ${ev.action}`, "info", ev.jobId);
+          setRunning(true);
+          setSelectedJobId(ev.jobId ?? null);
+          void refreshJobs();
+          break;
+        case "job.log":
+          if (ev.line) appendLog(ev.line, ev.level, ev.jobId);
+          break;
+        case "job.finished":
+          appendLog(
+            ev.ok
+              ? `finished ${ev.action} (${ev.durationMs ?? "?"}ms)`
+              : `failed ${ev.action}: ${ev.error ?? "?"}`,
+            ev.ok ? "success" : "error",
+            ev.jobId,
+          );
+          setRunning(false);
+          void refreshJobs();
+          break;
+        case "device.selected":
+          if (ev.serial) setSelectedDevice(ev.serial);
+          break;
+        case "snapshot.captured":
+          appendLog(`snapshot ${ev.nodeCount ?? "?"} nodes`, "info");
+          break;
+        case "screenshot.captured":
+          appendLog(`screenshot ${ev.bytes ?? "?"} bytes`, "info");
+          break;
+        case "error":
+          appendLog(String((raw as { message?: string }).message ?? "error"), "error");
+          break;
+        default:
+          break;
+      }
+    }
+
+    function connectSse(base?: string) {
+      const url = base ?? serverUrl();
+      if (!url || typeof EventSource === "undefined") return;
+      try {
+        es?.close();
+      } catch {
+        /* ignore */
+      }
+      es = new EventSource(`${url}/events`);
+      es.onopen = () => setSseConnected(true);
+      es.onerror = () => setSseConnected(false);
+      const types = [
+        "job.queued",
+        "job.started",
+        "job.log",
+        "job.finished",
+        "device.selected",
+        "device.list",
+        "snapshot.captured",
+        "screenshot.captured",
+        "error",
+        "server.ready",
+        "hello",
+      ];
+      for (const t of types) {
+        es.addEventListener(t, (e) => {
+          try {
+            handleBusEvent(JSON.parse((e as MessageEvent).data));
+          } catch {
+            /* ignore */
+          }
+        });
+      }
+      es.onmessage = (e) => {
+        try {
+          handleBusEvent(JSON.parse(e.data));
+        } catch {
+          /* ignore */
+        }
+      };
+    }
+
+    async function selectDeviceRemote(serial: string | null) {
+      setSelectedDevice(serial);
+      try {
+        await request("/device/select", {
+          method: "POST",
+          body: JSON.stringify({ serial }),
+        });
+      } catch {
+        /* offline ok */
+      }
+    }
+
+    async function runSelected() {
+      const action = selectedAction();
+      if (!action) {
+        appendLog("No action selected", "error");
         return;
       }
-      await Promise.all([refreshDevices(), refreshActions()]);
-    }
-
-    async function runAction(opts?: { actionId?: string; deviceSerial?: string }) {
-      const actionId = opts?.actionId ?? selectedAction();
-      const deviceSerial = opts?.deviceSerial ?? selectedDevice();
-      if (!actionId) {
-        appendLog("No action selected", "error");
-        return { ok: false, error: "No action selected" } satisfies RunActionResult;
-      }
-      if (!deviceSerial) {
-        appendLog("No device selected", "error");
-        return { ok: false, error: "No device selected" } satisfies RunActionResult;
-      }
-
+      const serial = selectedDevice() ?? undefined;
+      appendLog(`enqueue ${action}${serial ? ` on ${serial}` : ""}…`, "info");
       setRunning(true);
-      appendLog(`Running ${actionId} on ${deviceSerial}…`, "info");
-
       try {
-        const data = await request<RunActionResult>(
-          `/actions/${encodeURIComponent(actionId)}/run`,
-          {
-            method: "POST",
-            body: JSON.stringify({ device: deviceSerial, serial: deviceSerial }),
-          },
-        );
-
-        const lines = data?.logs;
-        if (Array.isArray(lines)) {
-          for (const line of lines) appendLog(String(line));
-        }
-
-        if (data && data.ok === false) {
-          const msg = data.error ?? "Action failed";
-          appendLog(`FAIL: ${msg}`, "error");
-          await platform.notify?.("Action failed", msg);
-          return data;
-        }
-
-        appendLog(`DONE: ${actionId}`, "success");
-        await platform.notify?.("Action complete", actionId);
-        return data ?? { ok: true, action: actionId };
+        const data = await request<{ job: JobInfo }>("/jobs", {
+          method: "POST",
+          body: JSON.stringify({
+            action,
+            serial,
+            skipAccountSwitch: skipAccountSwitch(),
+            skipRestoreHome: skipRestoreHome(),
+          }),
+        });
+        setSelectedJobId(data.job.id);
+        void refreshJobs();
+        void platform.notify?.("Grok Device", `Queued ${action}`);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        appendLog(`FAIL: ${msg}`, "error");
-        await platform.notify?.("Action failed", msg);
-        return { ok: false, action: actionId, error: msg } satisfies RunActionResult;
-      } finally {
         setRunning(false);
+        const msg = err instanceof Error ? err.message : String(err);
+        appendLog(msg, "error");
+        setError(msg);
       }
     }
 
-    // Bootstrap URL + polling
-    void resolveUrl().then(() => refreshAll());
+    async function captureUiSnapshot() {
+      setBusyCapture(true);
+      try {
+        const serial = selectedDevice() ?? undefined;
+        const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
+        const data = await request<NonNullable<SnapshotState> & { tree?: string }>(`/snapshot${q}`);
+        setSnapshot(data);
+        setTab("inspector");
+      } catch (err) {
+        appendLog(err instanceof Error ? err.message : String(err), "error");
+      } finally {
+        setBusyCapture(false);
+      }
+    }
 
-    createEffect(() => {
-      // re-poll when URL changes
-      const url = serverUrl();
-      if (!url) return;
-      const timer = setInterval(() => {
-        void refreshAll();
-      }, pollMs);
-      onCleanup(() => clearInterval(timer));
+    async function captureUiScreenshot() {
+      setBusyCapture(true);
+      try {
+        const serial = selectedDevice() ?? undefined;
+        const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
+        const data = await request<NonNullable<ScreenshotState>>(`/screenshot${q}`);
+        setScreenshot(data);
+        setTab("screen");
+      } catch (err) {
+        appendLog(err instanceof Error ? err.message : String(err), "error");
+      } finally {
+        setBusyCapture(false);
+      }
+    }
+
+    async function pressNode(node: SnapshotNode) {
+      try {
+        if (node.ref) {
+          await request("/interact", {
+            method: "POST",
+            body: JSON.stringify({ kind: "ref", ref: node.ref, serial: selectedDevice() }),
+          });
+          appendLog(`pressed ref ${node.ref}`, "success");
+        } else if (node.label) {
+          await request("/interact", {
+            method: "POST",
+            body: JSON.stringify({ kind: "label", label: node.label, serial: selectedDevice() }),
+          });
+          appendLog(`pressed label ${node.label}`, "success");
+        } else if (node.rect) {
+          const x = Math.round(node.rect.x + node.rect.width / 2);
+          const y = Math.round(node.rect.y + node.rect.height / 2);
+          await request("/interact", {
+            method: "POST",
+            body: JSON.stringify({ kind: "point", x, y, serial: selectedDevice() }),
+          });
+          appendLog(`pressed point ${x},${y}`, "success");
+        }
+      } catch (err) {
+        appendLog(err instanceof Error ? err.message : String(err), "error");
+      }
+    }
+
+    // bootstrap once
+    void (async () => {
+      await resolveUrl();
+      await pollHealth();
+      await Promise.all([refreshDevices(), refreshActions(), refreshJobs()]);
+      connectSse();
+    })();
+
+    const poll = setInterval(() => {
+      void (async () => {
+        await pollHealth();
+        if (health() === "online") {
+          void refreshDevices();
+          void refreshJobs();
+        }
+      })();
+    }, pollMs);
+
+    onCleanup(() => {
+      clearInterval(poll);
+      es?.close();
     });
 
     return {
-      serverUrl: serverUrl as Accessor<string>,
+      serverUrl,
       setServerUrl,
       health,
+      sseConnected,
       devices,
       actions,
+      jobs,
       selectedDevice,
-      setSelectedDevice,
+      setSelectedDevice: selectDeviceRemote,
       selectedAction,
       setSelectedAction,
+      selectedJobId,
+      setSelectedJobId,
       running,
       error,
       logs,
       appendLog,
       clearLogs,
-      refreshAll,
       refreshDevices,
       refreshActions,
-      checkHealth,
-      runAction,
+      refreshJobs,
+      pollHealth,
+      runSelected,
+      tab,
+      setTab,
+      snapshot,
+      screenshot,
+      busyCapture,
+      captureUiSnapshot,
+      captureUiScreenshot,
+      pressNode,
+      skipAccountSwitch,
+      setSkipAccountSwitch,
+      skipRestoreHome,
+      setSkipRestoreHome,
     };
   },
 });

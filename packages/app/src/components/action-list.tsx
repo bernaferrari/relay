@@ -1,76 +1,88 @@
 import { For, Show, createMemo } from "solid-js";
-import { Badge } from "@grok-device/ui/badge";
+import { Button } from "@grok-device/ui/button";
 import { useServer, type ActionInfo } from "../context/server";
 
-const CATEGORY_ORDER = ["play-store", "grok"] as const;
-
-const CATEGORY_LABEL: Record<string, string> = {
-  "play-store": "Play Store",
-  grok: "Grok",
-};
-
-export function ActionList() {
+export function ActionPanel() {
   const server = useServer();
 
-  const grouped = createMemo(() => {
-    const map = new Map<string, ActionInfo[]>();
-    for (const action of server.actions()) {
-      const cat = action.category || "other";
-      const list = map.get(cat) ?? [];
-      list.push(action);
-      map.set(cat, list);
+  const groups = createMemo(() => {
+    const byCat = new Map<string, ActionInfo[]>();
+    for (const a of server.actions()) {
+      const list = byCat.get(a.category) ?? [];
+      list.push(a);
+      byCat.set(a.category, list);
     }
-    const keys = [
-      ...CATEGORY_ORDER.filter((k) => map.has(k)),
-      ...[...map.keys()].filter((k) => !(CATEGORY_ORDER as readonly string[]).includes(k)).sort(),
-    ];
-    return keys.map((key) => ({
-      key,
-      label: CATEGORY_LABEL[key] ?? key,
-      items: map.get(key) ?? [],
-    }));
+    return [...byCat.entries()];
   });
 
   return (
-    <section class="app-panel" aria-label="Actions" style={{ "border-right": "none" }}>
-      <div class="run-bar">
-        <h2 class="app-panel__title" style={{ margin: 0 }}>
-          Actions
-        </h2>
+    <div class="workspace-panel">
+      <div class="workspace-toolbar">
+        <div class="workspace-toolbar__left">
+          <h2 class="app-panel__title" style={{ margin: 0 }}>
+            Test actions
+          </h2>
+          <Show when={server.selectedAction()}>
+            <span class="header-chip">{server.selectedAction()}</span>
+          </Show>
+        </div>
+        <div class="workspace-toolbar__right">
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={server.skipAccountSwitch()}
+              onChange={(e) => server.setSkipAccountSwitch(e.currentTarget.checked)}
+            />
+            skip account
+          </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={server.skipRestoreHome()}
+              onChange={(e) => server.setSkipRestoreHome(e.currentTarget.checked)}
+            />
+            skip restore
+          </label>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={server.running() || !server.selectedAction() || server.health() !== "online"}
+            onClick={() => void server.runSelected()}
+          >
+            {server.running() ? "Running…" : "Run"}
+          </Button>
+        </div>
       </div>
-      <Show
-        when={server.actions().length > 0}
-        fallback={<p class="empty-state">No actions available from server.</p>}
-      >
-        <For each={grouped()}>
-          {(group) => (
-            <div class="category-group">
-              <h3 class="category-group__label">
-                <Badge variant={group.key === "grok" ? "primary" : "default"}>{group.label}</Badge>
-              </h3>
-              <div class="list" role="listbox" aria-label={`${group.label} actions`}>
-                <For each={group.items}>
-                  {(action) => (
+
+      <div class="action-groups">
+        <For each={groups()}>
+          {([category, actions]) => (
+            <section class="action-group">
+              <h3 class="action-group__title">{category}</h3>
+              <div class="list">
+                <For each={actions}>
+                  {(a) => (
                     <button
                       type="button"
-                      class="list-item"
-                      role="option"
-                      data-selected={server.selectedAction() === action.id ? "true" : undefined}
-                      aria-selected={server.selectedAction() === action.id}
-                      onClick={() => server.setSelectedAction(action.id)}
+                      class="list-item list-item--action"
+                      classList={{ "list-item--selected": server.selectedAction() === a.id }}
+                      onClick={() => server.setSelectedAction(a.id)}
+                      onDblClick={() => {
+                        server.setSelectedAction(a.id);
+                        void server.runSelected();
+                      }}
                     >
-                      <span class="list-item__title">{action.title}</span>
-                      <Show when={action.description}>
-                        <span class="list-item__meta">{action.description}</span>
-                      </Show>
+                      <span class="list-item__title">{a.title}</span>
+                      <span class="list-item__meta">{a.description ?? a.id}</span>
                     </button>
                   )}
                 </For>
               </div>
-            </div>
+            </section>
           )}
         </For>
-      </Show>
-    </section>
+      </div>
+      <p class="hint">Double-click an action to run · ⌘K for command palette</p>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import { type ParentProps, createSignal, Show } from "solid-js";
 import { ThemeProvider } from "@grok-device/ui/theme/context";
 import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
+import { CommandProvider } from "./context/command";
 import { Layout, type AppView } from "./components/layout";
 import { HomePage } from "./pages/home";
 import { SettingsPage } from "./pages/settings";
@@ -16,19 +17,21 @@ export function AppBaseProviders(
   return (
     <PlatformProvider value={props.platform}>
       <ThemeProvider defaultTheme={props.defaultTheme ?? "grok"} defaultColorScheme="system">
-        <ServerProvider>{props.children}</ServerProvider>
+        <ServerProvider>
+          <CommandProvider>{props.children}</CommandProvider>
+        </ServerProvider>
       </ThemeProvider>
     </PlatformProvider>
   );
 }
 
-/** Main product UI (home + settings). */
+/** Main product UI — OpenCode-style testing workspace. */
 export function AppInterface() {
-  const [view, setView] = createSignal<AppView>("home");
+  const [view, setView] = createSignal<AppView>("workspace");
 
   return (
     <Layout view={view()} onNavigate={setView}>
-      <Show when={view() === "home"} fallback={<SettingsPage />}>
+      <Show when={view() === "workspace"} fallback={<SettingsPage />}>
         <HomePage />
       </Show>
     </Layout>

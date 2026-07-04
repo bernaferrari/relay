@@ -8,7 +8,10 @@
     "./device": "./src/device.ts",
     "./play-store": "./src/play-store.ts",
     "./grok": "./src/grok.ts",
-    "./actions": "./src/actions.ts"
+    "./actions": "./src/actions.ts",
+    "./events": "./src/events.ts",
+    "./session": "./src/session.ts",
+    "./workspace": "./src/workspace.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"

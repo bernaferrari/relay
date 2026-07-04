@@ -1,39 +1,62 @@
-# Architecture
+# Architecture — app testing shell
 
-Inspired by OpenCode v2 layering, scaled down for device automation.
+Inspired by OpenCode v2, adapted for **Android app testing** (not a coding agent).
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  HOSTS                                                    │
-│  desktop (Electron) │ app (Solid web) │ cli │ tui         │
-└───────────────┬──────────────────┬─────────────┬─────────┘
-                │ HTTP             │ in-process  │ HTTP / in-process
-                ▼                  ▼             ▼
-┌──────────────────────────────────────────────────────────┐
-│  server (optional HTTP)  OR  direct @grok-device/core       │
-└─────────────────────────────┬────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  HOSTS                                                        │
+│  desktop (Electron) │ app (Solid web) │ cli │ tui             │
+└─────────┬──────────────────┬──────────────────┬──────────────┘
+          │ HTTP + SSE       │ HTTP + SSE       │ HTTP or in-process
+          ▼                  ▼                  ▼
+┌──────────────────────────────────────────────────────────────┐
+│  server — jobs queue, snapshot/screenshot/interact, SSE bus   │
+└─────────────────────────────┬────────────────────────────────┘
                               ▼
-┌──────────────────────────────────────────────────────────┐
-│  core — agent-device recipes (Play Store, Grok login)      │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  core — agent-device recipes, events, sessions/jobs, workspace │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+## OpenCode patterns we mirror
+
+| OpenCode              | Grok Device (app testing)                          |
+| --------------------- | -------------------------------------------------- |
+| Sessions + runner     | **Test jobs** (`enqueueJob` / queue / history)     |
+| SSE / event sync      | **`GET /events`** + in-process `publish/subscribe` |
+| Command palette       | **⌘K** command registry in `app`                   |
+| Platform injection    | **`Platform`** for web vs Electron                 |
+| Thin hosts / fat core | Domain only in **`core`**                          |
+| Default TTY → TUI     | **`grok-device`** opens testing TUI                |
+| Inspector-like UI     | **UI snapshot tree** + **screenshot** tabs         |
+| Theme JSON            | **`ui` themes** (grok / dracula / nord)            |
 
 ## Packages
 
-| Package                | Role                                                   |
-| ---------------------- | ------------------------------------------------------ |
-| `@grok-device/core`    | Domain: device SDK helpers, actions catalog, runAction |
-| `@grok-device/server`  | Thin Node HTTP over core                               |
-| `@grok-device/cli`     | Primary host: interactive, direct, serve, tui          |
-| `@grok-device/tui`     | Terminal UI (ANSI menus)                               |
-| `@grok-device/ui`      | Solid design system + theme JSON → CSS vars            |
-| `@grok-device/app`     | Product UI; host-agnostic via Platform                 |
-| `@grok-device/desktop` | Electron main/preload/renderer                         |
+| Package                | Role                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `@grok-device/core`    | Recipes, action catalog, event bus, job sessions, snapshot/screenshot/interact |
+| `@grok-device/server`  | HTTP + SSE over core                                                           |
+| `@grok-device/cli`     | Host: TUI default, interactive, serve, direct actions                          |
+| `@grok-device/tui`     | Terminal testing workspace                                                     |
+| `@grok-device/ui`      | Solid design system + themes                                                   |
+| `@grok-device/app`     | Solid product UI (workspace / inspector / screen / activity)                   |
+| `@grok-device/desktop` | Electron shell                                                                 |
+
+## API surface
+
+- `GET /health` `/meta` `/events` (SSE)
+- `GET /devices` `/actions` `/jobs` `/jobs/:id`
+- `POST /jobs` `{ action, serial?, … }` → 202 job
+- `POST /actions/:id/run` → wait for job (compat)
+- `GET /snapshot` `/screenshot`
+- `POST /interact` `{ kind: label|point|ref|find|text-match, … }`
+- `POST /device/select`
 
 ## Rules
 
-1. Domain first — ADB/device actions live in `core`.
-2. Host owns lifecycle — CLI/desktop start server; UI never forks domain processes without host.
-3. IPC only for OS — file pickers, notifications, window chrome.
-4. Renderer never imports `electron` — only `window.api`.
-5. `ui` has zero knowledge of hosts.
+1. Domain logic stays in `core`.
+2. UIs consume **jobs + events**, not ad-hoc synchronous-only calls (except CLI direct mode).
+3. Renderer never imports `electron`.
+4. `ui` has zero host knowledge.
+5. `vendor/opencode` is reference-only.

@@ -26,11 +26,11 @@ function usage(exitCode = 2): never {
   const actionLines = ACTIONS.map((a) => `  ${a.id.padEnd(22)} ${a.description}`).join("\n");
 
   console.log(`Usage:
-  grok-device                              # interactive: device + action
-  grok-device interactive | i               # same as no args
+  grok-device                              # TTY → testing TUI workspace (OpenCode-style)
+  grok-device interactive | i               # classic readline picker
+  grok-device tui [--server url]            # explicit TUI
   grok-device <action> [flags]              # run action on default/env device
   grok-device serve [--port <n>] [--host <h>]
-  grok-device tui                          # launch terminal UI (if installed)
   grok-device help | -h | --help
 
 Actions:
@@ -85,10 +85,9 @@ async function runServe(argv: string[]): Promise<void> {
   const { startServer } = await import("@grok-device/server");
   const server = await startServer({ port, host });
   console.log(`grok-device server listening on http://${server.host}:${server.port}`);
-  console.log("  GET  /health");
-  console.log("  GET  /actions");
-  console.log("  GET  /devices");
-  console.log("  POST /actions/:id/run");
+  console.log("  GET  /health  /meta  /events(SSE)");
+  console.log("  GET  /devices  /actions  /jobs  /snapshot  /screenshot");
+  console.log("  POST /jobs  /actions/:id/run  /interact  /device/select");
   console.log("Press Ctrl+C to stop.");
 
   await new Promise<void>((resolve) => {
@@ -138,13 +137,24 @@ async function runTui(argv: string[]): Promise<void> {
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
-  if (argv.length === 0 || argv[0] === "interactive" || argv[0] === "i") {
+  // OpenCode-style: bare launch in a TTY opens the testing workspace (TUI).
+  // Use `interactive` / `i` for the classic readline picker.
+  if (argv.length === 0) {
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      await runTui([]);
+      return;
+    }
     await runInteractive();
     return;
   }
 
   const cmd = argv[0]!;
   if (cmd === "-h" || cmd === "--help" || cmd === "help") usage(0);
+
+  if (cmd === "interactive" || cmd === "i") {
+    await runInteractive();
+    return;
+  }
 
   if (cmd === "serve") {
     await runServe(argv.slice(1));

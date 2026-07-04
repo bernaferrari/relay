@@ -21,9 +21,23 @@ export function SettingsPage() {
 
   async function saveServerUrl() {
     await server.setServerUrl(urlDraft().trim());
-    await server.refreshAll();
+    await Promise.all([
+      server.pollHealth(),
+      server.refreshDevices(),
+      server.refreshActions(),
+      server.refreshJobs(),
+    ]);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+  }
+
+  async function refreshNow() {
+    await Promise.all([
+      server.pollHealth(),
+      server.refreshDevices(),
+      server.refreshActions(),
+      server.refreshJobs(),
+    ]);
   }
 
   return (
@@ -74,7 +88,7 @@ export function SettingsPage() {
           <Button variant="primary" size="sm" onClick={() => void saveServerUrl()}>
             Save & reconnect
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => void server.refreshAll()}>
+          <Button variant="ghost" size="sm" onClick={() => void refreshNow()}>
             Refresh now
           </Button>
           <Show when={saved()}>

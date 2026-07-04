@@ -11,9 +11,9 @@ import "./styles.css";
 function createDesktopStorage(name = "default"): PlatformStorage {
   const api = window.api;
   return {
-    get: (key) => api.storeGet(name, key),
-    set: (key, value) => api.storeSet(name, key, value),
-    remove: (key) => api.storeDelete(name, key),
+    get: (key: string) => api.storeGet(name, key),
+    set: (key: string, value: string) => api.storeSet(name, key, value),
+    remove: (key: string) => api.storeDelete(name, key),
   };
 }
 

@@ -4,15 +4,8 @@ export {
   usePlatform,
   createWebPlatform,
   type Platform,
-  type PlatformName,
   type PlatformStorage,
+  type PlatformName,
 } from "./context/platform";
-export {
-  ServerProvider,
-  useServer,
-  type DeviceInfo,
-  type ActionInfo,
-  type HealthState,
-  type RunActionResult,
-  type LogLine,
-} from "./context/server";
+export { ServerProvider, useServer } from "./context/server";
+export { CommandProvider, useCommand, type Command } from "./context/command";
