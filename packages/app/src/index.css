@@ -108,7 +108,7 @@
   height: 22px;
   border-radius: var(--radius-sm);
   background: var(--button-primary-base);
-  color: #fff;
+  color: var(--text-invert, var(--icon-invert-base));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -268,7 +268,7 @@
 
 .btn-acc {
   background: var(--button-primary-base);
-  color: #fff;
+  color: var(--text-invert, var(--icon-invert-base));
   border: 1px solid transparent;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
@@ -1215,7 +1215,7 @@
 
 .scheme-seg__btn.on {
   background: var(--button-primary-base);
-  color: #fff;
+  color: var(--text-invert, var(--icon-invert-base));
 }
 
 .theme-search {
