@@ -318,3 +318,203 @@ test('MCP session tool exposes state-dir resolution without a daemon round-trip'
 
   assert.deepEqual(result.structuredContent, { stateDir: '/tmp/agent-device-dev-state' });
 });
+
+// --- #1076 versioned refs: MCP auto-pinning ---
+
+function createPinningExecutor(runCalls: Array<{ name: string; input: unknown }>) {
+  return createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      runCalls.push({ name, input });
+      if (name === 'snapshot') {
+        // Issues refs e2 and e37 at generation 500012.
+        return {
+          nodes: [{ ref: 'e2' }, { ref: 'e37' }],
+          truncated: false,
+          refsGeneration: 500012,
+        };
+      }
+      if (name === 'find') {
+        // A later find capture replaced the tree and issued ONLY e5 at 500013.
+        return { ref: '@e5', refsGeneration: 500013 };
+      }
+      return { message: `Ran ${name}` };
+    },
+  });
+}
+
+test('MCP keeps per-ref provenance: a pre-find snapshot ref stays pinned to ITS generation', async () => {
+  // THE find-blessing scenario (#1076): snapshot issues e37 at G1, a later
+  // find issues e5 at G2. A plain @e37 must forward pinned to G1 — pinning it
+  // to G2 would make the daemon read it as current and silently re-bless it.
+  // (The daemon side of this flow — precise warning for the G1 pin after the
+  // find capture replaced the tree — is covered in the provider scenario.)
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createPinningExecutor(runCalls);
+
+  await executor.execute('snapshot', { session: 'demo' });
+  await executor.execute('find', { session: 'demo', query: 'Continue' });
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e37' } });
+
+  assert.deepEqual(runCalls[2], {
+    name: 'press',
+    input: { session: 'demo', target: { kind: 'ref', ref: '@e37~s500012' } },
+  });
+});
+
+test('MCP pins the find-issued ref to the find generation', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createPinningExecutor(runCalls);
+
+  await executor.execute('snapshot', { session: 'demo' });
+  await executor.execute('find', { session: 'demo', query: 'Continue' });
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e5' } });
+
+  assert.deepEqual(runCalls[2], {
+    name: 'press',
+    input: { session: 'demo', target: { kind: 'ref', ref: '@e5~s500013' } },
+  });
+});
+
+test('MCP auto-pins wait refs and get targets from the per-ref map', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createPinningExecutor(runCalls);
+
+  await executor.execute('snapshot', { session: 'demo' });
+  await executor.execute('wait', { session: 'demo', ref: '@e2' });
+  await executor.execute('get', {
+    session: 'demo',
+    format: 'text',
+    target: { kind: 'ref', ref: '@e37' },
+  });
+
+  assert.deepEqual(runCalls[1], {
+    name: 'wait',
+    input: { session: 'demo', ref: '@e2~s500012' },
+  });
+  assert.deepEqual(runCalls[2], {
+    name: 'get',
+    input: { session: 'demo', format: 'text', target: { kind: 'ref', ref: '@e37~s500012' } },
+  });
+});
+
+test('MCP merges digest-level snapshot refs too', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      runCalls.push({ name, input });
+      return name === 'snapshot'
+        ? { nodeCount: 1, refs: [{ ref: 'e9', label: 'Continue' }], refsGeneration: 41 }
+        : {};
+    },
+  });
+
+  await executor.execute('snapshot', { responseLevel: 'digest' });
+  await executor.execute('press', { target: { kind: 'ref', ref: '@e9' } });
+
+  assert.deepEqual(runCalls[1]?.input, { target: { kind: 'ref', ref: '@e9~s41' } });
+});
+
+test('MCP passes never-issued refs through unpinned (coarse floor, never guess)', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createPinningExecutor(runCalls);
+
+  await executor.execute('snapshot', { session: 'demo' });
+  // e99 was never present in any issuing response for this scope.
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e99' } });
+
+  assert.deepEqual(runCalls[1]?.input, { session: 'demo', target: { kind: 'ref', ref: '@e99' } });
+});
+
+test('MCP passes refs through unpinned when the pin scope has no history', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createPinningExecutor(runCalls);
+
+  // Only OTHER session names have history.
+  await executor.execute('snapshot', { session: 'other' });
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e2' } });
+
+  assert.deepEqual(runCalls[1]?.input, { session: 'demo', target: { kind: 'ref', ref: '@e2' } });
+});
+
+test('MCP pin scopes include the state dir: same-named sessions never cross-pollinate', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createPinningExecutor(runCalls);
+
+  await executor.execute('snapshot', { session: 'demo', stateDir: '/state/a' });
+  // Same session name against a DIFFERENT daemon state dir: no history there.
+  await executor.execute('press', {
+    session: 'demo',
+    stateDir: '/state/b',
+    target: { kind: 'ref', ref: '@e2' },
+  });
+  // The original scope still pins.
+  await executor.execute('press', {
+    session: 'demo',
+    stateDir: '/state/a',
+    target: { kind: 'ref', ref: '@e2' },
+  });
+
+  assert.deepEqual(runCalls[1]?.input, { session: 'demo', target: { kind: 'ref', ref: '@e2' } });
+  assert.deepEqual(runCalls[2]?.input, {
+    session: 'demo',
+    target: { kind: 'ref', ref: '@e2~s500012' },
+  });
+});
+
+test('MCP clears the whole scope when a ref-issuing response stops carrying a generation', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  let issueGeneration = true;
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      runCalls.push({ name, input });
+      if (name === 'snapshot') {
+        return issueGeneration
+          ? { nodes: [{ ref: 'e2' }], truncated: false, refsGeneration: 4 }
+          : { nodes: [{ ref: 'e2' }], truncated: false };
+      }
+      return {};
+    },
+  });
+
+  await executor.execute('snapshot', {});
+  issueGeneration = false;
+  // An older daemon without refsGeneration: the remembered pins must not
+  // leak onto refs the response did not vouch for.
+  await executor.execute('snapshot', {});
+  await executor.execute('press', { target: { kind: 'ref', ref: '@e2' } });
+
+  assert.deepEqual(runCalls[2], {
+    name: 'press',
+    input: { target: { kind: 'ref', ref: '@e2' } },
+  });
+});
+
+test('MCP never rewrites refs that already carry a suffix and never pins non-@ refs', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createPinningExecutor(runCalls);
+
+  await executor.execute('snapshot', {});
+  await executor.execute('press', { target: { kind: 'ref', ref: '@e2~s3' } });
+  await executor.execute('press', { target: { kind: 'ref', ref: 'e2' } });
+
+  assert.deepEqual(runCalls[1]?.input, { target: { kind: 'ref', ref: '@e2~s3' } });
+  assert.deepEqual(runCalls[2]?.input, { target: { kind: 'ref', ref: 'e2' } });
+});
+
+test('MCP renders tool text from the unpinned input so the model never sees suffixes', async () => {
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name) =>
+      name === 'snapshot'
+        ? { nodes: [{ ref: 'e2' }], truncated: false, refsGeneration: 9 }
+        : { message: 'Tapped @e2 (10, 20)' },
+  });
+
+  await executor.execute('snapshot', {});
+  const result = await executor.execute('press', { target: { kind: 'ref', ref: '@e2' } });
+
+  assert.doesNotMatch(result.content[0]?.text ?? '', /~s9/);
+});
