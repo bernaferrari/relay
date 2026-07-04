@@ -221,8 +221,12 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
         trackingIssue: GAPS_UMBRELLA_ISSUE,
       },
       offscreen: {
+        // Decision: TapPointPolicy (pure geometry, parity-tested against the
+        // TS twin isTapPointInsideViewport). onScreenWindowFrame stays the
+        // impure frame getter feeding it.
         kind: 'runner',
-        via: 'RunnerTests+Interaction.swift#onScreenWindowFrame',
+        via: 'RunnerTapPointPolicy.swift#TapPointPolicy',
+        parityTable: 'contracts/fixtures/tap-point-policy.json',
       },
       nonHittable: {
         kind: 'waived',
@@ -340,8 +344,12 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
         reason: 'Intentional: Maestro taps resolved bounds regardless of overlay state.',
       },
       offscreen: {
+        // hasTappableFrame keeps two path-specific choices (empty element
+        // frames are refused; app.frame is the frame source, Maestro-style)
+        // but its center-in-frame decision is the shared TapPointPolicy.
         kind: 'runner',
         via: 'RunnerTests+Interaction.swift#hasTappableFrame',
+        parityTable: 'contracts/fixtures/tap-point-policy.json',
       },
       nonHittable: {
         kind: 'waived',
