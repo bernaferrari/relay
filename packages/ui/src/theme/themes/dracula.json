@@ -1,0 +1,30 @@
+{
+  "id": "dracula",
+  "name": "Dracula",
+  "light": {
+    "palette": {
+      "bg": "#f8f8f2",
+      "surface": "#ffffff",
+      "text": "#1f1f2f",
+      "textMuted": "#6b6d85",
+      "primary": "#7c6bf5",
+      "success": "#2fbf71",
+      "warning": "#f7a14d",
+      "error": "#d9536f",
+      "border": "#d9d9e6"
+    }
+  },
+  "dark": {
+    "palette": {
+      "bg": "#1d1e28",
+      "surface": "#282a36",
+      "text": "#f8f8f2",
+      "textMuted": "#a0a4c0",
+      "primary": "#bd93f9",
+      "success": "#50fa7b",
+      "warning": "#ffb86c",
+      "error": "#ff5555",
+      "border": "#44475a"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@grok-device/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./device": "./src/device.ts",
+    "./play-store": "./src/play-store.ts",
+    "./grok": "./src/grok.ts",
+    "./actions": "./src/actions.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "agent-device": "^0.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "grok",
+  "name": "Grok",
+  "light": {
+    "palette": {
+      "bg": "#f6f6f8",
+      "surface": "#ffffff",
+      "text": "#0a0a0c",
+      "textMuted": "#5c5c6a",
+      "primary": "#6d5efc",
+      "success": "#1f9d63",
+      "warning": "#c47b16",
+      "error": "#d14343",
+      "border": "#e2e2ea"
+    }
+  },
+  "dark": {
+    "palette": {
+      "bg": "#050507",
+      "surface": "#121218",
+      "text": "#f4f4f7",
+      "textMuted": "#9a9aad",
+      "primary": "#8b7cff",
+      "success": "#3dd68c",
+      "warning": "#f0b429",
+      "error": "#ff6b6b",
+      "border": "#2a2a36"
+    }
+  }
+}

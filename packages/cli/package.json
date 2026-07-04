@@ -1,0 +1,27 @@
+{
+  "name": "@grok-device/cli",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "grok-device": "./src/index.ts"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@grok-device/core": "workspace:*",
+    "@grok-device/server": "workspace:*",
+    "@grok-device/tui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  }
+}

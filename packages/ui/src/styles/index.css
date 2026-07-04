@@ -1,0 +1,280 @@
+/* Base resets + design tokens consumers can rely on */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+:root {
+  color-scheme: dark;
+  --color-bg: #050507;
+  --color-surface: #121218;
+  --color-text: #f4f4f7;
+  --color-text-muted: #9a9aad;
+  --color-primary: #8b7cff;
+  --color-success: #3dd68c;
+  --color-warning: #f0b429;
+  --color-error: #ff6b6b;
+  --color-border: #2a2a36;
+  --bg: var(--color-bg);
+  --surface: var(--color-surface);
+  --text: var(--color-text);
+  --text-muted: var(--color-text-muted);
+  --primary: var(--color-primary);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --error: var(--color-error);
+  --border: var(--color-border);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.24);
+  --font-sans:
+    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Focus ring shared by interactive components */
+:where(button, a, input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 70%, white);
+  outline-offset: 2px;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 80%, transparent) transparent;
+}
+
+/* Button */
+[data-component="button"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-style: solid;
+  border-width: 1px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  user-select: none;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease,
+    box-shadow 120ms ease;
+}
+
+[data-component="button"][data-size="sm"] {
+  height: 1.875rem;
+  padding: 0 0.7rem;
+  font-size: 0.8125rem;
+}
+
+[data-component="button"][data-size="md"] {
+  height: 2.25rem;
+  padding: 0 0.95rem;
+  font-size: 0.875rem;
+}
+
+[data-component="button"][data-variant="primary"] {
+  background: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 70%, black);
+  color: #fff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+[data-component="button"][data-variant="primary"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 88%, white);
+}
+
+[data-component="button"][data-variant="primary"]:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 85%, black);
+}
+
+[data-component="button"][data-variant="ghost"] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text);
+}
+
+[data-component="button"][data-variant="ghost"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-surface) 70%, var(--color-border));
+}
+
+[data-component="button"][data-variant="ghost"][data-selected="true"] {
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface));
+  color: var(--color-text);
+}
+
+[data-component="button"][data-variant="danger"] {
+  background: color-mix(in srgb, var(--color-error) 18%, transparent);
+  border-color: color-mix(in srgb, var(--color-error) 45%, var(--color-border));
+  color: var(--color-error);
+}
+
+[data-component="button"][data-variant="danger"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error) 28%, transparent);
+}
+
+[data-component="button"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Card */
+[data-component="card"] {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-4);
+}
+
+[data-component="card"][data-padding="sm"] {
+  padding: var(--space-3);
+}
+
+[data-component="card"][data-padding="lg"] {
+  padding: var(--space-6);
+}
+
+[data-slot="card-title"] {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0 0 var(--space-2);
+  color: var(--color-text);
+}
+
+[data-slot="card-description"] {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+/* Badge */
+[data-component="badge"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 1.4rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+}
+
+[data-component="badge"][data-variant="default"] {
+  background: color-mix(in srgb, var(--color-surface) 70%, var(--color-border));
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+}
+
+[data-component="badge"][data-variant="success"] {
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+}
+
+[data-component="badge"][data-variant="warning"] {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+}
+
+[data-component="badge"][data-variant="error"] {
+  background: color-mix(in srgb, var(--color-error) 18%, transparent);
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 35%, transparent);
+}
+
+[data-component="badge"][data-variant="primary"] {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+/* Logo */
+[data-component="logo"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--color-text);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  user-select: none;
+}
+
+[data-component="logo"] [data-slot="logo-mark"] {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.4rem;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-primary) 90%, white),
+    var(--color-primary)
+  );
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent);
+  flex-shrink: 0;
+}
+
+[data-component="logo"] [data-slot="logo-wordmark"] {
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+[data-component="logo"] [data-slot="logo-wordmark"] em {
+  font-style: normal;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}

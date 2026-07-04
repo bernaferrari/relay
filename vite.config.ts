@@ -1,37 +1,38 @@
 import { defineConfig } from "vite-plus";
 
 /**
- * Vite+ config for the Grok device-actions Node CLI (not a web app).
- *
- *   vp run dev                 interactive menu (package.json script)
- *   vp exec tsx src/cli.ts …   direct action
- *   vp check
- *   vp pack
+ * Root Vite+ config (format/lint/pack for CLI entry).
+ * Package-level apps (app, desktop) use their own vite configs.
  */
 export default defineConfig({
   pack: {
-    entry: "src/cli.ts",
+    entry: "packages/cli/src/index.ts",
     format: ["esm"],
     platform: "node",
     target: "node22",
     dts: false,
     sourcemap: true,
     deps: {
-      neverBundle: ["agent-device"],
+      neverBundle: ["agent-device", "@grok-device/core", "@grok-device/server", "@grok-device/tui"],
     },
   },
-
   staged: {
     "*": "vp check --fix",
   },
   fmt: {
-    ignorePatterns: ["dist/**", "node_modules/**", "pnpm-lock.yaml"],
+    ignorePatterns: [
+      "dist/**",
+      "node_modules/**",
+      "pnpm-lock.yaml",
+      "vendor/**",
+      "packages/*/dist/**",
+    ],
   },
   lint: {
     options: {
-      typeAware: true,
-      typeCheck: true,
+      typeAware: false,
+      typeCheck: false,
     },
-    ignorePatterns: ["dist/**", "node_modules/**"],
+    ignorePatterns: ["dist/**", "node_modules/**", "vendor/**", "packages/*/dist/**"],
   },
 });

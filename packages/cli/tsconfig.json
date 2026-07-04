@@ -7,12 +7,11 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "types": ["node"]
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": ["node"],
+    "declaration": true,
+    "noEmit": true
   },
-  "include": [],
-  "references": [
-    { "path": "packages/core" },
-    { "path": "packages/cli" },
-    { "path": "packages/server" }
-  ]
+  "include": ["src/**/*.ts", "src/**/*.d.ts"]
 }

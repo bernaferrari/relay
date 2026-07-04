@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en" style="background-color: #050507">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; font-src 'self' data:"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#050507" />
+    <title>Grok Device</title>
+    <!-- Theme flash prevention — sourced from @grok-device/ui/theme/preload -->
+    <script src="./theme-preload.js"></script>
+  </head>
+  <body class="antialiased overscroll-none">
+    <noscript>You need to enable JavaScript to run Grok Device.</noscript>
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+  </body>
+</html>

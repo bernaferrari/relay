@@ -14,3 +14,38 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
 
 <!--VITE PLUS END-->
+
+# Grok Device monorepo
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
+
+## Packages
+
+| Package                | Path               | Notes                            |
+| ---------------------- | ------------------ | -------------------------------- |
+| `@grok-device/core`    | `packages/core`    | Domain recipes — no UI           |
+| `@grok-device/server`  | `packages/server`  | HTTP API over core               |
+| `@grok-device/cli`     | `packages/cli`     | Primary host                     |
+| `@grok-device/tui`     | `packages/tui`     | ANSI terminal UI                 |
+| `@grok-device/ui`      | `packages/ui`      | Solid design system + themes     |
+| `@grok-device/app`     | `packages/app`     | Solid product UI (host-agnostic) |
+| `@grok-device/desktop` | `packages/desktop` | Electron shell                   |
+
+## Rules
+
+1. Domain logic stays in `core`. UIs call `runAction` or HTTP `/actions/:id/run`.
+2. Renderer never imports `electron` — only `window.api`.
+3. `ui` has zero host knowledge.
+4. `vendor/opencode` is reference-only (gitignored); do not vendor its agent runtime.
+
+## Commands
+
+```bash
+vp install
+pnpm dev            # interactive CLI
+pnpm dev:serve      # HTTP :8787
+pnpm dev:tui
+pnpm dev:app
+pnpm dev:desktop
+pnpm typecheck
+```
