@@ -1,7 +1,8 @@
-/* FOUC guard — mirrors OpenCode oc-theme-preload pattern (simplified). */
+/* OpenCode-style FOUC prevention (namespaced keys for grok-device). */
 (function () {
   try {
     var themeId = localStorage.getItem("grok-device-theme-id") || "grok";
+    if (themeId === "oc-1") themeId = "oc-2";
     var scheme = localStorage.getItem("grok-device-color-scheme") || "system";
     var dark =
       scheme === "dark" ||
@@ -18,12 +19,17 @@
     if (cached) {
       var style = document.createElement("style");
       style.id = "gd-theme-preload";
-      style.textContent = ":root{color-scheme:" + mode + ";" + cached + "}";
+      style.textContent =
+        ":root{color-scheme:" +
+        mode +
+        ";--text-mix-blend-mode:" +
+        (dark ? "plus-lighter" : "multiply") +
+        ";" +
+        cached +
+        "}";
       document.documentElement.appendChild(style);
     } else {
-      document.documentElement.style.backgroundColor = dark ? "#1d1f27" : "#f6f7f9";
+      document.documentElement.style.backgroundColor = dark ? "#080808" : "#fafafa";
     }
-  } catch (e) {
-    /* ignore */
-  }
+  } catch (e) {}
 })();

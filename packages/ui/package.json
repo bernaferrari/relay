@@ -14,6 +14,7 @@
     "./theme/*": "./src/theme/*.ts",
     "./theme/context": "./src/theme/context.tsx",
     "./theme/preload": "./src/theme/preload.js",
+    "./theme/v2/*": "./src/theme/v2/*.ts",
     "./styles": "./src/styles/index.css",
     "./context/helper": "./src/context/helper.tsx"
   },

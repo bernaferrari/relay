@@ -9,33 +9,37 @@
 */
 
 :root {
-  /* PostHog-ish dark product palette */
-  --bg: #1d1f27;
-  --bg-light: #23252e;
-  --stage: #191b22;
-  --panel: #23252e;
-  --raise: #2d3039;
-  --raise-2: #353842;
-  --line: #2f323c;
-  --line2: #3d4150;
-  --text: #eeefe9;
-  --dim: #c0c1c3;
-  --faint: #8f9197;
-  --muted: #6a6c75;
+  /*
+   * Fallback chrome before OpenCode theme CSS injects.
+   * After ThemeProvider applies, OC tokens + product aliases override these.
+   */
+  --background-base: #1d1f27;
+  --text-strong: #eeefe9;
+  --bg: var(--background-base, #1d1f27);
+  --bg-light: var(--surface-base, #23252e);
+  --stage: var(--background-base, #191b22);
+  --panel: var(--surface-raised-base, var(--surface-base, #23252e));
+  --raise: var(--surface-raised-base, #2d3039);
+  --raise-2: var(--border-weak-base, #353842);
+  --line: var(--border-weak-base, #2f323c);
+  --line2: var(--border-base, #3d4150);
+  --text: var(--text-strong, #eeefe9);
+  --dim: var(--text-base, #c0c1c3);
+  --faint: var(--text-weak, #8f9197);
+  --muted: var(--text-weaker, #6a6c75);
 
-  /* PostHog primary blue */
-  --acc: #1d4aff;
-  --acc-hover: #3461ff;
-  --acc-soft: rgba(29, 74, 255, 0.14);
-  --acc-line: rgba(29, 74, 255, 0.4);
-  --acc-text: #dce4ff;
+  --acc: var(--icon-info-base, #1d4aff);
+  --acc-hover: var(--button-primary-hover, #3461ff);
+  --acc-soft: color-mix(in srgb, var(--acc) 16%, transparent);
+  --acc-line: color-mix(in srgb, var(--acc) 40%, transparent);
+  --acc-text: var(--acc);
 
-  --pass: #42d392;
-  --pass-soft: rgba(66, 211, 146, 0.12);
-  --heal: #f7a501;
-  --heal-soft: rgba(247, 165, 1, 0.12);
-  --fail: #f54e00;
-  --fail-soft: rgba(245, 78, 0, 0.12);
+  --pass: var(--text-success-base, #42d392);
+  --pass-soft: var(--surface-success-base, rgba(66, 211, 146, 0.12));
+  --heal: var(--text-warning-base, #f7a501);
+  --heal-soft: var(--surface-warning-base, rgba(247, 165, 1, 0.12));
+  --fail: var(--text-critical-base, #f54e00);
+  --fail-soft: var(--surface-critical-base, rgba(245, 78, 0, 0.12));
 
   --radius: 6px;
   --radius-sm: 4px;
