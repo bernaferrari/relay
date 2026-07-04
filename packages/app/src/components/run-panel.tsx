@@ -74,7 +74,7 @@ export function RunPanel() {
           <span class="panel__stats">
             {stats().ok} passed · {stats().fail} failed
             {stats().healed ? (
-              <span style={{ color: "var(--heal)" }}> · {stats().healed} healed</span>
+              <span style={{ color: "var(--text-warning-base)" }}> · {stats().healed} healed</span>
             ) : null}
             {stats().run ? ` · ${stats().run} active` : ""}
             {stats().frames ? ` · ${stats().frames} frames` : ""}
@@ -132,7 +132,11 @@ export function RunPanel() {
                             <span>·</span>
                             <span class="mono">{a.id}</span>
                             <span
-                              style={{ width: "1px", height: "10px", background: "var(--line)" }}
+                              style={{
+                                width: "1px",
+                                height: "10px",
+                                background: "var(--border-weak-base)",
+                              }}
                             />
                             <Glyphs glyphs={a.glyphs} />
                             <Show when={job()}>
@@ -178,7 +182,13 @@ export function RunPanel() {
                       </span>
                       <span>·</span>
                       <span class="mono">{fmtDur(j)}</span>
-                      <span style={{ width: "1px", height: "10px", background: "var(--line)" }} />
+                      <span
+                        style={{
+                          width: "1px",
+                          height: "10px",
+                          background: "var(--border-weak-base)",
+                        }}
+                      />
                       <Glyphs glyphs={j.glyphs ?? j.steps?.[0]?.glyphs} />
                       <Show when={(j.attempts ?? 1) > 1}>
                         <span class="mono">×{j.attempts}</span>
@@ -196,7 +206,7 @@ export function RunPanel() {
                         <span class="heal-box__icon">⚠</span>
                         <span>
                           {j.healMessage ?? "Step self-healed on retry."}{" "}
-                          <span class="mono" style={{ color: "var(--heal)" }}>
+                          <span class="mono" style={{ color: "var(--text-warning-base)" }}>
                             attempt {j.attempts}
                           </span>
                         </span>
@@ -257,19 +267,19 @@ export function RunPanel() {
             </div>
             <div class="tile">
               <span class="tile__label">Passed</span>
-              <b class="mono" style={{ color: "var(--pass)" }}>
+              <b class="mono" style={{ color: "var(--text-success-base)" }}>
                 {stats().ok}
               </b>
             </div>
             <div class="tile">
               <span class="tile__label">Failed</span>
-              <b class="mono" style={{ color: "var(--fail)" }}>
+              <b class="mono" style={{ color: "var(--text-critical-base)" }}>
                 {stats().fail}
               </b>
             </div>
             <div class="tile">
               <span class="tile__label">Healed</span>
-              <b class="mono" style={{ color: "var(--heal)" }}>
+              <b class="mono" style={{ color: "var(--text-warning-base)" }}>
                 {stats().healed}
               </b>
             </div>
@@ -286,9 +296,11 @@ export function RunPanel() {
           <Show when={stats().healed > 0}>
             <div class="tile tile--wide" style={{ "border-color": "rgba(229,164,59,.3)" }}>
               <div style={{ display: "flex", gap: "9px" }}>
-                <span style={{ color: "var(--heal)" }}>✦</span>
-                <div style={{ "font-size": "12px", "line-height": "1.55", color: "var(--dim)" }}>
-                  <span style={{ color: "var(--text)", "font-weight": 600 }}>
+                <span style={{ color: "var(--text-warning-base)" }}>✦</span>
+                <div
+                  style={{ "font-size": "12px", "line-height": "1.55", color: "var(--text-base)" }}
+                >
+                  <span style={{ color: "var(--text-strong)", "font-weight": 600 }}>
                     {stats().healed} step{stats().healed === 1 ? "" : "s"} self-healed on this
                     session.
                   </span>{" "}
@@ -301,7 +313,7 @@ export function RunPanel() {
 
           <div class="tile tile--wide">
             <span class="tile__label">Selected recipe</span>
-            <div class="mono" style={{ "margin-top": "0.35rem", color: "var(--text)" }}>
+            <div class="mono" style={{ "margin-top": "0.35rem", color: "var(--text-strong)" }}>
               {selectedMeta()?.id ?? "—"}
             </div>
             <div style={{ "margin-top": "0.45rem" }}>
@@ -310,7 +322,7 @@ export function RunPanel() {
             <div
               style={{
                 "margin-top": "0.35rem",
-                color: "var(--dim)",
+                color: "var(--text-base)",
                 "font-size": "12px",
                 "line-height": "1.55",
               }}
@@ -321,7 +333,7 @@ export function RunPanel() {
 
           <div class="tile tile--wide">
             <span class="tile__label">Device under test</span>
-            <div class="mono" style={{ "margin-top": "0.35rem", color: "var(--text)" }}>
+            <div class="mono" style={{ "margin-top": "0.35rem", color: "var(--text-strong)" }}>
               {server.selectedDevice() ?? "no device"}
             </div>
           </div>
@@ -330,7 +342,11 @@ export function RunPanel() {
             <span class="tile__label">Runs directory</span>
             <div
               class="mono"
-              style={{ "margin-top": "0.35rem", "font-size": "11.5px", color: "var(--text)" }}
+              style={{
+                "margin-top": "0.35rem",
+                "font-size": "11.5px",
+                color: "var(--text-strong)",
+              }}
             >
               {server.runsRoot() || "runs/"}
             </div>
@@ -385,7 +401,7 @@ export function RunPanel() {
                 <span class="mono" style={{ "font-size": "12px" }}>
                   {row.name}
                 </span>
-                <span class="mono" style={{ "font-size": "10.5px", color: "var(--faint)" }}>
+                <span class="mono" style={{ "font-size": "10.5px", color: "var(--text-weak)" }}>
                   {row.meta}
                 </span>
               </div>
@@ -430,7 +446,7 @@ export function RunPanel() {
                     <span class="mono" style={{ "font-size": "12px", display: "block" }}>
                       {run.action}
                     </span>
-                    <span class="mono" style={{ "font-size": "10.5px", color: "var(--faint)" }}>
+                    <span class="mono" style={{ "font-size": "10.5px", color: "var(--text-weak)" }}>
                       {run.status}
                       {run.healed ? " · healed" : ""}
                       {" · "}

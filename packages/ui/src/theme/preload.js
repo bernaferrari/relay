@@ -1,4 +1,4 @@
-/* OpenCode-style FOUC prevention (namespaced keys for grok-device). */
+/* OpenCode FOUC prevention — inject cached resolve+v2 CSS only. */
 (function () {
   try {
     var themeId = localStorage.getItem("grok-device-theme-id") || "grok";

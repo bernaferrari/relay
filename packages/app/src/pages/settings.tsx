@@ -114,17 +114,17 @@ export function SettingsPage() {
                     <span
                       class="theme-card__swatch"
                       style={{
-                        background: sw()?.bg ?? "var(--bg)",
-                        "border-color": sw()?.primary ?? "var(--line)",
+                        background: sw()?.bg ?? "var(--background-base)",
+                        "border-color": sw()?.primary ?? "var(--border-weak-base)",
                       }}
                     >
                       <span
                         class="theme-card__dot"
-                        style={{ background: sw()?.primary ?? "var(--acc)" }}
+                        style={{ background: sw()?.primary ?? "var(--button-primary-base)" }}
                       />
                       <span
                         class="theme-card__bar"
-                        style={{ background: sw()?.surface ?? "var(--panel)" }}
+                        style={{ background: sw()?.surface ?? "var(--surface-raised-base)" }}
                       />
                     </span>
                     <span class="theme-card__name">{theme.name(id)}</span>
@@ -165,7 +165,10 @@ export function SettingsPage() {
           </Show>
         </div>
         <Show when={server.error()}>
-          <p class="appearance-hint" style={{ "margin-top": "0.75rem", color: "var(--fail)" }}>
+          <p
+            class="appearance-hint"
+            style={{ "margin-top": "0.75rem", color: "var(--text-critical-base)" }}
+          >
             {server.error()}
           </p>
         </Show>
@@ -174,7 +177,7 @@ export function SettingsPage() {
       <Card>
         <CardHeader title="About" description="Runtime platform information." />
         <p class="appearance-hint" style={{ margin: 0 }}>
-          Platform: <strong style={{ color: "var(--text)" }}>{platform.platform}</strong>
+          Platform: <strong style={{ color: "var(--text-strong)" }}>{platform.platform}</strong>
           {platform.version ? ` · v${platform.version}` : ""}
           {" · "}
           Theme <span class="mono">{theme.themeId()}</span> / {theme.mode()}

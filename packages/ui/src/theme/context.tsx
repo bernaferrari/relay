@@ -146,53 +146,6 @@ function getSystemMode(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-/**
- * Product shell aliases so Stage/PostHog-ish CSS keeps working on top of OpenCode tokens.
- * OpenCode remains the token source; these are pure var() bridges.
- */
-function productAliasCss(): string {
-  return `
-  --bg: var(--background-base);
-  --bg-light: var(--surface-base, var(--background-base));
-  --stage: var(--background-base);
-  --panel: var(--surface-raised-base, var(--surface-base, var(--background-base)));
-  --raise: var(--surface-raised-base, var(--surface-base, var(--background-stronger, var(--background-base))));
-  --raise-2: var(--border-weak-base, var(--border-base, var(--background-stronger)));
-  --line: var(--border-weak-base, var(--border-base));
-  --line2: var(--border-base, var(--border-strong-base));
-  --text: var(--text-strong);
-  --dim: var(--text-base, var(--text-weak));
-  --faint: var(--text-weak, var(--text-weaker));
-  --muted: var(--text-weaker, var(--text-weak));
-  --acc: var(--icon-info-base, var(--text-info-base, var(--button-primary-base)));
-  --acc-hover: var(--button-primary-hover, var(--acc));
-  --acc-soft: color-mix(in srgb, var(--acc) 16%, transparent);
-  --acc-line: color-mix(in srgb, var(--acc) 40%, transparent);
-  --acc-text: var(--acc);
-  --pass: var(--text-success-base, var(--icon-success-base));
-  --pass-soft: var(--surface-success-base, color-mix(in srgb, var(--pass) 14%, transparent));
-  --heal: var(--text-warning-base, var(--icon-warning-base));
-  --heal-soft: var(--surface-warning-base, color-mix(in srgb, var(--heal) 14%, transparent));
-  --fail: var(--text-critical-base, var(--icon-critical-base, var(--text-error-base)));
-  --fail-soft: var(--surface-critical-base, color-mix(in srgb, var(--fail) 14%, transparent));
-  --color-bg: var(--background-base);
-  --color-surface: var(--panel);
-  --color-text: var(--text-strong);
-  --color-text-muted: var(--text-weak);
-  --color-primary: var(--acc);
-  --color-success: var(--pass);
-  --color-warning: var(--heal);
-  --color-error: var(--fail);
-  --color-border: var(--line);
-  --surface: var(--panel);
-  --primary: var(--acc);
-  --success: var(--pass);
-  --warning: var(--heal);
-  --error: var(--fail);
-  --border: var(--line);
-`;
-}
-
 export type ThemeAppliedDetail = {
   themeId: string;
   mode: "light" | "dark";
@@ -219,22 +172,18 @@ function applyThemeCss(
   const tokens = resolveThemeVariant(variant, isDark);
   const css = themeToCss(tokens);
   const v2 = themeV2ToCss(resolveThemeVariantV2(variant, isDark));
-  const aliases = productAliasCss();
 
   // Cache non-default themes for FOUC preload (OpenCode skips oc-2)
   if (themeId !== "oc-2") {
-    write(
-      isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT,
-      `${css}\n  ${v2}\n  ${aliases}`,
-    );
+    write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, `${css}\n  ${v2}`);
   }
 
+  // Pure OpenCode injection — no product alias layer
   const fullCss = `:root {
   color-scheme: ${mode};
   --text-mix-blend-mode: ${isDark ? "plus-lighter" : "multiply"};
   ${css}
   ${v2}
-  ${aliases}
 }`;
 
   document.getElementById("gd-theme-preload")?.remove();
@@ -265,11 +214,7 @@ function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
     const tokens = resolveThemeVariant(variant, isDark);
     const css = themeToCss(tokens);
     const v2 = themeV2ToCss(resolveThemeVariantV2(variant, isDark));
-    const aliases = productAliasCss();
-    write(
-      isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT,
-      `${css}\n  ${v2}\n  ${aliases}`,
-    );
+    write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, `${css}\n  ${v2}`);
   }
 }
 

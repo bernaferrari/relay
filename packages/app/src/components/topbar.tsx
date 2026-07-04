@@ -161,7 +161,7 @@ export function Topbar(props: { onSettings: () => void }) {
           }}
         >
           Theme
-          <span class="mono" style={{ "font-size": "11px", color: "var(--faint)" }}>
+          <span class="mono" style={{ "font-size": "11px", color: "var(--text-weak)" }}>
             {theme.name(theme.themeId())} · {theme.mode()}
           </span>
         </button>
@@ -203,7 +203,7 @@ export function Topbar(props: { onSettings: () => void }) {
                       >
                         <span
                           class="appear-menu__swatch"
-                          style={{ background: sw()?.primary ?? "var(--acc)" }}
+                          style={{ background: sw()?.primary ?? "var(--button-primary-base)" }}
                         />
                         <span style={{ overflow: "hidden", "text-overflow": "ellipsis" }}>
                           {theme.name(id)}
