@@ -1205,3 +1205,229 @@
     transition: none;
   }
 }
+
+/* ——— Appearance / theme picker (Settings + desktop) ——— */
+.appearance-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.appearance-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+  letter-spacing: -0.01em;
+}
+
+.appearance-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.appearance-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint);
+  line-height: 1.45;
+}
+
+.scheme-seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.scheme-seg__btn {
+  padding: 6px 14px !important;
+  border-radius: 6px !important;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--faint);
+}
+
+.scheme-seg__btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.scheme-seg__btn.on {
+  background: var(--acc);
+  color: #fff;
+}
+
+.theme-search {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 10px;
+  font-size: 12.5px;
+  min-width: 10rem;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding: 2px;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  text-align: left;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.theme-card:hover {
+  border-color: var(--line2);
+  background: color-mix(in srgb, var(--panel) 80%, var(--bg));
+}
+
+.theme-card.on {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc-soft);
+  background: var(--acc-soft);
+}
+
+.theme-card__swatch {
+  display: block;
+  height: 44px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-card__dot {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 12px;
+  height: 12px;
+  border-radius: 99px;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+.theme-card__bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  height: 8px;
+  border-radius: 3px;
+  opacity: 0.95;
+}
+
+.theme-card__name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-card__id {
+  font-size: 10px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* topbar appearance menu */
+.appear-wrap {
+  position: relative;
+}
+
+.appear-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 60;
+  width: min(320px, calc(100vw - 24px));
+  background: var(--raise);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.appear-menu__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.appear-menu__title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.appear-menu__themes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.appear-menu__theme {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.appear-menu__theme:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.appear-menu__theme.on {
+  border-color: var(--acc-line);
+  background: var(--acc-soft);
+}
+
+.appear-menu__swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  flex: none;
+}
+
+.appear-menu__footer {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}

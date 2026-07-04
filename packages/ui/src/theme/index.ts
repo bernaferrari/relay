@@ -1,10 +1,21 @@
 export type {
-  Theme,
-  ThemePalette,
-  ThemeVariant,
-  HexColor,
   ColorScheme,
+  ColorValue,
+  DesktopTheme,
+  HexColor,
   ResolvedCssVars,
+  Theme,
+  ThemePaletteColors,
+  ThemeVariant,
 } from "./types";
-export { resolveThemeVariant, resolveTheme, themeToCss, themeToRootCss } from "./resolve";
-export { ThemeProvider, useTheme } from "./context";
+
+export {
+  resolvePalette,
+  resolveTheme,
+  resolveThemeVariant,
+  themeBackground,
+  themeToCss,
+  themeToRootCss,
+} from "./resolve";
+
+export { ThemeProvider, useTheme, type ThemeAppliedDetail } from "./context";

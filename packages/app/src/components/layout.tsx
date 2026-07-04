@@ -1,6 +1,7 @@
 import { type JSX, onMount, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
 import { useCommand, CommandPalette } from "../context/command";
+import { useTheme } from "@grok-device/ui/theme/context";
 import { Topbar } from "./topbar";
 
 export type AppView = "workspace" | "settings";
@@ -12,6 +13,7 @@ export function Layout(props: {
 }) {
   const server = useServer();
   const cmd = useCommand();
+  const theme = useTheme();
 
   onMount(() => {
     const unsub = cmd.register([
@@ -20,6 +22,25 @@ export function Layout(props: {
         title: "Go to workspace",
         group: "Navigation",
         run: () => props.onNavigate("workspace"),
+      },
+
+      {
+        id: "appearance.scheme.light",
+        title: "Color scheme: Light",
+        group: "Appearance",
+        run: () => theme.setColorScheme("light"),
+      },
+      {
+        id: "appearance.scheme.dark",
+        title: "Color scheme: Dark",
+        group: "Appearance",
+        run: () => theme.setColorScheme("dark"),
+      },
+      {
+        id: "appearance.scheme.system",
+        title: "Color scheme: System",
+        group: "Appearance",
+        run: () => theme.setColorScheme("system"),
       },
       {
         id: "nav.settings",

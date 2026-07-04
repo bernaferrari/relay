@@ -1,30 +1,35 @@
 {
+  "$schema": "https://opencode.ai/desktop-theme.json",
+  "name": "Grok",
   "id": "grok",
-  "name": "Grok (PostHog-ish)",
   "light": {
     "palette": {
-      "bg": "#F6F7F9",
-      "surface": "#FFFFFF",
-      "text": "#1D1F27",
-      "textMuted": "#6A6C75",
+      "neutral": "#F6F7F9",
+      "ink": "#1D1F27",
       "primary": "#1D4AFF",
+      "accent": "#F7A501",
       "success": "#2F9E6B",
       "warning": "#C47E00",
       "error": "#D4430F",
-      "border": "#D7D9E0"
+      "info": "#318795",
+      "interactive": "#1D4AFF",
+      "diffAdd": "#4db380",
+      "diffDelete": "#f52a65"
     }
   },
   "dark": {
     "palette": {
-      "bg": "#1D1F27",
-      "surface": "#23252E",
-      "text": "#EEEFE9",
-      "textMuted": "#C0C1C3",
+      "neutral": "#1D1F27",
+      "ink": "#EEEFE9",
       "primary": "#1D4AFF",
+      "accent": "#F7A501",
       "success": "#42D392",
       "warning": "#F7A501",
       "error": "#F54E00",
-      "border": "#2F323C"
+      "info": "#7dcfff",
+      "interactive": "#4C7DFF",
+      "diffAdd": "#41a6b5",
+      "diffDelete": "#c34043"
     }
   }
 }

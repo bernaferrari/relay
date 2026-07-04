@@ -9,3 +9,4 @@ export {
 } from "./context/platform";
 export { ServerProvider, useServer } from "./context/server";
 export { CommandProvider, useCommand, type Command } from "./context/command";
+export type { ThemeAppliedDetail } from "@grok-device/ui/theme/context";

@@ -4,10 +4,10 @@ import { createEffect, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import { createSimpleContext } from "../context/helper";
 import grokThemeJson from "./themes/grok.json";
-import { resolveThemeVariant, themeToCss } from "./resolve";
-import type { ColorScheme, Theme } from "./types";
+import { resolveThemeVariant, themeBackground, themeToCss } from "./resolve";
+import type { ColorScheme, DesktopTheme } from "./types";
 
-export type { ColorScheme, Theme };
+export type { ColorScheme, DesktopTheme as Theme };
 
 const STORAGE_KEYS = {
   THEME_ID: "grok-device-theme-id",
@@ -17,24 +17,71 @@ const STORAGE_KEYS = {
 } as const;
 
 const THEME_STYLE_ID = "gd-theme";
+/** Default product theme; OpenCode themes available in the picker. */
 const DEFAULT_THEME_ID = "grok";
 
-let files: Record<string, () => Promise<{ default: Theme }>> | undefined;
-let ids: string[] | undefined;
+const NAMES: Record<string, string> = {
+  grok: "Grok",
+  "oc-2": "OC-2",
+  opencode: "OpenCode",
+  amoled: "AMOLED",
+  aura: "Aura",
+  ayu: "Ayu",
+  carbonfox: "Carbonfox",
+  catppuccin: "Catppuccin",
+  "catppuccin-frappe": "Catppuccin Frappe",
+  "catppuccin-macchiato": "Catppuccin Macchiato",
+  cobalt2: "Cobalt2",
+  cursor: "Cursor",
+  dracula: "Dracula",
+  everforest: "Everforest",
+  flexoki: "Flexoki",
+  github: "GitHub",
+  gruvbox: "Gruvbox",
+  kanagawa: "Kanagawa",
+  "lucent-orng": "Lucent Orng",
+  material: "Material",
+  matrix: "Matrix",
+  mercury: "Mercury",
+  monokai: "Monokai",
+  nightowl: "Night Owl",
+  nord: "Nord",
+  "one-dark": "One Dark",
+  onedarkpro: "One Dark Pro",
+  orng: "Orng",
+  "osaka-jade": "Osaka Jade",
+  palenight: "Palenight",
+  rosepine: "Rose Pine",
+  shadesofpurple: "Shades of Purple",
+  solarized: "Solarized",
+  synthwave84: "Synthwave '84",
+  tokyonight: "Tokyonight",
+  vercel: "Vercel",
+  vesper: "Vesper",
+  zenburn: "Zenburn",
+};
+
+let files: Record<string, () => Promise<{ default: DesktopTheme }>> | undefined;
+let cachedIds: string[] | undefined;
 let known: Set<string> | undefined;
 
 function getFiles() {
   if (files) return files;
-  files = import.meta.glob<{ default: Theme }>("./themes/*.json");
+  files = import.meta.glob<{ default: DesktopTheme }>("./themes/*.json");
   return files;
 }
 
 function themeIDs() {
-  if (ids) return ids;
-  ids = Object.keys(getFiles())
+  if (cachedIds) return cachedIds;
+  cachedIds = Object.keys(getFiles())
     .map((path) => path.slice("./themes/".length, -".json".length))
-    .sort();
-  return ids;
+    .sort((a, b) => {
+      const rank = (id: string) =>
+        id === "grok" ? 0 : id === "opencode" ? 1 : id === "oc-2" ? 2 : 10;
+      const d = rank(a) - rank(b);
+      return d !== 0 ? d : a.localeCompare(b);
+    });
+  return cachedIds;
 }
 
 function knownThemes() {
@@ -43,13 +90,7 @@ function knownThemes() {
   return known;
 }
 
-const names: Record<string, string> = {
-  grok: "Grok",
-  dracula: "Dracula",
-  nord: "Nord",
-};
-
-const grokTheme = grokThemeJson as Theme;
+const grokTheme = grokThemeJson as DesktopTheme;
 
 function read(key: string) {
   if (typeof localStorage !== "object") return null;
@@ -65,7 +106,7 @@ function write(key: string, value: string) {
   try {
     localStorage.setItem(key, value);
   } catch {
-    /* ignore quota / private mode */
+    /* ignore */
   }
 }
 
@@ -83,40 +124,59 @@ function getSystemMode(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function applyThemeCss(theme: Theme, themeId: string, mode: "light" | "dark") {
-  const isDark = mode === "dark";
-  const variant = isDark ? theme.dark : theme.light;
+export type ThemeAppliedDetail = {
+  themeId: string;
+  mode: "light" | "dark";
+  background: string;
+};
+
+function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "dark") {
+  const variant = mode === "dark" ? theme.dark : theme.light;
   const tokens = resolveThemeVariant(variant);
   const css = themeToCss(tokens);
+  const bg = themeBackground(theme, mode);
 
-  write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css);
+  write(mode === "dark" ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css);
 
-  const fullCss = `:root {
+  ensureThemeStyleElement().textContent = `:root {
   color-scheme: ${mode};
   ${css}
 }`;
 
   document.getElementById("gd-theme-preload")?.remove();
-  ensureThemeStyleElement().textContent = fullCss;
   document.documentElement.dataset.theme = themeId;
   document.documentElement.dataset.colorScheme = mode;
-  document.documentElement.style.backgroundColor = variant.palette.bg;
+  document.documentElement.style.backgroundColor = bg;
+  if (document.body) document.body.style.backgroundColor = bg;
 
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", variant.palette.bg);
+  if (meta) meta.setAttribute("content", bg);
+
+  window.dispatchEvent(
+    new CustomEvent<ThemeAppliedDetail>("grok-device:theme-applied", {
+      detail: { themeId, mode, background: bg },
+    }),
+  );
 }
 
-function cacheThemeVariants(theme: Theme) {
+function cacheThemeVariants(theme: DesktopTheme) {
   for (const mode of ["light", "dark"] as const) {
     const variant = mode === "dark" ? theme.dark : theme.light;
-    const css = themeToCss(resolveThemeVariant(variant));
-    write(mode === "dark" ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css);
+    write(
+      mode === "dark" ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT,
+      themeToCss(resolveThemeVariant(variant)),
+    );
   }
 }
 
 export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
   name: "Theme",
-  init: (props: { defaultTheme?: string; defaultColorScheme?: ColorScheme }) => {
+  gate: false,
+  init: (props: {
+    defaultTheme?: string;
+    defaultColorScheme?: ColorScheme;
+    onThemeApplied?: (detail: ThemeAppliedDetail) => void;
+  }) => {
     const themeId = read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme ?? DEFAULT_THEME_ID;
     const colorScheme =
       (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ??
@@ -125,15 +185,14 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme;
 
     const [store, setStore] = createStore({
-      themes: {
-        grok: grokTheme,
-      } as Record<string, Theme>,
+      themes: { grok: grokTheme } as Record<string, DesktopTheme>,
       themeId,
       colorScheme,
       mode,
+      ready: false,
     });
 
-    const loads = new Map<string, Promise<Theme | undefined>>();
+    const loads = new Map<string, Promise<DesktopTheme | undefined>>();
 
     const load = (id: string) => {
       const hit = store.themes[id];
@@ -148,27 +207,30 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
           setStore("themes", id, theme);
           return theme;
         })
-        .finally(() => {
-          loads.delete(id);
-        });
+        .finally(() => loads.delete(id));
       loads.set(id, task);
       return task;
     };
 
-    const applyTheme = (theme: Theme, id: string, nextMode: "light" | "dark") => {
-      applyThemeCss(theme, id, nextMode);
-    };
-
-    const ids = () => {
-      const extra = Object.keys(store.themes)
-        .filter((id) => !knownThemes().has(id))
-        .sort();
-      const all = themeIDs();
-      if (extra.length === 0) return all;
-      return [...all, ...extra];
-    };
+    const ids = () => themeIDs();
 
     const loadThemes = () => Promise.all(themeIDs().map(load)).then(() => store.themes);
+
+    const name = (id: string) => store.themes[id]?.name ?? NAMES[id] ?? id;
+
+    /** Swatches from OpenCode palette (neutral + primary). */
+    const swatches = (id: string) => {
+      const t = store.themes[id];
+      if (!t) return null;
+      const p = (store.mode === "dark" ? t.dark : t.light).palette;
+      if (!p) return null;
+      return {
+        bg: p.neutral,
+        primary: p.primary,
+        text: p.ink,
+        surface: p.neutral,
+      };
+    };
 
     onMount(() => {
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -197,6 +259,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       };
       window.addEventListener("storage", onStorage);
 
+      void loadThemes().then(() => setStore("ready", true));
       void load(store.themeId).then((theme) => {
         if (!theme) return;
         cacheThemeVariants(theme);
@@ -211,7 +274,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     createEffect(() => {
       const theme = store.themes[store.themeId];
       if (!theme) return;
-      applyTheme(theme, store.themeId, store.mode);
+      applyThemeCss(theme, store.themeId, store.mode);
+      props.onThemeApplied?.({
+        themeId: store.themeId,
+        mode: store.mode,
+        background: themeBackground(theme, store.mode),
+      });
     });
 
     const setTheme = (id: string) => {
@@ -237,13 +305,15 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       themeId: () => store.themeId,
       colorScheme: () => store.colorScheme,
       mode: () => store.mode,
+      ready: () => store.ready,
       ids,
-      name: (id: string) => store.themes[id]?.name ?? names[id] ?? id,
+      name,
+      swatches,
       loadThemes,
       themes: () => store.themes,
       setTheme,
       setColorScheme,
-      registerTheme: (theme: Theme) => setStore("themes", theme.id, theme),
+      registerTheme: (theme: DesktopTheme) => setStore("themes", theme.id, theme),
     };
   },
 });

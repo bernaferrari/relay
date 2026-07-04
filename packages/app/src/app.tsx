@@ -1,5 +1,5 @@
 import { type ParentProps, createSignal, Show } from "solid-js";
-import { ThemeProvider } from "@grok-device/ui/theme/context";
+import { ThemeProvider, type ThemeAppliedDetail } from "@grok-device/ui/theme/context";
 import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
 import { CommandProvider } from "./context/command";
@@ -12,11 +12,17 @@ export function AppBaseProviders(
   props: ParentProps<{
     platform: Platform;
     defaultTheme?: string;
+    defaultColorScheme?: "light" | "dark" | "system";
+    onThemeApplied?: (detail: ThemeAppliedDetail) => void;
   }>,
 ) {
   return (
     <PlatformProvider value={props.platform}>
-      <ThemeProvider defaultTheme={props.defaultTheme ?? "grok"} defaultColorScheme="system">
+      <ThemeProvider
+        defaultTheme={props.defaultTheme ?? "grok"}
+        defaultColorScheme={props.defaultColorScheme ?? "system"}
+        onThemeApplied={props.onThemeApplied}
+      >
         <ServerProvider>
           <CommandProvider>{props.children}</CommandProvider>
         </ServerProvider>
@@ -25,7 +31,7 @@ export function AppBaseProviders(
   );
 }
 
-/** Main product UI — OpenCode-style testing workspace. */
+/** Main product UI — Stage testing workspace. */
 export function AppInterface() {
   const [view, setView] = createSignal<AppView>("workspace");
 

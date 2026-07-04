@@ -4,6 +4,7 @@ import {
   AppInterface,
   type Platform,
   type PlatformStorage,
+  type ThemeAppliedDetail,
 } from "@grok-device/app";
 import "@grok-device/ui/styles";
 import "./styles.css";
@@ -42,6 +43,12 @@ function createDesktopPlatform(): Platform {
   };
 }
 
+function onThemeApplied(detail: ThemeAppliedDetail) {
+  void window.api.setBackgroundColor(detail.background);
+  // macOS titlebar / traffic lights read a bit better with matching base
+  document.documentElement.style.setProperty("--desktop-bg", detail.background);
+}
+
 const root = document.getElementById("root");
 if (!root) {
   throw new Error("Root element #root not found");
@@ -51,7 +58,7 @@ const platform = createDesktopPlatform();
 
 render(
   () => (
-    <AppBaseProviders platform={platform}>
+    <AppBaseProviders platform={platform} onThemeApplied={onThemeApplied}>
       <AppInterface />
     </AppBaseProviders>
   ),

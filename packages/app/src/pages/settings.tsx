@@ -1,4 +1,4 @@
-import { For, createSignal, onMount, Show } from "solid-js";
+import { For, Show, createSignal, onMount } from "solid-js";
 import { Button } from "@grok-device/ui/button";
 import { Card, CardHeader } from "@grok-device/ui/card";
 import { useTheme, type ColorScheme } from "@grok-device/ui/theme/context";
@@ -12,6 +12,7 @@ export function SettingsPage() {
   const [urlDraft, setUrlDraft] = createSignal("");
   const [themeIds, setThemeIds] = createSignal<string[]>([]);
   const [saved, setSaved] = createSignal(false);
+  const [query, setQuery] = createSignal("");
 
   onMount(() => {
     setUrlDraft(server.serverUrl());
@@ -40,31 +41,99 @@ export function SettingsPage() {
     ]);
   }
 
+  const filteredThemes = () => {
+    const q = query().trim().toLowerCase();
+    const list = themeIds().length ? themeIds() : theme.ids();
+    if (!q) return list;
+    return list.filter((id) => {
+      const name = theme.name(id).toLowerCase();
+      return name.includes(q) || id.includes(q);
+    });
+  };
+
   return (
     <main class="settings-page">
       <Card>
-        <CardHeader title="Appearance" description="Theme and color scheme for the app shell." />
-        <div class="settings-row">
-          <label for="theme-id">Theme</label>
-          <select
-            id="theme-id"
-            value={theme.themeId()}
-            onChange={(e) => theme.setTheme(e.currentTarget.value)}
-          >
-            <For each={themeIds()}>{(id) => <option value={id}>{theme.name(id)}</option>}</For>
-          </select>
+        <CardHeader
+          title="Appearance"
+          description="OpenCode-derived themes with light, dark, or system color scheme. Preference is saved for this app (including Electron)."
+        />
+
+        <div class="appearance-block">
+          <div class="appearance-label">Color scheme</div>
+          <div class="scheme-seg" role="group" aria-label="Color scheme">
+            {(
+              [
+                ["system", "System"],
+                ["light", "Light"],
+                ["dark", "Dark"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                type="button"
+                class="scheme-seg__btn"
+                classList={{ on: theme.colorScheme() === id }}
+                onClick={() => theme.setColorScheme(id as ColorScheme)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p class="appearance-hint">
+            Active mode: <span class="mono">{theme.mode()}</span>
+            {theme.colorScheme() === "system" ? " (follows OS)" : ""}
+          </p>
         </div>
-        <div class="settings-row" style={{ "margin-top": "0.85rem" }}>
-          <label for="color-scheme">Color scheme</label>
-          <select
-            id="color-scheme"
-            value={theme.colorScheme()}
-            onChange={(e) => theme.setColorScheme(e.currentTarget.value as ColorScheme)}
-          >
-            <option value="system">System</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
+
+        <div class="appearance-block" style={{ "margin-top": "1.1rem" }}>
+          <div class="appearance-label-row">
+            <div class="appearance-label">Theme</div>
+            <input
+              class="theme-search"
+              type="search"
+              placeholder="Search themes…"
+              value={query()}
+              onInput={(e) => setQuery(e.currentTarget.value)}
+            />
+          </div>
+          <p class="appearance-hint">
+            {filteredThemes().length} themes · sourced from OpenCode (+ Grok product default)
+          </p>
+          <div class="theme-grid">
+            <For each={filteredThemes()}>
+              {(id) => {
+                const sw = () => theme.swatches(id);
+                return (
+                  <button
+                    type="button"
+                    class="theme-card"
+                    classList={{ on: theme.themeId() === id }}
+                    onClick={() => theme.setTheme(id)}
+                    title={theme.name(id)}
+                  >
+                    <span
+                      class="theme-card__swatch"
+                      style={{
+                        background: sw()?.bg ?? "var(--bg)",
+                        "border-color": sw()?.primary ?? "var(--line)",
+                      }}
+                    >
+                      <span
+                        class="theme-card__dot"
+                        style={{ background: sw()?.primary ?? "var(--acc)" }}
+                      />
+                      <span
+                        class="theme-card__bar"
+                        style={{ background: sw()?.surface ?? "var(--panel)" }}
+                      />
+                    </span>
+                    <span class="theme-card__name">{theme.name(id)}</span>
+                    <span class="theme-card__id mono">{id}</span>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
         </div>
       </Card>
 
@@ -92,14 +161,11 @@ export function SettingsPage() {
             Refresh now
           </Button>
           <Show when={saved()}>
-            <span class="list-item__meta">Saved</span>
+            <span class="appearance-hint">Saved</span>
           </Show>
         </div>
         <Show when={server.error()}>
-          <p
-            class="list-item__meta"
-            style={{ "margin-top": "0.75rem", color: "var(--color-error)" }}
-          >
+          <p class="appearance-hint" style={{ "margin-top": "0.75rem", color: "var(--fail)" }}>
             {server.error()}
           </p>
         </Show>
@@ -107,9 +173,11 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader title="About" description="Runtime platform information." />
-        <p class="list-item__meta" style={{ margin: 0 }}>
-          Platform: <strong style={{ color: "var(--color-text)" }}>{platform.platform}</strong>
+        <p class="appearance-hint" style={{ margin: 0 }}>
+          Platform: <strong style={{ color: "var(--text)" }}>{platform.platform}</strong>
           {platform.version ? ` · v${platform.version}` : ""}
+          {" · "}
+          Theme <span class="mono">{theme.themeId()}</span> / {theme.mode()}
         </p>
       </Card>
     </main>
