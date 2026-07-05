@@ -54,6 +54,41 @@ final class RunnerTests: XCTestCase {
   var needsFirstInteractionDelay = false
   var activeRecording: ScreenRecorder?
   let commandJournal = RunnerCommandJournal()
+  // Coalesces duplicate transport sends of the same commandId onto the single in-flight
+  // execution instead of enqueueing them again behind it (#1105 capture pileup).
+  let inFlightCommandLock = NSLock()
+  var inFlightCommandIds: Set<String> = []
+  var inFlightCommandWaiters: [String: [((data: Data, shouldFinish: Bool)) -> Void]] = [:]
+  // Tracks main-queue work abandoned by the execution watchdog so new main-thread commands
+  // fail fast as busy instead of queueing behind work that cannot be cancelled (#1105).
+  let mainThreadWorkLock = NSLock()
+  var abandonedMainThreadWorkCount = 0
+  var abandonedMainThreadWorkSince: Date?
+  // Past this age the runner stops claiming "busy, retry soon" and reports itself wedged so
+  // the daemon recycles it — the only cure once the main thread is stuck for good.
+  let mainThreadWedgeThreshold: TimeInterval = 120
+  // Sticky per-bundle hint: after the XCTest tree backend ground past its slice (or a snapshot
+  // was abandoned by the watchdog), later capture plans lead with the private AX backend
+  // instead of re-grinding the tree on the same screen class (#1105).
+  let snapshotTreePenaltyLock = NSLock()
+  var snapshotTreePenaltyBundleId: String?
+  var snapshotTreePenaltyUntil = Date.distantPast
+  let snapshotTreePenaltyDuration: TimeInterval = 120
+  // Bluesky-class screens grind ~4-8s before the tree backend fails; anything past this
+  // threshold marks the screen hostile so the next capture leads with private AX.
+  let snapshotTreeSlowCaptureThreshold: TimeInterval = 3
+  // The blocking XCTest tree snapshot XPC runs on a worker thread with this slice so a
+  // content-dependent grind (#1105: seconds to minutes on live Bluesky screens) cannot pin
+  // the capture plan. On timeout the XPC keeps grinding on its worker; while any abandoned
+  // tree capture is outstanding, plans skip the XCTest-backed tiers (tree, query sweep) and
+  // use the private AX backend, which does not go through testmanagerd.
+  let treeCaptureLock = NSLock()
+  var abandonedTreeCaptureCount = 0
+  let treeCaptureSliceBudget: TimeInterval = 8
+  // Observability for the record(_:) suppression below: how many AX-broken-screen snapshot
+  // issues this session muted, so wedge investigations see the volume without grepping logs.
+  let suppressedIssueLock = NSLock()
+  var suppressedAxSnapshotIssueCount = 0
   let interactiveTypes: Set<XCUIElement.ElementType> = [
     .button,
     .cell,
@@ -86,6 +121,43 @@ final class RunnerTests: XCTestCase {
 
   override func setUp() {
     continueAfterFailure = true
+  }
+
+  /// True for the one recorded-issue class the runner deliberately mutes: an AX-server error
+  /// (`kAXError*`) inside a "Failed to get matching snapshot" fetch. The kAXError token
+  /// intentionally covers kAXErrorIllegalArgument and its sibling AX server codes (e.g.
+  /// kAXErrorCannotComplete): any AX-server rejection inside a matching-snapshot fetch is the
+  /// same capture-plan noise the plan already classifies and recovers from. The timeout
+  /// variant ("Failed to get matching snapshot: Timed out while evaluating UI query.") carries
+  /// no kAXError token and MUST keep recording — it signals a genuinely hung query, exactly
+  /// the pathology XCTEST_RECORDED_FAILURE must stay able to see.
+  static func isSuppressedAxSnapshotIssueDescription(_ description: String) -> Bool {
+    description.contains("Failed to get matching snapshot") && description.contains("kAXError")
+  }
+
+  /// On AX-broken screens (deep RN trees, #758/#1105) XCUIApplication queries record
+  /// "Failed to get matching snapshot: ... kAXError..." issues; XCTest tears the whole test
+  /// case down once a few accumulate, killing the long-lived runner right after the command
+  /// completes and forcing a ~25s restart per capture. This override is deliberately
+  /// suite-global (all commands, not just snapshot capture): tap-triggered element queries on
+  /// the same screens record the same noise and would still tear the runner down, and command
+  /// outcomes stay honest through their own error paths — only this issue side-channel is
+  /// muted. Everything else still records (and still drives XCTEST_RECORDED_FAILURE).
+  override func record(_ issue: XCTIssue) {
+    let description = issue.compactDescription
+    if Self.isSuppressedAxSnapshotIssueDescription(description) {
+      suppressedIssueLock.lock()
+      suppressedAxSnapshotIssueCount += 1
+      let count = suppressedAxSnapshotIssueCount
+      suppressedIssueLock.unlock()
+      NSLog(
+        "AGENT_DEVICE_RUNNER_AX_SNAPSHOT_ISSUE_SUPPRESSED count=%ld description=%@",
+        count,
+        description
+      )
+      return
+    }
+    super.record(issue)
   }
 
   @MainActor
