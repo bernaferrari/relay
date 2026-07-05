@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Minimal operating guide for AI coding agents in this repo.
+AGENTS.md is this repo's README for coding agents: project context, commands, conventions, non-obvious traps, and PR expectations in one predictable place. Keep it high-signal and living; prefer durable source-of-truth pointers over file inventories that drift.
 
 ## Agent skills
 
@@ -92,30 +92,25 @@ Keep `src/daemon.ts` a thin router and `src/daemon/request-router.ts` orchestrat
   - read `.oxlintrc.json` before treating lint output as source-level bugs
 - For files over 500 LOC, search for the relevant type/function/section first, then read a bounded range.
 - Do not run integration tests by default.
-- Keep long help prose in `src/cli/parser/cli-help.ts`, flag definitions in `src/cli/parser/cli-flags.ts`, and CLI-specific usage/flag metadata in `src/utils/cli-command-overrides.ts`.
+- Keep long help prose in `src/cli/parser/cli-help.ts`, flag definitions in `src/cli/parser/cli-flags.ts`, and command-specific usage/flag metadata with the command family metadata that owns the command.
 - If build/type errors mention declaration generation, inspect `tsconfig.lib.json` before reading platform code.
 - If lint failures appear after toolchain edits, check whether the rule is from `eslint/*`, `typescript/*`, `import/*`, or `node/*` in `.oxlintrc.json` before assuming source bugs.
 
 ## Apple Runner Seams
-- The OS-agnostic Apple XCTest runner lives under `src/platforms/apple/core/runner/`. Keep dependency direction clean:
-  - `runner-client.ts`: command execution + retry behavior
-  - `runner-transport.ts`: connection/probing/HTTP transport
-  - `runner-contract.ts`: shared `RunnerCommand` type and runner connect/error helpers
-  - `runner-session.ts`: session lifecycle and request/response execution
-  - `runner-xctestrun.ts`: xctestrun preparation/build/cache logic
-- `runner-transport.ts` must not import back from `runner-client.ts`.
+- The OS-agnostic Apple XCTest runner lives under `src/platforms/apple/core/runner/`; use `rg --files src/platforms/apple/core/runner` and read the seam you are changing before editing.
+- Keep dependency direction clean: transport stays below client/session behavior, shared command/error contracts stay in the runner contract module, and xctestrun preparation/build/cache logic stays isolated from request execution.
 - If changing runner connect errors, retry policy, or command typing, start in `src/platforms/apple/core/runner/runner-contract.ts` before touching client/transport files.
 
 ## Adding a New CLI Flag
 
 A new snapshot/command flag touches only the layers that need to understand it. Follow this checklist in order:
 
-1. `src/cli/parser/cli-flags.ts`: add to `CliFlags`, `FLAG_DEFINITIONS`, and the relevant exported flag group (e.g. `SNAPSHOT_FLAGS`). Add the flag to `CLI_COMMAND_OVERRIDES` in `src/utils/cli-command-overrides.ts` for each command that supports it; command names/descriptions come from command contracts unless CLI help needs a specific override.
+1. `src/cli/parser/cli-flags.ts`: add to `CliFlags`, `FLAG_DEFINITIONS`, and the relevant exported flag group (e.g. `SNAPSHOT_FLAGS`). Then update the command family metadata/schema that exposes the flag; find the owner with `rg -n "<command>|supportedFlags|allowedFlags" src/commands src/cli/parser`.
 2. `src/commands/cli-grammar/*`: read the CLI flag into command input when the CLI accepts it.
 3. `src/commands/command-projection.ts` and command-family projection helpers: write the input into the daemon request only if the flag affects daemon execution.
 4. `src/commands/*-command-contracts.ts`: add or update the command input schema only if the option should be available through Node.js or MCP as structured input.
-5. `src/client-types.ts`: update the public typed client option only when the Node.js interface exposes the option.
-6. `src/client-normalizers.ts`: update daemon flag normalization only when the request still needs a public-to-internal option translation.
+5. `src/client/client-types.ts`: update the public typed client option only when the Node.js interface exposes the option.
+6. `src/client/client-normalizers.ts`: update daemon flag normalization only when the request still needs a public-to-internal option translation.
 7. `src/daemon/context.ts` and `src/core/dispatch-context.ts`: add the field only when it flows into platform dispatch.
 8. Handler/platform modules: thread the option only after the command surface, grammar, and projection prove it belongs there.
 
@@ -201,15 +196,9 @@ This repo encodes invariants as self-declaring gates. The correct response to a 
 - Prefer selector or `@ref` interactions over raw x/y commands in tests and docs, especially on macOS where window position can vary across runs.
 
 ## Shared Test Utilities
-- Before writing a new test, check `src/__tests__/test-utils/` for existing helpers:
-  - `device-fixtures.ts`: canonical `DeviceInfo` constants (`ANDROID_EMULATOR`, `IOS_SIMULATOR`, `IOS_DEVICE`, `MACOS_DEVICE`, `LINUX_DEVICE`, etc.)
-  - `session-factories.ts`: `makeSession`, `makeIosSession`, `makeAndroidSession`, `makeMacOsSession`
-  - `store-factory.ts`: `makeSessionStore` (creates temp `SessionStore` instances)
-  - `snapshot-builders.ts`: `buildNodes`, `makeSnapshotState`
-  - `mocked-binaries.ts`: `withMockedAdb`, `withMockedXcrun` (stub CLI binaries for dispatch tests)
-- Use `import { ... } from '<relative-path>/__tests__/test-utils/index.ts'` for convenient barrel imports.
-- Prefer shared fixtures over inlining new `DeviceInfo` or `SessionState` objects in tests.
-- Do not duplicate `makeSessionStore`, `makeSession`, or device constants when a shared helper already exists.
+- Before writing a new test, inspect `src/__tests__/test-utils/index.ts` and search for existing factories, fixtures, and mocked binaries with `rg -n "export .*make|export .*DEVICE|withMocked" src/__tests__/test-utils`.
+- Use the test-utils barrel for imports and prefer named shared fixtures over inlining new `DeviceInfo`, `SessionState`, snapshot, store, or mocked-binary objects.
+- Do not duplicate session/store/device helpers when a shared helper already exists; if a helper is missing, add it near the concept it serves and export it through the barrel.
 
 ## Testing Matrix
 - Docs/skills only: no tests required unless a more specific rule below applies.
@@ -258,8 +247,8 @@ This repo encodes invariants as self-declaring gates. The correct response to a 
 - Changing `tsconfig.lib.json`/build tooling without running `pnpm check:tooling`; declaration generation is stricter than a plain typecheck.
 
 ## Docs & Skills
-- Versioned CLI help is the agent-facing source of truth. Put workflow guidance/help topics in `src/cli/parser/cli-help.ts`, flags in `src/cli/parser/cli-flags.ts`, CLI command overrides in `src/utils/cli-command-overrides.ts`, and assertions for important copy in `src/cli/parser/__tests__/cli-help-topics.test.ts` / `cli-help-command-usage.test.ts`.
-- Keep parser schema and help rendering separate: `src/utils/command-schema.ts` composes contract-derived command schemas with CLI overrides; `src/cli/parser/cli-help.ts` owns help topics and usage rendering.
+- Versioned CLI help is the agent-facing source of truth. Put workflow guidance/help topics in `src/cli/parser/cli-help.ts`, flags in `src/cli/parser/cli-flags.ts`, command-specific schema/help metadata with the owning command family, and assertions near the focused CLI parser/help tests.
+- Keep parser schema and help rendering separate: parser/help rendering lives in `src/cli/parser/`, while command schema metadata is derived from command metadata and command family declarations.
 - Before planning device automation commands, read `agent-device help workflow`; then read topic help such as `debugging`, `react-native`, `react-devtools`, `physical-device`, `macos`, or `dogfood` when relevant. This is required even when local agent skills are unavailable.
 - Skills are thin routers. Keep `skills/**/SKILL.md` focused on when to use the skill, version gating, which `agent-device help <topic>` page to read, and a short default loop. Do not duplicate full CLI manuals in skills.
 - For behavior/CLI surface changes, update help/metadata, README or `website/docs/**` when user-facing, and a SkillGym case in `test/skillgym/suites/agent-device-smoke-suite.ts` when command-planning guidance changes.
@@ -275,22 +264,12 @@ This repo encodes invariants as self-declaring gates. The correct response to a 
   - why it blocks completion
   - exact next command/action needed to unblock
 
-## Key Files
-- CLI parse + formatting: `src/bin.ts`, `src/cli.ts`, `src/cli/parser/args.ts`
-- CLI help + option metadata: `src/cli/parser/cli-help.ts`, `src/cli/parser/cli-flags.ts`, `src/utils/cli-command-overrides.ts`, `src/utils/command-schema.ts`, `src/utils/cli-option-schema.ts`
-- Daemon client transport: `src/daemon-client.ts`
-- Daemon state/store: `src/daemon/session-store.ts`
-- Selector DSL and matching: `src/daemon/selectors.ts`
-- `is` predicate evaluation: `src/daemon/is-predicates.ts`
-- Shared action helpers: `src/daemon/action-utils.ts`
-- Snapshot shaping + labels: `src/daemon/snapshot-processing.ts`
-- Handler context helpers: `src/daemon/context.ts`, `src/daemon/device-ready.ts`
-- Request routing/policy: `src/daemon/daemon-command-registry.ts`, `src/daemon/request-router.ts`, `src/daemon/request-admission.ts`, `src/daemon/request-generic-dispatch.ts`
-- Dispatcher + capability map: `src/core/dispatch.ts`, `src/core/dispatch-context.ts`, `src/core/dispatch-interactions.ts`, `src/core/capabilities.ts`
-- Command identity + command surface: `src/command-catalog.ts`, `src/commands/command-surface.ts`, `src/commands/command-contract.ts`, `src/commands/client-command-contracts.ts`
-- CLI grammar: `src/commands/cli-grammar.ts`, `src/commands/cli-grammar/*`
-- Daemon request projection: `src/commands/command-projection.ts`
-- Platform backends: `src/platforms/apple/*`, `src/platforms/ios/*`, `apple-runner/*`, `src/platforms/android/*`
+## Finding Source Owners
+- Do not turn this file into a source tree map. For implementation work, identify owner modules from the durable registries and then follow imports/tests from there.
+- Command identity and projection: search command descriptors and command contracts first with `rg -n "<command>|CommandDescriptor|defineCommand" src/core/command-descriptor src/command-catalog.ts src/commands`.
+- Daemon routing and policy: start with `src/daemon/daemon-command-registry.ts`, then trace to the named handler/request module with `rg -n "<command>|route|policy" src/daemon`.
+- Platform behavior and capabilities: start with `src/core/capabilities.ts` and the relevant platform under `src/platforms/`; use `rg`, not broad directory reads.
+- CLI help and command-planning guidance: start with `src/cli/parser/cli-help.ts` and `src/cli/parser/cli-flags.ts`; for command-specific schema, search `rg -n "helpDescription|summary|supportedFlags|allowedFlags" src/commands src/cli/parser`.
 
 ## Pull Requests
 - Before opening PR: ensure no conflict markers/unmerged paths.
