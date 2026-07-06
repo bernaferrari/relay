@@ -2,7 +2,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'vitest';
+import { beforeEach, test, vi } from 'vitest';
+
+const { providerStartupCleanupMock } = vi.hoisted(() => ({
+  providerStartupCleanupMock: vi.fn(),
+}));
+
+vi.mock('./agent-browser-lifecycle.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./agent-browser-lifecycle.ts')>();
+  return {
+    ...actual,
+    cleanupManagedAgentBrowserOrphansForProviderStartup: providerStartupCleanupMock,
+  };
+});
+
 import { createAgentBrowserWebProvider } from './agent-browser-provider.ts';
 import type { WebSnapshotResult } from './provider.ts';
 import { withCommandExecutorOverride, type ExecResult } from '../../utils/exec.ts';
@@ -19,6 +32,12 @@ type AgentBrowserCall = {
   cmd: string;
   args: string[];
 };
+
+const mockProviderStartupCleanup = vi.mocked(providerStartupCleanupMock);
+
+beforeEach(() => {
+  mockProviderStartupCleanup.mockReset();
+});
 
 test('agent-browser provider maps supported operations to session-scoped JSON commands', async () => {
   await withManagedAgentBrowserProvider({ session: 'web-session' }, async (provider) => {
@@ -71,6 +90,52 @@ test('agent-browser provider maps supported operations to session-scoped JSON co
       ],
     );
   });
+});
+
+test('agent-browser provider runs provider-startup cleanup before the first managed command', async () => {
+  const events: string[] = [];
+  mockProviderStartupCleanup.mockImplementation(async () => {
+    events.push('provider-startup-cleanup');
+  });
+
+  await withManagedAgentBrowserProvider(
+    { session: 'web-session', openWebSessionNames: () => [] },
+    async (provider) => {
+      await withCommandExecutorOverride(
+        async (cmd, args) => {
+          events.push(`${path.basename(cmd)} ${args[0] ?? ''}`);
+          return jsonResult({ success: true, data: {} });
+        },
+        async () => await provider.open('https://example.test'),
+      );
+    },
+  );
+
+  assert.deepEqual(events, ['provider-startup-cleanup', 'agent-browser open']);
+  assert.equal(mockProviderStartupCleanup.mock.calls.length, 1);
+  assert.deepEqual(mockProviderStartupCleanup.mock.calls[0]?.[1], {
+    openWebSessionNames: [],
+  });
+});
+
+test('agent-browser provider ignores provider-startup cleanup failures', async () => {
+  const calls: AgentBrowserCall[] = [];
+  mockProviderStartupCleanup.mockRejectedValue(new Error('ps failed'));
+
+  await withManagedAgentBrowserProvider(
+    { session: 'web-session', openWebSessionNames: () => [] },
+    async (provider) => {
+      await withCommandExecutorOverride(recordingExecutor(calls), async () => {
+        await provider.open('https://example.test');
+      });
+    },
+  );
+
+  assert.deepEqual(
+    calls.map((call) => call.args),
+    [['open', 'https://example.test', '--json', '--session', 'web-session']],
+  );
+  assert.equal(mockProviderStartupCleanup.mock.calls.length, 1);
 });
 
 test('agent-browser provider normalizes snapshot refs, labels, values, and parents', async () => {
@@ -396,7 +461,7 @@ test('agent-browser provider preserves Node version guidance for missing managed
 });
 
 async function withManagedAgentBrowserProvider(
-  options: { session?: string },
+  options: { session?: string; openWebSessionNames?: () => readonly string[] },
   testFn: (provider: ReturnType<typeof createAgentBrowserWebProvider>) => void | Promise<void>,
 ): Promise<void> {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-web-provider-'));
