@@ -1,9 +1,10 @@
 /**
  * Thin agent-device SDK helpers.
  * Pattern: open → snapshot/find → press → re-check. Failures throw.
+ * All long waits honor job cancel/pause via control.ts.
  */
 import { createAgentDeviceClient } from "agent-device";
-import { cooperativeCheckpoint } from "./control.js";
+import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 
 export const PLATFORM = "android" as const;
 export const GROK_PACKAGE = "ai.x.grok";
@@ -12,7 +13,6 @@ export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "tea
 
 export type Device = ReturnType<typeof createAgentDeviceClient>;
 
-/** Minimal node shape we read from snapshot results (SDK types are not all exported). */
 export type SnapshotNode = {
   label?: string;
   value?: string;
@@ -25,7 +25,6 @@ export type SnapshotNode = {
 
 export function createDevice(): Device {
   return createAgentDeviceClient({
-    // Prefer a dedicated session name so we don't fight other tools.
     session: process.env.AGENT_DEVICE_SESSION?.trim() || "grok-actions",
   });
 }
@@ -39,14 +38,25 @@ export function base() {
   } as const;
 }
 
+/** Run a device promise under cancel race + pre/post checkpoints. */
+async function controlled<T>(op: () => Promise<T>): Promise<T> {
+  await cooperativeCheckpoint();
+  throwIfCancelled();
+  try {
+    return await raceCancel(op());
+  } finally {
+    // After cancel race wins, still allow cleanup checks
+  }
+}
+
 export async function sleep(ms: number, device: Device = createDevice()): Promise<void> {
-  // Chunk waits so cancel/pause can interrupt long sleeps.
-  const chunk = 250;
+  // Small chunks = faster cancel/pause response
+  const chunk = 100;
   let left = Math.max(0, ms);
   while (left > 0) {
     await cooperativeCheckpoint();
     const step = Math.min(chunk, left);
-    await device.command.wait({ ...base(), durationMs: step });
+    await raceCancel(device.command.wait({ ...base(), durationMs: step }));
     left -= step;
   }
   await cooperativeCheckpoint();
@@ -56,11 +66,13 @@ export async function snapshot(
   device: Device,
   opts?: { interactiveOnly?: boolean; raw?: boolean },
 ): Promise<SnapshotNode[]> {
-  const result = await device.capture.snapshot({
-    ...base(),
-    interactiveOnly: opts?.interactiveOnly ?? false,
-    raw: opts?.raw,
-  });
+  const result = await controlled(() =>
+    device.capture.snapshot({
+      ...base(),
+      interactiveOnly: opts?.interactiveOnly ?? false,
+      raw: opts?.raw,
+    }),
+  );
   return (result.nodes ?? []) as SnapshotNode[];
 }
 
@@ -69,61 +81,68 @@ export async function openApp(
   app: string,
   opts?: { relaunch?: boolean },
 ): Promise<void> {
-  await device.apps.open({
-    ...base(),
-    app,
-    relaunch: opts?.relaunch ?? true,
-  });
+  await controlled(() =>
+    device.apps.open({
+      ...base(),
+      app,
+      relaunch: opts?.relaunch ?? true,
+    }),
+  );
   await sleep(2000, device);
 }
 
 export async function openUrl(device: Device, url: string): Promise<void> {
-  await device.apps.open({ ...base(), url });
+  await controlled(() => device.apps.open({ ...base(), url }));
   await sleep(2500, device);
 }
 
-/** label="Foo" style selector press; throws if the command fails. */
 export async function pressLabel(device: Device, label: string): Promise<void> {
-  await device.interactions.press({
-    ...base(),
-    selector: `label="${label}"`,
-  });
+  await controlled(() =>
+    device.interactions.press({
+      ...base(),
+      selector: `label="${label}"`,
+    }),
+  );
 }
 
 export async function pressPoint(device: Device, x: number, y: number): Promise<void> {
-  await device.interactions.press({ ...base(), x, y });
+  await controlled(() => device.interactions.press({ ...base(), x, y }));
 }
 
 export async function pressRef(device: Device, ref: string): Promise<void> {
   const normalized = ref.startsWith("@") ? ref : `@${ref}`;
-  await device.interactions.press({ ...base(), ref: normalized });
+  await controlled(() => device.interactions.press({ ...base(), ref: normalized }));
 }
 
-/** Semantic find → click. Throws on no match / command failure. */
 export async function findClick(
   device: Device,
   query: string,
   opts?: { first?: boolean; last?: boolean },
 ): Promise<void> {
-  await device.interactions.find({
-    ...base(),
-    query,
-    action: "click",
-    first: opts?.first ?? true,
-    last: opts?.last,
-  });
+  await controlled(() =>
+    device.interactions.find({
+      ...base(),
+      query,
+      action: "click",
+      first: opts?.first ?? true,
+      last: opts?.last,
+    }),
+  );
 }
 
 export async function exists(device: Device, query: string): Promise<boolean> {
   try {
-    await device.interactions.find({
-      ...base(),
-      query,
-      action: "exists",
-      first: true,
-    });
+    await controlled(() =>
+      device.interactions.find({
+        ...base(),
+        query,
+        action: "exists",
+        first: true,
+      }),
+    );
     return true;
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === "JobCancelledError") throw err;
     return false;
   }
 }
@@ -134,45 +153,52 @@ export async function waitFor(
   timeoutMs = 30_000,
 ): Promise<void> {
   if (selectorOrText.selector) {
-    await device.command.wait({
-      ...base(),
-      selector: selectorOrText.selector,
-      timeoutMs,
-    });
+    const selector = selectorOrText.selector;
+    await controlled(() =>
+      device.command.wait({
+        ...base(),
+        selector,
+        timeoutMs,
+      }),
+    );
     return;
   }
   if (selectorOrText.text) {
-    await device.command.wait({
-      ...base(),
-      text: selectorOrText.text,
-      timeoutMs,
-    });
+    const text = selectorOrText.text;
+    await controlled(() =>
+      device.command.wait({
+        ...base(),
+        text,
+        timeoutMs,
+      }),
+    );
     return;
   }
-  // Poll find exists for free-form query
   const query = selectorOrText.query;
   if (!query) throw new Error("waitFor requires selector, text, or query");
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
+    await cooperativeCheckpoint();
     if (await exists(device, query)) return;
-    await sleep(1000, device);
+    await sleep(400, device);
   }
   throw new Error(`Timed out waiting for: ${query}`);
 }
 
 export async function scrollDown(device: Device, amount = 0.5): Promise<void> {
-  await device.interactions.scroll({
-    ...base(),
-    direction: "down",
-    amount,
-  });
+  await controlled(() =>
+    device.interactions.scroll({
+      ...base(),
+      direction: "down",
+      amount,
+    }),
+  );
 }
 
 export async function screenshot(device: Device, path: string): Promise<void> {
-  await device.capture.screenshot({ path });
+  await controlled(() => device.capture.screenshot({ path }));
 }
 
-/** True if any node label/value contains the substring (case-insensitive). */
 export function nodesMatch(nodes: SnapshotNode[], substring: string): SnapshotNode | undefined {
   const q = substring.toLowerCase();
   return nodes.find((n) => {
@@ -181,7 +207,6 @@ export function nodesMatch(nodes: SnapshotNode[], substring: string): SnapshotNo
   });
 }
 
-/** Center of a rect. */
 export function center(rect: { x: number; y: number; width: number; height: number }): {
   x: number;
   y: number;
@@ -192,17 +217,13 @@ export function center(rect: { x: number; y: number; width: number; height: numb
   };
 }
 
-/**
- * Press a row whose label/value contains `match`.
- * Prefers find click; falls back to smallest hittable ancestor rect of the text node.
- */
 export async function pressMatchingText(device: Device, match: string): Promise<void> {
   if (await exists(device, match)) {
     try {
       await findClick(device, match);
       return;
-    } catch {
-      // fall through to geometry
+    } catch (err) {
+      if (err instanceof Error && err.name === "JobCancelledError") throw err;
     }
   }
 

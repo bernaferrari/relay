@@ -1,13 +1,17 @@
 import {
   ACTIONS,
+  cancelJob,
   captureScreenshot,
   captureSnapshot,
   createDevice,
   enqueueJob,
   formatSnapshotTree,
+  getActiveJob,
   getJob,
   listDevices,
   listJobs,
+  pauseJob,
+  resumeJob,
   runAction,
   selectDevice,
   type ActionMeta,
@@ -34,7 +38,11 @@ export type DeviceClient = {
     skipAccountSwitch?: boolean;
     skipRestoreHome?: boolean;
     onLog?: (line: string) => void;
-  }) => Promise<{ ok: boolean; error?: string; result?: unknown }>;
+  }) => Promise<{ ok: boolean; error?: string; result?: unknown; status?: string }>;
+  cancel: (jobId?: string) => Promise<void>;
+  pause: (jobId?: string) => Promise<void>;
+  resume: (jobId?: string) => Promise<void>;
+  getActiveJobId: () => Promise<string | null>;
 };
 
 async function httpJson<T>(base: string, path: string, init?: RequestInit): Promise<T> {
@@ -94,24 +102,53 @@ function inProcessClient(): DeviceClient {
       return { path: shot.path, bytes: shot.bytes };
     },
     async runAction(opts) {
-      // prefer job queue so history is shared
       const job = enqueueJob({
         action: opts.action,
         serial: opts.serial,
         skipAccountSwitch: opts.skipAccountSwitch,
         skipRestoreHome: opts.skipRestoreHome,
       });
+      let seen = 0;
       for (;;) {
         const current = getJob(job.id)!;
-        for (const line of current.logs.slice(opts.onLog ? 0 : 0)) {
-          /* logs published live via execute; poll tail */
+        if (opts.onLog) {
+          const fresh = current.logs.slice(seen);
+          for (const line of fresh) opts.onLog(line);
+          seen = current.logs.length;
         }
-        if (current.status === "ok" || current.status === "error") {
-          if (opts.onLog) for (const line of current.logs) opts.onLog(line);
-          return { ok: current.status === "ok", error: current.error, result: current.result };
+        if (
+          current.status === "ok" ||
+          current.status === "error" ||
+          current.status === "healed" ||
+          current.status === "cancelled"
+        ) {
+          return {
+            ok: current.status === "ok" || current.status === "healed",
+            error: current.error,
+            result: current.result,
+            status: current.status,
+          };
         }
         await new Promise((r) => setTimeout(r, 80));
       }
+    },
+    async cancel(jobId) {
+      const id = jobId ?? getActiveJob()?.id;
+      if (!id) throw new Error("No active job");
+      cancelJob(id);
+    },
+    async pause(jobId) {
+      const id = jobId ?? getActiveJob()?.id;
+      if (!id) throw new Error("No active job");
+      pauseJob(id);
+    },
+    async resume(jobId) {
+      const id = jobId ?? getActiveJob()?.id;
+      if (!id) throw new Error("No active job");
+      resumeJob(id);
+    },
+    async getActiveJobId() {
+      return getActiveJob()?.id ?? null;
     },
   };
 }
@@ -149,21 +186,72 @@ function httpClient(baseUrl: string): DeviceClient {
       return data;
     },
     async runAction(opts) {
-      const data = await httpJson<{
-        ok: boolean;
-        error?: string;
-        result?: unknown;
-        logs?: string[];
-      }>(base, `/actions/${encodeURIComponent(opts.action)}/run`, {
+      // Async job so cancel/pause work against the same server process
+      const { job } = await httpJson<{ job: TestJob }>(base, "/jobs", {
         method: "POST",
         body: JSON.stringify({
+          action: opts.action,
           serial: opts.serial,
           skipAccountSwitch: opts.skipAccountSwitch,
           skipRestoreHome: opts.skipRestoreHome,
         }),
       });
-      if (opts.onLog && data.logs) for (const line of data.logs) opts.onLog(line);
-      return data;
+      let seen = 0;
+      for (;;) {
+        const data = await httpJson<{ job: TestJob }>(base, `/jobs/${job.id}`);
+        const current = data.job;
+        if (opts.onLog && current.logs) {
+          const fresh = current.logs.slice(seen);
+          for (const line of fresh) opts.onLog(line);
+          seen = current.logs.length;
+        }
+        if (
+          current.status === "ok" ||
+          current.status === "error" ||
+          current.status === "healed" ||
+          current.status === "cancelled"
+        ) {
+          return {
+            ok: current.status === "ok" || current.status === "healed",
+            error: current.error,
+            result: current.result,
+            status: current.status,
+          };
+        }
+        await new Promise((r) => setTimeout(r, 120));
+      }
+    },
+    async cancel(jobId) {
+      if (jobId) {
+        await httpJson(base, `/jobs/${encodeURIComponent(jobId)}/cancel`, {
+          method: "POST",
+          body: "{}",
+        });
+      } else {
+        await httpJson(base, `/jobs/active/cancel`, { method: "POST", body: "{}" });
+      }
+    },
+    async pause(jobId) {
+      const id = jobId ?? (await this.getActiveJobId());
+      if (!id) throw new Error("No active job");
+      await httpJson(base, `/jobs/${encodeURIComponent(id)}/pause`, {
+        method: "POST",
+        body: "{}",
+      });
+    },
+    async resume(jobId) {
+      const id = jobId ?? (await this.getActiveJobId());
+      if (!id) throw new Error("No active job");
+      await httpJson(base, `/jobs/${encodeURIComponent(id)}/resume`, {
+        method: "POST",
+        body: "{}",
+      });
+    },
+    async getActiveJobId() {
+      const data = await httpJson<{ active: TestJob | null }>(base, "/jobs?limit=1");
+      const a = data.active;
+      if (a && (a.status === "running" || a.status === "paused")) return a.id;
+      return null;
     },
   };
 }

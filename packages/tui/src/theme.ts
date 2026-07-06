@@ -41,10 +41,15 @@ export function colorStatus(status: string): string {
   switch (status) {
     case "ok":
       return theme.success(status);
+    case "healed":
+      return theme.warning(status);
     case "error":
+    case "cancelled":
       return theme.error(status);
     case "running":
       return theme.primary(status);
+    case "paused":
+      return theme.warning(status);
     case "queued":
       return theme.warning(status);
     default:

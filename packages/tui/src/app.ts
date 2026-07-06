@@ -69,14 +69,17 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
         "UI snapshot (inspector tree)",
         "Screenshot path",
         "Job history",
+        "Cancel active job",
+        "Pause active job",
+        "Resume paused job",
         "Switch device",
         "Quit",
       ];
       const choice = await pickIndex(rl, "Workspace:", menu);
 
-      if (choice === 5) break;
+      if (choice === 8) break;
 
-      if (choice === 4) {
+      if (choice === 7) {
         const next = await client.listDevices();
         const i = await pickIndex(
           rl,
@@ -86,6 +89,36 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
         serial = next[i]!.serial;
         await client.selectDevice(serial);
         console.log(theme.success(`→ Device ${serial}`));
+        continue;
+      }
+
+      if (choice === 6) {
+        try {
+          await client.resume();
+          console.log(theme.success("Resumed active job"));
+        } catch (err) {
+          console.log(theme.error(err instanceof Error ? err.message : String(err)));
+        }
+        continue;
+      }
+
+      if (choice === 5) {
+        try {
+          await client.pause();
+          console.log(theme.warning("Paused active job"));
+        } catch (err) {
+          console.log(theme.error(err instanceof Error ? err.message : String(err)));
+        }
+        continue;
+      }
+
+      if (choice === 4) {
+        try {
+          await client.cancel();
+          console.log(theme.error("Cancelled active job"));
+        } catch (err) {
+          console.log(theme.error(err instanceof Error ? err.message : String(err)));
+        }
         continue;
       }
 
@@ -153,16 +186,35 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
         process.env.PROD_ACCOUNT_MATCH = match;
       }
 
-      console.log(theme.primary(`\n→ Running ${action.id} on ${serial}…\n`));
-      const result = await client.runAction({
-        action: action.id,
-        serial,
-        skipAccountSwitch,
-        skipRestoreHome,
-        onLog: (line) => console.log(theme.muted(line)),
-      });
-      if (result.ok) console.log(theme.success(`\nDONE ${action.id}`));
-      else console.log(theme.error(`\nFAIL ${action.id}: ${result.error}`));
+      console.log(theme.primary(`\n→ Running ${action.id} on ${serial}…`));
+      console.log(theme.muted("  Ctrl+C cancel · menu: Pause / Resume / Cancel\n"));
+
+      const onSig = () => {
+        console.log(theme.error("\n→ cancel (Ctrl+C)…"));
+        void client.cancel().catch(() => undefined);
+      };
+      process.on("SIGINT", onSig);
+
+      let result: { ok: boolean; error?: string; status?: string };
+      try {
+        result = await client.runAction({
+          action: action.id,
+          serial,
+          skipAccountSwitch,
+          skipRestoreHome,
+          onLog: (line) => console.log(theme.muted(line)),
+        });
+      } finally {
+        process.off("SIGINT", onSig);
+      }
+
+      if (result.status === "cancelled") {
+        console.log(theme.error(`\nCANCELLED ${action.id}`));
+      } else if (result.ok) {
+        console.log(theme.success(`\nDONE ${action.id}`));
+      } else {
+        console.log(theme.error(`\nFAIL ${action.id}: ${result.error}`));
+      }
     }
   } finally {
     rl.close();

@@ -34,6 +34,8 @@ import {
   setExecutingJobId,
   cooperativeCheckpoint,
   throwIfCancelled,
+  raceCancel,
+  hardStopDeviceSession,
 } from "./control.js";
 
 function classifyError(message: string): JobErrorCode {
@@ -302,7 +304,11 @@ function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
   void persistRun(job).catch(() => undefined);
 }
 
-/** Cancel a queued or in-flight job (cooperative). */
+/**
+ * Cancel a queued or in-flight job.
+ * Flags cancel immediately and hard-stops the agent-device session so in-flight
+ * ADB work is more likely to drop (best-effort).
+ */
 export function cancelJob(id: string): TestJob {
   const job = jobs.get(id);
   if (!job) throw new Error(`Unknown job: ${id}`);
@@ -317,9 +323,11 @@ export function cancelJob(id: string): TestJob {
   }
 
   requestCancel(id);
+  if (job.status === "running" || job.status === "paused") {
+    void hardStopDeviceSession();
+  }
 
   if (job.status === "queued") {
-    // remove from queue
     const idx = queue.indexOf(id);
     if (idx >= 0) queue.splice(idx, 1);
     job.startedAt = job.startedAt ?? now();
@@ -328,13 +336,12 @@ export function cancelJob(id: string): TestJob {
     return job;
   }
 
-  // running / paused — executeJob will observe cancel at next checkpoint
-  job.logs.push("==> cancel requested");
+  job.logs.push("==> cancel requested (hard-stop session)");
   publish({
     type: "job.log",
     at: now(),
     jobId: job.id,
-    line: "==> cancel requested",
+    line: "==> cancel requested (hard-stop session)",
     level: "info",
   });
   return job;
@@ -459,8 +466,8 @@ async function executeJob(id: string): Promise<void> {
       },
     };
 
-    // Race: run action, but also poll for cancel so we surface sooner after long device calls
-    const result: RunActionResult = await runAction(device, job.action, opts);
+    // Race entire recipe against cancel — device ops also race individually
+    const result: RunActionResult = await raceCancel(runAction(device, job.action, opts), id);
     await cooperativeCheckpoint(id);
 
     job.finishedAt = now();
