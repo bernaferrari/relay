@@ -20,6 +20,7 @@ import {
   formatJsonReport,
   getActiveJob,
   isActionId,
+  listDevices,
   pauseJob,
   resumeJob,
   runDoctor,
@@ -27,6 +28,7 @@ import {
   toJobReport,
   toJunitXml,
   type ActionId,
+  type TestJob,
 } from "@grok-device/core";
 import { runInteractive } from "./interactive.js";
 
@@ -57,6 +59,8 @@ run flags:
   --json                     Print JobReport JSON (with summary) to stdout
   --junit <path>             Write JUnit XML to path
   --serial <s>               Target device serial
+  --all-devices              Run on every connected Android device
+  --retries <n>              Device op retries (default 3, env GROK_DEVICE_RETRY_ATTEMPTS)
   --skip-account-switch      Skip Play account ensure/switch
   --skip-restore-home        After alpha flows, do not restore home account
 
@@ -131,17 +135,33 @@ async function runDoctorCmd(): Promise<void> {
   process.exit(result.ok ? 0 : 1);
 }
 
-async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> {
-  const serial = parseFlagValue(argv, "--serial");
-  const junitPath = parseFlagValue(argv, "--junit");
-  const asJson = hasFlag(argv, "--json");
-  const skipAccountSwitch = hasFlag(argv, "--skip-account-switch");
-  const skipRestoreHome = hasFlag(argv, "--skip-restore-home");
-
-  if (!asJson) {
-    console.log(`→ run ${action}${serial ? ` @ ${serial}` : ""}`);
+function printReportHuman(report: ReturnType<typeof toJobReport>): void {
+  const dur = report.durationMs != null ? `${(report.durationMs / 1000).toFixed(1)}s` : "?";
+  const device =
+    report.deviceName || report.serial ? ` · ${report.deviceName ?? report.serial}` : "";
+  if (report.ok) {
+    const tag = report.healed ? "HEALED" : report.status === "cancelled" ? "CANCELLED" : "OK";
+    console.log(`✓ ${tag} ${report.action}${device} (${dur})`);
+    if (report.healMessage) console.log(`  ${report.healMessage}`);
+    if (report.runDir) console.log(`  run → ${report.runDir}`);
+  } else {
+    const tag = report.status === "cancelled" ? "CANCELLED" : "FAIL";
+    console.error(
+      `✗ ${tag} ${report.action}${device} (${dur})${report.errorCode ? ` [${report.errorCode}]` : ""}`,
+    );
+    if (report.error) console.error(`  ${report.error}`);
+    if (report.runDir) console.error(`  run → ${report.runDir}`);
   }
+}
 
+async function runOneJob(
+  action: ActionId,
+  opts: {
+    serial?: string;
+    skipAccountSwitch?: boolean;
+    skipRestoreHome?: boolean;
+  },
+): Promise<TestJob> {
   const onSigInt = () => {
     console.error("\n→ cancel (Ctrl+C)…");
     try {
@@ -152,47 +172,67 @@ async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> 
   };
   process.on("SIGINT", onSigInt);
   process.on("SIGTERM", onSigInt);
-
-  let job;
   try {
-    job = await runJobSync({
+    return await runJobSync({
       action,
-      serial,
-      skipAccountSwitch,
-      skipRestoreHome,
+      serial: opts.serial,
+      skipAccountSwitch: opts.skipAccountSwitch,
+      skipRestoreHome: opts.skipRestoreHome,
     });
   } finally {
     process.off("SIGINT", onSigInt);
     process.off("SIGTERM", onSigInt);
   }
-  const report = toJobReport(job);
+}
+
+async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> {
+  const serialFlag = parseFlagValue(argv, "--serial");
+  const junitPath = parseFlagValue(argv, "--junit");
+  const asJson = hasFlag(argv, "--json");
+  const allDevices = hasFlag(argv, "--all-devices");
+  const skipAccountSwitch = hasFlag(argv, "--skip-account-switch");
+  const skipRestoreHome = hasFlag(argv, "--skip-restore-home");
+  const retries = parseFlagValue(argv, "--retries");
+  if (retries) process.env.GROK_DEVICE_RETRY_ATTEMPTS = retries;
+
+  let serials: (string | undefined)[] = [serialFlag];
+  if (allDevices) {
+    const devices = await listDevices();
+    if (devices.length === 0) {
+      console.error("error: --all-devices but no Android devices connected");
+      process.exit(1);
+    }
+    serials = devices.map((d) => d.serial);
+    if (!asJson) {
+      console.log(`→ matrix ${action} on ${serials.length} device(s)`);
+    }
+  } else if (!asJson) {
+    console.log(`→ run ${action}${serialFlag ? ` @ ${serialFlag}` : ""}`);
+  }
+
+  const jobs: TestJob[] = [];
+  for (const serial of serials) {
+    if (!asJson && allDevices) {
+      console.log(`\n→ device ${serial}`);
+    }
+    const job = await runOneJob(action, { serial, skipAccountSwitch, skipRestoreHome });
+    jobs.push(job);
+    if (!asJson) printReportHuman(toJobReport(job));
+  }
+
+  const reports = jobs.map(toJobReport);
 
   if (junitPath) {
-    await writeFile(junitPath, toJunitXml([report]), "utf8");
+    await writeFile(junitPath, toJunitXml(reports), "utf8");
     if (!asJson) console.log(`wrote junit → ${junitPath}`);
   }
 
   if (asJson) {
-    process.stdout.write(formatJsonReport([report]));
-  } else {
-    const dur = report.durationMs != null ? `${(report.durationMs / 1000).toFixed(1)}s` : "?";
-    const device =
-      report.deviceName || report.serial ? ` · ${report.deviceName ?? report.serial}` : "";
-    if (report.ok) {
-      const tag = report.healed ? "HEALED" : "OK";
-      console.log(`✓ ${tag} ${report.action}${device} (${dur})`);
-      if (report.healMessage) console.log(`  ${report.healMessage}`);
-      if (report.runDir) console.log(`  run → ${report.runDir}`);
-    } else {
-      console.error(
-        `✗ FAIL ${report.action}${device} (${dur})${report.errorCode ? ` [${report.errorCode}]` : ""}`,
-      );
-      if (report.error) console.error(`  ${report.error}`);
-      if (report.runDir) console.error(`  run → ${report.runDir}`);
-    }
+    process.stdout.write(formatJsonReport(reports));
   }
 
-  process.exit(report.ok ? 0 : 1);
+  const failed = reports.some((r) => !r.ok);
+  process.exit(failed ? 1 : 0);
 }
 
 async function runDirect(action: ActionId, argv: string[]): Promise<void> {

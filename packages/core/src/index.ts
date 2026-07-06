@@ -10,3 +10,4 @@ export * from "./runs.js";
 export * from "./report.js";
 export * from "./doctor.js";
 export * from "./control.js";
+export * from "./retry.js";

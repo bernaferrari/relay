@@ -427,24 +427,48 @@ async function executeJob(id: string): Promise<void> {
   }
 
   const plan = planForAction(job.action);
-  const primary = openStep(job, {
-    kind: job.retryOf ? "Healed" : plan.kind,
-    tone: job.retryOf ? "heal" : plan.tone,
-    title: job.title,
-    glyphs: job.retryOf ? (["re", ...plan.glyphs] as Glyph[]) : plan.glyphs,
-    status: "running",
-    log: job.retryOf
-      ? `retry of ${job.retryOf.slice(0, 8)} · attempt ${job.attempts}`
-      : `start ${job.action}${job.deviceName ? ` · ${job.deviceName}` : ""}${job.serial ? ` (${job.serial})` : ""}`,
-  });
+  const stepKind = job.retryOf ? ("Healed" as const) : plan.kind;
+  const stepTone = job.retryOf ? ("heal" as const) : plan.tone;
 
-  for (const p of plan.planned) {
-    appendStepLog(primary, `· plan: ${p.title} [${p.glyphs.join(",")}]`);
-  }
+  // Fine-grained steps from recipe plan (pause/cancel between phases via checkpoints in device ops)
+  const phaseSpecs =
+    plan.planned.length > 0 ? plan.planned : [{ title: job.title, glyphs: plan.glyphs as Glyph[] }];
+
+  const phaseSteps: TraceStep[] = phaseSpecs.map((p, i) =>
+    openStep(job, {
+      kind: stepKind,
+      tone: stepTone,
+      title: p.title,
+      glyphs: (job.retryOf && i === 0 ? (["re", ...p.glyphs] as Glyph[]) : p.glyphs) as Glyph[],
+      status: i === 0 ? "running" : undefined,
+      log:
+        i === 0
+          ? job.retryOf
+            ? `retry of ${job.retryOf.slice(0, 8)} · attempt ${job.attempts}`
+            : `start ${job.action}${job.deviceName ? ` · ${job.deviceName}` : ""}${job.serial ? ` (${job.serial})` : ""}`
+          : "",
+    }),
+  );
+
+  let phaseIdx = 0;
+  const currentPhase = () => phaseSteps[Math.min(phaseIdx, phaseSteps.length - 1)];
 
   const pushLog = (line: string) => {
     job.logs.push(line);
-    appendStepLog(primary, line);
+    appendStepLog(currentPhase(), line);
+    // Advance phase on major progress markers so pause has clearer boundaries
+    if (
+      phaseIdx < phaseSteps.length - 1 &&
+      (line.startsWith("==>") || /ensure|restore|update|install|login|sign out|chooser/i.test(line))
+    ) {
+      const cur = phaseSteps[phaseIdx];
+      if (cur && cur.status === "running") {
+        finishStep(cur, "ok", line);
+        phaseIdx += 1;
+        const next = phaseSteps[phaseIdx];
+        if (next) next.status = "running";
+      }
+    }
     const level = /FAIL|error|Error|cancel/i.test(line)
       ? ("error" as const)
       : /DONE|success|resumed|paused/i.test(line)
@@ -452,6 +476,8 @@ async function executeJob(id: string): Promise<void> {
         : ("info" as const);
     publish({ type: "job.log", at: now(), jobId: job.id, line, level });
   };
+
+  const primary = () => currentPhase() ?? phaseSteps[0]!;
 
   try {
     await cooperativeCheckpoint(id);
@@ -466,24 +492,45 @@ async function executeJob(id: string): Promise<void> {
       },
     };
 
-    // Race entire recipe against cancel — device ops also race individually
-    const result: RunActionResult = await raceCancel(runAction(device, job.action, opts), id);
+    // Heartbeat: surface cancel even during long SDK calls; hard-stop session
+    let pendingCancel: Error | null = null;
+    const heartbeat = setInterval(() => {
+      try {
+        throwIfCancelled(id);
+      } catch (err) {
+        pendingCancel = err instanceof Error ? err : new Error(String(err));
+        void hardStopDeviceSession();
+      }
+    }, 50);
+
+    let result: RunActionResult;
+    try {
+      result = await raceCancel(runAction(device, job.action, opts), id);
+      if (pendingCancel) throw pendingCancel;
+    } finally {
+      clearInterval(heartbeat);
+    }
     await cooperativeCheckpoint(id);
 
     job.finishedAt = now();
 
     if (result.ok) {
       const wasRetry = Boolean(job.retryOf && job.previousError);
+      // close any open phases as ok
+      for (const s of phaseSteps) {
+        if (s.status === "running" || !s.finishedAt) finishStep(s, "ok");
+      }
       if (wasRetry) {
         job.status = "healed";
         job.healed = true;
         job.healMessage = `Recovered after failure: ${job.previousError}. Recipe re-ran successfully on attempt ${job.attempts}.`;
         job.tone = "heal";
         job.kind = "Healed";
-        primary.tone = "heal";
-        primary.kind = "Healed";
-        primary.heal = job.healMessage;
-        finishStep(primary, "healed", `✓ healed · ${result.result ?? "ok"}`);
+        const last = phaseSteps[phaseSteps.length - 1]!;
+        last.tone = "heal";
+        last.kind = "Healed";
+        last.heal = job.healMessage;
+        finishStep(last, "healed", `✓ healed · ${result.result ?? "ok"}`);
         publish({
           type: "job.healed",
           at: job.finishedAt,
@@ -493,7 +540,7 @@ async function executeJob(id: string): Promise<void> {
         });
       } else {
         job.status = "ok";
-        finishStep(primary, "ok", `✓ ${result.result ?? "ok"}`);
+        finishStep(primary(), "ok", `✓ ${result.result ?? "ok"}`);
       }
       job.result = result.result;
       job.error = undefined;
@@ -502,7 +549,10 @@ async function executeJob(id: string): Promise<void> {
       job.status = "error";
       job.error = result.error;
       job.errorCode = classifyError(result.error ?? "failed");
-      finishStep(primary, "error", `✗ ${result.error}`);
+      for (const s of phaseSteps) {
+        if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
+      }
+      finishStep(primary(), "error", `✗ ${result.error}`);
     }
 
     publish({
@@ -526,7 +576,10 @@ async function executeJob(id: string): Promise<void> {
       (err instanceof Error && err.name === "JobCancelledError")
     ) {
       pushLog("==> CANCELLED");
-      finalizeCancelled(job, primary);
+      for (const s of phaseSteps) {
+        if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
+      }
+      finalizeCancelled(job, primary());
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -534,7 +587,10 @@ async function executeJob(id: string): Promise<void> {
     job.status = "error";
     job.error = message;
     job.errorCode = classifyError(message);
-    finishStep(primary, "error", `✗ ${message}`);
+    for (const s of phaseSteps) {
+      if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
+    }
+    finishStep(primary(), "error", `✗ ${message}`);
     pushLog(`==> FAIL: ${message}`);
     publish({
       type: "job.finished",

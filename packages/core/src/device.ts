@@ -5,6 +5,7 @@
  */
 import { createAgentDeviceClient } from "agent-device";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
+import { withRetry } from "./retry.js";
 
 export const PLATFORM = "android" as const;
 export const GROK_PACKAGE = "ai.x.grok";
@@ -38,15 +39,19 @@ export function base() {
   } as const;
 }
 
-/** Run a device promise under cancel race + pre/post checkpoints. */
+/** Run a device promise under cancel race, pause checkpoints, and flake retries. */
 async function controlled<T>(op: () => Promise<T>): Promise<T> {
-  await cooperativeCheckpoint();
-  throwIfCancelled();
-  try {
-    return await raceCancel(op());
-  } finally {
-    // After cancel race wins, still allow cleanup checks
-  }
+  return withRetry(
+    async () => {
+      await cooperativeCheckpoint();
+      throwIfCancelled();
+      return await raceCancel(op());
+    },
+    {
+      attempts: Number(process.env.GROK_DEVICE_RETRY_ATTEMPTS ?? 3),
+      baseDelayMs: Number(process.env.GROK_DEVICE_RETRY_DELAY_MS ?? 350),
+    },
+  );
 }
 
 export async function sleep(ms: number, device: Device = createDevice()): Promise<void> {

@@ -40,6 +40,12 @@ pnpm --filter @grok-device/cli exec tsx src/index.ts run logout --json
 pnpm --filter @grok-device/cli exec tsx src/index.ts run update-last-alpha \
   --serial "$SERIAL" --junit ./junit.xml
 
+# Matrix: every connected device
+pnpm --filter @grok-device/cli exec tsx src/index.ts run logout --all-devices --json --junit ./matrix.xml
+
+# Flake retries (default 3)
+GROK_DEVICE_RETRY_ATTEMPTS=5 pnpm --filter @grok-device/cli exec tsx src/index.ts run login-google
+
 # API
 pnpm dev:serve
 curl -s localhost:8787/health | jq .
