@@ -27,10 +27,11 @@ import { markRunnerXctestrunArtifactBadForRun } from './runner-xctestrun.ts';
 import { handleRunnerTransportErrorAfterCommandSend } from './runner-command-recovery.ts';
 import {
   buildRunnerRecycleBudgetExhaustedError,
+  commitRunnerRecycle,
   hasRunnerRequestTouchedSession,
   markRunnerRequestTouchedSession,
   runnerRecycleLedgerKey,
-  tryConsumeRunnerRecycle,
+  tryBeginRunnerRecycle,
 } from './runner-recycle-ledger.ts';
 
 export type PrepareIosRunnerOptions = AppleRunnerPrepareOptions;
@@ -251,18 +252,21 @@ export async function executeRunnerCommand(
   const signal = getRequestSignal(options.requestId);
   const recycleKey = runnerRecycleLedgerKey(options, command);
   let session: RunnerSession | undefined;
+  let recycleBootBegun = false;
   try {
     // A request that already used a runner session and finds none alive is about to pay for
     // a recycle boot (~25s): bound that to the per-request recycle budget so a hostile screen
     // fails fast with a preserved session instead of stacking runner boots (#1105).
-    if (
-      !getRunnerSessionSnapshot(device.id)?.alive &&
-      hasRunnerRequestTouchedSession(recycleKey) &&
-      !tryConsumeRunnerRecycle(recycleKey)
-    ) {
-      throw buildRunnerRecycleBudgetExhaustedError(command, options);
+    if (!getRunnerSessionSnapshot(device.id)?.alive && hasRunnerRequestTouchedSession(recycleKey)) {
+      if (!tryBeginRunnerRecycle(recycleKey)) {
+        throw buildRunnerRecycleBudgetExhaustedError(command, options);
+      }
+      recycleBootBegun = true;
     }
     session = await ensureRunnerSession(device, options);
+    if (recycleBootBegun) {
+      commitRunnerRecycle(recycleKey);
+    }
     markRunnerRequestTouchedSession(recycleKey);
     const timeoutMs = session.ready
       ? RUNNER_COMMAND_TIMEOUT_MS
@@ -337,7 +341,8 @@ async function restartSessionAndRunCommand(params: {
   // At most one recycle per request: when the budget is spent, fail fast and KEEP the current
   // session — if the runner is merely busy draining abandoned work it answers the next request
   // cheaply, and a dead process is detected and cleaned by the next ensureRunnerSession (#1105).
-  if (!tryConsumeRunnerRecycle(runnerRecycleLedgerKey(options, command))) {
+  const recycleKey = runnerRecycleLedgerKey(options, command);
+  if (!tryBeginRunnerRecycle(recycleKey)) {
     throw buildRunnerRecycleBudgetExhaustedError(command, options);
   }
   await invalidateRunnerSession(params.session, restartReason);
@@ -345,6 +350,7 @@ async function restartSessionAndRunCommand(params: {
     ...options,
     cleanStaleBundles: true,
   });
+  commitRunnerRecycle(recycleKey);
   try {
     const recovered = await executeRunnerCommandWithSession(
       device,

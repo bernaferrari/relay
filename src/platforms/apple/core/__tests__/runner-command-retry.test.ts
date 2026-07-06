@@ -10,12 +10,14 @@ const {
   mockEnsureRunnerSession,
   mockExecuteRunnerCommandWithSession,
   mockEmitDiagnostic,
+  mockGetRunnerSessionSnapshot,
   mockInvalidateRunnerSession,
   mockMarkRunnerXctestrunArtifactBadForRun,
 } = vi.hoisted(() => ({
   mockEnsureRunnerSession: vi.fn(),
   mockExecuteRunnerCommandWithSession: vi.fn(),
   mockEmitDiagnostic: vi.fn(),
+  mockGetRunnerSessionSnapshot: vi.fn(),
   mockInvalidateRunnerSession: vi.fn(),
   mockMarkRunnerXctestrunArtifactBadForRun: vi.fn(),
 }));
@@ -38,6 +40,7 @@ vi.mock('../runner/runner-session.ts', async () => {
     ...actual,
     ensureRunnerSession: mockEnsureRunnerSession,
     executeRunnerCommandWithSession: mockExecuteRunnerCommandWithSession,
+    getRunnerSessionSnapshot: mockGetRunnerSessionSnapshot,
     invalidateRunnerSession: mockInvalidateRunnerSession,
   };
 });
@@ -63,6 +66,7 @@ import type { RunnerXctestrunArtifact } from '../runner/runner-xctestrun.ts';
 beforeEach(() => {
   vi.resetAllMocks();
   resetRunnerRecycleLedgerForTests();
+  mockGetRunnerSessionSnapshot.mockReturnValue(null);
   mockMarkRunnerXctestrunArtifactBadForRun.mockResolvedValue(undefined);
 });
 
@@ -1188,6 +1192,54 @@ test('a request pays for at most one runner recycle, then fails fast with a pres
   // Attempt 1 (initial boot, free) + attempt 2 (the single recycle); attempt 3 fails fast
   // before paying for another boot.
   assert.equal(mockEnsureRunnerSession.mock.calls.length, 2);
+});
+
+test('a failed replacement boot does not consume the request recycle budget', async () => {
+  const requestId = 'req-recycle-transient-boot-failure';
+  mockEnsureRunnerSession
+    .mockResolvedValueOnce(makeRunnerSession({ port: 8100, ready: true }))
+    .mockRejectedValueOnce(new AppError('COMMAND_FAILED', 'Runner did not accept connection'))
+    .mockResolvedValueOnce(makeRunnerSession({ port: 8101, ready: true }));
+  mockExecuteRunnerCommandWithSession
+    .mockRejectedValueOnce(new AppError('COMMAND_FAILED', 'fetch failed'))
+    .mockRejectedValueOnce(new AppError('COMMAND_FAILED', 'fetch failed'))
+    .mockResolvedValueOnce({ nodes: [], truncated: false });
+
+  const result = await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'snapshot' }, { requestId });
+
+  assert.deepEqual(result, { nodes: [], truncated: false });
+  assert.equal(mockEnsureRunnerSession.mock.calls.length, 3);
+});
+
+test('alive session reuse in the same request does not consume recycle budget', async () => {
+  const requestId = 'req-alive-reuse-before-recycle';
+  mockGetRunnerSessionSnapshot
+    .mockReturnValueOnce(null)
+    .mockReturnValueOnce({ alive: true })
+    .mockReturnValueOnce(null);
+  mockEnsureRunnerSession
+    .mockResolvedValueOnce(makeRunnerSession({ port: 8100, ready: true }))
+    .mockResolvedValueOnce(makeRunnerSession({ port: 8100, ready: true }))
+    .mockResolvedValueOnce(makeRunnerSession({ port: 8101, ready: true }));
+  mockExecuteRunnerCommandWithSession
+    .mockResolvedValueOnce({ message: 'first tap' })
+    .mockResolvedValueOnce({ message: 'second tap' })
+    .mockResolvedValueOnce({ message: 'recovered tap' });
+
+  assert.deepEqual(
+    await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 120, y: 240 }, { requestId }),
+    { message: 'first tap' },
+  );
+  assert.deepEqual(
+    await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 120, y: 240 }, { requestId }),
+    { message: 'second tap' },
+  );
+  assert.deepEqual(
+    await runAppleRunnerCommand(IOS_SIMULATOR, { command: 'tap', x: 120, y: 240 }, { requestId }),
+    { message: 'recovered tap' },
+  );
+
+  assert.equal(mockEnsureRunnerSession.mock.calls.length, 3);
 });
 
 test('a later command in the same request cannot pay for a second recycle boot', async () => {
