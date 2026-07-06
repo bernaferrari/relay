@@ -37,6 +37,11 @@ import {
 } from '../../core/scroll-gesture.ts';
 import { SCROLL_INPUT_DIRECTIONS } from './runtime/gestures.ts';
 import { FIND_LOCATORS } from '../../utils/finders.ts';
+import {
+  commandSupportsSettleObservation,
+  commandSupportsVerifyEvidence,
+} from '../../core/command-descriptor/registry.ts';
+import type { PostActionObservationSupportFor } from '../../core/command-descriptor/post-action-observation.ts';
 
 const FIND_ACTION_VALUES = [
   'click',
@@ -71,19 +76,45 @@ const verifyField = () =>
     'Capture cheap post-action evidence (AX digest, node counts, changedFromBefore) instead of a follow-up snapshot.',
   );
 
+const settleFields = () => ({
+  settle: booleanField(
+    'After the action, wait for the UI to go quiet and return the settled diff vs the pre-action tree in the same response. Best-effort; never fails the action.',
+  ),
+  settleQuietMs: integerField('Settle: quiet window in milliseconds (default 500).', { min: 0 }),
+  timeoutMs: integerField('Settle: wait deadline in milliseconds (default 10000).', { min: 1 }),
+});
+
+type VerifyFieldMap = { verify: ReturnType<typeof verifyField> };
+type SettleFieldMap = ReturnType<typeof settleFields>;
+type PostActionObservationFields<TName extends string> =
+  PostActionObservationSupportFor<TName> extends 'settle-and-verify'
+    ? VerifyFieldMap & SettleFieldMap
+    : PostActionObservationSupportFor<TName> extends 'settle'
+      ? SettleFieldMap
+      : {};
+
+function postActionObservationFields<const TName extends InteractionCommandName>(
+  command: TName,
+): PostActionObservationFields<TName> {
+  return {
+    ...(commandSupportsVerifyEvidence(command) ? { verify: verifyField() } : {}),
+    ...(commandSupportsSettleObservation(command) ? settleFields() : {}),
+  } as PostActionObservationFields<TName>;
+}
+
 const clickFields = {
   target: requiredField(interactionTargetField()),
   button: enumField(CLICK_BUTTONS, 'Pointer button for platforms that support mouse buttons.'),
   ...selectorSnapshotFields(),
   ...repeatedFields(),
-  verify: verifyField(),
+  ...postActionObservationFields('click'),
 };
 
 const pressFields = {
   target: requiredField(interactionTargetField()),
   ...selectorSnapshotFields(),
   ...repeatedFields(),
-  verify: verifyField(),
+  ...postActionObservationFields('press'),
 };
 
 const fillFields = {
@@ -91,13 +122,14 @@ const fillFields = {
   text: requiredField(stringField('Text to enter into the target.')),
   delayMs: integerField('Delay between typed characters.', { min: 0 }),
   ...selectorSnapshotFields(),
-  verify: verifyField(),
+  ...postActionObservationFields('fill'),
 };
 
 const longPressFields = {
   target: requiredField(interactionTargetField()),
   durationMs: integerField('Long press duration in milliseconds.', { min: 0 }),
   ...selectorSnapshotFields(),
+  ...postActionObservationFields('longpress'),
 };
 
 const swipeFields = {

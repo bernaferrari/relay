@@ -252,3 +252,96 @@ test('snapshot digest preserves refsGeneration — the pinning signal for the re
   const digest = RESPONSE_VIEWS.snapshot!({ ...SNAPSHOT_DATA, refsGeneration: 7 }, 'digest');
   expect(digest.refsGeneration).toBe(7);
 });
+
+// --- #1101 --settle: interaction settle digest view ---
+
+const SETTLE_DATA: DaemonResponseData = {
+  ref: 'e2',
+  x: 200,
+  y: 322,
+  message: 'Tapped @e2 (200, 322)',
+  settle: {
+    settled: true,
+    waitedMs: 60,
+    captures: 2,
+    quietMs: 25,
+    timeoutMs: 2000,
+    refsGeneration: 8,
+    diff: {
+      summary: { additions: 1, removals: 1, unchanged: 4 },
+      lines: [
+        { kind: 'removed', text: '@e2 [button] "Continue"' },
+        { kind: 'added', text: '@e4 [text] "Welcome!"', ref: 'e4' },
+      ],
+    },
+  },
+};
+
+test('interaction settle views are registered for all four touch commands', () => {
+  expect(typeof RESPONSE_VIEWS.press).toBe('function');
+  expect(RESPONSE_VIEWS.press).toBe(RESPONSE_VIEWS.click);
+  expect(RESPONSE_VIEWS.press).toBe(RESPONSE_VIEWS.fill);
+  expect(RESPONSE_VIEWS.press).toBe(RESPONSE_VIEWS.longpress);
+});
+
+test('settle digest keeps the verdict, summary, refsGeneration, and capped added refs; drops the line texts', () => {
+  const digest = RESPONSE_VIEWS.press!(SETTLE_DATA, 'digest');
+  expect(digest.settle).toEqual({
+    settled: true,
+    waitedMs: 60,
+    captures: 2,
+    quietMs: 25,
+    timeoutMs: 2000,
+    refsGeneration: 8,
+    refs: [{ ref: 'e4' }],
+    diff: { summary: { additions: 1, removals: 1, unchanged: 4 } },
+  });
+  // Every other (cheap) field is preserved verbatim.
+  expect(digest.ref).toBe('e2');
+  expect(digest.message).toBe('Tapped @e2 (200, 322)');
+});
+
+test('settle digest caps added refs at the snapshot digest ref limit', () => {
+  const lines = Array.from({ length: 20 }, (_, index) => ({
+    kind: 'added' as const,
+    text: `@e${index + 1} [button] "Item ${index + 1}"`,
+    ref: `e${index + 1}`,
+  }));
+  const digest = RESPONSE_VIEWS.press!(
+    {
+      settle: {
+        settled: false,
+        waitedMs: 2000,
+        captures: 7,
+        quietMs: 25,
+        timeoutMs: 2000,
+        refsGeneration: 9,
+        diff: {
+          summary: { additions: 20, removals: 0, unchanged: 0 },
+          lines,
+          truncated: true,
+        },
+      },
+    },
+    'digest',
+  );
+
+  expect((digest.settle as { refs?: unknown[] }).refs).toHaveLength(12);
+  expect((digest.settle as { refs?: unknown[] }).refs?.at(0)).toEqual({ ref: 'e1' });
+  expect((digest.settle as { refs?: unknown[] }).refs?.at(11)).toEqual({ ref: 'e12' });
+});
+
+test('plain interaction responses pass through UNCHANGED at every level', () => {
+  const plain: DaemonResponseData = { ref: 'e2', x: 200, y: 322, message: 'Tapped @e2' };
+  expect(RESPONSE_VIEWS.press!(plain, 'digest')).toBe(plain);
+  expect(RESPONSE_VIEWS.press!(plain, 'default')).toBe(plain);
+  expect(RESPONSE_VIEWS.press!(plain, 'full')).toBe(plain);
+  // A diff-less settle payload (stalled/unstored observation) is already cheap.
+  const noDiff: DaemonResponseData = { ref: 'e2', settle: { settled: false, hint: 'stalled' } };
+  expect(RESPONSE_VIEWS.press!(noDiff, 'digest')).toBe(noDiff);
+});
+
+test('settle default and full return today’s shape unchanged (same reference)', () => {
+  expect(RESPONSE_VIEWS.press!(SETTLE_DATA, 'default')).toBe(SETTLE_DATA);
+  expect(RESPONSE_VIEWS.press!(SETTLE_DATA, 'full')).toBe(SETTLE_DATA);
+});

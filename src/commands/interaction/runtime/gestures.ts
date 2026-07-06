@@ -40,6 +40,11 @@ import {
   type ResolvedInteractionTarget,
   resolveInteractionTarget,
 } from './resolution.ts';
+import {
+  applyPostActionObservation,
+  planPostActionObservation,
+  type SettlePostActionObservationOptions,
+} from './post-action-observation.ts';
 
 export type FocusCommandOptions = CommandContext & {
   target: InteractionTarget;
@@ -50,7 +55,7 @@ export type FocusCommandResult = ResolvedInteractionTarget & BackendResultEnvelo
 export type LongPressCommandOptions = CommandContext & {
   target: InteractionTarget;
   durationMs?: number;
-};
+} & SettlePostActionObservationOptions;
 
 export type { LongPressCommandResult };
 
@@ -155,10 +160,12 @@ export const longPressCommand: RuntimeCommand<
   LongPressCommandOptions,
   LongPressCommandResult
 > = async (runtime, options): Promise<LongPressCommandResult> => {
+  const observation = planPostActionObservation(options);
   const resolved = await resolveInteractionTarget(runtime, options, {
     action: 'longPress',
     requireInteractive: true,
     promoteToHittableAncestor: true,
+    captureEvidenceBaseline: observation.needsPreActionBaseline,
   });
   if (!runtime.backend.longPress) {
     throw new AppError('UNSUPPORTED_OPERATION', 'longPress is not supported by this backend');
@@ -172,12 +179,18 @@ export const longPressCommand: RuntimeCommand<
     durationMs,
   });
   const formattedBackendResult = toBackendResult(backendResult);
-  return {
-    ...resolved,
-    ...(durationMs !== undefined ? { durationMs } : {}),
-    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
-    ...successText(`Long pressed (${point.x}, ${point.y})`),
-  };
+  return await applyPostActionObservation(
+    runtime,
+    options,
+    resolved,
+    {
+      ...resolved,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
+      ...successText(`Long pressed (${point.x}, ${point.y})`),
+    },
+    observation,
+  );
 };
 
 export const scrollCommand: RuntimeCommand<ScrollCommandOptions, ScrollCommandResult> = async (

@@ -2,16 +2,13 @@ import { AppError } from '../../../kernel/errors.ts';
 import type { ClickButton } from '../../../core/click-button.ts';
 import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
 import { isFillableType } from '../../../snapshot/snapshot-processing.ts';
-import type { Point, SnapshotNode } from '../../../kernel/snapshot.ts';
+import type { Point } from '../../../kernel/snapshot.ts';
 import { requireIntInRange } from '../../../utils/validation.ts';
 import { successText } from '../../../utils/success-text.ts';
 import { findMistargetedTypeRefToken } from '../../../utils/type-target-warning.ts';
-import { summarizeAxEvidence } from '../../../utils/ax-digest.ts';
 import type {
   FillCommandResult,
-  InteractionEvidence,
   PressCommandResult,
-  ResolvedInteractionTarget,
   ResolvedTarget,
 } from '../../../contracts/interaction.ts';
 import { toBackendContext } from '../../runtime-common.ts';
@@ -22,11 +19,15 @@ import {
 } from '../../runtime-types.ts';
 import type { RepeatedInput } from '../../command-input.ts';
 import {
-  captureInteractionSnapshot,
   type InteractionTarget,
   preflightNativeRefInteraction,
   resolveInteractionTarget,
 } from './resolution.ts';
+import {
+  applyPostActionObservation,
+  planPostActionObservation,
+  type PostActionObservationOptions,
+} from './post-action-observation.ts';
 
 export {
   focusCommand,
@@ -56,13 +57,7 @@ export type PressCommandOptions = CommandContext &
   RepeatedInput & {
     target: InteractionTarget;
     button?: ClickButton;
-    /**
-     * Opt-in (#1047): take one post-action interactive-only capture, digest it,
-     * and return it as `evidence` instead of the caller having to spend a full
-     * follow-up snapshot round trip to confirm the action had an effect.
-     */
-    verify?: boolean;
-  };
+  } & PostActionObservationOptions;
 
 export type ClickCommandOptions = PressCommandOptions;
 
@@ -72,8 +67,7 @@ export type FillCommandOptions = CommandContext & {
   target: InteractionTarget;
   text: string;
   delayMs?: number;
-  verify?: boolean;
-};
+} & PostActionObservationOptions;
 
 export type TypeTextCommandOptions = CommandContext & {
   text: string;
@@ -101,15 +95,17 @@ export const fillCommand: RuntimeCommand<FillCommandOptions, FillCommandResult> 
   options,
 ): Promise<FillCommandResult> => {
   if (!options.text) throw new AppError('INVALID_ARGS', 'fill requires text');
-  const verify = options.verify === true;
-  const nativeRefFill = verify ? null : await maybeFillRefTarget(runtime, options);
+  const observation = planPostActionObservation(options);
+  const nativeRefFill = observation.needsPreActionBaseline
+    ? null
+    : await maybeFillRefTarget(runtime, options);
   if (nativeRefFill) return nativeRefFill;
 
   const resolved = await resolveInteractionTarget(runtime, options, {
     action: 'fill',
     requireInteractive: true,
     promoteToHittableAncestor: false,
-    captureEvidenceBaseline: verify,
+    captureEvidenceBaseline: observation.needsPreActionBaseline,
   });
   if (!runtime.backend.fill) {
     throw new AppError('UNSUPPORTED_OPERATION', 'fill is not supported by this backend');
@@ -127,14 +123,18 @@ export const fillCommand: RuntimeCommand<FillCommandOptions, FillCommandResult> 
     nodeType && !isFillableType(nodeType, runtime.backend.platform)
       ? `fill target ${formatTargetForWarning(resolved)} resolved to "${nodeType}", attempting fill anyway.`
       : undefined;
-  const evidence = verify ? await captureVerifyEvidence(runtime, options, resolved) : undefined;
-  return reconcileNonHittableHintWithEvidence({
-    ...resolved,
-    text: options.text,
-    ...(warning ? { warning } : {}),
-    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
-    ...(evidence ? { evidence } : {}),
-  });
+  return await applyPostActionObservation(
+    runtime,
+    options,
+    resolved,
+    {
+      ...resolved,
+      text: options.text,
+      ...(warning ? { warning } : {}),
+      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
+    },
+    observation,
+  );
 };
 
 export const typeTextCommand: RuntimeCommand<
@@ -175,15 +175,17 @@ async function tapCommand(
   options: PressCommandOptions,
   action: 'click' | 'press',
 ): Promise<PressCommandResult> {
-  const verify = options.verify === true;
-  const nativeRefTap = verify ? null : await maybeTapRefTarget(runtime, options, action);
+  const observation = planPostActionObservation(options);
+  const nativeRefTap = observation.needsPreActionBaseline
+    ? null
+    : await maybeTapRefTarget(runtime, options, action);
   if (nativeRefTap) return nativeRefTap;
 
   const resolved = await resolveInteractionTarget(runtime, options, {
     action,
     requireInteractive: true,
     promoteToHittableAncestor: true,
-    captureEvidenceBaseline: verify,
+    captureEvidenceBaseline: observation.needsPreActionBaseline,
   });
   if (!runtime.backend.tap) {
     throw new AppError('UNSUPPORTED_OPERATION', 'tap is not supported by this backend');
@@ -198,63 +200,16 @@ async function tapCommand(
     doubleTap: options.doubleTap,
   });
   const formattedBackendResult = toBackendResult(backendResult);
-  const evidence = verify ? await captureVerifyEvidence(runtime, options, resolved) : undefined;
-  return reconcileNonHittableHintWithEvidence({
-    ...resolved,
-    ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
-    ...(evidence ? { evidence } : {}),
-  });
-}
-
-/**
- * Post-action side of `--verify` (#1047): one interactive-only capture through
- * the same capture helper the resolution path already uses, digested and then
- * discarded — the node tree itself is never attached to the result, only the
- * cheap summary. Best-effort: a failed capture must not turn a successful
- * action into a failure, so this returns `undefined` instead of throwing.
- */
-async function captureVerifyEvidence(
-  runtime: AgentDeviceRuntime,
-  options: CommandContext,
-  resolved: ResolvedInteractionTarget,
-): Promise<InteractionEvidence | undefined> {
-  const preActionNodes: SnapshotNode[] | undefined =
-    'preActionNodes' in resolved ? resolved.preActionNodes : undefined;
-  try {
-    const capture = await captureInteractionSnapshot(runtime, options, true);
-    const after = summarizeAxEvidence(capture.snapshot.nodes);
-    // No pre-action baseline (for example the baseline capture itself failed)
-    // means we cannot claim a change happened — default to false rather than
-    // asserting a change we did not actually observe.
-    const changedFromBefore =
-      preActionNodes !== undefined && after.digest !== summarizeAxEvidence(preActionNodes).digest;
-    return { ...after, changedFromBefore };
-  } catch {
-    return undefined;
-  }
-}
-
-// The resolution-time non-hittable hint warns the action "may have had no
-// visible effect". When --verify evidence proves the interactive tree changed,
-// that warning is contradicted by data sitting next to it in the same response
-// — drop it and let targetHittable + evidence speak for themselves.
-function reconcileNonHittableHintWithEvidence<T extends object>(result: T): T {
-  // Widened view: point-target results carry none of these fields, which is
-  // exactly the no-op path.
-  const view = result as {
-    targetHittable?: boolean;
-    hint?: string;
-    evidence?: InteractionEvidence;
-  };
-  if (
-    view.targetHittable !== false ||
-    view.evidence?.changedFromBefore !== true ||
-    view.hint === undefined
-  ) {
-    return result;
-  }
-  const { hint: _hint, ...rest } = view;
-  return rest as T;
+  return await applyPostActionObservation(
+    runtime,
+    options,
+    resolved,
+    {
+      ...resolved,
+      ...(formattedBackendResult ? { backendResult: formattedBackendResult } : {}),
+    },
+    observation,
+  );
 }
 
 function requireResolvedPoint(result: { point?: Point }): Point {

@@ -18,7 +18,16 @@ import type {
   TypeTextOptions,
 } from '../../client/client-types.ts';
 import type { CommandSchemaOverride } from '../../utils/cli-command-schema-types.ts';
-import { REPEATED_TOUCH_FLAGS, SELECTOR_SNAPSHOT_FLAGS } from '../../cli/parser/cli-flags.ts';
+import {
+  REPEATED_TOUCH_FLAGS,
+  SELECTOR_SNAPSHOT_FLAGS,
+  SETTLE_FLAGS,
+  type FlagKey,
+} from '../../cli/parser/cli-flags.ts';
+import {
+  commandSupportsSettleObservation,
+  commandSupportsVerifyEvidence,
+} from '../../core/command-descriptor/registry.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
 import {
@@ -70,7 +79,12 @@ const interactionCliSchemas = {
     usageOverride: 'click <x y|@ref|selector>',
     positionalArgs: ['target'],
     allowsExtraPositionals: true,
-    allowedFlags: [...REPEATED_TOUCH_FLAGS, 'clickButton', 'verify', ...SELECTOR_SNAPSHOT_FLAGS],
+    allowedFlags: [
+      ...REPEATED_TOUCH_FLAGS,
+      'clickButton',
+      ...postActionObservationCliFlags('click'),
+      ...SELECTOR_SNAPSHOT_FLAGS,
+    ],
   },
   press: {
     usageOverride: 'press <x y|@ref|selector>',
@@ -78,7 +92,11 @@ const interactionCliSchemas = {
       'Short press a semantic UI target by ref, selector, or point. For native context menus or hold gestures, use longpress <target> <durationMs> instead of press --hold-ms.',
     positionalArgs: ['targetOrX', 'y?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...REPEATED_TOUCH_FLAGS, 'verify', ...SELECTOR_SNAPSHOT_FLAGS],
+    allowedFlags: [
+      ...REPEATED_TOUCH_FLAGS,
+      ...postActionObservationCliFlags('press'),
+      ...SELECTOR_SNAPSHOT_FLAGS,
+    ],
   },
   longpress: {
     usageOverride: 'longpress <x y|@ref|selector> [durationMs]',
@@ -86,7 +104,7 @@ const interactionCliSchemas = {
       'Open native context menus or long-press targets by ref, selector, or point. Duration is positional, for example longpress @e12 800 or longpress 300 500 800.',
     positionalArgs: ['targetOrX', 'yOrDurationMs?', 'durationMs?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS],
+    allowedFlags: [...postActionObservationCliFlags('longpress'), ...SELECTOR_SNAPSHOT_FLAGS],
   },
   swipe: {
     helpDescription: 'Swipe coordinates with optional repeat pattern',
@@ -114,7 +132,7 @@ const interactionCliSchemas = {
     usageOverride: 'fill <x> <y> <text> | fill <@ref|selector> <text>',
     positionalArgs: ['targetOrX', 'yOrText', 'text?'],
     allowsExtraPositionals: true,
-    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS, 'delayMs', 'verify'],
+    allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS, 'delayMs', ...postActionObservationCliFlags('fill')],
   },
   scroll: {
     usageOverride: 'scroll <direction|top|bottom> [amount] [--pixels <n>] [--duration-ms <ms>]',
@@ -129,6 +147,13 @@ type InteractionCommandMetadata = (typeof interactionCommandMetadata)[number];
 type InteractionCommandName = InteractionCommandMetadata['name'];
 const { gesture: _gestureDaemonWriter, ...gestureProjectionAliasDaemonWriters } =
   gestureDaemonWriters;
+
+function postActionObservationCliFlags(command: InteractionCommandName): readonly FlagKey[] {
+  const flags: FlagKey[] = [];
+  if (commandSupportsVerifyEvidence(command)) flags.push('verify');
+  if (commandSupportsSettleObservation(command)) flags.push(...SETTLE_FLAGS);
+  return flags;
+}
 
 const clickCommandDefinition = defineExecutableCommand(metadata('click'), (client, input) =>
   client.interactions.click(toClickOptions(input)),
@@ -221,6 +246,7 @@ const fillCommandFacet = defineCommandFacet({
   cliSchema: interactionCliSchemas.fill,
   cliReader: interactionCliReaders.fill,
   daemonWriter: interactionDaemonWriters.fill,
+  cliOutputFormatter: interactionCliOutputFormatters.fill,
 });
 
 const longPressCommandFacet = defineCommandFacet({
@@ -230,6 +256,7 @@ const longPressCommandFacet = defineCommandFacet({
   cliSchema: interactionCliSchemas.longpress,
   cliReader: interactionCliReaders.longpress,
   daemonWriter: interactionDaemonWriters.longpress,
+  cliOutputFormatter: interactionCliOutputFormatters.longpress,
 });
 
 const swipeCommandFacet = defineCommandFacet({
@@ -343,6 +370,7 @@ function toClickOptions(input: ClickInput): ClickOptions {
     ...toRepeatedOptions(input),
     button: input.button,
     verify: input.verify,
+    ...toSettleOptions(input),
   };
 }
 
@@ -353,6 +381,7 @@ function toPressOptions(input: PressInput): PressOptions {
     ...toSelectorSnapshotOptions(input),
     ...toRepeatedOptions(input),
     verify: input.verify,
+    ...toSettleOptions(input),
   };
 }
 
@@ -364,6 +393,7 @@ function toFillOptions(input: FillInput): FillOptions {
     text: input.text,
     delayMs: input.delayMs,
     verify: input.verify,
+    ...toSettleOptions(input),
   };
 }
 
@@ -373,6 +403,19 @@ function toLongPressOptions(input: LongPressInput): LongPressOptions {
     ...toClientInteractionTarget(input.target),
     ...toSelectorSnapshotOptions(input),
     durationMs: input.durationMs,
+    ...toSettleOptions(input),
+  };
+}
+
+function toSettleOptions(input: {
+  settle?: boolean;
+  settleQuietMs?: number;
+  timeoutMs?: number;
+}): Pick<PressOptions, 'settle' | 'settleQuietMs' | 'timeoutMs'> {
+  return {
+    settle: input.settle,
+    settleQuietMs: input.settleQuietMs,
+    timeoutMs: input.timeoutMs,
   };
 }
 

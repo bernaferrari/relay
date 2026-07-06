@@ -180,6 +180,60 @@ const interactionEvidenceSchema: JsonSchema = objectSchema(
   ['nodeCount', 'interactiveNodeCount', 'digest', 'changedFromBefore'],
 );
 
+// SettleObservation (src/contracts/interaction.ts) — opt-in `--settle` settled
+// diff observation (#1101).
+const settleObservationSchema: JsonSchema = objectSchema(
+  {
+    settled: booleanSchema(
+      'Whether the UI held the quiet window before the deadline. false is advisory, not failure.',
+    ),
+    waitedMs: numberSchema(),
+    captures: numberSchema(),
+    quietMs: numberSchema(),
+    timeoutMs: numberSchema(),
+    refsGeneration: numberSchema(
+      'Snapshot generation of the stored settled tree; refs on added diff lines were minted from it.',
+    ),
+    refs: {
+      type: 'array',
+      items: objectSchema(
+        {
+          ref: stringSchema('Plain ref body (e12) minted from the stored settled tree.'),
+        },
+        ['ref'],
+      ),
+    },
+    diff: objectSchema(
+      {
+        summary: objectSchema(
+          {
+            additions: numberSchema(),
+            removals: numberSchema(),
+            unchanged: numberSchema(),
+          },
+          ['additions', 'removals', 'unchanged'],
+        ),
+        lines: {
+          type: 'array',
+          items: objectSchema(
+            {
+              kind: enumSchema(['added', 'removed']),
+              text: stringSchema(),
+              ref: stringSchema('Plain ref body (e12) for added lines.'),
+            },
+            ['kind', 'text'],
+          ),
+        },
+        truncated: booleanSchema('Lines were capped to the response bound.'),
+      },
+      ['summary', 'lines'],
+      'Settled diff vs the pre-action tree (changed lines only).',
+    ),
+    hint: stringSchema(),
+  },
+  ['settled', 'waitedMs', 'captures', 'quietMs', 'timeoutMs'],
+);
+
 // boot / shutdown share the resolved-device header (src/contracts/device.ts).
 const deviceHeaderProperties: Record<string, JsonSchema> = {
   platform: enumSchema(PLATFORMS),
@@ -210,6 +264,7 @@ export const COMMAND_OUTPUT_SCHEMAS = {
       message: stringSchema(),
       warning: stringSchema(),
       evidence: interactionEvidenceSchema,
+      settle: settleObservationSchema,
     },
   }),
   fill: interactionResultSchema({
@@ -219,6 +274,7 @@ export const COMMAND_OUTPUT_SCHEMAS = {
       backendResult: backendResultSchema,
       message: stringSchema(),
       evidence: interactionEvidenceSchema,
+      settle: settleObservationSchema,
     },
     required: ['text'],
   }),
@@ -228,6 +284,7 @@ export const COMMAND_OUTPUT_SCHEMAS = {
       backendResult: backendResultSchema,
       message: stringSchema(),
       warning: stringSchema(),
+      settle: settleObservationSchema,
     },
   }),
 
