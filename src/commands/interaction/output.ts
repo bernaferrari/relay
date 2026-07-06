@@ -37,14 +37,68 @@ function tapCliOutput(result: CommandRequestResult): CliOutput {
   const x = data.x;
   const y = data.y;
   if (!ref || typeof x !== 'number' || typeof y !== 'number') {
-    return defaultCommandCliOutput(data);
+    const output = defaultCommandCliOutput(data);
+    return { data: output.data, text: appendSettleText(output.text, data.settle) };
   }
-  return { data, text: `Tapped @${ref} (${x}, ${y})` };
+  return { data, text: appendSettleText(`Tapped @${ref} (${x}, ${y})`, data.settle) };
+}
+
+function messageWithSettleCliOutput(result: CommandRequestResult): CliOutput {
+  const data = result as Record<string, unknown>;
+  const output = defaultCommandCliOutput(data);
+  return { data: output.data, text: appendSettleText(output.text, data.settle) };
+}
+
+function appendSettleText(text: string | null | undefined, settle: unknown): string {
+  return `${text ?? ''}${formatSettleText(settle)}`;
+}
+
+type SettleTextView = {
+  settled?: boolean;
+  waitedMs?: number;
+  hint?: string;
+  diff?: {
+    summary?: { additions?: number; removals?: number; unchanged?: number };
+    lines?: Array<{ kind?: string; text?: string }>;
+    truncated?: boolean;
+  };
+};
+
+/**
+ * Compact `--settle` (#1101) rendering appended to the tap line: the verdict,
+ * the changed-count summary, and the changed lines themselves (the payload the
+ * agent acts on). Empty for non-settle responses.
+ */
+function formatSettleText(settle: unknown): string {
+  if (!settle || typeof settle !== 'object') return '';
+  const view = settle as SettleTextView;
+  const parts = [formatSettleVerdict(view), ...formatSettleDiffLines(view.diff)];
+  if (view.hint) parts.push(`hint: ${view.hint}`);
+  return `\n${parts.join('\n')}`;
+}
+
+function formatSettleDiffLines(diff: SettleTextView['diff']): string[] {
+  const lines = (diff?.lines ?? []).map(
+    (line) => `${line.kind === 'removed' ? '-' : '+'} ${line.text ?? ''}`,
+  );
+  if (diff?.truncated) lines.push('… changed lines truncated');
+  return lines;
+}
+
+function formatSettleVerdict(view: SettleTextView): string {
+  const verdict = view.settled === true ? 'settled' : 'not settled';
+  const summary = view.diff?.summary;
+  const counts = summary
+    ? ` +${summary.additions ?? 0} -${summary.removals ?? 0} (~${summary.unchanged ?? 0} unchanged)`
+    : '';
+  return `${verdict} after ${view.waitedMs ?? 0}ms:${counts}`;
 }
 
 export const interactionCliOutputFormatters = {
   click: resultOutput(tapCliOutput),
   press: resultOutput(tapCliOutput),
+  fill: resultOutput(messageWithSettleCliOutput),
+  longpress: resultOutput(messageWithSettleCliOutput),
   get: ({ input, result }) =>
     getCliOutput({
       result: result as CommandRequestResult,

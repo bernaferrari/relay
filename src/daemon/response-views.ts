@@ -123,9 +123,65 @@ function selectorReadView(data: DaemonResponseData, level: ResponseLevel): Daemo
   return { ...data, node: compactSelectorNode(node as SnapshotNode) };
 }
 
+/**
+ * Token-cheap settle digest for interaction commands (#1101). CONSERVATIVE:
+ * only acts on a result that carries a `settle.diff` payload (the `--settle`
+ * opt-in) and otherwise returns the data UNCHANGED, so plain interaction
+ * responses stay byte-identical at every level. The digest keeps the verdict
+ * fields and the changed-line COUNTS (`diff.summary`) plus `refsGeneration`,
+ * and drops the diff line texts — the changed-count summary is the digest
+ * answer; the lines are the default-level payload. `full` returns today's
+ * shape unchanged (nothing richer is computed yet).
+ */
+function interactionSettleView(data: DaemonResponseData, level: ResponseLevel): DaemonResponseData {
+  if (level !== 'digest') return data;
+  const settle = data.settle;
+  if (!settle || typeof settle !== 'object' || Array.isArray(settle)) return data;
+  const { diff, ...rest } = settle as Record<string, unknown>;
+  if (!diff || typeof diff !== 'object' || Array.isArray(diff)) return data;
+  const diffRecord = diff as Record<string, unknown>;
+  const summary = diffRecord.summary;
+  const refs = readSettleDigestRefs(diffRecord.lines);
+  return {
+    ...data,
+    settle: {
+      ...rest,
+      ...(refs.length > 0 ? { refs } : {}),
+      diff: { summary },
+    },
+  };
+}
+
+type DigestRef = { ref: string };
+
+function readSettleDigestRefs(lines: unknown): DigestRef[] {
+  if (!Array.isArray(lines)) return [];
+  return lines.flatMap(readSettleDigestRef).slice(0, DIGEST_REF_LIMIT);
+}
+
+function readSettleDigestRef(line: unknown): DigestRef[] {
+  const record = readObjectRecord(line);
+  if (record?.kind !== 'added') return [];
+  return readDigestRef(record.ref);
+}
+
+function readDigestRef(ref: unknown): DigestRef[] {
+  return typeof ref === 'string' && ref.length > 0 ? [{ ref }] : [];
+}
+
+function readObjectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export const RESPONSE_VIEWS: Record<string, ResponseView> = {
   snapshot: snapshotView,
   screenshot: screenshotView,
   find: selectorReadView,
   get: selectorReadView,
+  press: interactionSettleView,
+  click: interactionSettleView,
+  fill: interactionSettleView,
+  longpress: interactionSettleView,
 };

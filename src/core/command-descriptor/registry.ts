@@ -11,6 +11,8 @@ import {
   INSTALL_REQUEST_TIMEOUT_MS,
   PREPARE_REQUEST_TIMEOUT_MS,
 } from './timeout-policy.ts';
+import { resolvePostActionObservationSupport } from './post-action-observation.ts';
+import type { PostActionObservationSupport } from './post-action-observation.ts';
 import type { CommandDescriptor, CommandTimeoutPolicy } from './types.ts';
 
 // ---------------------------------------------------------------------------
@@ -74,9 +76,9 @@ const APP_INSTALL_CAPABILITY = {
 } satisfies CommandCapability;
 
 // ---------------------------------------------------------------------------
-// Timeout policies (ADR-0011) — the request-envelope budget source and the
-// on-timeout daemon policy, derived VERBATIM from the two deleted client hand
-// lists (`isExplicitTimeoutCommand` in daemon-client.ts and
+// Timeout policies — descriptor-owned request-envelope budget source and
+// on-timeout daemon policy (ADR 0008). This replaces the two deleted client
+// hand lists (`isExplicitTimeoutCommand` in daemon-client.ts and
 // `DAEMON_PRESERVING_TIMEOUT_COMMANDS` in daemon-client-timeout.ts) plus the
 // per-command envelope branches of `resolveDaemonRequestTimeoutMs`.
 // ---------------------------------------------------------------------------
@@ -98,6 +100,39 @@ const INSTALL_TIMEOUT_POLICY: CommandTimeoutPolicy = {
   ...DEFAULT_TIMEOUT_POLICY,
   envelopeMs: INSTALL_REQUEST_TIMEOUT_MS,
 };
+
+const DEFAULT_SETTLE_TIMEOUT_MS = 10_000;
+
+// Settle-capable interaction commands also resolve their target through the
+// same platform accessibility capture as snapshot/find (#1105): a hung capture
+// is their dominant timeout mode, so on top of the --settle flag-sourced
+// widening envelope above, keep the daemon (and sessions) alive on timeout too.
+const SETTLE_FLAG_PRESERVE_DAEMON_TIMEOUT_POLICY: CommandTimeoutPolicy = {
+  ...DEFAULT_TIMEOUT_POLICY,
+  // --settle (#1101) makes --timeout bound the SETTLE wait, not the whole
+  // request. Widen the envelope by the settle budget so selector/action
+  // overhead still has room before the post-action wait.
+  budget: {
+    source: 'flag',
+    envelope: 'widen',
+    defaultBudgetMs: DEFAULT_SETTLE_TIMEOUT_MS,
+  },
+  onTimeout: 'preserve-daemon',
+};
+
+function interactionTimeoutPolicy(command: string): CommandTimeoutPolicy {
+  return resolvePostActionObservationSupport(command) !== undefined
+    ? SETTLE_FLAG_PRESERVE_DAEMON_TIMEOUT_POLICY
+    : PRESERVE_DAEMON_TIMEOUT_POLICY;
+}
+
+function postActionObservation(command: string): PostActionObservationSupport {
+  const support = resolvePostActionObservationSupport(command);
+  if (support === undefined) {
+    throw new Error(`Missing post-action observation descriptor support for ${command}`);
+  }
+  return support;
+}
 
 // ---------------------------------------------------------------------------
 // The additive single source. Each entry carries the daemon route/traits +
@@ -473,49 +508,53 @@ const RAW_COMMAND_DESCRIPTORS = [
     name: PUBLIC_COMMANDS.click,
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
+    timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.click),
+    postActionObservation: postActionObservation(PUBLIC_COMMANDS.click),
     batchable: true,
   },
   {
     name: PUBLIC_COMMANDS.fill,
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
+    timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.fill),
+    postActionObservation: postActionObservation(PUBLIC_COMMANDS.fill),
     batchable: true,
   },
   {
     name: PUBLIC_COMMANDS.longPress,
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
+    timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.longPress),
+    postActionObservation: postActionObservation(PUBLIC_COMMANDS.longPress),
     batchable: true,
   },
   {
     name: PUBLIC_COMMANDS.press,
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
+    timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.press),
+    postActionObservation: postActionObservation(PUBLIC_COMMANDS.press),
     batchable: true,
   },
   {
     name: PUBLIC_COMMANDS.type,
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
-    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
+    timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.type),
     batchable: true,
   },
   {
     name: PUBLIC_COMMANDS.get,
     daemon: { route: 'interaction', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
-    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
+    timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.get),
     batchable: true,
   },
   {
     name: PUBLIC_COMMANDS.is,
     daemon: { route: 'interaction', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
-    timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
+    timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.is),
     batchable: true,
   },
 
@@ -675,12 +714,31 @@ export const commandDescriptors = RAW_COMMAND_DESCRIPTORS.map((descriptor) => ({
 /** The literal union of every registered command name. */
 export type Command = (typeof commandDescriptors)[number]['name'];
 
+const COMMAND_DESCRIPTOR_BY_NAME: ReadonlyMap<string, CommandDescriptor> = new Map(
+  commandDescriptors.map((descriptor) => [descriptor.name, descriptor]),
+);
+
 const TIMEOUT_POLICY_BY_COMMAND: ReadonlyMap<string, CommandTimeoutPolicy> = new Map(
   commandDescriptors.map((descriptor) => [descriptor.name, descriptor.timeoutPolicy]),
 );
 
+export function resolveCommandPostActionObservationSupport(
+  command: string | undefined,
+): PostActionObservationSupport | undefined {
+  if (command === undefined) return undefined;
+  return COMMAND_DESCRIPTOR_BY_NAME.get(command)?.postActionObservation;
+}
+
+export function commandSupportsSettleObservation(command: string | undefined): boolean {
+  return resolveCommandPostActionObservationSupport(command) !== undefined;
+}
+
+export function commandSupportsVerifyEvidence(command: string | undefined): boolean {
+  return resolveCommandPostActionObservationSupport(command) === 'settle-and-verify';
+}
+
 /**
- * The declared timeout policy for a command (ADR-0011). Command names outside
+ * The declared timeout policy for a command (ADR 0008). Command names outside
  * the registry (internal probes, unknown commands) fall back to
  * {@link DEFAULT_TIMEOUT_POLICY} — standard envelope, reset-daemon — exactly as
  * the deleted hand lists treated unlisted commands.
