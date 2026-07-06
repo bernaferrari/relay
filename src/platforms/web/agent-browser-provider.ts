@@ -1,5 +1,6 @@
 import { execFailureDetails, runCmd } from '../../utils/exec.ts';
 import { AppError } from '../../kernel/errors.ts';
+import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { sleep } from '../../utils/timeouts.ts';
 import type { Rect } from '../../kernel/snapshot.ts';
 import {
@@ -15,7 +16,12 @@ import {
   type JsonObject,
 } from './json-utils.ts';
 import type { WebProvider, WebSnapshotOptions, WebSnapshotResult } from './provider.ts';
-import { mapManagedAgentBrowserError, resolveAgentBrowserTool } from './agent-browser-tool.ts';
+import {
+  getManagedAgentBrowserStatus,
+  mapManagedAgentBrowserError,
+  resolveAgentBrowserTool,
+} from './agent-browser-tool.ts';
+import { cleanupManagedAgentBrowserOrphansForProviderStartup } from './agent-browser-lifecycle.ts';
 
 const AGENT_BROWSER = 'agent-browser';
 const AGENT_BROWSER_TIMEOUT_MS = 30_000;
@@ -25,6 +31,7 @@ const AGENT_BROWSER_DOCTOR_HINT =
 type AgentBrowserProviderOptions = {
   session?: string;
   stateDir?: string;
+  openWebSessionNames?: () => readonly string[];
 };
 
 export function createAgentBrowserWebProvider(
@@ -220,6 +227,7 @@ async function runAgentBrowserCommand(
   let stderr = '';
   let exitCode = 0;
   try {
+    await cleanupProviderStartupOrphans(options);
     const tool = await resolveAgentBrowserTool({ stateDir: options.stateDir });
     const result = await runCmd(tool.command, cliArgs, {
       allowFailure: true,
@@ -234,6 +242,23 @@ async function runAgentBrowserCommand(
   }
 
   return { stdout, stderr, exitCode };
+}
+
+async function cleanupProviderStartupOrphans(options: AgentBrowserProviderOptions): Promise<void> {
+  if (!options.openWebSessionNames) return;
+  const status = getManagedAgentBrowserStatus({ stateDir: options.stateDir });
+  if (!status.installed) return;
+  try {
+    await cleanupManagedAgentBrowserOrphansForProviderStartup(status, {
+      openWebSessionNames: options.openWebSessionNames(),
+    });
+  } catch (error) {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'web_agent_browser_provider_orphan_cleanup_failed',
+      data: { error: error instanceof Error ? error.message : String(error) },
+    });
+  }
 }
 
 function unwrapAgentBrowserJson(
