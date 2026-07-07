@@ -18,10 +18,18 @@ export type SnapshotNode = {
   label?: string;
   value?: string;
   identifier?: string;
+  role?: string;
+  type?: string;
   enabled?: boolean;
+  selected?: boolean;
+  focused?: boolean;
+  visibleToUser?: boolean;
   hittable?: boolean;
   rect?: { x: number; y: number; width: number; height: number };
   ref?: string;
+  index?: number;
+  depth?: number;
+  parentIndex?: number;
 };
 
 // Singleton client — reusing one client avoids "session already bound"

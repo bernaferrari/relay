@@ -134,10 +134,18 @@ export type SnapshotNode = {
   label?: string;
   value?: string;
   identifier?: string;
+  role?: string;
+  type?: string;
   enabled?: boolean;
+  selected?: boolean;
+  focused?: boolean;
+  visibleToUser?: boolean;
   hittable?: boolean;
   rect?: { x: number; y: number; width: number; height: number };
   ref?: string;
+  index?: number;
+  depth?: number;
+  parentIndex?: number;
 };
 
 export type SnapshotState = {
@@ -982,6 +990,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const activeJob = () =>
       jobs().find((j) => j.status === "running" || j.status === "paused") ?? null;
     const isPaused = () => activeJob()?.status === "paused";
+    // jobs() is newest-first (listJobs reverses); queued display order is
+    // execution order — oldest queued first — so reverse the filtered slice.
+    const queuedJobs = () =>
+      jobs()
+        .filter((j) => j.status === "queued")
+        .reverse();
     const selectedRecipe = () => recipes().find((r) => r.id === selectedRecipeId()) ?? null;
 
     return {
