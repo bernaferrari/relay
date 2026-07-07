@@ -2786,6 +2786,47 @@
   gap: 8px;
   padding-top: 4px;
 }
+.recipe-editor__desc {
+  height: 30px;
+  padding: 0 12px;
+  margin-top: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--v2-border-border-base);
+  background: var(--v2-bg-1);
+  color: var(--v2-text-text-base);
+  font-size: 12px;
+}
+.recipe-editor__desc:focus {
+  outline: none;
+  border-color: var(--v2-border-border-focus);
+}
+.recipe-editor__value-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.recipe-editor__value-wrap--err .recipe-editor__value {
+  border-color: var(--c-fail);
+}
+.recipe-editor__target {
+  display: contents;
+}
+.recipe-editor__target .recipe-editor__value {
+  flex: 1 1 80px;
+}
+.recipe-editor__flow {
+  flex: 1;
+  font-size: 12px;
+  color: var(--v2-text-text-base);
+  padding: 0 4px;
+}
+.recipe-editor__readonly {
+  color: var(--c-dim);
+  font-size: 10.5px;
+}
 
 /* ════════════════════════ REDUCED MOTION ════════════════════════ */
 @media (prefers-reduced-motion: reduce) {

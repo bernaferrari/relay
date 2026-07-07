@@ -2,32 +2,58 @@
  * OpenCode-style left rail: recipes + run history (clean rows, no chip soup).
  */
 import { For, Show, createMemo, createSignal } from "solid-js";
-import { useServer, type ActionInfo } from "../context/server";
-import { useRecorder, type CustomRecipe } from "../context/recorder";
+import { useServer, type RecipeInfo } from "../context/server";
+import { useRecorder } from "../context/recorder";
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { RecipeEditor } from "./recipe-editor";
 import { statusTone, fmtDur } from "../lib/job";
 
+/** Derive a sidebar group for a builtin recipe id (plan-002 builtins carry no category). */
+function builtinCategory(id: string): string {
+  if (id.startsWith("login-") || id === "logout" || id.startsWith("grok")) return "grok";
+  return "play-store";
+}
+
+const CAT_LABEL: Record<string, string> = {
+  "play-store": "Play Store",
+  grok: "Grok app",
+};
+
+type Group = { key: string; label: string; items: RecipeInfo[]; custom: boolean };
+
 export function Sidebar() {
   const server = useServer();
   const rec = useRecorder();
-  const [editingRecipe, setEditingRecipe] = createSignal<CustomRecipe | "new" | null>(null);
+  const [editingRecipe, setEditingRecipe] = createSignal<RecipeInfo | "new" | null>(null);
 
-  const groups = createMemo(() => {
-    const byCat = new Map<string, ActionInfo[]>();
-    for (const a of server.actions()) {
-      const list = byCat.get(a.category) ?? [];
-      list.push(a);
-      byCat.set(a.category, list);
+  // One unified list from server.recipes(): custom recipes group as "Recipes"
+  // (with New/Edit/Delete), builtins group by their derived category.
+  const groups = createMemo<Group[]>(() => {
+    const custom: RecipeInfo[] = [];
+    const byCat = new Map<string, RecipeInfo[]>();
+    for (const r of server.recipes()) {
+      if (r.source === "custom") {
+        custom.push(r);
+        continue;
+      }
+      const cat = builtinCategory(r.id);
+      const list = byCat.get(cat) ?? [];
+      list.push(r);
+      byCat.set(cat, list);
     }
-    return [...byCat.entries()];
+    const built: Group[] = [...byCat.entries()].map(([key, items]) => ({
+      key,
+      label: CAT_LABEL[key] ?? key,
+      items,
+      custom: false,
+    }));
+    return [{ key: "Recipes", label: "Recipes", items: custom, custom: true }, ...built];
   });
 
-  const catLabel = (c: string) => {
-    if (c === "play-store") return "Play Store";
-    if (c === "grok") return "Grok app";
-    return c;
+  const select = (id: string) => {
+    server.setSelectedRecipeId(id);
+    server.setPanelTab("steps");
   };
 
   return (
@@ -35,70 +61,11 @@ export function Sidebar() {
       <div class="sidebar__section">
         <div class="sidebar__head">
           <span class="sidebar__label">Recipes</span>
-          <span class="sidebar__count mono">{server.actions().length}</span>
+          <span class="sidebar__count mono">{server.recipes().length}</span>
         </div>
         <div class="sidebar__scroll">
-          <div class="sidebar__group">
-            <div class="sidebar__group-label">
-              Custom
-              <button
-                type="button"
-                class="sidebar__new-btn"
-                title="Create a new recipe"
-                onClick={() => setEditingRecipe("new")}
-              >
-                <Icon name="chevron-right" size={12} />
-                New
-              </button>
-            </div>
-            <For each={rec.recipes()}>
-              {(r) => (
-                <button
-                  type="button"
-                  class="nav-row"
-                  classList={{ on: rec.selectedRecipeId() === r.id }}
-                  title={`Custom · ${r.steps.length} steps — double-click to replay`}
-                  onClick={() => {
-                    rec.setSelectedRecipeId(r.id);
-                    server.setSelectedAction(null);
-                    server.setPanelTab("steps");
-                  }}
-                  onDblClick={() => void rec.runRecipe(r)}
-                >
-                  <span class="nav-row__title">{r.title}</span>
-                  <span class="nav-row__meta">
-                    <Show when={r.steps.length > 0}>
-                      <span class="mono nav-row__count">{r.steps.length}</span>
-                    </Show>
-                    <span class="nav-row__actions">
-                      <span
-                        class="nav-row__action"
-                        title="Edit recipe"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingRecipe(r);
-                        }}
-                      >
-                        <Icon name="sliders" size={11} />
-                      </span>
-                      <span
-                        class="nav-row__action"
-                        title="Delete recipe"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          rec.deleteRecipe(r.id);
-                        }}
-                      >
-                        <Icon name="trash" size={11} />
-                      </span>
-                    </span>
-                  </span>
-                </button>
-              )}
-            </For>
-          </div>
           <Show
-            when={server.actions().length > 0}
+            when={server.recipes().length > 0}
             fallback={
               <EmptyState
                 size="sm"
@@ -113,36 +80,40 @@ export function Sidebar() {
             }
           >
             <For each={groups()}>
-              {([category, actions]) => (
+              {(g) => (
                 <div class="sidebar__group">
-                  <div class="sidebar__group-label">{catLabel(category)}</div>
-                  <For each={actions}>
-                    {(a) => {
-                      const on = () => server.selectedAction() === a.id;
-                      const last = () => server.jobs().findLast((j) => j.action === a.id);
+                  <div class="sidebar__group-label">
+                    {g.label}
+                    <Show when={g.custom}>
+                      <button
+                        type="button"
+                        class="sidebar__new-btn"
+                        title="Create a new recipe"
+                        onClick={() => setEditingRecipe("new")}
+                      >
+                        + New
+                      </button>
+                    </Show>
+                  </div>
+                  <For each={g.items}>
+                    {(r) => {
+                      const on = () => server.selectedRecipeId() === r.id;
+                      const last = () => server.jobs().findLast((j) => j.action === r.id);
+                      const stepCount = () => r.steps.length;
                       return (
                         <button
                           type="button"
                           class="nav-row"
                           classList={{ on: on() }}
-                          title={
-                            a.description
-                              ? `${a.description}\nBuilt-in recipe — steps are code-defined\nDouble-click to run`
-                              : "Built-in recipe — steps are code-defined\nDouble-click to run"
-                          }
-                          onClick={() => {
-                            server.setSelectedAction(a.id);
-                            rec.setSelectedRecipeId(null);
-                            server.setPanelTab("steps");
-                          }}
-                          onDblClick={() => {
-                            server.setSelectedAction(a.id);
-                            rec.setSelectedRecipeId(null);
-                            void server.runSelected();
-                          }}
+                          title={`${r.source === "custom" ? "Custom" : "Built-in"} · ${r.steps.length} step${r.steps.length === 1 ? "" : "s"} — double-click to run`}
+                          onClick={() => select(r.id)}
+                          onDblClick={() => void server.runRecipeRemote(r.id)}
                         >
-                          <span class="nav-row__title">{a.title}</span>
+                          <span class="nav-row__title">{r.title}</span>
                           <span class="nav-row__meta">
+                            <Show when={r.source === "custom" && stepCount() > 0}>
+                              <span class="mono nav-row__count">{stepCount()}</span>
+                            </Show>
                             <Show when={last()}>
                               {(j) => (
                                 <span class={`tone tone--${statusTone(j().status)}`}>
@@ -151,16 +122,40 @@ export function Sidebar() {
                               )}
                             </Show>
                             <span class="nav-row__actions">
-                              <span
-                                class="nav-row__action"
-                                title="Fork to custom recipe"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  rec.forkRecipe({ title: a.title, description: a.description });
-                                }}
-                              >
-                                <Icon name="external" size={11} />
-                              </span>
+                              <Show when={r.source === "custom"}>
+                                <span
+                                  class="nav-row__action"
+                                  title="Edit recipe"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingRecipe(r);
+                                  }}
+                                >
+                                  <Icon name="sliders" size={11} />
+                                </span>
+                                <span
+                                  class="nav-row__action"
+                                  title="Delete recipe"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void server.deleteRecipeRemote(r.id);
+                                  }}
+                                >
+                                  <Icon name="trash" size={11} />
+                                </span>
+                              </Show>
+                              <Show when={r.source === "builtin"}>
+                                <span
+                                  class="nav-row__action"
+                                  title="Fork to custom recipe"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void rec.forkRecipe(r);
+                                  }}
+                                >
+                                  <Icon name="external" size={11} />
+                                </span>
+                              </Show>
                             </span>
                           </span>
                         </button>

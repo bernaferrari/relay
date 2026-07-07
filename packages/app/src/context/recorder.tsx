@@ -1,60 +1,99 @@
-import { createSignal } from "solid-js";
+import { createSignal, createEffect } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
-import { useServer, type SnapshotNode } from "./server";
+import { useServer, type SnapshotNode, type RecipeStep, type StepTarget } from "./server";
 import { toast } from "./toast";
 
 /**
  * Interactive recorder: click the device preview to tap the real device, and
- * record each tap at the best available abstraction level —
- *   click @e26            (accessibility ref — most robust)
- *   click "Sign in"       (label text)
- *   click 540, 1200       (raw coordinate — always works)
- * Recorded sequences become custom recipes (client-side macros) you can replay.
+ * record each tap at every available abstraction level — the full fallback
+ * chain (ref · label · point) — so replays survive app updates. Recorded
+ * sequences are saved as server recipes (POST /recipes) and replayed as jobs
+ * (POST /jobs {recipe}); localStorage is only read once, to migrate legacy
+ * recipes onto the server.
  */
 export type RecLevel = "smart" | "element" | "point";
 
-export type RecStep =
+/** Legacy localStorage step shape (pre-plan-003). */
+export type LegacyRecStep =
   | { kind: "ref"; ref: string; label?: string }
   | { kind: "label"; label: string }
   | { kind: "point"; x: number; y: number };
 
-export type CustomRecipe = {
-  id: string;
-  title: string;
-  steps: RecStep[];
-  createdAt: number;
-};
-
 const STORAGE_KEY = "specimen:custom-recipes";
 
-const sleep = (ms: number): Promise<void> => {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, ms);
-  return promise;
-};
-
-export function describeStep(step: RecStep): string {
-  if (step.kind === "ref")
-    return step.label ? `click ${step.ref} · ${step.label}` : `click ${step.ref}`;
-  if (step.kind === "label") return `click "${step.label}"`;
-  return `click ${step.x}, ${step.y}`;
+/**
+ * Pure: map a legacy localStorage step to a plan-002 RecipeStep. Every legacy
+ * kind was a tap, so all become `{ kind: "tap", target: {...} }` carrying the
+ * fields that were known. (Extracted to a pure function so it is testable
+ * headlessly — the app package has no test harness today.)
+ */
+export function migrateLegacyStep(step: LegacyRecStep): RecipeStep {
+  if (step.kind === "ref") {
+    const target: StepTarget = { ref: step.ref };
+    if (step.label) target.label = step.label;
+    return { kind: "tap", target };
+  }
+  if (step.kind === "label") return { kind: "tap", target: { label: step.label } };
+  return { kind: "tap", target: { point: { x: step.x, y: step.y } } };
 }
 
-function loadRecipes(): CustomRecipe[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as CustomRecipe[]) : [];
-  } catch {
-    return [];
+function descTarget(t: StepTarget): string {
+  const parts: string[] = [];
+  if (t.ref) parts.push(t.ref);
+  if (t.label) parts.push(`"${t.label}"`);
+  if (t.text) parts.push(`text "${t.text}"`);
+  if (t.point) parts.push(`${t.point.x},${t.point.y}`);
+  return parts.join(" · ") || "<target>";
+}
+
+/** Human-readable one-liner for a RecipeStep (stage / run-panel / editor). */
+export function describeStep(step: RecipeStep): string {
+  switch (step.kind) {
+    case "tap":
+      return `tap ${descTarget(step.target)}`;
+    case "type":
+      return step.target
+        ? `type "${step.text}" → ${descTarget(step.target)}`
+        : `type "${step.text}"`;
+    case "scroll":
+      return step.amount ? `scroll ${step.direction} ${step.amount}` : `scroll ${step.direction}`;
+    case "key":
+      return `key ${step.key}`;
+    case "sleep":
+      return `sleep ${step.ms}ms`;
+    case "wait-for":
+      return `wait for ${descTarget(step.target)}${
+        step.timeoutMs ? ` (${Math.round(step.timeoutMs / 1000)}s)` : ""
+      }`;
+    case "pause":
+      return `pause: ${step.message}`;
+    case "screenshot":
+      return step.caption ? `screenshot · ${step.caption}` : "screenshot";
+    case "flow":
+      return `flow: ${step.flow}`;
   }
 }
 
-function persist(list: CustomRecipe[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  } catch {
-    /* ignore */
-  }
+/**
+ * Build the full tap target for a click — every field that is known, so the
+ * recorded step can fall back through ref → label → point at replay time
+ * (plan 002's runner). Pure: shared by the recorder and the stage picker.
+ */
+export function buildTapTarget(
+  bounds: { width: number; height: number } | undefined,
+  node: SnapshotNode | null,
+  fx: number,
+  fy: number,
+): StepTarget {
+  const w = bounds?.width ?? 1;
+  const h = bounds?.height ?? 1;
+  const point = { x: Math.round(fx * w), y: Math.round(fy * h) };
+  if (!node) return { point };
+  const label = (node.label ?? node.value ?? node.identifier ?? "").trim();
+  const target: StepTarget = { point };
+  if (node.ref) target.ref = node.ref.startsWith("@") ? node.ref : `@${node.ref}`;
+  if (label) target.label = label;
+  return target;
 }
 
 export const { use: useRecorder, provider: RecorderProvider } = createSimpleContext({
@@ -64,12 +103,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     const server = useServer();
     const [interacting, setInteracting] = createSignal(false);
     const [recording, setRecording] = createSignal(false);
-    const [level, setLevel] = createSignal<RecLevel>("smart");
-    const [steps, setSteps] = createSignal<RecStep[]>([]);
-    const [recipes, setRecipes] = createSignal<CustomRecipe[]>(loadRecipes());
-    const [replaying, setReplaying] = createSignal(false);
-    const [selectedRecipeId, setSelectedRecipeId] = createSignal<string | null>(null);
-    const selectedRecipe = () => recipes().find((r) => r.id === selectedRecipeId()) ?? null;
+    const [steps, setSteps] = createSignal<RecipeStep[]>([]);
 
     /** Most specific a11y node containing the fractional point (null if none). */
     function nodeAt(fx: number, fy: number): SnapshotNode | null {
@@ -96,28 +130,23 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return best;
     }
 
-    /** Pick the step kind for the chosen level + hit node. */
-    function resolveStep(node: SnapshotNode | null, fx: number, fy: number): RecStep {
-      const bounds = server.snapshot()?.bounds;
-      const w = bounds?.width ?? 1;
-      const h = bounds?.height ?? 1;
-      const asPoint = (): RecStep => ({
-        kind: "point",
-        x: Math.round(fx * w),
-        y: Math.round(fy * h),
-      });
-      const lv = level();
-      if (lv === "point" || !node) return asPoint();
-      const label = (node.label ?? node.value ?? node.identifier ?? "").trim();
-      if (node.ref) {
-        return {
-          kind: "ref",
-          ref: node.ref.startsWith("@") ? node.ref : `@${node.ref}`,
-          label: label || undefined,
-        };
+    /** Execute a tap target on the device, preferring ref → label → point. */
+    async function executeTap(target: StepTarget, caption?: string): Promise<boolean> {
+      if (target.ref) {
+        const ok = await server.interactStep({ kind: "ref", ref: target.ref }, caption);
+        if (ok) return true;
       }
-      if (label) return { kind: "label", label };
-      return asPoint();
+      if (target.label) {
+        const ok = await server.interactStep({ kind: "label", label: target.label }, caption);
+        if (ok) return true;
+      }
+      if (target.point) {
+        return server.interactStep(
+          { kind: "point", x: target.point.x, y: target.point.y },
+          caption,
+        );
+      }
+      return false;
     }
 
     /** Called by the stage on a preview click (fx, fy are 0..1 of the image). */
@@ -126,35 +155,22 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         toast("Server offline — can't interact", "warning");
         return;
       }
-      // need a snapshot to resolve elements; grab one if missing and not pure-point
+      // need a snapshot to resolve elements; grab one if missing
       if (!server.snapshot()?.bounds) {
         await server.captureUiSnapshot().catch(() => undefined);
       }
       const node = nodeAt(fx, fy);
-      const step = resolveStep(node, fx, fy);
-      let ok = await server.interactStep(step, describeStep(step));
-      let recorded = step;
-      if (!ok && step.kind !== "point") {
-        // ref/label failed (no session) — retry as a raw coordinate tap
-        const bounds = server.snapshot()?.bounds;
-        if (bounds) {
-          const pointStep: RecStep = {
-            kind: "point",
-            x: Math.round(fx * bounds.width),
-            y: Math.round(fy * bounds.height),
-          };
-          ok = await server.interactStep(pointStep, describeStep(pointStep));
-          recorded = pointStep;
-        }
-      }
+      const target = buildTapTarget(server.snapshot()?.bounds, node, fx, fy);
+      const step: RecipeStep = { kind: "tap", target };
+      const ok = await executeTap(target, describeStep(step));
       if (ok && recording()) {
-        setSteps((s) => [...s, recorded]);
-        toast(describeStep(recorded), "info", 1600);
+        setSteps((s) => [...s, step]);
+        toast(describeStep(step), "info", 1600);
       }
     }
 
     /** Record a step without executing (used by the stage element picker). */
-    function recordStep(step: RecStep): void {
+    function recordStep(step: RecipeStep): void {
       setSteps((s) => [...s, step]);
       toast(describeStep(step), "info", 1600);
     }
@@ -166,107 +182,123 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setSteps((s) => s.filter((_, idx) => idx !== i));
     }
 
-    function saveRecipe(title: string): void {
-      const t = title.trim() || `Recipe ${recipes().length + 1}`;
-      const r: CustomRecipe = {
-        id: `custom-${Date.now().toString(36)}`,
-        title: t,
-        steps: steps(),
-        createdAt: Date.now(),
-      };
-      const next = [r, ...recipes()];
-      setRecipes(next);
-      persist(next);
-      setSteps([]);
-      setRecording(false);
-      toast(`Saved "${t}" — ${r.steps.length} steps`, "success");
-    }
-    function saveRecipeFromSteps(title: string, newSteps: RecStep[]): void {
-      const t = title.trim() || `Recipe ${recipes().length + 1}`;
-      const r: CustomRecipe = {
-        id: `custom-${Date.now().toString(36)}`,
-        title: t,
-        steps: newSteps,
-        createdAt: Date.now(),
-      };
-      const next = [r, ...recipes()];
-      setRecipes(next);
-      persist(next);
-      toast(`Saved "${t}" — ${r.steps.length} steps`, "success");
-    }
-    function updateRecipe(id: string, title: string, updatedSteps: RecStep[]): void {
-      const next = recipes().map((r) =>
-        r.id === id ? { ...r, title: title.trim() || r.title, steps: updatedSteps } : r,
-      );
-      setRecipes(next);
-      persist(next);
-      toast("Recipe updated", "success");
-    }
-    function forkRecipe(meta: { title: string; description?: string }): void {
-      const base = (meta.title ?? "").trim() || "Recipe";
-      const r: CustomRecipe = {
-        id: `custom-${Date.now().toString(36)}`,
-        title: `${base} (copy)`,
-        steps: [],
-        createdAt: Date.now(),
-      };
-      const next = [r, ...recipes()];
-      setRecipes(next);
-      persist(next);
-      setSelectedRecipeId(r.id);
-      toast(`Forked "${base}" — add steps via Interact mode or the editor`, "success");
+    /** Save the recorded steps as a server recipe, then clear the buffer. */
+    async function saveRecipe(title: string): Promise<void> {
+      const t = title.trim() || `Recipe ${Date.now().toString(36).slice(-4)}`;
+      const saved = await server.saveRecipeRemote({ title: t, steps: steps() });
+      if (saved) {
+        setSteps([]);
+        setRecording(false);
+        server.setSelectedRecipeId(saved.id);
+        toast(`Saved "${saved.title}" — ${saved.steps.length} steps`, "success");
+      }
     }
 
-    function deleteRecipe(id: string): void {
-      const next = recipes().filter((r) => r.id !== id);
-      setRecipes(next);
-      persist(next);
+    /**
+     * Fork any recipe (builtin or custom) into an editable custom copy. Builtins
+     * are recipes whose steps are a single opaque `flow` step, so the copy is
+     * honest now (previously it forked an empty recipe).
+     */
+    async function forkRecipe(recipe: {
+      title: string;
+      description?: string;
+      steps: RecipeStep[];
+    }): Promise<void> {
+      const saved = await server.saveRecipeRemote({
+        title: `${recipe.title} (copy)`,
+        description: recipe.description,
+        steps: recipe.steps,
+      });
+      if (saved) {
+        server.setSelectedRecipeId(saved.id);
+        toast(`Forked "${recipe.title}"`, "success");
+      }
     }
 
-    async function runRecipe(r: CustomRecipe): Promise<void> {
-      if (replaying()) {
-        toast("Already replaying — wait for it to finish", "warning");
-        return;
-      }
-      if (server.health() !== "online") {
-        toast("Server offline — can't replay", "warning");
-        return;
-      }
-      setReplaying(true);
-      server.setPanelTab("steps");
+    // ---- One-time localStorage migration (plan 003, Step 2) ----
+    // Reads legacy `specimen:custom-recipes`, converts each recipe to
+    // RecipeSteps, and POSTs them to the server. The key is removed ONLY after
+    // every recipe saves successfully; on failure we retry when health flips
+    // back online. Losing a user's recorded recipes is the one unrecoverable
+    // failure in this plan.
+    let migrationInFlight = false;
+    let migrationDone = false;
+    async function migrateLegacyRecipes(): Promise<void> {
+      if (migrationDone || migrationInFlight) return;
+      if (server.health() !== "online") return;
+      let raw: string | null = null;
       try {
-        for (const step of r.steps) {
-          await server.interactStep(step, describeStep(step));
-          await sleep(900);
+        raw = localStorage.getItem(STORAGE_KEY);
+      } catch {
+        return;
+      }
+      if (!raw) {
+        migrationDone = true;
+        return;
+      }
+      let legacy: { id?: string; title?: string; steps?: LegacyRecStep[] }[] = [];
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) legacy = parsed as typeof legacy;
+      } catch {
+        // corrupt key — nothing we can migrate; leave it for safety
+        migrationDone = true;
+        return;
+      }
+      if (legacy.length === 0) {
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          /* ignore */
         }
-        toast(`Replayed "${r.title}"`, "success");
+        migrationDone = true;
+        return;
+      }
+      migrationInFlight = true;
+      let allOk = true;
+      try {
+        for (const r of legacy) {
+          const steps = (r.steps ?? []).map(migrateLegacyStep);
+          const saved = await server.saveRecipeRemote({
+            title: (r.title ?? "Recipe").trim() || "Recipe",
+            steps,
+          });
+          if (!saved) allOk = false;
+        }
+        if (allOk) {
+          try {
+            localStorage.removeItem(STORAGE_KEY);
+          } catch {
+            /* ignore */
+          }
+          migrationDone = true;
+          toast(
+            `Migrated ${legacy.length} recorded recipe${legacy.length === 1 ? "" : "s"} to the server`,
+            "success",
+          );
+        }
       } finally {
-        setReplaying(false);
+        migrationInFlight = false;
       }
     }
+
+    // attempt on init (no-op if offline) and retry when health flips online
+    void migrateLegacyRecipes();
+    createEffect(() => {
+      if (server.health() === "online") void migrateLegacyRecipes();
+    });
 
     return {
       interacting,
       setInteracting,
       recording,
       setRecording,
-      level,
-      setLevel,
       steps,
-      recipes,
-      selectedRecipeId,
-      setSelectedRecipeId,
-      selectedRecipe,
-      replaying,
       handleTap,
       recordStep,
       clearSteps,
       removeStep,
       saveRecipe,
-      deleteRecipe,
-      runRecipe,
-      saveRecipeFromSteps,
-      updateRecipe,
       forkRecipe,
     };
   },

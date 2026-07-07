@@ -9,6 +9,7 @@ import { type JSX } from "solid-js";
  *  - fill: solid marks (play, dots) where a filled glyph reads better
  */
 export type IconName =
+  | "chevron-up"
   | "chevron-down"
   | "chevron-right"
   | "play"
@@ -50,6 +51,7 @@ type Path = { d: string; fill?: boolean };
 const STROKE: Record<string, Path[]> = {
   "chevron-down": [{ d: "m6 9 6 6 6-6" }],
   "chevron-right": [{ d: "m9 18 6-6-6-6" }],
+  "chevron-up": [{ d: "m18 15-6-6-6 6" }],
   refresh: [{ d: "M3 12a9 9 0 1 0 3-6.7" }, { d: "M3 4v4h4" }],
   search: [{ d: "M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" }, { d: "m21 21-4.3-4.3" }],
   sliders: [{ d: "M4 6h16M4 12h16M4 18h16" }, { d: "M7 3v6M17 9v6M12 15v6" }],

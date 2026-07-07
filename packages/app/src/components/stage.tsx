@@ -1,6 +1,6 @@
 import { For, Show, createSignal, onCleanup } from "solid-js";
 import { useServer, type SnapshotNode } from "../context/server";
-import { useRecorder, describeStep, type RecStep } from "../context/recorder";
+import { useRecorder, describeStep, buildTapTarget } from "../context/recorder";
 import { Icon } from "./icon";
 
 /** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
@@ -11,7 +11,7 @@ export function DeviceStage() {
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   const job = () => server.jobs().find((j) => j.id === server.selectedJobId());
   const actionMeta = () =>
-    server.actions().find((a) => a.id === (server.selectedAction() ?? job()?.action));
+    server.actions().find((a) => a.id === (server.selectedRecipeId() ?? job()?.action));
 
   let stageEl: HTMLElement | undefined;
 
@@ -55,44 +55,45 @@ export function DeviceStage() {
     return n?.label ?? n?.value ?? n?.identifier ?? "No element";
   };
   const labelOption = () => (pickerNode()?.label ?? pickerNode()?.value ?? "").trim();
-  const pointStep = (): { kind: "point"; x: number; y: number } => {
-    const p = picker();
-    const b = server.snapshot()?.bounds;
-    const w = b?.width ?? 1;
-    const h = b?.height ?? 1;
-    return { kind: "point", x: Math.round((p?.fx ?? 0) * w), y: Math.round((p?.fy ?? 0) * h) };
-  };
-  const refStep = (): RecStep => {
-    const n = pickerNode()!;
-    const raw = n.ref!;
-    return {
-      kind: "ref",
-      ref: raw.startsWith("@") ? raw : `@${raw}`,
-      label: (n.label ?? n.value ?? n.identifier ?? "").trim() || undefined,
-    };
+  /** Full tap target for the current picker hit (ref · label · point fallback chain). */
+  const fullTarget = () =>
+    buildTapTarget(
+      server.snapshot()?.bounds,
+      picker()?.node ?? null,
+      picker()?.fx ?? 0,
+      picker()?.fy ?? 0,
+    );
+  const pointLabel = () => {
+    const p = fullTarget().point;
+    return p ? `${p.x}, ${p.y}` : "0, 0";
   };
 
-  /** Execute the chosen precision: tap, then record if recording. */
-  async function pick(step: RecStep): Promise<void> {
+  /** Execute the chosen precision: tap the chosen strategy, then record the
+   *  full target (so replays survive via ref → label → point fallback). */
+  async function pick(strategy: "ref" | "label" | "point"): Promise<void> {
     const p = picker();
     if (!p) return;
     setPicker(null);
-    let ok = await server.interactStep(step, describeStep(step));
-    if (!ok && step.kind !== "point") {
-      // ref/label failed (likely no session) — fall back to a coordinate tap
-      const bounds = server.snapshot()?.bounds;
-      if (bounds) {
-        const pointStep: RecStep = {
-          kind: "point",
-          x: Math.round(p.fx * bounds.width),
-          y: Math.round(p.fy * bounds.height),
-        };
-        ok = await server.interactStep(pointStep, describeStep(pointStep));
-        if (ok && rec.recording()) rec.recordStep(pointStep);
-        return;
-      }
+    const full = fullTarget();
+    let ok = false;
+    if (strategy === "ref" && full.ref) {
+      ok = await server.interactStep({ kind: "ref", ref: full.ref }, `tap ${full.ref}`);
+    } else if (strategy === "label" && full.label) {
+      ok = await server.interactStep({ kind: "label", label: full.label }, `tap "${full.label}"`);
+    } else if (full.point) {
+      ok = await server.interactStep(
+        { kind: "point", x: full.point.x, y: full.point.y },
+        `tap ${full.point.x},${full.point.y}`,
+      );
     }
-    if (ok && rec.recording()) rec.recordStep(step);
+    // chosen strategy failed (likely no session) — fall back to a coordinate tap
+    if (!ok && strategy !== "point" && full.point) {
+      ok = await server.interactStep(
+        { kind: "point", x: full.point.x, y: full.point.y },
+        `tap ${full.point.x},${full.point.y}`,
+      );
+    }
+    if (ok && rec.recording()) rec.recordStep({ kind: "tap", target: full });
   }
 
   const onStageKey = (e: KeyboardEvent) => {
@@ -247,21 +248,17 @@ export function DeviceStage() {
             <div class="picker__label">{nodeLabel()}</div>
             <div class="picker__opts">
               <Show when={pickerNode()?.ref}>
-                <button type="button" class="picker__opt" onClick={() => void pick(refStep())}>
+                <button type="button" class="picker__opt" onClick={() => void pick("ref")}>
                   @{(pickerNode()?.ref ?? "").replace(/^@/, "")}
                 </button>
               </Show>
               <Show when={labelOption()}>
-                <button
-                  type="button"
-                  class="picker__opt"
-                  onClick={() => void pick({ kind: "label", label: labelOption()! })}
-                >
+                <button type="button" class="picker__opt" onClick={() => void pick("label")}>
                   "{labelOption()}"
                 </button>
               </Show>
-              <button type="button" class="picker__opt" onClick={() => void pick(pointStep())}>
-                {pointStep().x}, {pointStep().y}
+              <button type="button" class="picker__opt" onClick={() => void pick("point")}>
+                {pointLabel()}
               </button>
             </div>
           </div>

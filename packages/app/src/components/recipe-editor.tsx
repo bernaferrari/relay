@@ -1,42 +1,76 @@
 import { For, Show, createSignal, type JSX } from "solid-js";
-import { useRecorder, type RecStep, type CustomRecipe } from "../context/recorder";
+import { useServer, type RecipeInfo, type RecipeStep, type StepTarget } from "../context/server";
 import { Icon } from "./icon";
 
-function stepKind(s: RecStep): string {
-  return s.kind;
-}
+type EditableKind =
+  | "tap"
+  | "type"
+  | "wait-for"
+  | "sleep"
+  | "pause"
+  | "key"
+  | "scroll"
+  | "screenshot";
 
-function stepToText(s: RecStep): string {
-  if (s.kind === "ref") return s.ref;
-  if (s.kind === "label") return s.label;
-  return `${s.x}, ${s.y}`;
-}
+const KIND_OPTIONS: { value: EditableKind; label: string }[] = [
+  { value: "tap", label: "tap" },
+  { value: "type", label: "type" },
+  { value: "wait-for", label: "wait-for" },
+  { value: "sleep", label: "sleep" },
+  { value: "pause", label: "pause" },
+  { value: "key", label: "key" },
+  { value: "scroll", label: "scroll" },
+  { value: "screenshot", label: "screenshot" },
+];
 
-function parseStep(kind: string, text: string): RecStep {
-  if (kind === "ref") {
-    return { kind: "ref", ref: text.startsWith("@") ? text : `@${text}` };
+/** Default step when inserting a new row of a given kind. */
+function defaultStep(kind: EditableKind): RecipeStep {
+  switch (kind) {
+    case "tap":
+      return { kind: "tap", target: {} };
+    case "type":
+      return { kind: "type", text: "" };
+    case "wait-for":
+      return { kind: "wait-for", target: {} };
+    case "sleep":
+      return { kind: "sleep", ms: 500 };
+    case "pause":
+      return { kind: "pause", message: "" };
+    case "key":
+      return { kind: "key", key: "back" };
+    case "scroll":
+      return { kind: "scroll", direction: "down" };
+    case "screenshot":
+      return { kind: "screenshot" };
   }
-  if (kind === "label") return { kind: "label", label: text };
+}
+
+function parsePoint(text: string): { x: number; y: number } | undefined {
   const parts = text.split(/[,\s]+/).filter(Boolean);
-  return {
-    kind: "point",
-    x: parseInt(parts[0] ?? "0", 10) || 0,
-    y: parseInt(parts[1] ?? "0", 10) || 0,
-  };
+  const x = parseInt(parts[0] ?? "", 10);
+  const y = parseInt(parts[1] ?? "", 10);
+  if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+  return undefined;
+}
+
+function fmtPoint(p?: { x: number; y: number }): string {
+  return p ? `${p.x}, ${p.y}` : "";
 }
 
 export function RecipeEditor(props: {
-  recipe: CustomRecipe | null;
+  recipe: RecipeInfo | null;
   onClose: () => void;
 }): JSX.Element {
-  const rec = useRecorder();
+  const server = useServer();
   const [title, setTitle] = createSignal(props.recipe?.title ?? "");
-  const [steps, setSteps] = createSignal<RecStep[]>(
-    props.recipe?.steps ? [...props.recipe.steps] : [],
+  const [description, setDescription] = createSignal(props.recipe?.description ?? "");
+  const [steps, setSteps] = createSignal<RecipeStep[]>(
+    props.recipe?.steps ? props.recipe.steps.map((s) => ({ ...s })) : [],
   );
+  const [saving, setSaving] = createSignal(false);
 
   function addStep(): void {
-    setSteps((s) => [...s, { kind: "point", x: 0, y: 0 }]);
+    setSteps((s) => [...s, defaultStep("tap")]);
   }
   function removeStep(i: number): void {
     setSteps((s) => s.filter((_, idx) => idx !== i));
@@ -52,19 +86,55 @@ export function RecipeEditor(props: {
       return next;
     });
   }
-  function updateStepText(i: number, text: string): void {
-    setSteps((s) => s.map((st, idx) => (idx === i ? parseStep(stepKind(st), text) : st)));
+  /** Replace step i with a new value of the given kind (preserving common fields). */
+  function changeKind(i: number, kind: EditableKind): void {
+    setSteps((s) => s.map((st, idx) => (idx === i ? defaultStep(kind) : st)));
   }
-  function changeStepKind(i: number, kind: string): void {
-    setSteps((s) => s.map((st, idx) => (idx === i ? parseStep(kind, stepToText(st)) : st)));
+  /** Replace step i with an updated copy. */
+  function setStep(i: number, next: RecipeStep): void {
+    setSteps((s) => s.map((st, idx) => (idx === i ? next : st)));
   }
-  function save(): void {
-    if (props.recipe) {
-      rec.updateRecipe(props.recipe.id, title(), steps());
-    } else {
-      rec.saveRecipeFromSteps(title(), steps());
+
+  function targetValid(t: StepTarget): boolean {
+    return Boolean(t.ref || t.label || t.text || t.point);
+  }
+
+  /** A step is valid if its required fields are present (mirrors core validation). */
+  function stepValid(step: RecipeStep): boolean {
+    switch (step.kind) {
+      case "tap":
+      case "wait-for":
+        return targetValid(step.target);
+      case "type":
+        return step.text.trim().length > 0;
+      case "sleep":
+        return Number.isFinite(step.ms) && step.ms >= 0;
+      case "pause":
+        return step.message.trim().length > 0;
+      case "scroll":
+      case "key":
+      case "screenshot":
+      case "flow":
+        return true;
     }
-    props.onClose();
+  }
+
+  const allValid = () => title().trim().length > 0 && steps().every(stepValid);
+
+  async function save(): Promise<void> {
+    if (!allValid()) return;
+    setSaving(true);
+    const saved = await server.saveRecipeRemote({
+      ...(props.recipe ? { id: props.recipe.id } : {}),
+      title: title().trim(),
+      description: description().trim() || undefined,
+      steps: steps(),
+    });
+    setSaving(false);
+    if (saved) {
+      server.setSelectedRecipeId(saved.id);
+      props.onClose();
+    }
   }
 
   return (
@@ -101,34 +171,50 @@ export function RecipeEditor(props: {
             onInput={(e) => setTitle(e.currentTarget.value)}
             spellcheck={false}
           />
+          <input
+            class="recipe-editor__desc"
+            type="text"
+            placeholder="Description (optional)…"
+            value={description()}
+            onInput={(e) => setDescription(e.currentTarget.value)}
+            spellcheck={false}
+          />
           <div class="recipe-editor__steps">
             <For each={steps()}>
               {(step, i) => (
                 <div class="recipe-editor__step">
                   <span class="recipe-editor__step-i mono">{String(i() + 1).padStart(2, "0")}</span>
-                  <select
-                    class="recipe-editor__kind"
-                    value={stepKind(step)}
-                    onChange={(e) => changeStepKind(i(), e.currentTarget.value)}
+                  <Show
+                    when={step.kind !== "flow"}
+                    fallback={
+                      <span class="recipe-editor__flow mono">
+                        flow · {step.kind === "flow" ? step.flow : ""}{" "}
+                        <span class="recipe-editor__readonly">(read-only)</span>
+                      </span>
+                    }
                   >
-                    <option value="ref">ref</option>
-                    <option value="label">label</option>
-                    <option value="point">point</option>
-                  </select>
-                  <input
-                    class="recipe-editor__value mono"
-                    type="text"
-                    value={stepToText(step)}
-                    onInput={(e) => updateStepText(i(), e.currentTarget.value)}
-                    spellcheck={false}
-                  />
+                    <select
+                      class="recipe-editor__kind"
+                      value={step.kind}
+                      onChange={(e) => changeKind(i(), e.currentTarget.value as EditableKind)}
+                    >
+                      <For each={KIND_OPTIONS}>
+                        {(o) => <option value={o.value}>{o.label}</option>}
+                      </For>
+                    </select>
+                    <StepValueEditor
+                      step={step}
+                      invalid={!stepValid(step)}
+                      onChange={(next) => setStep(i(), next)}
+                    />
+                  </Show>
                   <button
                     type="button"
                     class="recipe-editor__btn"
                     title="Move up"
                     onClick={() => move(i(), -1)}
                   >
-                    <Icon name="chevron-down" size={12} />
+                    <Icon name="chevron-up" size={12} />
                   </button>
                   <button
                     type="button"
@@ -136,7 +222,7 @@ export function RecipeEditor(props: {
                     title="Move down"
                     onClick={() => move(i(), 1)}
                   >
-                    <Icon name="chevron-right" size={12} />
+                    <Icon name="chevron-down" size={12} />
                   </button>
                   <button
                     type="button"
@@ -156,13 +242,18 @@ export function RecipeEditor(props: {
             </Show>
           </div>
           <button type="button" class="btn btn-ghost recipe-editor__add" onClick={() => addStep()}>
-            <Icon name="chevron-right" size={13} />
+            <Icon name="chevron-down" size={13} />
             Add step
           </button>
           <div class="recipe-editor__actions">
-            <button type="button" class="btn btn-acc" onClick={() => save()}>
+            <button
+              type="button"
+              class="btn btn-acc"
+              disabled={!allValid() || saving()}
+              onClick={() => void save()}
+            >
               <Icon name="check" size={13} />
-              Save
+              {saving() ? "Saving…" : "Save"}
             </button>
             <button type="button" class="btn btn-ghost" onClick={() => props.onClose()}>
               Cancel
@@ -171,5 +262,184 @@ export function RecipeEditor(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Per-kind value editor: one compact row of inputs for the active kind. */
+function StepValueEditor(props: {
+  step: RecipeStep;
+  invalid: boolean;
+  onChange: (next: RecipeStep) => void;
+}): JSX.Element {
+  const setTarget = (patch: Partial<StepTarget>) => {
+    const s = props.step as
+      | Extract<RecipeStep, { kind: "tap" }>
+      | Extract<RecipeStep, { kind: "wait-for" }>;
+    const target: StepTarget = { ...s.target, ...patch };
+    props.onChange({ ...s, target } as RecipeStep);
+  };
+  const tapTarget = () =>
+    props.step.kind === "tap" || props.step.kind === "wait-for" ? props.step.target : null;
+
+  return (
+    <span
+      class="recipe-editor__value-wrap"
+      classList={{ "recipe-editor__value-wrap--err": props.invalid }}
+    >
+      <Show when={props.step.kind === "type"}>
+        <input
+          class="recipe-editor__value mono"
+          type="text"
+          placeholder="text to type"
+          value={props.step.kind === "type" ? props.step.text : ""}
+          onInput={(e) => props.onChange({ kind: "type", text: e.currentTarget.value })}
+          spellcheck={false}
+        />
+      </Show>
+
+      <Show when={props.step.kind === "sleep"}>
+        <input
+          class="recipe-editor__value mono"
+          type="number"
+          min={0}
+          placeholder="ms"
+          value={props.step.kind === "sleep" ? props.step.ms : 0}
+          onInput={(e) =>
+            props.onChange({ kind: "sleep", ms: parseInt(e.currentTarget.value, 10) || 0 })
+          }
+        />
+      </Show>
+
+      <Show when={props.step.kind === "wait-for"}>
+        <input
+          class="recipe-editor__value mono"
+          type="number"
+          min={0}
+          placeholder="timeout s"
+          value={
+            props.step.kind === "wait-for" ? Math.round((props.step.timeoutMs ?? 0) / 1000) : 0
+          }
+          onInput={(e) =>
+            props.onChange({
+              kind: "wait-for",
+              target: tapTarget() ?? {},
+              timeoutMs: (parseInt(e.currentTarget.value, 10) || 0) * 1000,
+            })
+          }
+        />
+      </Show>
+
+      <Show when={props.step.kind === "pause"}>
+        <input
+          class="recipe-editor__value"
+          type="text"
+          placeholder="message / instructions"
+          value={props.step.kind === "pause" ? props.step.message : ""}
+          onInput={(e) => props.onChange({ kind: "pause", message: e.currentTarget.value })}
+          spellcheck={false}
+        />
+      </Show>
+
+      <Show when={props.step.kind === "key"}>
+        <select
+          class="recipe-editor__value"
+          value={props.step.kind === "key" ? props.step.key : "back"}
+          onChange={(e) =>
+            props.onChange({ kind: "key", key: e.currentTarget.value as "back" | "home" })
+          }
+        >
+          <option value="back">back</option>
+          <option value="home">home</option>
+        </select>
+      </Show>
+
+      <Show when={props.step.kind === "scroll"}>
+        <select
+          class="recipe-editor__value"
+          value={props.step.kind === "scroll" ? props.step.direction : "down"}
+          onChange={(e) => {
+            const amount = props.step.kind === "scroll" ? props.step.amount : undefined;
+            props.onChange({
+              kind: "scroll",
+              direction: e.currentTarget.value as "down" | "up",
+              ...(amount !== undefined ? { amount } : {}),
+            });
+          }}
+        >
+          <option value="down">down</option>
+          <option value="up">up</option>
+        </select>
+        <input
+          class="recipe-editor__value mono"
+          type="number"
+          min={0}
+          placeholder="amount"
+          value={props.step.kind === "scroll" ? (props.step.amount ?? "") : ""}
+          onInput={(e) => {
+            const n = parseInt(e.currentTarget.value, 10);
+            const direction = props.step.kind === "scroll" ? props.step.direction : "down";
+            props.onChange({
+              kind: "scroll",
+              direction,
+              ...(Number.isFinite(n) ? { amount: n } : {}),
+            });
+          }}
+        />
+      </Show>
+
+      <Show when={props.step.kind === "screenshot"}>
+        <input
+          class="recipe-editor__value"
+          type="text"
+          placeholder="caption (optional)"
+          value={props.step.kind === "screenshot" ? (props.step.caption ?? "") : ""}
+          onInput={(e) =>
+            props.onChange({
+              kind: "screenshot",
+              ...(e.currentTarget.value ? { caption: e.currentTarget.value } : {}),
+            })
+          }
+          spellcheck={false}
+        />
+      </Show>
+
+      {/* tap / wait-for share the target editor (ref · label · text · point) */}
+      <Show when={tapTarget()}>
+        <span class="recipe-editor__target">
+          <input
+            class="recipe-editor__value mono"
+            type="text"
+            placeholder="ref @e26"
+            value={tapTarget()!.ref ?? ""}
+            onInput={(e) => setTarget({ ref: e.currentTarget.value || undefined })}
+            spellcheck={false}
+          />
+          <input
+            class="recipe-editor__value mono"
+            type="text"
+            placeholder="label"
+            value={tapTarget()!.label ?? ""}
+            onInput={(e) => setTarget({ label: e.currentTarget.value || undefined })}
+            spellcheck={false}
+          />
+          <input
+            class="recipe-editor__value mono"
+            type="text"
+            placeholder="text"
+            value={tapTarget()!.text ?? ""}
+            onInput={(e) => setTarget({ text: e.currentTarget.value || undefined })}
+            spellcheck={false}
+          />
+          <input
+            class="recipe-editor__value mono"
+            type="text"
+            placeholder="x, y"
+            value={fmtPoint(tapTarget()!.point)}
+            onInput={(e) => setTarget({ point: parsePoint(e.currentTarget.value) })}
+            spellcheck={false}
+          />
+        </span>
+      </Show>
+    </span>
   );
 }

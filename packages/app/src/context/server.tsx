@@ -48,6 +48,34 @@ export type TraceStep = {
   status?: string;
 };
 
+export type StepTarget = {
+  ref?: string;
+  label?: string;
+  text?: string;
+  point?: { x: number; y: number };
+};
+
+export type RecipeStep =
+  | { kind: "tap"; target: StepTarget; note?: string }
+  | { kind: "type"; text: string; target?: StepTarget; note?: string }
+  | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
+  | { kind: "key"; key: "back" | "home"; note?: string }
+  | { kind: "sleep"; ms: number; note?: string }
+  | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
+  | { kind: "pause"; message: string; note?: string }
+  | { kind: "screenshot"; caption?: string; note?: string }
+  | { kind: "flow"; flow: string; note?: string };
+
+export type RecipeInfo = {
+  id: string;
+  title: string;
+  description?: string;
+  source: "builtin" | "custom";
+  steps: RecipeStep[];
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type JobInfo = {
   id: string;
   action: string;
@@ -167,6 +195,7 @@ function uid() {
 // Polling equality gates — skip setX when a poll returns an unchanged list,
 // so unchanged polls don't re-create arrays and thrash dependents every cycle.
 let prevDevicesKey = "";
+let prevRecipesKey = "";
 let prevJobsKey = "";
 let prevRunsKey = "";
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
@@ -180,6 +209,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [health, setHealth] = createSignal<HealthState>("unknown");
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
+    const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
+    const [selectedRecipeId, setSelectedRecipeId] = createSignal<string | null>(null);
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
     const [runsRoot, setRunsRoot] = createSignal("");
@@ -373,10 +404,24 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const data = await request<{ actions: ActionInfo[] }>("/actions");
         const list = asArray<ActionInfo>(data, "actions");
         setActions(list);
-        if (!selectedAction() && list[0]) setSelectedAction(list[0].id);
       } catch (err) {
         if (health() === "offline") return;
         setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    async function refreshRecipes() {
+      if (health() === "offline") return;
+      try {
+        const data = await request<{ recipes: RecipeInfo[] }>("/recipes");
+        const list = asArray<RecipeInfo>(data, "recipes");
+        const key = list.map((r) => `${r.id}|${r.source}|${r.updatedAt ?? 0}`).join("~");
+        if (key !== prevRecipesKey) {
+          prevRecipesKey = key;
+          setRecipes(list);
+        }
+      } catch {
+        /* ignore — recipes are non-critical for connectivity UX */
       }
     }
 
@@ -431,7 +476,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function retryConnection() {
       await pollHealth();
       if (health() !== "online") return;
-      await Promise.all([refreshDevices(), refreshActions(), refreshJobs(), refreshRuns()]);
+      await Promise.all([
+        refreshDevices(),
+        refreshActions(),
+        refreshRecipes(),
+        refreshJobs(),
+        refreshRuns(),
+      ]);
       connectSse();
     }
 
@@ -586,29 +637,69 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function runSelected() {
-      const action = selectedAction();
-      if (!action) {
-        appendLog("No action selected", "error");
+    async function saveRecipeRemote(input: {
+      id?: string;
+      title: string;
+      description?: string;
+      steps: RecipeStep[];
+    }): Promise<RecipeInfo | null> {
+      const body = JSON.stringify({
+        title: input.title,
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        steps: input.steps,
+      });
+      try {
+        const data = input.id
+          ? await request<{ recipe: RecipeInfo }>(`/recipes/${encodeURIComponent(input.id)}`, {
+              method: "PUT",
+              body,
+            })
+          : await request<{ recipe: RecipeInfo }>("/recipes", { method: "POST", body });
+        await refreshRecipes();
+        return data.recipe;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        appendLog(msg, "error");
+        toast(msg, "error");
+        return null;
+      }
+    }
+
+    async function deleteRecipeRemote(id: string): Promise<void> {
+      try {
+        await request(`/recipes/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (selectedRecipeId() === id) setSelectedRecipeId(null);
+        await refreshRecipes();
+        toast("Recipe deleted", "success");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        appendLog(msg, "error");
+        toast(msg, "error");
+      }
+    }
+
+    async function runRecipeRemote(id: string): Promise<void> {
+      if (health() !== "online") {
+        toast("Server offline — can't run", "warning");
         return;
       }
       const serial = selectedDevice() ?? undefined;
-      appendLog(`enqueue ${action}${serial ? ` on ${serial}` : ""}…`, "info");
+      appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
       setRunning(true);
       setPanelTab("steps");
       try {
-        await captureUiScreenshot(`before · ${action}`, undefined, action).catch(() => undefined);
+        await captureUiScreenshot(`before · ${id}`, undefined, id).catch(() => undefined);
         const data = await request<{ job: JobInfo }>("/jobs", {
           method: "POST",
           body: JSON.stringify({
-            action,
+            recipe: id,
             serial,
             ...(prodAccountMatch() ? { prodAccountMatch: prodAccountMatch() } : {}),
           }),
         });
         setSelectedJobId(data.job.id);
-        toast(`Queued ${action}`, "success");
-        void platform.notify?.("Specimen", `Queued ${action}`);
+        toast(`Queued ${id}`, "success");
+        void platform.notify?.("Specimen", `Queued ${id}`);
       } catch (err) {
         setRunning(false);
         const msg = err instanceof Error ? err.message : String(err);
@@ -797,7 +888,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
       await pollHealth();
       if (health() === "online") {
-        await Promise.all([refreshDevices(), refreshActions(), refreshJobs(), refreshRuns()]);
+        await Promise.all([
+          refreshDevices(),
+          refreshActions(),
+          refreshRecipes(),
+          refreshJobs(),
+          refreshRuns(),
+        ]);
         connectSse();
       }
     })();
@@ -812,6 +909,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           // re-attach bus when we come back online
           if (prev !== "online") {
             void refreshActions();
+            void refreshRecipes();
             void refreshRuns();
             connectSse();
           }
@@ -884,6 +982,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const activeJob = () =>
       jobs().find((j) => j.status === "running" || j.status === "paused") ?? null;
     const isPaused = () => activeJob()?.status === "paused";
+    const selectedRecipe = () => recipes().find((r) => r.id === selectedRecipeId()) ?? null;
 
     return {
       serverUrl,
@@ -896,6 +995,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       sseConnected,
       devices,
       actions,
+      recipes,
+      selectedRecipeId,
+      setSelectedRecipeId,
+      selectedRecipe,
       jobs,
       persistedRuns,
       runsRoot,
@@ -915,12 +1018,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       pressNode,
       interactStep,
       refreshActions,
+      refreshRecipes,
       refreshDevices,
       refreshJobs,
       refreshRuns,
       pollHealth,
       retryConnection,
-      runSelected,
+      runRecipeRemote,
+      saveRecipeRemote,
+      deleteRecipeRemote,
       cancelJob: cancelJobRemote,
       pauseJob: pauseJobRemote,
       resumeJob: resumeJobRemote,

@@ -1,6 +1,5 @@
 import { type JSX, onMount, onCleanup, createEffect } from "solid-js";
 import { useServer } from "../context/server";
-import { useRecorder } from "../context/recorder";
 import { useCommand, CommandPalette } from "../context/command";
 import { Toaster } from "../context/toast";
 import { useTheme } from "@grok-device/ui/theme/context";
@@ -12,7 +11,6 @@ export type AppView = "workspace" | "settings";
 
 export function Layout(props: { children: JSX.Element; onOpenSettings: () => void }) {
   const server = useServer();
-  const rec = useRecorder();
   const cmd = useCommand();
   const theme = useTheme();
   const platform = usePlatform();
@@ -71,13 +69,10 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         group: "Jobs",
         keybind: "mod+enter",
         disabled: () =>
-          server.running() ||
-          (!server.selectedAction() && !rec.selectedRecipe()) ||
-          server.health() !== "online",
+          server.running() || !server.selectedRecipe() || server.health() !== "online",
         run: () => {
-          const cr = rec.selectedRecipe();
-          if (cr && !server.selectedAction()) void rec.runRecipe(cr);
-          else void server.runSelected();
+          const r = server.selectedRecipe();
+          if (r) void server.runRecipeRemote(r.id);
         },
       },
       {
@@ -200,18 +195,22 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
     onCleanup(unsub);
   });
 
-  // Register recipe commands whenever catalog changes (searchable in palette)
+  // Register recipe commands whenever the catalog changes (searchable in palette)
   createEffect(() => {
-    const actions = server.actions();
+    const recipes = server.recipes();
     const unsub = cmd.register(
-      actions.map((a) => ({
-        id: `recipe.${a.id}`,
-        title: a.title,
-        subtitle: a.id,
+      recipes.map((r) => ({
+        id: `recipe.${r.id}`,
+        title: r.title,
+        subtitle: r.id,
         group:
-          a.category === "play-store" ? "Play Store" : a.category === "grok" ? "Grok" : "Recipes",
+          r.source === "custom"
+            ? "Recipes"
+            : r.id.startsWith("login-") || r.id === "logout" || r.id.startsWith("grok")
+              ? "Grok"
+              : "Play Store",
         run: () => {
-          server.setSelectedAction(a.id);
+          server.setSelectedRecipeId(r.id);
           server.setPanelTab("steps");
         },
       })),

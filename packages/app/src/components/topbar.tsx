@@ -1,13 +1,11 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
-import { useRecorder } from "../context/recorder";
 import { useCommand } from "../context/command";
 import { useTheme, type ColorScheme } from "@grok-device/ui/theme/context";
 import { Icon } from "./icon";
 
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();
-  const rec = useRecorder();
   const cmd = useCommand();
   const theme = useTheme();
   const [deviceOpen, setDeviceOpen] = createSignal(false);
@@ -37,20 +35,17 @@ export function Topbar(props: { onSettings: () => void }) {
   const runDisabledReason = () => {
     if (server.health() !== "online") return "Server is offline — start with pnpm dev:serve";
     if (server.running()) return "A job is already running";
-    if (rec.replaying()) return "Replaying custom recipe";
     if (server.isEmptyDevices()) return "No device connected — run adb devices";
-    const cr = server.selectedAction() ? null : rec.selectedRecipe();
-    if (cr) return `Run custom recipe "${cr.title}"`;
-    if (!server.selectedAction()) return "Select a recipe first";
-    return "Run selected recipe";
+    const r = server.selectedRecipe();
+    if (!r) return "Select a recipe first";
+    return `Run "${r.title}"`;
   };
 
   const canRun = () =>
     !server.running() &&
-    !rec.replaying() &&
     server.health() === "online" &&
     !server.isEmptyDevices() &&
-    (Boolean(server.selectedAction()) || Boolean(rec.selectedRecipe()));
+    Boolean(server.selectedRecipe());
 
   const popular = () => {
     const prefer = [
@@ -326,31 +321,21 @@ export function Topbar(props: { onSettings: () => void }) {
         disabled={!canRun()}
         title={runDisabledReason()}
         onClick={() => {
-          const cr = server.selectedAction() ? null : rec.selectedRecipe();
-          if (cr) void rec.runRecipe(cr);
-          else void server.runSelected();
+          const r = server.selectedRecipe();
+          if (r) void server.runRecipeRemote(r.id);
         }}
       >
         <Show
           when={server.isPaused?.()}
           fallback={
-            <Show
-              when={server.running() || rec.replaying()}
-              fallback={<Icon name="play" size={13} />}
-            >
+            <Show when={server.running()} fallback={<Icon name="play" size={13} />}>
               <span class="btn-spinner" aria-hidden="true" />
             </Show>
           }
         >
           <Icon name="pause" size={13} />
         </Show>
-        {server.isPaused?.()
-          ? "Paused"
-          : server.running()
-            ? "Running…"
-            : rec.replaying()
-              ? "Replaying…"
-              : "Run"}
+        {server.isPaused?.() ? "Paused" : server.running() ? "Running…" : "Run"}
       </button>
     </header>
   );

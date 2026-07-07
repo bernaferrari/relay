@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
-import { useServer, type JobInfo } from "../context/server";
-import { useRecorder, describeStep, type CustomRecipe } from "../context/recorder";
+import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
+import { describeStep } from "../context/recorder";
 import { Glyphs } from "./glyphs";
 import { EmptyState } from "./empty-state";
 import { useCommand } from "../context/command";
@@ -34,16 +34,16 @@ function stepTip(step: { title: string; glyphs?: string[]; durationMs?: number }
 
 export function RunPanel() {
   const server = useServer();
-  const rec = useRecorder();
   const cmd = useCommand();
-  const [editingRecipe, setEditingRecipe] = createSignal<CustomRecipe | null>(null);
+  const [editingRecipe, setEditingRecipe] = createSignal<RecipeInfo | null>(null);
 
+  /** The selected recipe (builtin or custom) — the single selection source. */
+  const selectedRecipe = createMemo(() => server.selectedRecipe());
+
+  /** ActionInfo metadata for the selected recipe, when it's a builtin (ids match). */
   const selectedMeta = createMemo(() =>
-    server.actions().find((a) => a.id === server.selectedAction()),
+    server.actions().find((a) => a.id === selectedRecipe()?.id),
   );
-
-  /** Custom recipe takes over the panel when no server action is selected. */
-  const customRecipe = createMemo(() => (server.selectedAction() ? null : rec.selectedRecipe()));
 
   const selectedJob = createMemo(
     () => server.jobs().find((j) => j.id === server.selectedJobId()) ?? null,
@@ -78,9 +78,7 @@ export function RunPanel() {
     <aside class="panel" aria-label="Run panel">
       <div class="panel__head">
         <div class="panel__title-row">
-          <h1 class="mono panel__flow">
-            {server.selectedAction() ?? customRecipe()?.title ?? "ready"}
-          </h1>
+          <h1 class="mono panel__flow">{selectedRecipe()?.title ?? "ready"}</h1>
           <span class="panel__stats">
             <span class="panel__stats-pass">{stats().ok} passed</span> ·{" "}
             <span class="panel__stats-fail">{stats().fail} failed</span>
@@ -114,65 +112,64 @@ export function RunPanel() {
 
       <Show when={server.panelTab() === "steps"}>
         <div class="panel__scroll">
-          <Show when={selectedMeta()}>
-            <div class="panel__recipe-card">
-              <div class="panel__recipe-card-title">{selectedMeta()!.title}</div>
-              <Show when={selectedMeta()!.description}>
-                <p class="panel__recipe-card-desc">{selectedMeta()!.description}</p>
-              </Show>
-              <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
-                <div class="panel__recipe-notice">
-                  <span class="panel__recipe-notice-icon" aria-hidden="true">
-                    <Icon name="alert" size={14} />
-                  </span>
-                  <span class="panel__recipe-notice-text">
-                    Needs a prod account match (e.g. gmail.com) to target the right account.
-                  </span>
-                  <button
-                    type="button"
-                    class="btn btn-ghost"
-                    onClick={() => cmd.run("nav.settings")}
-                  >
-                    Configure
-                  </button>
-                </div>
-              </Show>
-              <Show when={selectedJob()?.status === "error"}>
-                <div class="panel__recipe-card-actions">
-                  <button
-                    type="button"
-                    class="btn btn-ghost"
-                    onClick={() => void server.retrySelectedJob(selectedJob()!.id)}
-                  >
-                    <Icon name="refresh" size={13} />
-                    Retry
-                  </button>
-                </div>
-              </Show>
-            </div>
-          </Show>
-          <Show when={customRecipe()}>
+          <Show when={selectedRecipe()}>
             {(r) => (
               <div class="panel__recipe-card">
                 <div class="panel__recipe-card-title">{r().title}</div>
+                <Show when={r().description}>
+                  <p class="panel__recipe-card-desc">{r().description}</p>
+                </Show>
                 <p class="panel__recipe-card-desc">
-                  Custom recipe · {r().steps.length} step{r().steps.length === 1 ? "" : "s"} ·
-                  client-side replay
+                  {r().source === "custom" ? "Custom" : "Built-in"} recipe · {r().steps.length} step
+                  {r().steps.length === 1 ? "" : "s"}
                 </p>
+                <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
+                  <div class="panel__recipe-notice">
+                    <span class="panel__recipe-notice-icon" aria-hidden="true">
+                      <Icon name="alert" size={14} />
+                    </span>
+                    <span class="panel__recipe-notice-text">
+                      Needs a prod account match (e.g. gmail.com) to target the right account.
+                    </span>
+                    <button
+                      type="button"
+                      class="btn btn-ghost"
+                      onClick={() => cmd.run("nav.settings")}
+                    >
+                      Configure
+                    </button>
+                  </div>
+                </Show>
                 <div class="panel__recipe-card-actions">
                   <button
                     type="button"
                     class="btn btn-acc"
-                    disabled={rec.replaying()}
-                    onClick={() => void rec.runRecipe(r())}
+                    disabled={server.running()}
+                    onClick={() => void server.runRecipeRemote(r().id)}
                   >
                     <Icon name="play" size={13} />
-                    {rec.replaying() ? "Replaying…" : "Run"}
+                    {server.running() ? "Running…" : "Run"}
                   </button>
-                  <button type="button" class="btn btn-ghost" onClick={() => setEditingRecipe(r())}>
-                    <Icon name="sliders" size={13} />
-                    Edit
-                  </button>
+                  <Show when={r().source === "custom"}>
+                    <button
+                      type="button"
+                      class="btn btn-ghost"
+                      onClick={() => setEditingRecipe(r())}
+                    >
+                      <Icon name="sliders" size={13} />
+                      Edit
+                    </button>
+                  </Show>
+                  <Show when={selectedJob()?.status === "error"}>
+                    <button
+                      type="button"
+                      class="btn btn-ghost"
+                      onClick={() => void server.retrySelectedJob(selectedJob()!.id)}
+                    >
+                      <Icon name="refresh" size={13} />
+                      Retry
+                    </button>
+                  </Show>
                 </div>
               </div>
             )}
@@ -180,83 +177,69 @@ export function RunPanel() {
 
           <div class="section-label">Steps</div>
           <Show
-            when={customRecipe()}
+            when={(selectedJob()?.steps?.length ?? 0) > 0}
             fallback={
               <Show
-                when={(selectedJob()?.steps?.length ?? 0) > 0}
+                when={selectedRecipe() && selectedRecipe()!.steps.length > 0}
                 fallback={
                   <EmptyState
                     size="sm"
                     icon="run"
-                    title={selectedMeta() ? "Ready to run" : "Pick a recipe"}
+                    title={selectedRecipe() ? "Ready to run" : "Pick a recipe"}
                     description={
-                      selectedMeta()
+                      selectedRecipe()
                         ? "Press Run (⌘↵). Live steps appear here."
                         : "Select a recipe in the left sidebar."
                     }
                   />
                 }
               >
-                <For each={selectedJob()!.steps ?? []}>
-                  {(step, i) => {
-                    const tone =
-                      step.status === "ok" || step.status === "healed"
-                        ? "pass"
-                        : step.status === "error"
-                          ? "fail"
-                          : step.status === "running"
-                            ? "run"
-                            : "dim";
-                    return (
-                      <div
-                        class="srow srow--static"
-                        classList={{ on: i() === (selectedJob()!.steps?.length ?? 1) - 1 }}
-                        title={stepTip(step)}
-                      >
-                        <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
-                        <span class="srow__body">
-                          <span class="stitle">{step.title}</span>
-                          <span class="smeta">
-                            <span class={`tone tone--${tone === "dim" ? "dim" : tone}`}>
-                              {step.status ?? "queued"}
-                            </span>
-                            <Glyphs glyphs={step.glyphs} />
-                          </span>
-                        </span>
-                      </div>
-                    );
-                  }}
-                </For>
-              </Show>
-            }
-          >
-            {(r) => (
-              <Show
-                when={r().steps.length > 0}
-                fallback={
-                  <EmptyState
-                    size="sm"
-                    icon="run"
-                    title="No steps yet"
-                    description="Edit this recipe to add steps, or record a new one from the device."
-                  />
-                }
-              >
-                <For each={r().steps}>
+                <For each={selectedRecipe()!.steps}>
                   {(step, i) => (
                     <div class="srow srow--static" title={describeStep(step)}>
                       <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
                         <span class="stitle">{describeStep(step)}</span>
                         <span class="smeta">
-                          <span class="tone tone--dim">custom</span>
+                          <span class="tone tone--dim">{selectedRecipe()!.source}</span>
                         </span>
                       </span>
                     </div>
                   )}
                 </For>
               </Show>
-            )}
+            }
+          >
+            <For each={selectedJob()!.steps ?? []}>
+              {(step, i) => {
+                const tone =
+                  step.status === "ok" || step.status === "healed"
+                    ? "pass"
+                    : step.status === "error"
+                      ? "fail"
+                      : step.status === "running"
+                        ? "run"
+                        : "dim";
+                return (
+                  <div
+                    class="srow srow--static"
+                    classList={{ on: i() === (selectedJob()!.steps?.length ?? 1) - 1 }}
+                    title={stepTip(step)}
+                  >
+                    <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
+                    <span class="srow__body">
+                      <span class="stitle">{step.title}</span>
+                      <span class="smeta">
+                        <span class={`tone tone--${tone === "dim" ? "dim" : tone}`}>
+                          {step.status ?? "queued"}
+                        </span>
+                        <Glyphs glyphs={step.glyphs} />
+                      </span>
+                    </span>
+                  </div>
+                );
+              }}
+            </For>
           </Show>
 
           <Show when={selectedJob()?.error}>
@@ -273,11 +256,9 @@ export function RunPanel() {
           <div class="console__label mono">
             {selectedJob()
               ? `LOG · ${selectedJob()!.action}`
-              : selectedMeta()
-                ? `ACTION · ${selectedMeta()!.id}`
-                : customRecipe()
-                  ? `RECIPE · ${customRecipe()!.title}`
-                  : "ACTIVITY"}
+              : selectedRecipe()
+                ? `RECIPE · ${selectedRecipe()!.title}`
+                : "ACTIVITY"}
           </div>
           <pre>{jobLogs() || "— live logs stream here via SSE —"}</pre>
         </div>
@@ -332,12 +313,12 @@ export function RunPanel() {
 
           <div class="tile tile--wide">
             <span class="tile__label">Selected recipe</span>
-            <div class="mono tile__mono-value">{selectedMeta()?.id ?? "—"}</div>
+            <div class="mono tile__mono-value">{selectedRecipe()?.id ?? "—"}</div>
             <div class="tile__glyphs">
               <Glyphs glyphs={selectedMeta()?.glyphs} size="md" />
             </div>
             <div class="tile__desc">
-              {selectedMeta()?.description ?? "Pick a step on the Steps tab, then Run."}
+              {selectedRecipe()?.description ?? "Pick a recipe in the sidebar, then Run."}
             </div>
           </div>
 
