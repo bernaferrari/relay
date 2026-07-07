@@ -6,7 +6,7 @@ import { EmptyState } from "./empty-state";
 import { useCommand } from "../context/command";
 import { Icon } from "./icon";
 import { RecipeEditor } from "./recipe-editor";
-import { statusTone } from "../lib/job";
+import { statusTone, fmtDur, fmtMs, n } from "../lib/job";
 
 const GLYPH_LABEL: Record<string, string> = {
   tap: "tap",
@@ -49,6 +49,13 @@ export function RunPanel() {
     () => server.jobs().find((j) => j.id === server.selectedJobId()) ?? null,
   );
 
+  /** Device display name for the selected job's serial (falls back to serial). */
+  const jobDevice = createMemo(() => {
+    const j = selectedJob();
+    if (!j?.serial) return undefined;
+    return server.devices().find((d) => d.serial === j.serial)?.name ?? j.serial;
+  });
+
   const jobLogs = createMemo(() => {
     const j = selectedJob();
     if (j?.steps?.length) {
@@ -78,16 +85,23 @@ export function RunPanel() {
     <aside class="panel" aria-label="Run panel">
       <div class="panel__head">
         <div class="panel__title-row">
-          <h1 class="mono panel__flow">{selectedRecipe()?.title ?? "ready"}</h1>
-          <span class="panel__stats">
-            <span class="panel__stats-pass">{stats().ok} passed</span> ·{" "}
-            <span class="panel__stats-fail">{stats().fail} failed</span>
-            {stats().healed ? (
-              <span class="panel__stats-heal"> · {stats().healed} healed</span>
-            ) : null}
-            {stats().run ? ` · ${stats().run} active` : ""}
-            {stats().frames ? ` · ${stats().frames} frames` : ""}
-          </span>
+          <h1 class="panel__flow">
+            {selectedRecipe()?.title ?? "No recipe selected"}
+            <Show when={selectedRecipe() && selectedRecipe()!.id !== selectedRecipe()!.title}>
+              <span class="mono panel__flow-id">{selectedRecipe()!.id}</span>
+            </Show>
+          </h1>
+          <Show when={stats().total > 0}>
+            <span class="panel__stats">
+              <span class="panel__stats-pass">{n(stats().ok, "passed")}</span> ·{" "}
+              <span class="panel__stats-fail">{n(stats().fail, "failed")}</span>
+              {stats().healed ? (
+                <span class="panel__stats-heal"> · {n(stats().healed, "healed")}</span>
+              ) : null}
+              {stats().run ? ` · ${stats().run} active` : ""}
+              {stats().frames ? ` · ${n(stats().frames, "frame")}` : ""}
+            </span>
+          </Show>
         </div>
         <nav class="tabs-nav" aria-label="Panel tabs">
           {(
@@ -120,8 +134,8 @@ export function RunPanel() {
                   <p class="panel__recipe-card-desc">{r().description}</p>
                 </Show>
                 <p class="panel__recipe-card-desc">
-                  {r().source === "custom" ? "Custom" : "Built-in"} recipe · {r().steps.length} step
-                  {r().steps.length === 1 ? "" : "s"}
+                  {r().source === "custom" ? "Custom" : "Built-in"} recipe ·{" "}
+                  {n(r().steps.length, "step")}
                 </p>
                 <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
                   <div class="panel__recipe-notice">
@@ -171,6 +185,39 @@ export function RunPanel() {
                     </button>
                   </Show>
                 </div>
+              </div>
+            )}
+          </Show>
+
+          <Show when={selectedJob()}>
+            {(j) => (
+              <div class="run-head">
+                <span class={`run-head__chip tone tone--${statusTone(j().status)}`}>
+                  <Show when={j().status === "running" || j().status === "queued"}>
+                    <span class="run-head__spinner" aria-hidden="true" />
+                  </Show>
+                  {j().status === "ok"
+                    ? "Passed ✓"
+                    : j().status === "error"
+                      ? "Failed ✗"
+                      : j().status === "healed"
+                        ? "Healed"
+                        : j().status === "cancelled"
+                          ? "Cancelled"
+                          : j().status === "paused"
+                            ? "Paused"
+                            : "Running"}
+                </span>
+                <Show when={j().startedAt}>
+                  <span class="run-head__fact">{new Date(j().startedAt!).toLocaleString()}</span>
+                </Show>
+                <span class="run-head__fact mono">{fmtDur(j(), server.clock())}</span>
+                <Show when={jobDevice()}>
+                  <span class="run-head__fact">{jobDevice()}</span>
+                </Show>
+                <Show when={(j().attempts ?? 0) > 1}>
+                  <span class="run-head__fact">attempt {j().attempts}</span>
+                </Show>
               </div>
             )}
           </Show>
@@ -236,6 +283,9 @@ export function RunPanel() {
                         <Glyphs glyphs={step.glyphs} />
                       </span>
                     </span>
+                    <Show when={fmtMs(step.durationMs)}>
+                      <span class="srow__dur mono">{fmtMs(step.durationMs)}</span>
+                    </Show>
                   </div>
                 );
               }}
@@ -301,8 +351,7 @@ export function RunPanel() {
                 </span>
                 <div class="tile__note-body">
                   <span class="tile__note-strong">
-                    {stats().healed} step{stats().healed === 1 ? "" : "s"} self-healed on this
-                    session.
+                    {n(stats().healed, "step")} self-healed on this session.
                   </span>{" "}
                   Failures were re-run via Retry / heal; successful retries re-record evidence under{" "}
                   <span class="mono">runs/</span>.
@@ -473,7 +522,7 @@ function InspectorBody() {
             checked={server.showOverlays()}
             onChange={(e) => server.setShowOverlays(e.currentTarget.checked)}
           />
-          Show rect overlays on phone glass
+          Highlight elements on hover
         </label>
       </div>
       <Show

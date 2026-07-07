@@ -2,6 +2,7 @@ import { For, Show, createSignal, onMount, onCleanup, type JSX } from "solid-js"
 import { useServer, type RecipeInfo, type RecipeStep, type StepTarget } from "../context/server";
 import { useCommand } from "../context/command";
 import { Icon } from "./icon";
+import { trapFocus } from "../lib/modal";
 
 type EditableKind =
   | "tap"
@@ -64,6 +65,7 @@ export function RecipeEditor(props: {
 }): JSX.Element {
   const server = useServer();
   const cmd = useCommand();
+  let dialogRef: HTMLDivElement | undefined;
   const [title, setTitle] = createSignal(props.recipe?.title ?? "");
   const [description, setDescription] = createSignal(props.recipe?.description ?? "");
   const [steps, setSteps] = createSignal<RecipeStep[]>(
@@ -71,7 +73,10 @@ export function RecipeEditor(props: {
   );
   const [saving, setSaving] = createSignal(false);
 
-  onMount(() => onCleanup(cmd.pushModal()));
+  onMount(() => {
+    onCleanup(cmd.pushModal());
+    if (dialogRef) onCleanup(trapFocus(dialogRef));
+  });
   function addStep(): void {
     setSteps((s) => [...s, defaultStep("tap")]);
   }
@@ -153,7 +158,13 @@ export function RecipeEditor(props: {
         }
       }}
     >
-      <div class="dialog dialog--editor" role="dialog" aria-modal="true" aria-label="Recipe editor">
+      <div
+        class="dialog dialog--editor"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Recipe editor"
+      >
         <div class="dialog__head">
           <h2 class="dialog__title">{props.recipe ? "Edit recipe" : "New recipe"}</h2>
           <button
@@ -245,7 +256,7 @@ export function RecipeEditor(props: {
             </Show>
           </div>
           <button type="button" class="btn btn-ghost recipe-editor__add" onClick={() => addStep()}>
-            <Icon name="chevron-down" size={13} />
+            <Icon name="plus" size={13} />
             Add step
           </button>
           <div class="recipe-editor__actions">

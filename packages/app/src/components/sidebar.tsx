@@ -1,13 +1,13 @@
 /**
  * OpenCode-style left rail: recipes + run history (clean rows, no chip soup).
  */
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
 import { useServer, type RecipeInfo } from "../context/server";
 import { useRecorder } from "../context/recorder";
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { RecipeEditor } from "./recipe-editor";
-import { statusTone, fmtDur, fmtAgo } from "../lib/job";
+import { statusTone, fmtDur, fmtAgo, n } from "../lib/job";
 
 /** Derive a sidebar group for a builtin recipe id (plan-002 builtins carry no category). */
 function builtinCategory(id: string): string {
@@ -26,6 +26,18 @@ export function Sidebar() {
   const server = useServer();
   const rec = useRecorder();
   const [editingRecipe, setEditingRecipe] = createSignal<RecipeInfo | "new" | null>(null);
+  // Delete confirmation: first click arms a 3s "Sure?" state per recipe id.
+  const [confirmDeleteId, setConfirmDeleteId] = createSignal<string | null>(null);
+  function armDelete(id: string): void {
+    if (confirmDeleteId() === id) {
+      setConfirmDeleteId(null);
+      void server.deleteRecipeRemote(id);
+      return;
+    }
+    setConfirmDeleteId(id);
+    const t = setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 3000);
+    onCleanup(() => clearTimeout(t));
+  }
 
   // One unified list from server.recipes(): custom recipes group as "Recipes"
   // (with New/Edit/Delete), builtins group by their derived category.
@@ -91,7 +103,8 @@ export function Sidebar() {
                         title="Create a new recipe"
                         onClick={() => setEditingRecipe("new")}
                       >
-                        + New
+                        <Icon name="plus" size={11} />
+                        New
                       </button>
                     </Show>
                   </div>
@@ -101,64 +114,72 @@ export function Sidebar() {
                       const last = () => server.jobs().findLast((j) => j.action === r.id);
                       const stepCount = () => r.steps.length;
                       return (
-                        <button
-                          type="button"
-                          class="nav-row"
-                          classList={{ on: on() }}
-                          title={`${r.source === "custom" ? "Custom" : "Built-in"} · ${r.steps.length} step${r.steps.length === 1 ? "" : "s"} — double-click to run`}
-                          onClick={() => select(r.id)}
-                          onDblClick={() => void server.runRecipeRemote(r.id)}
-                        >
-                          <span class="nav-row__title">{r.title}</span>
-                          <span class="nav-row__meta">
-                            <Show when={r.source === "custom" && stepCount() > 0}>
-                              <span class="mono nav-row__count">{stepCount()}</span>
-                            </Show>
-                            <Show when={last()}>
-                              {(j) => (
-                                <span class={`tone tone--${statusTone(j().status)}`}>
-                                  {j().status}
-                                </span>
-                              )}
-                            </Show>
-                            <span class="nav-row__actions">
-                              <Show when={r.source === "custom"}>
-                                <span
-                                  class="nav-row__action"
-                                  title="Edit recipe"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingRecipe(r);
-                                  }}
-                                >
-                                  <Icon name="sliders" size={11} />
-                                </span>
-                                <span
-                                  class="nav-row__action"
-                                  title="Delete recipe"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void server.deleteRecipeRemote(r.id);
-                                  }}
-                                >
-                                  <Icon name="trash" size={11} />
-                                </span>
+                        <div class="nav-row-wrap">
+                          <button
+                            type="button"
+                            class="nav-row"
+                            classList={{ on: on() }}
+                            title={`${r.source === "custom" ? "Custom" : "Built-in"} · ${n(r.steps.length, "step")} — double-click to run`}
+                            onClick={() => select(r.id)}
+                            onDblClick={() => void server.runRecipeRemote(r.id)}
+                          >
+                            <span class="nav-row__title">{r.title}</span>
+                            <span class="nav-row__meta">
+                              <Show when={r.source === "custom" && stepCount() > 0}>
+                                <span class="mono nav-row__count">{stepCount()}</span>
                               </Show>
-                              <Show when={r.source === "builtin"}>
-                                <span
-                                  class="nav-row__action"
-                                  title="Fork to custom recipe"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void rec.forkRecipe(r);
-                                  }}
-                                >
-                                  <Icon name="external" size={11} />
-                                </span>
+                              <Show when={last()}>
+                                {(j) => (
+                                  <span class={`tone tone--${statusTone(j().status)}`}>
+                                    {j().status}
+                                  </span>
+                                )}
                               </Show>
                             </span>
+                          </button>
+                          <span class="nav-row__actions">
+                            <Show when={r.source === "custom"}>
+                              <button
+                                type="button"
+                                class="nav-row__action"
+                                aria-label={`Edit ${r.title}`}
+                                title="Edit recipe"
+                                onClick={() => setEditingRecipe(r)}
+                              >
+                                <Icon name="sliders" size={11} />
+                              </button>
+                              <button
+                                type="button"
+                                class="nav-row__action nav-row__action--del"
+                                aria-label={`Delete ${r.title}`}
+                                title={
+                                  confirmDeleteId() === r.id
+                                    ? "Click again to confirm"
+                                    : "Delete recipe"
+                                }
+                                onClick={() => armDelete(r.id)}
+                              >
+                                <Show
+                                  when={confirmDeleteId() !== r.id}
+                                  fallback={<span class="nav-row__action-sure">Sure?</span>}
+                                >
+                                  <Icon name="trash" size={11} />
+                                </Show>
+                              </button>
+                            </Show>
+                            <Show when={r.source === "builtin"}>
+                              <button
+                                type="button"
+                                class="nav-row__action"
+                                aria-label={`Fork ${r.title} to a custom recipe`}
+                                title="Fork to custom recipe"
+                                onClick={() => void rec.forkRecipe(r)}
+                              >
+                                <Icon name="external" size={11} />
+                              </button>
+                            </Show>
                           </span>
-                        </button>
+                        </div>
                       );
                     }}
                   </For>
@@ -181,16 +202,15 @@ export function Sidebar() {
                   <span class="nav-row__pos mono">{i() + 1}</span>
                   <span class="nav-row__title">{j.title ?? j.action}</span>
                   <span class="nav-row__actions">
-                    <span
+                    <button
+                      type="button"
                       class="nav-row__action"
+                      aria-label={`Remove ${j.title ?? j.action} from queue`}
                       title="Remove from queue"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void server.cancelJob(j.id);
-                      }}
+                      onClick={() => void server.cancelJob(j.id)}
                     >
                       <Icon name="x" size={11} />
-                    </span>
+                    </button>
                   </span>
                 </div>
               )}
@@ -213,54 +233,58 @@ export function Sidebar() {
           >
             <For each={server.jobs()}>
               {(j) => (
-                <button
-                  type="button"
-                  class="nav-row nav-row--job"
-                  classList={{
-                    on: server.selectedJobId() === j.id,
-                    "nav-row--active": j.status === "running" || j.status === "paused",
-                  }}
-                  onClick={() => {
-                    server.jumpToJob(j.id);
-                    server.setPanelTab("steps");
-                  }}
-                >
-                  <span class={`nav-row__dot nav-row__dot--${statusTone(j.status)}`} aria-hidden />
-                  <span class="nav-row__title">{j.title ?? j.action}</span>
-                  <span class="nav-row__meta mono">
-                    <Show
-                      when={
-                        j.status === "ok" ||
-                        j.status === "error" ||
-                        j.status === "healed" ||
-                        j.status === "cancelled"
-                      }
-                      fallback={fmtDur(j, server.clock())}
-                    >
-                      <span class={`tone tone--${statusTone(j.status)}`}>
-                        {j.status === "error" ? "failed" : j.status}
-                      </span>
-                      <span class="nav-row__sep">·</span>
-                      <span>{fmtAgo(j.finishedAt, server.clock())}</span>
-                      <span class="nav-row__sep">·</span>
-                      <span>{fmtDur(j, server.clock())}</span>
-                    </Show>
-                  </span>
+                <div class="nav-row-wrap">
+                  <button
+                    type="button"
+                    class="nav-row nav-row--job"
+                    classList={{
+                      on: server.selectedJobId() === j.id,
+                      "nav-row--active": j.status === "running" || j.status === "paused",
+                    }}
+                    onClick={() => {
+                      server.jumpToJob(j.id);
+                      server.setPanelTab("steps");
+                    }}
+                  >
+                    <span
+                      class={`nav-row__dot nav-row__dot--${statusTone(j.status)}`}
+                      aria-hidden
+                    />
+                    <span class="nav-row__title">{j.title ?? j.action}</span>
+                    <span class="nav-row__meta mono">
+                      <Show
+                        when={
+                          j.status === "ok" ||
+                          j.status === "error" ||
+                          j.status === "healed" ||
+                          j.status === "cancelled"
+                        }
+                        fallback={fmtDur(j, server.clock())}
+                      >
+                        <span class={`tone tone--${statusTone(j.status)}`}>
+                          {j.status === "error" ? "failed" : j.status}
+                        </span>
+                        <span class="nav-row__sep">·</span>
+                        <span>{fmtAgo(j.finishedAt, server.clock())}</span>
+                        <span class="nav-row__sep">·</span>
+                        <span>{fmtDur(j, server.clock())}</span>
+                      </Show>
+                    </span>
+                  </button>
                   <span class="nav-row__actions">
                     <Show when={j.status === "error"}>
-                      <span
+                      <button
+                        type="button"
                         class="nav-row__action"
+                        aria-label={`Retry ${j.title ?? j.action}`}
                         title="Retry / heal job"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void server.retrySelectedJob(j.id);
-                        }}
+                        onClick={() => void server.retrySelectedJob(j.id)}
                       >
                         <Icon name="refresh" size={11} />
-                      </span>
+                      </button>
                     </Show>
                   </span>
-                </button>
+                </div>
               )}
             </For>
           </Show>

@@ -38,3 +38,18 @@ export function fmtAgo(finishedAt?: number, now: number = Date.now()): string {
   if (h < 24) return `${h}h`;
   return `${Math.floor(h / 24)}d`;
 }
+
+/** Compact millisecond formatting for a single step/action: 423ms / 1.2s / 1m4s. */
+export function fmtMs(ms: number | undefined): string {
+  if (!ms || !Number.isFinite(ms) || ms < 1) return "";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60000);
+  const s = Math.round((ms % 60000) / 1000);
+  return `${m}m${s}s`;
+}
+
+/** Pluralize a count + noun: n(1, "frame") → "1 frame", n(2, "step") → "2 steps". */
+export function n(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}

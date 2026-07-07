@@ -5,11 +5,13 @@ import { usePlatform } from "../context/platform";
 import { useServer } from "../context/server";
 import { useCommand } from "../context/command";
 import { Icon } from "../components/icon";
+import { trapFocus } from "../lib/modal";
 export function SettingsPage(props: { onClose: () => void }) {
   const theme = useTheme();
   const platform = usePlatform();
   const server = useServer();
   const cmd = useCommand();
+  let dialogRef: HTMLDivElement | undefined;
 
   const [section, setSection] = createSignal<"appearance" | "server" | "recipes" | "about">(
     "appearance",
@@ -26,6 +28,7 @@ export function SettingsPage(props: { onClose: () => void }) {
     setProdDraft(server.prodAccountMatch());
     void theme.loadThemes().then(() => setThemeIds(theme.ids()));
     onCleanup(cmd.pushModal());
+    if (dialogRef) onCleanup(trapFocus(dialogRef));
   });
 
   async function saveServerUrl() {
@@ -77,7 +80,13 @@ export function SettingsPage(props: { onClose: () => void }) {
         }
       }}
     >
-      <div class="dialog dialog--settings" role="dialog" aria-modal="true" aria-label="Settings">
+      <div
+        class="dialog dialog--settings"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
         <div class="dialog__head">
           <h2 class="dialog__title">Settings</h2>
           <button
