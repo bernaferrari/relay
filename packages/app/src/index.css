@@ -734,6 +734,12 @@ html[data-color-scheme="light"] .qa::before {
   letter-spacing: 0.07em;
   color: var(--c-dim);
 }
+.sidebar__label--quiet {
+  font-size: var(--fs-meta);
+  font-weight: 550;
+  text-transform: none;
+  letter-spacing: 0;
+}
 .sidebar__count {
   font-size: var(--fs-meta);
   color: var(--c-dim);
@@ -754,11 +760,11 @@ html[data-color-scheme="light"] .qa::before {
   align-items: center;
   gap: 6px;
   font-size: var(--fs-meta);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight: 550;
+  text-transform: none;
   color: var(--c-dim);
-  padding: 12px 10px 5px;
+  margin: 16px 0 5px;
+  padding: 0 10px;
 }
 .sidebar__empty-hint {
   font-size: var(--fs-meta);
@@ -806,16 +812,6 @@ html[data-color-scheme="light"] .qa::before {
 .nav-row__sep {
   color: var(--v2-border-border-strong);
   opacity: 0.6;
-}
-.nav-row__disk {
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--c-dim);
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--v2-background-bg-layer-02);
 }
 .nav-row--job .nav-row__title {
   font-weight: 450;

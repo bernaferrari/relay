@@ -199,7 +199,9 @@ export function Sidebar() {
       <Show when={server.queuedJobs().length > 0}>
         <div class="sidebar__section">
           <div class="sidebar__head">
-            <span class="sidebar__label">Queue · {server.queuedJobs().length}</span>
+            <span class="sidebar__label sidebar__label--quiet">
+              Queue · {server.queuedJobs().length}
+            </span>
           </div>
           <div class="sidebar__scroll">
             <For each={server.queuedJobs()}>
@@ -296,7 +298,6 @@ export function Sidebar() {
               }}
             </For>
             <Show when={diskOnlyRuns().length > 0}>
-              <div class="sidebar__group-label">Disk</div>
               <For each={diskOnlyRuns()}>
                 {(run) => {
                   const isSelected = () => server.persistedRunId() === run.id;

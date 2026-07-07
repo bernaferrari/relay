@@ -99,7 +99,7 @@ export function StepsPane() {
     if (j) return `Log — ${j.title ?? j.action}`;
     const r = selectedRecipe();
     if (r) return `Log — ${r.title}`;
-    return "Activity";
+    return "Log";
   };
 
   const hasContent = () => Boolean(selectedRecipe() || persistedRun());
@@ -148,7 +148,6 @@ export function StepsPane() {
                   </div>
                 </div>
 
-                <div class="section-label">Steps</div>
                 <For each={run().steps}>
                   {(step, i) => {
                     const tone =
@@ -289,7 +288,6 @@ export function StepsPane() {
 
             {/* Live job steps */}
             <Show when={(selectedJob()?.steps?.length ?? 0) > 0}>
-              <div class="section-label">Steps</div>
               <For each={selectedJob()!.steps ?? []}>
                 {(step, i) => {
                   const tone =
@@ -333,7 +331,6 @@ export function StepsPane() {
                 (selectedRecipe()?.steps.length ?? 0) > 0
               }
             >
-              <div class="section-label">Steps</div>
               <For each={selectedRecipe()!.steps}>
                 {(step, i) => (
                   <div class="srow srow--static" title={describeStep(step)}>
@@ -356,7 +353,6 @@ export function StepsPane() {
                 (selectedRecipe()?.steps.length ?? 0) > 0
               }
             >
-              <div class="section-label">Steps</div>
               <For each={selectedRecipe()!.steps}>
                 {(step, i) => (
                   <div class="srow srow--static" title={flowLabel(step)}>
