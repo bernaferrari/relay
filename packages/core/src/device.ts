@@ -122,6 +122,18 @@ export async function pressPoint(device: Device, x: number, y: number): Promise<
   await controlled(() => device.interactions.press({ ...base(), x, y }));
 }
 
+export async function typeText(device: Device, text: string): Promise<void> {
+  await controlled(() => device.interactions.type({ ...base(), text }));
+}
+
+export async function pressKey(device: Device, key: "back" | "home"): Promise<void> {
+  if (key === "back") {
+    await controlled(() => device.command.back({ ...base() }));
+  } else {
+    await controlled(() => device.command.home({ ...base() }));
+  }
+}
+
 export async function pressRef(device: Device, ref: string): Promise<void> {
   const normalized = ref.startsWith("@") ? ref : `@${ref}`;
   await controlled(() => device.interactions.press({ ...base(), ref: normalized }));
