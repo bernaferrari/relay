@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   JobCancelledError,
   clearControl,
+  debugWaiterCount,
   ensureControl,
   raceCancel,
   requestCancel,
@@ -47,6 +48,20 @@ describe("job control", () => {
     await p;
     assert.equal(passed, true);
     clearControl("j3");
+    setExecutingJobId(null);
+  });
+
+  it("raceCancel cleans up its poll timer when the op wins", async () => {
+    ensureControl("j4");
+    setExecutingJobId("j4");
+    // The op resolves immediately every iteration; a leaked setInterval/waiter
+    // would accumulate. After 50 runs no waiter should remain registered.
+    for (let i = 0; i < 50; i++) {
+      const result = await raceCancel(Promise.resolve("ok"), "j4");
+      assert.equal(result, "ok");
+    }
+    assert.equal(debugWaiterCount("j4"), 0);
+    clearControl("j4");
     setExecutingJobId(null);
   });
 });

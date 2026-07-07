@@ -42,6 +42,11 @@ export function clearControl(jobId: string): void {
   }
 }
 
+/** White-box: number of live cancel-waiters for a job (0 after cleanup). */
+export function debugWaiterCount(jobId: string): number {
+  return cancelWaiters.get(jobId)?.size ?? 0;
+}
+
 function wakeCancelWaiters(jobId: string): void {
   const waiters = cancelWaiters.get(jobId);
   if (!waiters) return;
@@ -87,48 +92,43 @@ export function throwIfCancelled(jobId?: string | null): void {
   if (controls.get(id)?.cancel) throw new JobCancelledError();
 }
 
-/** Rejects with JobCancelledError once cancel is requested. */
-export function waitUntilCancelled(jobId?: string | null): Promise<never> {
-  const id = jobId ?? executingJobId;
-  if (!id) return new Promise(() => undefined);
-
-  return new Promise((_resolve, reject) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      if (!controls.get(id)?.cancel) return;
-      settled = true;
-      clearInterval(poll);
-      set?.delete(onWake);
-      reject(new JobCancelledError());
-    };
-
-    if (controls.get(id)?.cancel) {
-      reject(new JobCancelledError());
-      return;
-    }
-
-    const onWake = () => finish();
-    let set = cancelWaiters.get(id);
-    if (!set) {
-      set = new Set();
-      cancelWaiters.set(id, set);
-    }
-    set.add(onWake);
-
-    const poll = setInterval(finish, 40);
-  });
-}
-
 /**
  * Race a promise against cancel. On cancel, rejects with JobCancelledError
  * even if the underlying work is still running (caller may hard-stop session).
+ *
+ * All resources this allocates (the poll interval and the cancel-waiter entry)
+ * are released in `finally`, regardless of whether the op or the cancel signal
+ * wins the race — so a normal completion no longer leaks a 40 ms timer.
  */
 export async function raceCancel<T>(promise: Promise<T>, jobId?: string | null): Promise<T> {
   const id = jobId ?? executingJobId;
   if (!id) return promise;
   throwIfCancelled(id);
-  return Promise.race([promise, waitUntilCancelled(id)]);
+
+  let cleanup = () => {};
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    const check = () => {
+      if (controls.get(id)?.cancel) reject(new JobCancelledError());
+    };
+    let set = cancelWaiters.get(id);
+    if (!set) {
+      set = new Set();
+      cancelWaiters.set(id, set);
+    }
+    set.add(check);
+    const poll = setInterval(check, 40);
+    cleanup = () => {
+      clearInterval(poll);
+      set.delete(check);
+    };
+    check();
+  });
+
+  try {
+    return await Promise.race([promise, cancelled]);
+  } finally {
+    cleanup();
+  }
 }
 
 export async function cooperativeCheckpoint(jobId?: string | null): Promise<void> {
