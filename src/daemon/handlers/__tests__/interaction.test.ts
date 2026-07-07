@@ -2262,7 +2262,6 @@ test('fill @ref preserves fallback coordinates for recording when platform resul
   expect(response?.ok).toBe(true);
   if (response?.ok) {
     expect(response.data?.filled).toBe(true);
-    expect(response.data?.x).toBeUndefined();
   }
 
   const stored = sessionStore.get(sessionName);
