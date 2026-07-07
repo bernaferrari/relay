@@ -60,7 +60,7 @@ export function Sidebar() {
       items,
       custom: false,
     }));
-    return [{ key: "Recipes", label: "Recipes", items: custom, custom: true }, ...built];
+    return [{ key: "Recipes", label: "Custom", items: custom, custom: true }, ...built];
   });
 
   const select = (id: string) => {
@@ -228,7 +228,7 @@ export function Sidebar() {
       <div class="sidebar__section sidebar__section--history">
         <div class="sidebar__head">
           <span class="sidebar__label">History</span>
-          <span class="sidebar__count mono">{server.jobs().length + diskOnlyRuns().length}</span>
+          <span class="sidebar__count">{server.jobs().length + diskOnlyRuns().length}</span>
         </div>
         <div class="sidebar__scroll">
           <Show
@@ -238,93 +238,100 @@ export function Sidebar() {
             }
           >
             <For each={server.jobs()}>
-              {(j) => (
-                <div class="nav-row-wrap">
-                  <button
-                    type="button"
-                    class="nav-row nav-row--job"
-                    classList={{
-                      on: server.selectedJobId() === j.id,
-                      "nav-row--active": j.status === "running" || j.status === "paused",
-                    }}
-                    onClick={() => {
-                      server.jumpToJob(j.id);
-                      server.setPersistedRunId(null);
-                    }}
-                  >
-                    <span
-                      class={`nav-row__dot nav-row__dot--${statusTone(j.status)}`}
-                      aria-hidden
-                    />
-                    <span class="nav-row__title">{j.title ?? j.action}</span>
-                    <span class="nav-row__meta mono">
-                      <Show
-                        when={
-                          j.status === "ok" ||
-                          j.status === "error" ||
-                          j.status === "healed" ||
-                          j.status === "cancelled"
-                        }
-                        fallback={fmtDur(j, server.clock())}
-                      >
-                        <span class={`tone tone--${statusTone(j.status)}`}>
-                          {j.status === "error" ? "failed" : j.status}
-                        </span>
-                        <span class="nav-row__sep">·</span>
-                        <span>{fmtAgo(j.finishedAt, server.clock())}</span>
-                        <span class="nav-row__sep">·</span>
-                        <span>{fmtDur(j, server.clock())}</span>
-                      </Show>
-                    </span>
-                  </button>
-                  <span class="nav-row__actions">
-                    <Show when={j.status === "error"}>
-                      <button
-                        type="button"
-                        class="nav-row__action"
-                        aria-label={`Retry ${j.title ?? j.action}`}
-                        title="Retry / heal job"
-                        onClick={() => void server.retrySelectedJob(j.id)}
-                      >
-                        <Icon name="refresh" size={11} />
-                      </button>
-                    </Show>
-                  </span>
-                </div>
-              )}
-            </For>
-            <Show when={diskOnlyRuns().length > 0}>
-              <div class="sidebar__group-label">Disk</div>
-              <For each={diskOnlyRuns()}>
-                {(run) => (
+              {(j) => {
+                const isSelected = () => server.selectedJobId() === j.id;
+                const done = () =>
+                  j.status === "ok" ||
+                  j.status === "error" ||
+                  j.status === "healed" ||
+                  j.status === "cancelled";
+                return (
                   <div class="nav-row-wrap">
                     <button
                       type="button"
                       class="nav-row nav-row--job"
-                      classList={{ on: server.persistedRunId() === run.id }}
-                      title={`Disk run · ${run.dir}`}
+                      classList={{
+                        on: isSelected(),
+                        "nav-row--active": j.status === "running" || j.status === "paused",
+                      }}
                       onClick={() => {
-                        server.setSelectedJobId(null);
-                        server.setPersistedRunId(run.id);
+                        server.jumpToJob(j.id);
+                        server.setPersistedRunId(null);
                       }}
                     >
                       <span
-                        class={`nav-row__dot nav-row__dot--${statusTone(run.status as JobInfo["status"])}`}
+                        class={`nav-row__dot nav-row__dot--${statusTone(j.status)}`}
                         aria-hidden
                       />
-                      <span class="nav-row__title">{run.action}</span>
-                      <span class="nav-row__meta mono">
-                        <span class={`tone tone--${statusTone(run.status as JobInfo["status"])}`}>
-                          {run.healed ? "healed" : run.status}
-                        </span>
-                        <span class="nav-row__sep">·</span>
-                        <span class="nav-row__disk">disk</span>
-                        <span class="nav-row__sep">·</span>
-                        <span>{run.frames?.length ?? 0}f</span>
+                      <span class="nav-row__title">{j.title ?? j.action}</span>
+                      <span class="nav-row__meta">
+                        {done() ? fmtAgo(j.finishedAt, server.clock()) : fmtDur(j, server.clock())}
                       </span>
                     </button>
+                    {/* Selected-row detail: status word · duration (C2 calm fix) */}
+                    <Show when={isSelected() && done()}>
+                      <div class="nav-row__detail">
+                        <span class={`tone tone--${statusTone(j.status)}`}>
+                          {j.status === "error" ? "failed" : j.status}
+                        </span>
+                        <span class="nav-row__sep">·</span>
+                        <span class="mono">{fmtDur(j, server.clock())}</span>
+                      </div>
+                    </Show>
+                    <span class="nav-row__actions">
+                      <Show when={j.status === "error"}>
+                        <button
+                          type="button"
+                          class="nav-row__action"
+                          aria-label={`Retry ${j.title ?? j.action}`}
+                          title="Retry / heal job"
+                          onClick={() => void server.retrySelectedJob(j.id)}
+                        >
+                          <Icon name="refresh" size={11} />
+                        </button>
+                      </Show>
+                    </span>
                   </div>
-                )}
+                );
+              }}
+            </For>
+            <Show when={diskOnlyRuns().length > 0}>
+              <div class="sidebar__group-label">Disk</div>
+              <For each={diskOnlyRuns()}>
+                {(run) => {
+                  const isSelected = () => server.persistedRunId() === run.id;
+                  return (
+                    <div class="nav-row-wrap">
+                      <button
+                        type="button"
+                        class="nav-row nav-row--job"
+                        classList={{ on: isSelected() }}
+                        title={`Disk run · ${run.dir}`}
+                        onClick={() => {
+                          server.setSelectedJobId(null);
+                          server.setPersistedRunId(run.id);
+                        }}
+                      >
+                        <span
+                          class={`nav-row__dot nav-row__dot--${statusTone(run.status as JobInfo["status"])}`}
+                          aria-hidden
+                        />
+                        <span class="nav-row__title">{run.action}</span>
+                        <Icon name="folder" size={11} class="nav-row__disk-ico" aria-hidden />
+                        <span class="nav-row__meta">{fmtAgo(run.writtenAt, server.clock())}</span>
+                      </button>
+                      <Show when={isSelected()}>
+                        <div class="nav-row__detail">
+                          <span class={`tone tone--${statusTone(run.status as JobInfo["status"])}`}>
+                            {run.healed ? "healed" : run.status}
+                          </span>
+                          <span class="nav-row__sep">·</span>
+                          <span>{run.frames?.length ?? 0} frames</span>
+                        </div>
+                      </Show>
+                    </div>
+                  );
+                }}
               </For>
             </Show>
           </Show>
