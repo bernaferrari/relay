@@ -1,7 +1,7 @@
 import { createSignal, createEffect } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
 import { useServer, type SnapshotNode, type RecipeStep, type StepTarget } from "./server";
-import { nodeAtPoint } from "../lib/snapshot";
+import { nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
 import { toast } from "./toast";
 
 /**
@@ -145,10 +145,23 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
     }
 
-    /** Record a step without executing (used by the stage element picker). */
+    /** Internal: append a step + toast (used by recordPick). */
     function recordStep(step: RecipeStep): void {
       setSteps((s) => [...s, step]);
       toast(describeStep(step), "info", 1600);
+    }
+
+    /**
+     * Record a picker choice as a tap step. The user explicitly picked a
+     * strategy, so ONLY that strategy's field is recorded (plus `point` as the
+     * emergency fallback); the other strategies are deliberately omitted — the
+     * runner's ref → label → text → point order must not silently override the
+     * user's intent. e.g. choosing `text` on a node that also has a ref records
+     * `{ text, point }`, NOT `{ ref, label, text, point }`.
+     */
+    function recordPick(strategy: PickStrategy, fx: number, fy: number): void {
+      const target = targetFromStrategy(strategy, fx, fy, server.snapshot()?.bounds);
+      recordStep({ kind: "tap", target });
     }
 
     function clearSteps(): void {
@@ -271,7 +284,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setRecording,
       steps,
       handleTap,
-      recordStep,
+      recordPick,
       clearSteps,
       removeStep,
       saveRecipe,

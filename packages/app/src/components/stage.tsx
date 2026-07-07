@@ -1,11 +1,10 @@
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import { useServer, type SnapshotNode, type RecipeStep } from "../context/server";
+import { useServer, type SnapshotNode } from "../context/server";
 import {
   ancestryOf,
   nodeAtPoint,
   shortLabel,
   strategiesFor,
-  targetFromStrategy,
   type PickStrategy,
 } from "../lib/snapshot";
 import { useRecorder, describeStep } from "../context/recorder";
@@ -85,13 +84,10 @@ export function DeviceStage() {
   async function pick(strategy: PickStrategy): Promise<void> {
     const p = picker();
     if (!p) return;
-    const bounds = server.snapshot()?.bounds;
-    // The user picked the strategy; point is the emergency fallback.
-    const target = targetFromStrategy(strategy, p.fx, p.fy, bounds);
-    const step: RecipeStep = { kind: "tap", target };
     setPicker(null);
     if (pickMode() === "select") {
-      rec.recordStep(step);
+      // Select-only: record the chosen-strategy step WITHOUT tapping.
+      rec.recordPick(strategy, p.fx, p.fy);
       return;
     }
     const body =
@@ -102,15 +98,15 @@ export function DeviceStage() {
           : strategy.kind === "text"
             ? ({ kind: "text-match", match: strategy.text } as const)
             : ({ kind: "point", x: strategy.x, y: strategy.y } as const);
-    let ok = await server.interactStep(body, describeStep(step));
+    let ok = await server.interactStep(body, `tap ${strategy.describe}`);
     // chosen strategy failed (likely no session) — fall back to a coordinate tap
-    if (!ok && strategy.kind !== "point" && target.point) {
-      ok = await server.interactStep(
-        { kind: "point", x: target.point.x, y: target.point.y },
-        `tap ${target.point.x},${target.point.y}`,
-      );
+    if (!ok && strategy.kind !== "point") {
+      const b = server.snapshot()?.bounds;
+      const fx = Math.round(p.fx * (b?.width ?? 1));
+      const fy = Math.round(p.fy * (b?.height ?? 1));
+      ok = await server.interactStep({ kind: "point", x: fx, y: fy }, `tap ${fx},${fy}`);
     }
-    if (ok && rec.recording()) rec.recordStep(step);
+    if (ok && rec.recording()) rec.recordPick(strategy, p.fx, p.fy);
   }
 
   const onStageKey = (e: KeyboardEvent) => {
