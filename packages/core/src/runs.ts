@@ -43,7 +43,7 @@ function slug(s: string): string {
     .slice(0, 48);
 }
 
-function findWorkspaceRoot(start = process.cwd()): string {
+export function findWorkspaceRoot(start = process.cwd()): string {
   let dir = start;
   for (;;) {
     if (existsSync(join(dir, "pnpm-workspace.yaml")) || existsSync(join(dir, "pnpm-lock.yaml"))) {
