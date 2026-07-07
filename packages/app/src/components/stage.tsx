@@ -284,7 +284,9 @@ export function DeviceStage() {
 
       <div class="stage__meta">
         <span class="stage__title">
-          {job() ? (actionMeta()?.title ?? "Select an action") : "Select a run"}
+          {job()
+            ? (job()?.title ?? actionMeta()?.title ?? job()?.action ?? "Running")
+            : (server.selectedRecipe()?.title ?? "Pick a recipe")}
         </span>
         <Show when={job()?.healed || job()?.status === "healed"}>
           <span class="badge b-heal">Healed</span>

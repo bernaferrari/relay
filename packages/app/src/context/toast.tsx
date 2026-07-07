@@ -55,7 +55,11 @@ export function Toaster(): JSX.Element {
     <div class="toaster" role="region" aria-label="Notifications" aria-live="polite">
       <For each={t.toasts()}>
         {(toast) => (
-          <div class="toast" classList={{ [`toast--${toast.tone}`]: true }} role="status">
+          <div
+            class="toast"
+            classList={{ [`toast--${toast.tone}`]: true }}
+            role={toast.tone === "error" ? "alert" : "status"}
+          >
             <span class="toast__icon" aria-hidden="true">
               <Icon name={TONE_ICON[toast.tone]} size={15} />
             </span>

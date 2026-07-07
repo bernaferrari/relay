@@ -4,31 +4,16 @@ import { describeStep } from "../context/recorder";
 import { Glyphs } from "./glyphs";
 import { EmptyState } from "./empty-state";
 import { useCommand } from "../context/command";
-import { Icon } from "./icon";
+import { Icon, GLYPH_META } from "./icon";
 import { RecipeEditor } from "./recipe-editor";
 import { statusTone, fmtDur, fmtMs, n } from "../lib/job";
 
-const GLYPH_LABEL: Record<string, string> = {
-  tap: "tap",
-  type: "type",
-  wait: "wait",
-  shot: "screenshot",
-  swipe: "swipe",
-  ok: "ok",
-  fail: "fail",
-  ai: "AI heal",
-  dl: "download",
-  re: "retry",
-  store: "store",
-  login: "login",
-};
-
 /** Hover tip describing what a step does (its actions + timing). */
 function stepTip(step: { title: string; glyphs?: string[]; durationMs?: number }): string {
-  const acts = (step.glyphs ?? []).map((g) => GLYPH_LABEL[g]).filter(Boolean);
+  const acts = (step.glyphs ?? []).map((g) => GLYPH_META[g]?.label).filter(Boolean);
   const parts = [step.title];
   if (acts.length) parts.push(acts.join(" · "));
-  if (step.durationMs) parts.push(`${Math.round(step.durationMs)}ms`);
+  if (step.durationMs) parts.push(fmtMs(step.durationMs));
   return parts.join(" — ");
 }
 

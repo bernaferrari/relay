@@ -167,18 +167,23 @@ export function Icon(props: {
   );
 }
 
-/** glyph → icon mapping for the step badges (replaces unicode stand-ins) */
-export const GLYPH_ICON: Record<string, IconName> = {
-  tap: "pointer",
-  type: "keyboard",
-  wait: "clock",
-  shot: "camera",
-  swipe: "move",
-  ok: "check",
-  fail: "x",
-  ai: "sparkle",
-  dl: "download",
-  re: "refresh",
-  store: "bag",
-  login: "login",
+/** glyph → { icon, label } metadata for step badges (single source of truth). */
+export const GLYPH_META: Record<string, { icon: IconName; label: string }> = {
+  tap: { icon: "pointer", label: "tap" },
+  type: { icon: "keyboard", label: "type" },
+  wait: { icon: "clock", label: "wait" },
+  shot: { icon: "camera", label: "screenshot" },
+  swipe: { icon: "move", label: "swipe" },
+  ok: { icon: "check", label: "ok" },
+  fail: { icon: "x", label: "fail" },
+  ai: { icon: "sparkle", label: "AI heal" },
+  dl: { icon: "download", label: "download" },
+  re: { icon: "refresh", label: "retry" },
+  store: { icon: "bag", label: "store" },
+  login: { icon: "login", label: "login" },
 };
+
+/** glyph → icon name (derived from GLYPH_META for backward compat). */
+export const GLYPH_ICON: Record<string, IconName> = Object.fromEntries(
+  Object.entries(GLYPH_META).map(([k, v]) => [k, v.icon]),
+);

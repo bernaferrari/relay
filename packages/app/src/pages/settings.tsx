@@ -63,7 +63,7 @@ export function SettingsPage(props: { onClose: () => void }) {
   const SECTIONS = [
     ["appearance", "Appearance"],
     ["server", "Server"],
-    ["recipes", "Recipes"],
+    ["recipes", "Accounts"],
     ["about", "About"],
   ] as const;
 
@@ -216,7 +216,7 @@ export function SettingsPage(props: { onClose: () => void }) {
               <div class="s-row">
                 <div class="s-row__copy">
                   <span class="s-row__title">Server URL</span>
-                  <span class="s-row__desc mono">{urlDraft() || "not set"}</span>
+                  <span class="s-row__desc">HTTP API this app connects to.</span>
                 </div>
                 <div class="s-row__control s-row__control--grow">
                   <input
@@ -278,6 +278,12 @@ export function SettingsPage(props: { onClose: () => void }) {
             </Show>
 
             <Show when={section() === "about"}>
+              <div class="s-row">
+                <div class="s-row__copy">
+                  <span class="s-row__title">Product</span>
+                  <span class="s-row__desc">Specimen · grok-device 0.1.0</span>
+                </div>
+              </div>
               <div class="s-row">
                 <div class="s-row__copy">
                   <span class="s-row__title">Platform</span>
