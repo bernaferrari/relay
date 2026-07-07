@@ -268,6 +268,21 @@ export function DeviceStage() {
   onCleanup(() => {
     if (hoverRaf) cancelAnimationFrame(hoverRaf);
   });
+  /** Segmented stage mode (plan 009 step 6): View = watch only;
+   *  Drive = live poll + click-to-tap + hover-inspect; Record = Drive +
+   *  capture. Hover-inspect is on by default in Drive/Record; ⌘O remains
+   *  the power-user escape hatch (showOverlays signal kept). */
+  function setStageMode(mode: "view" | "drive" | "record"): void {
+    const interacting = mode !== "view";
+    const recording = mode === "record";
+    rec.setInteracting(interacting);
+    rec.setRecording(recording);
+    setPicker(null);
+    if (interacting) {
+      server.setShowOverlays(true);
+      if (!server.snapshot()?.bounds) void server.captureUiSnapshot();
+    }
+  }
 
   return (
     <section
@@ -510,88 +525,75 @@ export function DeviceStage() {
         </div>
       </Show>
 
-      <div class="stage__actions">
-        <button
-          type="button"
-          class="btn btn-ghost"
-          classList={{ "btn-ghost--on": rec.interacting() }}
-          disabled={server.health() !== "online" || server.isEmptyDevices()}
-          title={
-            server.health() !== "online"
-              ? "Server offline"
-              : server.isEmptyDevices()
-                ? "No device connected"
-                : "Live mode — auto-refresh device view; click the preview to inspect or tap"
+      <div class="stage__controls">
+        <Show
+          when={server.health() === "online" && !server.isEmptyDevices()}
+          fallback={
+            <p class="stage__controls-reason">
+              {server.health() !== "online"
+                ? "Server offline — start with pnpm dev:serve"
+                : "No device connected — connect and refresh"}
+            </p>
           }
-          onClick={() => {
-            const next = !rec.interacting();
-            rec.setInteracting(next);
-            setPicker(null);
-            if (next) {
-              server.setShowOverlays(true);
-              if (!server.snapshot()?.bounds) void server.captureUiSnapshot();
-            }
-          }}
         >
-          <Icon name="pointer" size={14} />
-          Interact {rec.interacting() ? "on" : "off"}
-        </button>
-        <Show when={rec.interacting()}>
+          <div class="seg" role="group" aria-label="Stage mode">
+            <button
+              type="button"
+              class="seg__btn"
+              classList={{ "seg__btn--on": !rec.interacting() }}
+              aria-pressed={!rec.interacting()}
+              onClick={() => setStageMode("view")}
+            >
+              View
+            </button>
+            <button
+              type="button"
+              class="seg__btn"
+              classList={{ "seg__btn--on": rec.interacting() && !rec.recording() }}
+              aria-pressed={rec.interacting() && !rec.recording()}
+              onClick={() => setStageMode("drive")}
+            >
+              Drive
+            </button>
+            <button
+              type="button"
+              class="seg__btn"
+              classList={{
+                "seg__btn--on": rec.interacting() && rec.recording(),
+                "seg__btn--rec": rec.interacting() && rec.recording(),
+              }}
+              aria-pressed={rec.interacting() && rec.recording()}
+              onClick={() => setStageMode("record")}
+            >
+              <span class="seg__dot" aria-hidden="true" />
+              Record
+            </button>
+          </div>
+          <span class="stage__controls-spacer" />
           <button
             type="button"
-            class="btn btn-ghost"
-            classList={{
-              "btn-ghost--on": rec.recording(),
-              "recorder--active": rec.recording(),
-            }}
-            title="Record clicks as a reusable recipe"
-            onClick={() => rec.setRecording(!rec.recording())}
+            class="btn btn-ghost top__icon-btn"
+            data-tip="Screenshot (⌘⇧S)"
+            aria-label="Capture screenshot"
+            disabled={server.busyCapture()}
+            onClick={() => void server.captureUiScreenshot()}
           >
-            <Icon name="circle" size={11} />
-            {rec.recording() ? "Recording" : "Record"}
+            <Show when={server.busyCapture()} fallback={<Icon name="camera" size={15} />}>
+              <span class="btn-spinner" aria-hidden="true" />
+            </Show>
           </button>
-        </Show>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          disabled={server.busyCapture() || server.health() !== "online" || server.isEmptyDevices()}
-          title={
-            server.health() !== "online"
-              ? "Server offline"
-              : server.isEmptyDevices()
-                ? "No device connected"
-                : "Save a screenshot to the frame scrubber"
-          }
-          onClick={() => void server.captureUiScreenshot()}
-        >
-          <Show
-            when={server.busyCapture()}
-            fallback={
-              <>
-                <Icon name="camera" size={14} /> Screenshot
-              </>
-            }
-          >
-            <span class="btn-spinner" aria-hidden="true" />
+          <Show when={server.frames().length > 0}>
+            <button
+              type="button"
+              class="btn btn-ghost top__icon-btn"
+              data-tip="Clear captured frames"
+              aria-label="Clear frames"
+              onClick={() => server.clearFrames()}
+            >
+              <Icon name="trash" size={15} />
+            </button>
           </Show>
-        </button>
-        <Show when={server.frames().length > 0}>
-          <button type="button" class="btn btn-ghost" onClick={() => server.clearFrames()}>
-            <Icon name="trash" size={14} />
-            Clear
-          </button>
         </Show>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          classList={{ "btn-ghost--on": server.showOverlays() }}
-          title="Highlight elements on hover (⌘O)"
-          aria-pressed={server.showOverlays()}
-          onClick={() => server.setShowOverlays(!server.showOverlays())}
-        >
-          <Icon name="pointer" size={14} />
-          Hover
-        </button>
       </div>
       <RecorderBar />
     </section>
