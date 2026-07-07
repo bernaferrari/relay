@@ -161,12 +161,33 @@ function backgroundFromTokens(cssBlock: string, isDark: boolean): string {
   }
   return isDark ? "#080808" : "#fafafa";
 }
+function isDarkOnlyTheme(theme: DesktopTheme): boolean {
+  // A theme is "dark-only" when its `light` variant carries a dark palette
+  // (ink lighter than neutral) — e.g. Catppuccin Frappe/Macchiato, whose JSON
+  // duplicates the dark palette into the light slot. Such themes have no
+  // readable light variant (text resolves near the background), so we always
+  // render the dark one instead of emitting unreadable light tokens.
+  const palette = theme.light?.palette as { neutral?: string; ink?: string } | undefined;
+  if (!palette?.neutral || !palette?.ink) return false;
+  const lum = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    if (Number.isNaN(n)) return -1;
+    const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+    return (
+      0.2126 * lin(((n >> 16) & 255) / 255) +
+      0.7152 * lin(((n >> 8) & 255) / 255) +
+      0.0722 * lin((n & 255) / 255)
+    );
+  };
+  return lum(palette.ink) > lum(palette.neutral);
+}
 
 function applyThemeCss(
   theme: DesktopTheme,
   themeId: string,
   mode: "light" | "dark",
 ): ThemeAppliedDetail {
+  if (mode === "light" && isDarkOnlyTheme(theme)) mode = "dark";
   const isDark = mode === "dark";
   const variant = isDark ? theme.dark : theme.light;
   const tokens = resolveThemeVariant(variant, isDark);
@@ -208,8 +229,11 @@ function applyThemeCss(
 
 function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
   if (themeId === "oc-2") return;
+  const darkOnly = isDarkOnlyTheme(theme);
   for (const mode of ["light", "dark"] as const) {
-    const isDark = mode === "dark";
+    // Dark-only themes have no readable light variant — cache the dark CSS
+    // under both keys so the FOUC preload never flashes unreadable text.
+    const isDark = mode === "dark" || darkOnly;
     const variant = isDark ? theme.dark : theme.light;
     const tokens = resolveThemeVariant(variant, isDark);
     const css = themeToCss(tokens);

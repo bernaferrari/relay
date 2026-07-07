@@ -661,7 +661,15 @@ html[data-color-scheme="light"] .qa::before {
   grid-template-columns: 0 minmax(0, 1fr) minmax(340px, 400px);
 }
 .shell--rail-collapsed > .sidebar {
-  display: none;
+  /* Keep the sidebar in flow (grid track 1 = 0) instead of `display: none`.
+     Removing it would shift the stage into the 0-width column via grid
+     auto-placement, squashing the device view to zero width. */
+  width: 0;
+  min-width: 0;
+  border-right-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* ════════════════════════ SIDEBAR ════════════════════════ */
