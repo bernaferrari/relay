@@ -21,7 +21,7 @@ import {
   type Device,
   type SnapshotNode,
 } from "./device.js";
-import { hardStopDeviceSession } from "./control.js";
+import { getExecutingJobId, hardStopDeviceSession } from "./control.js";
 import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
 
@@ -34,7 +34,7 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
     return await op();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (/already bound/i.test(msg)) {
+    if (/already bound/i.test(msg) && !getExecutingJobId()) {
       await hardStopDeviceSession().catch(() => undefined);
       return await op();
     }

@@ -127,23 +127,6 @@ function matchPath(pathname: string, pattern: string): Record<string, string> | 
   return params;
 }
 
-/** Strip heavy base64 from jobs for list responses (keep for single job optional). */
-function slimJob(job: ReturnType<typeof getJob> | null, keepBase64 = false) {
-  if (!job) return null;
-  return {
-    ...job,
-    frames: job.frames.map((f) =>
-      keepBase64 ? f : { ...f, base64: f.base64 ? "[omitted]" : undefined },
-    ),
-    steps: job.steps.map((s) => ({
-      ...s,
-      frames: s.frames.map((f) =>
-        keepBase64 ? f : { ...f, base64: f.base64 ? "[omitted]" : undefined },
-      ),
-    })),
-  };
-}
-
 type SseClient = { res: http.ServerResponse; id: number };
 const sseClients = new Set<SseClient>();
 let sseSeq = 0;
@@ -267,10 +250,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (method === "GET" && pathname === "/jobs") {
       const limit = Number(url.searchParams.get("limit") ?? 50);
-      const full = url.searchParams.get("full") === "1";
       json(res, 200, {
-        jobs: listJobs(limit).map((j) => slimJob(j, full)),
-        active: slimJob(getActiveJob(), full),
+        jobs: listJobs(limit),
+        active: getActiveJob(),
       });
       return;
     }
@@ -279,42 +261,42 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (method === "GET" && jobMatch) {
       const job = getJob(jobMatch.id!);
       if (!job) throw new HttpError(404, "Job not found");
-      json(res, 200, { job: slimJob(job, url.searchParams.get("full") === "1") });
+      json(res, 200, { job });
       return;
     }
 
     const retryMatch = matchPath(pathname, "/jobs/:id/retry");
     if (method === "POST" && retryMatch) {
       const job = retryJob(retryMatch.id!);
-      json(res, 202, { job: slimJob(job, false) });
+      json(res, 202, { job });
       return;
     }
 
     const cancelMatch = matchPath(pathname, "/jobs/:id/cancel");
     if (method === "POST" && cancelMatch) {
       const job = cancelJob(cancelMatch.id!);
-      json(res, 200, { job: slimJob(job, false) });
+      json(res, 200, { job });
       return;
     }
 
     const pauseMatch = matchPath(pathname, "/jobs/:id/pause");
     if (method === "POST" && pauseMatch) {
       const job = pauseJob(pauseMatch.id!);
-      json(res, 200, { job: slimJob(job, false) });
+      json(res, 200, { job });
       return;
     }
 
     const resumeMatch = matchPath(pathname, "/jobs/:id/resume");
     if (method === "POST" && resumeMatch) {
       const job = resumeJob(resumeMatch.id!);
-      json(res, 200, { job: slimJob(job, false) });
+      json(res, 200, { job });
       return;
     }
 
     if (method === "POST" && pathname === "/jobs/active/cancel") {
       const job = cancelActiveJob();
       if (!job) throw new HttpError(404, "No active job");
-      json(res, 200, { job: slimJob(job, false) });
+      json(res, 200, { job });
       return;
     }
 
@@ -333,7 +315,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             serial: body.serial,
             prodAccountMatch: body.prodAccountMatch,
           });
-      json(res, 202, { job: slimJob(job, false) });
+      json(res, 202, { job });
       return;
     }
 
@@ -350,7 +332,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         prodAccountMatch: body.prodAccountMatch,
       });
       if (body.wait === false) {
-        json(res, 202, { job: slimJob(job, false) });
+        json(res, 202, { job });
         return;
       }
       for (;;) {
@@ -363,7 +345,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             error: current.error,
             healed: current.healed,
             healMessage: current.healMessage,
-            job: slimJob(current, false),
+            job: current,
             logs: current.logs,
           });
           return;
@@ -400,6 +382,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
       if (!body || typeof body !== "object" || !("kind" in body)) {
         throw new HttpError(400, "body.kind required (label|point|ref|find|text-match)");
+      }
+      if (getActiveJob()?.status === "running") {
+        throw new HttpError(
+          409,
+          "A job is running — pause or cancel it before interacting manually",
+        );
       }
       const { serial, ...input } = body;
       await interact(input as InteractInput, { serial });
