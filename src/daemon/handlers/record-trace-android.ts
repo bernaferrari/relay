@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { sleep } from '../../utils/timeouts.ts';
 import { androidDeviceForSerial, runAndroidAdb } from '../../platforms/android/adb.ts';
@@ -23,6 +24,8 @@ import {
 import {
   cleanupAndroidRecoveryMetadata,
   writeAndroidRecoveryMetadata,
+  writeAndroidRecoveryPendingMetadata,
+  writeAndroidRecoveryRotatingMetadata,
 } from './record-trace-android-recovery.ts';
 
 type AndroidRecordingSize = { width: number; height: number };
@@ -39,6 +42,7 @@ const ANDROID_PROCESS_EXIT_POLL_MS = 250;
 const ANDROID_PROCESS_EXIT_ATTEMPTS = 40;
 const ANDROID_RECORDING_READY_ATTEMPTS = 8;
 const ANDROID_RECORDING_READY_MIN_RUNNING_POLLS = 2;
+const ANDROID_RECORDING_PROBE_TIMEOUT_MS = 5_000;
 
 type AndroidDevice = SessionState['device'];
 type AndroidRecording = Extract<NonNullable<SessionState['recording']>, { platform: 'android' }>;
@@ -57,6 +61,14 @@ type AndroidRecordingChunkStart = {
   remotePath: string;
   remotePid: string;
   startedAt: number;
+};
+type AndroidRecordingChunkStartAttempt =
+  | { kind: 'started'; chunk: AndroidRecordingChunkStart }
+  | { kind: 'failed'; message: string };
+
+type AndroidRecordingChunkStartHooks = {
+  prepareRemotePath?: (remotePath: string) => Promise<string | undefined>;
+  cleanupPreparedRemotePath?: (remotePath: string) => Promise<void>;
 };
 
 async function runAndroidRecordingAdb(
@@ -78,6 +90,7 @@ function parseAndroidRemotePid(stdout: string): string | undefined {
 async function isAndroidProcessRunning(deviceId: string, pid: string): Promise<boolean> {
   const result = await runAndroidRecordingAdb(deviceId, ['shell', 'ps', '-o', 'pid=', '-p', pid], {
     allowFailure: true,
+    timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS,
   });
   if (result.exitCode !== 0) {
     return false;
@@ -109,7 +122,7 @@ async function waitForAndroidRemoteFileStability(
     const statResult = await runAndroidRecordingAdb(
       deviceId,
       ['shell', 'stat', '-c', '%s', remotePath],
-      { allowFailure: true },
+      { allowFailure: true, timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS },
     );
     const currentSize = statResult.exitCode === 0 ? statResult.stdout.trim() : '';
     if (currentSize.length > 0 && currentSize === previousSize) {
@@ -134,7 +147,7 @@ async function waitForAndroidRecordingReady(
     const statResult = await runAndroidRecordingAdb(
       deviceId,
       ['shell', 'stat', '-c', '%s', remotePath],
-      { allowFailure: true },
+      { allowFailure: true, timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS },
     );
     const currentSize = statResult.exitCode === 0 ? Number(statResult.stdout.trim()) : NaN;
     if (Number.isFinite(currentSize) && currentSize > 0) {
@@ -179,6 +192,7 @@ async function resolveAndroidRecordingSize(params: {
 
   const sizeResult = await runAndroidRecordingAdb(deviceId, ['shell', 'wm', 'size'], {
     allowFailure: true,
+    timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS,
   });
   const match =
     sizeResult.stdout.match(/Override size:\s*(\d+)x(\d+)/) ??
@@ -229,12 +243,14 @@ function buildAndroidScreenrecordCommand(
 async function cleanupAndroidRemoteRecording(deviceId: string, remotePath: string): Promise<void> {
   await runAndroidRecordingAdb(deviceId, ['shell', 'rm', '-f', remotePath], {
     allowFailure: true,
+    timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS,
   });
 }
 
 async function forceStopAndroidProcess(deviceId: string, pid: string): Promise<boolean> {
   const forceResult = await runAndroidRecordingAdb(deviceId, ['shell', 'kill', '-9', pid], {
     allowFailure: true,
+    timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS,
   });
   emitDiagnostic({
     level: 'warn',
@@ -258,64 +274,105 @@ async function startAndroidScreenrecordChunk(params: {
   recordingSize: AndroidRecordingSize | undefined;
   quality: RecordingExportQuality;
   preferredRemoteDir?: string;
+  hooks?: AndroidRecordingChunkStartHooks;
 }): Promise<AndroidRecordingChunkStart | { error: DaemonResponse }> {
-  const { device, recordingSize, quality, preferredRemoteDir } = params;
+  const { device, recordingSize, quality, preferredRemoteDir, hooks } = params;
   let lastStartError =
     'failed to start recording: Android screenrecord did not begin producing frames';
 
   for (const remotePath of androidRemoteRecordingPaths(Date.now(), preferredRemoteDir)) {
-    const startResult = await runAndroidRecordingAdb(
-      device.id,
-      ['shell', buildAndroidScreenrecordCommand(remotePath, recordingSize, quality)],
-      {
-        allowFailure: true,
-      },
-    );
-    if (startResult.exitCode !== 0) {
-      lastStartError = `failed to start recording: ${formatRecordTraceExecFailure(startResult, 'adb shell screenrecord')}`;
-      continue;
-    }
-
-    const remotePid = parseAndroidRemotePid(startResult.stdout);
-    if (!remotePid) {
-      lastStartError =
-        'failed to start recording: adb did not return a valid Android screenrecord pid';
-      await cleanupAndroidRemoteRecording(device.id, remotePath);
-      continue;
-    }
-
-    emitDiagnostic({
-      level: 'debug',
-      phase: 'record_start_android_started',
-      data: {
-        deviceId: device.id,
-        remotePath,
-        remotePid,
-      },
+    const attempt = await tryStartAndroidScreenrecordAtPath({
+      device,
+      recordingSize,
+      quality,
+      remotePath,
+      hooks,
     });
-
-    if (await waitForAndroidRecordingReady(device.id, remotePath, remotePid)) {
-      return {
-        remotePath,
-        remotePid,
-        startedAt: Date.now(),
-      };
+    if (attempt.kind === 'started') {
+      return attempt.chunk;
     }
-
-    lastStartError =
-      'failed to start recording: Android screenrecord did not begin producing frames';
-    await forceStopAndroidProcess(device.id, remotePid);
-    await cleanupAndroidRemoteRecording(device.id, remotePath);
+    lastStartError = attempt.message;
   }
 
   return { error: errorResponse('COMMAND_FAILED', lastStartError) };
 }
 
+async function tryStartAndroidScreenrecordAtPath(params: {
+  device: AndroidDevice;
+  recordingSize: AndroidRecordingSize | undefined;
+  quality: RecordingExportQuality;
+  remotePath: string;
+  hooks?: AndroidRecordingChunkStartHooks;
+}): Promise<AndroidRecordingChunkStartAttempt> {
+  const { device, recordingSize, quality, remotePath, hooks } = params;
+  const prepareError = await hooks?.prepareRemotePath?.(remotePath);
+  if (prepareError) {
+    return { kind: 'failed', message: prepareError };
+  }
+
+  const startResult = await runAndroidRecordingAdb(
+    device.id,
+    ['shell', buildAndroidScreenrecordCommand(remotePath, recordingSize, quality)],
+    {
+      allowFailure: true,
+      timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS,
+    },
+  );
+  if (startResult.exitCode !== 0) {
+    await hooks?.cleanupPreparedRemotePath?.(remotePath);
+    return {
+      kind: 'failed',
+      message: `failed to start recording: ${formatRecordTraceExecFailure(startResult, 'adb shell screenrecord')}`,
+    };
+  }
+
+  const remotePid = parseAndroidRemotePid(startResult.stdout);
+  if (!remotePid) {
+    await hooks?.cleanupPreparedRemotePath?.(remotePath);
+    await cleanupAndroidRemoteRecording(device.id, remotePath);
+    return {
+      kind: 'failed',
+      message: 'failed to start recording: adb did not return a valid Android screenrecord pid',
+    };
+  }
+
+  emitDiagnostic({
+    level: 'debug',
+    phase: 'record_start_android_started',
+    data: {
+      deviceId: device.id,
+      remotePath,
+      remotePid,
+    },
+  });
+
+  if (await waitForAndroidRecordingReady(device.id, remotePath, remotePid)) {
+    return {
+      kind: 'started',
+      chunk: {
+        remotePath,
+        remotePid,
+        startedAt: Date.now(),
+      },
+    };
+  }
+
+  await forceStopAndroidProcess(device.id, remotePid);
+  await hooks?.cleanupPreparedRemotePath?.(remotePath);
+  await cleanupAndroidRemoteRecording(device.id, remotePath);
+  return {
+    kind: 'failed',
+    message: 'failed to start recording: Android screenrecord did not begin producing frames',
+  };
+}
+
 export async function startAndroidRecording(params: {
+  sessionName: string;
+  activeSession: SessionState;
   device: AndroidDevice;
   recordingBase: AndroidRecordingBase;
 }): Promise<DaemonResponse | AndroidRecording> {
-  const { device, recordingBase } = params;
+  const { sessionName, activeSession, device, recordingBase } = params;
   let recordingSize: AndroidRecordingSize | undefined;
   try {
     recordingSize = await resolveAndroidRecordingSize({
@@ -327,18 +384,47 @@ export async function startAndroidRecording(params: {
   }
 
   const quality = recordingBase.exportQuality ?? DEFAULT_RECORDING_EXPORT_QUALITY;
+  const recordingId = randomUUID();
   const chunk = await startAndroidScreenrecordChunk({
     device,
     recordingSize,
     quality,
+    hooks: {
+      prepareRemotePath: async (remotePath) =>
+        await writeAndroidRecoveryPendingMetadata({
+          deviceId: device.id,
+          sessionName,
+          sessionScope: activeSession.sessionScope,
+          recordingId,
+          startedAt: recordingBase.startedAt,
+          showTouches: recordingBase.showTouches,
+          remotePath,
+        }),
+      cleanupPreparedRemotePath: async () => {
+        await cleanupAndroidRecoveryMetadata(device.id);
+      },
+    },
   });
   if ('error' in chunk) {
     return chunk.error;
   }
 
-  const recording = buildAndroidRecording({ recordingBase, chunk });
-  await writeAndroidRecoveryMetadataForChunk(device.id, chunk);
+  const recording = buildAndroidRecording({ recordingBase, chunk, recordingId });
+  const metadataError = await writeAndroidRecoveryMetadata({
+    deviceId: device.id,
+    sessionName,
+    sessionScope: activeSession.sessionScope,
+    recording,
+  });
+  if (metadataError) {
+    await forceStopAndroidProcess(device.id, recording.remotePid);
+    await cleanupAndroidRemoteRecording(device.id, recording.remotePath);
+    await cleanupAndroidRecoveryMetadata(device.id);
+    return errorResponse('COMMAND_FAILED', `failed to start recording: ${metadataError}`);
+  }
   scheduleAndroidRecordingChunks({
+    activeSession,
+    sessionName,
     device,
     recording,
     recordingSize,
@@ -350,12 +436,15 @@ export async function startAndroidRecording(params: {
 function buildAndroidRecording(params: {
   recordingBase: AndroidRecordingBase;
   chunk: AndroidRecordingChunkStart;
+  recordingId: string;
 }): AndroidRecording {
-  const { recordingBase, chunk } = params;
+  const { recordingBase, chunk, recordingId } = params;
   return {
     platform: 'android',
+    recordingId,
     remotePath: chunk.remotePath,
     remotePid: chunk.remotePid,
+    remoteStartedAt: chunk.startedAt,
     chunks: [
       {
         index: 1,
@@ -368,38 +457,53 @@ function buildAndroidRecording(params: {
   };
 }
 
-async function writeAndroidRecoveryMetadataForChunk(
-  deviceId: string,
-  chunk: AndroidRecordingChunkStart,
-): Promise<void> {
-  await writeAndroidRecoveryMetadata(deviceId, {
-    remotePath: chunk.remotePath,
-    remotePid: chunk.remotePid,
-    startedAt: chunk.startedAt,
-  });
-}
-
 function scheduleAndroidRecordingChunks(params: {
+  activeSession: SessionState;
+  sessionName: string;
   device: AndroidDevice;
   recording: AndroidRecording;
   recordingSize: AndroidRecordingSize | undefined;
   quality: RecordingExportQuality;
 }): void {
-  const { device, recording, recordingSize, quality } = params;
+  const { activeSession, sessionName, device, recording, recordingSize, quality } = params;
   scheduleAndroidRecordingRotation({
     recording,
-    finishCurrentChunk: async () =>
+    finishCurrentChunk: async (chunk) =>
       await finishCurrentAndroidRecordingChunk({
         device,
         recording,
+        remotePath: chunk.remotePath,
+        remotePid: chunk.remotePid,
         waitForRemoteFileStability: false,
       }),
-    startNextChunk: async (preferredRemoteDir) => {
+    cleanupStartedChunk: async (chunk) => {
+      await cleanupAndroidRemoteRecording(device.id, chunk.remotePath);
+    },
+    startNextChunk: async (preferredRemoteDir, nextIndex) => {
       const nextChunk = await startAndroidScreenrecordChunk({
         device,
         recordingSize,
         quality,
         preferredRemoteDir,
+        hooks: {
+          prepareRemotePath: async (remotePath) =>
+            await writeAndroidRecoveryRotatingMetadata({
+              deviceId: device.id,
+              sessionName,
+              sessionScope: activeSession.sessionScope,
+              recording,
+              nextRemotePath: remotePath,
+              nextIndex,
+            }),
+          cleanupPreparedRemotePath: async () => {
+            await writeAndroidRecoveryMetadata({
+              deviceId: device.id,
+              sessionName,
+              sessionScope: activeSession.sessionScope,
+              recording,
+            });
+          },
+        },
       });
       if ('error' in nextChunk) {
         throw new Error(
@@ -408,8 +512,18 @@ function scheduleAndroidRecordingChunks(params: {
             : nextChunk.error.error.message,
         );
       }
-      await writeAndroidRecoveryMetadataForChunk(device.id, nextChunk);
       return nextChunk;
+    },
+    persistRecordingState: async (updatedRecording) => {
+      const metadataError = await writeAndroidRecoveryMetadata({
+        deviceId: device.id,
+        sessionName,
+        sessionScope: activeSession.sessionScope,
+        recording: updatedRecording,
+      });
+      if (metadataError) {
+        throw new Error(metadataError);
+      }
     },
   });
 }
@@ -417,28 +531,33 @@ function scheduleAndroidRecordingChunks(params: {
 async function finishCurrentAndroidRecordingChunk(params: {
   device: AndroidDevice;
   recording: AndroidRecording;
+  remotePath?: string;
+  remotePid?: string;
   waitForRemoteFileStability?: boolean;
 }): Promise<string | undefined> {
-  const { device, recording, waitForRemoteFileStability = true } = params;
-  const wasRunningBeforeStop = await isAndroidProcessRunning(device.id, recording.remotePid);
+  const {
+    device,
+    recording,
+    remotePath = recording.remotePath,
+    remotePid = recording.remotePid,
+    waitForRemoteFileStability = true,
+  } = params;
+  const wasRunningBeforeStop = await isAndroidProcessRunning(device.id, remotePid);
   if (!wasRunningBeforeStop) {
     appendAndroidRecordingWarning(recording, resolveAndroidScreenrecordLimitWarning(recording));
   }
 
-  const stopResult = await runAndroidRecordingAdb(
-    device.id,
-    ['shell', 'kill', '-2', recording.remotePid],
-    {
-      allowFailure: true,
-    },
-  );
+  const stopResult = await runAndroidRecordingAdb(device.id, ['shell', 'kill', '-2', remotePid], {
+    allowFailure: true,
+    timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS,
+  });
   emitDiagnostic({
     level: 'debug',
     phase: 'record_stop_android_signal',
     data: {
       deviceId: device.id,
-      remotePath: recording.remotePath,
-      remotePid: recording.remotePid,
+      remotePath,
+      remotePid,
       exitCode: stopResult.exitCode,
       stdout: stopResult.stdout.trim(),
       stderr: stopResult.stderr.trim(),
@@ -446,15 +565,15 @@ async function finishCurrentAndroidRecordingChunk(params: {
   });
 
   if (stopResult.exitCode !== 0) {
-    return await recoverAndroidStopSignalFailure(device.id, recording.remotePid, stopResult);
+    return await recoverAndroidStopSignalFailure(device.id, remotePid, stopResult);
   }
-  const exitError = await waitForAndroidStopExit(device.id, recording.remotePid);
+  const exitError = await waitForAndroidStopExit(device.id, remotePid);
   if (exitError) {
     return exitError;
   }
 
   if (waitForRemoteFileStability) {
-    await waitForAndroidRemoteFileStability(device.id, recording.remotePath);
+    await waitForAndroidRemoteFileStability(device.id, remotePath);
   }
   return undefined;
 }
@@ -590,6 +709,7 @@ async function cleanupRemoteAndroidRecordingChunk(
 ): Promise<string | undefined> {
   const rmResult = await runAndroidRecordingAdb(deviceId, ['shell', 'rm', '-f', remotePath], {
     allowFailure: true,
+    timeoutMs: ANDROID_RECORDING_PROBE_TIMEOUT_MS,
   });
   emitDiagnostic({
     level: 'debug',
