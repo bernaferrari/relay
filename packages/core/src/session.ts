@@ -11,7 +11,7 @@ import {
   type RunActionOptions,
   type RunActionResult,
 } from "./actions.js";
-import { createDevice } from "./device.js";
+import { createDevice, type Device } from "./device.js";
 import {
   glyphsFromLogLine,
   planForAction,
@@ -37,6 +37,8 @@ import {
   raceCancel,
   hardStopDeviceSession,
 } from "./control.js";
+import { readRecipe, describeRecipeStep, glyphsForStep } from "./recipes.js";
+import { runRecipeStep } from "./recipe-runner.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -71,7 +73,9 @@ export type JobErrorCode =
 
 export type TestJob = {
   id: string;
-  action: ActionId;
+  action: string;
+  /** recipe id when this job runs a recipe (action == recipeId for naming) */
+  recipeId?: string;
   serial?: string;
   /** Human device name from agent-device list */
   deviceName?: string;
@@ -141,41 +145,68 @@ function remember(job: TestJob): void {
 }
 
 export type EnqueueJobInput = {
-  action: string;
+  /** legacy coded action id (mutually exclusive with `recipe`) */
+  action?: string;
+  /** recipe id — runs a JSON recipe instead of a coded action */
+  recipe?: string;
   serial?: string;
   prodAccountMatch?: string;
   /** retry a failed job — enables heal if success */
   retryOf?: string;
+  /** provisional title for recipe jobs (recipe id is used if absent) */
+  title?: string;
 };
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
-  if (!isActionId(input.action)) {
-    throw new Error(`Unknown action: ${input.action}`);
-  }
-  const plan = planForAction(input.action);
-  const meta = getAction(input.action);
   const parent = input.retryOf ? jobs.get(input.retryOf) : undefined;
-  return {
-    id: randomUUID(),
-    action: input.action,
+  const id = randomUUID();
+  const baseJob = {
+    id,
     serial: input.serial?.trim() || parent?.serial || undefined,
     deviceName: parent?.deviceName,
-    platform: "android",
-    status: "queued",
+    platform: "android" as const,
+    status: "queued" as const,
     queuedAt: now(),
-    logs: [],
+    logs: [] as string[],
     attempts: parent ? parent.attempts + 1 : attemptSeed,
     retryOf: input.retryOf,
     previousError: parent?.error ?? parent?.previousError,
-    steps: [],
-    frames: [],
-    glyphs: plan.glyphs,
-    kind: plan.kind,
-    tone: plan.tone,
-    title: meta?.title ?? input.action,
+    steps: [] as TraceStep[],
+    frames: [] as TraceFrameRef[],
     options: {
       prodAccountMatch: input.prodAccountMatch ?? parent?.options?.prodAccountMatch,
     },
+  };
+
+  // Recipe job: action doubles as the recipe id so history/run-dir naming keeps working.
+  // The recipe is resolved (title/steps) inside executeJob; enqueue stays sync.
+  if (input.recipe) {
+    const recipeId = input.recipe;
+    return {
+      ...baseJob,
+      action: recipeId,
+      recipeId,
+      glyphs: ["ai", "wait"],
+      kind: "Replay",
+      tone: "acc",
+      title: input.title ?? recipeId,
+    };
+  }
+
+  // Legacy coded-action job
+  const action = input.action;
+  if (!action || !isActionId(action)) {
+    throw new Error(`Unknown action: ${action ?? "(none)"}`);
+  }
+  const plan = planForAction(action);
+  const meta = getAction(action);
+  return {
+    ...baseJob,
+    action,
+    glyphs: plan.glyphs,
+    kind: plan.kind,
+    tone: plan.tone,
+    title: meta?.title ?? action,
   };
 }
 
@@ -203,10 +234,12 @@ export function retryJob(id: string): TestJob {
   const parent = jobs.get(id);
   if (!parent) throw new Error(`Unknown job: ${id}`);
   return enqueueJob({
-    action: parent.action,
+    action: parent.recipeId ? undefined : parent.action,
+    recipe: parent.recipeId,
     serial: parent.serial,
     prodAccountMatch: parent.options?.prodAccountMatch,
     retryOf: parent.id,
+    title: parent.title,
   });
 }
 
@@ -388,6 +421,63 @@ export function cancelActiveJob(): TestJob | null {
   return cancelJob(active.id);
 }
 
+/** Legacy coded-action path: dispatch to runAction under cancel race. */
+async function runLegacyAction(
+  job: TestJob,
+  device: Device,
+  pushLog: (line: string) => void,
+): Promise<RunActionResult> {
+  // makeJob guarantees legacy jobs carry a valid ActionId; narrow to satisfy types.
+  if (!isActionId(job.action)) {
+    throw new Error(`not a legacy action: ${job.action}`);
+  }
+  const opts: RunActionOptions = {
+    onLog: (line) => {
+      throwIfCancelled(job.id);
+      pushLog(line);
+    },
+  };
+  return await raceCancel(runAction(device, job.action, opts), job.id);
+}
+
+/**
+ * Recipe path: load the recipe, run each step as a real TraceStep. Cancel
+ * propagates from device ops (controlled/raceCancel) and is rethrown so the
+ * shared catch path finalizes the job. `setCurrentStep` routes per-step logs.
+ */
+async function runRecipeSteps(
+  job: TestJob,
+  device: Device,
+  pushLog: (line: string) => void,
+  setCurrentStep: (step: TraceStep | undefined) => void,
+): Promise<void> {
+  const recipeId = job.recipeId;
+  if (!recipeId) throw new Error("recipe job has no recipeId");
+  const recipe = await readRecipe(recipeId);
+  if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
+  pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
+  for (const step of recipe.steps) {
+    await cooperativeCheckpoint(job.id);
+    const ts = openStep(job, {
+      kind: "Replay",
+      tone: "acc",
+      title: describeRecipeStep(step),
+      glyphs: glyphsForStep(step),
+      status: "running",
+    });
+    setCurrentStep(ts);
+    try {
+      await runRecipeStep(device, step, { log: pushLog, job });
+      finishStep(ts, "ok");
+    } catch (err) {
+      finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
+      setCurrentStep(undefined);
+      throw err;
+    }
+  }
+  setCurrentStep(undefined);
+}
+
 async function executeJob(id: string): Promise<void> {
   const job = jobs.get(id);
   if (!job) return;
@@ -425,13 +515,19 @@ async function executeJob(id: string): Promise<void> {
     process.env.PROD_ACCOUNT_MATCH = job.options.prodAccountMatch.trim();
   }
 
+  const isRecipeJob = Boolean(job.recipeId);
+
+  // Legacy jobs build cosmetic phase steps advanced by log-line regexes.
+  // Recipe jobs open real TraceSteps one-per-step in runRecipeSteps.
   const plan = planForAction(job.action);
   const stepKind = job.retryOf ? ("Healed" as const) : plan.kind;
   const stepTone = job.retryOf ? ("heal" as const) : plan.tone;
-
-  // Fine-grained steps from recipe plan (pause/cancel between phases via checkpoints in device ops)
   const phaseSpecs =
-    plan.planned.length > 0 ? plan.planned : [{ title: job.title, glyphs: plan.glyphs as Glyph[] }];
+    !isRecipeJob && plan.planned.length > 0
+      ? plan.planned
+      : !isRecipeJob
+        ? [{ title: job.title, glyphs: plan.glyphs as Glyph[] }]
+        : [];
 
   const phaseSteps: TraceStep[] = phaseSpecs.map((p, i) =>
     openStep(job, {
@@ -450,13 +546,16 @@ async function executeJob(id: string): Promise<void> {
   );
 
   let phaseIdx = 0;
+  let currentRecipeStep: TraceStep | undefined;
   const currentPhase = () => phaseSteps[Math.min(phaseIdx, phaseSteps.length - 1)];
+  const logTarget = () => (phaseSteps.length > 0 ? currentPhase() : currentRecipeStep);
 
   const pushLog = (line: string) => {
     job.logs.push(line);
-    appendStepLog(currentPhase(), line);
-    // Advance phase on major progress markers so pause has clearer boundaries
+    appendStepLog(logTarget(), line);
+    // Advance phase on major progress markers so pause has clearer boundaries (legacy only)
     if (
+      phaseSteps.length > 0 &&
       phaseIdx < phaseSteps.length - 1 &&
       (line.startsWith("==>") || /ensure|restore|update|install|login|sign out|chooser/i.test(line))
     ) {
@@ -476,7 +575,7 @@ async function executeJob(id: string): Promise<void> {
     publish({ type: "job.log", at: now(), jobId: job.id, line, level });
   };
 
-  const primary = () => currentPhase() ?? phaseSteps[0]!;
+  const primary = () => currentPhase() ?? currentRecipeStep ?? job.steps[job.steps.length - 1];
 
   try {
     await cooperativeCheckpoint(id);
@@ -485,12 +584,6 @@ async function executeJob(id: string): Promise<void> {
     // bind the selected device cleanly (avoids "session already bound").
     await hardStopDeviceSession();
     const device = createDevice();
-    const opts: RunActionOptions = {
-      onLog: (line) => {
-        throwIfCancelled(id);
-        pushLog(line);
-      },
-    };
 
     // Heartbeat: surface cancel even during long SDK calls; hard-stop session
     let pendingCancel: Error | null = null;
@@ -503,9 +596,16 @@ async function executeJob(id: string): Promise<void> {
       }
     }, 50);
 
-    let result: RunActionResult;
+    let result: { ok: boolean; result?: unknown; error?: string };
     try {
-      result = await raceCancel(runAction(device, job.action, opts), id);
+      if (isRecipeJob) {
+        await runRecipeSteps(job, device, pushLog, (s) => {
+          currentRecipeStep = s;
+        });
+        result = { ok: true, result: "recipe completed" };
+      } else {
+        result = await runLegacyAction(job, device, pushLog);
+      }
       if (pendingCancel) throw pendingCancel;
     } finally {
       clearInterval(heartbeat);
@@ -516,8 +616,8 @@ async function executeJob(id: string): Promise<void> {
 
     if (result.ok) {
       const wasRetry = Boolean(job.retryOf && job.previousError);
-      // close any open phases as ok
-      for (const s of phaseSteps) {
+      // close any open steps as ok (legacy phases + recipe steps alike)
+      for (const s of job.steps) {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "ok");
       }
       if (wasRetry) {
@@ -526,11 +626,13 @@ async function executeJob(id: string): Promise<void> {
         job.healMessage = `Recovered after failure: ${job.previousError}. Recipe re-ran successfully on attempt ${job.attempts}.`;
         job.tone = "heal";
         job.kind = "Healed";
-        const last = phaseSteps[phaseSteps.length - 1]!;
-        last.tone = "heal";
-        last.kind = "Healed";
-        last.heal = job.healMessage;
-        finishStep(last, "healed", `✓ healed · ${result.result ?? "ok"}`);
+        const last = job.steps[job.steps.length - 1];
+        if (last) {
+          last.tone = "heal";
+          last.kind = "Healed";
+          last.heal = job.healMessage;
+          finishStep(last, "healed", `✓ healed · ${result.result ?? "ok"}`);
+        }
         publish({
           type: "job.healed",
           at: job.finishedAt,
@@ -540,7 +642,8 @@ async function executeJob(id: string): Promise<void> {
         });
       } else {
         job.status = "ok";
-        finishStep(primary(), "ok", `✓ ${result.result ?? "ok"}`);
+        const p = primary();
+        if (p) finishStep(p, "ok", `✓ ${result.result ?? "ok"}`);
       }
       job.result = result.result;
       job.error = undefined;
@@ -549,10 +652,11 @@ async function executeJob(id: string): Promise<void> {
       job.status = "error";
       job.error = result.error;
       job.errorCode = classifyError(result.error ?? "failed");
-      for (const s of phaseSteps) {
+      for (const s of job.steps) {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
       }
-      finishStep(primary(), "error", `✗ ${result.error}`);
+      const pe = primary();
+      if (pe) finishStep(pe, "error", `✗ ${result.error}`);
     }
 
     publish({
@@ -576,7 +680,7 @@ async function executeJob(id: string): Promise<void> {
       (err instanceof Error && err.name === "JobCancelledError")
     ) {
       pushLog("==> CANCELLED");
-      for (const s of phaseSteps) {
+      for (const s of job.steps) {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
       }
       finalizeCancelled(job, primary());
@@ -587,10 +691,11 @@ async function executeJob(id: string): Promise<void> {
     job.status = "error";
     job.error = message;
     job.errorCode = classifyError(message);
-    for (const s of phaseSteps) {
+    for (const s of job.steps) {
       if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
     }
-    finishStep(primary(), "error", `✗ ${message}`);
+    const pe = primary();
+    if (pe) finishStep(pe, "error", `✗ ${message}`);
     pushLog(`==> FAIL: ${message}`);
     publish({
       type: "job.finished",
