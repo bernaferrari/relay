@@ -954,10 +954,10 @@ html[data-color-scheme="light"] .qa::before {
 .stage__meta {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   width: 100%;
-  max-width: 560px;
-  margin-bottom: 18px;
+  height: 44px;
+  flex: none;
   z-index: 2;
 }
 .stage__step {
@@ -980,7 +980,7 @@ html[data-color-scheme="light"] .qa::before {
   font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: -0.014em;
-  color: var(--v2-text-text-base);
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -991,8 +991,13 @@ html[data-color-scheme="light"] .qa::before {
   position: relative;
   width: min(280px, 40vh);
   aspect-ratio: 9 / 19.5;
-  max-height: 56vh;
+  max-height: calc(100% - 160px);
+  margin-block: auto;
   z-index: 2;
+  box-shadow: 0 24px 48px -24px rgb(0 0 0 / 0.5);
+}
+html[data-color-scheme="light"] .bezel {
+  box-shadow: 0 16px 40px -20px rgb(0 0 0 / 0.25);
 }
 .glass {
   position: relative;
@@ -1180,12 +1185,9 @@ html[data-color-scheme="light"] .qa::before {
 .stage__controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 14px;
+  justify-content: center;
+  margin-top: 16px;
   z-index: 2;
-}
-.stage__controls-spacer {
-  flex: 1;
 }
 .seg {
   display: inline-flex;
@@ -1199,13 +1201,13 @@ html[data-color-scheme="light"] .qa::before {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 13px;
+  height: 32px;
+  padding: 0 14px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--v2-text-text-muted);
-  font-size: var(--fs-meta);
+  font-size: var(--fs-body);
   font-weight: 500;
   cursor: pointer;
   transition:
@@ -1245,8 +1247,8 @@ html[data-color-scheme="light"] .qa::before {
   z-index: 2;
 }
 .stage__no-device-icon {
-  width: 64px;
-  height: 64px;
+  width: 56px;
+  height: 56px;
   display: grid;
   place-items: center;
   margin-bottom: 10px;

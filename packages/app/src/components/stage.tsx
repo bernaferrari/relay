@@ -366,7 +366,7 @@ export function DeviceStage() {
         fallback={
           <div class="stage__no-device">
             <span class="stage__no-device-icon" aria-hidden="true">
-              <Icon name="smartphone" size={34} strokeWidth={1.3} />
+              <Icon name="smartphone" size={28} strokeWidth={1.3} />
             </span>
             <p class="stage__no-device-title">No device connected</p>
             <p class="stage__no-device-hint">
@@ -629,7 +629,6 @@ export function DeviceStage() {
               Record
             </button>
           </div>
-          <span class="stage__controls-spacer" />
           <button
             type="button"
             class="btn btn-ghost top__icon-btn"
