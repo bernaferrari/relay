@@ -2,7 +2,7 @@
  * OpenCode-style left rail: recipes + run history (clean rows, no chip soup).
  */
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import { useServer, type RecipeInfo } from "../context/server";
+import { useServer, type RecipeInfo, type JobInfo } from "../context/server";
 import { useRecorder } from "../context/recorder";
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
@@ -65,8 +65,16 @@ export function Sidebar() {
 
   const select = (id: string) => {
     server.setSelectedRecipeId(id);
+    server.setPersistedRunId(null);
     server.setPanelTab("steps");
   };
+
+  /** Disk-only runs: persisted runs with no matching live job (plan 008 step 4).
+   *  Folded into History so the Artifacts tab's one useful residue survives. */
+  const diskOnlyRuns = createMemo(() => {
+    const live = new Set(server.jobs().map((j) => j.id));
+    return server.persistedRuns().filter((r) => !live.has(r.id));
+  });
 
   return (
     <aside class="sidebar" aria-label="Recipes and history">
@@ -222,11 +230,11 @@ export function Sidebar() {
       <div class="sidebar__section sidebar__section--history">
         <div class="sidebar__head">
           <span class="sidebar__label">History</span>
-          <span class="sidebar__count mono">{server.jobs().length}</span>
+          <span class="sidebar__count mono">{server.jobs().length + diskOnlyRuns().length}</span>
         </div>
         <div class="sidebar__scroll">
           <Show
-            when={server.jobs().length > 0}
+            when={server.jobs().length > 0 || diskOnlyRuns().length > 0}
             fallback={
               <p class="sidebar__empty-hint">Runs appear here. Double-click a recipe to start.</p>
             }
@@ -243,6 +251,7 @@ export function Sidebar() {
                     }}
                     onClick={() => {
                       server.jumpToJob(j.id);
+                      server.setPersistedRunId(null);
                       server.setPanelTab("steps");
                     }}
                   >
@@ -287,6 +296,41 @@ export function Sidebar() {
                 </div>
               )}
             </For>
+            <Show when={diskOnlyRuns().length > 0}>
+              <div class="sidebar__group-label">Disk</div>
+              <For each={diskOnlyRuns()}>
+                {(run) => (
+                  <div class="nav-row-wrap">
+                    <button
+                      type="button"
+                      class="nav-row nav-row--job"
+                      classList={{ on: server.persistedRunId() === run.id }}
+                      title={`Disk run · ${run.dir}`}
+                      onClick={() => {
+                        server.setSelectedJobId(null);
+                        server.setPersistedRunId(run.id);
+                        server.setPanelTab("steps");
+                      }}
+                    >
+                      <span
+                        class={`nav-row__dot nav-row__dot--${statusTone(run.status as JobInfo["status"])}`}
+                        aria-hidden
+                      />
+                      <span class="nav-row__title">{run.action}</span>
+                      <span class="nav-row__meta mono">
+                        <span class={`tone tone--${statusTone(run.status as JobInfo["status"])}`}>
+                          {run.healed ? "healed" : run.status}
+                        </span>
+                        <span class="nav-row__sep">·</span>
+                        <span class="nav-row__disk">disk</span>
+                        <span class="nav-row__sep">·</span>
+                        <span>{run.frames?.length ?? 0}f</span>
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </For>
+            </Show>
           </Show>
         </div>
       </div>

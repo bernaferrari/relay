@@ -581,6 +581,17 @@ export function DeviceStage() {
             Clear
           </button>
         </Show>
+        <button
+          type="button"
+          class="btn btn-ghost"
+          classList={{ "btn-ghost--on": server.showOverlays() }}
+          title="Highlight elements on hover (⌘O)"
+          aria-pressed={server.showOverlays()}
+          onClick={() => server.setShowOverlays(!server.showOverlays())}
+        >
+          <Icon name="pointer" size={14} />
+          Hover
+        </button>
       </div>
       <RecorderBar />
     </section>

@@ -163,6 +163,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         title: "Panel: Steps",
         group: "Workspace",
         keybind: "mod+1",
+        disabled: () => server.layout() === "deck",
         run: () => server.setPanelTab("steps"),
       },
       {
@@ -170,6 +171,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         title: "Panel: Summary",
         group: "Workspace",
         keybind: "mod+2",
+        disabled: () => server.layout() === "deck",
         run: () => server.setPanelTab("summary"),
       },
       {
@@ -177,6 +179,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         title: "Panel: Inspector",
         group: "Workspace",
         keybind: "mod+3",
+        disabled: () => server.layout() === "deck",
         run: () => server.setPanelTab("inspector"),
       },
       {
@@ -184,6 +187,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         title: "Panel: Artifacts",
         group: "Workspace",
         keybind: "mod+4",
+        disabled: () => server.layout() === "deck",
         run: () => server.setPanelTab("artifacts"),
       },
       {

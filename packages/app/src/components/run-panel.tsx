@@ -624,14 +624,6 @@ function InspectorBody() {
             Capturing…
           </Show>
         </button>
-        <label class="check-row">
-          <input
-            type="checkbox"
-            checked={server.showOverlays()}
-            onChange={(e) => server.setShowOverlays(e.currentTarget.checked)}
-          />
-          Highlight elements on hover
-        </label>
       </div>
       <Show
         when={server.snapshot()}
