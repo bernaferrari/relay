@@ -1,6 +1,7 @@
 import { createSignal, createEffect } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
 import { useServer, type SnapshotNode, type RecipeStep, type StepTarget } from "./server";
+import { nodeAtPoint } from "../lib/snapshot";
 import { toast } from "./toast";
 
 /**
@@ -105,31 +106,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     const [recording, setRecording] = createSignal(false);
     const [steps, setSteps] = createSignal<RecipeStep[]>([]);
 
-    /** Most specific a11y node containing the fractional point (null if none). */
-    function nodeAt(fx: number, fy: number): SnapshotNode | null {
-      const snap = server.snapshot();
-      if (!snap?.bounds) return null;
-      const bw = snap.bounds.width;
-      const bh = snap.bounds.height;
-      let best: SnapshotNode | null = null;
-      let bestArea = Infinity;
-      for (const n of snap.nodes) {
-        if (!n.rect) continue;
-        const nx = n.rect.x / bw;
-        const ny = n.rect.y / bh;
-        const nw = n.rect.width / bw;
-        const nh = n.rect.height / bh;
-        if (fx >= nx && fx <= nx + nw && fy >= ny && fy <= ny + nh) {
-          const area = nw * nh;
-          if (area > 0 && area < bestArea) {
-            best = n;
-            bestArea = area;
-          }
-        }
-      }
-      return best;
-    }
-
     /** Execute a tap target on the device, preferring ref → label → point. */
     async function executeTap(target: StepTarget, caption?: string): Promise<boolean> {
       if (target.ref) {
@@ -159,7 +135,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!server.snapshot()?.bounds) {
         await server.captureUiSnapshot().catch(() => undefined);
       }
-      const node = nodeAt(fx, fy);
+      const node = nodeAtPoint(server.snapshot(), fx, fy);
       const target = buildTapTarget(server.snapshot()?.bounds, node, fx, fy);
       const step: RecipeStep = { kind: "tap", target };
       const ok = await executeTap(target, describeStep(step));

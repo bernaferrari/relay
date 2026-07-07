@@ -44,7 +44,8 @@ export type IconName =
   | "sparkle"
   | "circle"
   | "dot"
-  | "wave";
+  | "wave"
+  | "plus";
 
 type Path = { d: string; fill?: boolean };
 
@@ -108,6 +109,7 @@ const STROKE: Record<string, Path[]> = {
   bag: [{ d: "M5 7h14l-1 13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 7z" }, { d: "M9 7a3 3 0 0 1 6 0" }],
   login: [{ d: "M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l4 4-4 4M14 12H3" }],
   wave: [{ d: "M3 12c2 0 2-5 4-5s2 10 4 10 2-10 4-10 2 5 4 5" }],
+  plus: [{ d: "M12 5v14M5 12h14" }],
 };
 
 const FILL: Record<string, Path[]> = {
@@ -116,14 +118,12 @@ const FILL: Record<string, Path[]> = {
     { d: "M6 4.5h4v15H6z", fill: true },
     { d: "M14 4.5h4v15h-4z", fill: true },
   ],
-  square: [{ d: "M6 6h12v12H6z", fill: true }],
   sparkle: [
     {
       d: "M12 2c.4 3.4 1.6 4.6 5 5-3.4.4-4.6 1.6-5 5-.4-3.4-1.6-4.6-5-5 3.4-.4 4.6-1.6 5-5z",
       fill: true,
     },
   ],
-  bolt: [{ d: "M13 2 4 14h7l-1 8 9-12h-7z", fill: true }],
   circle: [{ d: "M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0", fill: true }],
   dot: [{ d: "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0", fill: true }],
 };

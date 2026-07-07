@@ -693,7 +693,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
       const serial = selectedDevice() ?? undefined;
       appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
-      setRunning(true);
+
       setPanelTab("steps");
       try {
         await captureUiScreenshot(`before · ${id}`, undefined, id).catch(() => undefined);
@@ -709,7 +709,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         toast(`Queued ${id}`, "success");
         void platform.notify?.("Specimen", `Queued ${id}`);
       } catch (err) {
-        setRunning(false);
         const msg = err instanceof Error ? err.message : String(err);
         appendLog(msg, "error");
         toast(msg, "error");
@@ -724,7 +723,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         return;
       }
       appendLog(`retry / heal ${id.slice(0, 8)}…`, "info");
-      setRunning(true);
+
       try {
         const data = await request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}/retry`, {
           method: "POST",
@@ -734,7 +733,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         setSelectedAction(data.job.action);
         void refreshJobs();
       } catch (err) {
-        setRunning(false);
         appendLog(err instanceof Error ? err.message : String(err), "error");
       }
     }
@@ -1045,6 +1043,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       pauseJob: pauseJobRemote,
       resumeJob: resumeJobRemote,
       activeJob,
+      queuedJobs,
       isPaused,
       retrySelectedJob,
       panelTab,

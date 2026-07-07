@@ -1,5 +1,6 @@
 import { For, Show, createSignal, onCleanup } from "solid-js";
 import { useServer, type SnapshotNode } from "../context/server";
+import { nodeAtPoint } from "../lib/snapshot";
 import { useRecorder, describeStep, buildTapTarget } from "../context/recorder";
 import { Icon } from "./icon";
 
@@ -23,31 +24,6 @@ export function DeviceStage() {
     vy: number;
     node: SnapshotNode | null;
   } | null>(null);
-
-  /** Smallest a11y node containing the fractional point (mirrors recorder.nodeAt). */
-  function hitNode(fx: number, fy: number): SnapshotNode | null {
-    const snap = server.snapshot();
-    if (!snap?.bounds) return null;
-    const bw = snap.bounds.width;
-    const bh = snap.bounds.height;
-    let best: SnapshotNode | null = null;
-    let bestArea = Infinity;
-    for (const n of snap.nodes) {
-      if (!n.rect) continue;
-      const nx = n.rect.x / bw;
-      const ny = n.rect.y / bh;
-      const nw = n.rect.width / bw;
-      const nh = n.rect.height / bh;
-      if (fx >= nx && fx <= nx + nw && fy >= ny && fy <= ny + nh) {
-        const area = nw * nh;
-        if (area > 0 && area < bestArea) {
-          best = n;
-          bestArea = area;
-        }
-      }
-    }
-    return best;
-  }
 
   const pickerNode = () => picker()?.node ?? null;
   const nodeLabel = () => {
@@ -203,7 +179,7 @@ export function DeviceStage() {
                   const r = e.currentTarget.getBoundingClientRect();
                   const fx = (e.clientX - r.left) / r.width;
                   const fy = (e.clientY - r.top) / r.height;
-                  const node = hitNode(fx, fy);
+                  const node = nodeAtPoint(server.snapshot(), fx, fy);
                   if (!node && !rec.recording()) {
                     setPicker(null);
                     void rec.handleTap(fx, fy);

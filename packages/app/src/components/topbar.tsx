@@ -3,6 +3,7 @@ import { useServer } from "../context/server";
 import { useCommand } from "../context/command";
 import { useTheme, type ColorScheme } from "@grok-device/ui/theme/context";
 import { Icon } from "./icon";
+import { fmtDur } from "../lib/job";
 
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();
@@ -34,18 +35,23 @@ export function Topbar(props: { onSettings: () => void }) {
 
   const runDisabledReason = () => {
     if (server.health() !== "online") return "Server is offline — start with pnpm dev:serve";
-    if (server.running()) return "A job is already running";
     if (server.isEmptyDevices()) return "No device connected — run adb devices";
     const r = server.selectedRecipe();
     if (!r) return "Select a recipe first";
-    return `Run "${r.title}"`;
+    return "";
   };
 
+  // Run always enqueues; the label/title flip to "Queue" once a job is active.
   const canRun = () =>
-    !server.running() &&
-    server.health() === "online" &&
-    !server.isEmptyDevices() &&
-    Boolean(server.selectedRecipe());
+    server.health() === "online" && !server.isEmptyDevices() && Boolean(server.selectedRecipe());
+
+  const runTitle = () => {
+    if (!canRun()) return runDisabledReason();
+    const r = server.selectedRecipe();
+    return server.activeJob()
+      ? `Queue "${r?.title}" — runs after the current job`
+      : `Run "${r?.title}"`;
+  };
 
   const popular = () => {
     const prefer = [
