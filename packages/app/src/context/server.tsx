@@ -172,6 +172,11 @@ export type Frame = {
 
 export type PanelTab = "summary" | "steps" | "inspector" | "artifacts";
 
+/** Workspace shell layout. Deck = stage + steps + drawer sidebar (default);
+ *  classic = the original 3-column + tabbed-panel layout. The toggle is an
+ *  evaluation vehicle (plan 008) and has an expiry — see maintenance notes. */
+export type LayoutMode = "deck" | "classic";
+
 function normalizeBase(url: string) {
   return url.replace(/\/+$/, "");
 }
@@ -224,11 +229,26 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [runsRoot, setRunsRoot] = createSignal("");
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
+    // Plan 008 — workspace shell layout. Deck is default; persisted to storage.
+    const [layout, setLayoutState] = createSignal<LayoutMode>("deck");
+    // Drawer state for deck mode (sidebar slides in from the left).
+    const [drawerOpen, setDrawerOpen] = createSignal(false);
+    // Persisted-run selection: when set, StepsPane renders a read-only view of
+    // a disk run's steps (disk runs folded into History by plan 008 step 4).
+    const [persistedRunId, setPersistedRunId] = createSignal<string | null>(null);
+    const [panelTab, setPanelTabState] = createSignal<PanelTab>("steps");
     const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
     const [running, setRunning] = createSignal(false);
     const [error, setError] = createSignal<string | null>(null);
     const [logs, setLogs] = createSignal<LogLine[]>([]);
-    const [panelTab, setPanelTab] = createSignal<PanelTab>("steps");
+    /** Guarded panel-tab setter: a no-op in deck mode (plan 008 step 4) so
+     *  call sites that force a tab (e.g. after capturing a snapshot) don't
+     *  drift the signal while no tab nav is shown. The single guard lives here
+     *  instead of at every call site. */
+    function setPanelTab(tab: PanelTab) {
+      if (layout() === "deck") return;
+      setPanelTabState(tab);
+    }
     const [snapshot, setSnapshot] = createSignal<SnapshotState>(null);
     const [frames, setFrames] = createSignal<Frame[]>([]);
     const [frameIndex, setFrameIndex] = createSignal(0);
@@ -271,6 +291,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setProdAccountMatchState(v);
       try {
         await platform.storage.set("prodAccountMatch", v);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    /** Set the workspace layout and persist it (plan 008). */
+    async function setLayout(value: LayoutMode) {
+      setLayoutState(value);
+      try {
+        await platform.storage.set("layout", value);
       } catch {
         /* ignore */
       }
@@ -952,6 +982,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       } catch {
         /* ignore */
       }
+      try {
+        const savedLayout = await platform.storage.get("layout");
+        if (savedLayout === "classic" || savedLayout === "deck") setLayoutState(savedLayout);
+      } catch {
+        /* ignore */
+      }
       await pollHealth();
       if (health() === "online") {
         await Promise.all([
@@ -1061,6 +1097,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,
+      setLayout,
       health,
       isOffline,
       isEmptyDevices,
@@ -1108,6 +1145,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       retrySelectedJob,
       panelTab,
       setPanelTab,
+      layout,
+      drawerOpen,
+      setDrawerOpen,
+      persistedRunId,
+      setPersistedRunId,
       snapshot,
       frames,
       frameIndex,

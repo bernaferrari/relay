@@ -199,6 +199,12 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         keybind: "mod+k",
         run: () => cmd.setOpen(true),
       },
+      {
+        id: "layout.toggle",
+        title: "Layout: switch deck ⇄ classic",
+        group: "Workspace",
+        run: () => void server.setLayout(server.layout() === "deck" ? "classic" : "deck"),
+      },
     ]);
     onCleanup(unsub);
   });
