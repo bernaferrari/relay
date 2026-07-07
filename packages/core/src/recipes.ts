@@ -72,7 +72,7 @@ function targetHasStrategy(t: StepTarget): boolean {
   return Boolean(t.ref || t.label || t.text || t.point);
 }
 
-function describeTarget(t: StepTarget): string {
+export function describeTarget(t: StepTarget): string {
   if (t.ref) return `ref ${t.ref}`;
   if (t.label) return `label "${t.label}"`;
   if (t.text) return `text "${t.text}"`;
