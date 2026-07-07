@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, createEffect } from "solid-js";
 import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
 import { describeStep } from "../context/recorder";
 import { Glyphs } from "./glyphs";
@@ -17,10 +17,19 @@ function stepTip(step: { title: string; glyphs?: string[]; durationMs?: number }
   return parts.join(" — ");
 }
 
-export function RunPanel() {
+/**
+ * Steps surface: recipe card + run header + step rows + error box + collapsible
+ * console. Shared by the classic tabbed panel (inside its Steps tab) and the
+ * deck layout (as the whole right pane). Reads contexts — no props.
+ *
+ * Plan 008 step 2 extracted this from RunPanel; step 4 added the persisted-run
+ * (disk) read-only view folded in from the retired Artifacts tab.
+ */
+export function StepsPane() {
   const server = useServer();
   const cmd = useCommand();
   const [editingRecipe, setEditingRecipe] = createSignal<RecipeInfo | null>(null);
+  const [consoleOpen, setConsoleOpen] = createSignal(false);
 
   /** The selected recipe (builtin or custom) — the single selection source. */
   const selectedRecipe = createMemo(() => server.selectedRecipe());
@@ -34,6 +43,17 @@ export function RunPanel() {
     () => server.jobs().find((j) => j.id === server.selectedJobId()) ?? null,
   );
 
+  /** Persisted-run view (disk runs folded into History by plan 008 step 4).
+   *  When a disk run with no matching live job is selected, render its steps
+   *  directly — job-selection model is live-only. */
+  const persistedRun = createMemo(() => {
+    const id = server.persistedRunId();
+    if (!id) return null;
+    const live = server.jobs().find((j) => j.id === id);
+    if (live) return null; // a live job exists — let the normal path render it
+    return server.persistedRuns().find((r) => r.id === id) ?? null;
+  });
+
   /** Device display name for the selected job's serial (falls back to serial). */
   const jobDevice = createMemo(() => {
     const j = selectedJob();
@@ -42,6 +62,8 @@ export function RunPanel() {
   });
 
   const jobLogs = createMemo(() => {
+    const run = persistedRun();
+    if (run) return run.logs.join("\n");
     const j = selectedJob();
     if (j?.steps?.length) {
       const step = j.steps[j.steps.length - 1];
@@ -57,60 +79,74 @@ export function RunPanel() {
       .join("\n");
   });
 
-  const stats = createMemo(() => {
-    const jobs = server.jobs();
-    const ok = jobs.filter((j) => j.status === "ok" && !j.healed).length;
-    const fail = jobs.filter((j) => j.status === "error").length;
-    const healed = jobs.filter((j) => j.status === "healed" || j.healed).length;
-    const run = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
-    return { total: jobs.length, ok, fail, healed, run, frames: server.frames().length };
+  // Auto-expand the console while a job is running; collapse otherwise.
+  createEffect(() => {
+    setConsoleOpen(server.running());
   });
 
   return (
-    <aside class="panel" aria-label="Run panel">
-      <div class="panel__head">
-        <div class="panel__title-row">
-          <h1 class="panel__flow">
-            {selectedRecipe()?.title ?? "No recipe selected"}
-            <Show when={selectedRecipe() && selectedRecipe()!.id !== selectedRecipe()!.title}>
-              <span class="mono panel__flow-id">{selectedRecipe()!.id}</span>
-            </Show>
-          </h1>
-          <Show when={stats().total > 0}>
-            <span class="panel__stats">
-              <span class="panel__stats-pass">{n(stats().ok, "passed")}</span> ·{" "}
-              <span class="panel__stats-fail">{n(stats().fail, "failed")}</span>
-              {stats().healed ? (
-                <span class="panel__stats-heal"> · {n(stats().healed, "healed")}</span>
-              ) : null}
-              {stats().run ? ` · ${stats().run} active` : ""}
-              {stats().frames ? ` · ${n(stats().frames, "frame")}` : ""}
-            </span>
-          </Show>
-        </div>
-        <nav class="tabs-nav" aria-label="Panel tabs">
-          {(
-            [
-              ["summary", "Summary"],
-              ["steps", "Steps"],
-              ["inspector", "Inspector"],
-              ["artifacts", "Artifacts"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              type="button"
-              class="tab"
-              classList={{ on: server.panelTab() === id }}
-              onClick={() => server.setPanelTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-      </div>
+    <>
+      <div class="panel__scroll">
+        {/* ── Persisted-run (disk) view — replaces recipe/live content ── */}
+        <Show when={persistedRun()}>
+          {(run) => (
+            <>
+              <div class="panel__recipe-card">
+                <div class="panel__recipe-card-title">{run().action}</div>
+                <p class="panel__recipe-card-desc">
+                  <span class={`tone tone--${statusTone(run().status as JobInfo["status"])}`}>
+                    {run().healed ? "healed" : run().status}
+                  </span>{" "}
+                  · {n(run().frames.length, "frame")} · saved run
+                </p>
+                <div class="panel__recipe-card-actions">
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    onClick={() => server.setPersistedRunId(null)}
+                  >
+                    <Icon name="x" size={13} />
+                    Close
+                  </button>
+                </div>
+              </div>
 
-      <Show when={server.panelTab() === "steps"}>
-        <div class="panel__scroll">
+              <div class="section-label">Steps</div>
+              <For each={run().steps}>
+                {(step, i) => {
+                  const tone =
+                    step.status === "ok" || step.status === "healed"
+                      ? "pass"
+                      : step.status === "error"
+                        ? "fail"
+                        : step.status === "running"
+                          ? "run"
+                          : "dim";
+                  return (
+                    <div class="srow srow--static" title={stepTip(step)}>
+                      <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
+                      <span class="srow__body">
+                        <span class="stitle">{step.title}</span>
+                        <span class="smeta">
+                          <span class={`tone tone--${tone === "dim" ? "dim" : tone}`}>
+                            {step.status ?? "queued"}
+                          </span>
+                          <Glyphs glyphs={step.glyphs} />
+                        </span>
+                      </span>
+                      <Show when={fmtMs(step.durationMs)}>
+                        <span class="srow__dur mono">{fmtMs(step.durationMs)}</span>
+                      </Show>
+                    </div>
+                  );
+                }}
+              </For>
+            </>
+          )}
+        </Show>
+
+        {/* ── Normal content: recipe card + live steps ── */}
+        <Show when={!persistedRun()}>
           <Show when={selectedRecipe()}>
             {(r) => (
               <div class="panel__recipe-card">
@@ -285,18 +321,108 @@ export function RunPanel() {
               <span>{selectedJob()!.error}</span>
             </div>
           </Show>
-        </div>
+        </Show>
+      </div>
 
-        <div class="console">
-          <div class="console__label mono">
-            {selectedJob()
-              ? `LOG · ${selectedJob()!.action}`
-              : selectedRecipe()
-                ? `RECIPE · ${selectedRecipe()!.title}`
-                : "ACTIVITY"}
-          </div>
+      {/* ── Collapsible console (plan 008 step 2) ── */}
+      <div class="console" classList={{ "console--open": consoleOpen() }}>
+        <button
+          type="button"
+          class="console__head"
+          aria-expanded={consoleOpen()}
+          aria-label={consoleOpen() ? "Collapse console" : "Expand console"}
+          onClick={() => setConsoleOpen((o) => !o)}
+        >
+          <Icon
+            name={consoleOpen() ? "chevron-down" : "chevron-right"}
+            size={12}
+            class="console__chev"
+          />
+          <span class="console__label mono">
+            {persistedRun()
+              ? `DISK · ${persistedRun()!.action}`
+              : selectedJob()
+                ? `LOG · ${selectedJob()!.action}`
+                : selectedRecipe()
+                  ? `RECIPE · ${selectedRecipe()!.title}`
+                  : "ACTIVITY"}
+          </span>
+        </button>
+        <Show when={consoleOpen()}>
           <pre>{jobLogs() || "— live logs stream here via SSE —"}</pre>
+        </Show>
+      </div>
+
+      <Show when={editingRecipe()}>
+        {(r) => <RecipeEditor recipe={r()} onClose={() => setEditingRecipe(null)} />}
+      </Show>
+    </>
+  );
+}
+
+export function RunPanel() {
+  const server = useServer();
+
+  /** The selected recipe (builtin or custom) — used in the panel header. */
+  const selectedRecipe = createMemo(() => server.selectedRecipe());
+  const selectedMeta = createMemo(() =>
+    server.actions().find((a) => a.id === selectedRecipe()?.id),
+  );
+
+  const stats = createMemo(() => {
+    const jobs = server.jobs();
+    const ok = jobs.filter((j) => j.status === "ok" && !j.healed).length;
+    const fail = jobs.filter((j) => j.status === "error").length;
+    const healed = jobs.filter((j) => j.status === "healed" || j.healed).length;
+    const run = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
+    return { total: jobs.length, ok, fail, healed, run, frames: server.frames().length };
+  });
+
+  return (
+    <aside class="panel" aria-label="Run panel">
+      <div class="panel__head">
+        <div class="panel__title-row">
+          <h1 class="panel__flow">
+            {selectedRecipe()?.title ?? "No recipe selected"}
+            <Show when={selectedRecipe() && selectedRecipe()!.id !== selectedRecipe()!.title}>
+              <span class="mono panel__flow-id">{selectedRecipe()!.id}</span>
+            </Show>
+          </h1>
+          <Show when={stats().total > 0}>
+            <span class="panel__stats">
+              <span class="panel__stats-pass">{n(stats().ok, "passed")}</span> ·{" "}
+              <span class="panel__stats-fail">{n(stats().fail, "failed")}</span>
+              {stats().healed ? (
+                <span class="panel__stats-heal"> · {n(stats().healed, "healed")}</span>
+              ) : null}
+              {stats().run ? ` · ${stats().run} active` : ""}
+              {stats().frames ? ` · ${n(stats().frames, "frame")}` : ""}
+            </span>
+          </Show>
         </div>
+        <nav class="tabs-nav" aria-label="Panel tabs">
+          {(
+            [
+              ["summary", "Summary"],
+              ["steps", "Steps"],
+              ["inspector", "Inspector"],
+              ["artifacts", "Artifacts"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              type="button"
+              class="tab"
+              classList={{ on: server.panelTab() === id }}
+              onClick={() => server.setPanelTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      <Show when={server.panelTab() === "steps"}>
+        <StepsPane />
       </Show>
 
       <Show when={server.panelTab() === "summary"}>
@@ -461,9 +587,6 @@ export function RunPanel() {
             <span class="mono">frames/*.png</span>.
           </p>
         </div>
-      </Show>
-      <Show when={editingRecipe()}>
-        {(r) => <RecipeEditor recipe={r()} onClose={() => setEditingRecipe(null)} />}
       </Show>
     </aside>
   );
