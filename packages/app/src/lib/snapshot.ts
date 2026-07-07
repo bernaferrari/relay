@@ -49,6 +49,67 @@ function contains(a: SnapshotNode, b: SnapshotNode): boolean {
   );
 }
 
+/**
+ * Pick the nodes worth offering as hover-inspect targets on the stage.
+ *
+ * Three filters, in order:
+ *  1. Actionable + labelled — has a rect AND (`hittable` OR `ref` OR a
+ *     non-empty label/value). Bare layout containers with no semantic payload
+ *     are dropped.
+ *  2. Not a full-screen tint — area under 35% of the snapshot bounds, so the
+ *     root window and other backdrop nodes never paint over the screenshot
+ *     (the "even the bg gets the overlay" bug).
+ *  3. Leaf-ish — dropped when another candidate's rect sits strictly inside it
+ *     AND it is more than 4× that candidate's area (a big wrapper around a
+ *     real target). Keeps genuinely leaf-sized containers; removes only the
+ *     wrappers that exist solely to hold smaller interactive children.
+ *
+ * Pure; safe to unit-test once the app package has a harness (plan 003 note).
+ */
+export function overlayCandidates(
+  nodes: SnapshotNode[],
+  bounds: { width: number; height: number } | undefined,
+): SnapshotNode[] {
+  if (!bounds || bounds.width <= 0 || bounds.height <= 0) return [];
+  const cap = bounds.width * bounds.height * 0.35;
+  const actionable = nodes.filter((n) => {
+    if (!n.rect) return false;
+    const label = (n.label ?? n.value ?? "").trim();
+    if (!(n.hittable || n.ref || label)) return false;
+    return n.rect.width * n.rect.height < cap;
+  });
+  return actionable.filter(
+    (a) => !actionable.some((b) => b !== a && contains(a, b) && rectArea(a) > 4 * rectArea(b)),
+  );
+}
+
+/** Smallest candidate whose rect contains the fractional point (0..1 of bounds). */
+export function candidateAtPoint(
+  candidates: SnapshotNode[],
+  bounds: { width: number; height: number } | undefined,
+  fx: number,
+  fy: number,
+): SnapshotNode | null {
+  if (!bounds) return null;
+  let best: SnapshotNode | null = null;
+  let bestArea = Infinity;
+  for (const n of candidates) {
+    if (!n.rect) continue;
+    const nx = n.rect.x / bounds.width;
+    const ny = n.rect.y / bounds.height;
+    const nw = n.rect.width / bounds.width;
+    const nh = n.rect.height / bounds.height;
+    if (fx >= nx && fx <= nx + nw && fy >= ny && fy <= ny + nh) {
+      const area = nw * nh;
+      if (area > 0 && area < bestArea) {
+        best = n;
+        bestArea = area;
+      }
+    }
+  }
+  return best;
+}
+
 /** Build a node lookup by `index` (falling back to array position). */
 function indexMap(nodes: SnapshotNode[]): Map<number, SnapshotNode> {
   const m = new Map<number, SnapshotNode>();

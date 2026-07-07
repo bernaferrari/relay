@@ -51,7 +51,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
       },
       {
         id: "device.snapshot",
-        title: "Capture UI snapshot",
+        title: "Refresh UI snapshot",
         group: "Device",
         keybind: "mod+shift+i",
         run: () => void server.captureUiSnapshot(),
@@ -129,7 +129,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
       },
       {
         id: "device.overlays",
-        title: "Toggle rect overlays on stage",
+        title: "Toggle hover-inspect on stage",
         group: "Device",
         keybind: "mod+o",
         run: () => server.setShowOverlays(!server.showOverlays()),

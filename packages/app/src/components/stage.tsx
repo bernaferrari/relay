@@ -2,7 +2,9 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "so
 import { useServer, type SnapshotNode } from "../context/server";
 import {
   ancestryOf,
+  candidateAtPoint,
   nodeAtPoint,
+  overlayCandidates,
   shortLabel,
   strategiesFor,
   type PickStrategy,
@@ -198,27 +200,74 @@ export function DeviceStage() {
     onCleanup(stopLiveTimers);
   });
 
-  const overlays = () => {
-    if (!server.showOverlays()) return [];
+  // ── Hover-inspect: exactly one highlighted element under the cursor
+  //    (devtools-style), not the old grid of 80 translucent rects. The
+  //    background-tint bug is fixed upstream by `overlayCandidates` (full-screen
+  //    containers and pure wrappers never become candidates).
+  const candidates = createMemo(() => {
     const snap = server.snapshot();
-    if (!snap?.nodes?.length || !snap.bounds) return [];
-    return snap.nodes
-      .filter((n) => n.rect && (n.hittable || n.label || n.ref))
-      .slice(0, 80)
-      .map((n) => {
-        const r = n.rect!;
-        const bw = snap.bounds!.width;
-        const bh = snap.bounds!.height;
-        return {
-          node: n,
-          left: `${(r.x / bw) * 100}%`,
-          top: `${(r.y / bh) * 100}%`,
-          width: `${(r.width / bw) * 100}%`,
-          height: `${(r.height / bh) * 100}%`,
-          label: (n.label ?? n.value ?? n.identifier ?? "").trim(),
-        };
-      });
-  };
+    if (!snap?.nodes?.length || !snap.bounds) return [] as SnapshotNode[];
+    return overlayCandidates(snap.nodes, snap.bounds);
+  });
+
+  const [hoverNode, setHoverNode] = createSignal<SnapshotNode | null>(null);
+  let hoverRaf = 0;
+
+  /** Bounds-relative geometry + chip text for the node under the cursor. */
+  const hoverHighlight = createMemo(() => {
+    const n = hoverNode();
+    const b = server.snapshot()?.bounds;
+    if (!n?.rect || !b) return null;
+    const leftPct = (n.rect.x / b.width) * 100;
+    const topPct = (n.rect.y / b.height) * 100;
+    const heightPct = (n.rect.height / b.height) * 100;
+    const label = (n.label ?? n.value ?? n.identifier ?? "").trim() || n.role || "element";
+    const ref = n.ref ? (n.ref.startsWith("@") ? n.ref : `@${n.ref}`) : "";
+    return {
+      rect: {
+        left: `${leftPct}%`,
+        top: `${topPct}%`,
+        width: `${(n.rect.width / b.width) * 100}%`,
+        height: `${heightPct}%`,
+      },
+      chip: {
+        left: `${Math.max(0, Math.min(leftPct, 100))}%`,
+        top: `${topPct}%`,
+        bottom: `${topPct + heightPct}%`,
+        // flip the chip below the rect when there's no room above it
+        below: topPct < 8,
+        text: ref ? `${label} · ${ref}` : label,
+      },
+    };
+  });
+
+  /** rAF-throttled hit-test against the candidate list. Captures the image rect
+   *  at event time so the deferred frame reads stable geometry. */
+  function scheduleHover(img: HTMLElement, cx: number, cy: number): void {
+    if (!server.showOverlays() || hoverRaf) return;
+    const rect = img.getBoundingClientRect();
+    hoverRaf = requestAnimationFrame(() => {
+      hoverRaf = 0;
+      const fx = (cx - rect.left) / rect.width;
+      const fy = (cy - rect.top) / rect.height;
+      if (fx < 0 || fx > 1 || fy < 0 || fy > 1) {
+        setHoverNode(null);
+        return;
+      }
+      const snap = server.snapshot();
+      setHoverNode(snap?.bounds ? candidateAtPoint(candidates(), snap.bounds, fx, fy) : null);
+    });
+  }
+  function clearHover(): void {
+    if (hoverRaf) {
+      cancelAnimationFrame(hoverRaf);
+      hoverRaf = 0;
+    }
+    setHoverNode(null);
+  }
+  onCleanup(() => {
+    if (hoverRaf) cancelAnimationFrame(hoverRaf);
+  });
 
   return (
     <section
@@ -323,26 +372,25 @@ export function DeviceStage() {
                   });
                   setPickMode(rec.recording() ? "select" : "tap");
                 }}
+                onMouseMove={(e) => scheduleHover(e.currentTarget, e.clientX, e.clientY)}
+                onMouseLeave={() => clearHover()}
               />
-              <Show when={server.showOverlays() && overlays().length > 0}>
-                <div class="glass__overlays">
-                  <For each={overlays()}>
-                    {(o) => (
-                      <button
-                        type="button"
-                        class="hit-rect"
-                        style={{
-                          left: o.left,
-                          top: o.top,
-                          width: o.width,
-                          height: o.height,
-                        }}
-                        title={o.label || "press"}
-                        onClick={() => void server.pressNode(o.node)}
-                      />
-                    )}
-                  </For>
-                </div>
+              <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
+                {(h) => (
+                  <div class="glass__overlays" aria-hidden="true">
+                    <div class="hit-rect hit-rect--hover" style={h().rect} />
+                    <div
+                      class="hit-chip"
+                      classList={{ "hit-chip--below": h().chip.below }}
+                      style={{
+                        left: h().chip.left,
+                        top: h().chip.below ? h().chip.bottom : h().chip.top,
+                      }}
+                    >
+                      {h().chip.text}
+                    </div>
+                  </div>
+                )}
               </Show>
               <Show when={pickedHighlight()}>
                 {(h) => <div class="hit-rect hit-rect--picked" aria-hidden="true" style={h()} />}
@@ -466,7 +514,13 @@ export function DeviceStage() {
           class="btn btn-ghost"
           classList={{ "btn-ghost--on": rec.interacting() }}
           disabled={server.health() !== "online" || server.isEmptyDevices()}
-          title="Interactive mode — click the preview to tap the device"
+          title={
+            server.health() !== "online"
+              ? "Server offline"
+              : server.isEmptyDevices()
+                ? "No device connected"
+                : "Live mode — auto-refresh device view; click the preview to inspect or tap"
+          }
           onClick={() => {
             const next = !rec.interacting();
             rec.setInteracting(next);
@@ -477,8 +531,8 @@ export function DeviceStage() {
             }
           }}
         >
-          <Icon name="pointer" size={14} />
-          Interact {rec.interacting() ? "on" : "off"}
+          <Icon name="dot" size={14} />
+          Live {rec.interacting() ? "on" : "off"}
         </button>
         <Show when={rec.interacting()}>
           <button
@@ -504,7 +558,7 @@ export function DeviceStage() {
               ? "Server offline"
               : server.isEmptyDevices()
                 ? "No device connected"
-                : "Capture device screenshot"
+                : "Save a screenshot to the frame scrubber"
           }
           onClick={() => void server.captureUiScreenshot()}
         >
@@ -512,22 +566,12 @@ export function DeviceStage() {
             when={server.busyCapture()}
             fallback={
               <>
-                <Icon name="camera" size={14} /> Capture
+                <Icon name="camera" size={14} /> Screenshot
               </>
             }
           >
             <span class="btn-spinner" aria-hidden="true" />
           </Show>
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          disabled={server.busyCapture() || server.health() !== "online" || server.isEmptyDevices()}
-          title="Capture accessibility tree snapshot"
-          onClick={() => void server.captureUiSnapshot()}
-        >
-          <Icon name="scan" size={14} />
-          Snapshot
         </button>
         <Show when={server.frames().length > 0}>
           <button type="button" class="btn btn-ghost" onClick={() => server.clearFrames()}>
