@@ -533,8 +533,8 @@ export function DeviceStage() {
             }
           }}
         >
-          <Icon name="dot" size={14} />
-          Live {rec.interacting() ? "on" : "off"}
+          <Icon name="pointer" size={14} />
+          Interact {rec.interacting() ? "on" : "off"}
         </button>
         <Show when={rec.interacting()}>
           <button

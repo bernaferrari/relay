@@ -111,8 +111,7 @@ export function Sidebar() {
                         title="Create a new recipe"
                         onClick={() => setEditingRecipe("new")}
                       >
-                        <Icon name="plus" size={11} />
-                        New
+                        <Icon name="plus" size={12} />
                       </button>
                     </Show>
                   </div>

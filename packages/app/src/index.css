@@ -973,24 +973,35 @@
   }
 }
 
-/* row wrapper — button + hover actions aligned */
+/* row wrapper — single hover surface (no flash) */
 .nav-row-wrap {
   display: flex;
   align-items: center;
   border-radius: var(--radius);
+  transition: background 120ms var(--ease-out);
+}
+.nav-row-wrap:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
 }
 .nav-row-wrap > .nav-row {
   flex: 1;
   min-width: 0;
+  background: transparent !important;
+}
+.nav-row-wrap:hover > .nav-row {
+  background: transparent !important;
+}
+.nav-row-wrap > .nav-row.on {
+  background: color-mix(in srgb, var(--c-accent) 12%, transparent) !important;
 }
 
-/* hover actions (edit/fork/delete) */
+/* hover actions */
 .nav-row__actions {
   display: none;
   align-items: center;
   gap: 1px;
   flex: none;
-  padding-right: 2px;
+  padding-right: 4px;
 }
 .nav-row-wrap:hover .nav-row__actions {
   display: flex;
