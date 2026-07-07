@@ -692,6 +692,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         return;
       }
       const serial = selectedDevice() ?? undefined;
+      // Snapshot before enqueue so the toast reports the right queue position.
+      // The new job lands behind the active job + any already-queued jobs.
+      const queuedBefore = queuedJobs().length;
+      const willQueue = Boolean(activeJob()) || queuedBefore > 0;
       appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
 
       setPanelTab("steps");
@@ -706,8 +710,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           }),
         });
         setSelectedJobId(data.job.id);
-        toast(`Queued ${id}`, "success");
-        void platform.notify?.("Specimen", `Queued ${id}`);
+        const title = recipes().find((r) => r.id === id)?.title ?? id;
+        if (willQueue) {
+          toast(`Queued ${title} — position ${queuedBefore + 1}`, "info");
+          void platform.notify?.("Specimen", `Queued ${title} — position ${queuedBefore + 1}`);
+        } else {
+          toast(`Running ${title}`, "success");
+          void platform.notify?.("Specimen", `Running ${title}`);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         appendLog(msg, "error");
@@ -834,11 +844,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    /** Execute a recorded/interactive step (ref | label | point). Returns success. */
+    /** Execute a recorded/interactive step (ref | label | text-match | point). Returns success. */
     async function interactStep(
       step:
         | { kind: "ref"; ref: string }
         | { kind: "label"; label: string }
+        | { kind: "text-match"; match: string }
         | { kind: "point"; x: number; y: number },
       caption?: string,
     ): Promise<boolean> {
@@ -848,7 +859,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             ? { kind: "ref", ref: step.ref }
             : step.kind === "label"
               ? { kind: "label", label: step.label }
-              : { kind: "point", x: step.x, y: step.y };
+              : step.kind === "text-match"
+                ? { kind: "text-match", match: step.match }
+                : { kind: "point", x: step.x, y: step.y };
         await request("/interact", {
           method: "POST",
           body: JSON.stringify({ ...body, serial: selectedDevice() }),

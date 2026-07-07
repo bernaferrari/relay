@@ -23,3 +23,18 @@ export function fmtDur(job: JobInfo, now: number = Date.now()): string {
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
 }
+
+/**
+ * Compact relative time for a finished job: "now" / "Nm" / "Nh" / "Nd".
+ * Returns "" when there's no finish timestamp (running/queued/idle).
+ */
+export function fmtAgo(finishedAt?: number, now: number = Date.now()): string {
+  if (!finishedAt) return "";
+  const s = Math.max(0, Math.round((now - finishedAt) / 1000));
+  if (s < 60) return "now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}

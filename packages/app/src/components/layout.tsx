@@ -65,14 +65,22 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
       },
       {
         id: "job.run",
-        title: "Run selected recipe",
+        title: "Run / queue selected recipe",
         group: "Jobs",
         keybind: "mod+enter",
-        disabled: () =>
-          server.running() || !server.selectedRecipe() || server.health() !== "online",
+        disabled: () => !server.selectedRecipe() || server.health() !== "online",
         run: () => {
           const r = server.selectedRecipe();
           if (r) void server.runRecipeRemote(r.id);
+        },
+      },
+      {
+        id: "queue.clear",
+        title: "Cancel all queued jobs",
+        group: "Jobs",
+        disabled: () => server.queuedJobs().length === 0,
+        run: () => {
+          for (const q of server.queuedJobs()) void server.cancelJob(q.id);
         },
       },
       {

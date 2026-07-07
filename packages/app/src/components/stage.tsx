@@ -1,7 +1,14 @@
-import { For, Show, createSignal, onCleanup } from "solid-js";
-import { useServer, type SnapshotNode } from "../context/server";
-import { nodeAtPoint } from "../lib/snapshot";
-import { useRecorder, describeStep, buildTapTarget } from "../context/recorder";
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { useServer, type SnapshotNode, type RecipeStep } from "../context/server";
+import {
+  ancestryOf,
+  nodeAtPoint,
+  shortLabel,
+  strategiesFor,
+  targetFromStrategy,
+  type PickStrategy,
+} from "../lib/snapshot";
+import { useRecorder, describeStep } from "../context/recorder";
 import { Icon } from "./icon";
 
 /** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
@@ -16,64 +23,113 @@ export function DeviceStage() {
 
   let stageEl: HTMLElement | undefined;
 
-  /** Element picker: shows the hit node + precision options instead of tapping on click. */
+  /** Element picker: devtools-style — choose how to address the hit element,
+   *  walk up to its parent, and optionally record a step WITHOUT tapping. */
+  type PickMode = "tap" | "select";
   const [picker, setPicker] = createSignal<{
     fx: number;
     fy: number;
     vx: number;
     vy: number;
-    node: SnapshotNode | null;
+    /** ancestry[0] = hit node, up to root (geometric fallback when no parentIndex). */
+    ancestry: SnapshotNode[];
+    /** current target index into `ancestry` (ArrowUp/Down + breadcrumb walk it). */
+    index: number;
   } | null>(null);
+  const [pickMode, setPickMode] = createSignal<PickMode>("tap");
 
-  const pickerNode = () => picker()?.node ?? null;
+  const ancestry = () => picker()?.ancestry ?? [];
+  const pickerNode = () => {
+    const p = picker();
+    return p ? (p.ancestry[p.index] ?? null) : null;
+  };
+  const strategies = createMemo(() => {
+    const p = picker();
+    if (!p) return [] as PickStrategy[];
+    return strategiesFor(pickerNode(), server.snapshot(), p.fx, p.fy);
+  });
+  /** Bounds-relative rect of the currently-targeted node, for the stage highlight. */
+  const pickedHighlight = createMemo(() => {
+    const n = pickerNode();
+    const b = server.snapshot()?.bounds;
+    if (!n?.rect || !b) return null;
+    return {
+      left: `${(n.rect.x / b.width) * 100}%`,
+      top: `${(n.rect.y / b.height) * 100}%`,
+      width: `${(n.rect.width / b.width) * 100}%`,
+      height: `${(n.rect.height / b.height) * 100}%`,
+    };
+  });
+
   const nodeLabel = () => {
     const n = pickerNode();
-    return n?.label ?? n?.value ?? n?.identifier ?? "No element";
+    return (n?.label ?? n?.value ?? n?.identifier ?? "").trim() || "No element";
   };
-  const labelOption = () => (pickerNode()?.label ?? pickerNode()?.value ?? "").trim();
-  /** Full tap target for the current picker hit (ref · label · point fallback chain). */
-  const fullTarget = () =>
-    buildTapTarget(
-      server.snapshot()?.bounds,
-      picker()?.node ?? null,
-      picker()?.fx ?? 0,
-      picker()?.fy ?? 0,
-    );
-  const pointLabel = () => {
-    const p = fullTarget().point;
-    return p ? `${p.x}, ${p.y}` : "0, 0";
+  /** Header meta: role · @ref · W×H — helps judge whether to re-target. */
+  const metaLine = () => {
+    const n = pickerNode();
+    if (!n) return "";
+    const parts: string[] = [];
+    if (n.role) parts.push(n.role);
+    if (n.ref) parts.push(n.ref.startsWith("@") ? n.ref : `@${n.ref}`);
+    if (n.rect) parts.push(`${Math.round(n.rect.width)}×${Math.round(n.rect.height)}`);
+    return parts.join(" · ");
   };
 
-  /** Execute the chosen precision: tap the chosen strategy, then record the
-   *  full target (so replays survive via ref → label → point fallback). */
-  async function pick(strategy: "ref" | "label" | "point"): Promise<void> {
+  /** Re-target the picker to an ancestry index (breadcrumb click or arrows). */
+  function retarget(i: number) {
+    setPicker((p) => (p ? { ...p, index: Math.max(0, Math.min(i, p.ancestry.length - 1)) } : p));
+  }
+
+  /** Execute (Tap mode) or just record (Select-only mode) the chosen strategy. */
+  async function pick(strategy: PickStrategy): Promise<void> {
     const p = picker();
     if (!p) return;
+    const bounds = server.snapshot()?.bounds;
+    // The user picked the strategy; point is the emergency fallback.
+    const target = targetFromStrategy(strategy, p.fx, p.fy, bounds);
+    const step: RecipeStep = { kind: "tap", target };
     setPicker(null);
-    const full = fullTarget();
-    let ok = false;
-    if (strategy === "ref" && full.ref) {
-      ok = await server.interactStep({ kind: "ref", ref: full.ref }, `tap ${full.ref}`);
-    } else if (strategy === "label" && full.label) {
-      ok = await server.interactStep({ kind: "label", label: full.label }, `tap "${full.label}"`);
-    } else if (full.point) {
-      ok = await server.interactStep(
-        { kind: "point", x: full.point.x, y: full.point.y },
-        `tap ${full.point.x},${full.point.y}`,
-      );
+    if (pickMode() === "select") {
+      rec.recordStep(step);
+      return;
     }
+    const body =
+      strategy.kind === "ref"
+        ? ({ kind: "ref", ref: strategy.ref } as const)
+        : strategy.kind === "label"
+          ? ({ kind: "label", label: strategy.label } as const)
+          : strategy.kind === "text"
+            ? ({ kind: "text-match", match: strategy.text } as const)
+            : ({ kind: "point", x: strategy.x, y: strategy.y } as const);
+    let ok = await server.interactStep(body, describeStep(step));
     // chosen strategy failed (likely no session) — fall back to a coordinate tap
-    if (!ok && strategy !== "point" && full.point) {
+    if (!ok && strategy.kind !== "point" && target.point) {
       ok = await server.interactStep(
-        { kind: "point", x: full.point.x, y: full.point.y },
-        `tap ${full.point.x},${full.point.y}`,
+        { kind: "point", x: target.point.x, y: target.point.y },
+        `tap ${target.point.x},${target.point.y}`,
       );
     }
-    if (ok && rec.recording()) rec.recordStep({ kind: "tap", target: full });
+    if (ok && rec.recording()) rec.recordStep(step);
   }
 
   const onStageKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape" && picker()) setPicker(null);
+    if (!picker()) return;
+    if (e.key === "Escape") {
+      setPicker(null);
+      return;
+    }
+    // Walk the ancestry chain; stop propagation so the command palette's
+    // window keydown can't also react while the picker is open.
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      e.stopPropagation();
+      retarget((picker()?.index ?? 0) + 1);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      e.stopPropagation();
+      retarget((picker()?.index ?? 0) - 1);
+    }
   };
   window.addEventListener("keydown", onStageKey);
   onCleanup(() => window.removeEventListener("keydown", onStageKey));
@@ -186,13 +242,17 @@ export function DeviceStage() {
                     return;
                   }
                   const s = stageEl?.getBoundingClientRect();
+                  const snap = server.snapshot();
+                  const anc = node && snap ? ancestryOf(snap, node) : node ? [node] : [];
                   setPicker({
                     fx,
                     fy,
                     vx: s ? e.clientX - s.left : e.clientX - r.left,
                     vy: s ? e.clientY - s.top : e.clientY - r.top,
-                    node,
+                    ancestry: anc,
+                    index: 0,
                   });
+                  setPickMode(rec.recording() ? "select" : "tap");
                 }}
               />
               <Show when={server.showOverlays() && overlays().length > 0}>
@@ -215,28 +275,68 @@ export function DeviceStage() {
                   </For>
                 </div>
               </Show>
+              <Show when={pickedHighlight()}>
+                {(h) => <div class="hit-rect hit-rect--picked" aria-hidden="true" style={h()} />}
+              </Show>
             </Show>
           </div>
         </div>
 
-        <Show when={picker() && rec.interacting() && (picker()!.node || rec.recording())}>
+        <Show when={picker() && rec.interacting() && (pickerNode() || rec.recording())}>
           <div class="picker" style={{ left: `${picker()!.vx}px`, top: `${picker()!.vy}px` }}>
-            <div class="picker__label">{nodeLabel()}</div>
-            <div class="picker__opts">
-              <Show when={pickerNode()?.ref}>
-                <button type="button" class="picker__opt" onClick={() => void pick("ref")}>
-                  @{(pickerNode()?.ref ?? "").replace(/^@/, "")}
-                </button>
+            <div class="picker__head">
+              <span class="picker__label">{nodeLabel()}</span>
+              <Show when={metaLine()}>
+                <span class="picker__meta mono">{metaLine()}</span>
               </Show>
-              <Show when={labelOption()}>
-                <button type="button" class="picker__opt" onClick={() => void pick("label")}>
-                  "{labelOption()}"
-                </button>
-              </Show>
-              <button type="button" class="picker__opt" onClick={() => void pick("point")}>
-                {pointLabel()}
+            </div>
+            <Show when={ancestry().length > 1}>
+              <div class="picker__crumbs" role="group" aria-label="Element ancestry">
+                <For each={ancestry().slice(0, 4)}>
+                  {(n, i) => (
+                    <button
+                      type="button"
+                      class="picker__crumb"
+                      classList={{ "picker__crumb--on": i() === picker()!.index }}
+                      title={shortLabel(n) || n.role || "node"}
+                      onClick={() => retarget(i())}
+                    >
+                      {shortLabel(n) || n.role || "node"}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <div class="picker__mode" role="group" aria-label="Picker mode">
+              <button
+                type="button"
+                class="picker__mode-btn"
+                classList={{ "picker__mode-btn--on": pickMode() === "tap" }}
+                onClick={() => setPickMode("tap")}
+              >
+                Tap
+              </button>
+              <button
+                type="button"
+                class="picker__mode-btn"
+                classList={{ "picker__mode-btn--on": pickMode() === "select" }}
+                onClick={() => setPickMode("select")}
+              >
+                Select only
               </button>
             </div>
+            <div class="picker__opts">
+              <For each={strategies()}>
+                {(s) => (
+                  <button type="button" class="picker__opt" onClick={() => void pick(s)}>
+                    {s.describe}
+                  </button>
+                )}
+              </For>
+            </div>
+            <Show when={ancestry().length > 1}>
+              <div class="picker__hint mono">↑ parent · ↓ child · esc to close</div>
+            </Show>
           </div>
         </Show>
 

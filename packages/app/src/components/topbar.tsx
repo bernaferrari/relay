@@ -285,63 +285,60 @@ export function Topbar(props: { onSettings: () => void }) {
         <Icon name="sliders" size={14} />
         Settings
       </button>
-      <Show when={server.activeJob?.()}>
-        <Show
-          when={server.isPaused?.()}
-          fallback={
+      <Show when={server.activeJob()}>
+        {(job) => (
+          <div class="runbar desktop-titlebar-no-drag" role="group" aria-label="Active job">
+            <span class="runbar__pulse" aria-hidden="true">
+              <Show when={server.isPaused()} fallback={<span class="runbar__spinner" />}>
+                <Icon name="pause" size={10} />
+              </Show>
+            </span>
+            <span class="runbar__title">{job().title ?? job().action}</span>
+            <span class="runbar__time mono">{fmtDur(job(), server.clock())}</span>
             <button
               type="button"
-              class="btn btn-ghost desktop-titlebar-no-drag"
-              title="Pause job (Space)"
-              onClick={() => void server.pauseJob()}
+              class="runbar__btn"
+              title={server.isPaused() ? "Resume (Space)" : "Pause (Space)"}
+              aria-label={server.isPaused() ? "Resume job" : "Pause job"}
+              onClick={() => {
+                const a = server.activeJob();
+                if (!a) return;
+                if (a.status === "paused") void server.resumeJob(a.id);
+                else void server.pauseJob(a.id);
+              }}
             >
-              <Icon name="pause" size={13} />
-              Pause
+              <Icon name={server.isPaused() ? "play" : "pause"} size={12} />
             </button>
-          }
-        >
-          <button
-            type="button"
-            class="btn btn-ghost desktop-titlebar-no-drag"
-            title="Resume job (Space)"
-            onClick={() => void server.resumeJob()}
-          >
-            <Icon name="play" size={13} />
-            Resume
-          </button>
-        </Show>
-        <button
-          type="button"
-          class="btn btn-ghost desktop-titlebar-no-drag"
-          title="Cancel job (Esc)"
-          onClick={() => void server.cancelJob()}
-          style={{ color: "var(--c-fail)" }}
-        >
-          <Icon name="x" size={13} />
-          Cancel
-        </button>
+            <button
+              type="button"
+              class="runbar__btn runbar__btn--stop"
+              title="Cancel (Esc)"
+              aria-label="Cancel job"
+              style={{ color: "var(--c-fail)" }}
+              onClick={() => {
+                const a = server.activeJob();
+                if (a) void server.cancelJob(a.id);
+              }}
+            >
+              <Icon name="square" size={11} />
+            </button>
+          </div>
+        )}
       </Show>
       <button
         type="button"
         class="btn btn-acc desktop-titlebar-no-drag"
         disabled={!canRun()}
-        title={runDisabledReason()}
+        title={runTitle()}
         onClick={() => {
           const r = server.selectedRecipe();
           if (r) void server.runRecipeRemote(r.id);
         }}
       >
-        <Show
-          when={server.isPaused?.()}
-          fallback={
-            <Show when={server.running()} fallback={<Icon name="play" size={13} />}>
-              <span class="btn-spinner" aria-hidden="true" />
-            </Show>
-          }
-        >
-          <Icon name="pause" size={13} />
+        <Show when={server.activeJob()} fallback={<Icon name="play" size={13} />}>
+          <Icon name="plus" size={13} />
         </Show>
-        {server.isPaused?.() ? "Paused" : server.running() ? "Running…" : "Run"}
+        {server.activeJob() ? "Queue" : "Run"}
       </button>
     </header>
   );

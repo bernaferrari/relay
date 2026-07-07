@@ -7,7 +7,7 @@ import { useRecorder } from "../context/recorder";
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { RecipeEditor } from "./recipe-editor";
-import { statusTone, fmtDur } from "../lib/job";
+import { statusTone, fmtDur, fmtAgo } from "../lib/job";
 
 /** Derive a sidebar group for a builtin recipe id (plan-002 builtins carry no category). */
 function builtinCategory(id: string): string {
@@ -169,6 +169,36 @@ export function Sidebar() {
         </div>
       </div>
 
+      <Show when={server.queuedJobs().length > 0}>
+        <div class="sidebar__section">
+          <div class="sidebar__head">
+            <span class="sidebar__label">Queue · {server.queuedJobs().length}</span>
+          </div>
+          <div class="sidebar__scroll">
+            <For each={server.queuedJobs()}>
+              {(j, i) => (
+                <div class="nav-row nav-row--queued" title={`Queued · ${j.title ?? j.action}`}>
+                  <span class="nav-row__pos mono">{i() + 1}</span>
+                  <span class="nav-row__title">{j.title ?? j.action}</span>
+                  <span class="nav-row__actions">
+                    <span
+                      class="nav-row__action"
+                      title="Remove from queue"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void server.cancelJob(j.id);
+                      }}
+                    >
+                      <Icon name="x" size={11} />
+                    </span>
+                  </span>
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
+
       <div class="sidebar__section sidebar__section--history">
         <div class="sidebar__head">
           <span class="sidebar__label">History</span>
@@ -186,7 +216,10 @@ export function Sidebar() {
                 <button
                   type="button"
                   class="nav-row nav-row--job"
-                  classList={{ on: server.selectedJobId() === j.id }}
+                  classList={{
+                    on: server.selectedJobId() === j.id,
+                    "nav-row--active": j.status === "running" || j.status === "paused",
+                  }}
                   onClick={() => {
                     server.jumpToJob(j.id);
                     server.setPanelTab("steps");
@@ -194,7 +227,39 @@ export function Sidebar() {
                 >
                   <span class={`nav-row__dot nav-row__dot--${statusTone(j.status)}`} aria-hidden />
                   <span class="nav-row__title">{j.title ?? j.action}</span>
-                  <span class="nav-row__meta mono">{fmtDur(j, server.clock())}</span>
+                  <span class="nav-row__meta mono">
+                    <Show
+                      when={
+                        j.status === "ok" ||
+                        j.status === "error" ||
+                        j.status === "healed" ||
+                        j.status === "cancelled"
+                      }
+                      fallback={fmtDur(j, server.clock())}
+                    >
+                      <span class={`tone tone--${statusTone(j.status)}`}>
+                        {j.status === "error" ? "failed" : j.status}
+                      </span>
+                      <span class="nav-row__sep">·</span>
+                      <span>{fmtAgo(j.finishedAt, server.clock())}</span>
+                      <span class="nav-row__sep">·</span>
+                      <span>{fmtDur(j, server.clock())}</span>
+                    </Show>
+                  </span>
+                  <span class="nav-row__actions">
+                    <Show when={j.status === "error"}>
+                      <span
+                        class="nav-row__action"
+                        title="Retry / heal job"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void server.retrySelectedJob(j.id);
+                        }}
+                      >
+                        <Icon name="refresh" size={11} />
+                      </span>
+                    </Show>
+                  </span>
                 </button>
               )}
             </For>
