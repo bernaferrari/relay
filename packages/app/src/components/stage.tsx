@@ -11,11 +11,13 @@ import {
 } from "../lib/snapshot";
 import { useRecorder, describeStep } from "../context/recorder";
 import { Icon } from "./icon";
+import { useCommand } from "../context/command";
 
 /** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
 export function DeviceStage() {
   const server = useServer();
   const rec = useRecorder();
+  const cmd = useCommand();
   const frame = () =>
     rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
@@ -137,6 +139,27 @@ export function DeviceStage() {
   };
   window.addEventListener("keydown", onStageKey);
   onCleanup(() => window.removeEventListener("keydown", onStageKey));
+
+  // ── Typing capture (plan 010 step 3.3): route printable keys + Backspace +
+  //    Enter to the phone while Drive/Record is active. The modal/focus/modifier
+  //    gate here keeps palette/dialog/input keys (⌘K included) from leaking to
+  //    the device; the recorder owns the buffer + flush.
+  const onDriveKey = (e: KeyboardEvent) => {
+    if (!rec.interacting()) return;
+    if (cmd.modalOpen()) return;
+    // Modifier chords belong to the app / command palette, never the phone.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Don't steal keystrokes meant for an app input, textarea, or editor.
+    const ae = typeof document !== "undefined" ? document.activeElement : null;
+    if (
+      ae &&
+      (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || (ae as HTMLElement).isContentEditable)
+    )
+      return;
+    if (rec.feedTypeKey(e)) e.preventDefault();
+  };
+  window.addEventListener("keydown", onDriveKey);
+  onCleanup(() => window.removeEventListener("keydown", onDriveKey));
 
   // ── Live mode: auto-refresh the stage image + snapshot while Live is on.
   //    Skips a tick while a request is in flight, the tab is hidden, the server
@@ -284,6 +307,30 @@ export function DeviceStage() {
     }
   }
 
+  // ── Drive gestures (plan 010 step 2): pointer events replace bare click.
+  //    Left-button down→up under 6 px = tap (driveTap); over = swipe (driveSwipe).
+  //    Right-click opens the picker for deliberate strategy selection.
+  let down: { fx: number; fy: number; t: number } | null = null;
+
+  /** Open the element picker at a client point (right-click inspection path). */
+  function openPickerAt(img: HTMLImageElement, clientX: number, clientY: number): void {
+    const r = img.getBoundingClientRect();
+    const fx = (clientX - r.left) / r.width;
+    const fy = (clientY - r.top) / r.height;
+    const node = nodeAtPoint(server.snapshot(), fx, fy);
+    const s = stageEl?.getBoundingClientRect();
+    const snap = server.snapshot();
+    const anc = node && snap ? ancestryOf(snap, node) : node ? [node] : [];
+    setPicker({
+      fx,
+      fy,
+      vx: s ? clientX - s.left : clientX - r.left,
+      vy: s ? clientY - s.top : clientY - r.top,
+      ancestry: anc,
+      index: 0,
+    });
+  }
+
   return (
     <section
       class="stage"
@@ -360,34 +407,53 @@ export function DeviceStage() {
                     setFrameAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
                   }
                 }}
-                onClick={(e) => {
+                onPointerDown={(e) => {
+                  // View mode is inert; only the primary button starts a gesture.
+                  if (!rec.interacting() || e.button !== 0) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  down = {
+                    fx: (e.clientX - r.left) / r.width,
+                    fy: (e.clientY - r.top) / r.height,
+                    t: e.timeStamp,
+                  };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
+                onPointerUp={(e) => {
                   if (!rec.interacting()) return;
+                  const start = down;
+                  down = null;
+                  if (!start || e.button !== 0) return;
                   const r = e.currentTarget.getBoundingClientRect();
                   const fx = (e.clientX - r.left) / r.width;
                   const fy = (e.clientY - r.top) / r.height;
-                  const node = nodeAtPoint(server.snapshot(), fx, fy);
-                  if (!node && !rec.recording()) {
-                    setPicker(null);
-                    void rec.handleTap(fx, fy).then(() => {
+                  const dx = (fx - start.fx) * r.width;
+                  const dy = (fy - start.fy) * r.height;
+                  if (Math.hypot(dx, dy) < 6) {
+                    // tap → direct action, no picker
+                    void rec.driveTap(start.fx, start.fy).then(() => {
                       if (rec.interacting()) {
                         void tickLiveFrame();
                         void tickLiveSnapshot();
                       }
                     });
-                    return;
+                  } else {
+                    // drag → swipe, duration clamped to a sane gesture range
+                    const durationMs = Math.max(80, Math.min(e.timeStamp - start.t, 800));
+                    void rec
+                      .driveSwipe({ x: start.fx, y: start.fy }, { x: fx, y: fy }, durationMs)
+                      .then(() => {
+                        if (rec.interacting()) {
+                          void tickLiveFrame();
+                          void tickLiveSnapshot();
+                        }
+                      });
                   }
-                  const s = stageEl?.getBoundingClientRect();
-                  const snap = server.snapshot();
-                  const anc = node && snap ? ancestryOf(snap, node) : node ? [node] : [];
-                  setPicker({
-                    fx,
-                    fy,
-                    vx: s ? e.clientX - s.left : e.clientX - r.left,
-                    vy: s ? e.clientY - s.top : e.clientY - r.top,
-                    ancestry: anc,
-                    index: 0,
-                  });
-                  setPickMode(rec.recording() ? "select" : "tap");
+                }}
+                onContextMenu={(e) => {
+                  // Right-click = deliberate inspection / strategy selection.
+                  if (!rec.interacting()) return;
+                  e.preventDefault();
+                  openPickerAt(e.currentTarget, e.clientX, e.clientY);
                 }}
                 onMouseMove={(e) => scheduleHover(e.currentTarget, e.clientX, e.clientY)}
                 onMouseLeave={() => clearHover()}

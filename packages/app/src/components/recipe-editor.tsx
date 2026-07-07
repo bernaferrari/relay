@@ -84,6 +84,8 @@ function sentenceFor(step: RecipeStep): string {
       return `Press ${step.key === "back" ? "Back" : "Home"}`;
     case "scroll":
       return step.amount ? `Scroll ${step.direction} ${step.amount}` : `Scroll ${step.direction}`;
+    case "swipe":
+      return `Swipe ${Math.round(step.from.x)},${Math.round(step.from.y)} → ${Math.round(step.to.x)},${Math.round(step.to.y)}`;
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
     case "flow":
@@ -173,6 +175,7 @@ export function RecipeEditor(props: {
         return step.message.trim().length > 0;
       case "scroll":
       case "key":
+      case "swipe":
       case "screenshot":
       case "flow":
         return true;

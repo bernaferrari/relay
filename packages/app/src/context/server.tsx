@@ -59,6 +59,13 @@ export type RecipeStep =
   | { kind: "tap"; target: StepTarget; note?: string }
   | { kind: "type"; text: string; target?: StepTarget; note?: string }
   | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
+  | {
+      kind: "swipe";
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      durationMs?: number;
+      note?: string;
+    }
   | { kind: "key"; key: "back" | "home"; note?: string }
   | { kind: "sleep"; ms: number; note?: string }
   | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
@@ -905,13 +912,20 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    /** Execute a recorded/interactive step (ref | label | text-match | point). Returns success. */
+    /** Execute a recorded/interactive step on the device. Returns success. */
     async function interactStep(
       step:
         | { kind: "ref"; ref: string }
         | { kind: "label"; label: string }
         | { kind: "text-match"; match: string }
-        | { kind: "point"; x: number; y: number },
+        | { kind: "point"; x: number; y: number }
+        | {
+            kind: "swipe";
+            from: { x: number; y: number };
+            to: { x: number; y: number };
+            durationMs?: number;
+          }
+        | { kind: "type"; text: string },
       caption?: string,
     ): Promise<boolean> {
       try {
@@ -922,7 +936,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
               ? { kind: "label", label: step.label }
               : step.kind === "text-match"
                 ? { kind: "text-match", match: step.match }
-                : { kind: "point", x: step.x, y: step.y };
+                : step.kind === "point"
+                  ? { kind: "point", x: step.x, y: step.y }
+                  : step.kind === "swipe"
+                    ? {
+                        kind: "swipe",
+                        from: step.from,
+                        to: step.to,
+                        ...(step.durationMs ? { durationMs: step.durationMs } : {}),
+                      }
+                    : { kind: "type", text: step.text };
         await request("/interact", {
           method: "POST",
           body: JSON.stringify({ ...body, serial: selectedDevice() }),

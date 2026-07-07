@@ -58,6 +58,8 @@ export function describeStep(step: RecipeStep): string {
         : `type "${step.text}"`;
     case "scroll":
       return step.amount ? `scroll ${step.direction} ${step.amount}` : `scroll ${step.direction}`;
+    case "swipe":
+      return `swipe ${Math.round(step.from.x)},${Math.round(step.from.y)} → ${Math.round(step.to.x)},${Math.round(step.to.y)}`;
     case "key":
       return `key ${step.key}`;
     case "sleep":
@@ -125,13 +127,20 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return false;
     }
 
-    /** Called by the stage on a preview click (fx, fy are 0..1 of the image). */
-    async function handleTap(fx: number, fy: number): Promise<void> {
+    /**
+     * Drive a tap through the mirror: hit-test the current snapshot, build the
+     * FULL target silently (ref · label · point — every known field), send the
+     * interaction preferring ref → label → point exactly like the runner, and
+     * if recording append a tap step. No strategy UI, no per-step toast — the
+     * recorder bar is the single feedback surface (plan 010 step 3).
+     */
+    async function driveTap(fx: number, fy: number): Promise<boolean> {
       if (server.health() !== "online") {
         toast("Server offline — can't interact", "warning");
-        return;
+        return false;
       }
-      // need a snapshot to resolve elements; grab one if missing
+      // Flush any buffered typing first so order stays tap → type, not interleaved.
+      await flushType();
       if (!server.snapshot()?.bounds) {
         await server.captureUiSnapshot().catch(() => undefined);
       }
@@ -139,25 +148,49 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const target = buildTapTarget(server.snapshot()?.bounds, node, fx, fy);
       const step: RecipeStep = { kind: "tap", target };
       const ok = await executeTap(target, describeStep(step));
-      if (ok && recording()) {
-        setSteps((s) => [...s, step]);
-        toast(describeStep(step), "info", 1600);
-      }
-    }
-
-    /** Internal: append a step + toast (used by recordPick). */
-    function recordStep(step: RecipeStep): void {
-      setSteps((s) => [...s, step]);
-      toast(describeStep(step), "info", 1600);
+      if (ok && recording()) setSteps((s) => [...s, step]);
+      return ok;
     }
 
     /**
-     * Record a picker choice as a tap step. The user explicitly picked a
-     * strategy, so ONLY that strategy's field is recorded (plus `point` as the
-     * emergency fallback); the other strategies are deliberately omitted — the
-     * runner's ref → label → text → point order must not silently override the
-     * user's intent. e.g. choosing `text` on a node that also has a ref records
-     * `{ text, point }`, NOT `{ ref, label, text, point }`.
+     * Drive a swipe through the mirror. `from`/`to` are fractional image
+     * coords (0..1); converted to device coords via snapshot bounds. Sends the
+     * interaction and, if recording, appends a swipe step.
+     */
+    async function driveSwipe(
+      from: { x: number; y: number },
+      to: { x: number; y: number },
+      durationMs: number,
+    ): Promise<boolean> {
+      if (server.health() !== "online") {
+        toast("Server offline — can't interact", "warning");
+        return false;
+      }
+      await flushType();
+      const b = server.snapshot()?.bounds;
+      const w = b?.width ?? 1;
+      const h = b?.height ?? 1;
+      const devFrom = { x: Math.round(from.x * w), y: Math.round(from.y * h) };
+      const devTo = { x: Math.round(to.x * w), y: Math.round(to.y * h) };
+      const step: RecipeStep = { kind: "swipe", from: devFrom, to: devTo, durationMs };
+      const ok = await server.interactStep(
+        { kind: "swipe", from: devFrom, to: devTo, durationMs },
+        describeStep(step),
+      );
+      if (ok && recording()) setSteps((s) => [...s, step]);
+      return ok;
+    }
+
+    /** Internal: append a recorded step (no toast — the bar shows the list). */
+    function recordStep(step: RecipeStep): void {
+      setSteps((s) => [...s, step]);
+    }
+
+    /**
+     * Record a picker (right-click) choice as a tap step. The user explicitly
+     * picked a strategy, so ONLY that strategy's field is recorded (plus point
+     * as the emergency fallback); the runner's ref → label → text → point order
+     * must not silently override the user's intent.
      */
     function recordPick(strategy: PickStrategy, fx: number, fy: number): void {
       const target = targetFromStrategy(strategy, fx, fy, server.snapshot()?.bounds);
@@ -171,8 +204,67 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setSteps((s) => s.filter((_, idx) => idx !== i));
     }
 
+    // ── Typing capture (plan 010 step 3.3) ──────────────────────────────────
+    // Keystrokes are buffered while Drive/Record is active and no app input or
+    // modal has focus, then flushed as ONE type interaction + ONE recorded step
+    // after 800 ms idle or on Enter. The window keydown listener (in the stage,
+    // which can see the command context's modalOpen gate) calls feedTypeKey.
+    const [typeBuffer, setTypeBuffer] = createSignal("");
+    let typeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    function scheduleTypeFlush(): void {
+      clearTimeout(typeTimer);
+      typeTimer = setTimeout(() => void flushType(), 800);
+    }
+
+    /** Send the buffered text to the device + record a type step. No-op if empty. */
+    async function flushType(): Promise<void> {
+      if (typeTimer) {
+        clearTimeout(typeTimer);
+        typeTimer = undefined;
+      }
+      const text = typeBuffer();
+      if (!text) return;
+      setTypeBuffer("");
+      if (server.health() !== "online") return;
+      const step: RecipeStep = { kind: "type", text };
+      const ok = await server.interactStep({ kind: "type", text }, describeStep(step));
+      if (ok && recording()) setSteps((s) => [...s, step]);
+    }
+
+    /**
+     * Buffer a keyboard event for the phone. Handles Escape (clear), Enter
+     * (flush + end), Backspace (delete last), and printable chars. Returns true
+     * when the key was consumed (the caller may preventDefault). The caller is
+     * responsible for the modal/focus/modifier gate so palette keys never reach
+     * here.
+     */
+    function feedTypeKey(e: KeyboardEvent): boolean {
+      if (e.key === "Escape") {
+        setTypeBuffer("");
+        return true;
+      }
+      if (e.key === "Enter") {
+        void flushType();
+        return true;
+      }
+      if (e.key === "Backspace") {
+        setTypeBuffer((b) => b.slice(0, -1));
+        scheduleTypeFlush();
+        return true;
+      }
+      if (e.key.length === 1) {
+        setTypeBuffer((b) => b + e.key);
+        scheduleTypeFlush();
+        return true;
+      }
+      return false;
+    }
+
     /** Save the recorded steps as a server recipe, then clear the buffer. */
     async function saveRecipe(title: string): Promise<void> {
+      // Capture any buffered typing before freezing the step list.
+      await flushType();
       const t = title.trim() || `Recipe ${Date.now().toString(36).slice(-4)}`;
       const saved = await server.saveRecipeRemote({ title: t, steps: steps() });
       if (saved) {
@@ -283,7 +375,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       recording,
       setRecording,
       steps,
-      handleTap,
+      driveTap,
+      driveSwipe,
+      typeBuffer,
+      feedTypeKey,
+      flushType,
       recordPick,
       clearSteps,
       removeStep,
