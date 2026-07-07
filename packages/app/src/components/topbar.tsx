@@ -80,11 +80,11 @@ export function Topbar(props: { onSettings: () => void }) {
       <button
         type="button"
         class="btn btn-ghost top__icon-btn desktop-titlebar-no-drag"
-        classList={{ on: server.drawerOpen() }}
-        title={server.layout() === "deck" ? "Toggle drawer (⌘B)" : "Toggle sidebar (⌘B)"}
-        aria-label={server.layout() === "deck" ? "Toggle drawer" : "Toggle sidebar"}
-        aria-pressed={server.drawerOpen()}
-        onClick={() => cmd.run("drawer.toggle")}
+        classList={{ on: server.railCollapsed() }}
+        title="Toggle sidebar (⌘B)"
+        aria-label="Toggle sidebar"
+        aria-pressed={server.railCollapsed()}
+        onClick={() => server.toggleRail()}
       >
         <Icon name="panel-left" size={15} />
       </button>
@@ -184,19 +184,6 @@ export function Topbar(props: { onSettings: () => void }) {
           </div>
         </Show>
       </div>
-      <Show when={server.layout() === "deck" && server.selectedRecipe()}>
-        <div class="pick-wrap desktop-titlebar-no-drag">
-          <button
-            type="button"
-            class="pick pick--recipe"
-            title={`Recipe: ${server.selectedRecipe()?.title ?? ""}`}
-            onClick={() => cmd.run("drawer.toggle")}
-          >
-            <Icon name="play" size={11} class="pick__recipe-ico" />
-            <span class="mono pick__label">{server.selectedRecipe()?.title ?? "Pick recipe"}</span>
-          </button>
-        </div>
-      </Show>
 
       <span class="top__spacer" />
 

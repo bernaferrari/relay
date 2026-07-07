@@ -170,12 +170,7 @@ export type Frame = {
   path?: string;
 };
 
-export type PanelTab = "summary" | "steps" | "inspector" | "artifacts";
-
-/** Workspace shell layout. Deck = stage + steps + drawer sidebar (default);
- *  classic = the original 3-column + tabbed-panel layout. The toggle is an
- *  evaluation vehicle (plan 008) and has an expiry — see maintenance notes. */
-export type LayoutMode = "deck" | "classic";
+/** Workspace shell: the rail (sidebar) can be collapsed to 0 width via ⌘B. */
 
 function normalizeBase(url: string) {
   return url.replace(/\/+$/, "");
@@ -229,26 +224,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [runsRoot, setRunsRoot] = createSignal("");
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
-    // Plan 008 — workspace shell layout. Deck is default; persisted to storage.
-    const [layout, setLayoutState] = createSignal<LayoutMode>("deck");
-    // Drawer state for deck mode (sidebar slides in from the left).
-    const [drawerOpen, setDrawerOpen] = createSignal(false);
+    // Plan 009 — the rail (sidebar) collapses to 0 width via ⌘B. Persisted.
+    const [railCollapsed, setRailCollapsedState] = createSignal(false);
     // Persisted-run selection: when set, StepsPane renders a read-only view of
     // a disk run's steps (disk runs folded into History by plan 008 step 4).
     const [persistedRunId, setPersistedRunId] = createSignal<string | null>(null);
-    const [panelTab, setPanelTabState] = createSignal<PanelTab>("steps");
     const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
     const [running, setRunning] = createSignal(false);
     const [error, setError] = createSignal<string | null>(null);
     const [logs, setLogs] = createSignal<LogLine[]>([]);
-    /** Guarded panel-tab setter: a no-op in deck mode (plan 008 step 4) so
-     *  call sites that force a tab (e.g. after capturing a snapshot) don't
-     *  drift the signal while no tab nav is shown. The single guard lives here
-     *  instead of at every call site. */
-    function setPanelTab(tab: PanelTab) {
-      if (layout() === "deck") return;
-      setPanelTabState(tab);
-    }
     const [snapshot, setSnapshot] = createSignal<SnapshotState>(null);
     const [frames, setFrames] = createSignal<Frame[]>([]);
     const [frameIndex, setFrameIndex] = createSignal(0);
@@ -296,14 +280,17 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    /** Set the workspace layout and persist it (plan 008). */
-    async function setLayout(value: LayoutMode) {
-      setLayoutState(value);
+    /** Collapse/expand the rail (sidebar) and persist the choice (plan 009). */
+    async function setRailCollapsed(value: boolean) {
+      setRailCollapsedState(value);
       try {
-        await platform.storage.set("layout", value);
+        await platform.storage.set("railCollapsed", String(value));
       } catch {
         /* ignore */
       }
+    }
+    function toggleRail() {
+      void setRailCollapsed(!railCollapsed());
     }
 
     function appendLog(text: string, level?: LogLine["level"], jobId?: string) {
@@ -539,7 +526,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           setRunning(true);
           if (!selectedJobId()) {
             setSelectedJobId((ev.jobId as string) ?? null);
-            setPanelTab("steps");
           }
           void refreshJobs();
           break;
@@ -729,7 +715,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const willQueue = Boolean(activeJob()) || queuedBefore > 0;
       appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
 
-      setPanelTab("steps");
       try {
         await captureUiScreenshot(`before · ${id}`, undefined, id).catch(() => undefined);
         const data = await request<{ job: JobInfo }>("/jobs", {
@@ -786,7 +771,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const data = await request<NonNullable<SnapshotState> & { tree?: string }>(`/snapshot${q}`);
         setSnapshot(data);
         setShowOverlays(true);
-        setPanelTab("inspector");
         appendLog(
           `snapshot ${data.nodes.length} nodes · bounds ${data.bounds?.width ?? "?"}×${data.bounds?.height ?? "?"}`,
           "info",
@@ -964,7 +948,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         .reverse()
         .find((x) => x.f.jobId === jobId)?.i;
       if (idx !== undefined) setFrameIndex(idx);
-      setPanelTab("steps");
       stopPlayback();
     }
 
@@ -983,8 +966,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         /* ignore */
       }
       try {
-        const savedLayout = await platform.storage.get("layout");
-        if (savedLayout === "classic" || savedLayout === "deck") setLayoutState(savedLayout);
+        const savedRail = await platform.storage.get("railCollapsed");
+        if (savedRail === "true") setRailCollapsedState(true);
       } catch {
         /* ignore */
       }
@@ -1097,7 +1080,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,
-      setLayout,
+      railCollapsed,
+      setRailCollapsed,
+      toggleRail,
       health,
       isOffline,
       isEmptyDevices,
@@ -1143,11 +1128,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       queuedJobs,
       isPaused,
       retrySelectedJob,
-      panelTab,
-      setPanelTab,
-      layout,
-      drawerOpen,
-      setDrawerOpen,
       persistedRunId,
       setPersistedRunId,
       snapshot,

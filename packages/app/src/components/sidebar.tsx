@@ -66,7 +66,6 @@ export function Sidebar() {
   const select = (id: string) => {
     server.setSelectedRecipeId(id);
     server.setPersistedRunId(null);
-    server.setPanelTab("steps");
   };
 
   /** Disk-only runs: persisted runs with no matching live job (plan 008 step 4).
@@ -251,7 +250,6 @@ export function Sidebar() {
                     onClick={() => {
                       server.jumpToJob(j.id);
                       server.setPersistedRunId(null);
-                      server.setPanelTab("steps");
                     }}
                   >
                     <span
@@ -308,7 +306,6 @@ export function Sidebar() {
                       onClick={() => {
                         server.setSelectedJobId(null);
                         server.setPersistedRunId(run.id);
-                        server.setPanelTab("steps");
                       }}
                     >
                       <span

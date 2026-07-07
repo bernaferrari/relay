@@ -159,62 +159,11 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         run: () => server.clearLogs(),
       },
       {
-        id: "tab.steps",
-        title: "Panel: Steps",
-        group: "Workspace",
-        keybind: "mod+1",
-        disabled: () => server.layout() === "deck",
-        run: () => server.setPanelTab("steps"),
-      },
-      {
-        id: "tab.summary",
-        title: "Panel: Summary",
-        group: "Workspace",
-        keybind: "mod+2",
-        disabled: () => server.layout() === "deck",
-        run: () => server.setPanelTab("summary"),
-      },
-      {
-        id: "tab.inspector",
-        title: "Panel: Inspector",
-        group: "Workspace",
-        keybind: "mod+3",
-        disabled: () => server.layout() === "deck",
-        run: () => server.setPanelTab("inspector"),
-      },
-      {
-        id: "tab.artifacts",
-        title: "Panel: Artifacts",
-        group: "Workspace",
-        keybind: "mod+4",
-        disabled: () => server.layout() === "deck",
-        run: () => server.setPanelTab("artifacts"),
-      },
-      {
-        id: "server.retry",
-        title: "Retry server connection",
-        group: "Server",
-        run: () => void server.retryConnection(),
-      },
-      {
-        id: "command.palette",
-        title: "Command palette",
-        group: "Navigation",
-        keybind: "mod+k",
-        run: () => cmd.setOpen(true),
-      },
-      {
-        id: "layout.toggle",
-        title: "Layout: switch deck ⇄ classic",
-        group: "Workspace",
-        run: () => void server.setLayout(server.layout() === "deck" ? "classic" : "deck"),
-      },
-      {
-        id: "drawer.toggle",
-        title: "Toggle sidebar / drawer (⌘B)",
+        id: "rail.toggle",
+        title: "Toggle sidebar rail (⌘B)",
         group: "Workspace",
         keybind: "mod+b",
-        run: () => server.setDrawerOpen(!server.drawerOpen()),
+        run: () => server.toggleRail(),
       },
     ]);
     onCleanup(unsub);
@@ -236,7 +185,6 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
               : "Play Store",
         run: () => {
           server.setSelectedRecipeId(r.id);
-          server.setPanelTab("steps");
         },
       })),
     );

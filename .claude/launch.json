@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev:serve"],
+      "port": 8787
+    },
+    {
+      "name": "app-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@grok-device/app",
+        "exec",
+        "vp",
+        "dev",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
+      "port": 5199
+    }
+  ]
+}

@@ -143,33 +143,6 @@ export function SettingsPage(props: { onClose: () => void }) {
                   </div>
                 </div>
               </div>
-              <div class="s-row">
-                <div class="s-row__copy">
-                  <span class="s-row__title">Workspace layout</span>
-                  <span class="s-row__desc">
-                    Deck: device + steps only. Classic: sidebar and tabbed panel.
-                  </span>
-                </div>
-                <div class="s-row__control">
-                  <div class="scheme-seg" role="group" aria-label="Workspace layout">
-                    {(
-                      [
-                        ["deck", "Deck"],
-                        ["classic", "Classic"],
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        type="button"
-                        class="scheme-seg__btn"
-                        classList={{ on: server.layout() === id }}
-                        onClick={() => void server.setLayout(id)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
               <div class="s-section">
                 <div class="s-section__head">
                   <span class="s-section__title">Theme</span>
@@ -326,6 +299,21 @@ export function SettingsPage(props: { onClose: () => void }) {
                   <span class="s-row__desc mono">
                     {theme.themeId()} / {theme.mode()}
                   </span>
+                </div>
+              </div>
+              <div class="s-row">
+                <div class="s-row__copy">
+                  <span class="s-row__title">Command palette</span>
+                  <span class="s-row__desc">
+                    Press <span class="mono">⌘K</span> anywhere to run commands, jump to recipes, or
+                    toggle appearance.
+                  </span>
+                </div>
+                <div class="s-row__control">
+                  <button type="button" class="btn btn-ghost" onClick={() => cmd.setOpen(true)}>
+                    <Icon name="search" size={13} />
+                    Open palette
+                  </button>
                 </div>
               </div>
             </Show>

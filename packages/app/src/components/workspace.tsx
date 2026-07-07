@@ -1,94 +1,26 @@
-import { Show, createEffect, on, onCleanup } from "solid-js";
+import { OfflineGate } from "./offline-gate";
 import { DeviceStage } from "./stage";
-import { RunPanel } from "./run-panel";
 import { StepsPane } from "./run-panel";
 import { Sidebar } from "./sidebar";
-import { OfflineGate } from "./offline-gate";
 import { useServer } from "../context/server";
-import { useCommand } from "../context/command";
 
 /**
- * Workspace shell. Branches on the layout preference (plan 008):
- *  - **deck** (default): stage + steps pane, sidebar as a ⌘B slide-in drawer.
- *  - **classic**: the original 3-column grid (sidebar · stage · tabbed panel).
+ * Workspace shell — one composition (plan 009):
+ *   rail (232px, always visible, ⌘B collapses to 0) · stage (1fr) · run pane (340–400px).
+ * The deck/classic experiment, drawer, and tabbed panel are gone.
  */
 export function Workspace() {
   const server = useServer();
-  const cmd = useCommand();
-
-  // ── Drawer / sidebar state follows the active layout (plan 008 step 3) ──
-  // When the layout is first known (or switched), set the default:
-  //  - classic → sidebar visible (drawerOpen = true)
-  //  - deck    → drawer open only when no recipe is selected (discoverability)
-  createEffect(
-    on(server.layout, (layout) => {
-      server.setDrawerOpen(layout === "classic" ? true : !server.selectedRecipeId());
-    }),
-  );
-
-  // Auto-close the drawer when a run starts (deck mode, running() rising edge).
-  let wasRunning = false;
-  createEffect(() => {
-    const running = server.running();
-    if (running && !wasRunning && server.layout() === "deck") {
-      server.setDrawerOpen(false);
-    }
-    wasRunning = running;
-  });
-
-  // Register with the modal registry while the drawer is open so global
-  // keybinds (escape → cancel, space → pause) defer to it. Plan 007's registry.
-  createEffect(() => {
-    if (!server.drawerOpen()) return;
-    const dispose = cmd.pushModal();
-    onCleanup(dispose);
-  });
-
-  const closeDrawer = () => {
-    if (server.layout() === "deck") server.setDrawerOpen(false);
-  };
 
   return (
-    <div class="workspace">
-      <OfflineGate overlay>
-        <Show
-          when={server.layout() === "deck"}
-          fallback={
-            <div
-              class="workspace__main"
-              classList={{ "workspace__main--no-sidebar": !server.drawerOpen() }}
-            >
-              <Show when={server.drawerOpen()}>
-                <Sidebar />
-              </Show>
-              <DeviceStage />
-              <RunPanel />
-            </div>
-          }
-        >
-          <div class="deck">
-            <DeviceStage />
-            <section class="deck__steps">
-              <StepsPane />
-            </section>
-            <Show when={server.drawerOpen()}>
-              <div class="drawer-scrim" onClick={closeDrawer} />
-              <aside
-                class="drawer"
-                aria-label="Recipes and history"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.stopPropagation();
-                    closeDrawer();
-                  }
-                }}
-              >
-                <Sidebar />
-              </aside>
-            </Show>
-          </div>
-        </Show>
-      </OfflineGate>
-    </div>
+    <OfflineGate overlay>
+      <div class="shell" classList={{ "shell--rail-collapsed": server.railCollapsed() }}>
+        <Sidebar />
+        <DeviceStage />
+        <section class="runpane" aria-label="Run pane">
+          <StepsPane />
+        </section>
+      </div>
+    </OfflineGate>
   );
 }
