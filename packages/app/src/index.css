@@ -1347,6 +1347,9 @@ html[data-color-scheme="light"] .qa::before {
   min-width: 0;
 }
 .runpane__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   margin: 0;
   font-size: 14px;
   font-weight: 600;
@@ -1356,6 +1359,16 @@ html[data-color-scheme="light"] .qa::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.runpane__id {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--c-dim);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.runpane__title:hover .runpane__id {
+  opacity: 1;
 }
 .runpane__desc {
   margin: 5px 0 0;
