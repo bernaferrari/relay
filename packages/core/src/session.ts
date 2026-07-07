@@ -410,6 +410,13 @@ async function executeJob(id: string): Promise<void> {
     serial: job.serial,
   });
 
+  // Snapshot env so we can restore it in `finally` — the queue is strictly
+  // serial, so targeting never leaks across jobs. See plan 001, step 3.
+  const savedEnv = {
+    serial: process.env.AGENT_DEVICE_SERIAL,
+    androidSerial: process.env.ANDROID_SERIAL,
+    prodMatch: process.env.PROD_ACCOUNT_MATCH,
+  };
   if (job.serial) {
     process.env.AGENT_DEVICE_SERIAL = job.serial;
     process.env.ANDROID_SERIAL = job.serial;
@@ -599,6 +606,12 @@ async function executeJob(id: string): Promise<void> {
     setExecutingJobId(null);
     activeJobId = null;
     clearControl(id);
+    if (savedEnv.serial === undefined) delete process.env.AGENT_DEVICE_SERIAL;
+    else process.env.AGENT_DEVICE_SERIAL = savedEnv.serial;
+    if (savedEnv.androidSerial === undefined) delete process.env.ANDROID_SERIAL;
+    else process.env.ANDROID_SERIAL = savedEnv.androidSerial;
+    if (savedEnv.prodMatch === undefined) delete process.env.PROD_ACCOUNT_MATCH;
+    else process.env.PROD_ACCOUNT_MATCH = savedEnv.prodMatch;
   }
 }
 
@@ -619,7 +632,6 @@ export async function attachJobFrame(opts: {
       step.glyphs = [...step.glyphs, "shot" as Glyph].slice(0, 6);
     }
   }
-  // keep base64 in memory frame list for live UI
   publish({
     type: "job.frame",
     at: frame.capturedAt,

@@ -103,7 +103,7 @@ export async function writeFramePng(
     base64,
     mime: "image/png",
   };
-  job.frames.push(frame);
+  job.frames.push({ ...frame, base64: undefined });
   return frame;
 }
 
