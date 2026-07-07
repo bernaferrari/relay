@@ -1,4 +1,4 @@
-import { Show, createEffect, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, on, onCleanup } from "solid-js";
 import { DeviceStage } from "./stage";
 import { RunPanel } from "./run-panel";
 import { StepsPane } from "./run-panel";
@@ -15,17 +15,18 @@ import { useCommand } from "../context/command";
 export function Workspace() {
   const server = useServer();
   const cmd = useCommand();
-  let drawerRef: HTMLDivElement | undefined;
 
-  // ── Drawer auto-behavior (deck mode only, plan 008 step 3) ──────────────
-  // Open on first load when no recipe is selected (discoverability).
-  onMount(() => {
-    if (server.layout() === "deck" && !server.selectedRecipeId()) {
-      server.setDrawerOpen(true);
-    }
-  });
+  // ── Drawer / sidebar state follows the active layout (plan 008 step 3) ──
+  // When the layout is first known (or switched), set the default:
+  //  - classic → sidebar visible (drawerOpen = true)
+  //  - deck    → drawer open only when no recipe is selected (discoverability)
+  createEffect(
+    on(server.layout, (layout) => {
+      server.setDrawerOpen(layout === "classic" ? true : !server.selectedRecipeId());
+    }),
+  );
 
-  // Auto-close when a run starts (running() rising edge).
+  // Auto-close the drawer when a run starts (deck mode, running() rising edge).
   let wasRunning = false;
   createEffect(() => {
     const running = server.running();
@@ -73,7 +74,6 @@ export function Workspace() {
             <Show when={server.drawerOpen()}>
               <div class="drawer-scrim" onClick={closeDrawer} />
               <aside
-                ref={drawerRef}
                 class="drawer"
                 aria-label="Recipes and history"
                 onKeyDown={(e) => {
