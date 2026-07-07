@@ -474,7 +474,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (method === "POST" && pathname === "/interact") {
       const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
       if (!body || typeof body !== "object" || !("kind" in body)) {
-        throw new HttpError(400, "body.kind required (label|point|ref|find|text-match)");
+        throw new HttpError(400, "body.kind required (label|point|ref|find|text-match|swipe|type)");
       }
       if (getActiveJob()?.status === "running") {
         throw new HttpError(

@@ -84,6 +84,7 @@ describe("validateRecipeSteps", () => {
       { kind: "tap", target: { ref: "@e1" } },
       { kind: "type", text: "hi", target: { label: "Field" } },
       { kind: "scroll", direction: "down", amount: 0.5 },
+      { kind: "swipe", from: { x: 540, y: 1600 }, to: { x: 540, y: 600 }, durationMs: 300 },
       { kind: "key", key: "back" },
       { kind: "sleep", ms: 100 },
       { kind: "wait-for", target: { text: "Welcome" }, timeoutMs: 5000 },
@@ -94,7 +95,8 @@ describe("validateRecipeSteps", () => {
     const out = validateRecipeSteps(steps);
     assert.equal(out.length, steps.length);
     assert.equal(out[0]!.kind, "tap");
-    assert.equal(out[8]!.kind, "flow");
+    assert.equal(out[3]!.kind, "swipe");
+    assert.equal(out[9]!.kind, "flow");
   });
 
   it("rejects tap with empty target, naming the step index", () => {
@@ -125,6 +127,44 @@ describe("validateRecipeSteps", () => {
     );
   });
 
+  it("rejects swipe missing from/to", () => {
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "swipe", to: { x: 1, y: 2 } }]),
+      /step 1: swipe.from must be \{ x: number, y: number \}/,
+    );
+  });
+
+  it("rejects swipe with non-numeric coordinates", () => {
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "swipe", from: { x: "a", y: 2 }, to: { x: 1, y: 2 } }]),
+      /step 1: swipe.from must be \{ x: number, y: number \}/,
+    );
+  });
+
+  it("rejects swipe with out-of-range durationMs", () => {
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "swipe", from: { x: 0, y: 0 }, to: { x: 1, y: 1 }, durationMs: 10 },
+        ]),
+      /step 1: swipe.durationMs must be between 50 and 5000/,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "swipe", from: { x: 0, y: 0 }, to: { x: 1, y: 1 }, durationMs: 9000 },
+        ]),
+      /step 1: swipe.durationMs must be between 50 and 5000/,
+    );
+  });
+
+  it("accepts swipe without optional durationMs (defaults at runtime)", () => {
+    const out = validateRecipeSteps([
+      { kind: "swipe", from: { x: 540, y: 1600 }, to: { x: 540, y: 600 } },
+    ]);
+    assert.equal(out[0]!.kind, "swipe");
+  });
+
   it("rejects non-array steps", () => {
     assert.throws(() => validateRecipeSteps({ not: "array" }), /steps must be an array/);
   });
@@ -152,6 +192,14 @@ describe("describeRecipeStep", () => {
       'Type into text "Email"',
     );
     assert.equal(describeRecipeStep({ kind: "scroll", direction: "up" }), "Scroll up");
+    assert.equal(
+      describeRecipeStep({ kind: "swipe", from: { x: 540, y: 1600 }, to: { x: 540, y: 600 } }),
+      "swipe ↑ 540,1600 → 540,600",
+    );
+    assert.equal(
+      describeRecipeStep({ kind: "swipe", from: { x: 200, y: 600 }, to: { x: 800, y: 600 } }),
+      "swipe → 200,600 → 800,600",
+    );
     assert.equal(describeRecipeStep({ kind: "key", key: "home" }), "Key: home");
     assert.equal(describeRecipeStep({ kind: "sleep", ms: 250 }), "Sleep 250ms");
     assert.equal(describeRecipeStep({ kind: "screenshot" }), "Screenshot");
@@ -171,6 +219,9 @@ describe("describeRecipeStep", () => {
     assert.deepEqual(glyphsForStep({ kind: "tap", target: { ref: "x" } }), ["tap"]);
     assert.deepEqual(glyphsForStep({ kind: "type", text: "x" }), ["type"]);
     assert.deepEqual(glyphsForStep({ kind: "scroll", direction: "down" }), ["swipe"]);
+    assert.deepEqual(glyphsForStep({ kind: "swipe", from: { x: 0, y: 0 }, to: { x: 1, y: 1 } }), [
+      "swipe",
+    ]);
     assert.deepEqual(glyphsForStep({ kind: "key", key: "back" }), ["tap"]);
     assert.deepEqual(glyphsForStep({ kind: "sleep", ms: 1 }), ["wait"]);
     assert.deepEqual(glyphsForStep({ kind: "wait-for", target: { text: "x" } }), ["wait"]);

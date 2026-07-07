@@ -17,6 +17,7 @@ import {
   pressKey,
   scrollDown,
   sleep,
+  swipeGesture,
   waitFor,
   exists,
   base,
@@ -104,6 +105,12 @@ export async function runRecipeStep(
         await scrollUp(device, step.amount);
       }
       break;
+
+    case "swipe": {
+      const { from, to, durationMs } = step;
+      await swipeGesture(device, from, to, durationMs ?? 250);
+      break;
+    }
 
     case "key":
       await pressKey(device, step.key);

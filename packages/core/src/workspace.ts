@@ -18,6 +18,8 @@ import {
   pressPoint,
   pressRef,
   snapshot,
+  swipeGesture,
+  typeText,
   type Device,
   type SnapshotNode,
 } from "./device.js";
@@ -63,6 +65,38 @@ function rawTap(x: number, y: number): void {
     ? ["-s", serial, "shell", "input", "tap", String(x), String(y)]
     : ["shell", "input", "tap", String(x), String(y)];
   execFileSync("adb", args, { timeout: 5000 });
+}
+/** Raw adb input swipe — works without a session, on any app. */
+function rawSwipe(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  durationMs: number,
+): void {
+  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  const args = serial
+    ? [
+        "-s",
+        serial,
+        "shell",
+        "input",
+        "swipe",
+        String(from.x),
+        String(from.y),
+        String(to.x),
+        String(to.y),
+        String(durationMs),
+      ]
+    : [
+        "shell",
+        "input",
+        "swipe",
+        String(from.x),
+        String(from.y),
+        String(to.x),
+        String(to.y),
+        String(durationMs),
+      ];
+  execFileSync("adb", args, { timeout: 8000 });
 }
 
 export type ListedDevice = {
@@ -227,7 +261,14 @@ export type InteractInput =
   | { kind: "point"; x: number; y: number }
   | { kind: "ref"; ref: string }
   | { kind: "find"; query: string }
-  | { kind: "text-match"; match: string };
+  | { kind: "text-match"; match: string }
+  | {
+      kind: "swipe";
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      durationMs?: number;
+    }
+  | { kind: "type"; text: string };
 
 export async function interact(input: InteractInput, opts?: { serial?: string }): Promise<void> {
   if (opts?.serial) selectDevice(opts.serial);
@@ -250,13 +291,23 @@ export async function interact(input: InteractInput, opts?: { serial?: string })
         case "text-match":
           await pressMatchingText(device, input.match);
           return;
+        case "swipe":
+          await swipeGesture(device, input.from, input.to, input.durationMs ?? 250);
+          return;
+        case "type":
+          await typeText(device, input.text);
+          return;
       }
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // No SDK session — raw adb tap works for coordinate taps on any app
+    // No SDK session — raw adb works for coordinate interactions on any app.
     if (/no active session/i.test(msg) && input.kind === "point") {
       rawTap(input.x, input.y);
+      return;
+    }
+    if (/no active session/i.test(msg) && input.kind === "swipe") {
+      rawSwipe(input.from, input.to, input.durationMs ?? 250);
       return;
     }
     throw err;

@@ -130,6 +130,16 @@ export async function pressPoint(device: Device, x: number, y: number): Promise<
   await controlled(() => device.interactions.press({ ...base(), x, y }));
 }
 
+/** Swipe from one point to another over `durationMs`. Follows pressPoint style. */
+export async function swipeGesture(
+  device: Device,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  durationMs = 250,
+): Promise<void> {
+  await controlled(() => device.interactions.swipe({ ...base(), from, to, durationMs }));
+}
+
 export async function typeText(device: Device, text: string): Promise<void> {
   await controlled(() => device.interactions.type({ ...base(), text }));
 }

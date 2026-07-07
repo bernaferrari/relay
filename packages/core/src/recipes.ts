@@ -30,6 +30,13 @@ export type RecipeStep =
   | { kind: "type"; text: string; target?: StepTarget; note?: string }
   | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
   | { kind: "key"; key: "back" | "home"; note?: string }
+  | {
+      kind: "swipe";
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      durationMs?: number;
+      note?: string;
+    }
   | { kind: "sleep"; ms: number; note?: string }
   | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
   | { kind: "pause"; message: string; note?: string }
@@ -108,6 +115,13 @@ function parseTarget(raw: unknown, index: number, field: string): StepTarget {
   }
   return t;
 }
+/** Parse a required { x, y } coordinate object. */
+function parsePoint(raw: unknown, index: number, field: string): { x: number; y: number } {
+  if (!isObject(raw) || !isNumber(raw.x) || !isNumber(raw.y)) {
+    throw stepErr(index, `${field} must be { x: number, y: number }`);
+  }
+  return { x: raw.x, y: raw.y };
+}
 
 /**
  * Validate an unknown steps array field-by-field. Throws `Error` naming the
@@ -162,6 +176,27 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
                   throw stepErr(index, "scroll.amount must be a number");
                 })()
             : {}),
+          ...(note ? { note } : {}),
+        };
+        out.push(step);
+        break;
+      }
+      case "swipe": {
+        const from = parsePoint(raw.from, index, "swipe.from");
+        const to = parsePoint(raw.to, index, "swipe.to");
+        let durationMs: number | undefined;
+        if (raw.durationMs !== undefined) {
+          if (!isNumber(raw.durationMs)) throw stepErr(index, "swipe.durationMs must be a number");
+          if (raw.durationMs < 50 || raw.durationMs > 5000) {
+            throw stepErr(index, "swipe.durationMs must be between 50 and 5000");
+          }
+          durationMs = raw.durationMs;
+        }
+        const step: Extract<RecipeStep, { kind: "swipe" }> = {
+          kind: "swipe",
+          from,
+          to,
+          ...(durationMs !== undefined ? { durationMs } : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -381,6 +416,14 @@ export async function deleteRecipe(id: string): Promise<void> {
   }
 }
 
+/** Direction arrow for a swipe's dominant axis: ↓ ↑ → ← ↘ etc. */
+function arrowForSwipe(from: { x: number; y: number }, to: { x: number; y: number }): string {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dy) >= Math.abs(dx)) return dy >= 0 ? "↓" : "↑";
+  return dx >= 0 ? "→" : "←";
+}
+
 /** Human-readable one-line title for a step (trace + log surface). */
 export function describeRecipeStep(step: RecipeStep): string {
   switch (step.kind) {
@@ -390,6 +433,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return step.target ? `Type into ${describeTarget(step.target)}` : "Type text";
     case "scroll":
       return `Scroll ${step.direction}`;
+    case "swipe":
+      return `swipe ${arrowForSwipe(step.from, step.to)} ${Math.round(step.from.x)},${Math.round(step.from.y)} → ${Math.round(step.to.x)},${Math.round(step.to.y)}`;
     case "key":
       return `Key: ${step.key}`;
     case "sleep":
@@ -413,6 +458,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "type":
       return ["type"];
     case "scroll":
+      return ["swipe"];
+    case "swipe":
       return ["swipe"];
     case "key":
       return ["tap"];
