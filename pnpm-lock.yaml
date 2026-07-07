@@ -310,18 +310,18 @@ importers:
       electron:
         specifier: ^35.2.1
         version: 35.7.5
-      electron-vite:
-        specifier: ^3.1.0
-        version: 3.1.0(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
       vite:
         specifier: npm:@voidzero-dev/vite-plus-core@0.2.2
-        version: '@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)'
+        version: '@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)'
       vite-plugin-solid:
         specifier: ^2.11.6
-        version: 2.11.12(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))(solid-js@1.9.14)
+        version: 2.11.12(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))(solid-js@1.9.14)
 
   packages/server:
     dependencies:
@@ -434,12 +434,6 @@ packages:
 
   '@babel/plugin-syntax-jsx@7.29.7':
     resolution: {integrity: sha512-TSu8+mHCoEaaCDEZ0I3+6mvTBYR4PCxQwf2z9/r5Tbztv6NaLR3B9thGTTxX2WGuGHJqRiAbKPeGTJ5XWXVg6A==}
-    engines: {node: '>=6.9.0'}
-    peerDependencies:
-      '@babel/core': ^7.0.0-0
-
-  '@babel/plugin-transform-arrow-functions@7.29.7':
-    resolution: {integrity: sha512-N7zArUXWzAMzm+/N0uPBeVB3Fam5lMxtUwMmDK5f/IBBS7a7p1qeUoxd/6CckXoxUdgsntq1Dh8xNW06maZbDQ==}
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
@@ -1345,10 +1339,6 @@ packages:
   buffer-crc32@0.2.13:
     resolution: {integrity: sha512-VO9Ht/+p3SN7SKWqcrgEzjGbRSJYTx+Q1pTQC0wrWqHx0vpJraQ6GtHx8tvcg1rlK1byhU5gccxgOgj7B0TDkQ==}
 
-  cac@6.7.14:
-    resolution: {integrity: sha512-b6Ilus+c3RrdDk+JhLKUAQfzzgLEPy6wcXqS7f/xe1EETvsDP6GORG7SFuOs6cID5YkqchW/LXZbX5bc8j7ZcQ==}
-    engines: {node: '>=8'}
-
   cacheable-lookup@5.0.4:
     resolution: {integrity: sha512-2/kNscPhpcxrOigMZzbiWF7dz8ilhb/nIHU3EyZiXWXpeq/au8qJ8VhdftMkty3n7Gj6HIGalQG8oiBNB3AJgA==}
     engines: {node: '>=10.6.0'}
@@ -1414,17 +1404,6 @@ packages:
 
   electron-to-chromium@1.5.385:
     resolution: {integrity: sha512-78sa/M08MNAYHQfjoWMvOlKQqZ0ElhSm/L5HNUc96VZ3b+KvDVnngFm8sYQy0XrhTRgAhggHr5abA7yTvRdo4Q==}
-
-  electron-vite@3.1.0:
-    resolution: {integrity: sha512-M7aAzaRvSl5VO+6KN4neJCYLHLpF/iWo5ztchI/+wMxIieDZQqpbCYfaEHHHPH6eupEzfvZdLYdPdmvGqoVe0Q==}
-    engines: {node: ^18.0.0 || >=20.0.0}
-    hasBin: true
-    peerDependencies:
-      '@swc/core': ^1.0.0
-      vite: ^4.0.0 || ^5.0.0 || ^6.0.0
-    peerDependenciesMeta:
-      '@swc/core':
-        optional: true
 
   electron@35.7.5:
     resolution: {integrity: sha512-dnL+JvLraKZl7iusXTVTGYs10TKfzUi30uEDTqsmTm0guN9V2tbOjTzyIZbh9n3ygUjgEYyo+igAwMRXIi3IPw==}
@@ -2098,11 +2077,6 @@ snapshots:
       '@babel/core': 7.29.7
       '@babel/helper-plugin-utils': 7.29.7
 
-  '@babel/plugin-transform-arrow-functions@7.29.7(@babel/core@7.29.7)':
-    dependencies:
-      '@babel/core': 7.29.7
-      '@babel/helper-plugin-utils': 7.29.7
-
   '@babel/runtime@7.29.7': {}
 
   '@babel/template@7.29.7':
@@ -2610,6 +2584,20 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
 
+  '@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)':
+    dependencies:
+      '@oxc-project/runtime': 0.138.0
+      '@oxc-project/types': 0.138.0
+      lightningcss: 1.32.0
+      postcss: 8.5.16
+    optionalDependencies:
+      '@types/node': 22.20.0
+      esbuild: 0.25.12
+      fsevents: 2.3.3
+      tsx: 4.22.5
+      typescript: 5.9.3
+      yaml: 2.9.0
+
   '@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)':
     dependencies:
       '@oxc-project/runtime': 0.138.0
@@ -2693,8 +2681,6 @@ snapshots:
 
   buffer-crc32@0.2.13: {}
 
-  cac@6.7.14: {}
-
   cacheable-lookup@5.0.4: {}
 
   cacheable-request@7.0.4:
@@ -2753,18 +2739,6 @@ snapshots:
   dom-accessibility-api@0.5.16: {}
 
   electron-to-chromium@1.5.385: {}
-
-  electron-vite@3.1.0(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)):
-    dependencies:
-      '@babel/core': 7.29.7
-      '@babel/plugin-transform-arrow-functions': 7.29.7(@babel/core@7.29.7)
-      cac: 6.7.14
-      esbuild: 0.25.12
-      magic-string: 0.30.21
-      picocolors: 1.1.1
-      vite: '@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)'
-    transitivePeerDependencies:
-      - supports-color
 
   electron@35.7.5:
     dependencies:
@@ -3264,6 +3238,19 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
+  vite-plugin-solid@2.11.12(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))(solid-js@1.9.14):
+    dependencies:
+      '@babel/core': 7.29.7
+      '@types/babel__core': 7.20.5
+      babel-preset-solid: 1.9.12(@babel/core@7.29.7)(solid-js@1.9.14)
+      merge-anything: 5.1.7
+      solid-js: 1.9.14
+      solid-refresh: 0.6.3(solid-js@1.9.14)
+      vite: '@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)'
+      vitefu: 1.1.3(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))
+    transitivePeerDependencies:
+      - supports-color
+
   vite-plugin-solid@2.11.12(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))(solid-js@1.9.14):
     dependencies:
       '@babel/core': 7.29.7
@@ -3334,6 +3321,10 @@ snapshots:
       - utf-8-validate
       - vite
       - yaml
+
+  vitefu@1.1.3(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)):
+    optionalDependencies:
+      vite: '@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)'
 
   vitefu@1.1.3(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)):
     optionalDependencies:

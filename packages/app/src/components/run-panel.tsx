@@ -1,34 +1,49 @@
-import { For, Show, createMemo } from "solid-js";
-import { useServer, type ActionInfo, type JobInfo } from "../context/server";
+import { For, Show, createMemo, createSignal } from "solid-js";
+import { useServer, type JobInfo } from "../context/server";
+import { useRecorder, describeStep, type CustomRecipe } from "../context/recorder";
 import { Glyphs } from "./glyphs";
 import { EmptyState } from "./empty-state";
+import { useCommand } from "../context/command";
+import { Icon } from "./icon";
+import { RecipeEditor } from "./recipe-editor";
+import { statusTone } from "../lib/job";
 
-function statusTone(status: JobInfo["status"] | "idle") {
-  if (status === "ok") return "pass";
-  if (status === "healed") return "heal";
-  if (status === "error") return "fail";
-  if (status === "cancelled") return "fail";
-  if (status === "paused") return "heal";
-  if (status === "running" || status === "queued") return "run";
-  return "dim";
-}
+const GLYPH_LABEL: Record<string, string> = {
+  tap: "tap",
+  type: "type",
+  wait: "wait",
+  shot: "screenshot",
+  swipe: "swipe",
+  ok: "ok",
+  fail: "fail",
+  ai: "AI heal",
+  dl: "download",
+  re: "retry",
+  store: "store",
+  login: "login",
+};
 
-function fmtDur(job: JobInfo) {
-  const end =
-    job.finishedAt ?? (job.status === "running" ? Date.now() : (job.startedAt ?? job.queuedAt));
-  const start = job.startedAt ?? job.queuedAt;
-  const ms = Math.max(0, end - start);
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+/** Hover tip describing what a step does (its actions + timing). */
+function stepTip(step: { title: string; glyphs?: string[]; durationMs?: number }): string {
+  const acts = (step.glyphs ?? []).map((g) => GLYPH_LABEL[g]).filter(Boolean);
+  const parts = [step.title];
+  if (acts.length) parts.push(acts.join(" · "));
+  if (step.durationMs) parts.push(`${Math.round(step.durationMs)}ms`);
+  return parts.join(" — ");
 }
 
 export function RunPanel() {
   const server = useServer();
+  const rec = useRecorder();
+  const cmd = useCommand();
+  const [editingRecipe, setEditingRecipe] = createSignal<CustomRecipe | null>(null);
 
   const selectedMeta = createMemo(() =>
     server.actions().find((a) => a.id === server.selectedAction()),
   );
+
+  /** Custom recipe takes over the panel when no server action is selected. */
+  const customRecipe = createMemo(() => (server.selectedAction() ? null : rec.selectedRecipe()));
 
   const selectedJob = createMemo(
     () => server.jobs().find((j) => j.id === server.selectedJobId()) ?? null,
@@ -52,30 +67,23 @@ export function RunPanel() {
 
   const stats = createMemo(() => {
     const jobs = server.jobs();
-    const ok = jobs.filter((j) => j.status === "ok").length;
+    const ok = jobs.filter((j) => j.status === "ok" && !j.healed).length;
     const fail = jobs.filter((j) => j.status === "error").length;
     const healed = jobs.filter((j) => j.status === "healed" || j.healed).length;
     const run = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
     return { total: jobs.length, ok, fail, healed, run, frames: server.frames().length };
   });
 
-  const groups = createMemo(() => {
-    const byCat = new Map<string, ActionInfo[]>();
-    for (const a of server.actions()) {
-      const list = byCat.get(a.category) ?? [];
-      list.push(a);
-      byCat.set(a.category, list);
-    }
-    return [...byCat.entries()];
-  });
-
   return (
     <aside class="panel" aria-label="Run panel">
       <div class="panel__head">
         <div class="panel__title-row">
-          <h1 class="mono panel__flow">{server.selectedAction() ?? "ready"}</h1>
+          <h1 class="mono panel__flow">
+            {server.selectedAction() ?? customRecipe()?.title ?? "ready"}
+          </h1>
           <span class="panel__stats">
-            {stats().ok} passed · {stats().fail} failed
+            <span class="panel__stats-pass">{stats().ok} passed</span> ·{" "}
+            <span class="panel__stats-fail">{stats().fail} failed</span>
             {stats().healed ? (
               <span class="panel__stats-heal"> · {stats().healed} healed</span>
             ) : null}
@@ -106,176 +114,170 @@ export function RunPanel() {
 
       <Show when={server.panelTab() === "steps"}>
         <div class="panel__scroll">
-          <div class="section-label">Recipes</div>
-          <Show
-            when={server.actions().length > 0}
-            fallback={
-              <EmptyState
-                size="sm"
-                icon="run"
-                title={server.isOffline() ? "Server offline" : "No recipes loaded"}
-                description={
-                  server.isOffline()
-                    ? "Start the API to load available recipes."
-                    : "Actions will appear here when the server is online."
-                }
-                actionLabel="Retry"
-                onAction={() => void server.retryConnection()}
-              />
-            }
-          >
-            <For each={groups()}>
-              {([category, actions]) => (
-                <div class="action-block">
-                  <div class="section-label section-label--sub">{category}</div>
-                  <For each={actions}>
-                    {(a, i) => {
-                      const job = () => server.jobs().find((j) => j.action === a.id);
-                      const on = () => server.selectedAction() === a.id;
-                      return (
-                        <button
-                          type="button"
-                          class="srow"
-                          classList={{ on: on() }}
-                          onClick={() => server.setSelectedAction(a.id)}
-                          onDblClick={() => {
-                            server.setSelectedAction(a.id);
-                            void server.runSelected();
-                          }}
-                        >
-                          <span class="snum">{String(i() + 1).padStart(2, "0")}</span>
-                          <span class="srow__body">
-                            <span class="smeta">
-                              <span class={`tone tone--${a.category === "grok" ? "acc" : "dim"}`}>
-                                {a.category === "grok" ? "App" : "Store"}
-                              </span>
-                              <span>·</span>
-                              <span class="mono">{a.id}</span>
-                              <span class="smeta__rule" />
-                              <Glyphs glyphs={a.glyphs} />
-                              <Show when={job()}>
-                                <span>·</span>
-                                <span class={`tone tone--${statusTone(job()!.status)}`}>
-                                  {job()!.status}
-                                </span>
-                                <span class="mono">{fmtDur(job()!)}</span>
-                              </Show>
-                            </span>
-                            <span class="stitle">{a.title}</span>
-                            <Show when={on() && a.description}>
-                              <span class="sdesc">{a.description}</span>
-                            </Show>
-                          </span>
-                        </button>
-                      );
-                    }}
-                  </For>
+          <Show when={selectedMeta()}>
+            <div class="panel__recipe-card">
+              <div class="panel__recipe-card-title">{selectedMeta()!.title}</div>
+              <Show when={selectedMeta()!.description}>
+                <p class="panel__recipe-card-desc">{selectedMeta()!.description}</p>
+              </Show>
+              <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
+                <div class="panel__recipe-notice">
+                  <span class="panel__recipe-notice-icon" aria-hidden="true">
+                    <Icon name="alert" size={14} />
+                  </span>
+                  <span class="panel__recipe-notice-text">
+                    Needs a prod account match (e.g. gmail.com) to target the right account.
+                  </span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    onClick={() => cmd.run("nav.settings")}
+                  >
+                    Configure
+                  </button>
                 </div>
-              )}
-            </For>
+              </Show>
+              <Show when={selectedJob()?.status === "error"}>
+                <div class="panel__recipe-card-actions">
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    onClick={() => void server.retrySelectedJob(selectedJob()!.id)}
+                  >
+                    <Icon name="refresh" size={13} />
+                    Retry
+                  </button>
+                </div>
+              </Show>
+            </div>
+          </Show>
+          <Show when={customRecipe()}>
+            {(r) => (
+              <div class="panel__recipe-card">
+                <div class="panel__recipe-card-title">{r().title}</div>
+                <p class="panel__recipe-card-desc">
+                  Custom recipe · {r().steps.length} step{r().steps.length === 1 ? "" : "s"} ·
+                  client-side replay
+                </p>
+                <div class="panel__recipe-card-actions">
+                  <button
+                    type="button"
+                    class="btn btn-acc"
+                    disabled={rec.replaying()}
+                    onClick={() => void rec.runRecipe(r())}
+                  >
+                    <Icon name="play" size={13} />
+                    {rec.replaying() ? "Replaying…" : "Run"}
+                  </button>
+                  <button type="button" class="btn btn-ghost" onClick={() => setEditingRecipe(r())}>
+                    <Icon name="sliders" size={13} />
+                    Edit
+                  </button>
+                </div>
+              </div>
+            )}
           </Show>
 
-          <div class="section-label" style={{ "margin-top": "1rem" }}>
-            Run history
-          </div>
+          <div class="section-label">Steps</div>
           <Show
-            when={server.jobs().length > 0}
+            when={customRecipe()}
             fallback={
-              <EmptyState
-                size="sm"
-                icon="run"
-                title="No runs yet"
-                description="Pick a recipe and press Run — steps and evidence land here."
-              />
+              <Show
+                when={(selectedJob()?.steps?.length ?? 0) > 0}
+                fallback={
+                  <EmptyState
+                    size="sm"
+                    icon="run"
+                    title={selectedMeta() ? "Ready to run" : "Pick a recipe"}
+                    description={
+                      selectedMeta()
+                        ? "Press Run (⌘↵). Live steps appear here."
+                        : "Select a recipe in the left sidebar."
+                    }
+                  />
+                }
+              >
+                <For each={selectedJob()!.steps ?? []}>
+                  {(step, i) => {
+                    const tone =
+                      step.status === "ok" || step.status === "healed"
+                        ? "pass"
+                        : step.status === "error"
+                          ? "fail"
+                          : step.status === "running"
+                            ? "run"
+                            : "dim";
+                    return (
+                      <div
+                        class="srow srow--static"
+                        classList={{ on: i() === (selectedJob()!.steps?.length ?? 1) - 1 }}
+                        title={stepTip(step)}
+                      >
+                        <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
+                        <span class="srow__body">
+                          <span class="stitle">{step.title}</span>
+                          <span class="smeta">
+                            <span class={`tone tone--${tone === "dim" ? "dim" : tone}`}>
+                              {step.status ?? "queued"}
+                            </span>
+                            <Glyphs glyphs={step.glyphs} />
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  }}
+                </For>
+              </Show>
             }
           >
-            <For each={server.jobs()}>
-              {(j, i) => (
-                <button
-                  type="button"
-                  class="srow"
-                  classList={{ on: server.selectedJobId() === j.id }}
-                  onClick={() => server.jumpToJob(j.id)}
-                >
-                  <span class={`snum snum--${statusTone(j.status)}`}>
-                    {String(i() + 1).padStart(2, "0")}
-                  </span>
-                  <span class="srow__body">
-                    <span class="smeta">
-                      <span class={`tone tone--${statusTone(j.status)}`}>
-                        {j.kind ?? (j.healed ? "Healed" : "Replay")}
+            {(r) => (
+              <Show
+                when={r().steps.length > 0}
+                fallback={
+                  <EmptyState
+                    size="sm"
+                    icon="run"
+                    title="No steps yet"
+                    description="Edit this recipe to add steps, or record a new one from the device."
+                  />
+                }
+              >
+                <For each={r().steps}>
+                  {(step, i) => (
+                    <div class="srow srow--static" title={describeStep(step)}>
+                      <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
+                      <span class="srow__body">
+                        <span class="stitle">{describeStep(step)}</span>
+                        <span class="smeta">
+                          <span class="tone tone--dim">custom</span>
+                        </span>
                       </span>
-                      <span>·</span>
-                      <span class="mono">{fmtDur(j)}</span>
-                      <span class="smeta__rule" />
-                      <Glyphs glyphs={j.glyphs ?? j.steps?.[0]?.glyphs} />
-                      <Show when={(j.attempts ?? 1) > 1}>
-                        <span class="mono">×{j.attempts}</span>
-                      </Show>
-                    </span>
-                    <span class="stitle">{j.title ?? j.action}</span>
+                    </div>
+                  )}
+                </For>
+              </Show>
+            )}
+          </Show>
 
-                    <Show
-                      when={
-                        (j.healed || j.status === "healed" || j.healMessage) &&
-                        server.selectedJobId() === j.id
-                      }
-                    >
-                      <span class="heal-box" role="status">
-                        <span class="heal-box__icon" aria-hidden="true">
-                          ⚠
-                        </span>
-                        <span>
-                          {j.healMessage ?? "Step self-healed on retry."}{" "}
-                          <span class="mono heal-box__meta">attempt {j.attempts}</span>
-                        </span>
-                      </span>
-                    </Show>
-
-                    <Show when={j.status === "error" && server.selectedJobId() === j.id}>
-                      <span class="heal-box heal-box--fail" role="alert">
-                        <span class="heal-box__icon" aria-hidden="true">
-                          !
-                        </span>
-                        <span>
-                          {j.error}
-                          <div class="heal-box__actions">
-                            <button
-                              type="button"
-                              class="mono link-heal"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void server.retrySelectedJob(j.id);
-                              }}
-                            >
-                              Retry / heal →
-                            </button>
-                          </div>
-                        </span>
-                      </span>
-                    </Show>
-                  </span>
-                  <span class="srow__frames mono">
-                    {j.frames?.length ||
-                      server.frames().filter((f) => f.jobId === j.id).length ||
-                      "·"}
-                    <span class="srow__frames-ico" aria-hidden="true">
-                      🎞
-                    </span>
-                  </span>
-                </button>
-              )}
-            </For>
+          <Show when={selectedJob()?.error}>
+            <div class="heal-box heal-box--fail" role="alert" style={{ margin: "8px 14px" }}>
+              <span class="heal-box__icon" aria-hidden="true">
+                <Icon name="alert" size={12} />
+              </span>
+              <span>{selectedJob()!.error}</span>
+            </div>
           </Show>
         </div>
 
         <div class="console">
           <div class="console__label mono">
             {selectedJob()
-              ? `STEP ${String(selectedJob()!.steps?.length ?? 1).padStart(2, "0")} · LOG`
+              ? `LOG · ${selectedJob()!.action}`
               : selectedMeta()
                 ? `ACTION · ${selectedMeta()!.id}`
-                : "ACTIVITY"}
+                : customRecipe()
+                  ? `RECIPE · ${customRecipe()!.title}`
+                  : "ACTIVITY"}
           </div>
           <pre>{jobLogs() || "— live logs stream here via SSE —"}</pre>
         </div>
@@ -314,7 +316,7 @@ export function RunPanel() {
             <div class="tile tile--wide tile--heal-note">
               <div class="tile__note-row">
                 <span class="tile__note-ico" aria-hidden="true">
-                  ✦
+                  <Icon name="sparkle" size={16} />
                 </span>
                 <div class="tile__note-body">
                   <span class="tile__note-strong">
@@ -350,23 +352,6 @@ export function RunPanel() {
             <span class="tile__label">Runs directory</span>
             <div class="mono tile__path">{server.runsRoot() || "runs/"}</div>
           </div>
-
-          <label class="check-row">
-            <input
-              type="checkbox"
-              checked={server.skipAccountSwitch()}
-              onChange={(e) => server.setSkipAccountSwitch(e.currentTarget.checked)}
-            />
-            Skip Play account ensure
-          </label>
-          <label class="check-row">
-            <input
-              type="checkbox"
-              checked={server.skipRestoreHome()}
-              onChange={(e) => server.setSkipRestoreHome(e.currentTarget.checked)}
-            />
-            Skip restore home after alpha
-          </label>
         </div>
       </Show>
 
@@ -408,6 +393,7 @@ export function RunPanel() {
             disabled={server.isOffline()}
             onClick={() => void server.refreshRuns()}
           >
+            <Icon name="refresh" size={14} />
             Refresh disk runs
           </button>
 
@@ -417,9 +403,8 @@ export function RunPanel() {
               <EmptyState
                 size="sm"
                 icon="artifact"
-                title="No disk runs yet"
-                description="Finish a job to write run.json and frames to disk."
-                code={server.runsRoot() || "runs/<ts>_<action>_<device>_<id>/"}
+                title="No saved runs"
+                description="Completed runs are saved here with their frames and logs."
               />
             }
           >
@@ -462,6 +447,9 @@ export function RunPanel() {
           </p>
         </div>
       </Show>
+      <Show when={editingRecipe()}>
+        {(r) => <RecipeEditor recipe={r()} onClose={() => setEditingRecipe(null)} />}
+      </Show>
     </aside>
   );
 }
@@ -486,7 +474,14 @@ function InspectorBody() {
           }
           onClick={() => void server.captureUiSnapshot()}
         >
-          <Show when={server.busyCapture()} fallback="Capture UI snapshot">
+          <Show
+            when={server.busyCapture()}
+            fallback={
+              <>
+                <Icon name="scan" size={14} /> Capture UI snapshot
+              </>
+            }
+          >
             <span class="btn-spinner" aria-hidden="true" />
             Capturing…
           </Show>

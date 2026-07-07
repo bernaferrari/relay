@@ -35,8 +35,6 @@ export type DeviceClient = {
   runAction: (opts: {
     action: string;
     serial?: string;
-    skipAccountSwitch?: boolean;
-    skipRestoreHome?: boolean;
     onLog?: (line: string) => void;
   }) => Promise<{ ok: boolean; error?: string; result?: unknown; status?: string }>;
   cancel: (jobId?: string) => Promise<void>;
@@ -105,8 +103,6 @@ function inProcessClient(): DeviceClient {
       const job = enqueueJob({
         action: opts.action,
         serial: opts.serial,
-        skipAccountSwitch: opts.skipAccountSwitch,
-        skipRestoreHome: opts.skipRestoreHome,
       });
       let seen = 0;
       for (;;) {
@@ -192,8 +188,6 @@ function httpClient(baseUrl: string): DeviceClient {
         body: JSON.stringify({
           action: opts.action,
           serial: opts.serial,
-          skipAccountSwitch: opts.skipAccountSwitch,
-          skipRestoreHome: opts.skipRestoreHome,
         }),
       });
       let seen = 0;

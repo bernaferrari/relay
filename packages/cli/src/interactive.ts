@@ -49,11 +49,6 @@ async function pickIndex(rl: readline.Interface, title: string, labels: string[]
   }
 }
 
-async function confirm(rl: readline.Interface, q: string): Promise<boolean> {
-  const raw = (await rl.question(`${q} [y/N]: `)).trim().toLowerCase();
-  return raw === "y" || raw === "yes";
-}
-
 function actionLabel(meta: ActionMeta): string {
   return `${meta.id} — ${meta.description}`;
 }
@@ -86,14 +81,9 @@ export async function runInteractive(): Promise<void> {
     const meta = ACTIONS[actionIdx]!;
     const action = meta.id;
 
-    let skipAccountSwitch = false;
-    let skipRestoreHome = false;
-
     if (meta.isAlpha) {
       console.log(`\n  work: ${WORK_ACCOUNT_MATCH}\n  restore home: ${HOME_ACCOUNT_MATCH}`);
-      console.log("  (Works from any current Play account — switches only when needed.)");
-      skipAccountSwitch = await confirm(rl, "Skip ensuring teachx account?");
-      skipRestoreHome = await confirm(rl, "Skip restoring gmail/home after?");
+      console.log("  (Always switches to work account, then restores home after.)");
     }
 
     if (meta.requiresProdMatch) {
@@ -102,13 +92,12 @@ export async function runInteractive(): Promise<void> {
         if (!match) throw new Error("PROD_ACCOUNT_MATCH is required");
         process.env.PROD_ACCOUNT_MATCH = match;
       }
-      skipAccountSwitch = await confirm(rl, "Skip ensuring prod Play account?");
     }
 
     console.log(`\n→ Running ${action} on ${selected.serial}…\n`);
 
     const device = createDevice();
-    const result = await runAction(device, action, { skipAccountSwitch, skipRestoreHome });
+    const result = await runAction(device, action);
     if (!result.ok) {
       throw new Error(result.error);
     }

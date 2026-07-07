@@ -27,12 +27,9 @@ export const HOME_ACCOUNT_MATCH =
 
 export type GrokListingAction = "updated" | "installed" | "already-latest";
 
-export type AccountFlowOptions = {
-  /** Force skip ensure/switch for the *target* account */
-  skipAccountSwitch?: boolean;
-  /** After the op, switch back to HOME_ACCOUNT_MATCH (gmail). Default true for alpha. */
-  skipRestoreHome?: boolean;
-};
+/** Reserved for future alpha-flow knobs. Account switch is always enforced. */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export type AccountFlowOptions = {};
 
 function blobOf(n: SnapshotNode): string {
   return `${n.label ?? ""} ${n.value ?? ""} ${n.identifier ?? ""}`;
@@ -317,25 +314,9 @@ export async function reinstallGrok(device: Device, timeoutMs = defaultTimeout()
   await waitOpenEnabled(device, timeoutMs);
 }
 
-async function maybeRestoreHome(device: Device, opts?: AccountFlowOptions): Promise<void> {
-  if (process.env.SKIP_RESTORE_HOME === "1" || opts?.skipRestoreHome) {
-    console.log("==> skip restore home Play account");
-    return;
-  }
+async function restoreHome(device: Device): Promise<void> {
   console.log(`==> restore home Play account matching: ${HOME_ACCOUNT_MATCH}`);
   await ensurePlayAccount(device, HOME_ACCOUNT_MATCH);
-}
-
-async function maybeEnsureTarget(
-  device: Device,
-  match: string,
-  opts?: AccountFlowOptions,
-): Promise<void> {
-  if (opts?.skipAccountSwitch) {
-    console.log("==> --skip-account-switch: not ensuring target Play account");
-    return;
-  }
-  await ensurePlayAccount(device, match);
 }
 
 /**
@@ -344,14 +325,14 @@ async function maybeEnsureTarget(
  */
 export async function updateLastAlpha(
   device: Device,
-  opts?: AccountFlowOptions,
+  _opts?: AccountFlowOptions,
 ): Promise<GrokListingAction> {
-  await maybeEnsureTarget(device, WORK_ACCOUNT_MATCH, opts);
+  await ensurePlayAccount(device, WORK_ACCOUNT_MATCH);
   const result = await updateGrokOnly(device);
   if (result === "already-latest") {
     console.log(`==> User note: already on latest for ${WORK_ACCOUNT_MATCH} (no update needed).`);
   }
-  await maybeRestoreHome(device, opts);
+  await restoreHome(device);
   return result;
 }
 
@@ -361,45 +342,48 @@ export async function updateLastAlpha(
  */
 export async function installLastAlpha(
   device: Device,
-  opts?: AccountFlowOptions,
+  _opts?: AccountFlowOptions,
 ): Promise<GrokListingAction> {
-  await maybeEnsureTarget(device, WORK_ACCOUNT_MATCH, opts);
+  await ensurePlayAccount(device, WORK_ACCOUNT_MATCH);
   const result = await updateOrInstallGrok(device);
   if (result === "already-latest") {
     console.log(`==> User note: already on latest for ${WORK_ACCOUNT_MATCH}.`);
   }
-  await maybeRestoreHome(device, opts);
+  await restoreHome(device);
   return result;
 }
 
 /**
  * True reinstall on alpha/work account (Uninstall → Install) → restore gmail.
  */
-export async function reinstallLastAlpha(device: Device, opts?: AccountFlowOptions): Promise<void> {
-  await maybeEnsureTarget(device, WORK_ACCOUNT_MATCH, opts);
+export async function reinstallLastAlpha(
+  device: Device,
+  _opts?: AccountFlowOptions,
+): Promise<void> {
+  await ensurePlayAccount(device, WORK_ACCOUNT_MATCH);
   await reinstallGrok(device);
-  await maybeRestoreHome(device, opts);
+  await restoreHome(device);
 }
 
 /** UPDATE only on prod/personal account (no reinstall). Requires PROD_ACCOUNT_MATCH. */
 export async function updateLastProd(
   device: Device,
-  opts?: AccountFlowOptions,
+  _opts?: AccountFlowOptions,
 ): Promise<GrokListingAction> {
   const match = process.env.PROD_ACCOUNT_MATCH?.trim();
-  if (!match && !opts?.skipAccountSwitch) {
+  if (!match) {
     throw new Error("PROD_ACCOUNT_MATCH is required for update-last-prod (e.g. gmail.com).");
   }
-  if (match) await maybeEnsureTarget(device, match, opts);
+  await ensurePlayAccount(device, match);
   return updateGrokOnly(device);
 }
 
 /** Reinstall on prod account (Uninstall → Install). Requires PROD_ACCOUNT_MATCH. */
-export async function installLastProd(device: Device, opts?: AccountFlowOptions): Promise<void> {
+export async function installLastProd(device: Device, _opts?: AccountFlowOptions): Promise<void> {
   const match = process.env.PROD_ACCOUNT_MATCH?.trim();
-  if (!match && !opts?.skipAccountSwitch) {
+  if (!match) {
     throw new Error("PROD_ACCOUNT_MATCH is required for install-last-prod (e.g. gmail.com).");
   }
-  if (match) await maybeEnsureTarget(device, match, opts);
+  await ensurePlayAccount(device, match);
   await reinstallGrok(device);
 }

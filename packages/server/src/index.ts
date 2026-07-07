@@ -322,8 +322,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       const body = (await parseJsonBody(req)) as {
         action?: string;
         serial?: string;
-        skipAccountSwitch?: boolean;
-        skipRestoreHome?: boolean;
         prodAccountMatch?: string;
         retryOf?: string;
       };
@@ -333,8 +331,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         : enqueueJob({
             action: body.action!,
             serial: body.serial,
-            skipAccountSwitch: body.skipAccountSwitch,
-            skipRestoreHome: body.skipRestoreHome,
             prodAccountMatch: body.prodAccountMatch,
           });
       json(res, 202, { job: slimJob(job, false) });
@@ -345,16 +341,12 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (method === "POST" && runMatch) {
       const body = (await parseJsonBody(req)) as {
         serial?: string;
-        skipAccountSwitch?: boolean;
-        skipRestoreHome?: boolean;
         prodAccountMatch?: string;
         wait?: boolean;
       };
       const job = enqueueJob({
         action: runMatch.id!,
         serial: body.serial,
-        skipAccountSwitch: body.skipAccountSwitch,
-        skipRestoreHome: body.skipRestoreHome,
         prodAccountMatch: body.prodAccountMatch,
       });
       if (body.wait === false) {

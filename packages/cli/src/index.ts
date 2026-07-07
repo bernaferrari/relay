@@ -61,12 +61,6 @@ run flags:
   --serial <s>               Target device serial
   --all-devices              Run on every connected Android device
   --retries <n>              Device op retries (default 3, env GROK_DEVICE_RETRY_ATTEMPTS)
-  --skip-account-switch      Skip Play account ensure/switch
-  --skip-restore-home        After alpha flows, do not restore home account
-
-Direct action flags (compat):
-  --skip-account-switch
-  --skip-restore-home
 
 serve:
   --port <n>                 Listen port (default ${DEFAULT_SERVE_PORT})
@@ -158,8 +152,6 @@ async function runOneJob(
   action: ActionId,
   opts: {
     serial?: string;
-    skipAccountSwitch?: boolean;
-    skipRestoreHome?: boolean;
   },
 ): Promise<TestJob> {
   const onSigInt = () => {
@@ -176,8 +168,6 @@ async function runOneJob(
     return await runJobSync({
       action,
       serial: opts.serial,
-      skipAccountSwitch: opts.skipAccountSwitch,
-      skipRestoreHome: opts.skipRestoreHome,
     });
   } finally {
     process.off("SIGINT", onSigInt);
@@ -190,8 +180,6 @@ async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> 
   const junitPath = parseFlagValue(argv, "--junit");
   const asJson = hasFlag(argv, "--json");
   const allDevices = hasFlag(argv, "--all-devices");
-  const skipAccountSwitch = hasFlag(argv, "--skip-account-switch");
-  const skipRestoreHome = hasFlag(argv, "--skip-restore-home");
   const retries = parseFlagValue(argv, "--retries");
   if (retries) process.env.GROK_DEVICE_RETRY_ATTEMPTS = retries;
 
@@ -215,7 +203,7 @@ async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> 
     if (!asJson && allDevices) {
       console.log(`\n→ device ${serial}`);
     }
-    const job = await runOneJob(action, { serial, skipAccountSwitch, skipRestoreHome });
+    const job = await runOneJob(action, { serial });
     jobs.push(job);
     if (!asJson) printReportHuman(toJobReport(job));
   }

@@ -43,7 +43,7 @@ export function OfflineGate(props: {
               Server offline
             </h2>
             <p id="offline-gate-desc" class="offline-gate__desc">
-              The Grok Device API is not reachable. Start it locally, then retry.
+              The Specimen API is not reachable. Start it locally, then retry.
             </p>
             <code class="offline-gate__code mono">pnpm dev:serve</code>
             <Show when={server.serverUrl()}>

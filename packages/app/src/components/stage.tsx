@@ -1,14 +1,105 @@
-import { For, Show } from "solid-js";
-import { useServer } from "../context/server";
-import { EmptyState } from "./empty-state";
+import { For, Show, createSignal, onCleanup } from "solid-js";
+import { useServer, type SnapshotNode } from "../context/server";
+import { useRecorder, describeStep, type RecStep } from "../context/recorder";
+import { Icon } from "./icon";
 
 /** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
 export function DeviceStage() {
   const server = useServer();
+  const rec = useRecorder();
   const frame = () => server.currentFrame();
-  const job = () => server.jobs().find((j) => j.id === server.selectedJobId()) ?? server.jobs()[0];
+  const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
+  const job = () => server.jobs().find((j) => j.id === server.selectedJobId());
   const actionMeta = () =>
     server.actions().find((a) => a.id === (server.selectedAction() ?? job()?.action));
+
+  let stageEl: HTMLElement | undefined;
+
+  /** Element picker: shows the hit node + precision options instead of tapping on click. */
+  const [picker, setPicker] = createSignal<{
+    fx: number;
+    fy: number;
+    vx: number;
+    vy: number;
+    node: SnapshotNode | null;
+  } | null>(null);
+
+  /** Smallest a11y node containing the fractional point (mirrors recorder.nodeAt). */
+  function hitNode(fx: number, fy: number): SnapshotNode | null {
+    const snap = server.snapshot();
+    if (!snap?.bounds) return null;
+    const bw = snap.bounds.width;
+    const bh = snap.bounds.height;
+    let best: SnapshotNode | null = null;
+    let bestArea = Infinity;
+    for (const n of snap.nodes) {
+      if (!n.rect) continue;
+      const nx = n.rect.x / bw;
+      const ny = n.rect.y / bh;
+      const nw = n.rect.width / bw;
+      const nh = n.rect.height / bh;
+      if (fx >= nx && fx <= nx + nw && fy >= ny && fy <= ny + nh) {
+        const area = nw * nh;
+        if (area > 0 && area < bestArea) {
+          best = n;
+          bestArea = area;
+        }
+      }
+    }
+    return best;
+  }
+
+  const pickerNode = () => picker()?.node ?? null;
+  const nodeLabel = () => {
+    const n = pickerNode();
+    return n?.label ?? n?.value ?? n?.identifier ?? "No element";
+  };
+  const labelOption = () => (pickerNode()?.label ?? pickerNode()?.value ?? "").trim();
+  const pointStep = (): { kind: "point"; x: number; y: number } => {
+    const p = picker();
+    const b = server.snapshot()?.bounds;
+    const w = b?.width ?? 1;
+    const h = b?.height ?? 1;
+    return { kind: "point", x: Math.round((p?.fx ?? 0) * w), y: Math.round((p?.fy ?? 0) * h) };
+  };
+  const refStep = (): RecStep => {
+    const n = pickerNode()!;
+    const raw = n.ref!;
+    return {
+      kind: "ref",
+      ref: raw.startsWith("@") ? raw : `@${raw}`,
+      label: (n.label ?? n.value ?? n.identifier ?? "").trim() || undefined,
+    };
+  };
+
+  /** Execute the chosen precision: tap, then record if recording. */
+  async function pick(step: RecStep): Promise<void> {
+    const p = picker();
+    if (!p) return;
+    setPicker(null);
+    let ok = await server.interactStep(step, describeStep(step));
+    if (!ok && step.kind !== "point") {
+      // ref/label failed (likely no session) — fall back to a coordinate tap
+      const bounds = server.snapshot()?.bounds;
+      if (bounds) {
+        const pointStep: RecStep = {
+          kind: "point",
+          x: Math.round(p.fx * bounds.width),
+          y: Math.round(p.fy * bounds.height),
+        };
+        ok = await server.interactStep(pointStep, describeStep(pointStep));
+        if (ok && rec.recording()) rec.recordStep(pointStep);
+        return;
+      }
+    }
+    if (ok && rec.recording()) rec.recordStep(step);
+  }
+
+  const onStageKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && picker()) setPicker(null);
+  };
+  window.addEventListener("keydown", onStageKey);
+  onCleanup(() => window.removeEventListener("keydown", onStageKey));
 
   const overlays = () => {
     if (!server.showOverlays()) return [];
@@ -32,30 +123,10 @@ export function DeviceStage() {
       });
   };
 
-  const glassEmpty = () => {
-    if (server.isOffline()) {
-      return {
-        title: "Server offline",
-        description: "Connect the API to capture the device.",
-        code: "pnpm dev:serve",
-      };
-    }
-    if (server.isEmptyDevices()) {
-      return {
-        title: "No device",
-        description: "Connect a phone over USB or wireless adb.",
-        code: "adb devices",
-      };
-    }
-    return {
-      title: "No frames yet",
-      description: "Capture a screenshot or run a recipe — the device is the evidence.",
-    };
-  };
-
   return (
     <section
       class="stage"
+      ref={stageEl}
       aria-label="Device stage"
       classList={{ "stage--offline": server.isOffline() }}
     >
@@ -66,16 +137,9 @@ export function DeviceStage() {
       </Show>
 
       <div class="stage__meta">
-        <span class="mono stage__step">
-          {server.selectedAction()
-            ? String(
-                server.actions().findIndex((a) => a.id === server.selectedAction()) + 1,
-              ).padStart(2, "0")
-            : "—"}
-          /{String(server.actions().length).padStart(2, "0")}
+        <span class="stage__title">
+          {job() ? (actionMeta()?.title ?? "Select an action") : "Select a run"}
         </span>
-        <span class="stage__divider" />
-        <span class="stage__title">{actionMeta()?.title ?? "Select an action"}</span>
         <Show when={job()?.healed || job()?.status === "healed"}>
           <span class="badge b-heal">Healed</span>
         </Show>
@@ -84,63 +148,129 @@ export function DeviceStage() {
         </Show>
       </div>
 
-      <div class="bezel" data-empty={!frame() ? "1" : "0"}>
-        <div class="glass">
-          <div class="notch" aria-hidden="true" />
-          <Show
-            when={frame()}
-            fallback={
-              <div class="glass__empty">
-                <div class="glass__empty-illus" aria-hidden="true">
-                  <span class="glass__empty-rect" />
-                  <span class="glass__empty-line" />
-                  <span class="glass__empty-line glass__empty-line--short" />
+      <Show
+        when={!server.isEmptyDevices()}
+        fallback={
+          <div class="stage__no-device">
+            <span class="stage__no-device-icon" aria-hidden="true">
+              <Icon name="smartphone" size={34} strokeWidth={1.3} />
+            </span>
+            <p class="stage__no-device-title">No device connected</p>
+            <p class="stage__no-device-hint">
+              Connect a phone over USB or wireless adb, then refresh.
+            </p>
+            <div class="stage__connect">
+              <button
+                type="button"
+                class="btn btn-acc"
+                disabled={server.health() === "offline"}
+                onClick={() =>
+                  void (async () => {
+                    await server.pollHealth();
+                    if (server.health() === "online") await server.refreshDevices();
+                  })()
+                }
+              >
+                <Icon name="refresh" size={14} />
+                Refresh devices
+              </button>
+              <span class="mono stage__connect-hint">adb devices</span>
+            </div>
+          </div>
+        }
+      >
+        <div
+          class="bezel"
+          data-empty={!frame() ? "1" : "0"}
+          style={{ "aspect-ratio": frameAspect() }}
+        >
+          <div class="glass">
+            <Show when={frame()}>
+              <img
+                class="glass__img"
+                classList={{ "glass__img--interactive": rec.interacting() }}
+                alt={frame()!.caption ?? "device frame"}
+                src={`data:${frame()!.mime};base64,${frame()!.base64}`}
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  if (img.naturalWidth && img.naturalHeight) {
+                    setFrameAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
+                  }
+                }}
+                onClick={(e) => {
+                  if (!rec.interacting()) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const fx = (e.clientX - r.left) / r.width;
+                  const fy = (e.clientY - r.top) / r.height;
+                  const node = hitNode(fx, fy);
+                  if (!node && !rec.recording()) {
+                    setPicker(null);
+                    void rec.handleTap(fx, fy);
+                    return;
+                  }
+                  const s = stageEl?.getBoundingClientRect();
+                  setPicker({
+                    fx,
+                    fy,
+                    vx: s ? e.clientX - s.left : e.clientX - r.left,
+                    vy: s ? e.clientY - s.top : e.clientY - r.top,
+                    node,
+                  });
+                }}
+              />
+              <Show when={server.showOverlays() && overlays().length > 0}>
+                <div class="glass__overlays">
+                  <For each={overlays()}>
+                    {(o) => (
+                      <button
+                        type="button"
+                        class="hit-rect"
+                        style={{
+                          left: o.left,
+                          top: o.top,
+                          width: o.width,
+                          height: o.height,
+                        }}
+                        title={o.label || "press"}
+                        onClick={() => void server.pressNode(o.node)}
+                      />
+                    )}
+                  </For>
                 </div>
-                <p>{glassEmpty().title}</p>
-                <p class="glass__empty-hint">{glassEmpty().description}</p>
-                <Show when={glassEmpty().code}>
-                  <code class="mono glass__empty-code">{glassEmpty().code}</code>
-                </Show>
-              </div>
-            }
-          >
-            <img
-              class="glass__img"
-              alt={frame()!.caption}
-              src={`data:${frame()!.mime};base64,${frame()!.base64}`}
-            />
-            <Show when={server.showOverlays() && overlays().length > 0}>
-              <div class="glass__overlays">
-                <For each={overlays()}>
-                  {(o) => (
-                    <button
-                      type="button"
-                      class="hit-rect"
-                      style={{
-                        left: o.left,
-                        top: o.top,
-                        width: o.width,
-                        height: o.height,
-                      }}
-                      title={o.label || "press"}
-                      onClick={() => void server.pressNode(o.node)}
-                    />
-                  )}
-                </For>
-              </div>
+              </Show>
             </Show>
-          </Show>
+          </div>
         </div>
-      </div>
 
-      <div class="stage__caption mono">
-        {frame()?.caption ??
-          (server.isOffline()
-            ? "server offline"
-            : server.isEmptyDevices()
-              ? "waiting for device…"
-              : "waiting for capture…")}
-      </div>
+        <Show when={picker() && rec.interacting() && (picker()!.node || rec.recording())}>
+          <div class="picker" style={{ left: `${picker()!.vx}px`, top: `${picker()!.vy}px` }}>
+            <div class="picker__label">{nodeLabel()}</div>
+            <div class="picker__opts">
+              <Show when={pickerNode()?.ref}>
+                <button type="button" class="picker__opt" onClick={() => void pick(refStep())}>
+                  @{(pickerNode()?.ref ?? "").replace(/^@/, "")}
+                </button>
+              </Show>
+              <Show when={labelOption()}>
+                <button
+                  type="button"
+                  class="picker__opt"
+                  onClick={() => void pick({ kind: "label", label: labelOption()! })}
+                >
+                  "{labelOption()}"
+                </button>
+              </Show>
+              <button type="button" class="picker__opt" onClick={() => void pick(pointStep())}>
+                {pointStep().x}, {pointStep().y}
+              </button>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={frame()?.caption}>
+          <div class="stage__caption mono">{frame()!.caption}</div>
+        </Show>
+      </Show>
 
       <Show when={server.frames().length > 0}>
         <div class="scrubber">
@@ -150,7 +280,7 @@ export function DeviceStage() {
             aria-label={server.playing() ? "Pause playback" : "Replay frames"}
             onClick={() => server.togglePlayback()}
           >
-            {server.playing() ? "❚❚" : "▶"}
+            <Icon name={server.playing() ? "pause" : "play"} size={14} />
           </button>
           <div class="ticks" role="group" aria-label="Capture timeline">
             <For each={server.frames()}>
@@ -188,60 +318,41 @@ export function DeviceStage() {
         </div>
       </Show>
 
-      <Show when={!frame() && !server.isOffline()}>
-        <div class="stage__empty-cta">
-          <Show
-            when={!server.isEmptyDevices()}
-            fallback={
-              <EmptyState
-                size="sm"
-                icon="device"
-                title="Connect a phone"
-                description="Plug in a device and refresh the list."
-                code="adb devices"
-                actionLabel="Refresh devices"
-                onAction={() =>
-                  void (async () => {
-                    await server.pollHealth();
-                    if (server.health() === "online") await server.refreshDevices();
-                  })()
-                }
-              />
-            }
-          >
-            <div class="stage__actions stage__actions--primary">
-              <button
-                type="button"
-                class="btn btn-acc"
-                disabled={server.busyCapture() || server.health() !== "online"}
-                onClick={() => void server.captureUiScreenshot()}
-              >
-                <Show when={server.busyCapture()} fallback="Capture screenshot">
-                  <span class="btn-spinner" aria-hidden="true" />
-                  Capturing…
-                </Show>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost"
-                disabled={
-                  server.running() || !server.selectedAction() || server.health() !== "online"
-                }
-                title={
-                  !server.selectedAction()
-                    ? "Pick a recipe in the panel, then run"
-                    : "Run selected recipe"
-                }
-                onClick={() => void server.runSelected()}
-              >
-                Run a recipe
-              </button>
-            </div>
-          </Show>
-        </div>
-      </Show>
-
       <div class="stage__actions">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          classList={{ "btn-ghost--on": rec.interacting() }}
+          disabled={server.health() !== "online" || server.isEmptyDevices()}
+          title="Interactive mode — click the preview to tap the device"
+          onClick={() => {
+            const next = !rec.interacting();
+            rec.setInteracting(next);
+            setPicker(null);
+            if (next) {
+              server.setShowOverlays(true);
+              if (!server.snapshot()?.bounds) void server.captureUiSnapshot();
+            }
+          }}
+        >
+          <Icon name="pointer" size={14} />
+          Interact {rec.interacting() ? "on" : "off"}
+        </button>
+        <Show when={rec.interacting()}>
+          <button
+            type="button"
+            class="btn btn-ghost"
+            classList={{
+              "btn-ghost--on": rec.recording(),
+              "recorder--active": rec.recording(),
+            }}
+            title="Record clicks as a reusable recipe"
+            onClick={() => rec.setRecording(!rec.recording())}
+          >
+            <Icon name="circle" size={11} />
+            {rec.recording() ? "Recording" : "Record"}
+          </button>
+        </Show>
         <button
           type="button"
           class="btn btn-ghost"
@@ -255,8 +366,15 @@ export function DeviceStage() {
           }
           onClick={() => void server.captureUiScreenshot()}
         >
-          <Show when={server.busyCapture()} fallback="Capture">
-            <span class="btn-spinner" aria-hidden="true" />…
+          <Show
+            when={server.busyCapture()}
+            fallback={
+              <>
+                <Icon name="camera" size={14} /> Capture
+              </>
+            }
+          >
+            <span class="btn-spinner" aria-hidden="true" />
           </Show>
         </button>
         <button
@@ -266,24 +384,77 @@ export function DeviceStage() {
           title="Capture accessibility tree snapshot"
           onClick={() => void server.captureUiSnapshot()}
         >
+          <Icon name="scan" size={14} />
           Snapshot
-        </button>
-        <button
-          type="button"
-          class="btn btn-ghost"
-          classList={{ "btn-ghost--on": server.showOverlays() }}
-          disabled={!server.snapshot()?.bounds}
-          title="Toggle accessibility rect overlays on the phone glass"
-          onClick={() => server.setShowOverlays(!server.showOverlays())}
-        >
-          Overlays {server.showOverlays() ? "on" : "off"}
         </button>
         <Show when={server.frames().length > 0}>
           <button type="button" class="btn btn-ghost" onClick={() => server.clearFrames()}>
+            <Icon name="trash" size={14} />
             Clear
           </button>
         </Show>
       </div>
+      <RecorderBar />
     </section>
+  );
+}
+
+function RecorderBar() {
+  const rec = useRecorder();
+  const [name, setName] = createSignal("");
+  return (
+    <Show when={rec.interacting() && (rec.recording() || rec.steps().length > 0)}>
+      <div class="recorder">
+        <div class="recorder__head">
+          <span class="recorder__title" classList={{ "recorder__title--live": rec.recording() }}>
+            {rec.recording() ? "Recording" : "Recorded"} · {rec.steps().length} steps
+          </span>
+        </div>
+        <Show when={rec.steps().length > 0}>
+          <div class="recorder__steps">
+            <For each={rec.steps()}>
+              {(step, i) => (
+                <div class="recorder__step">
+                  <span class="recorder__step-i mono">{String(i() + 1).padStart(2, "0")}</span>
+                  <span class="recorder__step-text mono">{describeStep(step)}</span>
+                  <button
+                    type="button"
+                    class="recorder__step-rm"
+                    aria-label="Remove step"
+                    onClick={() => rec.removeStep(i())}
+                  >
+                    <Icon name="x" size={12} />
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+          <div class="recorder__save">
+            <input
+              class="recorder__name"
+              type="text"
+              placeholder="Recipe name…"
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              spellcheck={false}
+            />
+            <button
+              type="button"
+              class="btn btn-acc"
+              onClick={() => {
+                rec.saveRecipe(name());
+                setName("");
+              }}
+            >
+              <Icon name="check" size={13} />
+              Save
+            </button>
+            <button type="button" class="btn btn-ghost" onClick={() => rec.clearSteps()}>
+              Clear
+            </button>
+          </div>
+        </Show>
+      </div>
+    </Show>
   );
 }

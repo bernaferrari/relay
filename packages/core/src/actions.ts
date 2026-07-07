@@ -69,14 +69,14 @@ export const ACTIONS: readonly ActionMeta[] = [
   {
     id: "update-last-prod",
     title: "Update last prod",
-    description: "Any account → PROD_ACCOUNT_MATCH → Update only (no reinstall)",
+    description: "Any account → prod account → Update only (no reinstall)",
     category: "play-store",
     requiresProdMatch: true,
   },
   {
     id: "install-last-prod",
     title: "Install last prod",
-    description: "Any account → PROD_ACCOUNT_MATCH → Uninstall → Install",
+    description: "Any account → prod account → Uninstall → Install",
     category: "play-store",
     requiresProdMatch: true,
   },
@@ -128,10 +128,7 @@ export async function runAction(
   opts: RunActionOptions = {},
 ): Promise<RunActionResult> {
   const log = opts.onLog ?? ((line: string) => console.log(line));
-  const flow: AccountFlowOptions = {
-    skipAccountSwitch: opts.skipAccountSwitch,
-    skipRestoreHome: opts.skipRestoreHome,
-  };
+  const flow: AccountFlowOptions = {};
 
   try {
     log(`==> ${action}`);

@@ -1,10 +1,13 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
+import { useRecorder } from "../context/recorder";
 import { useCommand } from "../context/command";
 import { useTheme, type ColorScheme } from "@grok-device/ui/theme/context";
+import { Icon } from "./icon";
 
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();
+  const rec = useRecorder();
   const cmd = useCommand();
   const theme = useTheme();
   const [deviceOpen, setDeviceOpen] = createSignal(false);
@@ -13,7 +16,6 @@ export function Topbar(props: { onSettings: () => void }) {
 
   onMount(() => {
     void theme.loadThemes().then(() => setThemeIds(theme.ids()));
-    setThemeIds(theme.ids());
 
     const onDoc = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
@@ -25,36 +27,30 @@ export function Topbar(props: { onSettings: () => void }) {
   });
 
   const deviceLabel = () => {
+    if (server.health() === "offline") return "Offline";
     const s = server.selectedDevice();
     if (!s) return server.isEmptyDevices() ? "No device" : "Select device";
     const d = server.devices().find((x) => x.serial === s);
     return d?.name ?? s;
   };
 
-  /** Connection: Offline / Live (SSE) / Online (HTTP only). */
-  const connection = () => {
-    if (server.health() === "offline") {
-      return { cls: "conn--off", label: "Offline", title: "API unreachable" };
-    }
-    if (server.health() === "unknown") {
-      return { cls: "conn--dim", label: "Connecting", title: "Checking API health…" };
-    }
-    if (server.sseConnected()) {
-      return { cls: "conn--live", label: "Live", title: "SSE connected" };
-    }
-    return { cls: "conn--on", label: "Online", title: "HTTP connected (no SSE)" };
-  };
-
   const runDisabledReason = () => {
     if (server.health() !== "online") return "Server is offline — start with pnpm dev:serve";
     if (server.running()) return "A job is already running";
-    if (!server.selectedAction()) return "Select a recipe first";
+    if (rec.replaying()) return "Replaying custom recipe";
     if (server.isEmptyDevices()) return "No device connected — run adb devices";
+    const cr = server.selectedAction() ? null : rec.selectedRecipe();
+    if (cr) return `Run custom recipe "${cr.title}"`;
+    if (!server.selectedAction()) return "Select a recipe first";
     return "Run selected recipe";
   };
 
   const canRun = () =>
-    !server.running() && Boolean(server.selectedAction()) && server.health() === "online";
+    !server.running() &&
+    !rec.replaying() &&
+    server.health() === "online" &&
+    !server.isEmptyDevices() &&
+    (Boolean(server.selectedAction()) || Boolean(rec.selectedRecipe()));
 
   const popular = () => {
     const prefer = [
@@ -79,15 +75,23 @@ export function Topbar(props: { onSettings: () => void }) {
   };
 
   return (
-    <header class="top">
-      <div class="top__brand">
+    <header class="top desktop-titlebar-drag">
+      <div class="top__brand desktop-titlebar-no-drag">
         <span class="top__mark" aria-hidden="true">
-          G
+          S
         </span>
-        <span class="top__name">Grok Device</span>
+        <span class="top__name">Specimen</span>
       </div>
 
-      <div class="pick-wrap">
+      <div
+        class="pick-wrap desktop-titlebar-no-drag"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && deviceOpen()) {
+            e.stopPropagation();
+            setDeviceOpen(false);
+          }
+        }}
+      >
         <button
           type="button"
           class="pick"
@@ -102,13 +106,21 @@ export function Topbar(props: { onSettings: () => void }) {
           <span
             class="pick-status"
             classList={{
-              on: Boolean(server.selectedDevice()) && !server.isEmptyDevices(),
-              warn: server.isEmptyDevices(),
+              on:
+                server.health() === "online" &&
+                Boolean(server.selectedDevice()) &&
+                !server.isEmptyDevices(),
+              warn:
+                server.health() !== "offline" &&
+                (server.isEmptyDevices() || !server.selectedDevice()),
+              off: server.health() === "offline",
             }}
             aria-hidden="true"
           />
           <span class="mono pick__label">{deviceLabel()}</span>
-          <span class="pick__chev">▾</span>
+          <span class="pick__chev">
+            <Icon name="chevron-down" size={14} />
+          </span>
         </button>
         <Show when={deviceOpen()}>
           <div class="pick-menu" role="listbox">
@@ -161,20 +173,17 @@ export function Topbar(props: { onSettings: () => void }) {
         </Show>
       </div>
 
-      <span class={`conn ${connection().cls}`} title={connection().title}>
-        <span class="conn__dot" />
-        {connection().label}
-      </span>
-
-      <Show when={server.health() === "online" && server.serverUrl()}>
-        <span class="mono top__host" title={server.serverUrl()}>
-          {server.serverUrl().replace(/^https?:\/\//, "")}
-        </span>
-      </Show>
-
       <span class="top__spacer" />
 
-      <div class="appear-wrap">
+      <div
+        class="appear-wrap desktop-titlebar-no-drag"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && appearOpen()) {
+            e.stopPropagation();
+            setAppearOpen(false);
+          }
+        }}
+      >
         <button
           type="button"
           class="btn btn-ghost top__theme-btn"
@@ -187,10 +196,12 @@ export function Topbar(props: { onSettings: () => void }) {
             void theme.loadThemes().then(() => setThemeIds(theme.ids()));
           }}
         >
+          <span
+            class="top__theme-dot"
+            aria-hidden="true"
+            style={{ background: theme.swatches(theme.themeId())?.primary ?? "var(--c-accent)" }}
+          />
           Theme
-          <span class="mono top__theme-meta">
-            {theme.name(theme.themeId())} · {theme.mode()}
-          </span>
         </button>
         <Show when={appearOpen()}>
           <div class="appear-menu" role="dialog" aria-label="Appearance">
@@ -257,13 +268,20 @@ export function Topbar(props: { onSettings: () => void }) {
 
       <button
         type="button"
-        class="btn btn-ghost"
+        class="btn btn-ghost desktop-titlebar-no-drag"
         onClick={() => cmd.setOpen(true)}
         title="Command palette (⌘K)"
       >
-        ⌘K
+        <Icon name="search" size={14} />
+        <span class="mono">⌘K</span>
       </button>
-      <button type="button" class="btn btn-ghost" onClick={props.onSettings} title="Settings">
+      <button
+        type="button"
+        class="btn btn-ghost desktop-titlebar-no-drag"
+        onClick={props.onSettings}
+        title="Settings"
+      >
+        <Icon name="sliders" size={14} />
         Settings
       </button>
       <Show when={server.activeJob?.()}>
@@ -272,41 +290,67 @@ export function Topbar(props: { onSettings: () => void }) {
           fallback={
             <button
               type="button"
-              class="btn btn-ghost"
+              class="btn btn-ghost desktop-titlebar-no-drag"
               title="Pause job (Space)"
               onClick={() => void server.pauseJob()}
             >
+              <Icon name="pause" size={13} />
               Pause
             </button>
           }
         >
           <button
             type="button"
-            class="btn btn-ghost"
+            class="btn btn-ghost desktop-titlebar-no-drag"
             title="Resume job (Space)"
             onClick={() => void server.resumeJob()}
           >
+            <Icon name="play" size={13} />
             Resume
           </button>
         </Show>
         <button
           type="button"
-          class="btn btn-ghost"
+          class="btn btn-ghost desktop-titlebar-no-drag"
           title="Cancel job (Esc)"
           onClick={() => void server.cancelJob()}
-          style={{ color: "var(--text-critical-base)" }}
+          style={{ color: "var(--c-fail)" }}
         >
+          <Icon name="x" size={13} />
           Cancel
         </button>
       </Show>
       <button
         type="button"
-        class="btn btn-acc"
+        class="btn btn-acc desktop-titlebar-no-drag"
         disabled={!canRun()}
         title={runDisabledReason()}
-        onClick={() => void server.runSelected()}
+        onClick={() => {
+          const cr = server.selectedAction() ? null : rec.selectedRecipe();
+          if (cr) void rec.runRecipe(cr);
+          else void server.runSelected();
+        }}
       >
-        {server.isPaused?.() ? "Paused" : server.running() ? "Running…" : "Run"}
+        <Show
+          when={server.isPaused?.()}
+          fallback={
+            <Show
+              when={server.running() || rec.replaying()}
+              fallback={<Icon name="play" size={13} />}
+            >
+              <span class="btn-spinner" aria-hidden="true" />
+            </Show>
+          }
+        >
+          <Icon name="pause" size={13} />
+        </Show>
+        {server.isPaused?.()
+          ? "Paused"
+          : server.running()
+            ? "Running…"
+            : rec.replaying()
+              ? "Replaying…"
+              : "Run"}
       </button>
     </header>
   );

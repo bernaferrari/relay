@@ -103,8 +103,6 @@ export type TestJob = {
   runDir?: string;
   persisted?: boolean;
   options?: {
-    skipAccountSwitch?: boolean;
-    skipRestoreHome?: boolean;
     prodAccountMatch?: string;
   };
 };
@@ -145,8 +143,6 @@ function remember(job: TestJob): void {
 export type EnqueueJobInput = {
   action: string;
   serial?: string;
-  skipAccountSwitch?: boolean;
-  skipRestoreHome?: boolean;
   prodAccountMatch?: string;
   /** retry a failed job — enables heal if success */
   retryOf?: string;
@@ -178,8 +174,6 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     tone: plan.tone,
     title: meta?.title ?? input.action,
     options: {
-      skipAccountSwitch: input.skipAccountSwitch ?? parent?.options?.skipAccountSwitch,
-      skipRestoreHome: input.skipRestoreHome ?? parent?.options?.skipRestoreHome,
       prodAccountMatch: input.prodAccountMatch ?? parent?.options?.prodAccountMatch,
     },
   };
@@ -211,8 +205,6 @@ export function retryJob(id: string): TestJob {
   return enqueueJob({
     action: parent.action,
     serial: parent.serial,
-    skipAccountSwitch: parent.options?.skipAccountSwitch,
-    skipRestoreHome: parent.options?.skipRestoreHome,
     prodAccountMatch: parent.options?.prodAccountMatch,
     retryOf: parent.id,
   });
@@ -482,10 +474,11 @@ async function executeJob(id: string): Promise<void> {
   try {
     await cooperativeCheckpoint(id);
 
+    // Release any stale session binding left by a prior run so this job can
+    // bind the selected device cleanly (avoids "session already bound").
+    await hardStopDeviceSession();
     const device = createDevice();
     const opts: RunActionOptions = {
-      skipAccountSwitch: job.options?.skipAccountSwitch,
-      skipRestoreHome: job.options?.skipRestoreHome,
       onLog: (line) => {
         throwIfCancelled(id);
         pushLog(line);

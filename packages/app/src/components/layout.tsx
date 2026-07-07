@@ -1,58 +1,31 @@
-import { type JSX, onMount, onCleanup } from "solid-js";
+import { type JSX, onMount, onCleanup, createEffect } from "solid-js";
 import { useServer } from "../context/server";
+import { useRecorder } from "../context/recorder";
 import { useCommand, CommandPalette } from "../context/command";
+import { Toaster } from "../context/toast";
 import { useTheme } from "@grok-device/ui/theme/context";
+import { usePlatform } from "../context/platform";
 import { Topbar } from "./topbar";
 import { ErrorBanner } from "./error-banner";
 
 export type AppView = "workspace" | "settings";
 
-export function Layout(props: {
-  view: AppView;
-  onNavigate: (view: AppView) => void;
-  children: JSX.Element;
-}) {
+export function Layout(props: { children: JSX.Element; onOpenSettings: () => void }) {
   const server = useServer();
+  const rec = useRecorder();
   const cmd = useCommand();
   const theme = useTheme();
+  const platform = usePlatform();
 
   onMount(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Esc: close palette first, else cancel active job
-      if (e.key === "Escape") {
-        if (cmd.open()) return; // palette handler owns it
-        const active = server.activeJob?.();
-        if (active && (active.status === "running" || active.status === "paused")) {
-          e.preventDefault();
-          void server.cancelJob(active.id);
-        }
-      }
-      // Space while running toggles pause/resume (not when typing in inputs)
-      if (
-        e.key === " " &&
-        !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
-      ) {
-        const active = server.activeJob?.();
-        if (!active) return;
-        if (active.status === "running") {
-          e.preventDefault();
-          void server.pauseJob(active.id);
-        } else if (active.status === "paused") {
-          e.preventDefault();
-          void server.resumeJob(active.id);
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey);
-
     const unsub = cmd.register([
       {
-        id: "nav.workspace",
-        title: "Go to workspace",
+        id: "nav.settings",
+        title: "Open settings",
         group: "Navigation",
-        run: () => props.onNavigate("workspace"),
+        keybind: "mod+,",
+        run: () => props.onOpenSettings(),
       },
-
       {
         id: "appearance.scheme.light",
         title: "Color scheme: Light",
@@ -72,65 +45,90 @@ export function Layout(props: {
         run: () => theme.setColorScheme("system"),
       },
       {
-        id: "nav.settings",
-        title: "Open settings",
-        group: "Navigation",
-        run: () => props.onNavigate("settings"),
-      },
-      {
         id: "device.refresh",
         title: "Refresh devices",
         group: "Device",
+        keybind: "mod+r",
         run: () => void server.refreshDevices(),
       },
       {
         id: "device.snapshot",
         title: "Capture UI snapshot",
         group: "Device",
+        keybind: "mod+shift+i",
         run: () => void server.captureUiSnapshot(),
       },
       {
         id: "device.screenshot",
         title: "Capture screenshot",
         group: "Device",
+        keybind: "mod+shift+s",
         run: () => void server.captureUiScreenshot(),
       },
       {
         id: "job.run",
-        title: "Run selected action",
+        title: "Run selected recipe",
         group: "Jobs",
-        keybind: "⌘↵",
-        run: () => void server.runSelected(),
+        keybind: "mod+enter",
+        disabled: () =>
+          server.running() ||
+          (!server.selectedAction() && !rec.selectedRecipe()) ||
+          server.health() !== "online",
+        run: () => {
+          const cr = rec.selectedRecipe();
+          if (cr && !server.selectedAction()) void rec.runRecipe(cr);
+          else void server.runSelected();
+        },
       },
       {
         id: "job.retry",
         title: "Retry / heal selected job",
         group: "Jobs",
+        keybind: "mod+shift+r",
         run: () => void server.retrySelectedJob(),
       },
       {
         id: "job.cancel",
         title: "Cancel running job",
         group: "Jobs",
-        keybind: "Esc",
-        run: () => void server.cancelJob(),
+        keybind: "escape",
+        disabled: () => {
+          const a = server.activeJob?.();
+          return !a || (a.status !== "running" && a.status !== "paused");
+        },
+        run: () => {
+          const a = server.activeJob?.();
+          if (a) void server.cancelJob(a.id);
+          else void server.cancelJob();
+        },
       },
       {
         id: "job.pause",
         title: "Pause running job",
         group: "Jobs",
-        run: () => void server.pauseJob(),
+        keybind: "space",
+        disabled: () => server.activeJob?.()?.status !== "running",
+        run: () => {
+          const a = server.activeJob?.();
+          if (a?.status === "running") void server.pauseJob(a.id);
+        },
       },
       {
         id: "job.resume",
         title: "Resume paused job",
         group: "Jobs",
-        run: () => void server.resumeJob(),
+        keybind: "space",
+        disabled: () => server.activeJob?.()?.status !== "paused",
+        run: () => {
+          const a = server.activeJob?.();
+          if (a?.status === "paused") void server.resumeJob(a.id);
+        },
       },
       {
         id: "device.overlays",
         title: "Toggle rect overlays on stage",
         group: "Device",
+        keybind: "mod+o",
         run: () => server.setShowOverlays(!server.showOverlays()),
       },
       {
@@ -161,24 +159,28 @@ export function Layout(props: {
         id: "tab.steps",
         title: "Panel: Steps",
         group: "Workspace",
+        keybind: "mod+1",
         run: () => server.setPanelTab("steps"),
       },
       {
         id: "tab.summary",
         title: "Panel: Summary",
         group: "Workspace",
+        keybind: "mod+2",
         run: () => server.setPanelTab("summary"),
       },
       {
         id: "tab.inspector",
         title: "Panel: Inspector",
         group: "Workspace",
+        keybind: "mod+3",
         run: () => server.setPanelTab("inspector"),
       },
       {
         id: "tab.artifacts",
         title: "Panel: Artifacts",
         group: "Workspace",
+        keybind: "mod+4",
         run: () => server.setPanelTab("artifacts"),
       },
       {
@@ -187,21 +189,43 @@ export function Layout(props: {
         group: "Server",
         run: () => void server.retryConnection(),
       },
+      {
+        id: "command.palette",
+        title: "Command palette",
+        group: "Navigation",
+        keybind: "mod+k",
+        run: () => cmd.setOpen(true),
+      },
     ]);
-    onCleanup(() => {
-      unsub();
-      window.removeEventListener("keydown", onKey);
-    });
+    onCleanup(unsub);
+  });
+
+  // Register recipe commands whenever catalog changes (searchable in palette)
+  createEffect(() => {
+    const actions = server.actions();
+    const unsub = cmd.register(
+      actions.map((a) => ({
+        id: `recipe.${a.id}`,
+        title: a.title,
+        subtitle: a.id,
+        group:
+          a.category === "play-store" ? "Play Store" : a.category === "grok" ? "Grok" : "Recipes",
+        run: () => {
+          server.setSelectedAction(a.id);
+          server.setPanelTab("steps");
+        },
+      })),
+    );
+    onCleanup(unsub);
   });
 
   return (
-    <div class="qa">
-      <Topbar
-        onSettings={() => props.onNavigate(props.view === "settings" ? "workspace" : "settings")}
-      />
+    <div class="qa" classList={{ "qa--desktop": platform.platform === "desktop" }}>
+      <Topbar onSettings={() => props.onOpenSettings()} />
       <ErrorBanner />
       <div class="qa__body">{props.children}</div>
       <CommandPalette />
+      <Toaster />
     </div>
   );
 }

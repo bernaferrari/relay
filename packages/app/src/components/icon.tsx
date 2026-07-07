@@ -1,0 +1,182 @@
+import { type JSX } from "solid-js";
+
+/**
+ * Crisp, consistent icon set (lucide-style, 1.5 stroke, currentColor).
+ * Replaces the emoji / unicode glyphs that made the old UI look amateurish.
+ *
+ * Two flavors:
+ *  - stroke (default): outline icons
+ *  - fill: solid marks (play, dots) where a filled glyph reads better
+ */
+export type IconName =
+  | "chevron-down"
+  | "chevron-right"
+  | "play"
+  | "pause"
+  | "square"
+  | "refresh"
+  | "search"
+  | "sliders"
+  | "command"
+  | "camera"
+  | "scan"
+  | "grid"
+  | "trash"
+  | "check"
+  | "x"
+  | "alert"
+  | "info"
+  | "smartphone"
+  | "server"
+  | "folder"
+  | "bolt"
+  | "external"
+  | "slash"
+  | "arrow-right"
+  | "pointer"
+  | "keyboard"
+  | "clock"
+  | "move"
+  | "download"
+  | "bag"
+  | "login"
+  | "sparkle"
+  | "circle"
+  | "dot"
+  | "wave";
+
+type Path = { d: string; fill?: boolean };
+
+const STROKE: Record<string, Path[]> = {
+  "chevron-down": [{ d: "m6 9 6 6 6-6" }],
+  "chevron-right": [{ d: "m9 18 6-6-6-6" }],
+  refresh: [{ d: "M3 12a9 9 0 1 0 3-6.7" }, { d: "M3 4v4h4" }],
+  search: [{ d: "M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" }, { d: "m21 21-4.3-4.3" }],
+  sliders: [{ d: "M4 6h16M4 12h16M4 18h16" }, { d: "M7 3v6M17 9v6M12 15v6" }],
+  command: [{ d: "M9 9a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v6a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" }],
+  camera: [
+    {
+      d: "M4 7h3l1.8-2.2a1 1 0 0 1 .77-.37h4.86a1 1 0 0 1 .77.37L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z",
+    },
+    { d: "M12 11a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" },
+  ],
+  scan: [
+    {
+      d: "M4 8V5a1 1 0 0 1 1-1h3M17 4h3a1 1 0 0 1 1 1v3M21 16v3a1 1 0 0 1-1 1h-3M7 20H5a1 1 0 0 1-1-1v-3",
+    },
+    { d: "M4 12h16" },
+  ],
+  grid: [{ d: "M4 4h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6zM4 14h6v6H4z" }],
+  trash: [
+    { d: "M4 6h16M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" },
+    { d: "M6 6v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6M10 11v5M14 11v5" },
+  ],
+  check: [{ d: "M5 12.5 10 17 19 6.5" }],
+  x: [{ d: "M6 6l12 12M18 6 6 18" }],
+  alert: [
+    { d: "M12 3 2.5 19a1 1 0 0 0 .9 1.5h17.2a1 1 0 0 0 .9-1.5L12 3z" },
+    { d: "M12 10v4M12 17.5h.01" },
+  ],
+  info: [{ d: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" }, { d: "M12 11v5M12 7.5h.01" }],
+  smartphone: [
+    { d: "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" },
+    { d: "M11 18h2" },
+  ],
+  server: [
+    { d: "M5 3h14a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" },
+    { d: "M5 14h14a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" },
+    { d: "M8 6.5h.01M8 17.5h.01" },
+  ],
+  folder: [
+    {
+      d: "M4 20a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5.5a1 1 0 0 1 .8.4L12 6h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1z",
+    },
+  ],
+  external: [{ d: "M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" }],
+  slash: [{ d: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" }, { d: "m5.6 5.6 12.8 12.8" }],
+  "arrow-right": [{ d: "M4 12h16M14 6l6 6-6 6" }],
+  pointer: [{ d: "M4 3l6.5 17 2.2-6.3 6.3-2.2z" }],
+  keyboard: [
+    { d: "M3 6h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1z" },
+    { d: "M7 10h.01M11 10h.01M15 10h.01M9 13h.01M13 13h.01M7 16h10" },
+  ],
+  clock: [{ d: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" }, { d: "M12 7.5V12l3 2" }],
+  move: [{ d: "M3 12h18M8 7l-4 5 4 5M16 7l4 5-4 5" }],
+  download: [{ d: "M12 3v12M7 10l5 5 5-5M5 21h14" }],
+  bag: [{ d: "M5 7h14l-1 13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 7z" }, { d: "M9 7a3 3 0 0 1 6 0" }],
+  login: [{ d: "M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l4 4-4 4M14 12H3" }],
+  wave: [{ d: "M3 12c2 0 2-5 4-5s2 10 4 10 2-10 4-10 2 5 4 5" }],
+};
+
+const FILL: Record<string, Path[]> = {
+  play: [{ d: "M6 4.5v15l13-7.5z", fill: true }],
+  pause: [
+    { d: "M6 4.5h4v15H6z", fill: true },
+    { d: "M14 4.5h4v15h-4z", fill: true },
+  ],
+  square: [{ d: "M6 6h12v12H6z", fill: true }],
+  sparkle: [
+    {
+      d: "M12 2c.4 3.4 1.6 4.6 5 5-3.4.4-4.6 1.6-5 5-.4-3.4-1.6-4.6-5-5 3.4-.4 4.6-1.6 5-5z",
+      fill: true,
+    },
+  ],
+  bolt: [{ d: "M13 2 4 14h7l-1 8 9-12h-7z", fill: true }],
+  circle: [{ d: "M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0", fill: true }],
+  dot: [{ d: "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0", fill: true }],
+};
+
+const ALL: Record<string, Path[]> = { ...STROKE, ...FILL };
+
+const INFO_FALLBACK: Path[] = [
+  { d: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" },
+  { d: "M12 11v5M12 7.5h.01" },
+];
+
+export function Icon(props: {
+  name: IconName;
+  size?: number;
+  class?: string;
+  style?: JSX.CSSProperties;
+  "aria-hidden"?: boolean;
+  strokeWidth?: number;
+}): JSX.Element {
+  const size = () => props.size ?? 16;
+  const paths = (): Path[] => ALL[props.name] ?? INFO_FALLBACK;
+  const isFill = (p: Path) => p.fill;
+  return (
+    <svg
+      class={`ic ${props.class ?? ""}`}
+      width={size()}
+      height={size()}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width={props.strokeWidth ?? 1.6}
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden={props["aria-hidden"] ?? true}
+      style={props.style}
+    >
+      {paths().map((p) =>
+        isFill(p) ? <path d={p.d} fill="currentColor" stroke="none" /> : <path d={p.d} />,
+      )}
+    </svg>
+  );
+}
+
+/** glyph → icon mapping for the step badges (replaces unicode stand-ins) */
+export const GLYPH_ICON: Record<string, IconName> = {
+  tap: "pointer",
+  type: "keyboard",
+  wait: "clock",
+  shot: "camera",
+  swipe: "move",
+  ok: "check",
+  fail: "x",
+  ai: "sparkle",
+  dl: "download",
+  re: "refresh",
+  store: "bag",
+  login: "login",
+};

@@ -24,10 +24,18 @@ export type SnapshotNode = {
   ref?: string;
 };
 
+// Singleton client — reusing one client avoids "session already bound"
+// conflicts that arise when each operation creates a fresh client that
+// tries to re-bind the session to the device. Recipes call `open` once
+// to establish the binding; subsequent captures/interactions reuse it.
+let _device: Device | null = null;
 export function createDevice(): Device {
-  return createAgentDeviceClient({
-    session: process.env.AGENT_DEVICE_SESSION?.trim() || "grok-actions",
-  });
+  if (!_device) {
+    _device = createAgentDeviceClient({
+      session: process.env.AGENT_DEVICE_SESSION?.trim() || "grok-actions",
+    });
+  }
+  return _device;
 }
 
 export function base() {

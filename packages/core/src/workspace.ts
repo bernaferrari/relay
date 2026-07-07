@@ -2,9 +2,11 @@
  * Live device workspace helpers for the testing shell:
  * snapshot UI tree, screenshot, basic interactions.
  */
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import {
   PLATFORM,
   base,
@@ -12,14 +14,56 @@ import {
   createDevice,
   findClick,
   pressLabel,
+  pressMatchingText,
   pressPoint,
   pressRef,
   snapshot,
   type Device,
   type SnapshotNode,
 } from "./device.js";
+import { hardStopDeviceSession } from "./control.js";
 import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
+
+/**
+ * Recover from session binding conflicts by releasing the stale binding
+ * and retrying. Does NOT auto-open any app — each recipe opens its own.
+ */
+async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> {
+  try {
+    return await op();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/already bound/i.test(msg)) {
+      await hardStopDeviceSession().catch(() => undefined);
+      return await op();
+    }
+    throw err;
+  }
+}
+
+/**
+ * Raw adb screencap — captures the current device screen regardless of which
+ * app is showing. Bypasses the SDK's session requirement entirely.
+ * Used as a fallback when the SDK reports "No active session".
+ */
+function rawScreenshot(path: string): void {
+  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  const args = serial
+    ? ["-s", serial, "exec-out", "screencap", "-p"]
+    : ["exec-out", "screencap", "-p"];
+  const buf = execFileSync("adb", args, { maxBuffer: 20 * 1024 * 1024 });
+  writeFileSync(path, buf);
+}
+
+/** Raw adb input tap — works without a session, on any app. */
+function rawTap(x: number, y: number): void {
+  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  const args = serial
+    ? ["-s", serial, "shell", "input", "tap", String(x), String(y)]
+    : ["shell", "input", "tap", String(x), String(y)];
+  execFileSync("adb", args, { timeout: 5000 });
+}
 
 export type ListedDevice = {
   id: string;
@@ -87,7 +131,9 @@ export async function captureSnapshot(opts?: {
 }): Promise<SnapshotPayload> {
   if (opts?.serial) selectDevice(opts.serial);
   const device = opts?.device ?? createDevice();
-  const nodes = await snapshot(device, { interactiveOnly: opts?.interactiveOnly ?? false });
+  const nodes = await withSession(device, () =>
+    snapshot(device, { interactiveOnly: opts?.interactiveOnly ?? false }),
+  );
   const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
   const bounds = inferBounds(nodes);
   publish({
@@ -129,8 +175,17 @@ export async function captureScreenshot(opts?: {
   const dir = join(tmpdir(), "grok-device");
   await mkdir(dir, { recursive: true });
   const path = join(dir, `shot-${now()}.png`);
-  await device.capture.screenshot({ ...base(), path });
-  const { readFile } = await import("node:fs/promises");
+  try {
+    await withSession(device, () => device.capture.screenshot({ ...base(), path }));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/no active session/i.test(msg)) {
+      // No SDK session — fall back to raw adb screencap (works on any app)
+      rawScreenshot(path);
+    } else {
+      throw err;
+    }
+  }
   const buf = await readFile(path);
   const base64 = buf.toString("base64");
   publish({
@@ -177,24 +232,34 @@ export type InteractInput =
 export async function interact(input: InteractInput, opts?: { serial?: string }): Promise<void> {
   if (opts?.serial) selectDevice(opts.serial);
   const device = createDevice();
-  switch (input.kind) {
-    case "label":
-      await pressLabel(device, input.label);
-      return;
-    case "point":
-      await pressPoint(device, input.x, input.y);
-      return;
-    case "ref":
-      await pressRef(device, input.ref);
-      return;
-    case "find":
-      await findClick(device, input.query);
-      return;
-    case "text-match": {
-      const { pressMatchingText } = await import("./device.js");
-      await pressMatchingText(device, input.match);
+  try {
+    await withSession(device, async () => {
+      switch (input.kind) {
+        case "label":
+          await pressLabel(device, input.label);
+          return;
+        case "point":
+          await pressPoint(device, input.x, input.y);
+          return;
+        case "ref":
+          await pressRef(device, input.ref);
+          return;
+        case "find":
+          await findClick(device, input.query);
+          return;
+        case "text-match":
+          await pressMatchingText(device, input.match);
+          return;
+      }
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // No SDK session — raw adb tap works for coordinate taps on any app
+    if (/no active session/i.test(msg) && input.kind === "point") {
+      rawTap(input.x, input.y);
       return;
     }
+    throw err;
   }
 }
 

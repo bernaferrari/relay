@@ -19,13 +19,13 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 560,
     show: false,
-    title: "Grok Device",
+    title: "Specimen",
     backgroundColor: defaultBackgroundColor(),
     autoHideMenuBar: true,
     ...(process.platform === "darwin"
       ? {
-          titleBarStyle: "hiddenInset" as const,
-          trafficLightPosition: { x: 14, y: 14 },
+          titleBarStyle: "hidden" as const,
+          trafficLightPosition: { x: 13, y: 14 },
         }
       : {}),
     webPreferences: {
@@ -36,9 +36,13 @@ export function createMainWindow(): BrowserWindow {
     },
   });
 
-  win.once("ready-to-show", () => {
+  const fallbackShow = setTimeout(() => win.show(), 8000);
+  const reveal = () => {
+    clearTimeout(fallbackShow);
     win.show();
-  });
+  };
+  win.once("ready-to-show", reveal);
+  win.webContents.on("did-fail-load", reveal);
 
   return win;
 }

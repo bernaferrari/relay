@@ -3,9 +3,13 @@ import { ThemeProvider, type ThemeAppliedDetail } from "@grok-device/ui/theme/co
 import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
 import { CommandProvider } from "./context/command";
-import { Layout, type AppView } from "./components/layout";
+import { ToastProvider } from "./context/toast";
+import { RecorderProvider } from "./context/recorder";
+import { Layout } from "./components/layout";
 import { HomePage } from "./pages/home";
 import { SettingsPage } from "./pages/settings";
+/* Product chrome — must load for every host (web + desktop Electron). */
+import "./index.css";
 
 /** Root providers for web and desktop shells. */
 export function AppBaseProviders(
@@ -24,7 +28,11 @@ export function AppBaseProviders(
         onThemeApplied={props.onThemeApplied}
       >
         <ServerProvider>
-          <CommandProvider>{props.children}</CommandProvider>
+          <ToastProvider>
+            <RecorderProvider>
+              <CommandProvider>{props.children}</CommandProvider>
+            </RecorderProvider>
+          </ToastProvider>
         </ServerProvider>
       </ThemeProvider>
     </PlatformProvider>
@@ -33,12 +41,13 @@ export function AppBaseProviders(
 
 /** Main product UI — Stage testing workspace. */
 export function AppInterface() {
-  const [view, setView] = createSignal<AppView>("workspace");
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
 
   return (
-    <Layout view={view()} onNavigate={setView}>
-      <Show when={view() === "workspace"} fallback={<SettingsPage />}>
-        <HomePage />
+    <Layout onOpenSettings={() => setSettingsOpen(true)}>
+      <HomePage />
+      <Show when={settingsOpen()}>
+        <SettingsPage onClose={() => setSettingsOpen(false)} />
       </Show>
     </Layout>
   );

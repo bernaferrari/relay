@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
+import { Icon, type IconName } from "./icon";
 
 export type EmptyStateProps = {
   title: string;
@@ -18,48 +19,27 @@ export type EmptyStateProps = {
 };
 
 function EmptyIcon(props: { kind: NonNullable<EmptyStateProps["icon"]> }) {
-  // Simple geometric marks — no emoji clutter
-  switch (props.kind) {
-    case "server":
-      return (
-        <span class="empty-state__icon empty-state__icon--server" aria-hidden="true">
-          <span class="empty-state__geo empty-state__geo--stack" />
-          <span class="empty-state__geo empty-state__geo--stack" />
-          <span class="empty-state__geo empty-state__geo--dot" />
-        </span>
-      );
-    case "device":
-      return (
-        <span class="empty-state__icon empty-state__icon--device" aria-hidden="true">
-          <span class="empty-state__geo empty-state__geo--phone" />
-        </span>
-      );
-    case "frame":
-      return (
-        <span class="empty-state__icon empty-state__icon--frame" aria-hidden="true">
-          <span class="empty-state__geo empty-state__geo--rect" />
-          <span class="empty-state__geo empty-state__geo--rect empty-state__geo--rect-sm" />
-        </span>
-      );
-    case "run":
-      return (
-        <span class="empty-state__icon empty-state__icon--run" aria-hidden="true">
-          <span class="empty-state__geo empty-state__geo--play" />
-        </span>
-      );
-    case "artifact":
-      return (
-        <span class="empty-state__icon empty-state__icon--artifact" aria-hidden="true">
-          <span class="empty-state__geo empty-state__geo--folder" />
-        </span>
-      );
-    default:
-      return (
-        <span class="empty-state__icon empty-state__icon--info" aria-hidden="true">
-          <span class="empty-state__geo empty-state__geo--circle" />
-        </span>
-      );
-  }
+  const name = (): IconName => {
+    switch (props.kind) {
+      case "server":
+        return "server";
+      case "device":
+        return "smartphone";
+      case "frame":
+        return "camera";
+      case "run":
+        return "command";
+      case "artifact":
+        return "folder";
+      default:
+        return "info";
+    }
+  };
+  return (
+    <span class="empty-state__icon" aria-hidden="true">
+      <Icon name={name()} size={22} strokeWidth={1.5} />
+    </span>
+  );
 }
 
 /** Calm empty / zero-state used across stage, panel, and pickers. */

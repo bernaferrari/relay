@@ -7,6 +7,8 @@ import {
   type ThemeAppliedDetail,
 } from "@grok-device/app";
 import "@grok-device/ui/styles";
+/* App product CSS (workspace, panel, stage). Also imported from app root. */
+import "@grok-device/app/index.css";
 import "./styles.css";
 
 function createDesktopStorage(name = "default"): PlatformStorage {
