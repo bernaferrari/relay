@@ -1,24 +1,26 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
 import { useCommand } from "../context/command";
-import { useTheme, type ColorScheme } from "@grok-device/ui/theme/context";
 import { Icon } from "./icon";
 import { fmtDur } from "../lib/job";
 
+/**
+ * Topbar (plan 009 step 5) — six items max:
+ *   rail toggle · brand · device picker · [spacer] · runbar pill (active job)
+ *   · Settings (icon-only).
+ * Theme menu, ⌘K button, recipe chip, and Run button all deleted — the Run
+ * button lives in the run pane header; theme + palette are reachable from
+ * Settings. Electron titlebar-drag regions stay on the wrapper + no-drag on
+ * interactive elements.
+ */
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();
   const cmd = useCommand();
-  const theme = useTheme();
   const [deviceOpen, setDeviceOpen] = createSignal(false);
-  const [appearOpen, setAppearOpen] = createSignal(false);
-  const [themeIds, setThemeIds] = createSignal<string[]>([]);
 
   onMount(() => {
-    void theme.loadThemes().then(() => setThemeIds(theme.ids()));
-
     const onDoc = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
-      if (!t?.closest?.(".appear-wrap")) setAppearOpen(false);
       if (!t?.closest?.(".pick-wrap")) setDeviceOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
@@ -31,48 +33,6 @@ export function Topbar(props: { onSettings: () => void }) {
     if (!s) return server.isEmptyDevices() ? "No device" : "Select device";
     const d = server.devices().find((x) => x.serial === s);
     return d?.name ?? s;
-  };
-
-  const runDisabledReason = () => {
-    if (server.health() !== "online") return "Server is offline — start with pnpm dev:serve";
-    if (server.isEmptyDevices()) return "No device connected — run adb devices";
-    const r = server.selectedRecipe();
-    if (!r) return "Select a recipe first";
-    return "";
-  };
-
-  // Run always enqueues; the label/title flip to "Queue" once a job is active.
-  const canRun = () =>
-    server.health() === "online" && !server.isEmptyDevices() && Boolean(server.selectedRecipe());
-
-  const runTitle = () => {
-    if (!canRun()) return runDisabledReason();
-    const r = server.selectedRecipe();
-    return server.activeJob()
-      ? `Queue "${r?.title}" — runs after the current job`
-      : `Run "${r?.title}"`;
-  };
-
-  const popular = () => {
-    const prefer = [
-      "grok",
-      "opencode",
-      "oc-2",
-      "catppuccin",
-      "tokyonight",
-      "dracula",
-      "nord",
-      "rosepine",
-      "gruvbox",
-      "one-dark",
-      "github",
-      "vercel",
-    ];
-    const all = themeIds().length ? themeIds() : theme.ids();
-    const set = new Set(all);
-    const first = prefer.filter((id) => set.has(id));
-    const rest = all.filter((id) => !first.includes(id));
-    return [...first, ...rest];
   };
 
   return (
@@ -110,10 +70,7 @@ export function Topbar(props: { onSettings: () => void }) {
           classList={{ "pick--empty": server.isEmptyDevices() || !server.selectedDevice() }}
           aria-haspopup="listbox"
           aria-expanded={deviceOpen()}
-          onClick={() => {
-            setDeviceOpen((o) => !o);
-            setAppearOpen(false);
-          }}
+          onClick={() => setDeviceOpen((o) => !o)}
         >
           <span
             class="pick-status"
@@ -187,115 +144,6 @@ export function Topbar(props: { onSettings: () => void }) {
 
       <span class="top__spacer" />
 
-      <div
-        class="appear-wrap desktop-titlebar-no-drag"
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && appearOpen()) {
-            e.stopPropagation();
-            setAppearOpen(false);
-          }
-        }}
-      >
-        <button
-          type="button"
-          class="btn btn-ghost top__theme-btn"
-          aria-haspopup="dialog"
-          aria-expanded={appearOpen()}
-          title="Theme & color scheme"
-          onClick={() => {
-            setAppearOpen((o) => !o);
-            setDeviceOpen(false);
-            void theme.loadThemes().then(() => setThemeIds(theme.ids()));
-          }}
-        >
-          <span
-            class="top__theme-dot"
-            aria-hidden="true"
-            style={{ background: theme.swatches(theme.themeId())?.primary ?? "var(--c-accent)" }}
-          />
-          Theme
-        </button>
-        <Show when={appearOpen()}>
-          <div class="appear-menu" role="dialog" aria-label="Appearance">
-            <div class="appear-menu__section">
-              <div class="appear-menu__title">Color scheme</div>
-              <div class="scheme-seg" role="group" aria-label="Color scheme">
-                {(
-                  [
-                    ["system", "System"],
-                    ["light", "Light"],
-                    ["dark", "Dark"],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    type="button"
-                    class="scheme-seg__btn"
-                    classList={{ on: theme.colorScheme() === id }}
-                    onClick={() => theme.setColorScheme(id as ColorScheme)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div class="appear-menu__section">
-              <div class="appear-menu__title">OpenCode themes</div>
-              <div class="appear-menu__themes">
-                <For each={popular()}>
-                  {(id) => {
-                    const sw = () => theme.swatches(id);
-                    return (
-                      <button
-                        type="button"
-                        class="appear-menu__theme"
-                        classList={{ on: theme.themeId() === id }}
-                        onClick={() => theme.setTheme(id)}
-                      >
-                        <span
-                          class="appear-menu__swatch"
-                          style={{ background: sw()?.primary ?? "var(--button-primary-base)" }}
-                        />
-                        <span class="appear-menu__theme-name">{theme.name(id)}</span>
-                      </button>
-                    );
-                  }}
-                </For>
-              </div>
-            </div>
-            <div class="appear-menu__footer">
-              <button
-                type="button"
-                class="btn btn-ghost appear-menu__more"
-                onClick={() => {
-                  setAppearOpen(false);
-                  props.onSettings();
-                }}
-              >
-                All themes in Settings…
-              </button>
-            </div>
-          </div>
-        </Show>
-      </div>
-
-      <button
-        type="button"
-        class="btn btn-ghost desktop-titlebar-no-drag"
-        onClick={() => cmd.setOpen(true)}
-        title="Command palette (⌘K)"
-      >
-        <Icon name="search" size={14} />
-        <span class="mono">⌘K</span>
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost desktop-titlebar-no-drag"
-        onClick={props.onSettings}
-        title="Settings"
-      >
-        <Icon name="sliders" size={14} />
-        Settings
-      </button>
       <Show when={server.activeJob()}>
         {(job) => (
           <div class="runbar desktop-titlebar-no-drag" role="group" aria-label="Active job">
@@ -338,18 +186,12 @@ export function Topbar(props: { onSettings: () => void }) {
       </Show>
       <button
         type="button"
-        class="btn btn-acc desktop-titlebar-no-drag"
-        disabled={!canRun()}
-        title={runTitle()}
-        onClick={() => {
-          const r = server.selectedRecipe();
-          if (r) void server.runRecipeRemote(r.id);
-        }}
+        class="btn btn-ghost top__icon-btn desktop-titlebar-no-drag"
+        data-tip="Settings (⌘,)"
+        aria-label="Settings"
+        onClick={props.onSettings}
       >
-        <Show when={server.activeJob()} fallback={<Icon name="play" size={13} />}>
-          <Icon name="plus" size={13} />
-        </Show>
-        {server.activeJob() ? "Queue" : "Run"}
+        <Icon name="sliders" size={15} />
       </button>
     </header>
   );
