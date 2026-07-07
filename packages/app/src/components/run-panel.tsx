@@ -192,9 +192,6 @@ export function StepsPane() {
                   title={`${selectedRecipe()!.title} · ${selectedRecipe()!.id}`}
                 >
                   {selectedRecipe()!.title}
-                  <span class="runpane__id mono" aria-hidden="true">
-                    {selectedRecipe()!.id}
-                  </span>
                 </h2>
                 <Show when={selectedRecipe()!.description}>
                   <p class="runpane__desc">{selectedRecipe()!.description}</p>

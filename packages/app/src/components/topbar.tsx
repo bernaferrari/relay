@@ -1,6 +1,5 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
-import { useCommand } from "../context/command";
 import { Icon } from "./icon";
 import { fmtDur } from "../lib/job";
 
@@ -15,7 +14,6 @@ import { fmtDur } from "../lib/job";
  */
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();
-  const cmd = useCommand();
   const [deviceOpen, setDeviceOpen] = createSignal(false);
 
   onMount(() => {
