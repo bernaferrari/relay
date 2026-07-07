@@ -46,6 +46,25 @@ function fmtPoint(p?: { x: number; y: number }): string {
   return p ? `${p.x}, ${p.y}` : "";
 }
 
+/**
+ * The captured target fields a tap recorded, best-first (ref · label · text ·
+ * point) — each with its value, for the one-click retargeting chain (plan 010
+ * step 5). Empty when nothing but a raw point (or nothing) was captured.
+ */
+function detectedChain(t: StepTarget | undefined | null): {
+  id: Strategy;
+  label: string;
+  value: string;
+}[] {
+  if (!t) return [];
+  const out: { id: Strategy; label: string; value: string }[] = [];
+  if (t.ref) out.push({ id: "ref", label: "Element", value: t.ref });
+  if (t.label) out.push({ id: "label", label: "Label", value: `"${t.label}"` });
+  if (t.text) out.push({ id: "text", label: "Text", value: `"${t.text}"` });
+  if (t.point) out.push({ id: "point", label: "Point", value: fmtPoint(t.point) });
+  return out;
+}
+
 /** Human one-liner for a collapsed step row (plan 009 step 7). */
 function sentenceFor(step: RecipeStep): string {
   switch (step.kind) {
@@ -320,6 +339,67 @@ export function RecipeEditor(props: {
   );
 }
 
+/**
+ * Manual target editor: segmented strategy selector + one input for the
+ * chosen field's value. Shared by wait-for steps and hand-authored taps that
+ * captured no element (plan 010 step 5 keeps it as the authoring fallback).
+ */
+function ManualTarget(props: {
+  target: () => StepTarget | null;
+  strategy: () => Strategy;
+  onStrategy: (s: Strategy) => void;
+  onPatch: (patch: Partial<StepTarget>) => void;
+}): JSX.Element {
+  const strat = () => STRATEGIES.find((x) => x.id === props.strategy());
+  return (
+    <>
+      <div class="seg" role="group" aria-label="Target strategy">
+        <For each={STRATEGIES}>
+          {(st) => (
+            <button
+              type="button"
+              class="seg__btn"
+              classList={{ "seg__btn--on": props.strategy() === st.id }}
+              onClick={() => props.onStrategy(st.id)}
+            >
+              {st.label}
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={strat()}>
+        {(st) => {
+          const t = props.target() ?? {};
+          const value = () =>
+            st().id === "ref"
+              ? (t.ref ?? "")
+              : st().id === "label"
+                ? (t.label ?? "")
+                : st().id === "text"
+                  ? (t.text ?? "")
+                  : fmtPoint(t.point);
+          const onInput = (v: string) => {
+            if (st().id === "ref") props.onPatch({ ref: v || undefined });
+            else if (st().id === "label") props.onPatch({ label: v || undefined });
+            else if (st().id === "text") props.onPatch({ text: v || undefined });
+            else props.onPatch({ point: parsePoint(v) });
+          };
+          return (
+            <input
+              class="recipe-editor__value mono"
+              type="text"
+              placeholder={st().placeholder}
+              value={value()}
+              onInput={(e) => onInput(e.currentTarget.value)}
+              spellcheck={false}
+            />
+          );
+        }}
+      </Show>
+    </>
+  );
+}
+
 /** One step row: collapsed = sentence (plan 009 step 7); click to expand. */
 function StepRow(props: {
   step: () => RecipeStep;
@@ -346,7 +426,23 @@ function StepRow(props: {
     const s = props.step() as Extract<RecipeStep, { kind: "tap" | "wait-for" }>;
     props.onChange({ ...s, target: { ...s.target, ...patch } } as RecipeStep);
   };
-  const strat = () => STRATEGIES.find((x) => x.id === props.strategy());
+  /**
+   * One-click retarget (plan 010 step 5): prune the tap's target to the chosen
+   * strategy as primary, keeping `point` as the fallback. Selecting "point"
+   * leaves a point-only target.
+   */
+  const retargetTap = (id: Strategy) => {
+    const s = props.step();
+    if (s.kind !== "tap") return;
+    const t = s.target;
+    const pruned: StepTarget = {};
+    if (id === "ref" && t.ref) pruned.ref = t.ref;
+    else if (id === "label" && t.label) pruned.label = t.label;
+    else if (id === "text" && t.text) pruned.text = t.text;
+    if (t.point) pruned.point = t.point;
+    props.onChange({ ...s, target: pruned });
+    props.onStrategy(id);
+  };
   // Narrowed accessors — Solid's <Show when={acc()}>{(s) => s().field}</Show>
   // hands a typed accessor to the children, preserving union narrowing.
   const asType = () => {
@@ -432,75 +528,93 @@ function StepRow(props: {
 
       <Show when={props.expanded() && props.step().kind !== "flow"}>
         <div class="recipe-editor__detail">
-          {/* tap / wait-for — one target via segmented strategy selector */}
-          <Show when={isTargetKind()}>
-            <div class="seg" role="group" aria-label="Target strategy">
-              <For each={STRATEGIES}>
-                {(st) => (
-                  <button
-                    type="button"
-                    class="seg__btn"
-                    classList={{ "seg__btn--on": props.strategy() === st.id }}
-                    onClick={() => props.onStrategy(st.id)}
-                  >
-                    {st.label}
-                  </button>
-                )}
-              </For>
-            </div>
-            <Show when={strat()}>
-              {(st) => {
-                const t = target() ?? {};
-                const value = () =>
-                  st().id === "ref"
-                    ? (t.ref ?? "")
-                    : st().id === "label"
-                      ? (t.label ?? "")
-                      : st().id === "text"
-                        ? (t.text ?? "")
-                        : fmtPoint(t.point);
-                const onInput = (v: string) => {
-                  if (st().id === "ref") setTarget({ ref: v || undefined });
-                  else if (st().id === "label") setTarget({ label: v || undefined });
-                  else if (st().id === "text") setTarget({ text: v || undefined });
-                  else setTarget({ point: parsePoint(v) });
-                };
+          {/* tap — detected chain as one-click retargeting (plan 010 step 5) */}
+          <Show when={props.step().kind === "tap"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "tap") return null;
+              const chain = detectedChain(s.target);
+              const hasDetected = chain.some((c) => c.id !== "point");
+              if (!hasDetected) {
                 return (
-                  <input
-                    class="recipe-editor__value mono"
-                    type="text"
-                    placeholder={st().placeholder}
-                    value={value()}
-                    onInput={(e) => onInput(e.currentTarget.value)}
-                    spellcheck={false}
-                  />
+                  <div class="recipe-editor__nodetect">
+                    <p class="recipe-editor__hint">
+                      No element was detected under this tap — re-record with the target visible, or
+                      pick one now.
+                    </p>
+                    <button
+                      type="button"
+                      class="btn btn-ghost"
+                      disabled
+                      title="Pick on device — available once a live snapshot is captured"
+                    >
+                      Pick on device
+                    </button>
+                    <ManualTarget
+                      target={target}
+                      strategy={props.strategy}
+                      onStrategy={props.onStrategy}
+                      onPatch={setTarget}
+                    />
+                  </div>
                 );
-              }}
-            </Show>
-            <Show when={props.step().kind === "wait-for"}>
-              {(() => {
-                const s = props.step();
-                if (s.kind !== "wait-for") return null;
-                return (
-                  <input
-                    class="recipe-editor__value mono recipe-editor__value--timeout"
-                    type="number"
-                    min={0}
-                    placeholder="timeout s"
-                    value={Math.round((s.timeoutMs ?? 0) / 1000)}
-                    onInput={(e) =>
-                      props.onChange({
-                        ...s,
-                        timeoutMs: (parseInt(e.currentTarget.value, 10) || 0) * 1000,
-                      })
-                    }
-                  />
-                );
-              })()}
-            </Show>
-            <p class="recipe-editor__hint">
-              Tip: record taps from the device instead — Record mode fills targets automatically.
-            </p>
+              }
+              return (
+                <div class="recipe-editor__chain" role="radiogroup" aria-label="Retarget tap">
+                  <For each={chain}>
+                    {(c) => (
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={props.strategy() === c.id}
+                        class="recipe-editor__chain-opt"
+                        classList={{ "recipe-editor__chain-opt--on": props.strategy() === c.id }}
+                        onClick={() => retargetTap(c.id)}
+                      >
+                        <span class="recipe-editor__chain-mark mono" aria-hidden="true">
+                          {props.strategy() === c.id ? "◉" : "○"}
+                        </span>
+                        <span class="recipe-editor__chain-label">{c.label}</span>
+                        <span class="recipe-editor__chain-value mono">{c.value}</span>
+                      </button>
+                    )}
+                  </For>
+                  <p class="recipe-editor__hint">
+                    One click retargets — the chosen field becomes primary, point stays the
+                    fallback.
+                  </p>
+                </div>
+              );
+            })()}
+          </Show>
+
+          {/* wait-for — manual strategy selector + timeout */}
+          <Show when={props.step().kind === "wait-for"}>
+            <ManualTarget
+              target={target}
+              strategy={props.strategy}
+              onStrategy={props.onStrategy}
+              onPatch={setTarget}
+            />
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "wait-for") return null;
+              return (
+                <input
+                  class="recipe-editor__value mono recipe-editor__value--timeout"
+                  type="number"
+                  min={0}
+                  placeholder="timeout s"
+                  value={Math.round((s.timeoutMs ?? 0) / 1000)}
+                  onInput={(e) =>
+                    props.onChange({
+                      ...s,
+                      timeoutMs: (parseInt(e.currentTarget.value, 10) || 0) * 1000,
+                    })
+                  }
+                />
+              );
+            })()}
           </Show>
 
           {/* type */}
