@@ -3,6 +3,7 @@ import { useServer, type RecipeInfo, type RecipeStep, type StepTarget } from "..
 import { useCommand } from "../context/command";
 import { Icon } from "./icon";
 import { trapFocus } from "../lib/modal";
+import { titleize } from "../lib/job";
 
 type Strategy = "ref" | "label" | "text" | "point";
 
@@ -108,7 +109,7 @@ function sentenceFor(step: RecipeStep): string {
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
     case "flow":
-      return `Flow: ${step.flow}`;
+      return `Flow: ${titleize(step.flow)}`;
   }
 }
 

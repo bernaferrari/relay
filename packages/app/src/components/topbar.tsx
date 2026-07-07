@@ -1,7 +1,7 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
 import { Icon } from "./icon";
-import { fmtDur } from "../lib/job";
+import { fmtDur, titleize } from "../lib/job";
 
 /**
  * Topbar (plan 009 step 5) — six items max:
@@ -150,7 +150,9 @@ export function Topbar(props: { onSettings: () => void }) {
                 <Icon name="pause" size={10} />
               </Show>
             </span>
-            <span class="runbar__title">{job().title ?? job().action}</span>
+            <span class="runbar__title">
+              {job().title ?? titleize(job().action, server.recipes())}
+            </span>
             <span class="runbar__time mono">{fmtDur(job(), server.clock())}</span>
             <button
               type="button"

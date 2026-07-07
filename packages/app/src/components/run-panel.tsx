@@ -6,7 +6,7 @@ import { EmptyState } from "./empty-state";
 import { useCommand } from "../context/command";
 import { Icon, GLYPH_META } from "./icon";
 import { RecipeEditor } from "./recipe-editor";
-import { statusTone, fmtDur, fmtMs, n } from "../lib/job";
+import { statusTone, fmtDur, fmtMs, n, titleize } from "../lib/job";
 
 /** Hover tip describing what a step does (its actions + timing). */
 function stepTip(step: { title: string; glyphs?: string[]; durationMs?: number }): string {
@@ -88,15 +88,16 @@ export function StepsPane() {
    *  core's RECIPE_TRACE_PLANS, not exposed via /actions; we render the flow
    *  step as a sentence rather than showing nothing). */
   function flowLabel(step: RecipeInfo["steps"][number]): string {
-    if (step.kind === "flow") return `Runs the built-in ${step.flow} flow`;
+    if (step.kind === "flow")
+      return `Runs the built-in ${titleize(step.flow, server.recipes())} flow`;
     return describeStep(step);
   }
 
   const consoleLabel = () => {
     const run = persistedRun();
-    if (run) return `Log — ${run.action}`;
+    if (run) return `Log — ${titleize(run.action, server.recipes())}`;
     const j = selectedJob();
-    if (j) return `Log — ${j.title ?? j.action}`;
+    if (j) return `Log — ${j.title ?? titleize(j.action, server.recipes())}`;
     const r = selectedRecipe();
     if (r) return `Log — ${r.title}`;
     return "Log";
@@ -128,7 +129,7 @@ export function StepsPane() {
               <>
                 <div class="runpane__head">
                   <div class="runpane__head-copy">
-                    <h2 class="runpane__title">{run().action}</h2>
+                    <h2 class="runpane__title">{titleize(run().action, server.recipes())}</h2>
                     <p class="runpane__desc">
                       <span class={`tone tone--${statusTone(run().status as JobInfo["status"])}`}>
                         {run().healed ? "healed" : run().status}

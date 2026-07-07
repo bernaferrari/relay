@@ -12,6 +12,7 @@ import {
 import { useRecorder, describeStep } from "../context/recorder";
 import { Icon } from "./icon";
 import { useCommand } from "../context/command";
+import { titleize } from "../lib/job";
 
 /** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
 export function DeviceStage() {
@@ -347,7 +348,9 @@ export function DeviceStage() {
       <div class="stage__meta">
         <span class="stage__title">
           {job()
-            ? (job()?.title ?? actionMeta()?.title ?? job()?.action ?? "Running")
+            ? (job()?.title ??
+              actionMeta()?.title ??
+              (job()?.action ? titleize(job()!.action, server.recipes()) : "Running"))
             : (server.selectedRecipe()?.title ?? "Pick a recipe")}
         </span>
         <Show when={job()?.healed || job()?.status === "healed"}>
@@ -592,16 +595,7 @@ export function DeviceStage() {
       </Show>
 
       <div class="stage__controls">
-        <Show
-          when={server.health() === "online" && !server.isEmptyDevices()}
-          fallback={
-            <p class="stage__controls-reason">
-              {server.health() !== "online"
-                ? "Server offline — start with pnpm dev:serve"
-                : "No device connected — connect and refresh"}
-            </p>
-          }
-        >
+        <Show when={server.health() === "online" && !server.isEmptyDevices()}>
           <div class="seg" role="group" aria-label="Stage mode">
             <button
               type="button"

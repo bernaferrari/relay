@@ -53,3 +53,24 @@ export function fmtMs(ms: number | undefined): string {
 export function n(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
+
+/** A known recipe/action id → title, for resolving slugs at render sites. */
+export type TitledId = { id: string; title: string };
+
+/**
+ * Resolve a recipe/action id to a display title. Prefers a known recipe title
+ * (passed in by callers that have server context — lib/job stays pure); falls
+ * back to turning the slug into words, capitalizing only the first word:
+ * "update-last-alpha" → "Update last alpha". Internal ids never reach body copy.
+ */
+export function titleize(id: string, known?: Iterable<TitledId>): string {
+  if (known) {
+    for (const r of known) {
+      if (r.id === id) return r.title;
+    }
+  }
+  const words = id.replace(/[-_]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return id;
+  words[0] = words[0]!.charAt(0).toUpperCase() + words[0]!.slice(1);
+  return words.join(" ");
+}

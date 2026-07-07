@@ -7,7 +7,7 @@ import { useRecorder } from "../context/recorder";
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { RecipeEditor } from "./recipe-editor";
-import { statusTone, fmtDur, fmtAgo, n } from "../lib/job";
+import { statusTone, fmtDur, fmtAgo, n, titleize } from "../lib/job";
 
 /** Derive a sidebar group for a builtin recipe id (plan-002 builtins carry no category). */
 function builtinCategory(id: string): string {
@@ -206,14 +206,19 @@ export function Sidebar() {
           <div class="sidebar__scroll">
             <For each={server.queuedJobs()}>
               {(j, i) => (
-                <div class="nav-row nav-row--queued" title={`Queued · ${j.title ?? j.action}`}>
+                <div
+                  class="nav-row nav-row--queued"
+                  title={`Queued · ${j.title ?? titleize(j.action, server.recipes())}`}
+                >
                   <span class="nav-row__pos mono">{i() + 1}</span>
-                  <span class="nav-row__title">{j.title ?? j.action}</span>
+                  <span class="nav-row__title">
+                    {j.title ?? titleize(j.action, server.recipes())}
+                  </span>
                   <span class="nav-row__actions">
                     <button
                       type="button"
                       class="nav-row__action"
-                      aria-label={`Remove ${j.title ?? j.action} from queue`}
+                      aria-label={`Remove ${j.title ?? titleize(j.action, server.recipes())} from queue`}
                       title="Remove from queue"
                       onClick={() => void server.cancelJob(j.id)}
                     >
@@ -265,7 +270,9 @@ export function Sidebar() {
                         class={`nav-row__dot nav-row__dot--${statusTone(j.status)}`}
                         aria-hidden
                       />
-                      <span class="nav-row__title">{j.title ?? j.action}</span>
+                      <span class="nav-row__title">
+                        {j.title ?? titleize(j.action, server.recipes())}
+                      </span>
                       <span class="nav-row__meta">
                         {done() ? fmtAgo(j.finishedAt, server.clock()) : fmtDur(j, server.clock())}
                       </span>
@@ -285,7 +292,7 @@ export function Sidebar() {
                         <button
                           type="button"
                           class="nav-row__action"
-                          aria-label={`Retry ${j.title ?? j.action}`}
+                          aria-label={`Retry ${j.title ?? titleize(j.action, server.recipes())}`}
                           title="Retry / heal job"
                           onClick={() => void server.retrySelectedJob(j.id)}
                         >
@@ -317,7 +324,7 @@ export function Sidebar() {
                           class={`nav-row__dot nav-row__dot--${statusTone(run.status as JobInfo["status"])}`}
                           aria-hidden
                         />
-                        <span class="nav-row__title">{run.action}</span>
+                        <span class="nav-row__title">{titleize(run.action, server.recipes())}</span>
                         <Icon name="folder" size={11} class="nav-row__disk-ico" aria-hidden />
                         <span class="nav-row__meta">{fmtAgo(run.writtenAt, server.clock())}</span>
                       </button>

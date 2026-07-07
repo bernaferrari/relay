@@ -1187,12 +1187,6 @@ html[data-color-scheme="light"] .qa::before {
 .stage__controls-spacer {
   flex: 1;
 }
-.stage__controls-reason {
-  margin: 0;
-  font-size: var(--fs-meta);
-  line-height: 1.45;
-  color: var(--c-dim);
-}
 .seg {
   display: inline-flex;
   padding: 3px;
