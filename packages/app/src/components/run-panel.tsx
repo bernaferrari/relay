@@ -147,6 +147,7 @@ export function StepsPane() {
 
         {/* ── Normal content: recipe card + live steps ── */}
         <Show when={!persistedRun()}>
+          {/* Recipe card — title + description only, no Run (topbar owns Run) */}
           <Show when={selectedRecipe()}>
             {(r) => (
               <div class="panel__recipe-card">
@@ -154,17 +155,21 @@ export function StepsPane() {
                 <Show when={r().description}>
                   <p class="panel__recipe-card-desc">{r().description}</p>
                 </Show>
-                <p class="panel__recipe-card-desc">
-                  {r().source === "custom" ? "Custom" : "Built-in"} recipe ·{" "}
-                  {n(r().steps.length, "step")}
-                </p>
+                <Show when={r().source === "custom" && r().steps.length > 0}>
+                  <p class="panel__recipe-card-desc">
+                    {n(r().steps.length, "step")} · custom recipe
+                  </p>
+                </Show>
+                <Show when={r().source === "builtin"}>
+                  <p class="panel__recipe-card-desc">Built-in flow</p>
+                </Show>
                 <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
                   <div class="panel__recipe-notice">
                     <span class="panel__recipe-notice-icon" aria-hidden="true">
                       <Icon name="alert" size={14} />
                     </span>
                     <span class="panel__recipe-notice-text">
-                      Needs a prod account match (e.g. gmail.com) to target the right account.
+                      Needs a prod account match (e.g. gmail.com).
                     </span>
                     <button
                       type="button"
@@ -176,23 +181,13 @@ export function StepsPane() {
                   </div>
                 </Show>
                 <div class="panel__recipe-card-actions">
-                  <button
-                    type="button"
-                    class="btn btn-acc"
-                    disabled={server.running()}
-                    onClick={() => void server.runRecipeRemote(r().id)}
-                  >
-                    <Icon name="play" size={13} />
-                    {server.running() ? "Running…" : "Run"}
-                  </button>
                   <Show when={r().source === "custom"}>
                     <button
                       type="button"
                       class="btn btn-ghost"
                       onClick={() => setEditingRecipe(r())}
                     >
-                      <Icon name="sliders" size={13} />
-                      Edit
+                      <Icon name="sliders" size={13} /> Edit
                     </button>
                   </Show>
                   <Show when={selectedJob()?.status === "error"}>
@@ -201,8 +196,7 @@ export function StepsPane() {
                       class="btn btn-ghost"
                       onClick={() => void server.retrySelectedJob(selectedJob()!.id)}
                     >
-                      <Icon name="refresh" size={13} />
-                      Retry
+                      <Icon name="refresh" size={13} /> Retry
                     </button>
                   </Show>
                 </div>
@@ -210,6 +204,7 @@ export function StepsPane() {
             )}
           </Show>
 
+          {/* Run header when a job exists */}
           <Show when={selectedJob()}>
             {(j) => (
               <div class="run-head">
@@ -236,48 +231,13 @@ export function StepsPane() {
                 <Show when={jobDevice()}>
                   <span class="run-head__fact">{jobDevice()}</span>
                 </Show>
-                <Show when={(j().attempts ?? 0) > 1}>
-                  <span class="run-head__fact">attempt {j().attempts}</span>
-                </Show>
               </div>
             )}
           </Show>
 
-          <div class="section-label">Steps</div>
-          <Show
-            when={(selectedJob()?.steps?.length ?? 0) > 0}
-            fallback={
-              <Show
-                when={selectedRecipe() && selectedRecipe()!.steps.length > 0}
-                fallback={
-                  <EmptyState
-                    size="sm"
-                    icon="run"
-                    title={selectedRecipe() ? "Ready to run" : "Pick a recipe"}
-                    description={
-                      selectedRecipe()
-                        ? "Press Run (⌘↵). Live steps appear here."
-                        : "Select a recipe in the left sidebar."
-                    }
-                  />
-                }
-              >
-                <For each={selectedRecipe()!.steps}>
-                  {(step, i) => (
-                    <div class="srow srow--static" title={describeStep(step)}>
-                      <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
-                      <span class="srow__body">
-                        <span class="stitle">{describeStep(step)}</span>
-                        <span class="smeta">
-                          <span class="tone tone--dim">{selectedRecipe()!.source}</span>
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            }
-          >
+          {/* Live job steps */}
+          <Show when={(selectedJob()?.steps?.length ?? 0) > 0}>
+            <div class="section-label">Steps</div>
             <For each={selectedJob()!.steps ?? []}>
               {(step, i) => {
                 const tone =
@@ -311,6 +271,43 @@ export function StepsPane() {
                 );
               }}
             </For>
+          </Show>
+
+          {/* Custom recipe step preview (before first run) */}
+          <Show
+            when={
+              !selectedJob() &&
+              selectedRecipe()?.source === "custom" &&
+              (selectedRecipe()?.steps.length ?? 0) > 0
+            }
+          >
+            <div class="section-label">Steps</div>
+            <For each={selectedRecipe()!.steps}>
+              {(step, i) => (
+                <div class="srow srow--static" title={describeStep(step)}>
+                  <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
+                  <span class="srow__body">
+                    <span class="stitle">{describeStep(step)}</span>
+                  </span>
+                </div>
+              )}
+            </For>
+          </Show>
+
+          {/* No recipe selected — inline picker, not dead text */}
+          <Show when={!selectedRecipe() && !persistedRun() && !selectedJob()}>
+            <div class="panel__pick-recipe">
+              <select
+                class="panel__pick-select"
+                onChange={(e) => {
+                  const id = e.currentTarget.value;
+                  if (id) server.setSelectedRecipeId(id);
+                }}
+              >
+                <option value="">Choose a recipe…</option>
+                <For each={server.recipes()}>{(r) => <option value={r.id}>{r.title}</option>}</For>
+              </select>
+            </div>
           </Show>
 
           <Show when={selectedJob()?.error}>
