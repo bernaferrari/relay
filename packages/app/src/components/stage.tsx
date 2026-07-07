@@ -669,13 +669,38 @@ export function DeviceStage() {
 function RecorderBar() {
   const rec = useRecorder();
   const [name, setName] = createSignal("");
+  /** Head status line: red-dot + sentence when recording, hint when driving,
+   *  count when steps linger after stopping. */
+  const statusLine = () => {
+    if (rec.recording()) {
+      const s = rec.steps();
+      const last = s.length ? describeStep(s[s.length - 1]!) : "capturing…";
+      return `Recording · ${s.length} step${s.length === 1 ? "" : "s"} · ${last}`;
+    }
+    if (rec.steps().length > 0) {
+      return `Recorded · ${rec.steps().length} step${rec.steps().length === 1 ? "" : "s"}`;
+    }
+    return "Drive mode — your input goes to the device · right-click to inspect";
+  };
   return (
-    <Show when={rec.interacting() && (rec.recording() || rec.steps().length > 0)}>
-      <div class="recorder">
+    <Show when={rec.interacting()}>
+      <div class="recorder" classList={{ "recorder--rec": rec.recording() }}>
         <div class="recorder__head">
-          <span class="recorder__title" classList={{ "recorder__title--live": rec.recording() }}>
-            {rec.recording() ? "Recording" : "Recorded"} · {rec.steps().length} steps
-          </span>
+          <span
+            class="recorder__dot"
+            classList={{ "recorder__dot--rec": rec.recording() }}
+            aria-hidden="true"
+          />
+          <span class="recorder__status">{statusLine()}</span>
+          <Show when={rec.typeBuffer()}>
+            <span class="recorder__type mono" title="Typing to device…">
+              “{rec.typeBuffer()}
+              <span class="recorder__caret" aria-hidden="true">
+                ▍
+              </span>
+              ”
+            </span>
+          </Show>
         </div>
         <Show when={rec.steps().length > 0}>
           <div class="recorder__steps">
@@ -709,7 +734,7 @@ function RecorderBar() {
               type="button"
               class="btn btn-acc"
               onClick={() => {
-                rec.saveRecipe(name());
+                void rec.saveRecipe(name());
                 setName("");
               }}
             >
@@ -717,7 +742,7 @@ function RecorderBar() {
               Save
             </button>
             <button type="button" class="btn btn-ghost" onClick={() => rec.clearSteps()}>
-              Clear
+              Discard
             </button>
           </div>
         </Show>

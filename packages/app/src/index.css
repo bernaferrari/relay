@@ -2443,66 +2443,81 @@ html[data-color-scheme="light"] .qa::before {
   display: flex;
   flex-direction: column;
   margin-top: 14px;
-  padding: 10px;
+  padding: 8px 10px;
   border-radius: var(--radius-lg);
   background: var(--v2-background-bg-layer-01);
   box-shadow: var(--v2-elevation-raised);
   z-index: 3;
 }
+/* Drive (not recording): a quiet single-line hint strip */
+.recorder:not(.recorder--rec):not(:has(.recorder__steps)) {
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: none;
+  opacity: 0.92;
+}
 .recorder__head {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 0 4px 8px;
-  border-bottom: 0.5px solid var(--v2-border-border-muted);
+  min-height: 22px;
+  padding: 0 2px;
 }
-.recorder__title {
-  font-size: 11px;
+.recorder__head + .recorder__steps {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--v2-border-border-muted);
+}
+.recorder__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-dim);
+}
+.recorder__dot--rec {
+  background: var(--c-fail);
+  animation: gd-rec-pulse 1.4s var(--ease-in-out) infinite;
+}
+@keyframes gd-rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.recorder__status {
+  flex: 1;
+  font-size: 12px;
+  color: var(--v2-text-text-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recorder:not(.recorder--rec) .recorder__status {
+  color: var(--c-dim);
+}
+.recorder--rec .recorder__status {
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--c-fail);
 }
-.recorder:not(:has(.recorder__steps)) .recorder__title {
-  color: var(--c-dim);
-}
-.recorder__count {
-  font-size: 11px;
-  color: var(--c-dim);
-}
-.recorder__level {
-  display: inline-flex;
-  gap: 1px;
-  margin-left: auto;
-  padding: 2px;
-  border-radius: var(--radius);
-  background: var(--v2-background-bg-layer-02);
-}
-.recorder__level-btn {
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--c-dim);
-  transition:
-    background 100ms var(--ease-out),
-    color 100ms var(--ease-out);
-}
-.recorder__level-btn:hover {
+/* Live type buffer shown while keystrokes are buffered for the phone */
+.recorder__type {
+  flex: none;
+  max-width: 45%;
+  font-size: 12px;
   color: var(--v2-text-text-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.recorder__level-btn.on {
-  background: var(--v2-background-bg-layer-04);
+.recorder__caret {
   color: var(--v2-text-text-base);
-}
-.recorder__hint {
-  font-size: 10.5px;
-  color: var(--c-dim);
+  animation: gd-rec-pulse 1s steps(1) infinite;
 }
 .recorder__steps {
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 0;
   flex: 1;
   min-height: 0;
 }
@@ -2510,7 +2525,7 @@ html[data-color-scheme="light"] .qa::before {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 6px 6px;
+  padding: 5px 6px;
   border-radius: var(--radius);
 }
 .recorder__step:hover {
@@ -2547,6 +2562,7 @@ html[data-color-scheme="light"] .qa::before {
   align-items: center;
   gap: 7px;
   padding-top: 8px;
+  margin-top: 6px;
   border-top: 0.5px solid var(--v2-border-border-muted);
 }
 .recorder__name {
