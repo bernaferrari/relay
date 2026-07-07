@@ -1,5 +1,6 @@
-import { For, Show, createSignal, type JSX } from "solid-js";
+import { For, Show, createSignal, onMount, onCleanup, type JSX } from "solid-js";
 import { useServer, type RecipeInfo, type RecipeStep, type StepTarget } from "../context/server";
+import { useCommand } from "../context/command";
 import { Icon } from "./icon";
 
 type EditableKind =
@@ -62,6 +63,7 @@ export function RecipeEditor(props: {
   onClose: () => void;
 }): JSX.Element {
   const server = useServer();
+  const cmd = useCommand();
   const [title, setTitle] = createSignal(props.recipe?.title ?? "");
   const [description, setDescription] = createSignal(props.recipe?.description ?? "");
   const [steps, setSteps] = createSignal<RecipeStep[]>(
@@ -69,6 +71,7 @@ export function RecipeEditor(props: {
   );
   const [saving, setSaving] = createSignal(false);
 
+  onMount(() => onCleanup(cmd.pushModal()));
   function addStep(): void {
     setSteps((s) => [...s, defaultStep("tap")]);
   }

@@ -106,6 +106,14 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
     const [query, setQuery] = createSignal("");
     const [commands, setCommands] = createSignal<Command[]>([]);
     const [active, setActive] = createSignal(0);
+    /** Surface stack: dialogs increment this so global keybinds defer to them. */
+    const [modalCount, setModalCount] = createSignal(0);
+    const modalOpen = () => modalCount() > 0;
+    /** Register an open modal; returns a disposer to call on close. */
+    function pushModal(): () => void {
+      setModalCount((n) => n + 1);
+      return () => setModalCount((n) => Math.max(0, n - 1));
+    }
 
     function register(cmds: Command[]) {
       setCommands((prev) => {
@@ -191,10 +199,21 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       }
 
       if (isTypingTarget(e.target)) return;
+      // Modals own their keys — never dispatch global binds while one is open.
+      if (modalOpen()) return;
 
-      // Dispatch registered keybinds (first match wins)
+      // Dispatch registered keybinds (first match wins). Scope the two hazardous
+      // binds (escape → cancel, space → pause/resume) away from interactive
+      // elements so e.g. Space on a focused button activates it instead of
+      // pausing a run, and Escape on a focused control doesn't cancel a job.
+      const onInteractive =
+        e.target instanceof HTMLElement &&
+        Boolean(
+          e.target.closest('button, a, [role="option"], [role="listbox"], input, select, textarea'),
+        );
       for (const c of commands()) {
         if (!c.keybind || c.disabled?.()) continue;
+        if ((c.keybind === "escape" || c.keybind === "space") && onInteractive) continue;
         if (matchesKeybind(c.keybind, e)) {
           e.preventDefault();
           void run(c.id);
@@ -207,7 +226,6 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       window.addEventListener("keydown", onKeyDown);
       onCleanup(() => window.removeEventListener("keydown", onKeyDown));
     }
-
     return {
       open,
       setOpen,
@@ -220,6 +238,8 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       register,
       run,
       formatKeybind,
+      modalOpen,
+      pushModal,
     };
   },
 });

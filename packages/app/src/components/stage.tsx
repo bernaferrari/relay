@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { useServer, type SnapshotNode } from "../context/server";
 import {
   ancestryOf,
@@ -14,7 +14,8 @@ import { Icon } from "./icon";
 export function DeviceStage() {
   const server = useServer();
   const rec = useRecorder();
-  const frame = () => server.currentFrame();
+  const frame = () =>
+    rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   const job = () => server.jobs().find((j) => j.id === server.selectedJobId());
   const actionMeta = () =>
@@ -107,6 +108,11 @@ export function DeviceStage() {
       ok = await server.interactStep({ kind: "point", x: fx, y: fy }, `tap ${fx},${fy}`);
     }
     if (ok && rec.recording()) rec.recordPick(strategy, p.fx, p.fy);
+    // Live mode: refresh the stage image + tree now, don't wait for the next tick.
+    if (ok && rec.interacting()) {
+      void tickLiveFrame();
+      void tickLiveSnapshot();
+    }
   }
 
   const onStageKey = (e: KeyboardEvent) => {
@@ -129,6 +135,68 @@ export function DeviceStage() {
   };
   window.addEventListener("keydown", onStageKey);
   onCleanup(() => window.removeEventListener("keydown", onStageKey));
+
+  // ── Live mode: auto-refresh the stage image + snapshot while Live is on.
+  //    Skips a tick while a request is in flight, the tab is hidden, the server
+  //    went offline, or the picker popover is open (a mid-hover image swap is
+  //    disorienting). The createEffect owns the timers so they follow the Live
+  //    toggle and tear down on unmount.
+  const [tabVisible, setTabVisible] = createSignal(
+    typeof document !== "undefined" ? !document.hidden : true,
+  );
+  const onVisibility = () => setTabVisible(!document.hidden);
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisibility);
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisibility));
+  }
+
+  let frameInFlight = false;
+  let snapInFlight = false;
+  let frameTimer: NodeJS.Timeout | undefined;
+  let snapTimer: NodeJS.Timeout | undefined;
+
+  const livePaused = () =>
+    !rec.interacting() || !tabVisible() || server.health() !== "online" || picker() !== null;
+
+  async function tickLiveFrame(): Promise<void> {
+    if (livePaused() || frameInFlight) return;
+    frameInFlight = true;
+    try {
+      await server.pollLiveFrame();
+    } finally {
+      frameInFlight = false;
+    }
+  }
+  async function tickLiveSnapshot(): Promise<void> {
+    if (livePaused() || snapInFlight) return;
+    snapInFlight = true;
+    try {
+      await server.pollLiveSnapshot();
+    } finally {
+      snapInFlight = false;
+    }
+  }
+
+  function stopLiveTimers(): void {
+    if (frameTimer) {
+      clearInterval(frameTimer);
+      frameTimer = undefined;
+    }
+    if (snapTimer) {
+      clearInterval(snapTimer);
+      snapTimer = undefined;
+    }
+  }
+
+  createEffect(() => {
+    if (!rec.interacting()) return;
+    // immediate first paint, then steady-state polls
+    void tickLiveFrame();
+    void tickLiveSnapshot();
+    frameTimer = setInterval(() => void tickLiveFrame(), 1000);
+    snapTimer = setInterval(() => void tickLiveSnapshot(), 2000);
+    onCleanup(stopLiveTimers);
+  });
 
   const overlays = () => {
     if (!server.showOverlays()) return [];
@@ -234,7 +302,12 @@ export function DeviceStage() {
                   const node = nodeAtPoint(server.snapshot(), fx, fy);
                   if (!node && !rec.recording()) {
                     setPicker(null);
-                    void rec.handleTap(fx, fy);
+                    void rec.handleTap(fx, fy).then(() => {
+                      if (rec.interacting()) {
+                        void tickLiveFrame();
+                        void tickLiveSnapshot();
+                      }
+                    });
                     return;
                   }
                   const s = stageEl?.getBoundingClientRect();

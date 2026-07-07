@@ -1,14 +1,16 @@
-import { For, Show, createSignal, onMount } from "solid-js";
+import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { Button } from "@grok-device/ui/button";
 import { useTheme, type ColorScheme } from "@grok-device/ui/theme/context";
 import { usePlatform } from "../context/platform";
 import { useServer } from "../context/server";
+import { useCommand } from "../context/command";
 import { Icon } from "../components/icon";
-
 export function SettingsPage(props: { onClose: () => void }) {
   const theme = useTheme();
   const platform = usePlatform();
   const server = useServer();
+  const cmd = useCommand();
+
   const [section, setSection] = createSignal<"appearance" | "server" | "recipes" | "about">(
     "appearance",
   );
@@ -23,6 +25,7 @@ export function SettingsPage(props: { onClose: () => void }) {
     setUrlDraft(server.serverUrl());
     setProdDraft(server.prodAccountMatch());
     void theme.loadThemes().then(() => setThemeIds(theme.ids()));
+    onCleanup(cmd.pushModal());
   });
 
   async function saveServerUrl() {

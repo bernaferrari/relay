@@ -236,6 +236,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [busyCapture, setBusyCapture] = createSignal(false);
     const [sseConnected, setSseConnected] = createSignal(false);
     const [showOverlays, setShowOverlays] = createSignal(true);
+    const [liveFrame, setLiveFrame] = createSignal<Frame | null>(null);
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
     const [clock, setClock] = createSignal(Date.now());
 
@@ -809,6 +810,52 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    /** Quiet live-capture: refreshes the stage image without touching the
+     *  scrubber, the job log, or toasts. `/screenshot?ephemeral=1` skips job
+     *  attachment server-side. A missed frame is fine — swallow errors. */
+    async function pollLiveFrame(): Promise<void> {
+      try {
+        const serial = selectedDevice() ?? undefined;
+        const params = new URLSearchParams({ ephemeral: "1" });
+        if (serial) params.set("serial", serial);
+        const data = await request<{
+          serial?: string;
+          capturedAt: number;
+          mime: string;
+          base64: string;
+          bytes: number;
+        }>(`/screenshot?${params}`, undefined, 5000);
+        setLiveFrame({
+          id: `live-${data.capturedAt}`,
+          capturedAt: data.capturedAt,
+          mime: data.mime,
+          base64: data.base64,
+          bytes: data.bytes,
+          serial: data.serial ?? serial,
+          caption: `live · ${new Date(data.capturedAt).toLocaleTimeString(undefined, { hour12: false })}`,
+        });
+      } catch {
+        /* live frame missed — leave the previous frame visible */
+      }
+    }
+
+    /** Quiet live-snapshot: refreshes `snapshot` for hover-inspect without
+     *  switching the panel tab or writing a log line. Errors are swallowed. */
+    async function pollLiveSnapshot(): Promise<void> {
+      try {
+        const serial = selectedDevice() ?? undefined;
+        const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
+        const data = await request<NonNullable<SnapshotState> & { tree?: string }>(
+          `/snapshot${q}`,
+          undefined,
+          5000,
+        );
+        setSnapshot(data);
+      } catch {
+        /* live snapshot missed — keep the previous tree */
+      }
+    }
+
     async function pressNode(node: SnapshotNode) {
       try {
         if (node.ref) {
@@ -1076,6 +1123,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       jumpToJob,
       showOverlays,
       setShowOverlays,
+      liveFrame,
+      pollLiveFrame,
+      pollLiveSnapshot,
       frameUrlForPersisted,
     };
   },
