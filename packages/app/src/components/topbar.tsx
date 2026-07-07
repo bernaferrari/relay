@@ -129,7 +129,7 @@ export function Topbar(props: { onSettings: () => void }) {
             }}
             aria-hidden="true"
           />
-          <span class="mono pick__label">{deviceLabel()}</span>
+          <span class="pick__label">{deviceLabel()}</span>
           <span class="pick__chev">
             <Icon name="chevron-down" size={14} />
           </span>
