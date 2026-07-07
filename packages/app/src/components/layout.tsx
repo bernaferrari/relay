@@ -205,6 +205,13 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         group: "Workspace",
         run: () => void server.setLayout(server.layout() === "deck" ? "classic" : "deck"),
       },
+      {
+        id: "drawer.toggle",
+        title: "Toggle sidebar / drawer (⌘B)",
+        group: "Workspace",
+        keybind: "mod+b",
+        run: () => server.setDrawerOpen(!server.drawerOpen()),
+      },
     ]);
     onCleanup(unsub);
   });

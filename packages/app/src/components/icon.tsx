@@ -17,6 +17,7 @@ export type IconName =
   | "square"
   | "refresh"
   | "search"
+  | "panel-left"
   | "sliders"
   | "command"
   | "camera"
@@ -55,6 +56,10 @@ const STROKE: Record<string, Path[]> = {
   "chevron-up": [{ d: "m18 15-6-6-6 6" }],
   refresh: [{ d: "M3 12a9 9 0 1 0 3-6.7" }, { d: "M3 4v4h4" }],
   search: [{ d: "M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" }, { d: "m21 21-4.3-4.3" }],
+  "panel-left": [
+    { d: "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },
+    { d: "M9 3v18" },
+  ],
   sliders: [{ d: "M4 6h16M4 12h16M4 18h16" }, { d: "M7 3v6M17 9v6M12 15v6" }],
   command: [{ d: "M9 9a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v6a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z" }],
   camera: [
