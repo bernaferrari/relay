@@ -836,14 +836,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 13px 14px 9px;
+  padding: 14px 14px 8px;
   flex: none;
 }
 .sidebar__label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   color: var(--c-dim);
 }
 .sidebar__count {
@@ -856,33 +856,38 @@
 .sidebar__scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 0 8px 12px;
+  padding: 2px 10px 14px;
 }
 .sidebar__group {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .sidebar__group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--c-dim);
-  padding: 10px 8px 5px;
+  padding: 12px 10px 5px;
 }
 .sidebar__empty-hint {
   font-size: 11px;
   color: var(--c-dim);
-  padding: 6px 8px;
+  padding: 8px 10px;
   line-height: 1.5;
 }
 
+/* recipe rows — unified for built-in + custom + jobs */
 .nav-row {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 32px;
-  border-radius: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius);
   color: var(--v2-text-text-muted);
   transition:
     background 120ms var(--ease-out),
@@ -893,9 +898,8 @@
   color: var(--v2-text-text-base);
 }
 .nav-row.on {
-  background: color-mix(in srgb, var(--c-accent) 13%, transparent);
+  background: color-mix(in srgb, var(--c-accent) 12%, transparent);
   color: var(--v2-text-text-base);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-accent) 22%, transparent);
 }
 .nav-row__title {
   flex: 1;
@@ -911,16 +915,9 @@
   gap: 5px;
   flex: none;
 }
-.nav-row__id {
-  font-size: 10.5px;
-  color: var(--c-dim);
-}
-.nav-row--job .nav-row__title {
-  font-weight: 450;
-}
 .nav-row__sep {
   color: var(--v2-border-border-strong);
-  opacity: 0.7;
+  opacity: 0.6;
 }
 .nav-row__disk {
   font-size: 9px;
@@ -932,17 +929,15 @@
   border-radius: 3px;
   background: var(--v2-background-bg-layer-02);
 }
+.nav-row--job .nav-row__title {
+  font-weight: 450;
+}
 .nav-row--active {
-  /* pipeline accent: the live job gets a left border so Queue → active → history reads as a flow */
   box-shadow: inset 2px 0 0 var(--c-run);
   background: color-mix(in srgb, var(--c-run) 9%, transparent);
 }
 .nav-row--queued {
   color: var(--c-dim);
-  cursor: default;
-}
-.nav-row--queued:hover {
-  color: var(--v2-text-text-muted);
 }
 .nav-row__pos {
   width: 16px;
@@ -976,6 +971,58 @@
   50% {
     opacity: 0.35;
   }
+}
+
+/* row wrapper — button + hover actions aligned */
+.nav-row-wrap {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius);
+}
+.nav-row-wrap > .nav-row {
+  flex: 1;
+  min-width: 0;
+}
+
+/* hover actions (edit/fork/delete) */
+.nav-row__actions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  padding-right: 2px;
+}
+.nav-row-wrap:hover .nav-row__actions {
+  display: flex;
+}
+.nav-row-wrap:hover .nav-row__count {
+  display: none;
+}
+.nav-row__action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--c-dim);
+  cursor: pointer;
+  transition:
+    background 100ms var(--ease-out),
+    color 100ms var(--ease-out);
+}
+.nav-row__action:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
+}
+.nav-row__action--del:hover {
+  background: var(--v2-state-bg-danger);
+  color: var(--c-fail);
+}
+.nav-row__action-sure {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--c-fail);
 }
 
 /* ════════════════════════ STAGE (device hero) ════════════════════════ */
@@ -2792,34 +2839,6 @@
   animation: gd-blink 1.4s var(--ease-in-out) infinite;
 }
 
-/* custom recipe hover actions (edit/delete appear on row hover) */
-.nav-row__actions {
-  display: none;
-  gap: 1px;
-}
-.nav-row:hover .nav-row__actions {
-  display: inline-flex;
-}
-.nav-row:hover .nav-row__count {
-  display: none;
-}
-.nav-row__action {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  color: var(--c-dim);
-  cursor: pointer;
-  transition:
-    background 100ms var(--ease-out),
-    color 100ms var(--ease-out);
-}
-.nav-row__action:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
-  color: var(--v2-text-text-base);
-}
-
 /* ════════════════════════ ELEMENT PICKER ════════════════════════ */
 .picker {
   position: absolute;
@@ -2957,23 +2976,18 @@
 
 /* ════════════════════════ RECIPE EDITOR ════════════════════════ */
 .sidebar__new-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
   margin-left: auto;
-  font-size: 10px;
-  font-weight: 600;
+  border-radius: 5px;
   color: var(--c-accent-soft);
-  padding: 2px 6px;
-  border-radius: var(--radius);
-  transition: background 120ms var(--ease-out);
+  cursor: pointer;
+  transition: background 100ms var(--ease-out);
 }
 .sidebar__new-btn:hover {
   background: var(--v2-overlay-simple-overlay-hover);
-}
-.sidebar__group-label {
-  display: flex;
-  align-items: center;
 }
 .recipe-editor {
   padding: 18px 22px 20px;
