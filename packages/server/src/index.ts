@@ -15,6 +15,11 @@ import {
   listActionsWithTrace,
   listDevices,
   listJobs,
+  listRecipes,
+  readRecipe,
+  saveRecipe,
+  deleteRecipe,
+  validateRecipeSteps,
   listPersistedRuns,
   now,
   publish,
@@ -303,19 +308,107 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (method === "POST" && pathname === "/jobs") {
       const body = (await parseJsonBody(req)) as {
         action?: string;
+        recipe?: string;
         serial?: string;
         prodAccountMatch?: string;
         retryOf?: string;
       };
-      if (!body.action && !body.retryOf) throw new HttpError(400, "action is required");
-      const job = body.retryOf
-        ? retryJob(body.retryOf)
-        : enqueueJob({
-            action: body.action!,
-            serial: body.serial,
-            prodAccountMatch: body.prodAccountMatch,
-          });
+      if (!body.action && !body.recipe && !body.retryOf) {
+        throw new HttpError(400, "action or recipe is required");
+      }
+      let job;
+      try {
+        job = body.retryOf
+          ? retryJob(body.retryOf)
+          : enqueueJob({
+              action: body.action,
+              recipe: body.recipe,
+              serial: body.serial,
+              prodAccountMatch: body.prodAccountMatch,
+            });
+      } catch (err) {
+        // enqueueJob throws "Unknown action: <id>" for bad action ids — surface as 400, not 500.
+        const message = err instanceof Error ? err.message : String(err);
+        throw new HttpError(400, message);
+      }
       json(res, 202, { job });
+      return;
+    }
+
+    // ---- Recipe CRUD ----
+    if (method === "GET" && pathname === "/recipes") {
+      json(res, 200, { recipes: await listRecipes() });
+      return;
+    }
+
+    const recipeMatch = matchPath(pathname, "/recipes/:id");
+    if (method === "GET" && recipeMatch) {
+      const recipe = await readRecipe(recipeMatch.id!);
+      if (!recipe) throw new HttpError(404, "Recipe not found");
+      json(res, 200, { recipe });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/recipes") {
+      const body = (await parseJsonBody(req)) as {
+        title?: string;
+        description?: string;
+        steps?: unknown;
+      };
+      if (!body.title || !body.title.trim()) throw new HttpError(400, "title is required");
+      let steps;
+      try {
+        steps = validateRecipeSteps(body.steps);
+      } catch (err) {
+        throw new HttpError(400, err instanceof Error ? err.message : String(err));
+      }
+      const recipe = await saveRecipe({
+        title: body.title,
+        description: body.description,
+        steps,
+      });
+      json(res, 201, { recipe });
+      return;
+    }
+
+    if (method === "PUT" && recipeMatch) {
+      const id = recipeMatch.id!;
+      // saveRecipe refuses builtin ids with a clear message.
+      const body = (await parseJsonBody(req)) as {
+        title?: string;
+        description?: string;
+        steps?: unknown;
+      };
+      let steps;
+      try {
+        steps = validateRecipeSteps(body.steps);
+      } catch (err) {
+        throw new HttpError(400, err instanceof Error ? err.message : String(err));
+      }
+      let recipe;
+      try {
+        recipe = await saveRecipe({
+          id,
+          title: body.title ?? id,
+          description: body.description,
+          steps,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new HttpError(400, message);
+      }
+      json(res, 200, { recipe });
+      return;
+    }
+
+    if (method === "DELETE" && recipeMatch) {
+      try {
+        await deleteRecipe(recipeMatch.id!);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new HttpError(400, message);
+      }
+      json(res, 200, { ok: true });
       return;
     }
 
@@ -475,6 +568,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           "GET /jobs/:id",
           "POST /jobs",
           "POST /jobs/:id/retry",
+          "POST /jobs/:id/cancel",
+          "POST /jobs/:id/pause",
+          "POST /jobs/:id/resume",
+          "GET /recipes",
+          "GET /recipes/:id",
+          "POST /recipes",
+          "PUT /recipes/:id",
+          "DELETE /recipes/:id",
           "POST /actions/:id/run",
           "GET /snapshot",
           "GET /screenshot",

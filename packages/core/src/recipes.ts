@@ -116,7 +116,8 @@ function parseTarget(raw: unknown, index: number, field: string): StepTarget {
 export function validateRecipeSteps(steps: unknown): RecipeStep[] {
   if (!Array.isArray(steps)) throw new Error("steps must be an array");
   const out: RecipeStep[] = [];
-  steps.forEach((raw, index) => {
+  steps.forEach((raw, i) => {
+    const index = i + 1; // 1-based for human-readable error messages
     if (!isObject(raw)) throw stepErr(index, "must be an object");
     const kind = raw.kind;
     if (!isString(kind)) throw stepErr(index, "kind is required");

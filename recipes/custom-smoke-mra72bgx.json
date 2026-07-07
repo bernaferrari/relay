@@ -1,0 +1,13 @@
+{
+  "id": "custom-smoke-mra72bgx",
+  "title": "Smoke",
+  "source": "custom",
+  "steps": [
+    {
+      "kind": "sleep",
+      "ms": 100
+    }
+  ],
+  "createdAt": 1783401260433,
+  "updatedAt": 1783401260433
+}
