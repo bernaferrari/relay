@@ -53,6 +53,23 @@ export type IpcDeps = {
   getServerUrl: () => Promise<string> | string;
 };
 
+/** Only allow http(s) navigation — blocks file:, javascript:, data:, etc. */
+function openExternalSafe(url: unknown): void {
+  if (typeof url !== "string" || !url.trim()) return;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    console.warn("[desktop] open-external rejected invalid URL");
+    return;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    console.warn(`[desktop] open-external rejected scheme: ${parsed.protocol}`);
+    return;
+  }
+  void shell.openExternal(parsed.toString());
+}
+
 export function registerIpcHandlers(deps: IpcDeps): void {
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     const store = loadStore(name);
@@ -75,11 +92,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   });
 
   ipcMain.handle("open-external", (_event: IpcMainInvokeEvent, url: string) => {
-    void shell.openExternal(url);
+    openExternalSafe(url);
   });
 
   ipcMain.on("open-external", (_event, url: string) => {
-    void shell.openExternal(url);
+    openExternalSafe(url);
   });
 
   ipcMain.handle("notify", (_event: IpcMainInvokeEvent, title: string, body?: string) => {

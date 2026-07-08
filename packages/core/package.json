@@ -9,6 +9,8 @@
     "./play-store": "./src/play-store.ts",
     "./grok": "./src/grok.ts",
     "./actions": "./src/actions.ts",
+    "./recipes": "./src/recipes.ts",
+    "./recipe-runner": "./src/recipe-runner.ts",
     "./events": "./src/events.ts",
     "./session": "./src/session.ts",
     "./workspace": "./src/workspace.ts",
@@ -16,7 +18,8 @@
     "./runs": "./src/runs.ts",
     "./report": "./src/report.ts",
     "./doctor": "./src/doctor.ts",
-    "./control": "./src/control.ts"
+    "./control": "./src/control.ts",
+    "./retry": "./src/retry.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -181,12 +181,16 @@ export async function listPersistedRuns(limit = 40): Promise<PersistedRun[]> {
 }
 
 export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | null> {
-  // by id prefix or full folder name
+  // Match by exact folder name or trailing _<id> segment only — never loose includes().
+  const needle = idOrDir.trim();
+  if (!needle || needle.includes("/") || needle.includes("\\") || needle.includes("..")) {
+    return null;
+  }
   const root = runsRoot();
   try {
     const entries = await readdir(root);
     const match =
-      entries.find((e) => e === idOrDir || e.endsWith(`_${idOrDir}`) || e.includes(idOrDir)) ??
+      entries.find((e) => e === needle || e.endsWith(`_${needle}`) || e.startsWith(`${needle}_`)) ??
       null;
     if (!match) return null;
     const dir = join(root, match);

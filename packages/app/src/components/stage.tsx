@@ -21,6 +21,9 @@ export function DeviceStage() {
   const frame = () =>
     rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
+  // transient tap feedback (positioned in % of the glass)
+  const [tapFeedback, setTapFeedback] = createSignal<{ x: number; y: number } | null>(null);
+  let feedbackTimer: number | undefined;
 
   let stageEl: HTMLElement | undefined;
 
@@ -87,6 +90,11 @@ export function DeviceStage() {
     const p = picker();
     if (!p) return;
     setPicker(null);
+    // feedback for deliberate picker taps too
+    setTapFeedback({ x: p.fx * 100, y: p.fy * 100 });
+    if (feedbackTimer) clearTimeout(feedbackTimer);
+    feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
+
     if (pickMode() === "select") {
       // Select-only: record the chosen-strategy step WITHOUT tapping.
       rec.recordPick(strategy, p.fx, p.fy);
@@ -287,6 +295,7 @@ export function DeviceStage() {
   }
   onCleanup(() => {
     if (hoverRaf) cancelAnimationFrame(hoverRaf);
+    if (feedbackTimer) clearTimeout(feedbackTimer);
   });
   /** Segmented stage mode (plan 009 step 6): View = watch only;
    *  Drive = live poll + click-to-tap + hover-inspect; Record = Drive +
@@ -353,8 +362,7 @@ export function DeviceStage() {
             <div class="stage__connect">
               <button
                 type="button"
-                class="btn btn-ghost"
-                style={{ border: "1px solid var(--v2-border-border-muted)" }}
+                class="btn btn-ghost btn--bordered"
                 disabled={server.health() === "offline"}
                 onClick={() =>
                   void (async () => {
@@ -411,6 +419,11 @@ export function DeviceStage() {
                   const dy = (fy - start.fy) * r.height;
                   if (Math.hypot(dx, dy) < 6) {
                     // tap → direct action, no picker
+                    // show brief physical feedback at tap location
+                    setTapFeedback({ x: start.fx * 100, y: start.fy * 100 });
+                    if (feedbackTimer) clearTimeout(feedbackTimer);
+                    feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
+
                     void rec.driveTap(start.fx, start.fy).then(() => {
                       if (rec.interacting()) {
                         void tickLiveFrame();
@@ -458,6 +471,22 @@ export function DeviceStage() {
               </Show>
               <Show when={pickedHighlight()}>
                 {(h) => <div class="hit-rect hit-rect--picked" aria-hidden="true" style={h()} />}
+              </Show>
+
+              {/* tap confirmation ring */}
+              <Show when={tapFeedback()}>
+                {(fb) => (
+                  <div
+                    class="tap-feedback"
+                    aria-hidden="true"
+                    style={{
+                      left: `calc(${fb().x}% - 9px)`,
+                      top: `calc(${fb().y}% - 9px)`,
+                      width: "18px",
+                      height: "18px",
+                    }}
+                  />
+                )}
               </Show>
             </Show>
           </div>

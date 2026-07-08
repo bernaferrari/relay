@@ -533,6 +533,7 @@ export function StepsPane() {
                     >
                       <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
+                        <span class="stitle">{step.title}</span>
                         <Show
                           when={Boolean(
                             (step.kind && step.kind !== "Replay") ||
@@ -556,7 +557,6 @@ export function StepsPane() {
                             <Glyphs glyphs={step.glyphs} max={6} />
                           </span>
                         </Show>
-                        <span class="stitle">{step.title}</span>
                       </span>
                     </div>
                   );
@@ -574,12 +574,20 @@ export function StepsPane() {
             >
               <For each={selectedRecipe()!.steps}>
                 {(step, i) => (
-                  <div class="srow srow--static" title={describeStep(step)}>
+                  <button
+                    type="button"
+                    class="srow srow--static srow--clickable"
+                    title="Click to edit this step"
+                    onClick={() => setEditingRecipe(selectedRecipe()!)}
+                  >
                     <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                     <span class="srow__body">
                       <span class="stitle">{describeStep(step)}</span>
+                      <span class="smeta">
+                        <span class="smeta__kind">{step.kind}</span>
+                      </span>
                     </span>
-                  </div>
+                  </button>
                 )}
               </For>
             </Show>
@@ -597,6 +605,9 @@ export function StepsPane() {
                         <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                         <span class="srow__body">
                           <span class="stitle">{flowLabel(step)}</span>
+                          <span class="smeta">
+                            <span class="smeta__kind">{step.kind}</span>
+                          </span>
                         </span>
                       </div>
                     )}
@@ -605,20 +616,25 @@ export function StepsPane() {
               >
                 <For each={selectedMeta()!.planned!}>
                   {(step, i) => (
-                    <div
-                      class="srow srow--static"
-                      title={`${step.title} · ${step.glyphs?.join(" · ") ?? ""}`}
+                    <button
+                      type="button"
+                      class="srow srow--static srow--clickable"
+                      title="Click to fork and edit this recipe"
+                      onClick={() => {
+                        const r = selectedRecipe();
+                        if (r) void rec.forkRecipe(r);
+                      }}
                     >
                       <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
+                        <span class="stitle">{step.title}</span>
                         <Show when={(step.glyphs?.length ?? 0) > 0}>
                           <span class="smeta">
                             <Glyphs glyphs={step.glyphs} max={6} />
                           </span>
                         </Show>
-                        <span class="stitle">{step.title}</span>
                       </span>
-                    </div>
+                    </button>
                   )}
                 </For>
               </Show>
@@ -626,7 +642,7 @@ export function StepsPane() {
 
             {/* Error box */}
             <Show when={selectedJob()?.error}>
-              <div class="heal-box heal-box--fail" role="alert" style={{ margin: "8px 0" }}>
+              <div class="heal-box heal-box--fail heal-box--spaced" role="alert">
                 <span class="heal-box__icon" aria-hidden="true">
                   <Icon name="alert" size={12} />
                 </span>

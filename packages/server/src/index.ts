@@ -55,9 +55,13 @@ export type StartedServer = {
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  // PUT/DELETE are used by recipe CRUD; browsers preflight them.
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
+
+/** Reject oversized bodies early — screenshots/recipe JSON stay well under this. */
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 class HttpError extends Error {
   constructor(
@@ -99,12 +103,34 @@ function collectReports(limit: number): JobReport[] {
   return listJobs(limit).map(toJobReport);
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
+function readBody(req: http.IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<string> {
   return new Promise((resolve, reject) => {
+    const declared = Number(req.headers["content-length"] ?? 0);
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      reject(new HttpError(413, `Request body too large (max ${maxBytes} bytes)`));
+      req.resume();
+      return;
+    }
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    let total = 0;
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+    req.on("data", (chunk: Buffer) => {
+      if (settled) return;
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        settle(() => reject(new HttpError(413, `Request body too large (max ${maxBytes} bytes)`)));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => settle(() => resolve(Buffer.concat(chunks).toString("utf8"))));
+    req.on("error", (err) => settle(() => reject(err)));
   });
 }
 
@@ -254,7 +280,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 
     if (method === "GET" && pathname === "/jobs") {
-      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const limit = parseLimit(url.searchParams.get("limit"), 50);
       json(res, 200, {
         jobs: listJobs(limit),
         active: getActiveJob(),
@@ -429,8 +455,16 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
       }
       for (;;) {
-        const current = getJob(job.id)!;
-        if (current.status === "ok" || current.status === "error" || current.status === "healed") {
+        const current = getJob(job.id);
+        if (!current) {
+          throw new HttpError(500, "Job disappeared while waiting");
+        }
+        if (
+          current.status === "ok" ||
+          current.status === "error" ||
+          current.status === "healed" ||
+          current.status === "cancelled"
+        ) {
           json(res, 200, {
             ok: current.status === "ok" || current.status === "healed",
             action: current.action,
@@ -438,6 +472,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             error: current.error,
             healed: current.healed,
             healMessage: current.healMessage,
+            cancelled: current.status === "cancelled",
             job: current,
             logs: current.logs,
           });
@@ -490,7 +525,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // persisted runs
     if (method === "GET" && pathname === "/runs") {
-      const limit = Number(url.searchParams.get("limit") ?? 40);
+      const limit = parseLimit(url.searchParams.get("limit"), 40);
       const runs = await listPersistedRuns(limit);
       json(res, 200, { runs, root: runsRoot() });
       return;
@@ -600,9 +635,21 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 }
 
+function isLoopbackHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "0:0:0:0:0:0:0:1";
+}
+
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
+
+  if (!isLoopbackHost(host)) {
+    // No auth on this API — non-loopback binds expose device control to the LAN.
+    console.warn(
+      `[grok-device] WARNING: binding ${host} (not loopback). This API has no auth; anyone on the network can run jobs and interact with devices.`,
+    );
+  }
 
   const server = http.createServer((req, res) => {
     void handleRequest(req, res);

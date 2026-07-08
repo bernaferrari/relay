@@ -1,4 +1,4 @@
-import type { JobInfo } from "../context/server";
+import type { JobInfo } from "./api-types";
 
 /** Map a job/run status to a UI tone token used by `tone--*` / `nav-row__dot--*`. */
 export function statusTone(status: JobInfo["status"] | "idle"): string {

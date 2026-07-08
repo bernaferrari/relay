@@ -1,4 +1,4 @@
-import type { SnapshotNode, SnapshotState, StepTarget } from "../context/server";
+import type { SnapshotNode, SnapshotState, StepTarget } from "./api-types";
 
 /**
  * Snapshot geometry + addressing helpers. Pure functions of the snapshot and

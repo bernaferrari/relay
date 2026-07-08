@@ -169,7 +169,6 @@ export function Topbar(props: { onSettings: () => void }) {
               class="runbar__btn runbar__btn--stop"
               title="Cancel (Esc)"
               aria-label="Cancel job"
-              style={{ color: "var(--c-fail)" }}
               onClick={() => {
                 const a = server.activeJob();
                 if (a) void server.cancelJob(a.id);

@@ -2,211 +2,39 @@ import { createSignal, createEffect, onCleanup } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
+import { asArray, apiRequest, levelFromLine, normalizeBase, uid } from "../lib/api";
+import type {
+  ActionInfo,
+  DeviceInfo,
+  Frame,
+  HealthState,
+  JobInfo,
+  LogLine,
+  PersistedRun,
+  RecipeInfo,
+  RecipeStep,
+  SnapshotNode,
+  SnapshotState,
+  TraceFrameRef,
+} from "../lib/api-types";
 
-export type DeviceInfo = {
-  id?: string;
-  serial: string;
-  name?: string;
-  kind?: string | null;
-  booted?: boolean | null;
-  [key: string]: unknown;
-};
-
-export type ActionInfo = {
-  id: string;
-  title: string;
-  description?: string;
-  category: string;
-  requiresProdMatch?: boolean;
-  isAlpha?: boolean;
-  glyphs?: string[];
-  planned?: { title: string; glyphs?: string[] }[];
-  [key: string]: unknown;
-};
-
-export type TraceFrameRef = {
-  path: string;
-  caption: string;
-  capturedAt: number;
-  bytes?: number;
-  base64?: string;
-  mime?: string;
-};
-
-export type TraceStep = {
-  id: string;
-  index: number;
-  kind: string;
-  tone: string;
-  title: string;
-  glyphs: string[];
-  startedAt: number;
-  finishedAt?: number;
-  durationMs?: number;
-  frames: TraceFrameRef[];
-  log: string;
-  heal?: string;
-  status?: string;
-};
-
-export type StepTarget = {
-  ref?: string;
-  label?: string;
-  text?: string;
-  point?: { x: number; y: number };
-};
-
-export type RecipeStep =
-  | { kind: "tap"; target: StepTarget; note?: string }
-  | { kind: "type"; text: string; target?: StepTarget; note?: string }
-  | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
-  | {
-      kind: "swipe";
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-      durationMs?: number;
-      note?: string;
-    }
-  | { kind: "key"; key: "back" | "home"; note?: string }
-  | { kind: "sleep"; ms: number; note?: string }
-  | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
-  | { kind: "pause"; message: string; note?: string }
-  | { kind: "screenshot"; caption?: string; note?: string }
-  | { kind: "flow"; flow: string; note?: string };
-
-export type RecipeInfo = {
-  id: string;
-  title: string;
-  description?: string;
-  source: "builtin" | "custom";
-  steps: RecipeStep[];
-  createdAt: number;
-  updatedAt: number;
-};
-
-export type JobInfo = {
-  id: string;
-  action: string;
-  serial?: string;
-  status: "queued" | "running" | "paused" | "ok" | "error" | "healed" | "cancelled";
-  queuedAt: number;
-  startedAt?: number;
-  finishedAt?: number;
-  logs: string[];
-  result?: unknown;
-  error?: string;
-  previousError?: string;
-  healed?: boolean;
-  healMessage?: string;
-  attempts?: number;
-  retryOf?: string;
-  retriedBy?: string;
-  steps?: TraceStep[];
-  frames?: TraceFrameRef[];
-  glyphs?: string[];
-  kind?: string;
-  tone?: string;
-  title?: string;
-  runDir?: string;
-  persisted?: boolean;
-};
-
-export type PersistedRun = {
-  id: string;
-  action: string;
-  serial?: string;
-  status: string;
-  healed?: boolean;
-  healMessage?: string;
-  attempts: number;
-  dir: string;
-  frames: TraceFrameRef[];
-  steps: TraceStep[];
-  logs: string[];
-  durationMs?: number;
-  error?: string;
-  writtenAt: number;
-};
-
-export type HealthState = "unknown" | "online" | "offline";
-
-export type LogLine = {
-  id: number;
-  text: string;
-  level: "info" | "success" | "error" | "default";
-  at: number;
-  jobId?: string;
-};
-
-export type SnapshotNode = {
-  label?: string;
-  value?: string;
-  identifier?: string;
-  role?: string;
-  type?: string;
-  enabled?: boolean;
-  selected?: boolean;
-  focused?: boolean;
-  visibleToUser?: boolean;
-  hittable?: boolean;
-  rect?: { x: number; y: number; width: number; height: number };
-  ref?: string;
-  index?: number;
-  depth?: number;
-  parentIndex?: number;
-};
-
-export type SnapshotState = {
-  serial?: string;
-  capturedAt: number;
-  nodes: SnapshotNode[];
-  interactive: SnapshotNode[];
-  tree?: string;
-  bounds?: { width: number; height: number };
-} | null;
-
-export type Frame = {
-  id: string;
-  capturedAt: number;
-  mime: string;
-  base64: string;
-  bytes: number;
-  serial?: string;
-  caption: string;
-  jobId?: string;
-  actionId?: string;
-  path?: string;
-};
-
-/** Workspace shell: the rail (sidebar) can be collapsed to 0 width via ⌘B. */
-
-function normalizeBase(url: string) {
-  return url.replace(/\/+$/, "");
-}
-
-function asArray<T>(value: unknown, key?: string): T[] {
-  if (Array.isArray(value)) return value as T[];
-  if (
-    value &&
-    typeof value === "object" &&
-    key &&
-    Array.isArray((value as Record<string, unknown>)[key])
-  ) {
-    return (value as Record<string, unknown>)[key] as T[];
-  }
-  return [];
-}
-
-function levelFromLine(text: string): LogLine["level"] {
-  if (/FAIL|error|Error|ERR/i.test(text)) return "error";
-  if (/DONE|ok|success|healed/i.test(text)) return "success";
-  if (/^==>|^\[|health|poll|job\./i.test(text)) return "info";
-  return "default";
-}
-
-function uid() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
+// Re-export API types so existing `from "../context/server"` imports keep working.
+export type {
+  ActionInfo,
+  DeviceInfo,
+  Frame,
+  HealthState,
+  JobInfo,
+  LogLine,
+  PersistedRun,
+  RecipeInfo,
+  RecipeStep,
+  SnapshotNode,
+  SnapshotState,
+  StepTarget,
+  TraceFrameRef,
+  TraceStep,
+} from "../lib/api-types";
 
 // Polling equality gates — skip setX when a poll returns an unchanged list,
 // so unchanged polls don't re-create arrays and thrash dependents every cycle.
@@ -354,37 +182,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       timeoutMs = 20000,
     ): Promise<T> {
       const base = serverUrl() || (await resolveUrl());
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const res = await fetcher()(`${base}${path}`, {
-          ...init,
-          signal: controller.signal,
-          headers: {
-            Accept: "application/json",
-            ...(init?.body ? { "Content-Type": "application/json" } : {}),
-            ...init?.headers,
-          },
-        });
-        if (!res.ok) {
-          let msg = `${res.status} ${res.statusText}`;
-          try {
-            const body = (await res.json()) as { error?: string };
-            if (body.error) msg = body.error;
-          } catch {
-            /* ignore */
-          }
-          throw new Error(msg);
-        }
-        return (await res.json()) as T;
-      } catch (err) {
-        if ((err instanceof DOMException || err instanceof Error) && err.name === "AbortError") {
-          throw new Error("Request timed out");
-        }
-        throw err;
-      } finally {
-        clearTimeout(timer);
-      }
+      return apiRequest<T>(fetcher(), base, path, init, timeoutMs);
     }
 
     function dismissError() {
