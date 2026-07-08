@@ -13,7 +13,7 @@ export function Glyphs(props: { glyphs?: string[]; size?: "sm" | "md"; max?: num
         {(g) => (
           <Show when={GLYPH_ICON[g]} fallback={<span class="gly__dot" />}>
             {(name) => (
-              <span class="gly__i" title={GLYPH_META[g]?.label ?? g}>
+              <span class="gly__i" data-tip={GLYPH_META[g]?.label ?? g}>
                 <Icon name={name()} size={props.size === "md" ? 16 : 13} />
               </span>
             )}

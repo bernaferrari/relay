@@ -1860,6 +1860,10 @@ html[data-color-scheme="light"] .glass {
   width: 16px;
   height: 16px;
   color: var(--c-dim);
+  transition: color 120ms var(--ease-out);
+}
+.gly__i:hover {
+  color: var(--v2-text-text-base);
 }
 .gly--md .gly__i {
   width: 24px;
