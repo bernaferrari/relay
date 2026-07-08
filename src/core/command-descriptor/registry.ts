@@ -14,7 +14,11 @@ import {
 } from './timeout-policy.ts';
 import { resolvePostActionObservationSupport } from './post-action-observation.ts';
 import type { PostActionObservationSupport } from './post-action-observation.ts';
-import type { CommandDescriptor, CommandTimeoutPolicy } from './types.ts';
+import type {
+  CommandDescriptor,
+  CommandResponseDataTransform,
+  CommandTimeoutPolicy,
+} from './types.ts';
 
 type RawCommandDescriptor = Omit<CommandDescriptor, 'mcpExposed'> & {
   mcpExposed?: boolean;
@@ -124,6 +128,22 @@ const SETTLE_FLAG_PRESERVE_DAEMON_TIMEOUT_POLICY: CommandTimeoutPolicy = {
   },
   onTimeout: 'preserve-daemon',
 };
+
+const TOUCH_INTERACTION_RESPONSE_DATA_TRANSFORM = {
+  fields: {
+    count: { defaultValue: 1, omitDefault: true },
+    intervalMs: { defaultValue: 0, omitDefault: true },
+    holdMs: { defaultValue: 0, omitDefault: true },
+    jitterPx: { defaultValue: 0, omitDefault: true },
+    doubleTap: { defaultValue: false, omitDefault: true },
+  },
+} as const satisfies CommandResponseDataTransform;
+
+const FILL_INTERACTION_RESPONSE_DATA_TRANSFORM = {
+  fields: {
+    delayMs: { defaultValue: 0 },
+  },
+} as const satisfies CommandResponseDataTransform;
 
 function interactionTimeoutPolicy(command: string): CommandTimeoutPolicy {
   return resolvePostActionObservationSupport(command) !== undefined
@@ -516,6 +536,7 @@ const RAW_COMMAND_DESCRIPTORS = [
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.click),
     postActionObservation: postActionObservation(PUBLIC_COMMANDS.click),
+    responseDataTransform: TOUCH_INTERACTION_RESPONSE_DATA_TRANSFORM,
     batchable: true,
   },
   {
@@ -524,6 +545,7 @@ const RAW_COMMAND_DESCRIPTORS = [
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.fill),
     postActionObservation: postActionObservation(PUBLIC_COMMANDS.fill),
+    responseDataTransform: FILL_INTERACTION_RESPONSE_DATA_TRANSFORM,
     batchable: true,
   },
   {
@@ -540,6 +562,7 @@ const RAW_COMMAND_DESCRIPTORS = [
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: interactionTimeoutPolicy(PUBLIC_COMMANDS.press),
     postActionObservation: postActionObservation(PUBLIC_COMMANDS.press),
+    responseDataTransform: TOUCH_INTERACTION_RESPONSE_DATA_TRANSFORM,
     batchable: true,
   },
   {
@@ -786,6 +809,15 @@ const TIMEOUT_POLICY_BY_COMMAND: ReadonlyMap<string, CommandTimeoutPolicy> = new
   commandDescriptors.map((descriptor) => [descriptor.name, descriptor.timeoutPolicy]),
 );
 
+const RESPONSE_DATA_TRANSFORM_BY_COMMAND: ReadonlyMap<string, CommandResponseDataTransform> =
+  new Map(
+    Array.from(COMMAND_DESCRIPTOR_BY_NAME.values()).flatMap((descriptor) =>
+      descriptor.responseDataTransform
+        ? [[descriptor.name, descriptor.responseDataTransform] as const]
+        : [],
+    ),
+  );
+
 export function resolveCommandPostActionObservationSupport(
   command: string | undefined,
 ): PostActionObservationSupport | undefined {
@@ -810,4 +842,31 @@ export function commandSupportsVerifyEvidence(command: string | undefined): bool
 export function resolveCommandTimeoutPolicy(command: string | undefined): CommandTimeoutPolicy {
   if (command === undefined) return DEFAULT_TIMEOUT_POLICY;
   return TIMEOUT_POLICY_BY_COMMAND.get(command) ?? DEFAULT_TIMEOUT_POLICY;
+}
+
+export function resolveCommandResponseDataTransform(
+  command: string | undefined,
+): CommandResponseDataTransform | undefined {
+  if (command === undefined) return undefined;
+  return RESPONSE_DATA_TRANSFORM_BY_COMMAND.get(command);
+}
+
+export function listCommandResponseDataTransforms(): Array<{
+  command: string;
+  transform: CommandResponseDataTransform;
+}> {
+  return Array.from(RESPONSE_DATA_TRANSFORM_BY_COMMAND, ([command, transform]) => ({
+    command,
+    transform,
+  }));
+}
+
+export function listCommandResponseDataTransformFieldNames(): string[] {
+  return [
+    ...new Set(
+      Array.from(RESPONSE_DATA_TRANSFORM_BY_COMMAND.values()).flatMap((transform) =>
+        Object.keys(transform.fields),
+      ),
+    ),
+  ].sort();
 }
