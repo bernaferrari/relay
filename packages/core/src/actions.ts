@@ -42,6 +42,8 @@ export type ActionMeta = {
   isAlpha?: boolean;
   /** default trace glyphs (from RECIPE_TRACE_PLANS) */
   glyphs?: string[];
+  /** planned trace steps (from RECIPE_TRACE_PLANS) for pre-run preview */
+  planned?: { title: string; glyphs: string[] }[];
 };
 
 export const ACTIONS: readonly ActionMeta[] = [
@@ -176,10 +178,10 @@ export async function runAction(
   }
 }
 
-/** ACTIONS with default trace glyphs attached. */
+/** ACTIONS with default trace glyphs + planned steps attached. */
 export function listActionsWithTrace(): ActionMeta[] {
-  return ACTIONS.map((a) => ({
-    ...a,
-    glyphs: planForAction(a.id).glyphs,
-  }));
+  return ACTIONS.map((a) => {
+    const plan = planForAction(a.id);
+    return { ...a, glyphs: plan.glyphs, planned: plan.planned };
+  });
 }

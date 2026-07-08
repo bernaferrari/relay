@@ -20,6 +20,7 @@ export type ActionInfo = {
   requiresProdMatch?: boolean;
   isAlpha?: boolean;
   glyphs?: string[];
+  planned?: { title: string; glyphs?: string[] }[];
   [key: string]: unknown;
 };
 
