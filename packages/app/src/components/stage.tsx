@@ -344,10 +344,8 @@ export function DeviceStage() {
       <Show
         when={!server.isEmptyDevices()}
         fallback={
-          <div class="stage__no-device">
-            <span class="stage__no-device-icon" aria-hidden="true">
-              <Icon name="smartphone" size={40} strokeWidth={1.3} />
-            </span>
+          <div class="bezel--seat">
+            <Icon name="smartphone" size={24} strokeWidth={1.3} />
             <p class="stage__no-device-title">No device connected</p>
             <p class="stage__no-device-hint">
               Connect a phone over USB or wireless adb, then refresh.

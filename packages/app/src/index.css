@@ -1214,40 +1214,35 @@ html[data-color-scheme="light"] .bezel {
   margin-top: 16px;
   z-index: 2;
 }
-.stage__no-device {
+/* empty-device seat — a dashed phone silhouette, not a void (plan 013 step 6) */
+.bezel--seat {
+  width: min(240px, 34vh);
+  aspect-ratio: 9 / 19.5;
+  max-height: calc(100% - 160px);
+  border-radius: 34px;
+  border: 1.5px dashed var(--v2-border-border-strong);
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
+  justify-content: center;
   gap: 6px;
-  margin: auto 0;
-  padding: 40px 24px;
+  margin-block: auto;
+  padding: 20px;
+  text-align: center;
   z-index: 2;
-}
-.stage__no-device-icon {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  margin-bottom: 10px;
-  border-radius: 50%;
-  color: var(--c-accent-soft);
-  background: color-mix(in srgb, var(--c-accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--c-accent) 18%, transparent);
 }
 .stage__no-device-title {
   margin: 0;
-  font-size: var(--fs-title);
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-size: var(--fs-body);
+  font-weight: 600;
   color: var(--v2-text-text-base);
 }
 .stage__no-device-hint {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: var(--fs-meta);
   line-height: 1.5;
   color: var(--c-dim);
-  max-width: 260px;
+  max-width: 200px;
 }
 .stage__connect {
   display: flex;
