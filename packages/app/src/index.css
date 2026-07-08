@@ -1545,14 +1545,6 @@ html[data-color-scheme="light"] .glass {
 .stitle + .smeta {
   margin-top: 4px;
 }
-.srow--clickable {
-  cursor: pointer;
-  border-radius: var(--radius);
-  transition: background 120ms var(--ease-out);
-}
-.srow--clickable:hover {
-  background: color-mix(in srgb, var(--v2-background-bg-layer-02) 55%, transparent);
-}
 
 /* run header — status/date/duration/device (card on layer-02) */
 .run-head {

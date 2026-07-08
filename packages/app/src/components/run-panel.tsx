@@ -401,7 +401,7 @@ export function StepsPane() {
             </Show>
           </div>
           <div class="runpane__head-actions">
-            <Show when={selectedRecipe()?.source === "custom"}>
+            <Show when={selectedRecipe()?.source === "custom" && !selectedJob()}>
               <button
                 type="button"
                 class="btn btn-ghost"
@@ -410,6 +410,29 @@ export function StepsPane() {
               >
                 <Icon name="sliders" size={13} />
                 Edit
+              </button>
+            </Show>
+            <Show when={selectedRecipe()?.source === "builtin" && !selectedJob()}>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                title="Create a custom copy to edit"
+                onClick={async () => {
+                  const r = selectedRecipe();
+                  if (!r) return;
+                  const saved = await server.saveRecipeRemote({
+                    title: `${r.title} (copy)`,
+                    description: r.description,
+                    steps: r.steps,
+                  });
+                  if (saved) {
+                    server.setSelectedRecipeId(saved.id);
+                    setEditingRecipe(saved);
+                  }
+                }}
+              >
+                <Icon name="copy" size={13} />
+                Fork & edit
               </button>
             </Show>
             <Show when={selectedJob()?.status === "error"}>
@@ -574,12 +597,7 @@ export function StepsPane() {
             >
               <For each={selectedRecipe()!.steps}>
                 {(step, i) => (
-                  <button
-                    type="button"
-                    class="srow srow--static srow--clickable"
-                    title="Click to edit this step"
-                    onClick={() => setEditingRecipe(selectedRecipe()!)}
-                  >
+                  <div class="srow srow--static">
                     <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                     <span class="srow__body">
                       <span class="stitle">{describeStep(step)}</span>
@@ -587,7 +605,7 @@ export function StepsPane() {
                         <span class="smeta__kind">{step.kind}</span>
                       </span>
                     </span>
-                  </button>
+                  </div>
                 )}
               </For>
             </Show>
@@ -616,15 +634,7 @@ export function StepsPane() {
               >
                 <For each={selectedMeta()!.planned!}>
                   {(step, i) => (
-                    <button
-                      type="button"
-                      class="srow srow--static srow--clickable"
-                      title="Click to fork and edit this recipe"
-                      onClick={() => {
-                        const r = selectedRecipe();
-                        if (r) void rec.forkRecipe(r);
-                      }}
-                    >
+                    <div class="srow srow--static">
                       <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
                         <span class="stitle">{step.title}</span>
@@ -634,7 +644,7 @@ export function StepsPane() {
                           </span>
                         </Show>
                       </span>
-                    </button>
+                    </div>
                   )}
                 </For>
               </Show>
