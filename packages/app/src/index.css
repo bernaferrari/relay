@@ -1670,21 +1670,21 @@ html[data-color-scheme="light"] .bezel {
 .gly {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
 }
 .gly__i {
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
-  background: var(--v2-background-bg-layer-02);
-  color: var(--c-accent-soft);
+  width: 16px;
+  height: 16px;
+  color: var(--c-dim);
 }
 .gly--md .gly__i {
   width: 24px;
   height: 24px;
   border-radius: 6px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--c-accent-soft);
 }
 .gly__dot {
   width: 4px;
