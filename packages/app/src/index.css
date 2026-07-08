@@ -256,6 +256,14 @@ html[data-color-scheme="light"] .qa::before {
 .btn-primary:active:not(:disabled) {
   filter: brightness(0.94);
 }
+.btn-acc:disabled,
+.btn-primary:disabled {
+  background: var(--v2-background-bg-layer-02);
+  color: var(--c-dim);
+  border-color: var(--v2-border-border-muted);
+  box-shadow: none;
+  opacity: 1;
+}
 
 .btn-spinner {
   width: 13px;
