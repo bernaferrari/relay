@@ -739,7 +739,7 @@ html[data-color-scheme="light"] .qa::before {
   position: relative;
   display: grid;
   grid-template-columns: minmax(300px, 38%) minmax(0, 1fr);
-  background: var(--v2-background-bg-deep);
+  background: var(--v2-background-bg-layer-01);
 }
 
 /* Run pane (plan 009) — the right surface */
@@ -910,7 +910,7 @@ html[data-color-scheme="light"] .qa::before {
 .nav-row__action-sure {
   font-size: var(--fs-meta);
   font-weight: 600;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--c-fail);
 }
 
@@ -925,6 +925,13 @@ html[data-color-scheme="light"] .qa::before {
   padding: 16px 20px;
   min-height: 0;
   overflow: hidden;
+  background:
+    radial-gradient(
+      ellipse at 50% 35%,
+      color-mix(in srgb, var(--v2-background-bg-layer-02) 50%, transparent) 0%,
+      transparent 70%
+    ),
+    var(--v2-background-bg-layer-01);
 }
 .stage--offline {
   opacity: 0.55;
@@ -1220,7 +1227,9 @@ html[data-color-scheme="light"] .bezel {
   aspect-ratio: 9 / 19.5;
   max-height: calc(100% - 160px);
   border-radius: 34px;
-  border: 1.5px dashed var(--v2-border-border-strong);
+  border: 1.5px dashed
+    color-mix(in srgb, var(--v2-border-border-strong) 70%, var(--v2-text-text-muted));
+  background: color-mix(in srgb, var(--v2-background-bg-layer-02) 40%, transparent);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1230,6 +1239,10 @@ html[data-color-scheme="light"] .bezel {
   padding: 20px;
   text-align: center;
   z-index: 2;
+  transition: border-color 200ms var(--ease-out);
+}
+.bezel--seat:hover {
+  border-color: var(--v2-text-text-muted);
 }
 .stage__no-device-title {
   margin: 0;
@@ -1366,8 +1379,8 @@ html[data-color-scheme="light"] .bezel {
 .section-label {
   font-size: var(--fs-label);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--c-dim);
   margin: 16px 0 9px;
 }
@@ -1697,8 +1710,8 @@ html[data-color-scheme="light"] .bezel {
   font-family: var(--font-family-mono);
   font-size: var(--fs-meta);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  text-transform: none;
+  letter-spacing: 0;
   padding: 2px 6px;
   border-radius: 6px;
   color: var(--c-dim);
@@ -1731,8 +1744,8 @@ html[data-color-scheme="light"] .bezel {
   font-family: var(--font-family-mono);
   font-size: var(--fs-meta);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
   padding: 2px 7px;
   border-radius: 99px;
   color: var(--c-dim);
@@ -1970,8 +1983,8 @@ html[data-color-scheme="light"] .bezel {
 .appearance-label-row .appearance-label {
   font-size: var(--fs-label);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--c-dim);
   margin-bottom: 8px;
 }
@@ -2080,8 +2093,8 @@ html[data-color-scheme="light"] .bezel {
 .settings-status__label {
   font-size: var(--fs-label);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--c-dim);
 }
 .settings-row {
@@ -2093,8 +2106,8 @@ html[data-color-scheme="light"] .bezel {
 .settings-field-label {
   font-size: var(--fs-label);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--c-dim);
 }
 .settings-row input[type="url"],
@@ -2215,8 +2228,8 @@ html[data-color-scheme="light"] .bezel {
   padding: 9px 11px 4px;
   font-size: var(--fs-label);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--c-dim);
   background: var(--v2-background-bg-layer-01);
 }
@@ -2257,8 +2270,8 @@ html[data-color-scheme="light"] .bezel {
 .cmd-item__group {
   font-size: var(--fs-meta);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--c-dim);
 }
 .cmd-item__bind,

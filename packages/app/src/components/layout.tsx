@@ -169,7 +169,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
       recipes.map((r) => ({
         id: `recipe.${r.id}`,
         title: r.title,
-        subtitle: r.id,
+        subtitle: r.source === "custom" ? "Custom recipe" : "Built-in recipe",
         group:
           r.source === "custom"
             ? "Recipes"

@@ -438,6 +438,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         if (key !== prevRecipesKey) {
           prevRecipesKey = key;
           setRecipes(list);
+          // Auto-select the first recipe so the report opens with content, not void.
+          if (!selectedRecipeId() && list.length > 0 && list[0]) setSelectedRecipeId(list[0].id);
         }
       } catch {
         /* ignore — recipes are non-critical for connectivity UX */
