@@ -745,7 +745,10 @@ html[data-color-scheme="light"] .qa::before {
 .runpane__scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 0 12px 14px;
+  padding: 0 24px 16px;
+}
+.runpane__scroll > * {
+  max-width: 720px;
 }
 .runpane__empty {
   flex: 1;
@@ -1249,7 +1252,8 @@ html[data-color-scheme="light"] .bezel {
 
 /* pane header — title + Run/Queue + Edit */
 .runpane__head {
-  display: flex;
+  padding: 14px 24px;
+  max-width: 768px;
   align-items: flex-start;
   gap: 12px;
   padding: 16px 4px;
