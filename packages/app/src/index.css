@@ -1255,11 +1255,11 @@ html[data-color-scheme="light"] .bezel {
 
 /* pane header — title + Run/Queue + Edit */
 .runpane__head {
-  padding: 14px 24px;
-  max-width: 768px;
+  display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 16px 4px;
+  padding: 14px 24px;
+  max-width: 768px;
   border-bottom: 1px solid var(--v2-border-border-muted);
   margin-bottom: 4px;
 }
