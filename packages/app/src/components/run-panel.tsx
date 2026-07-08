@@ -130,12 +130,6 @@ export function StepsPane() {
                 <div class="runpane__head">
                   <div class="runpane__head-copy">
                     <h2 class="runpane__title">{titleize(run().action, server.recipes())}</h2>
-                    <p class="runpane__desc">
-                      <span class={`tone tone--${statusTone(run().status as JobInfo["status"])}`}>
-                        {run().healed ? "healed" : run().status}
-                      </span>{" "}
-                      · {n(run().frames.length, "frame")} · saved run
-                    </p>
                   </div>
                   <div class="runpane__head-actions">
                     <button
@@ -147,6 +141,33 @@ export function StepsPane() {
                       Close
                     </button>
                   </div>
+                </div>
+                <div class="run-head">
+                  <span
+                    class={`run-head__chip tone tone--${statusTone(run().status as JobInfo["status"])}`}
+                  >
+                    {run().healed
+                      ? "Healed"
+                      : run().status === "ok"
+                        ? "Passed"
+                        : run().status === "error"
+                          ? "Failed"
+                          : titleize(run().status)}
+                  </span>
+                  <span class="run-head__fact">{new Date(run().writtenAt).toLocaleString()}</span>
+                  <Show
+                    when={fmtMs(run().durationMs)}
+                    fallback={
+                      <Show when={run().steps.reduce((a, s) => a + (s.durationMs ?? 0), 0) > 0}>
+                        <span class="run-head__fact mono">
+                          {fmtMs(run().steps.reduce((a, s) => a + (s.durationMs ?? 0), 0))}
+                        </span>
+                      </Show>
+                    }
+                  >
+                    <span class="run-head__fact mono">{fmtMs(run().durationMs)}</span>
+                  </Show>
+                  <span class="run-head__fact">{n(run().frames.length, "frame")}</span>
                 </div>
 
                 <For each={run().steps}>
