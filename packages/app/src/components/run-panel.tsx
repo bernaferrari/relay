@@ -1,12 +1,12 @@
 import { For, Show, createMemo, createSignal, createEffect, onMount, onCleanup } from "solid-js";
-import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
+import { useServer, type JobInfo, type RecipeInfo, type PersistedRun } from "../context/server";
 import { describeStep, useRecorder } from "../context/recorder";
 import { Glyphs } from "./glyphs";
 import { EmptyState } from "./empty-state";
 import { useCommand } from "../context/command";
 import { Icon, GLYPH_META } from "./icon";
 import { RecipeEditor } from "./recipe-editor";
-import { statusTone, fmtDur, fmtMs, n, titleize } from "../lib/job";
+import { statusTone, fmtDur, fmtAgo, fmtMs, n, titleize } from "../lib/job";
 
 /** Hover tip describing what a step does (its actions + timing). */
 function stepTip(step: { title: string; glyphs?: string[]; durationMs?: number }): string {
@@ -154,6 +154,35 @@ export function StepsPane() {
       { key: "grok", label: "Grok app", items: grok, custom: false },
       { key: "custom", label: "Custom", items: custom, custom: true },
     ].filter((g) => g.items.length > 0);
+  });
+
+  // ── Recent runs (plan 012 step 6) — rehomes the sidebar's History + Queue ──
+  type RecentRow =
+    | { kind: "live"; id: string; ts: number; job: JobInfo; queuePos?: number }
+    | { kind: "disk"; id: string; ts: number; run: PersistedRun };
+  const recentRuns = createMemo(() => {
+    const r = selectedRecipe();
+    if (!r) return { rows: [] as RecentRow[], extra: 0 };
+    const jobs = server.jobs();
+    const liveIds = new Set(jobs.map((j) => j.id));
+    const queued = server.queuedJobs();
+    const rows: RecentRow[] = [];
+    for (const j of jobs) {
+      if (j.action !== r.id) continue;
+      rows.push({
+        kind: "live",
+        id: j.id,
+        ts: j.finishedAt ?? j.startedAt ?? j.queuedAt,
+        job: j,
+        queuePos: j.status === "queued" ? queued.findIndex((q) => q.id === j.id) + 1 : undefined,
+      });
+    }
+    for (const run of server.persistedRuns()) {
+      if (run.action !== r.id || liveIds.has(run.id)) continue;
+      rows.push({ kind: "disk", id: run.id, ts: run.writtenAt, run });
+    }
+    rows.sort((a, b) => b.ts - a.ts);
+    return { rows: rows.slice(0, 8), extra: Math.max(0, rows.length - 8) };
   });
 
   return (
@@ -581,6 +610,108 @@ export function StepsPane() {
                   <Icon name="alert" size={12} />
                 </span>
                 <span>{selectedJob()!.error}</span>
+              </div>
+            </Show>
+            {/* Recent runs — rehomes the sidebar's History + Queue (plan 012 step 6) */}
+            <Show when={recentRuns().rows.length > 0}>
+              <div class="recent">
+                <div class="recent__label">Recent runs</div>
+                <For each={recentRuns().rows}>
+                  {(row) => {
+                    const status: JobInfo["status"] =
+                      row.kind === "live" ? row.job.status : (row.run.status as JobInfo["status"]);
+                    const tone = statusTone(status);
+                    const isQueued = status === "queued";
+                    const isDone =
+                      status === "ok" ||
+                      status === "error" ||
+                      status === "healed" ||
+                      status === "cancelled";
+                    const isActive = status === "running" || status === "paused";
+                    const isErr = status === "error";
+                    const queuePos =
+                      row.kind === "live" && row.job.status === "queued" ? row.queuePos : undefined;
+                    const jobId = row.kind === "live" ? row.job.id : null;
+                    const selected =
+                      row.kind === "live"
+                        ? server.selectedJobId() === row.id
+                        : server.persistedRunId() === row.id;
+                    return (
+                      <div class="nav-row-wrap">
+                        <button
+                          type="button"
+                          class="nav-row nav-row--job"
+                          classList={{
+                            on: selected,
+                            "nav-row--active": row.kind === "live" && isActive,
+                          }}
+                          title={
+                            row.kind === "live"
+                              ? (row.job.title ?? titleize(row.job.action, server.recipes()))
+                              : `Disk run · ${row.run.dir}`
+                          }
+                          onClick={() => {
+                            if (row.kind === "live") {
+                              server.jumpToJob(row.id);
+                              server.setPersistedRunId(null);
+                            } else {
+                              server.setSelectedJobId(null);
+                              server.setPersistedRunId(row.id);
+                            }
+                          }}
+                        >
+                          <span class={`nav-row__dot nav-row__dot--${tone}`} aria-hidden="true" />
+                          <Show when={isQueued && queuePos}>
+                            <span class="nav-row__pos mono">{queuePos}</span>
+                          </Show>
+                          <span class="nav-row__title">
+                            {row.kind === "disk"
+                              ? fmtAgo(row.run.writtenAt, server.clock())
+                              : isQueued
+                                ? "Queued"
+                                : isDone
+                                  ? fmtAgo(row.job.finishedAt, server.clock())
+                                  : fmtDur(row.job, server.clock())}
+                          </span>
+                          <Show when={row.kind === "disk" ? row.run.durationMs : isDone ? 1 : 0}>
+                            <span class="nav-row__meta mono">
+                              {row.kind === "disk"
+                                ? fmtMs(row.run.durationMs)
+                                : fmtDur(row.job, server.clock())}
+                            </span>
+                          </Show>
+                        </button>
+                        <span class="nav-row__actions">
+                          <Show when={row.kind === "live" && isQueued && jobId}>
+                            <button
+                              type="button"
+                              class="nav-row__action"
+                              aria-label="Remove from queue"
+                              title="Remove from queue"
+                              onClick={() => jobId && void server.cancelJob(jobId)}
+                            >
+                              <Icon name="x" size={11} />
+                            </button>
+                          </Show>
+                          <Show when={row.kind === "live" && isErr && jobId}>
+                            <button
+                              type="button"
+                              class="nav-row__action"
+                              aria-label="Retry job"
+                              title="Retry / heal job"
+                              onClick={() => jobId && void server.retrySelectedJob(jobId)}
+                            >
+                              <Icon name="refresh" size={11} />
+                            </button>
+                          </Show>
+                        </span>
+                      </div>
+                    );
+                  }}
+                </For>
+                <Show when={recentRuns().extra > 0}>
+                  <p class="recent__more">and {recentRuns().extra} more on disk</p>
+                </Show>
               </div>
             </Show>
           </Show>

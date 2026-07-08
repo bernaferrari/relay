@@ -649,13 +649,28 @@ html[data-color-scheme="light"] .qa::before {
   animation: gd-spin 0.7s linear infinite;
 }
 .runbar__title {
+  font-family: inherit;
   font-size: var(--fs-body);
   font-weight: 550;
   letter-spacing: -0.006em;
+  color: var(--v2-text-text-base);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 150px;
+  max-width: 160px;
+  padding: 1px 6px;
+  margin: 0;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition:
+    background 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+.runbar__title:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--c-accent-soft);
 }
 .runbar__time {
   font-size: var(--fs-meta);
@@ -1466,6 +1481,24 @@ html[data-color-scheme="light"] .bezel {
   margin-left: 7px;
   color: var(--v2-border-border-strong);
   opacity: 0.5;
+}
+/* recent runs — rehomes the sidebar's History + Queue (plan 012 step 6) */
+.recent {
+  margin-top: 18px;
+}
+.recent__label {
+  font-size: var(--fs-meta);
+  font-weight: 550;
+  color: var(--c-dim);
+  margin: 0 0 4px;
+}
+.recent__more {
+  margin: 6px 0 0;
+  font-size: var(--fs-meta);
+  color: var(--c-dim);
+}
+.recent .nav-row-wrap {
+  margin: 0 -4px;
 }
 
 /* console — follows theme, no hardcoded dark (C4 fix) */

@@ -137,9 +137,18 @@ export function Topbar(props: { onSettings: () => void }) {
                 <Icon name="pause" size={10} />
               </Show>
             </span>
-            <span class="runbar__title">
+            <button
+              type="button"
+              class="runbar__title"
+              title="Jump to this run"
+              onClick={() => {
+                const j = job();
+                server.setSelectedRecipeId(j.action);
+                server.jumpToJob(j.id);
+              }}
+            >
               {job().title ?? titleize(job().action, server.recipes())}
-            </span>
+            </button>
             <span class="runbar__time mono">{fmtDur(job(), server.clock())}</span>
             <button
               type="button"
