@@ -3,6 +3,7 @@ import { AppError } from '../kernel/errors.ts';
 export const SCREENSHOT_COMMAND_FLAG_KEYS = [
   'out',
   'overlayRefs',
+  'screenshotPixelDensity',
   'screenshotFullscreen',
   'screenshotMaxSize',
   'screenshotNoStabilize',
@@ -10,6 +11,7 @@ export const SCREENSHOT_COMMAND_FLAG_KEYS = [
 ] as const;
 
 export const SCREENSHOT_ACTION_FLAG_KEYS = [
+  'screenshotPixelDensity',
   'screenshotFullscreen',
   'screenshotMaxSize',
   'screenshotNoStabilize',
@@ -28,6 +30,15 @@ type ScreenshotSpecificFlagDefinition = {
 };
 
 export const SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS: readonly ScreenshotSpecificFlagDefinition[] = [
+  {
+    key: 'screenshotPixelDensity',
+    names: ['--pixel-density'],
+    type: 'int',
+    min: 1,
+    usageLabel: '--pixel-density <n>',
+    usageDescription:
+      'Screenshot: output PNG pixel density in pixels per logical point (currently supported on iOS simulators)',
+  },
   {
     key: 'screenshotFullscreen',
     names: ['--fullscreen', '--full', '-f'],
@@ -62,9 +73,25 @@ export const SCREENSHOT_SPECIFIC_FLAG_DEFINITIONS: readonly ScreenshotSpecificFl
   },
 ];
 
+const SCREENSHOT_SCRIPT_BOOLEAN_FLAGS = [
+  { tokens: ['--fullscreen', '--full', '-f'], key: 'screenshotFullscreen' },
+  { tokens: ['--no-stabilize'], key: 'screenshotNoStabilize' },
+  { tokens: ['--normalize-status-bar'], key: 'screenshotNormalizeStatusBar' },
+] as const;
+
+const SCREENSHOT_SCRIPT_INT_FLAGS = [
+  {
+    token: '--pixel-density',
+    key: 'screenshotPixelDensity',
+    label: 'screenshot --pixel-density',
+  },
+  { token: '--max-size', key: 'screenshotMaxSize', label: 'screenshot --max-size' },
+] as const;
+
 export type ScreenshotRequestFlags = {
   out?: string;
   overlayRefs?: boolean;
+  screenshotPixelDensity?: number;
   screenshotFullscreen?: boolean;
   screenshotMaxSize?: number;
   screenshotNoStabilize?: boolean;
@@ -73,11 +100,15 @@ export type ScreenshotRequestFlags = {
 
 export type ScreenshotDispatchFlags = Pick<
   ScreenshotRequestFlags,
-  'screenshotFullscreen' | 'screenshotNoStabilize' | 'screenshotNormalizeStatusBar'
+  | 'screenshotPixelDensity'
+  | 'screenshotFullscreen'
+  | 'screenshotNoStabilize'
+  | 'screenshotNormalizeStatusBar'
 >;
 
 export type ScreenshotRuntimeFlags = Pick<
   ScreenshotRequestFlags,
+  | 'screenshotPixelDensity'
   | 'screenshotFullscreen'
   | 'screenshotMaxSize'
   | 'screenshotNoStabilize'
@@ -86,6 +117,7 @@ export type ScreenshotRuntimeFlags = Pick<
 
 export type ScreenshotPublicOptions = {
   overlayRefs?: boolean;
+  pixelDensity?: number;
   fullscreen?: boolean;
   maxSize?: number;
   stabilize?: boolean;
@@ -94,6 +126,7 @@ export type ScreenshotPublicOptions = {
 
 export type ScreenshotRuntimeOptions = {
   overlayRefs?: boolean;
+  pixelDensity?: number;
   fullscreen?: boolean;
   maxSize?: number;
   stabilize?: boolean;
@@ -105,6 +138,7 @@ export function screenshotOptionsFromFlags(
 ): ScreenshotRuntimeOptions {
   return stripUndefined({
     overlayRefs: flags?.overlayRefs,
+    pixelDensity: flags?.screenshotPixelDensity,
     fullscreen: flags?.screenshotFullscreen,
     maxSize: flags?.screenshotMaxSize,
     stabilize: flags?.screenshotNoStabilize ? false : undefined,
@@ -117,6 +151,7 @@ export function screenshotFlagsFromOptions(
 ): Partial<ScreenshotRequestFlags> {
   return stripUndefined({
     overlayRefs: options.overlayRefs,
+    screenshotPixelDensity: options.screenshotPixelDensity ?? options.pixelDensity,
     screenshotFullscreen: options.screenshotFullscreen ?? options.fullscreen,
     screenshotMaxSize: options.screenshotMaxSize ?? options.maxSize,
     screenshotNoStabilize:
@@ -130,6 +165,9 @@ export function appendScreenshotScriptFlags(
   parts: string[],
   flags: Partial<ScreenshotRequestFlags> | undefined,
 ): void {
+  if (typeof flags?.screenshotPixelDensity === 'number') {
+    parts.push('--pixel-density', String(flags.screenshotPixelDensity));
+  }
   if (flags?.screenshotFullscreen) parts.push('--fullscreen');
   if (typeof flags?.screenshotMaxSize === 'number') {
     parts.push('--max-size', String(flags.screenshotMaxSize));
@@ -145,30 +183,42 @@ export function readScreenshotScriptFlag(params: {
 }): { handled: true; nextIndex: number } | { handled: false } {
   const { args, flags, index } = params;
   const token = args[index];
-  if (token === '--fullscreen' || token === '--full' || token === '-f') {
-    flags.screenshotFullscreen = true;
-    return { handled: true, nextIndex: index };
-  }
-  if (token === '--no-stabilize') {
-    flags.screenshotNoStabilize = true;
-    return { handled: true, nextIndex: index };
-  }
-  if (token === '--normalize-status-bar') {
-    flags.screenshotNormalizeStatusBar = true;
-    return { handled: true, nextIndex: index };
-  }
-  if (token === '--max-size') {
-    const value = args[index + 1];
-    const maxSize = value === undefined ? NaN : Number(value);
-    if (!Number.isInteger(maxSize) || maxSize < 1) {
-      throw new AppError('INVALID_ARGS', 'screenshot --max-size requires a positive integer');
-    }
-    flags.screenshotMaxSize = maxSize;
-    return { handled: true, nextIndex: index + 1 };
-  }
-  return { handled: false };
+  return (
+    readScreenshotBooleanScriptFlag(token, flags, index) ??
+    readScreenshotIntScriptFlag({ args, index, flags, token }) ?? { handled: false }
+  );
 }
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter((entry) => entry[1] !== undefined)) as T;
+}
+
+function readScreenshotBooleanScriptFlag(
+  token: string | undefined,
+  flags: Partial<ScreenshotRequestFlags>,
+  index: number,
+): { handled: true; nextIndex: number } | undefined {
+  const definition = SCREENSHOT_SCRIPT_BOOLEAN_FLAGS.find((entry) =>
+    entry.tokens.some((candidate) => candidate === token),
+  );
+  if (!definition) return undefined;
+  flags[definition.key] = true;
+  return { handled: true, nextIndex: index };
+}
+
+function readScreenshotIntScriptFlag(params: {
+  args: readonly string[];
+  index: number;
+  flags: Partial<ScreenshotRequestFlags>;
+  token: string | undefined;
+}): { handled: true; nextIndex: number } | undefined {
+  const definition = SCREENSHOT_SCRIPT_INT_FLAGS.find((entry) => entry.token === params.token);
+  if (!definition) return undefined;
+  const value = params.args[params.index + 1];
+  const parsed = value === undefined ? NaN : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new AppError('INVALID_ARGS', `${definition.label} requires a positive integer`);
+  }
+  params.flags[definition.key] = parsed;
+  return { handled: true, nextIndex: params.index + 1 };
 }
