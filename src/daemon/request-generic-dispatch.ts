@@ -27,6 +27,10 @@ import { markPostGestureStabilization } from './post-gesture-stabilization.ts';
 import { normalizeError } from '../kernel/errors.ts';
 import { shouldGuardAndroidBlockingDialog } from './daemon-command-registry.ts';
 import { isActiveProviderDevice } from '../provider-device-runtime.ts';
+import {
+  assertSupportedScreenshotPixelDensity,
+  readScreenshotResultMetadata,
+} from '../utils/screenshot-density.ts';
 
 const GESTURE_PLATFORM_COMMANDS: Readonly<Record<string, string>> = {
   pan: 'pan',
@@ -185,12 +189,26 @@ async function executeGenericPlatformCommand(params: {
   out: string | undefined;
   dispatchContext: DaemonCommandContext;
 }): Promise<Record<string, unknown> | void> {
-  const { session, command, request, positionals, out, dispatchContext } = params;
-  if (command !== 'screenshot') {
-    return await dispatchCommand(session.device, command, positionals, out, {
-      ...dispatchContext,
-    });
+  const { session, command, positionals, out, dispatchContext } = params;
+  if (command === 'screenshot') {
+    return await executeScreenshotPlatformCommand(params);
   }
+  return await dispatchCommand(session.device, command, positionals, out, {
+    ...dispatchContext,
+  });
+}
+
+async function executeScreenshotPlatformCommand(params: {
+  session: SessionState;
+  sessionName: string;
+  logPath: string;
+  request: DaemonRequest;
+  positionals: string[];
+  out: string | undefined;
+  dispatchContext: DaemonCommandContext;
+}): Promise<Record<string, unknown>> {
+  const { session, request, positionals, out, dispatchContext } = params;
+  assertSupportedScreenshotPixelDensity(session.device, request.flags?.screenshotPixelDensity);
   const data = await dispatchScreenshotViaRuntime({
     session,
     sessionName: params.sessionName,
@@ -198,9 +216,21 @@ async function executeGenericPlatformCommand(params: {
     outputPlacement: resolveScreenshotOutputPlacement(request),
     dispatchContext,
   });
-  if (request.flags?.overlayRefs && typeof data?.path === 'string') {
+  if (typeof data.path !== 'string') {
+    return data;
+  }
+  if (request.flags?.overlayRefs) {
     await applyScreenshotOverlay(session, data, params.logPath);
   }
+  Object.assign(
+    data,
+    await readScreenshotResultMetadata({
+      device: session.device,
+      path: data.path,
+      requestedPixelDensity: request.flags?.screenshotPixelDensity,
+      maxSize: request.flags?.screenshotMaxSize,
+    }),
+  );
   return data;
 }
 

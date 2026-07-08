@@ -5,6 +5,7 @@ import { resolveUserPath } from '../../utils/path-resolution.ts';
 import type { AgentDeviceBackend } from '../../backend.ts';
 import type { AgentDeviceClient, CaptureScreenshotResult } from '../../client/client.ts';
 import { runCliCommand } from '../../commands/cli-runner.ts';
+import { pickScreenshotResultData } from '../../utils/screenshot-result.ts';
 import type { CliFlags } from '../parser/cli-flags.ts';
 import { writeCommandOutput } from './shared.ts';
 import type { ClientCommandHandler } from './router-types.ts';
@@ -23,14 +24,11 @@ export const screenshotCommand: ClientCommandHandler = async ({ positionals, fla
     writeCommandOutput(flags, result, () => JSON.stringify(result, null, 2));
     return true;
   }
-  const data = {
-    path: result.path,
-    ...(result.overlayRefs ? { overlayRefs: result.overlayRefs } : {}),
-  };
+  const data = pickScreenshotResultData(result);
   writeCommandOutput(flags, data, () =>
     result.overlayRefs
       ? `Annotated ${result.overlayRefs.length} refs onto ${result.path}`
-      : result.path,
+      : formatScreenshotSummary(result),
   );
   return true;
 };
@@ -99,17 +97,23 @@ function createClientScreenshotBackend(
         path: outPath,
         session: context.session,
         overlayRefs: options?.overlayRefs,
+        pixelDensity: options?.pixelDensity,
         fullscreen: options?.fullscreen,
         normalizeStatusBar: options?.normalizeStatusBar,
         stabilize: options?.stabilize,
         surface: options?.surface,
       });
-      return {
-        path: result.path,
-        ...(result.overlayRefs ? { overlayRefs: result.overlayRefs } : {}),
-      };
+      return pickScreenshotResultData(result);
     },
   };
+}
+
+function formatScreenshotSummary(result: CaptureScreenshotResult): string {
+  if (typeof result.width !== 'number' || typeof result.height !== 'number') {
+    return result.path;
+  }
+  const densitySuffix = typeof result.pixelDensity === 'number' ? ` @${result.pixelDensity}x` : '';
+  return `${result.path} (${result.width}x${result.height}${densitySuffix})`;
 }
 
 function resolveClientBackendPlatform(flags: CliFlags): AgentDeviceBackend['platform'] {
