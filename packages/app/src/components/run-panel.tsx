@@ -152,28 +152,31 @@ export function StepsPane() {
                 <For each={run().steps}>
                   {(step, i) => {
                     const tone =
-                      step.status === "ok" || step.status === "healed"
+                      step.status === "ok"
                         ? "pass"
-                        : step.status === "error"
-                          ? "fail"
-                          : step.status === "running"
-                            ? "run"
-                            : "dim";
+                        : step.status === "healed"
+                          ? "heal"
+                          : step.status === "error"
+                            ? "fail"
+                            : step.status === "running"
+                              ? "run"
+                              : "dim";
                     return (
                       <div class="srow srow--static" title={stepTip(step)}>
                         <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
                         <span class="srow__body">
-                          <span class="stitle">{step.title}</span>
                           <span class="smeta">
-                            <span class={`tone tone--${tone === "dim" ? "dim" : tone}`}>
-                              {step.status ?? "queued"}
-                            </span>
-                            <Glyphs glyphs={step.glyphs} />
+                            <span class="smeta__kind">{step.kind}</span>
+                            <Show when={fmtMs(step.durationMs)}>
+                              <span class="mono">{fmtMs(step.durationMs)}</span>
+                            </Show>
+                            <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
+                              <span class={`tone tone--${tone}`}>{step.status}</span>
+                            </Show>
+                            <Glyphs glyphs={step.glyphs} max={6} />
                           </span>
+                          <span class="stitle">{step.title}</span>
                         </span>
-                        <Show when={fmtMs(step.durationMs)}>
-                          <span class="srow__dur mono">{fmtMs(step.durationMs)}</span>
-                        </Show>
                       </div>
                     );
                   }}
@@ -292,13 +295,15 @@ export function StepsPane() {
               <For each={selectedJob()!.steps ?? []}>
                 {(step, i) => {
                   const tone =
-                    step.status === "ok" || step.status === "healed"
+                    step.status === "ok"
                       ? "pass"
-                      : step.status === "error"
-                        ? "fail"
-                        : step.status === "running"
-                          ? "run"
-                          : "dim";
+                      : step.status === "healed"
+                        ? "heal"
+                        : step.status === "error"
+                          ? "fail"
+                          : step.status === "running"
+                            ? "run"
+                            : "dim";
                   return (
                     <div
                       class="srow srow--static"
@@ -307,17 +312,18 @@ export function StepsPane() {
                     >
                       <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
-                        <span class="stitle">{step.title}</span>
                         <span class="smeta">
-                          <span class={`tone tone--${tone === "dim" ? "dim" : tone}`}>
-                            {step.status ?? "queued"}
-                          </span>
-                          <Glyphs glyphs={step.glyphs} />
+                          <span class="smeta__kind">{step.kind}</span>
+                          <Show when={fmtMs(step.durationMs)}>
+                            <span class="mono">{fmtMs(step.durationMs)}</span>
+                          </Show>
+                          <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
+                            <span class={`tone tone--${tone}`}>{step.status}</span>
+                          </Show>
+                          <Glyphs glyphs={step.glyphs} max={6} />
                         </span>
+                        <span class="stitle">{step.title}</span>
                       </span>
-                      <Show when={fmtMs(step.durationMs)}>
-                        <span class="srow__dur mono">{fmtMs(step.durationMs)}</span>
-                      </Show>
                     </div>
                   );
                 }}
@@ -337,6 +343,9 @@ export function StepsPane() {
                   <div class="srow srow--static" title={describeStep(step)}>
                     <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                     <span class="srow__body">
+                      <span class="smeta">
+                        <span class="smeta__kind">Step</span>
+                      </span>
                       <span class="stitle">{describeStep(step)}</span>
                     </span>
                   </div>
@@ -344,26 +353,46 @@ export function StepsPane() {
               </For>
             </Show>
 
-            {/* Builtin recipe step preview (before first run — C1 fix).
-                Planned titles live in core's RECIPE_TRACE_PLANS, not exposed
-                client-side; each flow step renders as a sentence. */}
-            <Show
-              when={
-                !selectedJob() &&
-                selectedRecipe()?.source === "builtin" &&
-                (selectedRecipe()?.steps.length ?? 0) > 0
-              }
-            >
-              <For each={selectedRecipe()!.steps}>
-                {(step, i) => (
-                  <div class="srow srow--static" title={flowLabel(step)}>
-                    <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
-                    <span class="srow__body">
-                      <span class="stitle">{flowLabel(step)}</span>
-                    </span>
-                  </div>
-                )}
-              </For>
+            {/* Builtin recipe step preview (before first run). Real planned
+                steps come from RECIPE_TRACE_PLANS via /actions; flowLabel is
+                the fallback when planned titles are absent. */}
+            <Show when={!selectedJob() && selectedRecipe()?.source === "builtin"}>
+              <Show
+                when={selectedMeta()?.planned?.length}
+                fallback={
+                  <For each={selectedRecipe()!.steps}>
+                    {(step, i) => (
+                      <div class="srow srow--static" title={flowLabel(step)}>
+                        <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
+                        <span class="srow__body">
+                          <span class="smeta">
+                            <span class="smeta__kind">Step</span>
+                          </span>
+                          <span class="stitle">{flowLabel(step)}</span>
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                }
+              >
+                <For each={selectedMeta()!.planned!}>
+                  {(step, i) => (
+                    <div
+                      class="srow srow--static"
+                      title={`${step.title} · ${step.glyphs?.join(" · ") ?? ""}`}
+                    >
+                      <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
+                      <span class="srow__body">
+                        <span class="smeta">
+                          <span class="smeta__kind">Step</span>
+                          <Glyphs glyphs={step.glyphs} max={6} />
+                        </span>
+                        <span class="stitle">{step.title}</span>
+                      </span>
+                    </div>
+                  )}
+                </For>
+              </Show>
             </Show>
 
             {/* Error box */}

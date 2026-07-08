@@ -1370,8 +1370,7 @@ html[data-color-scheme="light"] .bezel {
   display: flex;
   align-items: flex-start;
   gap: 11px;
-  min-height: 40px;
-  padding: 10px 4px;
+  padding: 12px 4px;
 }
 .srow + .srow {
   border-top: 1px solid var(--v2-border-border-muted);
@@ -1415,26 +1414,25 @@ html[data-color-scheme="light"] .bezel {
   min-width: 0;
   padding-top: 2px;
 }
-.stitle {
-  display: block;
-  font-size: var(--fs-body);
-  font-weight: 500;
-  color: var(--v2-text-text-base);
-  line-height: 1.4;
-}
 .smeta {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 3px;
+  margin-top: 0;
   font-size: var(--fs-meta);
   color: var(--c-dim);
 }
-.srow__dur {
-  flex: none;
-  font-size: var(--fs-meta);
-  color: var(--c-dim);
-  padding-top: 2px;
+.smeta__kind {
+  font-weight: 550;
+  color: var(--v2-text-text-muted);
+}
+.stitle {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--v2-text-text-base);
+  line-height: 1.4;
 }
 
 /* run header — status/date/duration/device (card on layer-02) */
@@ -1662,6 +1660,10 @@ html[data-color-scheme="light"] .bezel {
   height: 4px;
   border-radius: 50%;
   background: var(--c-dim);
+}
+.gly__more {
+  font-size: var(--fs-meta);
+  color: var(--c-dim);
 }
 
 /* ════════════════════════ DIALOG / SETTINGS ════════════════════════ */
