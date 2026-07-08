@@ -1,6 +1,6 @@
-import { For, Show, createMemo, createSignal, createEffect } from "solid-js";
+import { For, Show, createMemo, createSignal, createEffect, onMount, onCleanup } from "solid-js";
 import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
-import { describeStep } from "../context/recorder";
+import { describeStep, useRecorder } from "../context/recorder";
 import { Glyphs } from "./glyphs";
 import { EmptyState } from "./empty-state";
 import { useCommand } from "../context/command";
@@ -18,10 +18,12 @@ function stepTip(step: { title: string; glyphs?: string[]; durationMs?: number }
 }
 
 /**
- * The run pane (plan 009) — the single right surface.
- * Header (recipe title + Run/Queue + disabled-reason caption) · steps (always
- * rendered — custom authored steps, builtin flow preview, or live trace steps)
- * · run-head · error box · collapsible console. Reads contexts — no props.
+ * The run pane (plan 012) — the primary surface. The header's title is the
+ * recipe switcher (a dropdown, like the device picker); below it: run-head ·
+ * steps (custom authored steps, builtin planned-step preview, or live trace
+ * steps) · recent runs · error box · collapsible console. Reads contexts — no
+ * props. The header renders outside the scroll container so the switcher menu
+ * does not clip.
  */
 export function StepsPane() {
   const server = useServer();
@@ -74,19 +76,18 @@ export function StepsPane() {
     setConsoleOpen(server.running());
   });
 
-  // ── Run button (moved from topbar — plan 009 step 4) ──
   const canRun = () =>
     server.health() === "online" && !server.isEmptyDevices() && Boolean(selectedRecipe());
   const runDisabledReason = () => {
     if (server.health() !== "online") return "Server is offline — start with pnpm dev:serve";
-    if (server.isEmptyDevices()) return "No device connected — connect and refresh";
-    if (!selectedRecipe()) return "Select a recipe from the sidebar";
+    // No-device case: the device column already says it — one message per fact.
+    if (server.isEmptyDevices()) return "";
+    if (!selectedRecipe()) return "Select a recipe";
     return "";
   };
 
-  /** Human label for a builtin flow step (C1 fallback — planned titles live in
-   *  core's RECIPE_TRACE_PLANS, not exposed via /actions; we render the flow
-   *  step as a sentence rather than showing nothing). */
+  /** Human label for a builtin flow step. Used only as a fallback when a
+   *  builtin lacks planned steps (real planned titles come via /actions). */
   function flowLabel(step: RecipeInfo["steps"][number]): string {
     if (step.kind === "flow")
       return `Runs the built-in ${titleize(step.flow, server.recipes())} flow`;
@@ -105,181 +106,338 @@ export function StepsPane() {
 
   const hasContent = () => Boolean(selectedRecipe() || persistedRun());
 
+  // ── Recipe switcher (plan 012) — the report header's title is the nav ──
+  const rec = useRecorder();
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  // Delete confirmation: first click arms a 3s "Sure?" state per recipe id.
+  const [confirmDeleteId, setConfirmDeleteId] = createSignal<string | null>(null);
+  function armDelete(id: string): void {
+    if (confirmDeleteId() === id) {
+      setConfirmDeleteId(null);
+      void server.deleteRecipeRemote(id);
+      return;
+    }
+    setConfirmDeleteId(id);
+    const t = setTimeout(() => setConfirmDeleteId((cur) => (cur === id ? null : cur)), 3000);
+    onCleanup(() => clearTimeout(t));
+  }
+  const selectRecipe = (id: string) => {
+    server.setSelectedRecipeId(id);
+    server.setPersistedRunId(null);
+  };
+  onMount(() => {
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.(".runpane__switcher")) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    onCleanup(() => document.removeEventListener("mousedown", onDoc));
+  });
+
+  type SwitcherGroup = { key: string; label: string; items: RecipeInfo[]; custom: boolean };
+  const switcherGroups = createMemo<SwitcherGroup[]>(() => {
+    const cats = new Map<string, string>();
+    for (const a of server.actions()) cats.set(a.id, a.category);
+    const custom: RecipeInfo[] = [];
+    const playStore: RecipeInfo[] = [];
+    const grok: RecipeInfo[] = [];
+    for (const r of server.recipes()) {
+      if (r.source === "custom") {
+        custom.push(r);
+        continue;
+      }
+      const cat = cats.get(r.id) ?? "play-store";
+      (cat === "grok" ? grok : playStore).push(r);
+    }
+    return [
+      { key: "play-store", label: "Play Store", items: playStore, custom: false },
+      { key: "grok", label: "Grok app", items: grok, custom: false },
+      { key: "custom", label: "Custom", items: custom, custom: true },
+    ].filter((g) => g.items.length > 0);
+  });
+
   return (
     <>
-      {/* ── Empty state: no recipe / no run selected ── */}
-      <Show when={!hasContent()}>
-        <div class="runpane__empty">
-          <EmptyState
-            size="md"
-            icon="run"
-            title="Pick a recipe"
-            description="Choose a recipe from the sidebar to see its steps and run it."
-            actionLabel="New recipe"
-            onAction={() => setEditingRecipe("new")}
-          />
-        </div>
-      </Show>
-
-      <Show when={hasContent()}>
-        <div class="runpane__scroll">
-          {/* ── Persisted-run (disk) view — read-only ── */}
-          <Show when={persistedRun()}>
-            {(run) => (
-              <>
-                <div class="runpane__head">
-                  <div class="runpane__head-copy">
-                    <h2 class="runpane__title">{titleize(run().action, server.recipes())}</h2>
-                  </div>
-                  <div class="runpane__head-actions">
-                    <button
-                      type="button"
-                      class="btn btn-ghost"
-                      onClick={() => server.setPersistedRunId(null)}
-                    >
-                      <Icon name="x" size={13} />
-                      Close
-                    </button>
-                  </div>
-                </div>
-                <div class="run-head">
-                  <span
-                    class={`run-head__chip tone tone--${statusTone(run().status as JobInfo["status"])}`}
-                  >
-                    {run().healed
-                      ? "Healed"
-                      : run().status === "ok"
-                        ? "Passed"
-                        : run().status === "error"
-                          ? "Failed"
-                          : titleize(run().status)}
-                  </span>
-                  <span class="run-head__fact">{new Date(run().writtenAt).toLocaleString()}</span>
-                  <Show
-                    when={fmtMs(run().durationMs)}
-                    fallback={
-                      <Show when={run().steps.reduce((a, s) => a + (s.durationMs ?? 0), 0) > 0}>
-                        <span class="run-head__fact mono">
-                          {fmtMs(run().steps.reduce((a, s) => a + (s.durationMs ?? 0), 0))}
-                        </span>
-                      </Show>
-                    }
-                  >
-                    <span class="run-head__fact mono">{fmtMs(run().durationMs)}</span>
-                  </Show>
-                  <span class="run-head__fact">{n(run().frames.length, "frame")}</span>
-                </div>
-
-                <For each={run().steps}>
-                  {(step, i) => {
-                    const tone =
-                      step.status === "ok"
-                        ? "pass"
-                        : step.status === "healed"
-                          ? "heal"
-                          : step.status === "error"
-                            ? "fail"
-                            : step.status === "running"
-                              ? "run"
-                              : "dim";
-                    return (
-                      <div class="srow srow--static" title={stepTip(step)}>
-                        <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
-                        <span class="srow__body">
-                          <span class="smeta">
-                            <span class="smeta__kind">{step.kind}</span>
-                            <Show when={fmtMs(step.durationMs)}>
-                              <span class="mono">{fmtMs(step.durationMs)}</span>
-                            </Show>
-                            <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
-                              <span class={`tone tone--${tone}`}>{step.status}</span>
-                            </Show>
-                            <Glyphs glyphs={step.glyphs} max={6} />
-                          </span>
-                          <span class="stitle">{step.title}</span>
-                        </span>
-                      </div>
-                    );
-                  }}
-                </For>
-              </>
-            )}
-          </Show>
-
-          {/* ── Normal content: header + steps ── */}
-          <Show when={!persistedRun() && selectedRecipe()}>
-            {/* Pane header — title + Run/Queue + Edit (plan 009 step 4) */}
+      {/* ── Persisted-run (disk) view — read-only ── */}
+      <Show when={persistedRun()}>
+        {(run) => (
+          <>
             <div class="runpane__head">
               <div class="runpane__head-copy">
-                <h2
-                  class="runpane__title"
-                  title={`${selectedRecipe()!.title} · ${selectedRecipe()!.id}`}
-                >
-                  {selectedRecipe()!.title}
-                </h2>
-                <Show when={selectedRecipe()!.description}>
-                  <p class="runpane__desc">{selectedRecipe()!.description}</p>
-                </Show>
+                <h2 class="runpane__title">{titleize(run().action, server.recipes())}</h2>
               </div>
               <div class="runpane__head-actions">
-                <Show when={selectedRecipe()!.source === "custom"}>
-                  <button
-                    type="button"
-                    class="btn btn-ghost"
-                    title="Edit recipe"
-                    onClick={() => setEditingRecipe(selectedRecipe()!)}
-                  >
-                    <Icon name="sliders" size={13} />
-                    Edit
-                  </button>
-                </Show>
-                <Show when={selectedJob()?.status === "error"}>
-                  <button
-                    type="button"
-                    class="btn btn-ghost"
-                    title="Retry / heal job"
-                    onClick={() => void server.retrySelectedJob(selectedJob()!.id)}
-                  >
-                    <Icon name="refresh" size={13} />
-                    Retry
-                  </button>
-                </Show>
                 <button
                   type="button"
-                  class="btn btn-acc"
-                  disabled={!canRun()}
-                  onClick={() => {
-                    const r = server.selectedRecipe();
-                    if (r) void server.runRecipeRemote(r.id);
-                  }}
+                  class="btn btn-ghost"
+                  onClick={() => server.setPersistedRunId(null)}
                 >
-                  <Show when={server.activeJob()} fallback={<Icon name="play" size={13} />}>
-                    <Icon name="plus" size={13} />
-                  </Show>
-                  {server.activeJob() ? "Queue" : "Run"}
+                  <Icon name="x" size={13} />
+                  Close
                 </button>
               </div>
             </div>
-            {/* Disabled-run reason as visible caption (N2) */}
-            <Show when={!canRun() && runDisabledReason()}>
-              <p class="runpane__run-reason">{runDisabledReason()}</p>
-            </Show>
-
-            {/* Prod-account-match notice */}
-            <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
-              <div class="panel__recipe-notice">
-                <span class="panel__recipe-notice-icon" aria-hidden="true">
-                  <Icon name="alert" size={14} />
+            <div class="runpane__scroll">
+              <div class="run-head">
+                <span
+                  class={`run-head__chip tone tone--${statusTone(run().status as JobInfo["status"])}`}
+                >
+                  {run().healed
+                    ? "Healed"
+                    : run().status === "ok"
+                      ? "Passed"
+                      : run().status === "error"
+                        ? "Failed"
+                        : titleize(run().status)}
                 </span>
-                <span class="panel__recipe-notice-text">
-                  Needs a prod account match (e.g. gmail.com).
-                </span>
-                <button type="button" class="btn btn-ghost" onClick={() => cmd.run("nav.settings")}>
-                  Configure
-                </button>
+                <span class="run-head__fact">{new Date(run().writtenAt).toLocaleString()}</span>
+                <Show
+                  when={fmtMs(run().durationMs)}
+                  fallback={
+                    <Show when={run().steps.reduce((a, s) => a + (s.durationMs ?? 0), 0) > 0}>
+                      <span class="run-head__fact mono">
+                        {fmtMs(run().steps.reduce((a, s) => a + (s.durationMs ?? 0), 0))}
+                      </span>
+                    </Show>
+                  }
+                >
+                  <span class="run-head__fact mono">{fmtMs(run().durationMs)}</span>
+                </Show>
+                <span class="run-head__fact">{n(run().frames.length, "frame")}</span>
               </div>
-            </Show>
 
+              <For each={run().steps}>
+                {(step, i) => {
+                  const tone =
+                    step.status === "ok"
+                      ? "pass"
+                      : step.status === "healed"
+                        ? "heal"
+                        : step.status === "error"
+                          ? "fail"
+                          : step.status === "running"
+                            ? "run"
+                            : "dim";
+                  return (
+                    <div class="srow srow--static" title={stepTip(step)}>
+                      <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
+                      <span class="srow__body">
+                        <span class="smeta">
+                          <span class="smeta__kind">{step.kind}</span>
+                          <Show when={fmtMs(step.durationMs)}>
+                            <span class="mono">{fmtMs(step.durationMs)}</span>
+                          </Show>
+                          <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
+                            <span class={`tone tone--${tone}`}>{step.status}</span>
+                          </Show>
+                          <Glyphs glyphs={step.glyphs} max={6} />
+                        </span>
+                        <span class="stitle">{step.title}</span>
+                      </span>
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
+          </>
+        )}
+      </Show>
+
+      {/* ── Recipe view: switcher in the header, body below ── */}
+      <Show when={!persistedRun()}>
+        <div class="runpane__head">
+          <div class="runpane__head-copy">
+            <div
+              class="pick-wrap runpane__switcher"
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && menuOpen()) {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                }
+              }}
+            >
+              <button
+                type="button"
+                class="runpane__title-btn"
+                aria-haspopup="listbox"
+                aria-expanded={menuOpen()}
+                onClick={() => setMenuOpen((o) => !o)}
+              >
+                <span>{selectedRecipe()?.title ?? "Pick a recipe"}</span>
+                <span class="runpane__title-chev" aria-hidden="true">
+                  <Icon name="chevron-down" size={16} />
+                </span>
+              </button>
+              <Show when={menuOpen()}>
+                <div class="pick-menu" role="listbox">
+                  <For each={switcherGroups()}>
+                    {(g) => (
+                      <div class="pick-group">
+                        <div class="pick-group__label">{g.label}</div>
+                        <For each={g.items}>
+                          {(r) => (
+                            <div class="pick-row">
+                              <button
+                                type="button"
+                                role="option"
+                                class="pick-item"
+                                classList={{ on: server.selectedRecipeId() === r.id }}
+                                onClick={() => {
+                                  selectRecipe(r.id);
+                                  setMenuOpen(false);
+                                }}
+                              >
+                                <span class="pick-item__title">{r.title}</span>
+                              </button>
+                              <Show when={g.custom}>
+                                <button
+                                  type="button"
+                                  class="pick-row__action"
+                                  title="Edit recipe"
+                                  aria-label={`Edit ${r.title}`}
+                                  onClick={() => {
+                                    setEditingRecipe(r);
+                                    setMenuOpen(false);
+                                  }}
+                                >
+                                  <Icon name="sliders" size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  class="pick-row__action pick-row__action--del"
+                                  title={
+                                    confirmDeleteId() === r.id
+                                      ? "Click again to confirm"
+                                      : "Delete recipe"
+                                  }
+                                  aria-label={`Delete ${r.title}`}
+                                  onClick={() => armDelete(r.id)}
+                                >
+                                  <Show
+                                    when={confirmDeleteId() !== r.id}
+                                    fallback={<span class="pick-row__sure">Sure?</span>}
+                                  >
+                                    <Icon name="trash" size={12} />
+                                  </Show>
+                                </button>
+                              </Show>
+                              <Show when={!g.custom}>
+                                <button
+                                  type="button"
+                                  class="pick-row__action"
+                                  title="Fork to custom recipe"
+                                  aria-label={`Fork ${r.title}`}
+                                  onClick={() => {
+                                    void rec.forkRecipe(r);
+                                    setMenuOpen(false);
+                                  }}
+                                >
+                                  <Icon name="external" size={12} />
+                                </button>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    )}
+                  </For>
+                  <button
+                    type="button"
+                    class="pick-item pick-item--action"
+                    onClick={() => {
+                      setEditingRecipe("new");
+                      setMenuOpen(false);
+                    }}
+                  >
+                    New recipe
+                  </button>
+                </div>
+              </Show>
+            </div>
+            <Show when={selectedRecipe()?.description}>
+              <p class="runpane__desc">{selectedRecipe()!.description}</p>
+            </Show>
+          </div>
+          <div class="runpane__head-actions">
+            <Show when={selectedRecipe()?.source === "custom"}>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                title="Edit recipe"
+                onClick={() => setEditingRecipe(selectedRecipe()!)}
+              >
+                <Icon name="sliders" size={13} />
+                Edit
+              </button>
+            </Show>
+            <Show when={selectedJob()?.status === "error"}>
+              <button
+                type="button"
+                class="btn btn-ghost"
+                title="Retry / heal job"
+                onClick={() => void server.retrySelectedJob(selectedJob()!.id)}
+              >
+                <Icon name="refresh" size={13} />
+                Retry
+              </button>
+            </Show>
+            <Show when={selectedRecipe()}>
+              <button
+                type="button"
+                class="btn btn-acc"
+                disabled={!canRun()}
+                title={!canRun() && server.isEmptyDevices() ? "No device connected" : undefined}
+                onClick={() => {
+                  const r = server.selectedRecipe();
+                  if (r) void server.runRecipeRemote(r.id);
+                }}
+              >
+                <Show when={server.activeJob()} fallback={<Icon name="play" size={13} />}>
+                  <Icon name="plus" size={13} />
+                </Show>
+                {server.activeJob() ? "Queue" : "Run"}
+              </button>
+            </Show>
+          </div>
+        </div>
+
+        <div class="runpane__scroll">
+          {/* Disabled-run reason as visible caption */}
+          <Show when={selectedRecipe() && !canRun() && runDisabledReason()}>
+            <p class="runpane__run-reason">{runDisabledReason()}</p>
+          </Show>
+
+          {/* Prod-account-match notice */}
+          <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
+            <div class="panel__recipe-notice">
+              <span class="panel__recipe-notice-icon" aria-hidden="true">
+                <Icon name="alert" size={14} />
+              </span>
+              <span class="panel__recipe-notice-text">
+                Needs a prod account match (e.g. gmail.com).
+              </span>
+              <button type="button" class="btn btn-ghost" onClick={() => cmd.run("nav.settings")}>
+                Configure
+              </button>
+            </div>
+          </Show>
+
+          {/* Empty state: no recipe selected */}
+          <Show when={!selectedRecipe()}>
+            <div class="runpane__empty">
+              <EmptyState
+                size="md"
+                icon="run"
+                title="Pick a recipe"
+                description="Choose a recipe to see its steps and run it."
+                actionLabel="Browse recipes"
+                onAction={() => setMenuOpen(true)}
+              />
+            </div>
+          </Show>
+
+          {/* Selected-recipe body */}
+          <Show when={selectedRecipe()}>
             {/* Run header when a job exists */}
             <Show when={selectedJob()}>
               {(j) => (
@@ -427,8 +585,10 @@ export function StepsPane() {
             </Show>
           </Show>
         </div>
+      </Show>
 
-        {/* ── Collapsible console ── */}
+      {/* ── Collapsible console ── */}
+      <Show when={hasContent()}>
         <div class="console" classList={{ "console--open": consoleOpen() }}>
           <button
             type="button"
