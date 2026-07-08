@@ -20,6 +20,11 @@ import {
   RECORDING_EXPORT_QUALITIES,
   recordingQualityInputToExportQuality,
 } from '../../core/recording-export-quality.ts';
+import {
+  RECORDING_SCOPE_VALUES,
+  type RecordingScope,
+  isWholeScreenRecordingScope,
+} from '../../core/recording-scope.ts';
 import { resolveRecordingProvider } from '../recording-provider.ts';
 import { errorResponse, requireCommandSupported } from './response.ts';
 import { recordSessionAction } from './handler-utils.ts';
@@ -29,7 +34,7 @@ import {
   stopActiveRecording,
 } from './record-trace-recording-backends.ts';
 import type { RecordTraceDeps, RecordingBase } from './record-trace-types.ts';
-import { resolveImplicitSessionScope } from '../session-routing.ts';
+import { hasExplicitSessionFlag, resolveImplicitSessionScope } from '../session-routing.ts';
 
 const IOS_DEVICE_RECORD_MIN_FPS = 1;
 const IOS_DEVICE_RECORD_MAX_FPS = 120;
@@ -43,6 +48,7 @@ type StartRecordingParams = {
   sessionStore: SessionStore;
   activeSession: SessionState;
   device: SessionState['device'];
+  recordingScope: RecordingScope;
   logPath?: string;
   deps: RecordTraceDeps;
 };
@@ -93,12 +99,28 @@ async function waitForRecordingTail(
   await sleep(IOS_SIMULATOR_RECORDING_TAIL_SETTLE_MS);
 }
 
-function buildRecordingBase(req: DaemonRequest, outPath: string): RecordingBase {
+function buildRecordingBase(params: {
+  req: DaemonRequest;
+  outPath: string;
+  activeSession: SessionState;
+  recordingBackend: string;
+  recordingScope: RecordingScope;
+}): RecordingBase {
+  const { req, outPath, activeSession, recordingBackend, recordingScope } = params;
   const exportQuality = recordingQualityInputToExportQuality(req.flags?.quality);
   return {
     outPath,
     clientOutPath: req.meta?.clientArtifactPaths?.outPath,
     startedAt: Date.now(),
+    recordingScope,
+    recordingBackend,
+    recordOnlySession: activeSession.recordOnlySession === true,
+    activeSessionApp: activeSession.appBundleId
+      ? {
+          bundleId: activeSession.appBundleId,
+          ...(activeSession.appName ? { name: activeSession.appName } : {}),
+        }
+      : undefined,
     maxSize: req.flags?.screenshotMaxSize,
     exportQuality: exportQuality ?? DEFAULT_RECORDING_EXPORT_QUALITY,
     showTouches: req.flags?.hideTouches !== true,
@@ -139,13 +161,13 @@ async function startRecording(params: StartRecordingParams): Promise<DaemonRespo
 function resolveRecordingStartPlan(
   params: StartRecordingParams,
 ): DaemonResponse | RecordingStartPlan {
-  const { req, activeSession, device } = params;
+  const { req, activeSession, device, recordingScope } = params;
   const backend = resolveRecordingBackendForDevice(device);
   const startError = validateRecordingStartRequest({ req, activeSession, device, backend });
   if (startError) return startError;
 
   return {
-    ...prepareRecordingStart(req, backend),
+    ...prepareRecordingStart(req, backend, activeSession, recordingScope),
     backend,
     fpsFlag: req.flags?.fps,
   };
@@ -203,6 +225,10 @@ function persistStartedRecording(params: {
       recording: 'started',
       outPath: recording.clientOutPath ?? outPath,
       sessionStateDir,
+      recordingBackend: recording.recordingBackend,
+      recordingScope: recording.recordingScope,
+      recordOnlySession: recording.recordOnlySession,
+      activeSessionApp: recording.activeSessionApp,
       showTouches: recording.showTouches,
     },
   };
@@ -265,10 +291,18 @@ function validateRecordingMaxSizeFlag(maxSizeFlag: number | undefined): DaemonRe
 function prepareRecordingStart(
   req: DaemonRequest,
   backend: ReturnType<typeof resolveRecordingBackendForDevice>,
+  activeSession: SessionState,
+  recordingScope: RecordingScope,
 ): PreparedRecordingStart {
   const outPath = backend.resolveOutputPath({ req });
   const resolvedOut = SessionStore.expandHome(outPath, req.meta?.cwd);
-  const recordingBase = buildRecordingBase(req, resolvedOut);
+  const recordingBase = buildRecordingBase({
+    req,
+    outPath: resolvedOut,
+    activeSession,
+    recordingBackend: backend.recordingBackend,
+    recordingScope,
+  });
   fs.mkdirSync(path.dirname(resolvedOut), { recursive: true });
   fs.rmSync(resolvedOut, { force: true });
   return { outPath, resolvedOut, recordingBase };
@@ -327,7 +361,7 @@ async function recoverMissingRecordingState(
     return null;
   }
 
-  const { resolvedOut, recordingBase } = prepareRecoveredRecording(req, backend);
+  const { resolvedOut, recordingBase } = prepareRecoveredRecording(req, backend, activeSession);
   const recovered = await backend.recoverMissingStop({
     req,
     sessionName,
@@ -351,10 +385,17 @@ async function recoverMissingRecordingState(
 function prepareRecoveredRecording(
   req: DaemonRequest,
   backend: ReturnType<typeof resolveRecordingBackendForDevice>,
+  activeSession: SessionState,
 ): Pick<PreparedRecordingStart, 'resolvedOut' | 'recordingBase'> {
   const outPath = backend.resolveOutputPath({ req });
   const resolvedOut = SessionStore.expandHome(outPath, req.meta?.cwd);
-  const recordingBase = buildRecordingBase(req, resolvedOut);
+  const recordingBase = buildRecordingBase({
+    req,
+    outPath: resolvedOut,
+    activeSession,
+    recordingBackend: backend.recordingBackend,
+    recordingScope: activeSession.recording?.recordingScope ?? 'app',
+  });
   return { resolvedOut, recordingBase };
 }
 
@@ -427,6 +468,11 @@ function buildRecordStopResponse(
       outPath: recording.outPath,
       telemetryPath: recording.telemetryPath,
       artifacts,
+      recordingBackend: recording.recordingBackend,
+      recordingScope: recording.recordingScope,
+      recordOnlySession: recording.recordOnlySession,
+      activeSessionApp: recording.activeSessionApp,
+      durationMs: Date.now() - recording.startedAt,
       showTouches: recording.showTouches,
       warning: recording.warning,
       overlayWarning: recording.overlayWarning,
@@ -485,6 +531,24 @@ export async function handleRecordCommand(params: {
   const { req, sessionName, sessionStore, logPath } = params;
   const deps = buildRecordTraceDeps();
   const session = sessionStore.get(sessionName);
+  const action = (req.positionals?.[0] ?? '').toLowerCase();
+  if (!['start', 'stop'].includes(action)) {
+    return errorResponse('INVALID_ARGS', 'record requires start|stop');
+  }
+  const recordingScope = readRecordingScope(req);
+  if (typeof recordingScope === 'object') {
+    return recordingScope;
+  }
+
+  if (action === 'start' && !session && !isWholeScreenRecordingScope(recordingScope)) {
+    return errorResponse(
+      'INVALID_ARGS',
+      hasExplicitSessionFlag(req)
+        ? 'record start with app scope and an explicit session requires an active app session; run open <app> first, or use --scope device to record the full screen'
+        : 'record start defaults to app scope and requires an active app session; run open <app> first, or use --scope device to record the full screen',
+    );
+  }
+
   const device = session?.device ?? (await resolveTargetDevice(req.flags ?? {}));
   if (!session) {
     await ensureDeviceReady(device);
@@ -501,13 +565,17 @@ export async function handleRecordCommand(params: {
       actions: [],
     } satisfies SessionState);
 
-  const action = (req.positionals?.[0] ?? '').toLowerCase();
-  if (!['start', 'stop'].includes(action)) {
-    return errorResponse('INVALID_ARGS', 'record requires start|stop');
-  }
-
   if (action === 'start') {
-    return startRecording({ req, sessionName, sessionStore, activeSession, device, logPath, deps });
+    return startRecording({
+      req,
+      sessionName,
+      sessionStore,
+      activeSession,
+      device,
+      recordingScope,
+      logPath,
+      deps,
+    });
   }
 
   const response = await stopRecording({
@@ -531,4 +599,18 @@ export async function handleRecordCommand(params: {
   });
   await releaseRecordOnlySession(sessionStore, sessionName, activeSession, { writeLog: true });
   return response;
+}
+
+function readRecordingScope(req: DaemonRequest): RecordingScope | DaemonResponse {
+  const value = req.flags?.recordingScope;
+  if (value === undefined) return 'app';
+  if (isRecordingScope(value)) return value;
+  return errorResponse(
+    'INVALID_ARGS',
+    `record scope must be one of: ${RECORDING_SCOPE_VALUES.join(', ')}`,
+  );
+}
+
+function isRecordingScope(value: unknown): value is RecordingScope {
+  return typeof value === 'string' && RECORDING_SCOPE_VALUES.includes(value as RecordingScope);
 }
