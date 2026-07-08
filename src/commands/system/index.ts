@@ -2,11 +2,23 @@ import type { ClipboardCommandOptions } from '../../client/client-types.ts';
 import type { BackMode } from '../../core/back-mode.ts';
 import { BACK_MODES } from '../../core/back-mode.ts';
 import { parseDeviceRotation, DEVICE_ROTATIONS } from '../../core/device-rotation.ts';
+import {
+  parseTvRemoteButton,
+  TV_REMOTE_BUTTON_USAGE,
+  TV_REMOTE_BUTTONS,
+  tvRemoteDurationMode,
+} from '../../core/tv-remote.ts';
 import { AppError } from '../../kernel/errors.ts';
 import type { CommandSchemaOverride } from '../../utils/cli-command-schema-types.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
 import { defineExecutableCommand } from '../command-contract.ts';
-import { compactRecord, enumField, requiredField, stringField } from '../command-input.ts';
+import {
+  compactRecord,
+  enumField,
+  integerField,
+  requiredField,
+  stringField,
+} from '../command-input.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import {
   commonInputFromFlags,
@@ -25,6 +37,8 @@ const ROTATE_COMMAND_NAME = 'rotate';
 const APP_SWITCHER_COMMAND_NAME = 'app-switcher';
 const KEYBOARD_COMMAND_NAME = 'keyboard';
 const CLIPBOARD_COMMAND_NAME = 'clipboard';
+const TV_REMOTE_COMMAND_NAME = 'tv-remote';
+const TV_REMOTE_LONGPRESS_PRESET_MS = 500;
 
 const CLIPBOARD_ACTION_VALUES = ['read', 'write'] as const;
 const KEYBOARD_METADATA_ACTION_VALUES = ['status', 'dismiss'] as const;
@@ -36,6 +50,7 @@ const rotateCommandDescription = 'Rotate device orientation.';
 const appSwitcherCommandDescription = 'Open the app switcher.';
 const keyboardCommandDescription = 'Inspect or dismiss the keyboard.';
 const clipboardCommandDescription = 'Read or write clipboard text.';
+const tvRemoteCommandDescription = 'Press a TV remote/D-pad button.';
 
 const appStateCommandMetadata = defineFieldCommandMetadata(
   APPSTATE_COMMAND_NAME,
@@ -84,6 +99,20 @@ const clipboardCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
+const tvRemoteCommandMetadata = defineFieldCommandMetadata(
+  TV_REMOTE_COMMAND_NAME,
+  tvRemoteCommandDescription,
+  {
+    button: requiredField(enumField(TV_REMOTE_BUTTONS)),
+    durationMs: integerField(
+      `Press duration in milliseconds. tvOS uses the exact hold duration; Android TV maps any positive value to an ADB longpress (${tvRemoteDurationMode('android')}).`,
+      {
+        min: 0,
+      },
+    ),
+  },
+);
+
 const appStateCommandDefinition = defineExecutableCommand(
   appStateCommandMetadata,
   (client, input) => client.command.appState(input),
@@ -114,6 +143,11 @@ const keyboardCommandDefinition = defineExecutableCommand(
 const clipboardCommandDefinition = defineExecutableCommand(
   clipboardCommandMetadata,
   (client, input) => client.command.clipboard(input as ClipboardCommandOptions),
+);
+
+const tvRemoteCommandDefinition = defineExecutableCommand(
+  tvRemoteCommandMetadata,
+  (client, input) => client.command.tvRemote(input),
 );
 
 const appStateCliSchema = {
@@ -147,6 +181,16 @@ const clipboardCliSchema = {
   allowsExtraPositionals: true,
 } as const satisfies CommandSchemaOverride;
 
+const tvRemoteCliSchema = {
+  usageOverride: `tv-remote [press|longpress] ${TV_REMOTE_BUTTON_USAGE} [--duration-ms <ms>]`,
+  listUsageOverride: 'tv-remote press|longpress <button> [--duration-ms <ms>]',
+  helpDescription:
+    'Press a TV remote/D-pad button on Android TV or tvOS. Use longpress for a 500ms held remote button; --duration-ms overrides the preset. Aliases ok, center, and enter map to select.',
+  summary: 'Press a TV remote/D-pad button',
+  positionalArgs: ['press|longpress?', 'button'],
+  allowedFlags: ['durationMs'],
+} as const satisfies CommandSchemaOverride;
+
 export const appStateCliReader: CliReader = (_positionals, flags) => commonInputFromFlags(flags);
 export const homeCliReader: CliReader = (_positionals, flags) => commonInputFromFlags(flags);
 export const appSwitcherCliReader: CliReader = (_positionals, flags) => commonInputFromFlags(flags);
@@ -171,6 +215,11 @@ export const clipboardCliReader: CliReader = (positionals, flags) => ({
   ...readClipboardInput(positionals),
 });
 
+export const tvRemoteCliReader: CliReader = (positionals, flags) => ({
+  ...commonInputFromFlags(flags),
+  ...readTvRemoteInput(positionals, flags.durationMs),
+});
+
 export const appStateDaemonWriter: DaemonWriter = direct(APPSTATE_COMMAND_NAME);
 
 export const backDaemonWriter: DaemonWriter = (input) =>
@@ -192,10 +241,15 @@ export const clipboardDaemonWriter: DaemonWriter = direct(CLIPBOARD_COMMAND_NAME
   clipboardPositionals(input as ClipboardCommandOptions),
 );
 
+export const tvRemoteDaemonWriter: DaemonWriter = direct(TV_REMOTE_COMMAND_NAME, (input) => [
+  requiredDaemonString(input.button, 'tv-remote requires button'),
+]);
+
 const appStateCommandFacet = defineCommandFacet({
   name: APPSTATE_COMMAND_NAME,
   metadata: appStateCommandMetadata,
   definition: appStateCommandDefinition,
+  clientMethod: 'appState',
   cliSchema: appStateCliSchema,
   cliReader: appStateCliReader,
   daemonWriter: appStateDaemonWriter,
@@ -206,6 +260,7 @@ const backCommandFacet = defineCommandFacet({
   name: BACK_COMMAND_NAME,
   metadata: backCommandMetadata,
   definition: backCommandDefinition,
+  clientMethod: 'back',
   cliSchema: backCliSchema,
   cliReader: backCliReader,
   daemonWriter: backDaemonWriter,
@@ -216,6 +271,7 @@ const homeCommandFacet = defineCommandFacet({
   name: HOME_COMMAND_NAME,
   metadata: homeCommandMetadata,
   definition: homeCommandDefinition,
+  clientMethod: 'home',
   cliReader: homeCliReader,
   daemonWriter: homeDaemonWriter,
   cliOutputFormatter: systemCliOutputFormatters.home,
@@ -225,6 +281,7 @@ const rotateCommandFacet = defineCommandFacet({
   name: ROTATE_COMMAND_NAME,
   metadata: rotateCommandMetadata,
   definition: rotateCommandDefinition,
+  clientMethod: 'rotate',
   cliSchema: rotateCliSchema,
   cliReader: rotateCliReader,
   daemonWriter: rotateDaemonWriter,
@@ -235,6 +292,7 @@ const appSwitcherCommandFacet = defineCommandFacet({
   name: APP_SWITCHER_COMMAND_NAME,
   metadata: appSwitcherCommandMetadata,
   definition: appSwitcherCommandDefinition,
+  clientMethod: 'appSwitcher',
   cliReader: appSwitcherCliReader,
   daemonWriter: appSwitcherDaemonWriter,
   cliOutputFormatter: systemCliOutputFormatters['app-switcher'],
@@ -244,6 +302,7 @@ const keyboardCommandFacet = defineCommandFacet({
   name: KEYBOARD_COMMAND_NAME,
   metadata: keyboardCommandMetadata,
   definition: keyboardCommandDefinition,
+  clientMethod: 'keyboard',
   cliSchema: keyboardCliSchema,
   cliReader: keyboardCliReader,
   daemonWriter: keyboardDaemonWriter,
@@ -254,10 +313,22 @@ const clipboardCommandFacet = defineCommandFacet({
   name: CLIPBOARD_COMMAND_NAME,
   metadata: clipboardCommandMetadata,
   definition: clipboardCommandDefinition,
+  clientMethod: 'clipboard',
   cliSchema: clipboardCliSchema,
   cliReader: clipboardCliReader,
   daemonWriter: clipboardDaemonWriter,
   cliOutputFormatter: systemCliOutputFormatters.clipboard,
+});
+
+const tvRemoteCommandFacet = defineCommandFacet({
+  name: TV_REMOTE_COMMAND_NAME,
+  metadata: tvRemoteCommandMetadata,
+  definition: tvRemoteCommandDefinition,
+  clientMethod: 'tvRemote',
+  cliSchema: tvRemoteCliSchema,
+  cliReader: tvRemoteCliReader,
+  daemonWriter: tvRemoteDaemonWriter,
+  cliOutputFormatter: systemCliOutputFormatters['tv-remote'],
 });
 
 export const systemCommandFamily = defineCommandFamilyFromFacets({
@@ -270,6 +341,7 @@ export const systemCommandFamily = defineCommandFamilyFromFacets({
     appSwitcherCommandFacet,
     keyboardCommandFacet,
     clipboardCommandFacet,
+    tvRemoteCommandFacet,
   ],
 });
 
@@ -303,6 +375,27 @@ function readClipboardInput(positionals: string[]): Record<string, unknown> {
     throw new AppError('INVALID_ARGS', 'clipboard write requires text.');
   }
   return { action, text: positionals.slice(1).join(' ') };
+}
+
+function readTvRemoteInput(
+  positionals: string[],
+  durationMs: number | undefined,
+): Record<string, unknown> {
+  const subcommand = positionals[0]?.toLowerCase();
+  const isNamedAction = subcommand === 'press' || subcommand === 'longpress';
+  const args = isNamedAction ? positionals.slice(1) : positionals;
+  if (args.length !== 1) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `tv-remote requires exactly one button: ${TV_REMOTE_BUTTONS.join(', ')}.`,
+    );
+  }
+  const effectiveDurationMs =
+    durationMs ?? (subcommand === 'longpress' ? TV_REMOTE_LONGPRESS_PRESET_MS : undefined);
+  return compactRecord({
+    button: parseTvRemoteButton(args[0]),
+    durationMs: effectiveDurationMs,
+  });
 }
 
 function readKeyboardAction(

@@ -168,6 +168,114 @@ test('runtime visibility predicates request snapshot rects', async () => {
   assert.equal(captureOptions?.includeRects, true);
 });
 
+test('runtime focused predicate requests a full snapshot', async () => {
+  const snapshot = makeSnapshotState([
+    {
+      index: 0,
+      depth: 0,
+      type: 'Cell',
+      label: 'Profiles and Accounts',
+      focused: true,
+    },
+  ]);
+  let captureOptions: BackendSnapshotOptions | undefined;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'ios',
+      captureSnapshot: async (_context, options) => {
+        captureOptions = options;
+        return { snapshot };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
+    policy: localCommandPolicy(),
+  });
+
+  const result = await device.selectors.is({
+    session: 'default',
+    predicate: 'focused',
+    selector: 'role=cell label="Profiles and Accounts"',
+  });
+
+  assert.equal(result.pass, true);
+  assert.equal(captureOptions?.interactiveOnly, false);
+});
+
+test('runtime focused predicate reads focused Android TV nodes from the full tree', async () => {
+  const fullSnapshot = makeSnapshotState(
+    [
+      {
+        index: 0,
+        depth: 0,
+        type: 'TextView',
+        label: 'Featured',
+        focused: true,
+        hittable: false,
+      },
+    ],
+    { backend: 'android' },
+  );
+  const interactiveSnapshot = makeSnapshotState([], { backend: 'android' });
+  let captureOptions: BackendSnapshotOptions | undefined;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'android',
+      captureSnapshot: async (_context, options) => {
+        captureOptions = options;
+        return { snapshot: options?.interactiveOnly ? interactiveSnapshot : fullSnapshot };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot: interactiveSnapshot }]),
+    policy: localCommandPolicy(),
+  });
+
+  const result = await device.selectors.is({
+    session: 'default',
+    predicate: 'focused',
+    selector: 'label=Featured',
+  });
+
+  assert.equal(result.pass, true);
+  assert.equal(captureOptions?.interactiveOnly, false);
+});
+
+test('runtime focused selector waits against a full snapshot', async () => {
+  const snapshot = makeSnapshotState([
+    {
+      index: 0,
+      depth: 0,
+      type: 'Cell',
+      label: 'Profiles and Accounts',
+      focused: true,
+    },
+  ]);
+  let captureOptions: BackendSnapshotOptions | undefined;
+  const device = createAgentDevice({
+    backend: {
+      platform: 'ios',
+      captureSnapshot: async (_context, options) => {
+        captureOptions = options;
+        return { snapshot };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
+    policy: localCommandPolicy(),
+  });
+
+  const result = await device.selectors.wait({
+    session: 'default',
+    target: { kind: 'selector', selector: 'focused=true', timeoutMs: 1000 },
+  });
+
+  assert.equal(result.kind, 'selector');
+  assert.equal(result.selector, 'focused=true');
+  assert.equal(result.waitedMs >= 0, true);
+  assert.equal(captureOptions?.interactiveOnly, false);
+});
+
 test('runtime is validates selector predicates', async () => {
   const device = createSelectorDevice(selectorReadSnapshot());
 
