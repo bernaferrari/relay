@@ -165,8 +165,34 @@ extension RunnerTests {
       // Synthesis unsupported (e.g. macOS) — fall through to the drag-based tapAt below.
     }
     if step.kind == "drag", step.synthesized == true {
-      let dragPoints = keyboardAvoidingDragPoints(
+      let dragPoints: DragPoints
+      let referenceFrame: CGRect?
+#if os(iOS)
+      guard let dragPlan = axFreeSynthesizedDragPlan(
+        app: activeApp,
+        x: x,
+        y: y,
+        x2: step.x2 ?? x,
+        y2: step.y2 ?? y,
+        avoidKeyboardWhenSafe: true
+      ) else {
+        let nowMs = ProcessInfo.processInfo.systemUptime * 1000
+        return SequenceStepOutcome(
+          outcome: .unsupported(
+            message: "synthesized coordinate drag could not resolve a finite coordinate frame",
+            hint: "Retry after the app is foregrounded, or use a plain screenshot to choose coordinates."
+          ),
+          gestureStartUptimeMs: nowMs,
+          gestureEndUptimeMs: nowMs
+        )
+      }
+      dragPoints = dragPlan.points
+      referenceFrame = dragPlan.referenceFrame
+#else
+      dragPoints = keyboardAvoidingDragPoints(
         app: activeApp, x: x, y: y, x2: step.x2 ?? x, y2: step.y2 ?? y)
+      referenceFrame = nil
+#endif
       let durationMs = min(max(step.durationMs ?? 250, 16), 10000)
       let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
         synthesizedDragAt(
@@ -175,7 +201,8 @@ extension RunnerTests {
           y: dragPoints.y,
           x2: dragPoints.x2,
           y2: dragPoints.y2,
-          durationMs: durationMs
+          durationMs: durationMs,
+          referenceFrame: referenceFrame
         )
       }
       if case .performed = outcome {
@@ -188,6 +215,13 @@ extension RunnerTests {
           gestureEndUptimeMs: timing.gestureEndUptimeMs
         )
       }
+#if os(iOS)
+      return SequenceStepOutcome(
+        outcome: outcome,
+        gestureStartUptimeMs: timing.gestureStartUptimeMs,
+        gestureEndUptimeMs: timing.gestureEndUptimeMs
+      )
+#else
       let fallbackHoldDuration = synthesizedSwipeFallbackHoldDuration(durationMs: step.durationMs ?? 250)
       let (fallbackTiming, fallbackOutcome) = performGesture(activeApp) {
         dragAt(
@@ -207,6 +241,7 @@ extension RunnerTests {
         gestureStartUptimeMs: fallbackTiming.gestureStartUptimeMs,
         gestureEndUptimeMs: fallbackTiming.gestureEndUptimeMs
       )
+#endif
     }
     let (timing, outcome) = performGesture(activeApp) {
       switch step.kind {
