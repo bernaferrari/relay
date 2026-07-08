@@ -657,14 +657,30 @@ export function StepsPane() {
                       row.kind === "live"
                         ? server.selectedJobId() === row.id
                         : server.persistedRunId() === row.id;
+                    const statusWord =
+                      status === "ok" ? "Passed" : status === "error" ? "Failed" : titleize(status);
+                    const timeText =
+                      row.kind === "disk"
+                        ? fmtAgo(row.run.writtenAt, server.clock())
+                        : isQueued
+                          ? ""
+                          : isDone
+                            ? fmtAgo(row.job.finishedAt, server.clock())
+                            : fmtDur(row.job, server.clock());
+                    const durText =
+                      row.kind === "disk"
+                        ? fmtMs(row.run.durationMs)
+                        : isDone
+                          ? fmtDur(row.job, server.clock())
+                          : "";
                     return (
                       <div class="nav-row-wrap">
                         <button
                           type="button"
-                          class="nav-row nav-row--job"
+                          class="rrow"
                           classList={{
                             on: selected,
-                            "nav-row--active": row.kind === "live" && isActive,
+                            "rrow--active": row.kind === "live" && isActive,
                           }}
                           title={
                             row.kind === "live"
@@ -682,25 +698,20 @@ export function StepsPane() {
                           }}
                         >
                           <span class={`nav-row__dot nav-row__dot--${tone}`} aria-hidden="true" />
-                          <Show when={isQueued && queuePos}>
-                            <span class="nav-row__pos mono">{queuePos}</span>
-                          </Show>
-                          <span class="nav-row__title">
-                            {row.kind === "disk"
-                              ? fmtAgo(row.run.writtenAt, server.clock())
-                              : isQueued
-                                ? "Queued"
-                                : isDone
-                                  ? fmtAgo(row.job.finishedAt, server.clock())
-                                  : fmtDur(row.job, server.clock())}
-                          </span>
-                          <Show when={row.kind === "disk" ? row.run.durationMs : isDone ? 1 : 0}>
-                            <span class="nav-row__meta mono">
-                              {row.kind === "disk"
-                                ? fmtMs(row.run.durationMs)
-                                : fmtDur(row.job, server.clock())}
+                          <span class="rrow__facts">
+                            <Show when={isQueued && queuePos}>
+                              <span class="rrow__pos mono">{queuePos}</span>
+                            </Show>
+                            <span class={`rrow__fact rrow__word rrow__word--${tone}`}>
+                              {statusWord}
                             </span>
-                          </Show>
+                            <Show when={timeText}>
+                              <span class="rrow__fact rrow__time">{timeText}</span>
+                            </Show>
+                            <Show when={durText}>
+                              <span class="rrow__fact rrow__dur mono">{durText}</span>
+                            </Show>
+                          </span>
                         </button>
                         <span class="nav-row__actions">
                           <Show when={row.kind === "live" && isQueued && jobId}>

@@ -1528,6 +1528,84 @@ html[data-color-scheme="light"] .bezel {
 .recent .nav-row-wrap {
   margin: 0 -4px;
 }
+/* recent-runs rows — compact, left-clustered facts (plan 013 step 4) */
+.rrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  color: var(--v2-text-text-muted);
+}
+/* the row is transparent inside its hover wrapper (keeps the single hover
+   surface that also covers the X/Retry actions); flex:1 growth is the
+   spacer that pushes those actions to the measure edge */
+.nav-row-wrap > .rrow {
+  flex: 1;
+  min-width: 0;
+  background: transparent !important;
+}
+.nav-row-wrap:hover > .rrow {
+  background: transparent !important;
+}
+.nav-row-wrap > .rrow.on {
+  background: color-mix(in srgb, var(--c-accent) 9%, transparent) !important;
+  color: var(--v2-text-text-base);
+  box-shadow: inset 2px 0 0 var(--c-accent);
+}
+.nav-row-wrap > .rrow.rrow--active {
+  background: color-mix(in srgb, var(--c-run) 9%, transparent) !important;
+  box-shadow: inset 2px 0 0 var(--c-run);
+}
+.rrow__facts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+.rrow__fact:not(:last-child)::after {
+  content: "·";
+  margin-left: 7px;
+  color: var(--v2-border-border-strong);
+  opacity: 0.55;
+}
+.rrow__word {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rrow__word--pass {
+  color: var(--c-pass);
+}
+.rrow__word--fail {
+  color: var(--c-fail);
+}
+.rrow__word--heal {
+  color: var(--c-heal);
+}
+.rrow__word--run {
+  color: var(--c-run);
+}
+.rrow__word--dim {
+  color: var(--c-dim);
+}
+.rrow__time {
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+.rrow__dur {
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+  color: var(--c-dim);
+}
+.rrow__pos {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--c-dim);
+}
 
 /* console — follows theme, no hardcoded dark (C4 fix) */
 .console {
