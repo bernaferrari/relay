@@ -4,13 +4,11 @@ import { Icon } from "./icon";
 import { fmtDur, titleize } from "../lib/job";
 
 /**
- * Topbar (plan 009 step 5) — six items max:
- *   rail toggle · brand · device picker · [spacer] · runbar pill (active job)
- *   · Settings (icon-only).
- * Theme menu, ⌘K button, recipe chip, and Run button all deleted — the Run
- * button lives in the run pane header; theme + palette are reachable from
- * Settings. Electron titlebar-drag regions stay on the wrapper + no-drag on
- * interactive elements.
+ * Topbar (plan 012) — brand · device picker · [spacer] · runbar pill (active
+ * job) · Settings (icon-only). The Run button lives in the run pane header
+ * (whose title is now the recipe switcher); the rail toggle + ⌘B are gone.
+ * Electron titlebar-drag regions stay on the wrapper + no-drag on interactive
+ * elements.
  */
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();
@@ -35,17 +33,6 @@ export function Topbar(props: { onSettings: () => void }) {
 
   return (
     <header class="top desktop-titlebar-drag">
-      <button
-        type="button"
-        class="btn btn-ghost top__icon-btn desktop-titlebar-no-drag"
-        classList={{ on: server.railCollapsed() }}
-        title="Toggle sidebar (⌘B)"
-        aria-label="Toggle sidebar"
-        aria-pressed={server.railCollapsed()}
-        onClick={() => server.toggleRail()}
-      >
-        <Icon name="panel-left" size={15} />
-      </button>
       <div class="top__brand desktop-titlebar-no-drag">
         <span class="top__mark" aria-hidden="true">
           S

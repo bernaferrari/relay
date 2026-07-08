@@ -1,20 +1,16 @@
 import { OfflineGate } from "./offline-gate";
 import { DeviceStage } from "./stage";
 import { StepsPane } from "./run-panel";
-import { Sidebar } from "./sidebar";
-import { useServer } from "../context/server";
 
 /**
- * Workspace shell — one composition (plan 009):
- *   rail (232px, always visible, ⌘B collapses to 0) · stage (1fr) · run pane (340–400px).
+ * Workspace shell (plan 012) — two surfaces: device fixture left (~38%),
+ * run report right (the rest). The report header's title is the recipe
+ * switcher; the rail and its ⌘B collapse are gone.
  */
 export function Workspace() {
-  const server = useServer();
-
   return (
     <OfflineGate overlay>
-      <div class="shell" classList={{ "shell--rail-collapsed": server.railCollapsed() }}>
-        <Sidebar />
+      <div class="shell">
         <DeviceStage />
         <section class="runpane" aria-label="Run pane">
           <StepsPane />

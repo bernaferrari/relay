@@ -12,7 +12,6 @@ import {
 import { useRecorder, describeStep } from "../context/recorder";
 import { Icon } from "./icon";
 import { useCommand } from "../context/command";
-import { titleize } from "../lib/job";
 
 /** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
 export function DeviceStage() {
@@ -22,9 +21,6 @@ export function DeviceStage() {
   const frame = () =>
     rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
-  const job = () => server.jobs().find((j) => j.id === server.selectedJobId());
-  const actionMeta = () =>
-    server.actions().find((a) => a.id === (server.selectedRecipeId() ?? job()?.action));
 
   let stageEl: HTMLElement | undefined;
 
@@ -345,28 +341,12 @@ export function DeviceStage() {
         </div>
       </Show>
 
-      <div class="stage__meta">
-        <span class="stage__title">
-          {job()
-            ? (job()?.title ??
-              actionMeta()?.title ??
-              (job()?.action ? titleize(job()!.action, server.recipes()) : "Running"))
-            : (server.selectedRecipe()?.title ?? "Pick a recipe")}
-        </span>
-        <Show when={job()?.healed || job()?.status === "healed"}>
-          <span class="badge b-heal">Healed</span>
-        </Show>
-        <Show when={job()?.status === "error"}>
-          <span class="badge b-fail">Failed</span>
-        </Show>
-      </div>
-
       <Show
         when={!server.isEmptyDevices()}
         fallback={
           <div class="stage__no-device">
             <span class="stage__no-device-icon" aria-hidden="true">
-              <Icon name="smartphone" size={28} strokeWidth={1.3} />
+              <Icon name="smartphone" size={40} strokeWidth={1.3} />
             </span>
             <p class="stage__no-device-title">No device connected</p>
             <p class="stage__no-device-hint">
@@ -375,7 +355,8 @@ export function DeviceStage() {
             <div class="stage__connect">
               <button
                 type="button"
-                class="btn btn-acc"
+                class="btn btn-ghost"
+                style={{ border: "1px solid var(--v2-border-border-muted)" }}
                 disabled={server.health() === "offline"}
                 onClick={() =>
                   void (async () => {
@@ -387,7 +368,6 @@ export function DeviceStage() {
                 <Icon name="refresh" size={14} />
                 Refresh devices
               </button>
-              <span class="mono stage__connect-hint">adb devices</span>
             </div>
           </div>
         }

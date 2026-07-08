@@ -158,13 +158,6 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         group: "Jobs",
         run: () => server.clearLogs(),
       },
-      {
-        id: "rail.toggle",
-        title: "Toggle sidebar rail (⌘B)",
-        group: "Workspace",
-        keybind: "mod+b",
-        run: () => server.toggleRail(),
-      },
     ]);
     onCleanup(unsub);
   });

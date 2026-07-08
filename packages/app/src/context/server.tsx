@@ -232,8 +232,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [runsRoot, setRunsRoot] = createSignal("");
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
-    // Plan 009 — the rail (sidebar) collapses to 0 width via ⌘B. Persisted.
-    const [railCollapsed, setRailCollapsedState] = createSignal(false);
     // Persisted-run selection: when set, StepsPane renders a read-only view of
     // a disk run's steps (disk runs folded into History by plan 008 step 4).
     const [persistedRunId, setPersistedRunId] = createSignal<string | null>(null);
@@ -286,19 +284,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       } catch {
         /* ignore */
       }
-    }
-
-    /** Collapse/expand the rail (sidebar) and persist the choice (plan 009). */
-    async function setRailCollapsed(value: boolean) {
-      setRailCollapsedState(value);
-      try {
-        await platform.storage.set("railCollapsed", String(value));
-      } catch {
-        /* ignore */
-      }
-    }
-    function toggleRail() {
-      void setRailCollapsed(!railCollapsed());
     }
 
     function appendLog(text: string, level?: LogLine["level"], jobId?: string) {
@@ -989,12 +974,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       } catch {
         /* ignore */
       }
-      try {
-        const savedRail = await platform.storage.get("railCollapsed");
-        if (savedRail === "true") setRailCollapsedState(true);
-      } catch {
-        /* ignore */
-      }
       await pollHealth();
       if (health() === "online") {
         await Promise.all([
@@ -1104,9 +1083,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,
-      railCollapsed,
-      setRailCollapsed,
-      toggleRail,
       health,
       isOffline,
       isEmptyDevices,
