@@ -1180,6 +1180,47 @@ const SKILL_GUIDANCE_CASES: Case[] = [
     allowOnlyLocalCliHelpCommands: true,
   }),
   makeCase({
+    id: 'android-tv-focus-uses-tv-remote',
+    contract: [
+      'Platform: Android TV emulator',
+      'Target selector is not currently focused',
+      'TV apps are focus-first: move focus with D-pad/remote buttons before selecting',
+      'Visual focus evidence is required before selecting',
+      'Raw ADB keyevent is the old workaround; use agent-device command surface instead',
+      'If you inspect CLI help, run it raw; do not pipe it through head, grep, jq, or tail',
+      'Final answer must be agent-device command lines only, with no prose or introduction',
+    ],
+    task: 'Plan commands to move focus down twice, capture overlay-ref screenshot evidence, and select the focused Android TV control.',
+    outputs: [
+      plannedCommand('tv-remote'),
+      /\bdown\b/i,
+      /screenshot\b[^\n]*--overlay-refs/i,
+      /\bselect\b/i,
+    ],
+    forbiddenOutputs: [
+      /\badb\b/i,
+      /\bkeyevent\b/i,
+      /(?:^|\n)(?:agent-device\s+)?(?:press|click)\s+@(?:e\d+|ref)\b/i,
+    ],
+    strictFinalOutput: true,
+    allowOnlyLocalCliHelpCommands: true,
+  }),
+  makeCase({
+    id: 'android-tv-remote-longpress-preset',
+    contract: [
+      'Platform: Android TV emulator',
+      'The focused control is a TV remote target',
+      'Use the agent-device TV remote command surface, not raw ADB keyevents',
+      'For a held TV remote button, use the tv-remote longpress preset',
+      'Final answer must be agent-device command lines only, with no prose or introduction',
+    ],
+    task: 'Plan the command to hold the focused Android TV select button with the default TV remote longpress preset.',
+    outputs: [plannedCommand('tv-remote'), /\blongpress\b/i, /\bselect\b/i],
+    forbiddenOutputs: [/\badb\b/i, /\bkeyevent\b/i, /--duration-ms/i, plannedCommand('longpress')],
+    strictFinalOutput: true,
+    allowOnlyLocalCliHelpCommands: true,
+  }),
+  makeCase({
     id: 'ios-composite-horizontal-tabs-coordinate-fallback',
     contract: [
       'Platform: iOS simulator',

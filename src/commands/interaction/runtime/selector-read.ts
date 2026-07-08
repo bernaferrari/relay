@@ -24,7 +24,6 @@ import {
   evaluateIsPredicate,
   isSupportedPredicate,
   IS_PREDICATE_REQUIRED_MESSAGE,
-  type IsPredicate,
 } from '../../../utils/selector-is-predicates.ts';
 import type {
   ElementTarget,
@@ -49,6 +48,7 @@ import {
   TINY_STABLE_TREE_NODE_COUNT,
 } from './stable-capture.ts';
 import { now, sleep, toBackendContext } from '../../runtime-common.ts';
+import { deriveSelectorCapturePolicy } from './selector-capture-policy.ts';
 
 export type { SelectorSnapshotOptions } from './selector-read-shared.ts';
 export type { ElementTarget, RefTarget, ResolvedTarget, SelectorTarget };
@@ -98,7 +98,7 @@ export type GetAttrsCommandOptions = CommandContext &
 
 export type IsCommandOptions = CommandContext &
   SelectorSnapshotOptions & {
-    predicate: 'visible' | 'hidden' | 'exists' | 'editable' | 'selected' | 'text';
+    predicate: 'visible' | 'hidden' | 'exists' | 'editable' | 'selected' | 'focused' | 'text';
     selector: string;
     expectedText?: string;
   };
@@ -274,12 +274,11 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
   if (options.predicate === 'text' && !options.expectedText) {
     throw new AppError('INVALID_ARGS', 'is text requires expected text value');
   }
-  const includeRects = predicateNeedsRects(options.predicate);
+  const chain = parseSelectorChain(options.selector);
   const capture = await captureSelectorSnapshot(runtime, options, {
     updateSession: true,
-    includeRects,
+    ...deriveSelectorCapturePolicy({ predicate: options.predicate, selectorChain: chain }),
   });
-  const chain = parseSelectorChain(options.selector);
 
   if (options.predicate === 'exists') {
     const matched = findSelectorChainMatch(capture.snapshot.nodes, chain, {
@@ -435,6 +434,7 @@ async function findFirstLocatorMatch(
   const capture = await captureSelectorSnapshot(runtime, options, {
     updateSession: true,
     scope: findSnapshotScope(runtime, locator, options.query, selectorChain),
+    ...deriveSelectorCapturePolicy({ selectorChain }),
   });
   if (isSparseSnapshotQualityVerdict(capture.snapshot.snapshotQuality)) {
     throw sparseSelectorSnapshotError(capture.snapshot.snapshotQuality);
@@ -471,10 +471,6 @@ function sparseSelectorSnapshotError(verdict: SnapshotQualityVerdict): AppError 
   });
 }
 
-function predicateNeedsRects(predicate: IsPredicate): boolean {
-  return predicate === 'visible' || predicate === 'hidden';
-}
-
 async function waitForSelector(
   runtime: AgentDeviceRuntime,
   options: WaitCommandOptions,
@@ -484,8 +480,12 @@ async function waitForSelector(
   const timeout = timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const start = now(runtime);
   const chain = parseSelectorChain(selectorExpression);
+  const capturePolicy = deriveSelectorCapturePolicy({ selectorChain: chain });
   while (now(runtime) - start < timeout) {
-    const capture = await captureSelectorSnapshot(runtime, options, { updateSession: true });
+    const capture = await captureSelectorSnapshot(runtime, options, {
+      updateSession: true,
+      ...capturePolicy,
+    });
     const match = findSelectorChainMatch(capture.snapshot.nodes, chain, {
       platform: runtime.backend.platform,
     });
@@ -568,14 +568,15 @@ async function resolveSelectorNode(
   sessionName: string,
   params: { selector: string; disambiguateAmbiguous: boolean },
 ): Promise<{ capture: CapturedSnapshot; node: SnapshotNode; selector: string; ref: string }> {
+  const chain = parseSelectorChain(params.selector);
   const capture = await captureSelectorSnapshot(
     runtime,
     { ...options, session: sessionName },
     {
       updateSession: true,
+      ...deriveSelectorCapturePolicy({ selectorChain: chain }),
     },
   );
-  const chain = parseSelectorChain(params.selector);
   const resolved = resolveSelectorChain(capture.snapshot.nodes, chain, {
     platform: runtime.backend.platform,
     requireRect: false,

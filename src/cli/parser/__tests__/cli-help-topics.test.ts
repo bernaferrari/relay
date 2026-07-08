@@ -157,6 +157,10 @@ test('usage includes agent workflows, config, environment, and examples footers'
   );
   assert.match(
     usageText,
+    /agent-device help tv\s+Use when navigating Android TV or tvOS focus-first surfaces/,
+  );
+  assert.match(
+    usageText,
     /agent-device help react-devtools\s+Use when inspecting components, props\/state\/hooks, renders, or profiles/,
   );
   assert.match(
@@ -294,6 +298,20 @@ test('usageForCommand resolves workflow help topic', async () => {
   assert.match(help, /help react-devtools/);
   assert.match(help, /help react-native/);
   assert.doesNotMatch(help, /agent-device react-devtools profile/);
+});
+
+test('usageForCommand resolves tv help topic', async () => {
+  const help = await usageForCommand('tv');
+  if (help === null) throw new Error('Expected tv help text');
+  assert.match(help, /agent-device help tv/);
+  assert.match(help, /agent-device tv-remote press down/);
+  assert.match(help, /agent-device screenshot \.\/tv-focus\.png --overlay-refs/);
+  assert.match(help, /tv-remote longpress select/);
+  assert.match(help, /tv-remote press select --duration-ms 500/);
+  assert.match(help, /longpress is CLI sugar for --duration-ms 500/);
+  assert.match(help, /ok, center, and enter are input aliases for select/);
+  assert.match(help, /do not switch to raw adb keyevent/);
+  assert.match(help, /Use --platform ios --target tv/);
 });
 
 test('usageForCommand resolves web help topic', async () => {

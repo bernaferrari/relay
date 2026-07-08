@@ -3,6 +3,7 @@ import type { DeviceInfo } from '../../kernel/device.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import type { DeviceRotation } from '../../core/device-rotation.ts';
 import { buildScrollGesturePlan, type ScrollDirection } from '../../core/scroll-gesture.ts';
+import { toAndroidTvRemoteKeyevent, type TvRemoteButton } from '../../core/tv-remote.ts';
 import { runAndroidAdb, sleep } from './adb.ts';
 import { resolveAndroidTextInjector, type AndroidTextInputAction } from './adb-executor.ts';
 import { getAndroidKeyboardState, type AndroidKeyboardState } from './device-input-state.ts';
@@ -17,6 +18,16 @@ export { readAndroidTextAtPoint } from './fill-verification.ts';
 
 export async function pressAndroid(device: DeviceInfo, x: number, y: number): Promise<void> {
   await runAndroidAdb(device, ['shell', 'input', 'tap', String(x), String(y)]);
+}
+
+export async function pressAndroidTvRemote(
+  device: DeviceInfo,
+  button: TvRemoteButton,
+  durationMs?: number,
+): Promise<void> {
+  const keyevent = toAndroidTvRemoteKeyevent(button);
+  const keyeventArgs = durationMs && durationMs > 0 ? ['keyevent', '--longpress'] : ['keyevent'];
+  await runAndroidAdb(device, ['shell', 'input', ...keyeventArgs, keyevent]);
 }
 
 export async function swipeAndroid(
