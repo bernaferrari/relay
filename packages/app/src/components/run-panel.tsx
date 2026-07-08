@@ -251,16 +251,29 @@ export function StepsPane() {
                     <div class="srow srow--static" title={stepTip(step)}>
                       <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
-                        <span class="smeta">
-                          <span class="smeta__kind">{step.kind}</span>
-                          <Show when={fmtMs(step.durationMs)}>
-                            <span class="mono">{fmtMs(step.durationMs)}</span>
-                          </Show>
-                          <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
-                            <span class={`tone tone--${tone}`}>{step.status}</span>
-                          </Show>
-                          <Glyphs glyphs={step.glyphs} max={6} />
-                        </span>
+                        <Show
+                          when={Boolean(
+                            (step.kind && step.kind !== "Replay") ||
+                            fmtMs(step.durationMs) ||
+                            tone === "fail" ||
+                            tone === "heal" ||
+                            tone === "run" ||
+                            (step.glyphs?.length ?? 0) > 0,
+                          )}
+                        >
+                          <span class="smeta">
+                            <Show when={step.kind && step.kind !== "Replay"}>
+                              <span class="smeta__kind">{step.kind}</span>
+                            </Show>
+                            <Show when={fmtMs(step.durationMs)}>
+                              <span class="mono">{fmtMs(step.durationMs)}</span>
+                            </Show>
+                            <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
+                              <span class={`tone tone--${tone}`}>{step.status}</span>
+                            </Show>
+                            <Glyphs glyphs={step.glyphs} max={6} />
+                          </span>
+                        </Show>
                         <span class="stitle">{step.title}</span>
                       </span>
                     </div>
@@ -520,16 +533,29 @@ export function StepsPane() {
                     >
                       <span class={`snum snum--${tone}`}>{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
-                        <span class="smeta">
-                          <span class="smeta__kind">{step.kind}</span>
-                          <Show when={fmtMs(step.durationMs)}>
-                            <span class="mono">{fmtMs(step.durationMs)}</span>
-                          </Show>
-                          <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
-                            <span class={`tone tone--${tone}`}>{step.status}</span>
-                          </Show>
-                          <Glyphs glyphs={step.glyphs} max={6} />
-                        </span>
+                        <Show
+                          when={Boolean(
+                            (step.kind && step.kind !== "Replay") ||
+                            fmtMs(step.durationMs) ||
+                            tone === "fail" ||
+                            tone === "heal" ||
+                            tone === "run" ||
+                            (step.glyphs?.length ?? 0) > 0,
+                          )}
+                        >
+                          <span class="smeta">
+                            <Show when={step.kind && step.kind !== "Replay"}>
+                              <span class="smeta__kind">{step.kind}</span>
+                            </Show>
+                            <Show when={fmtMs(step.durationMs)}>
+                              <span class="mono">{fmtMs(step.durationMs)}</span>
+                            </Show>
+                            <Show when={tone === "fail" || tone === "heal" || tone === "run"}>
+                              <span class={`tone tone--${tone}`}>{step.status}</span>
+                            </Show>
+                            <Glyphs glyphs={step.glyphs} max={6} />
+                          </span>
+                        </Show>
                         <span class="stitle">{step.title}</span>
                       </span>
                     </div>
@@ -551,9 +577,6 @@ export function StepsPane() {
                   <div class="srow srow--static" title={describeStep(step)}>
                     <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                     <span class="srow__body">
-                      <span class="smeta">
-                        <span class="smeta__kind">Step</span>
-                      </span>
                       <span class="stitle">{describeStep(step)}</span>
                     </span>
                   </div>
@@ -573,9 +596,6 @@ export function StepsPane() {
                       <div class="srow srow--static" title={flowLabel(step)}>
                         <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                         <span class="srow__body">
-                          <span class="smeta">
-                            <span class="smeta__kind">Step</span>
-                          </span>
                           <span class="stitle">{flowLabel(step)}</span>
                         </span>
                       </div>
@@ -591,10 +611,11 @@ export function StepsPane() {
                     >
                       <span class="snum snum--dim">{String(i() + 1).padStart(2, "0")}</span>
                       <span class="srow__body">
-                        <span class="smeta">
-                          <span class="smeta__kind">Step</span>
-                          <Glyphs glyphs={step.glyphs} max={6} />
-                        </span>
+                        <Show when={(step.glyphs?.length ?? 0) > 0}>
+                          <span class="smeta">
+                            <Glyphs glyphs={step.glyphs} max={6} />
+                          </span>
+                        </Show>
                         <span class="stitle">{step.title}</span>
                       </span>
                     </div>

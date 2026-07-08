@@ -1438,11 +1438,14 @@ html[data-color-scheme="light"] .bezel {
 }
 .stitle {
   display: block;
-  margin-top: 3px;
+  margin-top: 0;
   font-size: var(--fs-body);
   font-weight: 500;
   color: var(--v2-text-text-base);
   line-height: 1.4;
+}
+.smeta + .stitle {
+  margin-top: 3px;
 }
 
 /* run header — status/date/duration/device (card on layer-02) */
