@@ -99,7 +99,7 @@ async function invokeNativeMaestroVisibleWaitWithSnapshotFallback(
           nativeStartedAt,
         );
         if (failedSample.kind === 'return') return failedSample.response;
-        return await invokeSnapshotMaestroAssertVisible(params, args);
+        return await invokeSnapshotMaestroAssertVisible(params, visibleAssertionRetryArgs(args));
       }
     }
     rememberMaestroVisibleContext(params.scope, args.selector);
@@ -277,7 +277,7 @@ async function confirmVisibleAfterAndroidRecovery(
 ): Promise<DaemonResponse> {
   const retryArgs = {
     ...args,
-    timeoutMs: Math.min(args.timeoutMs, MAESTRO_ASSERTION_POLICY.assertVisibleRetryTimeoutMs),
+    timeoutMs: visibleAssertionRetryTimeoutMs(args.timeoutMs),
   };
   const nativeWaitQuery = readNativeVisibleWaitQuery(params.baseReq, retryArgs.selector);
   if (!nativeWaitQuery) return await invokeSnapshotMaestroAssertVisible(params, retryArgs);
@@ -429,6 +429,19 @@ function readVisibleAssertionDeadlineAction(params: {
   )
     ? 'capture-again'
     : 'finish';
+}
+
+function visibleAssertionRetryArgs(
+  args: MaestroVisibilityAssertionArgs,
+): MaestroVisibilityAssertionArgs {
+  return {
+    ...args,
+    timeoutMs: visibleAssertionRetryTimeoutMs(args.timeoutMs),
+  };
+}
+
+function visibleAssertionRetryTimeoutMs(timeoutMs: number): number {
+  return Math.min(timeoutMs, MAESTRO_ASSERTION_POLICY.assertVisibleRetryTimeoutMs);
 }
 
 function isReactNativeOverlayBlockingAssertion(response: DaemonResponse): boolean {

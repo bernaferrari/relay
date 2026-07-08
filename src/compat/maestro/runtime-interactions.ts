@@ -8,8 +8,10 @@ import {
   type ScrollDirection,
 } from '../../core/scroll-gesture.ts';
 import type { ReplayVarScope } from '../../replay/vars.ts';
+import type { SnapshotState } from '../../kernel/snapshot.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { sleep } from '../../utils/timeouts.ts';
+import { invokeMaestroClickPoint } from './runtime-click.ts';
 import { pointForMaestroTapOnTarget, swipeCoordinatesFromTarget } from './runtime-geometry.ts';
 import {
   captureMaestroSnapshot,
@@ -140,15 +142,7 @@ export async function invokeMaestroTapPointPercent(params: {
   }
 
   const point = pointFromPercent(frame, xPercent, yPercent);
-  const response = await params.invoke({
-    ...params.baseReq,
-    command: 'click',
-    positionals: [String(point.x), String(point.y)],
-    flags: {
-      ...params.baseReq.flags,
-      postGestureStabilization: true,
-    },
-  });
+  const response = await invokeMaestroClickPoint({ ...params, point });
   if (response.ok) clearMaestroRecoverableInteraction(params.scope);
   return response;
 }
@@ -520,15 +514,7 @@ async function clickMaestroResolvedTarget(
       point,
     },
   });
-  const response = await params.invoke({
-    ...params.baseReq,
-    command: 'click',
-    positionals: [String(point.x), String(point.y)],
-    flags: {
-      ...params.baseReq.flags,
-      postGestureStabilization: true,
-    },
-  });
+  const response = await invokeMaestroClickPoint({ ...params, point });
   if (response.ok) {
     clearMaestroVisibleContext(params.scope);
     rememberMaestroRecoverableInteraction(params.scope, {
@@ -586,7 +572,8 @@ async function resolveMaestroInteractionTarget(
   commandLabel: string,
   resolutionOptions: { promoteTapTarget: boolean },
 ): Promise<
-  { ok: true; target: ResolvedMaestroInteractionTarget } | { ok: false; response: DaemonResponse }
+  | { ok: true; target: ResolvedMaestroInteractionTarget; snapshot: SnapshotState }
+  | { ok: false; response: DaemonResponse }
 > {
   const snapshotResponse = await captureMaestroSnapshot({ ...params, raw: true });
   return resolveMaestroInteractionTargetFromResponse(
@@ -610,7 +597,7 @@ function resolveMaestroInteractionTargetFromResponse(
   resolutionOptions: { promoteTapTarget: boolean },
   snapshotResponse: DaemonResponse,
 ):
-  | { ok: true; target: ResolvedMaestroInteractionTarget }
+  | { ok: true; target: ResolvedMaestroInteractionTarget; snapshot: SnapshotState }
   | { ok: false; response: DaemonResponse } {
   if (!snapshotResponse.ok) return { ok: false, response: snapshotResponse };
   const snapshot = readSnapshotState(snapshotResponse.data);
@@ -650,6 +637,7 @@ function resolveMaestroInteractionTargetFromResponse(
             rect: fuzzyResolution.rect,
             frame,
           },
+          snapshot,
         };
       }
     }
@@ -671,6 +659,7 @@ function resolveMaestroInteractionTargetFromResponse(
       rect: resolution.rect,
       frame,
     },
+    snapshot,
   };
 }
 

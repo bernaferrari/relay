@@ -555,6 +555,39 @@ test('invokeMaestroAssertVisible does not use Android raw fallback for generated
   );
 });
 
+test('invokeMaestroAssertVisible bounds Android verification retries after native wait succeeds', async () => {
+  vi.useFakeTimers();
+
+  const calls: Array<[string, string[] | undefined]> = [];
+  const responsePromise = invokeMaestroAssertVisible({
+    baseReq: {
+      token: 't',
+      session: 's',
+      flags: { platform: 'android' },
+    },
+    positionals: ['label="Input" || text="Input" || id="Input"', '60000'],
+    invoke: async (req): Promise<DaemonResponse> => {
+      calls.push([req.command, req.positionals]);
+      if (req.command === 'snapshot') {
+        return { ok: true, data: snapshot([node('Loading')]) };
+      }
+      if (req.command === 'wait') return { ok: true, data: { matches: 1 } };
+      return { ok: false, error: { code: 'UNEXPECTED_COMMAND', message: req.command } };
+    },
+  });
+
+  await vi.advanceTimersByTimeAsync(6500);
+  const response = await responsePromise;
+
+  assert.equal(response.ok, false);
+  assert.deepEqual(calls.slice(0, 3), [
+    ['wait', ['Input', '60000']],
+    ['snapshot', []],
+    ['snapshot', []],
+  ]);
+  assert.ok(calls.filter(([command]) => command === 'snapshot').length < 40);
+});
+
 test('invokeMaestroAssertVisible writes terminal snapshot artifacts for failed attempts', async () => {
   const artifactsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maestro-assert-artifacts-'));
   try {
