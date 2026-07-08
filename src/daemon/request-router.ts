@@ -38,9 +38,11 @@ import {
   prepareLockedRequestScope,
   type RequestExecutionScope,
 } from './request-execution-scope.ts';
+import { buildRequestFinishedEvent, shouldRecordEventForRequest } from './session-event-log.ts';
 import { canRunReplayScopedAction } from './daemon-command-registry.ts';
 import { createAgentBrowserWebProvider } from '../platforms/web/agent-browser-provider.ts';
 import type { LeaseLifecycleProvider } from './handlers/lease.ts';
+import { openWebSessionNames } from './web-session-names.ts';
 
 // ---------------------------------------------------------------------------
 // Request handler API
@@ -124,9 +126,10 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       return unauthorizedResponse();
     }
 
+    let scope: RequestExecutionScope | undefined;
     try {
       return await withTargetDeviceResolutionScope(deviceInventoryProvider, async () => {
-        const scope = await createRequestExecutionScope({
+        scope = await createRequestExecutionScope({
           req,
           sessionStore,
           leaseRegistry,
@@ -134,7 +137,9 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
         return await executeRequestScope(scope);
       });
     } catch (error) {
-      return finalizeThrownRequestError(error);
+      const response = finalizeThrownRequestError(error);
+      recordThrownRequestEvent(sessionStore, scope, response);
+      return response;
     }
   }
 
@@ -229,13 +234,16 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
         return unauthorizedResponse();
       }
 
+      let childScope: RequestExecutionScope | undefined;
       try {
-        const childScope = await createRequestExecutionScope({ req, sessionStore, leaseRegistry });
+        childScope = await createRequestExecutionScope({ req, sessionStore, leaseRegistry });
         return childScope.sessionName === parentScope.sessionName
           ? await executeRequestScope(childScope, providerScope)
-          : await handleRequest(req);
+          : await executeRequestScope(childScope);
       } catch (error) {
-        return finalizeThrownRequestError(error);
+        const response = finalizeThrownRequestError(error);
+        recordThrownRequestEvent(sessionStore, childScope, response);
+        return response;
       }
     };
   }
@@ -254,13 +262,6 @@ const createDefaultWebProvider =
 
 function shouldUseDefaultWebProvider(scope: LockedRequestScope): boolean {
   return scope.existingSession?.device.platform === 'web' || scope.req.flags?.platform === 'web';
-}
-
-function openWebSessionNames(sessionStore: SessionStore): string[] {
-  return sessionStore
-    .toArray()
-    .filter((session) => session.device.platform === 'web')
-    .map((session) => session.name);
 }
 
 function unauthorizedResponse(): DaemonResponse {
@@ -314,6 +315,22 @@ function finalizeThrownRequestError(error: unknown): DaemonResponse {
     logPath: logPathOnFailure,
   });
   return { ok: false, error: normalizedError };
+}
+
+function recordThrownRequestEvent(
+  sessionStore: SessionStore,
+  scope: RequestExecutionScope | undefined,
+  response: DaemonResponse,
+): void {
+  if (!scope || !shouldRecordEventForRequest(scope.req)) return;
+  sessionStore.recordEvent(
+    scope.sessionName,
+    buildRequestFinishedEvent({
+      req: scope.req,
+      response,
+      durationMs: Math.max(0, Date.now() - scope.startedAtMs),
+    }),
+  );
 }
 
 // Phase 2 typed-error graft: add machine-readable signals to an error response.

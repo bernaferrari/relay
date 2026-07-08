@@ -194,6 +194,9 @@ export async function handleSessionObservabilityCommands(
   if (req.command === 'logs') {
     return handleLogsCommand(params);
   }
+  if (req.command === 'events') {
+    return await handleEventsCommand(params);
+  }
   if (req.command === 'network') {
     return handleNetworkCommand(params);
   }
@@ -202,6 +205,22 @@ export async function handleSessionObservabilityCommands(
   }
 
   return null;
+}
+
+async function handleEventsCommand(params: ObservabilityParams): Promise<DaemonResponse> {
+  const { req, sessionName, sessionStore } = params;
+  try {
+    await sessionStore.flushEvents(sessionName);
+    return {
+      ok: true,
+      data: sessionStore.readEvents(sessionName, {
+        limit: req.positionals?.[0],
+        cursor: req.positionals?.[1],
+      }),
+    };
+  } catch (error) {
+    return { ok: false, error: normalizeError(error) };
+  }
 }
 
 // ---------------------------------------------------------------------------

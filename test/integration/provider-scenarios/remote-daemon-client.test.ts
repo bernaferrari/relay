@@ -317,10 +317,42 @@ function writeRemoteSuccess(
   payload: RemoteRpcRequest,
   state: RemoteDaemonState,
 ): void {
+  if (payload.params?.command === 'events') return writeEventsSuccess(res, payload);
   if (payload.params?.command === 'install') return writeInstallSuccess(res, payload);
   if (payload.params?.command === 'install_source') return writeInstallSourceSuccess(res, payload);
   if (payload.params?.command === 'record') return writeRecordSuccess(res, payload, state);
   writeScreenshotSuccess(res, payload, state.screenshotPath);
+}
+
+function writeEventsSuccess(res: http.ServerResponse, payload: RemoteRpcRequest): void {
+  const positionals = payload.params?.positionals ?? [];
+  const limitArg = typeof positionals[0] === 'string' ? positionals[0] : undefined;
+  const cursorArg = typeof positionals[1] === 'string' ? positionals[1] : undefined;
+  const limit = limitArg === undefined || limitArg.trim() === '' ? 100 : Number(limitArg);
+  writeJson(res, 200, {
+    jsonrpc: '2.0',
+    id: payload.id,
+    result: {
+      ok: true,
+      data: {
+        path: '/remote/sessions/default/events.ndjson',
+        cursor: cursorArg ?? '0',
+        limit,
+        nextCursor: '6',
+        events: [
+          {
+            version: 1,
+            ts: '2026-07-02T12:00:00.000Z',
+            session: 'default',
+            kind: 'action.recorded',
+            command: 'click',
+            summary: 'Tapped @e14',
+            details: { ref: '@e14' },
+          },
+        ],
+      },
+    },
+  });
 }
 
 function writeInstallSuccess(res: http.ServerResponse, payload: RemoteRpcRequest): void {
@@ -531,6 +563,41 @@ async function assertRecordingArtifactRoundTrip(
   assert.equal(recordStopRpc?.params?.meta?.clientArtifactPaths, undefined);
 }
 
+async function assertEventsRpc(
+  client: RemoteClient,
+  rpcRequests: RemoteRpcRequest[],
+): Promise<void> {
+  const page = await client.observability.events({ limit: 2, cursor: '4' });
+  assertEventsPage(page);
+  assertEventsRpcRequest(rpcRequests.at(-1), ['2', '4']);
+
+  const cursorOnlyPage = await client.observability.events({ cursor: '6' });
+  assert.equal(cursorOnlyPage.cursor, '6');
+  assert.equal(cursorOnlyPage.limit, 100);
+  assertEventsRpcRequest(rpcRequests.at(-1), ['', '6']);
+}
+
+function assertEventsPage(
+  page: Awaited<ReturnType<RemoteClient['observability']['events']>>,
+): void {
+  assert.equal(page.path, '/remote/sessions/default/events.ndjson');
+  assert.equal(page.cursor, '4');
+  assert.equal(page.limit, 2);
+  assert.equal(page.nextCursor, '6');
+  assert.equal(Array.isArray(page.events), true);
+  assert.equal((page.events as Array<{ command?: string }>)[0]?.command, 'click');
+}
+
+function assertEventsRpcRequest(
+  eventsRpc: RemoteRpcRequest | undefined,
+  positionals: string[],
+): void {
+  assert.equal(eventsRpc?.method, 'agent_device.command');
+  assert.equal(eventsRpc?.params?.command, 'events');
+  assert.deepEqual(eventsRpc?.params?.positionals, positionals);
+  assert.equal(eventsRpc?.params?.token, 'remote-token');
+}
+
 async function assertRemoteRpcErrorNormalization(client: RemoteClient): Promise<void> {
   await assert.rejects(
     async () => await client.sessions.list(),
@@ -584,6 +651,7 @@ test('Provider-backed integration remote daemon client materializes artifacts an
     await assertInstallUpload(client, paths, rpcRequests, uploadRequests);
     await assertInstallSourceUpload(client, paths, rpcRequests, uploadRequests);
     await assertRecordingArtifactRoundTrip(client, paths, rpcRequests);
+    await assertEventsRpc(client, rpcRequests);
     rejectRpcRequests();
     await assertRemoteRpcErrorNormalization(client);
   } finally {
