@@ -30,19 +30,29 @@ import { btnGhost, mono, seg, segBtnOn, segBtn } from "../lib/ui";
 type AddOption = { label: string; make: () => RecipeStep };
 type AddGroup = { label: string; items: AddOption[] };
 
-/** Shared field chrome for expanded step editors. */
-const valueCls =
-  "h-[30px] min-w-[140px] flex-1 rounded-control border border-border bg-base px-2.5 text-body text-text transition-[border-color] focus:border-border-focus focus:outline-none";
+/** Shared field chrome for expanded step editors — dark instrument. */
+const valueCls = cn(
+  "h-8 min-w-[140px] flex-1 rounded-md border border-white/10 bg-black/35 px-2.5",
+  "text-body text-white/90 transition-[border-color] placeholder:text-white/25",
+  "focus:border-accent/50 focus:outline-none",
+);
 const valueTimeoutCls = cn(valueCls, "w-[72px] min-w-0 flex-none");
-const iconBtnCls =
-  "grid size-[26px] shrink-0 place-items-center rounded-control text-text-faint transition-[background,color,transform] hover:enabled:bg-hover hover:enabled:text-text active:enabled:scale-[0.94] disabled:cursor-default disabled:opacity-35";
+const iconBtnCls = cn(
+  "grid size-7 shrink-0 place-items-center rounded-md text-white/35 transition-[background,color,transform]",
+  "hover:enabled:bg-white/[0.08] hover:enabled:text-white/90",
+  "active:enabled:scale-[0.94] disabled:cursor-default disabled:opacity-30",
+);
 const stepICls =
-  "mono w-[18px] shrink-0 text-right text-xs font-medium tabular-nums text-text-faint";
-const kindCls = "block text-[10.5px] font-semibold uppercase tracking-[0.04em] text-text-faint";
-const menuItemCls =
-  "block w-full rounded-lg px-3 py-2 text-left text-body font-medium text-text transition-colors hover:bg-hover active:scale-[0.99]";
-const moreItemCls =
-  "block w-full rounded-md px-2.5 py-[7px] text-left text-body text-text transition-colors hover:enabled:bg-hover disabled:cursor-default disabled:opacity-40";
+  "font-mono w-5 shrink-0 text-center text-[11px] font-semibold tabular-nums text-white/30";
+const kindCls = "block text-[10px] font-bold uppercase tracking-[0.08em] text-white/30";
+const menuItemCls = cn(
+  "block w-full rounded-md px-3 py-2 text-left text-body font-medium text-white/85",
+  "transition-colors hover:bg-white/[0.06] active:scale-[0.99]",
+);
+const moreItemCls = cn(
+  "block w-full rounded-md px-2.5 py-[7px] text-left text-body text-white/80",
+  "transition-colors hover:enabled:bg-white/[0.06] disabled:cursor-default disabled:opacity-40",
+);
 
 /** Short kind chip — Uber-style “Instruction / Manual” density. */
 function kindLabel(kind: string): string {
@@ -426,35 +436,40 @@ function StepRow(props: {
   return (
     <div
       class={cn(
-        "group relative border-b border-border transition-colors",
-        selected() && "bg-accent/10 shadow-[inset_3px_0_0_0_var(--color-accent)]",
-        !selected() && anno().status === "running" && "bg-run/[0.08]",
-        !selected() && anno().status === "pass" && "bg-pass/[0.06]",
-        !selected() && anno().status === "fail" && "bg-fail/[0.09]",
-        !selected() && anno().status === "idle" && "hover:bg-layer-2/70",
-        // Red only when incomplete AND collapsed — while editing, don't scold.
-        Boolean(issue()) && !props.expanded() && "bg-fail/[0.04]",
-        props.flash() && "bg-accent/25",
+        "group relative border-b border-white/[0.06] transition-colors",
+        selected() && "bg-accent/[0.14] shadow-[inset_3px_0_0_0_var(--color-accent)]",
+        !selected() && anno().status === "running" && "bg-run/[0.1]",
+        !selected() && anno().status === "pass" && "bg-pass/[0.08]",
+        !selected() && anno().status === "fail" && "bg-fail/[0.1]",
+        !selected() && anno().status === "idle" && "hover:bg-white/[0.03]",
+        Boolean(issue()) && !props.expanded() && "bg-fail/[0.06]",
+        props.flash() && "bg-accent/20",
       )}
     >
       <div
-        class="flex min-h-12 cursor-pointer items-center gap-2.5 px-2 py-2 pl-1.5"
+        class="flex min-h-[52px] cursor-pointer items-center gap-3 px-4 py-2.5"
         onClick={(e) => {
-          // The whole row toggles the editor — except clicks meant for the
-          // action buttons / menus.
           if ((e.target as HTMLElement).closest("[data-step-actions], [data-step-more-menu]"))
             return;
           props.onToggleExpand();
         }}
       >
-        <span class={stepICls}>{props.index + 1}</span>
+        <span
+          class={cn(
+            stepICls,
+            "grid size-6 place-items-center rounded-md bg-white/[0.04] text-[11px]",
+            selected() && "bg-accent/20 text-accent-soft",
+          )}
+        >
+          {props.index + 1}
+        </span>
         <button
           type="button"
-          class="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0 border-0 bg-transparent py-0 text-left text-[13.5px] font-medium tracking-[-0.012em] text-text hover:text-text-strong"
+          class="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 border-0 bg-transparent py-0 text-left"
           aria-expanded={props.expanded()}
         >
           <span class={kindCls}>{kindLabel(kind())}</span>
-          <span class="w-full truncate font-medium text-text">
+          <span class="w-full truncate text-[13.5px] font-medium tracking-tight text-white/90">
             {sentenceForStep(props.step(), server.recipes())}
           </span>
         </button>
@@ -560,7 +575,7 @@ function StepRow(props: {
       </Show>
 
       <Show when={props.expanded()}>
-        <div class="mx-1 flex flex-wrap items-center gap-2 border-t border-border px-3 pt-0.5 pb-3 pl-10">
+        <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] bg-black/20 px-4 pt-2.5 pb-3 pl-[3.25rem]">
           {/* tap — detected chain as one-click retargeting when captured */}
           <Show when={kind() === "tap"}>
             {(() => {
@@ -1010,23 +1025,31 @@ export function RecipeStepsEditor(): JSX.Element {
   const isEmpty = () => draft.steps().length === 0;
 
   return (
-    <div class={cn("flex flex-col gap-0.5 pt-1 pb-6", isEmpty() && "pt-0")}>
+    <div class="flex min-h-0 flex-1 flex-col">
       <Show when={isEmpty()}>
         <div class="flex w-full flex-col" role="group" aria-label="Add first step">
           <For each={STARTERS}>
             {(s, i) => (
               <button
                 type="button"
-                class="group flex w-full min-h-14 cursor-pointer items-center gap-3 border-0 border-b border-border bg-transparent px-4 py-2.5 text-left font-[inherit] text-inherit transition-colors hover:bg-accent/[0.08]"
+                class={cn(
+                  "group flex w-full min-h-[52px] cursor-pointer items-center gap-3 border-0 border-b border-white/[0.06]",
+                  "bg-transparent px-4 py-2.5 text-left font-[inherit] text-inherit transition-colors",
+                  "hover:bg-white/[0.03]",
+                )}
                 onClick={() => insertAt(0, s.make())}
               >
-                <span class={cn(stepICls, "opacity-55")}>{i() + 1}</span>
-                <span class="flex min-w-0 flex-1 flex-col items-start gap-0">
+                <span
+                  class={cn(stepICls, "grid size-6 place-items-center rounded-md bg-white/[0.04]")}
+                >
+                  {i() + 1}
+                </span>
+                <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                   <span class={kindCls}>{s.kind}</span>
-                  <span class="truncate font-medium text-text-muted">{s.title}</span>
+                  <span class="truncate text-[13.5px] font-medium text-white/55">{s.title}</span>
                 </span>
                 <span
-                  class="ml-auto grid size-7 shrink-0 place-items-center rounded-lg border border-border bg-layer-2 text-text-faint transition-colors group-hover:border-accent/35 group-hover:text-accent-soft"
+                  class="ml-auto grid size-7 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-white/35 transition-colors group-hover:border-accent/40 group-hover:text-accent-soft"
                   aria-hidden="true"
                 >
                   <Icon name="plus" size={14} />
@@ -1084,14 +1107,13 @@ export function RecipeStepsEditor(): JSX.Element {
         )}
       </Index>
 
-      <div class="relative mt-2 px-4 pt-2.5">
+      <div class="relative mt-auto border-t border-white/[0.06] px-3 py-2.5">
         <button
           type="button"
           class={cn(
             btnGhost,
-            "h-[38px] w-full justify-center rounded-[10px] border border-border font-medium text-text-muted",
-            "hover:border-accent/45 hover:bg-accent/[0.08] hover:text-accent-soft",
-            isEmpty() && "border-dashed",
+            "h-9 w-full justify-center rounded-md border border-white/10 font-medium text-white/45",
+            "hover:border-accent/40 hover:bg-accent/10 hover:text-accent-soft",
           )}
           aria-haspopup="menu"
           aria-expanded={addAt() === draft.steps().length}

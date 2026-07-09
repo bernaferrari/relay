@@ -328,7 +328,7 @@ export function StepsPane() {
         SpaceX header: one switcher · status · primary actions.
         No nag captions. Empty steps are self-explanatory in the body.
       */}
-      <div class="relative z-40 flex min-h-12 shrink-0 items-start gap-3.5 border-b border-border bg-layer-1/90 px-4 py-3 pb-2.5 backdrop-blur-sm">
+      <div class="relative z-40 flex min-h-13 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-[#0e1014]/95 px-4 py-2.5 backdrop-blur-md">
         <div class="min-w-0 flex-1">
           <div class="relative" data-switcher>
             <Show
@@ -337,10 +337,12 @@ export function StepsPane() {
                 <button
                   type="button"
                   class={cn(
-                    "inline-flex h-[34px] max-w-full items-center gap-2 rounded-[10px] border border-border bg-layer-2 py-0 pr-3 pl-3.5 text-sm font-semibold tracking-tight text-text shadow-[0_1px_0_rgb(0_0_0_/0.06)] transition-[border-color,background,box-shadow] hover:border-border-strong",
-                    !selectedRecipe() && "font-medium text-text-faint",
+                    "inline-flex h-8 max-w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.04]",
+                    "py-0 pr-2.5 pl-3 text-[13px] font-semibold tracking-tight text-white/95",
+                    "transition-colors hover:border-white/15 hover:bg-white/[0.07]",
+                    !selectedRecipe() && "font-medium text-white/40",
                     menuOpen() &&
-                      "border-border-focus shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]",
+                      "border-accent/50 shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]",
                   )}
                   aria-haspopup="listbox"
                   aria-expanded={menuOpen()}
@@ -351,7 +353,7 @@ export function StepsPane() {
                     name="chevron-down"
                     size={14}
                     class={cn(
-                      "shrink-0 text-text-faint transition-transform duration-150",
+                      "shrink-0 text-white/35 transition-transform duration-150",
                       menuOpen() && "rotate-180",
                     )}
                   />
@@ -359,7 +361,7 @@ export function StepsPane() {
               }
             >
               <input
-                class="m-0 h-8 max-w-full min-w-40 rounded-lg border border-border-focus bg-base px-2.5 text-sm font-semibold tracking-tight text-text outline-none"
+                class="m-0 h-8 max-w-full min-w-40 rounded-md border border-accent/50 bg-black/40 px-2.5 text-[13px] font-semibold tracking-tight text-white outline-none"
                 value={titleBuf()}
                 ref={(el) =>
                   queueMicrotask(() => {
@@ -470,7 +472,7 @@ export function StepsPane() {
             <div class="mt-1 flex min-h-5 items-center gap-2.5">
               <span
                 class={cn(
-                  "whitespace-nowrap text-[11.5px] font-medium tracking-wide text-text-faint",
+                  "whitespace-nowrap text-[11px] font-medium tracking-wide text-white/35",
                   draft.saveState() === "invalid" &&
                     draft.expandedStep() == null &&
                     "font-semibold text-fail",
@@ -484,7 +486,7 @@ export function StepsPane() {
               <Show when={draft.source() === "custom" && draft.steps().length > 0}>
                 <button
                   type="button"
-                  class="cursor-pointer border-0 bg-transparent p-0 font-inherit text-meta text-text-faint underline underline-offset-2 hover:text-text-muted"
+                  class="cursor-pointer border-0 bg-transparent p-0 font-inherit text-[11px] text-white/30 underline underline-offset-2 hover:text-white/55"
                   onClick={() => startTitleEdit()}
                 >
                   Rename
@@ -493,14 +495,14 @@ export function StepsPane() {
             </div>
           </Show>
           <Show when={selectedRecipe() && (draft.description() || selectedMeta()?.description)}>
-            <p class="mt-1.5 mb-0 max-w-[42em] text-[12.5px] leading-snug text-text-muted">
+            <p class="mt-1 mb-0 max-w-[42em] truncate text-[12px] leading-snug text-white/35">
               {draft.description() || selectedMeta()?.description}
             </p>
           </Show>
         </div>
 
         <div class="flex shrink-0 flex-col items-end gap-1">
-          <div class="flex h-[34px] items-center gap-1 self-end">
+          <div class="flex h-8 items-center gap-1 self-end">
             <Show when={wb.running()}>
               <button type="button" class={btnGhost} onClick={() => wb.stop()}>
                 <Icon name="square" size={11} />
@@ -640,18 +642,16 @@ export function StepsPane() {
 
       <div class="relative z-[1] min-h-0 flex-1 overflow-y-auto">
         <Show when={!selectedRecipe()}>
-          <div class="flex min-h-[280px] flex-1 items-start justify-center px-2 py-14">
-            <div class="max-w-[360px]">
-              <p
-                class={cn(mono, "mb-2.5 text-[10px] font-bold tracking-[0.12em] text-accent-soft")}
-              >
+          <div class="flex min-h-0 flex-1 flex-col items-start justify-center px-8 py-16">
+            <div class="max-w-[340px]">
+              <p class={cn(mono, "mb-3 text-[10px] font-bold tracking-[0.14em] text-accent-soft")}>
                 SPECIMEN
               </p>
-              <p class="mb-2 text-xl font-semibold tracking-tight text-text leading-tight">
+              <p class="mb-2 text-[22px] font-semibold tracking-tight text-white/95 leading-tight">
                 Mobile tests, step by step
               </p>
-              <p class="mb-5 text-[13px] leading-normal text-text-muted">
-                Pick a test or create one. Connect a phone, hit Run — screenshots land on Canvas.
+              <p class="mb-6 text-[13px] leading-relaxed text-white/40">
+                Pick a test or create one. Connect a phone, hit Run — screenshots land on the board.
               </p>
               <div class="flex flex-wrap gap-2">
                 <button type="button" class={btnAcc} onClick={() => void createNewTest()}>
@@ -761,37 +761,36 @@ export function StepsPane() {
 
           {/* Packaged plan (builtin or forked thin flow) — human titles, never a lone FLOW row. */}
           <Show when={showPackagedPlan()}>
-            <div class="mt-1 flex flex-col" aria-label="Steps">
+            <div class="flex flex-col" aria-label="Steps">
               <For each={plannedSteps()}>
                 {(p, i) => {
                   const anno = () => wb.rowAnno(i());
                   const st = () => anno().status;
+                  const on = () => wb.focusedIndex() === i();
                   return (
                     <button
                       type="button"
                       class={cn(
-                        "flex w-full min-h-[52px] items-center gap-3 border-b border-border px-4 text-left text-inherit hover:bg-hover",
-                        wb.focusedIndex() === i()
-                          ? "border-l-2 border-l-accent bg-accent/10"
-                          : st() === "running"
-                            ? "bg-run/10"
-                            : st() === "pass"
-                              ? "bg-pass/10"
-                              : st() === "fail"
-                                ? "bg-fail/10"
-                                : undefined,
+                        "flex w-full min-h-[52px] items-center gap-3 border-b border-white/[0.06] px-4 text-left transition-colors",
+                        on()
+                          ? "bg-accent/[0.14] shadow-[inset_3px_0_0_0_var(--color-accent)]"
+                          : "hover:bg-white/[0.03]",
+                        !on() && st() === "running" && "bg-run/10",
+                        !on() && st() === "pass" && "bg-pass/10",
+                        !on() && st() === "fail" && "bg-fail/10",
                       )}
                       onClick={() => wb.focusStep(i())}
                     >
                       <span
                         class={cn(
                           mono,
-                          "grid size-[22px] shrink-0 place-items-center rounded-md border border-border bg-layer-1 text-[11px] font-semibold text-text-muted tabular-nums",
+                          "grid size-6 shrink-0 place-items-center rounded-md bg-white/[0.04] text-[11px] font-semibold text-white/30",
+                          on() && "bg-accent/20 text-accent-soft",
                         )}
                       >
                         {i() + 1}
                       </span>
-                      <span class="min-w-0 flex-1 text-[13.5px] font-medium tracking-tight text-text">
+                      <span class="min-w-0 flex-1 text-[13.5px] font-medium tracking-tight text-white/90">
                         {p.title}
                       </span>
                       <StepAnno anno={anno} />

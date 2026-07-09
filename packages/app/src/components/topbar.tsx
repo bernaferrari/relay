@@ -43,19 +43,19 @@ export function Topbar(props: { onSettings: () => void }) {
   return (
     <header
       class={cn(
-        "desktop-titlebar-drag z-40 flex h-[46px] shrink-0 flex-row items-center gap-2",
-        "border-b border-border bg-deep/90 px-3 pl-[var(--traffic-pad,12px)]",
-        "backdrop-blur-md backdrop-saturate-150",
+        "desktop-titlebar-drag z-40 flex h-12 shrink-0 flex-row items-center gap-2",
+        "border-b border-white/[0.07] bg-[#0b0c10]/95 px-3 pl-[var(--traffic-pad,12px)]",
+        "text-white/90 backdrop-blur-md backdrop-saturate-150",
       )}
     >
-      <div class="desktop-titlebar-no-drag mr-1.5 flex h-[30px] items-center gap-2.5 border-r border-border pr-3">
+      <div class="desktop-titlebar-no-drag mr-1.5 flex h-[30px] items-center gap-2.5 border-r border-white/10 pr-3">
         <span
-          class="grid size-[22px] place-items-center rounded-[7px] bg-accent/15 text-accent-soft"
+          class="grid size-[22px] place-items-center rounded-[7px] bg-accent/20 text-accent-soft"
           aria-hidden="true"
         >
           <Icon name="smartphone" size={12} strokeWidth={2} />
         </span>
-        <span class="text-[13.5px] font-semibold tracking-tight text-text">Specimen</span>
+        <span class="text-[13.5px] font-semibold tracking-tight text-white/95">Specimen</span>
       </div>
 
       <div
@@ -71,10 +71,10 @@ export function Topbar(props: { onSettings: () => void }) {
         <button
           type="button"
           class={cn(
-            "inline-flex h-7 items-center gap-2 rounded-control border border-border bg-layer-1",
-            "px-2 pl-2.5 text-body font-medium text-text transition-colors",
-            "hover:border-border-strong hover:bg-layer-2",
-            pickEmpty() && "text-text-faint",
+            "inline-flex h-7 items-center gap-2 rounded-md border border-white/10 bg-white/[0.04]",
+            "px-2 pl-2.5 text-body font-medium text-white/85 transition-colors",
+            "hover:border-white/15 hover:bg-white/[0.07]",
+            pickEmpty() && "text-white/40",
           )}
           aria-haspopup="listbox"
           aria-expanded={deviceOpen()}

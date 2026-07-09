@@ -5,19 +5,15 @@ import { FrameCanvas } from "./frame-canvas";
 import { StepsPane } from "./run-panel";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
+import { borderSubtle, surfaceDeep, surfacePanel } from "../lib/ui";
 
 /**
- * Figma-style workbench:
- *   left  = the artboard (phone) — freeform board only when expanded with frames
- *   right = the structure (steps)
- *
- * No peer Device/Canvas tabs. Empty canvas is not a destination.
+ * Dense instrument shell: dark artboard + dark steps column, full height.
  */
 export function Workspace() {
   const server = useServer();
   const [boardOpen, setBoardOpen] = createSignal(false);
 
-  // Collapse board when captures disappear.
   createEffect(() => {
     if (server.frames().length === 0) setBoardOpen(false);
   });
@@ -29,20 +25,19 @@ export function Workspace() {
       <div
         class={cn(
           "relative grid min-h-0 w-full min-w-0 flex-1 grid-rows-[minmax(0,1fr)]",
-          "bg-[radial-gradient(ellipse_80%_60%_at_50%_42%,color-mix(in_srgb,var(--color-accent)_6%,transparent),transparent_55%),var(--color-deep)]",
+          surfaceDeep,
           noDevice()
-            ? "grid-cols-[minmax(320px,40%)_minmax(0,1fr)]"
+            ? "grid-cols-[minmax(340px,42%)_minmax(0,1fr)]"
             : boardOpen()
-              ? "grid-cols-[minmax(440px,54%)_minmax(0,1fr)]"
-              : "grid-cols-[minmax(380px,46%)_minmax(0,1fr)]",
+              ? "grid-cols-[minmax(440px,52%)_minmax(0,1fr)]"
+              : "grid-cols-[minmax(360px,44%)_minmax(0,1fr)]",
         )}
       >
-        {/* Left: phone artboard */}
         <div
           class={cn(
-            "flex h-full min-h-0 min-w-0 flex-col border-r border-border",
-            "bg-[radial-gradient(ellipse_80%_60%_at_50%_42%,color-mix(in_srgb,var(--color-accent)_6%,transparent),transparent_55%),#d8dbe3]",
-            "dark:bg-[radial-gradient(ellipse_80%_60%_at_50%_42%,color-mix(in_srgb,var(--color-accent)_8%,transparent),transparent_55%),var(--color-deep)]",
+            "relative flex h-full min-h-0 min-w-0 flex-col border-r",
+            borderSubtle,
+            "bg-[radial-gradient(ellipse_70%_55%_at_50%_40%,color-mix(in_srgb,var(--color-accent)_12%,transparent),transparent_60%),#0a0b0f]",
           )}
         >
           <div class="flex h-full min-h-0 flex-1 flex-col">
@@ -54,9 +49,8 @@ export function Workspace() {
             </Show>
           </div>
         </div>
-        {/* Right: steps */}
         <section
-          class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-layer-1"
+          class={cn("flex h-full min-h-0 min-w-0 flex-col overflow-hidden", surfacePanel)}
           aria-label="Test editor"
         >
           <StepsPane />

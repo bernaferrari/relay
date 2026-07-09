@@ -383,9 +383,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
       ref={stageEl}
       aria-label="Device stage"
       class={cn(
-        "relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-7",
-        "bg-[radial-gradient(ellipse_80%_60%_at_50%_42%,color-mix(in_srgb,var(--color-accent)_8%,transparent),transparent_55%),radial-gradient(ellipse_100%_80%_at_50%_100%,rgb(0_0_0/0.2),transparent_50%),var(--color-deep)]",
-        "dark:bg-[radial-gradient(ellipse_80%_60%_at_50%_42%,color-mix(in_srgb,var(--color-accent)_8%,transparent),transparent_55%),var(--color-deep)]",
+        "relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-8",
         server.isOffline() && "opacity-55",
       )}
     >
