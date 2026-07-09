@@ -1,8 +1,9 @@
-import type { SnapshotNode } from '../../../kernel/snapshot.ts';
+import type { Point, SnapshotNode } from '../../../kernel/snapshot.ts';
 import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
 import { isSparseSnapshotQualityVerdict } from '../../../snapshot/snapshot-quality.ts';
 import { buildSnapshotDiff } from '../../../snapshot/snapshot-diff.ts';
 import { displayLabel, formatRole } from '../../../snapshot/snapshot-lines.ts';
+import { normalizeType } from '../../../utils/text-surface.ts';
 import { summarizeAxEvidence } from '../../../utils/ax-digest.ts';
 import type {
   InteractionEvidence,
@@ -94,7 +95,11 @@ export async function settleAfterInteraction(
         // observation, so surfacing refs would invite agents to act on
         // advisory state.
         ...(outcome.settled && stored
-          ? buildSettleDiffAndTail(resolveBaselineNodes(params.resolved), settledNodes)
+          ? buildSettleDiffAndTail(
+              resolveBaselineNodes(params.resolved),
+              settledNodes,
+              params.resolved.point,
+            )
           : {}),
         ...resolveSettleHint(outcome, stored, settledNodes.length),
       },
@@ -142,8 +147,8 @@ function buildSettleDiff(
   // snapshot), extra baseline-only lines surface as removals — advisory noise,
   // the same baseline caveat --verify's changedFromBefore already accepts.
   const diff = buildSnapshotDiff(
-    withoutKeyboardKeys(baselineNodes),
-    withoutKeyboardKeys(settledNodes),
+    withoutKeyboardChrome(baselineNodes),
+    withoutKeyboardChrome(settledNodes),
     { flatten: true, withRefs: true },
   );
   const changed = diff.lines.filter((line) => line.kind !== 'unchanged');
@@ -162,45 +167,96 @@ function buildSettleDiff(
 function buildSettleDiffAndTail(
   baselineNodes: SnapshotNode[],
   settledNodes: SnapshotNode[],
+  actionPoint: Point | undefined,
 ): Pick<SettleObservation, 'diff' | 'tail' | 'tailTruncated'> {
   const diff = buildSettleDiff(baselineNodes, settledNodes);
-  return { diff, ...buildSettleTail(diff, settledNodes) };
+  return { diff, ...buildSettleTail(diff, settledNodes, actionPoint) };
 }
 
 /**
  * Unchanged interactive refs tail: attached ONLY when the settled diff carries
- * zero added-line refs (a modal-dismiss/toast-only diff shows removals but
- * nothing added, so the next actionable target is otherwise invisible). Every
- * hittable, uncovered element on the settled tree is a candidate; refs already
- * present on the diff's added lines are excluded so the tail never repeats
- * what the diff already handed the caller.
+ * zero MEANINGFUL added-line refs (a modal-dismiss/toast-only diff shows
+ * removals but nothing added, so the next actionable target is otherwise
+ * invisible). "Meaningful" excludes two ref classes that are provably not a
+ * NEW target (live-verified on the July 2026 React Navigation benchmark flow):
+ *
+ * - Keyboard chrome refs: a fill that summons the keyboard adds the keyboard
+ *   container line, but that is not a next target the caller asked for.
+ * - Self-echo refs: added lines whose settled node's rect contains the action
+ *   point are re-descriptions of the element the caller JUST acted on (a
+ *   filled field re-labels itself with its new value, and its ancestor
+ *   wrappers inherit that label), not something new to press next.
+ *
+ * Refs already present on the diff's added lines (meaningful or not) are also
+ * excluded from the tail itself so it never repeats what the diff already
+ * handed the caller.
  */
 function buildSettleTail(
   diff: NonNullable<SettleObservation['diff']>,
   settledNodes: SnapshotNode[],
+  actionPoint: Point | undefined,
 ): Pick<SettleObservation, 'tail' | 'tailTruncated'> {
   const addedRefs = new Set(
     diff.lines.filter((line) => line.kind === 'added' && line.ref).map((line) => line.ref),
   );
-  if (addedRefs.size > 0) return {};
+  const keyboardChromeRefs = collectKeyboardChromeRefs(settledNodes);
+  const byRef = new Map(settledNodes.filter((node) => node.ref).map((node) => [node.ref, node]));
+  const hasMeaningfulAddedRef = [...addedRefs].some(
+    (ref) =>
+      ref !== undefined &&
+      !keyboardChromeRefs.has(ref) &&
+      !isSelfEchoNode(byRef.get(ref), actionPoint),
+  );
+  if (hasMeaningfulAddedRef) return {};
   return buildSettleTailEntries(settledNodes, addedRefs);
 }
+
+function isSelfEchoNode(node: SnapshotNode | undefined, actionPoint: Point | undefined): boolean {
+  if (!node?.rect || !actionPoint) return false;
+  const { x, y, width, height } = node.rect;
+  return (
+    actionPoint.x >= x &&
+    actionPoint.x <= x + width &&
+    actionPoint.y >= y &&
+    actionPoint.y <= y + height
+  );
+}
+
+// Structural container roles that survive an interactive-only capture (as a
+// lone root or alongside real content) but are never a next actionable
+// target: application/window chrome, not a control. `snapshot -i` itself
+// still lists these lines, but the tail exists specifically to name pressable
+// targets, so it drops them rather than spend budget on chrome.
+const STRUCTURAL_TAIL_ROLES = new Set(['application', 'window']);
 
 /**
  * The filtering/cap step behind `buildSettleTail`, split out so the dedup
  * rule (excludeRefs) is unit-testable independent of the trigger condition
  * above.
+ *
+ * Inclusion bar matches what `snapshot -i` itself would show for the same
+ * interactive-only capture: presence in `settledNodes` (already filtered to
+ * interactive content upstream) IS the interactivity bar, so this does NOT
+ * additionally require `hittable === true`. A real dismiss-animation capture
+ * routinely reports transient buttons as `hittable: false`/`undefined` right
+ * after the dismissing element leaves — requiring `hittable === true` here
+ * was stricter than `snapshot -i`'s own bar and silently dropped exactly the
+ * buttons the tail exists to surface (#1167 post-merge benchmark). Structural
+ * application/window chrome and any keyboard container/chrome subtree are
+ * excluded on top of that bar: never a next actionable target either way.
  */
 export function buildSettleTailEntries(
   settledNodes: SnapshotNode[],
   excludeRefs: ReadonlySet<string | undefined>,
 ): Pick<SettleObservation, 'tail' | 'tailTruncated'> {
+  const keyboardChromeRefs = collectKeyboardChromeRefs(settledNodes);
   const candidates = settledNodes.filter(
     (node) =>
       node.ref &&
-      node.hittable === true &&
       node.interactionBlocked !== 'covered' &&
-      !excludeRefs.has(node.ref),
+      !excludeRefs.has(node.ref) &&
+      !keyboardChromeRefs.has(node.ref) &&
+      !STRUCTURAL_TAIL_ROLES.has(formatRole(node.type ?? 'Element')),
   );
   if (candidates.length === 0) return {};
   const tail: SettleTailEntry[] = candidates.slice(0, MAX_SETTLE_TAIL_ENTRIES).map((node) => {
@@ -214,12 +270,148 @@ export function buildSettleTailEntries(
   };
 }
 
-// The iOS QWERTY keyboard is ~50 Key nodes; a fill that summons it would spend
-// most of the capped line budget spelling out the keyboard instead of the
-// content change the agent actually asked to observe. The Keyboard container
-// node stays, so "keyboard appeared/left" remains one visible diff line.
-function withoutKeyboardKeys(nodes: SnapshotNode[]): SnapshotNode[] {
-  return nodes.filter((node) => node.type !== 'Key');
+// Editable text roles (normalized `node.type` vocabulary) used by the
+// keyboard-window guard below.
+const EDITABLE_TEXT_TYPES = new Set([
+  'textfield',
+  'securetextfield',
+  'textview',
+  'textarea',
+  'searchfield',
+  'edittext',
+]);
+
+/**
+ * Keyboard chrome classification, live-verified against the iPhone 17 Pro
+ * simulator (iOS 26, July 2026): the software keyboard renders in its OWN
+ * dedicated window (UIRemoteKeyboardWindow). That window contains the
+ * `[Keyboard]` container (keys plus real XCUIElementTypeButton chrome like
+ * shift/Emoji/return) AND a SIBLING subtree holding the "Next keyboard" and
+ * "Dictate" buttons — siblings of the container, so a container-descendant
+ * walk alone provably misses them. The rule is therefore: every node inside
+ * a window that has a `[Keyboard]` descendant is keyboard chrome.
+ *
+ * Detection stays structural (`parentIndex` chains), never label-based:
+ * keyboard chrome text is locale-dependent (the verified capture had Polish
+ * key labels) and a label list would silently stop matching under a
+ * different input language.
+ *
+ * Conservative guard: a window that also hosts an editable text node OUTSIDE
+ * the keyboard container is never window-classified — iOS hosts
+ * inputAccessoryView content (e.g. a messaging composer) in the keyboard
+ * window, and hiding the field the user is typing into would be worse than
+ * leaking chrome. Such windows fall back to the container-descendant walk.
+ */
+type KeyboardChrome = {
+  /** Chrome node indexes EXCLUDING the containers: stripped from the diff. */
+  strippedIndexes: ReadonlySet<number>;
+  /** Refs of ALL chrome incl. containers/window: trigger + tail exclusion. */
+  refs: ReadonlySet<string>;
+};
+
+const EMPTY_KEYBOARD_CHROME: KeyboardChrome = { strippedIndexes: new Set(), refs: new Set() };
+
+function collectKeyboardChrome(nodes: SnapshotNode[]): KeyboardChrome {
+  const containerIndexes = new Set(
+    nodes.filter((node) => normalizeType(node.type ?? '') === 'keyboard').map((node) => node.index),
+  );
+  if (containerIndexes.size === 0) return EMPTY_KEYBOARD_CHROME;
+  const byIndex = new Map(nodes.map((node) => [node.index, node]));
+  const chromeIndexes = collectSubtreeIndexes(nodes, byIndex, containerIndexes);
+  const windowIndexes = resolveKeyboardWindowIndexes(nodes, byIndex, chromeIndexes);
+  for (const index of collectSubtreeIndexes(nodes, byIndex, windowIndexes)) {
+    chromeIndexes.add(index);
+  }
+  const refs = new Set(
+    nodes.filter((node) => node.ref && chromeIndexes.has(node.index)).map((node) => node.ref),
+  );
+  // The [Keyboard] container line itself survives the diff so "keyboard
+  // appeared/left" stays one visible signal line; everything else collapses.
+  const strippedIndexes = new Set(
+    [...chromeIndexes].filter((index) => !containerIndexes.has(index)),
+  );
+  return { strippedIndexes, refs };
+}
+
+/** The root indexes plus every node whose parent chain passes through one. */
+function collectSubtreeIndexes(
+  nodes: SnapshotNode[],
+  byIndex: Map<number, SnapshotNode>,
+  rootIndexes: ReadonlySet<number>,
+): Set<number> {
+  const indexes = new Set(rootIndexes);
+  if (rootIndexes.size === 0) return indexes;
+  for (const node of nodes) {
+    if (hasAncestorIn(node, byIndex, rootIndexes)) indexes.add(node.index);
+  }
+  return indexes;
+}
+
+function withoutKeyboardChrome(nodes: SnapshotNode[]): SnapshotNode[] {
+  const { strippedIndexes } = collectKeyboardChrome(nodes);
+  if (strippedIndexes.size === 0) return nodes;
+  return nodes.filter((node) => !strippedIndexes.has(node.index));
+}
+
+function collectKeyboardChromeRefs(nodes: SnapshotNode[]): ReadonlySet<string> {
+  return collectKeyboardChrome(nodes).refs;
+}
+
+/**
+ * Windows eligible for whole-window chrome classification: nearest `[window]`
+ * ancestor of each `[Keyboard]` container, minus windows hosting editable
+ * text outside the container subtree (the inputAccessoryView guard above).
+ */
+function resolveKeyboardWindowIndexes(
+  nodes: SnapshotNode[],
+  byIndex: Map<number, SnapshotNode>,
+  containerChromeIndexes: ReadonlySet<number>,
+): Set<number> {
+  const windowIndexes = new Set<number>();
+  for (const index of containerChromeIndexes) {
+    const node = byIndex.get(index);
+    if (!node || normalizeType(node.type ?? '') !== 'keyboard') continue;
+    const windowAncestor = findNearestWindowAncestor(node, byIndex);
+    if (windowAncestor !== undefined) windowIndexes.add(windowAncestor);
+  }
+  for (const windowIndex of windowIndexes) {
+    const windowSet = new Set([windowIndex]);
+    const hostsEditableText = nodes.some(
+      (node) =>
+        EDITABLE_TEXT_TYPES.has(normalizeType(node.type ?? '')) &&
+        !containerChromeIndexes.has(node.index) &&
+        hasAncestorIn(node, byIndex, windowSet),
+    );
+    if (hostsEditableText) windowIndexes.delete(windowIndex);
+  }
+  return windowIndexes;
+}
+
+function findNearestWindowAncestor(
+  node: SnapshotNode,
+  byIndex: Map<number, SnapshotNode>,
+): number | undefined {
+  let current = typeof node.parentIndex === 'number' ? byIndex.get(node.parentIndex) : undefined;
+  while (current) {
+    if (normalizeType(current.type ?? '') === 'window') return current.index;
+    current =
+      typeof current.parentIndex === 'number' ? byIndex.get(current.parentIndex) : undefined;
+  }
+  return undefined;
+}
+
+function hasAncestorIn(
+  node: SnapshotNode,
+  byIndex: Map<number, SnapshotNode>,
+  ancestorIndexes: ReadonlySet<number>,
+): boolean {
+  let current = typeof node.parentIndex === 'number' ? byIndex.get(node.parentIndex) : undefined;
+  while (current) {
+    if (ancestorIndexes.has(current.index)) return true;
+    current =
+      typeof current.parentIndex === 'number' ? byIndex.get(current.parentIndex) : undefined;
+  }
+  return false;
 }
 
 /**
