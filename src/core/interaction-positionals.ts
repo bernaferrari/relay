@@ -1,5 +1,11 @@
 import { AppError } from '../kernel/errors.ts';
-import { isSelectorToken, splitSelectorFromArgs } from '../utils/selectors-parse.ts';
+import {
+  detectUnknownSelectorKeyToken,
+  isRoleHintWord,
+  isSelectorToken,
+  SELECTOR_KEY_NAMES,
+  splitSelectorFromArgs,
+} from '../utils/selectors-parse.ts';
 
 type PositionalInteractionTarget =
   | { x: number; y: number }
@@ -75,10 +81,40 @@ export function readFillTargetFromPositionals(positionals: string[]): DecodedFil
 }
 
 function readPointTarget(positionals: string[]): { x: number; y: number } {
+  const firstPositional = positionals[0] ?? '';
+  const unknownKey = detectUnknownSelectorKeyToken(firstPositional);
+  if (unknownKey) {
+    // An unquoted multi-word value arrives split across positionals (button=Push Article), so
+    // fold the trailing tokens back into the suggested value like mergeRestIntoSelectorValue.
+    // A fully quoted value (button="Push Article") is complete; trailing tokens are not part of it.
+    const value = hasCompleteQuotedValue(firstPositional)
+      ? unknownKey.value
+      : [unknownKey.value, ...positionals.slice(1)].join(' ').trim();
+    throw new AppError(
+      'INVALID_ARGS',
+      formatUnknownSelectorKeyFailure({ key: unknownKey.key, value }),
+    );
+  }
   const x = Number(positionals[0]);
   const y = Number(positionals[1]);
   if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
   throw new AppError('INVALID_ARGS', formatTargetParseFailure(positionals));
+}
+
+function hasCompleteQuotedValue(token: string): boolean {
+  const valueRaw = token.slice(token.indexOf('=') + 1).trim();
+  if (valueRaw.length < 2) return false;
+  const first = valueRaw[0];
+  return (first === '"' || first === "'") && valueRaw.endsWith(first);
+}
+
+function formatUnknownSelectorKeyFailure(unknownKey: { key: string; value: string }): string {
+  const { key, value } = unknownKey;
+  const supported = SELECTOR_KEY_NAMES.join(', ');
+  const hint = isRoleHintWord(key)
+    ? `Did you mean role=${key} label=${quoteSelectorValue(value)}?`
+    : `Did you mean label=${quoteSelectorValue(value)}?`;
+  return `Unknown selector key "${key}". Supported: ${supported}. ${hint}`;
 }
 
 function formatTargetParseFailure(positionals: string[]): string {

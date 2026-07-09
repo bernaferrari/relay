@@ -50,6 +50,69 @@ const BOOLEAN_KEYS = new Set<SelectorKey>([
   'hittable',
 ]);
 const ALL_KEYS = new Set<SelectorKey>([...TEXT_KEYS, ...BOOLEAN_KEYS]);
+
+/** Selector key names accepted on the left of `key=value`, for error messages. */
+export const SELECTOR_KEY_NAMES: readonly SelectorKey[] = [...ALL_KEYS];
+
+// Role/element-type words that show up as accessibility roles, not selector keys (e.g. the
+// `button` in `button="Push Article"`). Superset of the ROLE_LABELS vocabulary in
+// src/snapshot/snapshot-lines.ts (plus a few common role words like list/tab/alert/dialog/header,
+// minus valid selector keys such as `text`, which ALL_KEYS short-circuits before this set is
+// consulted), kept as a local copy to avoid a utils/ -> snapshot/ layering dependency
+// (scripts/layering/check.ts). Drifts silently if ROLE_LABELS grows; that's fine here since this
+// is only used to sharpen a hint, not to validate anything.
+const ROLE_HINT_WORDS = new Set([
+  'button',
+  'imagebutton',
+  'link',
+  'cell',
+  'statictext',
+  'checkedtextview',
+  'textfield',
+  'textbox',
+  'edittext',
+  'textarea',
+  'switch',
+  'slider',
+  'image',
+  'imageview',
+  'webview',
+  'framelayout',
+  'linearlayout',
+  'relativelayout',
+  'constraintlayout',
+  'viewgroup',
+  'view',
+  'listview',
+  'recyclerview',
+  'collectionview',
+  'list',
+  'searchfield',
+  'segmentedcontrol',
+  'group',
+  'window',
+  'checkbox',
+  'radio',
+  'menuitem',
+  'toolbar',
+  'scrollarea',
+  'scrollview',
+  'nestedscrollview',
+  'table',
+  'application',
+  'navigationbar',
+  'tabbar',
+  'tab',
+  'alert',
+  'dialog',
+  'header',
+]);
+
+/** Whether `key` looks like an accessibility role word rather than a selector key. */
+export function isRoleHintWord(key: string): boolean {
+  return ROLE_HINT_WORDS.has(key.trim().toLowerCase());
+}
+
 const SIMPLE_ESCAPE_REPLACEMENTS = new Map<string, string>([
   ['"', '"'],
   ["'", "'"],
@@ -95,6 +158,29 @@ export function isSelectorToken(token: string): boolean {
     return ALL_KEYS.has(key);
   }
   return ALL_KEYS.has(trimmed.toLowerCase() as SelectorKey);
+}
+
+/**
+ * Detects a `key=value` token whose key is not a recognized selector key, e.g.
+ * `button="Push Article"`. Returns the lowercased key and unquoted value so callers can build a
+ * targeted "did you mean role=/label=" hint instead of treating the whole token as free text.
+ * Returns null for tokens without an `=`, an empty key, an empty or whitespace-only value, or a
+ * recognized key.
+ */
+export function detectUnknownSelectorKeyToken(
+  token: string,
+): { key: string; value: string } | null {
+  const trimmed = token.trim();
+  const equalsIdx = trimmed.indexOf('=');
+  if (equalsIdx === -1) return null;
+  const key = trimmed.slice(0, equalsIdx).trim().toLowerCase();
+  if (!key) return null;
+  if (ALL_KEYS.has(key as SelectorKey)) return null;
+  const valueRaw = trimmed.slice(equalsIdx + 1).trim();
+  if (!valueRaw) return null;
+  const value = unquote(valueRaw).trim();
+  if (!value) return null;
+  return { key, value };
 }
 
 export function splitSelectorFromArgs(
