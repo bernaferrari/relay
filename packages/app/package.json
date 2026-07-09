@@ -11,7 +11,8 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/lib/step-sentence.test.ts src/lib/run-gates.test.ts"
   },
   "dependencies": {
     "@grok-device/ui": "workspace:*",

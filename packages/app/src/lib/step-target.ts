@@ -9,10 +9,10 @@ import type { StepTarget } from "./api-types";
 export type Strategy = "ref" | "label" | "text" | "point";
 
 export const STRATEGIES: { id: Strategy; label: string; placeholder: string }[] = [
-  { id: "ref", label: "Element @ref", placeholder: "@e26" },
-  { id: "label", label: "Label", placeholder: "Sign in" },
-  { id: "text", label: "Text", placeholder: "Welcome back" },
-  { id: "point", label: "Point", placeholder: "x, y" },
+  { id: "ref", label: "Element @ref", placeholder: "e.g. @e26" },
+  { id: "label", label: "Label", placeholder: "e.g. Sign in" },
+  { id: "text", label: "Text", placeholder: "e.g. Welcome back" },
+  { id: "point", label: "Point", placeholder: "e.g. 540, 1200" },
 ];
 
 export function defaultStrategy(t: StepTarget | undefined): Strategy {

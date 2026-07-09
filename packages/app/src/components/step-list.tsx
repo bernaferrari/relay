@@ -12,6 +12,7 @@ import {
 import { useServer, type RecipeStep, type StepTarget } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useWorkbench, type RowAnno } from "../context/workbench";
+// useWorkbench used in RecipeStepsEditor for step↔frame focus
 import { sentenceForStep, stepIssue } from "../lib/step-sentence";
 import { fmtMs, titleize } from "../lib/job";
 import {
@@ -26,6 +27,36 @@ import { Icon } from "./icon";
 
 type AddOption = { label: string; make: () => RecipeStep };
 type AddGroup = { label: string; items: AddOption[] };
+
+/** Short kind chip — Uber-style “Instruction / Manual” density. */
+function kindLabel(kind: string): string {
+  switch (kind) {
+    case "tap":
+      return "Tap";
+    case "type":
+      return "Type";
+    case "expect":
+      return "Check";
+    case "wait-for":
+      return "Wait";
+    case "sleep":
+      return "Sleep";
+    case "pause":
+      return "Pause";
+    case "key":
+      return "Key";
+    case "scroll":
+      return "Scroll";
+    case "swipe":
+      return "Swipe";
+    case "screenshot":
+      return "Shot";
+    case "flow":
+      return "Flow";
+    default:
+      return kind;
+  }
+}
 
 /** Add-step menu, grouped Act / Check / More. Swipe is deliberately absent —
  *  authoring meaningful from/to coordinates by hand isn't worth the UI; swipe
@@ -149,22 +180,23 @@ function AddMenu(props: { onPick: (step: RecipeStep) => void; onClose: () => voi
     const onDoc = (e: MouseEvent) => {
       if (ref && !ref.contains(e.target as Node)) props.onClose();
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        props.onClose();
+      }
+    };
     document.addEventListener("mousedown", onDoc);
-    onCleanup(() => document.removeEventListener("mousedown", onDoc));
+    window.addEventListener("keydown", onKey);
+    // Focus first item so keyboard users land in the menu.
+    queueMicrotask(() => ref?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus());
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+    });
   });
   return (
-    <div
-      class="recipe-editor__add-menu"
-      role="menu"
-      aria-label="Add step"
-      ref={ref}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          props.onClose();
-        }
-      }}
-    >
+    <div class="recipe-editor__add-menu" role="menu" aria-label="Add step" ref={ref}>
       <For each={ADD_GROUPS}>
         {(g) => (
           <div class="recipe-editor__add-group">
@@ -222,31 +254,31 @@ function InsertGap(props: {
  */
 export function StepAnno(props: { anno: Accessor<RowAnno> }): JSX.Element {
   const dur = () => fmtMs(props.anno().durationMs);
+  // Idle dots are pure noise — only render when a run left a mark.
   return (
-    <span class="sanno" aria-hidden="true">
-      <Show when={props.anno().status === "idle"}>
-        <span class="sanno__dot" />
-      </Show>
-      <Show when={props.anno().status === "running"}>
-        <span class="sanno__dot sanno__dot--run" />
-      </Show>
-      <Show when={props.anno().status === "pass"}>
-        <span class="sanno__mark sanno__mark--pass">
-          <Icon name="check" size={13} />
-        </span>
-        <Show when={dur()}>
-          <span class="sanno__dur">{dur()}</span>
+    <Show when={props.anno().status !== "idle"}>
+      <span class="sanno" aria-hidden="true">
+        <Show when={props.anno().status === "running"}>
+          <span class="sanno__dot sanno__dot--run" />
         </Show>
-      </Show>
-      <Show when={props.anno().status === "fail"}>
-        <span class="sanno__mark sanno__mark--fail">
-          <Icon name="x" size={13} />
-        </span>
-        <Show when={dur()}>
-          <span class="sanno__dur">{dur()}</span>
+        <Show when={props.anno().status === "pass"}>
+          <span class="sanno__mark sanno__mark--pass">
+            <Icon name="check" size={13} />
+          </span>
+          <Show when={dur()}>
+            <span class="sanno__dur">{dur()}</span>
+          </Show>
         </Show>
-      </Show>
-    </span>
+        <Show when={props.anno().status === "fail"}>
+          <span class="sanno__mark sanno__mark--fail">
+            <Icon name="x" size={13} />
+          </span>
+          <Show when={dur()}>
+            <span class="sanno__dur">{dur()}</span>
+          </Show>
+        </Show>
+      </span>
+    </Show>
   );
 }
 
@@ -266,13 +298,30 @@ function StepRow(props: {
 }): JSX.Element {
   const server = useServer();
   const wb = useWorkbench();
+  const focused = () => wb.focusedIndex() === props.index;
   const initialStep = props.step();
   const [strategy, setStrategy] = createSignal<Strategy>(
     isTargetKind(initialStep) ? defaultStrategy(initialStep.target) : "label",
   );
-  const [confirmDel, setConfirmDel] = createSignal(false);
-  let delTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(delTimer));
+  const [moreOpen, setMoreOpen] = createSignal(false);
+  onMount(() => {
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.(".recipe-editor__more")) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && moreOpen()) {
+        e.stopPropagation();
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+    });
+  });
 
   const kind = () => props.step().kind;
   const issue = () => stepIssue(props.step());
@@ -324,13 +373,7 @@ function StepRow(props: {
     (wb.autoContinue() ? "Run from this step (Auto-continue is on)" : "Run this step");
 
   function armDelete(): void {
-    if (confirmDel()) {
-      clearTimeout(delTimer);
-      props.onRemove();
-      return;
-    }
-    setConfirmDel(true);
-    delTimer = setTimeout(() => setConfirmDel(false), 3000);
+    props.onRemove();
   }
 
   return (
@@ -338,26 +381,32 @@ function StepRow(props: {
       class="recipe-editor__step"
       classList={{
         "recipe-editor__step--open": props.expanded(),
-        "recipe-editor__step--err": Boolean(issue()),
+        "recipe-editor__step--on": focused(),
+        // Red only when incomplete AND collapsed — while editing, don't scold.
+        "recipe-editor__step--err": Boolean(issue()) && !props.expanded(),
         "recipe-editor__step--flash": props.flash(),
+        "recipe-editor__step--run": anno().status === "running",
+        "recipe-editor__step--pass": anno().status === "pass",
+        "recipe-editor__step--fail": anno().status === "fail",
       }}
     >
       <div
         class="recipe-editor__row"
         onClick={(e) => {
           // The whole row toggles the editor — except clicks meant for the
-          // action buttons (they live in .recipe-editor__row-actions).
-          if ((e.target as HTMLElement).closest(".recipe-editor__row-actions")) return;
+          // action buttons / menus (they live in .recipe-editor__row-actions).
+          if (
+            (e.target as HTMLElement).closest(
+              ".recipe-editor__row-actions, .recipe-editor__more-menu",
+            )
+          )
+            return;
           props.onToggleExpand();
         }}
       >
-        <span class="recipe-editor__step-i mono">{String(props.index + 1).padStart(2, "0")}</span>
+        <span class="recipe-editor__step-i mono">{props.index + 1}</span>
         <button type="button" class="recipe-editor__sentence" aria-expanded={props.expanded()}>
-          <Icon
-            name={props.expanded() ? "chevron-down" : "chevron-right"}
-            size={12}
-            class="recipe-editor__chev"
-          />
+          <span class="recipe-editor__kind">{kindLabel(kind())}</span>
           <span class="recipe-editor__sentence-text">
             {sentenceForStep(props.step(), server.recipes())}
           </span>
@@ -368,7 +417,7 @@ function StepRow(props: {
         <span class="recipe-editor__row-actions">
           <button
             type="button"
-            class="recipe-editor__btn"
+            class="recipe-editor__btn recipe-editor__btn--run"
             data-tip={runTip()}
             aria-label="Run this step"
             disabled={!canRunStep()}
@@ -378,44 +427,65 @@ function StepRow(props: {
           </button>
           <button
             type="button"
-            class="recipe-editor__btn"
-            data-tip="Duplicate step"
-            aria-label="Duplicate step"
-            onClick={() => props.onDuplicate()}
-          >
-            <Icon name="copy" size={12} />
-          </button>
-          <button
-            type="button"
-            class="recipe-editor__btn"
-            data-tip="Move up"
-            aria-label="Move step up"
-            disabled={props.index === 0}
-            onClick={() => props.onMove(-1)}
-          >
-            <Icon name="chevron-up" size={12} />
-          </button>
-          <button
-            type="button"
-            class="recipe-editor__btn"
-            data-tip="Move down"
-            aria-label="Move step down"
-            disabled={props.index === props.total() - 1}
-            onClick={() => props.onMove(1)}
-          >
-            <Icon name="chevron-down" size={12} />
-          </button>
-          <button
-            type="button"
-            class="recipe-editor__btn recipe-editor__btn--del"
-            data-tip={confirmDel() ? "Click again to confirm" : "Delete step"}
+            class="recipe-editor__btn recipe-editor__btn--danger"
+            data-tip="Delete step"
             aria-label="Delete step"
             onClick={() => armDelete()}
           >
-            <Show when={!confirmDel()} fallback={<span class="pick-row__sure">Sure?</span>}>
-              <Icon name="trash" size={12} />
-            </Show>
+            <Icon name="trash" size={12} />
           </button>
+          <div class="recipe-editor__more">
+            <button
+              type="button"
+              class="recipe-editor__btn"
+              data-tip="More"
+              aria-label="Step options"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen()}
+              onClick={() => setMoreOpen((o) => !o)}
+            >
+              <Icon name="more" size={12} />
+            </button>
+            <Show when={moreOpen()}>
+              <div class="recipe-editor__more-menu" role="menu">
+                <button
+                  type="button"
+                  class="recipe-editor__more-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    props.onDuplicate();
+                  }}
+                >
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  class="recipe-editor__more-item"
+                  role="menuitem"
+                  disabled={props.index === 0}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    props.onMove(-1);
+                  }}
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  class="recipe-editor__more-item"
+                  role="menuitem"
+                  disabled={props.index === props.total() - 1}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    props.onMove(1);
+                  }}
+                >
+                  Move down
+                </button>
+              </div>
+            </Show>
+          </div>
         </span>
       </div>
 
@@ -428,7 +498,7 @@ function StepRow(props: {
       </Show>
 
       <Show when={issue() && !props.expanded()}>
-        <p class="step-row__issue">{issue()}</p>
+        <p class="step-row__issue">Click to finish — {issue()}</p>
       </Show>
 
       <Show when={props.expanded()}>
@@ -443,9 +513,6 @@ function StepRow(props: {
               if (!hasDetected) {
                 return (
                   <div class="recipe-editor__nodetect">
-                    <p class="recipe-editor__hint">
-                      Choose how to find the element — by label, visible text, @ref, or coordinates.
-                    </p>
                     <ManualTarget
                       target={target}
                       strategy={strategy}
@@ -477,10 +544,6 @@ function StepRow(props: {
                       </button>
                     )}
                   </For>
-                  <p class="recipe-editor__hint">
-                    One click retargets — the chosen field becomes primary, point stays the
-                    fallback.
-                  </p>
                 </div>
               );
             })()}
@@ -801,28 +864,99 @@ function StepRow(props: {
  */
 export function RecipeStepsEditor(): JSX.Element {
   const draft = useRecipeDraft();
+  const server = useServer();
   const [expanded, setExpanded] = createSignal<number | null>(null);
   const [addAt, setAddAt] = createSignal<number | null>(null);
   const [focusIndex, setFocusIndex] = createSignal<number | null>(null);
 
+  const wb = useWorkbench();
+
+  function setOpen(i: number | null): void {
+    setExpanded(i);
+    draft.setExpandedStep(i);
+  }
+
   function toggle(i: number): void {
-    setExpanded((e) => (e === i ? null : i));
+    // Uber-style: click = select (and show on phone). Second click collapses detail only.
+    if (expanded() === i && wb.focusedIndex() === i) {
+      setOpen(null);
+      return;
+    }
+    wb.focusStep(i);
+    setExpanded(i);
   }
 
   function insertAt(at: number, step: RecipeStep): void {
     draft.insertStep(at, step);
     setAddAt(null);
+    wb.focusStep(at);
     setExpanded(at);
     setFocusIndex(at);
   }
 
+  // Keep draft.expandedStep in sync on selection changes / unmount.
+  createEffect(() => {
+    const id = server.selectedRecipeId();
+    void id;
+    setExpanded(null);
+    draft.setExpandedStep(null);
+    setAddAt(null);
+  });
+
+  // External focus (filmstrip / board card) opens the matching row.
+  createEffect(() => {
+    const f = wb.focusedIndex();
+    if (f != null && f >= 0 && f < draft.steps().length) {
+      setExpanded(f);
+    }
+  });
+
+  // Empty guide + starter chips replace the old auto-open menu (less noise).
+
+  /** Starters look like real steps (Uber density), not orphan chips in white space. */
+  const STARTERS: { kind: string; title: string; make: () => RecipeStep }[] = [
+    {
+      kind: "Tap",
+      title: "Tap an element on the phone",
+      make: () => ({ kind: "tap", target: {} }),
+    },
+    { kind: "Type", title: "Type text into a field", make: () => ({ kind: "type", text: "" }) },
+    {
+      kind: "Check",
+      title: "Check that something is visible",
+      make: () => ({ kind: "expect", target: {}, condition: "visible" }),
+    },
+    { kind: "Wait", title: "Wait a moment", make: () => ({ kind: "sleep", ms: 1000 }) },
+  ];
+
+  const isEmpty = () => draft.steps().length === 0;
+
   return (
-    <div class="recipe-editor__steps">
-      <Show when={draft.steps().length === 0}>
-        <p class="recipe-editor__empty">No steps yet — record from the device or add one below.</p>
+    <div class="recipe-editor__steps" classList={{ "recipe-editor__steps--empty": isEmpty() }}>
+      <Show when={isEmpty()}>
+        <div class="recipe-editor__guide" role="group" aria-label="Add first step">
+          <For each={STARTERS}>
+            {(s, i) => (
+              <button
+                type="button"
+                class="recipe-editor__ghost-row"
+                onClick={() => insertAt(0, s.make())}
+              >
+                <span class="recipe-editor__step-i mono">{i() + 1}</span>
+                <span class="recipe-editor__sentence">
+                  <span class="recipe-editor__kind">{s.kind}</span>
+                  <span class="recipe-editor__sentence-text">{s.title}</span>
+                </span>
+                <span class="recipe-editor__ghost-add" aria-hidden="true">
+                  <Icon name="plus" size={14} />
+                </span>
+              </button>
+            )}
+          </For>
+        </div>
       </Show>
 
-      <Show when={draft.steps().length > 0}>
+      <Show when={!isEmpty()}>
         <InsertGap
           at={0}
           open={addAt() === 0}
@@ -847,11 +981,12 @@ export function RecipeStepsEditor(): JSX.Element {
               onChange={(next) => draft.updateStep(i, next)}
               onMove={(dir) => {
                 draft.moveStep(i, dir);
-                setExpanded((e) => (e === i ? i + dir : e === i + dir ? i : e));
+                setOpen(expanded() === i ? i + dir : expanded() === i + dir ? i : expanded());
               }}
               onRemove={() => {
                 draft.removeStep(i);
-                setExpanded((e) => (e === null ? null : e === i ? null : e > i ? e - 1 : e));
+                const e = expanded();
+                setOpen(e === null ? null : e === i ? null : e > i ? e - 1 : e);
               }}
               onDuplicate={() => draft.duplicateStep(i)}
             />
@@ -872,14 +1007,15 @@ export function RecipeStepsEditor(): JSX.Element {
         <button
           type="button"
           class="btn btn-ghost recipe-editor__add"
+          classList={{ "recipe-editor__add--empty": isEmpty() }}
           aria-haspopup="menu"
           aria-expanded={addAt() === draft.steps().length}
           onClick={() =>
             setAddAt((a) => (a === draft.steps().length ? null : draft.steps().length))
           }
         >
-          <Icon name="plus" size={13} />
-          Add step
+          <Icon name="plus" size={14} />
+          Add Step
         </button>
         <Show when={addAt() === draft.steps().length}>
           <AddMenu

@@ -63,7 +63,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
     case "flow":
-      return `Run flow: ${titleize(step.flow, recipes)}`;
+      // Human title only — "Built-in:" was opaque jargon in the step list.
+      return titleize(step.flow, recipes);
   }
 }
 

@@ -36,6 +36,8 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     const [saveState, setSaveState] = createSignal<SaveState>("saved");
     const [source, setSource] = createSignal<"custom" | "builtin" | null>(null);
     const [flashSteps, setFlashSteps] = createSignal<Set<RecipeStep>>(new Set());
+    /** Which step row is expanded in the editor — drives soft-invalid chrome. */
+    const [expandedStep, setExpandedStep] = createSignal<number | null>(null);
 
     let currentId: string | null = null;
     let dirty = false;
@@ -206,6 +208,41 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       return saved.id;
     }
 
+    /**
+     * Explicit “Edit” for packaged tests — fork to custom while keeping the
+     * same flow body (and thus the same planned step titles in the UI).
+     * Title stays clean (no forced “ (copy)” suffix from us).
+     */
+    async function forkAsCustom(): Promise<boolean> {
+      if (source() !== "builtin" || !currentId) return false;
+      dirty = true;
+      editSeq++;
+      // Keep the flow wrapper so Run still does the real packaged test, and the
+      // UI can expand planned[] from that flow id (not a lone “FLOW” row).
+      const body = {
+        title: title().trim() || "Untitled test",
+        description: description().trim() || undefined,
+        steps: steps().length
+          ? steps()
+          : ([{ kind: "flow" as const, flow: currentId }] as RecipeStep[]),
+      };
+      setSaveState("saving");
+      const saved = await server.saveRecipeRemote(body);
+      if (!saved) {
+        setSaveState("invalid");
+        return false;
+      }
+      currentId = saved.id;
+      setSource("custom");
+      setStepsState(body.steps.map((s) => ({ ...s })));
+      dirty = false;
+      setSaveState("saved");
+      skipReseedFor = saved.id;
+      server.setSelectedRecipeId(saved.id);
+      toast(`Editing your copy — steps stay visible`, "info");
+      return true;
+    }
+
     return {
       title,
       description,
@@ -214,6 +251,8 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       source,
       invalidCount,
       flashSteps,
+      expandedStep,
+      setExpandedStep,
       setTitle,
       setDescription,
       insertStep,
@@ -223,6 +262,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       moveStep,
       appendSteps,
       ensureRecordingDraft,
+      forkAsCustom,
     };
   },
 });

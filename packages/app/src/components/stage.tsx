@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+// createMemo used for focused step label
 import { useServer, type SnapshotNode } from "../context/server";
 import {
   ancestryOf,
@@ -10,15 +11,39 @@ import {
   type PickStrategy,
 } from "../lib/snapshot";
 import { useRecorder } from "../context/recorder";
+import { useWorkbench } from "../context/workbench";
+import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
 import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
+import { sentenceForStep } from "../lib/step-sentence";
 
-/** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
-export function DeviceStage() {
+/** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
+export function DeviceStage(props: { onExpandBoard?: () => void }) {
   const server = useServer();
   const rec = useRecorder();
   const cmd = useCommand();
+  const wb = useWorkbench();
+  const draft = useRecipeDraft();
+
+  /** What the artboard is “about” when a step is selected (Uber-style selection). */
+  const focusedStep = createMemo(() => {
+    const i = wb.focusedIndex();
+    if (i == null || i < 0) return null;
+    // Resolve plan from builtin id OR from a forked thin flow wrapper.
+    let planId = server.selectedRecipeId();
+    const steps = draft.steps();
+    if (draft.source() === "custom" && steps.length === 1 && steps[0]?.kind === "flow") {
+      planId = steps[0].flow;
+    }
+    const planned = planId
+      ? server.actions().find((a) => a.id === planId)?.planned?.[i]
+      : undefined;
+    if (planned?.title) return { index: i, title: planned.title };
+    const step = draft.steps()[i];
+    if (step) return { index: i, title: sentenceForStep(step, server.recipes()) };
+    return { index: i, title: `Step ${i + 1}` };
+  });
   const frame = () =>
     rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
@@ -367,10 +392,25 @@ export function DeviceStage() {
       <Show
         when={!server.isEmptyDevices()}
         fallback={
-          <div class="bezel--seat">
-            <Icon name="smartphone" size={24} strokeWidth={1.3} />
-            <p class="stage__no-device-title">No device connected</p>
-            <p class="stage__no-device-hint">Connect a device over USB or Wi-Fi, then refresh.</p>
+          <div class="bezel--seat" classList={{ "bezel--seat-focus": Boolean(focusedStep()) }}>
+            <Show
+              when={focusedStep()}
+              fallback={
+                <>
+                  <Icon name="smartphone" size={24} strokeWidth={1.3} />
+                  <p class="stage__no-device-title">No device</p>
+                  <p class="stage__no-device-hint">USB or Wi‑Fi · then refresh</p>
+                </>
+              }
+            >
+              {(s) => (
+                <div class="stage__focus-card">
+                  <span class="stage__focus-kicker mono">Step {s().index + 1}</span>
+                  <p class="stage__focus-title">{s().title}</p>
+                  <p class="stage__focus-hint">Connect a phone to run this step</p>
+                </div>
+              )}
+            </Show>
             <div class="stage__connect">
               <button
                 type="button"
@@ -510,6 +550,34 @@ export function DeviceStage() {
                 )}
               </Show>
             </Show>
+            {/* No frame yet: still show which step is selected on the glass */}
+            <Show when={!frame() && focusedStep()}>
+              {(s) => (
+                <div class="glass__focus">
+                  <span class="stage__focus-kicker mono">Step {s().index + 1}</span>
+                  <p class="stage__focus-title">{s().title}</p>
+                  <p class="stage__focus-hint">
+                    {rec.interacting()
+                      ? "Drive the phone or Run the test"
+                      : "Run the test to capture this screen"}
+                  </p>
+                </div>
+              )}
+            </Show>
+            <Show when={!frame() && !focusedStep()}>
+              <div class="glass__focus glass__focus--quiet">
+                <p class="stage__focus-hint">Select a step or Run</p>
+              </div>
+            </Show>
+            {/* Selected step chip over live frame */}
+            <Show when={frame() && focusedStep()}>
+              {(s) => (
+                <div class="stage__focus-pill">
+                  <span class="mono">{s().index + 1}</span>
+                  {s().title}
+                </div>
+              )}
+            </Show>
           </div>
         </div>
 
@@ -576,6 +644,7 @@ export function DeviceStage() {
         </Show>
       </Show>
 
+      {/* Filmstrip — Figma-style timeline under the artboard (not a peer mode). */}
       <Show when={server.frames().length > 0}>
         <div class="scrubber">
           <button
@@ -606,10 +675,7 @@ export function DeviceStage() {
                       }}
                       title={f.caption}
                       aria-label={`frame ${i() + 1}: ${f.caption}`}
-                      onClick={() => {
-                        server.stopPlayback();
-                        server.setFrameIndex(i());
-                      }}
+                      onClick={() => wb.focusFrame(i())}
                     />
                   </>
                 );
@@ -619,11 +685,24 @@ export function DeviceStage() {
           <span class="mono scrubber__count">
             {server.frameIndex() + 1}/{server.frames().length}
           </span>
+          <Show when={props.onExpandBoard}>
+            <button
+              type="button"
+              class="btn btn-ghost scrubber__expand"
+              data-tip="Expand board"
+              aria-label="Expand frame board"
+              onClick={() => props.onExpandBoard?.()}
+            >
+              <Icon name="grid" size={14} />
+              Board
+            </button>
+          </Show>
         </div>
       </Show>
 
-      <div class="stage__controls">
-        <Show when={server.health() === "online" && !server.isEmptyDevices()}>
+      {/* Mode controls only exist when a device can act — never greyed theatre. */}
+      <Show when={server.health() === "online" && !server.isEmptyDevices()}>
+        <div class="stage__controls">
           <div class="seg" role="group" aria-label="Stage mode">
             <button
               type="button"
@@ -673,15 +752,15 @@ export function DeviceStage() {
             <button
               type="button"
               class="btn btn-ghost top__icon-btn"
-              data-tip="Clear captured frames"
+              data-tip="Clear frames"
               aria-label="Clear frames"
               onClick={() => server.clearFrames()}
             >
               <Icon name="trash" size={15} />
             </button>
           </Show>
-        </Show>
-      </div>
+        </div>
+      </Show>
       <RecorderBar />
     </section>
   );

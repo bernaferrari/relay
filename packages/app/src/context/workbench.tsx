@@ -243,6 +243,58 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
     // annotations back to idle — stale results on changed steps lie.
     createEffect(on(draft.steps, () => clearAnnotations(), { defer: true }));
 
+    // ── Step ↔ frame focus (Figma selection: one index lights both sides) ─
+    const [focusedIndex, setFocusedIndex] = createSignal<number | null>(null);
+
+    // New test selected → focus first step so the artboard always shows *something*.
+    createEffect(
+      on(server.selectedRecipeId, (id) => {
+        if (!id) {
+          setFocusedIndex(null);
+          return;
+        }
+        // Defer so draft has reseeded from the new recipe.
+        queueMicrotask(() => {
+          const steps = draft.steps();
+          let planId = id;
+          if (draft.source() === "custom" && steps.length === 1 && steps[0]?.kind === "flow") {
+            planId = (steps[0] as { flow: string }).flow;
+          }
+          const plannedN = server.actions().find((a) => a.id === planId)?.planned?.length ?? 0;
+          const n = plannedN > 0 ? plannedN : steps.length;
+          if (n > 0) focusStep(0);
+          else setFocusedIndex(null);
+        });
+      }),
+    );
+
+    /** Select a step — also scrubs the matching capture when frames exist. */
+    function focusStep(i: number | null): void {
+      setFocusedIndex(i);
+      if (i == null) return;
+      draft.setExpandedStep(i);
+      const n = server.frames().length;
+      if (n > 0) {
+        server.stopPlayback();
+        server.setFrameIndex(Math.min(i, n - 1));
+      }
+    }
+
+    /** Select a frame — also opens the matching step row when it exists. */
+    function focusFrame(i: number): void {
+      setFocusedIndex(i);
+      server.stopPlayback();
+      server.setFrameIndex(i);
+      const stepCount =
+        draft.source() === "builtin"
+          ? // planned rows share index space with annotations
+            Math.max(draft.steps().length, i + 1)
+          : draft.steps().length;
+      if (i >= 0 && i < stepCount) {
+        draft.setExpandedStep(i);
+      }
+    }
+
     return {
       autoContinue,
       setAutoContinue,
@@ -256,6 +308,9 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
       activeLiveJob,
       reviewedRun,
       rowAnno,
+      focusedIndex,
+      focusStep,
+      focusFrame,
     };
   },
 });

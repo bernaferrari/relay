@@ -65,11 +65,13 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
       },
       {
         id: "job.run",
-        title: "Run / queue selected recipe",
+        title: "Run selected test",
         group: "Jobs",
         keybind: "mod+enter",
-        disabled: () => !server.selectedRecipe() || server.health() !== "online",
+        disabled: () =>
+          !server.selectedRecipe() || server.health() !== "online" || server.isEmptyDevices(),
         run: () => {
+          if (server.isEmptyDevices() || server.health() !== "online") return;
           const r = server.selectedRecipe();
           if (r) void server.runRecipeRemote(r.id);
         },
@@ -169,10 +171,10 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
       recipes.map((r) => ({
         id: `recipe.${r.id}`,
         title: r.title,
-        subtitle: r.source === "custom" ? "Custom recipe" : "Built-in recipe",
+        subtitle: r.source === "custom" ? "Your test" : "Built-in test",
         group:
           r.source === "custom"
-            ? "Recipes"
+            ? "Your tests"
             : r.id.startsWith("login-") || r.id === "logout" || r.id.startsWith("grok")
               ? "Grok"
               : "Play Store",

@@ -254,7 +254,7 @@ export function SettingsPage(props: { onClose: () => void }) {
                 <div class="s-row__copy">
                   <span class="s-row__title">Prod account match</span>
                   <span class="s-row__desc">
-                    The account the *-prod recipes target (e.g. gmail.com).
+                    The account the *-prod tests target (e.g. gmail.com).
                   </span>
                 </div>
                 <div class="s-row__control s-row__control--grow">
@@ -305,7 +305,7 @@ export function SettingsPage(props: { onClose: () => void }) {
                 <div class="s-row__copy">
                   <span class="s-row__title">Command palette</span>
                   <span class="s-row__desc">
-                    Press <span class="mono">⌘K</span> anywhere to run commands, jump to recipes, or
+                    Press <span class="mono">⌘K</span> anywhere to run commands, jump to tests, or
                     toggle appearance.
                   </span>
                 </div>

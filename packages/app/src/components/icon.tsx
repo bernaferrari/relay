@@ -47,7 +47,8 @@ export type IconName =
   | "dot"
   | "wave"
   | "plus"
-  | "copy";
+  | "copy"
+  | "more";
 
 type Path = { d: string; fill?: boolean };
 
@@ -137,6 +138,11 @@ const FILL: Record<string, Path[]> = {
   ],
   circle: [{ d: "M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0-10 0", fill: true }],
   dot: [{ d: "M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0", fill: true }],
+  more: [
+    { d: "M5 12m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0", fill: true },
+    { d: "M12 12m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0", fill: true },
+    { d: "M19 12m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0", fill: true },
+  ],
 };
 
 const ALL: Record<string, Path[]> = { ...STROKE, ...FILL };

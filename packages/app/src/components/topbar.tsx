@@ -35,7 +35,7 @@ export function Topbar(props: { onSettings: () => void }) {
     <header class="top desktop-titlebar-drag">
       <div class="top__brand desktop-titlebar-no-drag">
         <span class="top__mark" aria-hidden="true">
-          S
+          <Icon name="smartphone" size={12} strokeWidth={2} />
         </span>
         <span class="top__name">Specimen</span>
       </div>

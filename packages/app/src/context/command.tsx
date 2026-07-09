@@ -312,7 +312,7 @@ export function CommandPalette(): JSX.Element {
             <input
               ref={inputRef}
               class="cmd-input"
-              placeholder="Search commands, recipes…"
+              placeholder="Search commands, tests…"
               value={cmd.query()}
               onInput={(e) => cmd.setQuery(e.currentTarget.value)}
               autocomplete="off"
