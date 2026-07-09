@@ -1,5 +1,6 @@
 import { Show, type JSX, createSignal } from "solid-js";
 import { useServer } from "../context/server";
+import { cn } from "../lib/cn";
 
 /**
  * Full-stage / full-workspace overlay when the API is offline.
@@ -27,29 +28,37 @@ export function OfflineGate(props: {
       {props.children}
       <Show when={server.isOffline()}>
         <div
-          class={props.overlay ? "offline-gate offline-gate--overlay" : "offline-gate"}
+          class={cn(
+            "absolute inset-0 z-30 grid place-items-center bg-deep/70 backdrop-blur-sm",
+            props.overlay && "rounded-none",
+          )}
           role="alertdialog"
           aria-labelledby="offline-gate-title"
           aria-describedby="offline-gate-desc"
         >
-          <div class="offline-gate__card">
-            <div class="offline-gate__illus" aria-hidden="true">
-              <span class="offline-gate__bar" />
-              <span class="offline-gate__bar offline-gate__bar--mid" />
-              <span class="offline-gate__bar offline-gate__bar--short" />
-              <span class="offline-gate__pulse" />
+          <div class="flex max-w-[360px] flex-col items-center gap-1.5 rounded-card bg-layer-1 px-10 py-9 text-center shadow-[0_16px_48px_rgb(0_0_0/0.32)]">
+            <div class="relative mb-2.5 h-10 w-14" aria-hidden="true">
+              <span class="absolute bottom-0 left-0 h-2 w-3 origin-bottom animate-pulse rounded-[3px] bg-fail opacity-35" />
+              <span class="absolute bottom-0 left-4 h-2 w-3 origin-bottom animate-pulse rounded-[3px] bg-fail opacity-35 [animation-delay:200ms]" />
+              <span class="absolute bottom-0 left-8 h-2 w-3 origin-bottom animate-pulse rounded-[3px] bg-fail opacity-35 [animation-delay:400ms]" />
+              <span class="absolute top-[-2px] left-1/2 size-1.5 -translate-x-1/2 animate-pulse rounded-full bg-fail" />
             </div>
-            <h2 id="offline-gate-title" class="offline-gate__title">
+            <h2
+              id="offline-gate-title"
+              class="m-0 text-title font-semibold tracking-tight text-text"
+            >
               Server offline
             </h2>
-            <p id="offline-gate-desc" class="offline-gate__desc">
+            <p id="offline-gate-desc" class="m-0 mt-1 text-body leading-normal text-text-muted">
               The Specimen API is not reachable. Start it locally, then retry.
             </p>
-            <code class="offline-gate__code mono">pnpm dev:serve</code>
+            <code class="mono mt-2.5 rounded-md bg-layer-2 px-2.5 py-1 text-meta text-accent-soft">
+              pnpm dev:serve
+            </code>
             <Show when={server.serverUrl()}>
-              <p class="offline-gate__url mono">{server.serverUrl()}</p>
+              <p class="mono text-meta text-text-faint">{server.serverUrl()}</p>
             </Show>
-            <div class="offline-gate__actions">
+            <div class="mt-4">
               <button
                 type="button"
                 class="btn btn-acc"

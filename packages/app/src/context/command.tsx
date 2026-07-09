@@ -3,6 +3,7 @@
  */
 import { For, Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
+import { cn } from "../lib/cn";
 
 export type Command = {
   id: string;
@@ -295,10 +296,15 @@ export function CommandPalette(): JSX.Element {
     return (list[idx]?.group ?? "") !== (list[idx - 1]?.group ?? "");
   };
 
+  const kbdCls =
+    "mono rounded-md border border-border bg-layer-2 px-1.5 py-0.5 text-meta font-medium text-text-muted";
+
   return (
     <div
-      class="cmd-overlay"
-      classList={{ "cmd-overlay--open": cmd.open() }}
+      class={cn(
+        "fixed inset-0 z-[100] flex items-start justify-center bg-[var(--v2-overlay-simple-overlay-scrim)] pt-[14vh] backdrop-blur-[6px] transition-opacity duration-150",
+        cmd.open() ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+      )}
       aria-hidden={!cmd.open()}
       onClick={(e) => {
         if (e.target === e.currentTarget) cmd.setOpen(false);
@@ -307,11 +313,16 @@ export function CommandPalette(): JSX.Element {
       {/* Unmounted while closed so no phantom open dialog lingers in the
           DOM / accessibility tree (the overlay stays for the backdrop fade). */}
       <Show when={cmd.open()}>
-        <div class="cmd-palette" role="dialog" aria-label="Command palette" aria-modal="true">
-          <div class="cmd-palette__head">
+        <div
+          class="flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] scale-100 flex-col overflow-hidden rounded-xl bg-layer-1 opacity-100 shadow-[var(--v2-elevation-overlay,0_16px_48px_rgb(0_0_0/0.4))]"
+          role="dialog"
+          aria-label="Command palette"
+          aria-modal="true"
+        >
+          <div class="border-b border-border p-1">
             <input
               ref={inputRef}
-              class="cmd-input"
+              class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-body font-normal text-text placeholder:text-text-faint focus:outline-none"
               placeholder="Search commands, tests…"
               value={cmd.query()}
               onInput={(e) => cmd.setQuery(e.currentTarget.value)}
@@ -321,41 +332,50 @@ export function CommandPalette(): JSX.Element {
             <Show
               when={filtered().length > 0}
               fallback={
-                <div class="cmd-empty" role="presentation">
+                <div class="px-6 py-6 text-center text-body text-text-faint" role="presentation">
                   No matching commands
                 </div>
               }
             >
-              <div class="cmd-list" role="listbox" ref={listRef}>
+              <div
+                class="max-h-[min(40vh,360px)] flex-1 overflow-y-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                role="listbox"
+                ref={listRef}
+              >
                 <For each={filtered()}>
                   {(c, i) => (
                     <>
                       <Show when={groupStart(i())}>
-                        <div class="cmd-group" role="presentation">
+                        <div
+                          class="sticky top-0 z-[1] bg-layer-1 px-2.5 pt-2 pb-1 text-meta font-semibold text-text-faint"
+                          role="presentation"
+                        >
                           {c.group ?? "Commands"}
                         </div>
                       </Show>
                       <button
                         type="button"
                         role="option"
-                        class="cmd-item"
+                        class={cn(
+                          "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-text transition-colors",
+                          cmd.active() === i() && "bg-hover",
+                        )}
                         data-i={i()}
-                        classList={{ "cmd-item--active": cmd.active() === i() }}
                         aria-selected={cmd.active() === i()}
                         onMouseMove={(e) => {
                           if (e.movementX || e.movementY) cmd.setActive(i());
                         }}
                         onClick={() => void cmd.run(c.id)}
                       >
-                        <span class="cmd-item__main">
-                          <span class="cmd-item__title">{c.title}</span>
+                        <span class="flex min-w-0 flex-col gap-px">
+                          <span class="text-body font-medium">{c.title}</span>
                           <Show when={c.subtitle}>
-                            <span class="cmd-item__sub">{c.subtitle}</span>
+                            <span class="text-meta text-text-faint">{c.subtitle}</span>
                           </Show>
                         </span>
-                        <span class="cmd-item__meta">
+                        <span class="flex shrink-0 items-center gap-2">
                           <Show when={c.keybind}>
-                            <kbd class="cmd-item__bind">{cmd.formatKeybind(c.keybind!)}</kbd>
+                            <kbd class={kbdCls}>{cmd.formatKeybind(c.keybind!)}</kbd>
                           </Show>
                         </span>
                       </button>
@@ -365,18 +385,18 @@ export function CommandPalette(): JSX.Element {
               </div>
             </Show>
           </div>
-          <div class="cmd-hint">
-            <span>
-              <kbd>↑↓</kbd> move
+          <div class="flex items-center gap-4 border-t border-border px-3.5 py-2 text-meta text-text-faint">
+            <span class="inline-flex items-center gap-1">
+              <kbd class={kbdCls}>↑↓</kbd> move
             </span>
-            <span>
-              <kbd>↵</kbd> run
+            <span class="inline-flex items-center gap-1">
+              <kbd class={kbdCls}>↵</kbd> run
             </span>
-            <span>
-              <kbd>esc</kbd> close
+            <span class="inline-flex items-center gap-1">
+              <kbd class={kbdCls}>esc</kbd> close
             </span>
-            <span>
-              <kbd>
+            <span class="inline-flex items-center gap-1">
+              <kbd class={kbdCls}>
                 {typeof navigator !== "undefined" && /Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}K
               </kbd>{" "}
               toggle

@@ -4,6 +4,7 @@ import { DeviceStage } from "./stage";
 import { FrameCanvas } from "./frame-canvas";
 import { StepsPane } from "./run-panel";
 import { useServer } from "../context/server";
+import { cn } from "../lib/cn";
 
 /**
  * Figma-style workbench:
@@ -21,17 +22,23 @@ export function Workspace() {
     if (server.frames().length === 0) setBoardOpen(false);
   });
 
+  const noDevice = () => server.isEmptyDevices() || server.health() !== "online";
+
   return (
     <OfflineGate overlay>
       <div
-        class="shell"
-        classList={{
-          "shell--no-device": server.isEmptyDevices() || server.health() !== "online",
-          "shell--board": boardOpen(),
-        }}
+        class={cn(
+          "relative grid min-h-0 flex-1 bg-deep transition-[grid-template-columns] duration-200",
+          noDevice()
+            ? "grid-cols-[minmax(320px,40%)_minmax(0,1fr)]"
+            : boardOpen()
+              ? "grid-cols-[minmax(440px,54%)_minmax(0,1fr)]"
+              : "grid-cols-[minmax(380px,46%)_minmax(0,1fr)]",
+        )}
       >
-        <div class="shell__left">
-          <div class="shell__left-body">
+        {/* Left: phone artboard / frame canvas */}
+        <div class="flex min-h-0 min-w-0 flex-col border-r border-border bg-deep">
+          <div class="flex min-h-0 flex-1 flex-col">
             <Show
               when={boardOpen() && server.frames().length > 0}
               fallback={<DeviceStage onExpandBoard={() => setBoardOpen(true)} />}
@@ -40,7 +47,8 @@ export function Workspace() {
             </Show>
           </div>
         </div>
-        <section class="runpane" aria-label="Test editor">
+        {/* Right: steps / test editor */}
+        <section class="flex min-h-0 flex-col bg-layer-1" aria-label="Test editor">
           <StepsPane />
         </section>
       </div>

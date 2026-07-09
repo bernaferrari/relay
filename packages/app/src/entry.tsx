@@ -2,7 +2,7 @@
 import { render } from "solid-js/web";
 import { AppBaseProviders, AppInterface } from "./app";
 import { createWebPlatform } from "./context/platform";
-import "./index.css";
+import "./styles/app.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element #root not found");

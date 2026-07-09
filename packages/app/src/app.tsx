@@ -11,7 +11,7 @@ import { Layout } from "./components/layout";
 import { HomePage } from "./pages/home";
 import { SettingsPage } from "./pages/settings";
 /* Product chrome — must load for every host (web + desktop Electron). */
-import "./index.css";
+import "./styles/app.css";
 
 /** Root providers for web and desktop shells. */
 export function AppBaseProviders(

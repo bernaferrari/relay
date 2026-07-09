@@ -190,7 +190,7 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
     <div class="qa" classList={{ "qa--desktop": platform.platform === "desktop" }}>
       <Topbar onSettings={() => props.onOpenSettings()} />
       <ErrorBanner />
-      <div class="qa__body">{props.children}</div>
+      <div class="relative flex min-h-0 flex-1 flex-col">{props.children}</div>
       <CommandPalette />
       <Toaster />
     </div>

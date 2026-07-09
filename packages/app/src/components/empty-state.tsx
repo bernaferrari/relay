@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
 import { Icon, type IconName } from "./icon";
+import { cn } from "../lib/cn";
 
 export type EmptyStateProps = {
   title: string;
@@ -18,7 +19,10 @@ export type EmptyStateProps = {
   children?: JSX.Element;
 };
 
-function EmptyIcon(props: { kind: NonNullable<EmptyStateProps["icon"]> }) {
+function EmptyIcon(props: {
+  kind: NonNullable<EmptyStateProps["icon"]>;
+  size: "sm" | "md" | "lg";
+}) {
   const name = (): IconName => {
     switch (props.kind) {
       case "server":
@@ -36,7 +40,13 @@ function EmptyIcon(props: { kind: NonNullable<EmptyStateProps["icon"]> }) {
     }
   };
   return (
-    <span class="empty-state__icon" aria-hidden="true">
+    <span
+      class={cn(
+        "mb-0.5 grid place-items-center rounded-[10px] border border-accent/20 bg-accent/10 text-accent-soft",
+        props.size === "sm" ? "size-[38px]" : "size-9",
+      )}
+      aria-hidden="true"
+    >
       <Icon name={name()} size={22} strokeWidth={1.5} />
     </span>
   );
@@ -47,23 +57,31 @@ export function EmptyState(props: EmptyStateProps) {
   const size = () => props.size ?? "md";
   return (
     <div
-      class={`empty-state empty-state--${size()}${props.class ? ` ${props.class}` : ""}`}
+      class={cn(
+        "flex flex-col items-center gap-1 text-center",
+        size() === "sm" ? "px-3 py-6" : "px-4 py-[18px]",
+        props.class,
+      )}
       role="status"
     >
       <Show when={props.icon}>
-        <EmptyIcon kind={props.icon!} />
+        <EmptyIcon kind={props.icon!} size={size()} />
       </Show>
-      <div class="empty-state__copy">
-        <p class="empty-state__title">{props.title}</p>
+      <div class="flex flex-col items-center gap-0.5">
+        <p class="m-0 text-title font-semibold text-text">{props.title}</p>
         <Show when={props.description}>
-          <p class="empty-state__desc">{props.description}</p>
+          <p class="m-0 max-w-[300px] text-meta leading-[1.55] text-text-faint">
+            {props.description}
+          </p>
         </Show>
         <Show when={props.code}>
-          <code class="empty-state__code mono">{props.code}</code>
+          <code class="mono mt-2 rounded-md bg-layer-2 px-2 py-0.5 text-meta text-accent-soft">
+            {props.code}
+          </code>
         </Show>
       </div>
       <Show when={props.actionLabel || props.secondaryLabel || props.children}>
-        <div class="empty-state__actions">
+        <div class="mt-3 flex gap-2">
           <Show when={props.actionLabel && props.onAction}>
             <button type="button" class="btn btn-acc" onClick={() => props.onAction?.()}>
               {props.actionLabel}

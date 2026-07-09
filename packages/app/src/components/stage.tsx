@@ -17,6 +17,7 @@ import { Icon } from "./icon";
 import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
+import { cn } from "../lib/cn";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(props: { onExpandBoard?: () => void }) {
@@ -378,13 +379,19 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
 
   return (
     <section
-      class="stage"
       ref={stageEl}
       aria-label="Device stage"
-      classList={{ "stage--offline": server.isOffline() }}
+      class={cn(
+        "relative flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden",
+        "bg-deep px-6 pt-5 pb-7",
+        server.isOffline() && "opacity-55",
+      )}
     >
       <Show when={server.isOffline()}>
-        <div class="stage__watermark" aria-hidden="true">
+        <div
+          class="pointer-events-none absolute top-1/2 left-1/2 z-0 -translate-x-1/2 -translate-y-1/2 -rotate-12 font-mono text-[5.5rem] font-bold tracking-wider text-fail/15 select-none"
+          aria-hidden="true"
+        >
           Offline
         </div>
       </Show>
@@ -392,26 +399,41 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
       <Show
         when={!server.isEmptyDevices()}
         fallback={
-          <div class="bezel--seat" classList={{ "bezel--seat-focus": Boolean(focusedStep()) }}>
+          <div
+            class={cn(
+              "bezel--seat relative z-[2] my-auto aspect-[9/19.5] w-[min(320px,46vh)] max-h-[calc(100%-96px)] rounded-[38px] p-5 text-center",
+              focusedStep() && "gap-3.5",
+            )}
+          >
             <Show
               when={focusedStep()}
               fallback={
                 <>
                   <Icon name="smartphone" size={24} strokeWidth={1.3} />
-                  <p class="stage__no-device-title">No device</p>
-                  <p class="stage__no-device-hint">USB or Wi‑Fi · then refresh</p>
+                  <p class="m-0 text-[13px] font-semibold tracking-tight text-white/90">
+                    No device
+                  </p>
+                  <p class="m-0 max-w-[180px] text-[11.5px] leading-snug text-white/45">
+                    USB or Wi‑Fi · then refresh
+                  </p>
                 </>
               }
             >
               {(s) => (
-                <div class="stage__focus-card">
-                  <span class="stage__focus-kicker mono">Step {s().index + 1}</span>
-                  <p class="stage__focus-title">{s().title}</p>
-                  <p class="stage__focus-hint">Connect a phone to run this step</p>
+                <div class="flex max-w-[220px] flex-col items-center gap-1.5 px-5 text-center">
+                  <span class="mono text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90">
+                    Step {s().index + 1}
+                  </span>
+                  <p class="m-0 text-sm font-semibold leading-snug tracking-tight text-white/[0.94]">
+                    {s().title}
+                  </p>
+                  <p class="m-0 text-[11.5px] leading-snug text-white/45">
+                    Connect a phone to run this step
+                  </p>
                 </div>
               )}
             </Show>
-            <div class="stage__connect">
+            <div class="flex flex-col items-center gap-2.5">
               <button
                 type="button"
                 class="btn btn-ghost btn--bordered"
@@ -433,8 +455,11 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         {/* device identity chip — floats above the bezel */}
         <Show when={currentDevice()}>
           {(d) => (
-            <div class="stage__device-chip" title={d().serial}>
-              <span class="stage__device-dot" aria-hidden="true" />
+            <div
+              class="z-[2] mb-3 inline-flex h-6 flex-none items-center gap-1.5 rounded-full bg-layer-2 px-2.5 text-meta text-text-muted tabular-nums"
+              title={d().serial}
+            >
+              <span class="size-1.5 flex-none rounded-full bg-pass" aria-hidden="true" />
               {deviceChipText(d())}
             </div>
           )}
@@ -447,8 +472,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           <div class="glass">
             <Show when={frame()}>
               <img
-                class="glass__img"
-                classList={{ "glass__img--interactive": rec.interacting() }}
+                class={cn("glass__img", rec.interacting() && "glass__img--interactive")}
                 alt={frame()!.caption ?? "device frame"}
                 src={`data:${frame()!.mime};base64,${frame()!.base64}`}
                 onLoad={(e) => {
@@ -515,11 +539,16 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               />
               <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
                 {(h) => (
-                  <div class="glass__overlays" aria-hidden="true">
-                    <div class="hit-rect hit-rect--hover" style={h().rect} />
+                  <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
                     <div
-                      class="hit-chip"
-                      classList={{ "hit-chip--below": h().chip.below }}
+                      class="absolute rounded-[3px] border-[1.4px] border-accent bg-accent/10 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_30%,transparent)]"
+                      style={h().rect}
+                    />
+                    <div
+                      class={cn(
+                        "absolute z-[5] max-w-[60%] overflow-hidden rounded-control bg-accent px-1.5 py-0.5 font-mono text-meta leading-snug text-ellipsis whitespace-nowrap text-accent-fg",
+                        h().chip.below ? "translate-y-1" : "-translate-y-[calc(100%+4px)]",
+                      )}
                       style={{
                         left: h().chip.left,
                         top: h().chip.below ? h().chip.bottom : h().chip.top,
@@ -531,14 +560,20 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 )}
               </Show>
               <Show when={pickedHighlight()}>
-                {(h) => <div class="hit-rect hit-rect--picked" aria-hidden="true" style={h()} />}
+                {(h) => (
+                  <div
+                    class="pointer-events-none absolute rounded-[3px] border-[1.6px] border-accent bg-accent/[0.16] shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_40%,transparent)]"
+                    aria-hidden="true"
+                    style={h()}
+                  />
+                )}
               </Show>
 
               {/* tap confirmation ring */}
               <Show when={tapFeedback()}>
                 {(fb) => (
                   <div
-                    class="tap-feedback"
+                    class="pointer-events-none absolute z-[6] origin-center rounded-full border-[1.5px] border-accent bg-accent/15 animate-ping"
                     aria-hidden="true"
                     style={{
                       left: `calc(${fb().x}% - 9px)`,
@@ -553,10 +588,14 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             {/* No frame yet: still show which step is selected on the glass */}
             <Show when={!frame() && focusedStep()}>
               {(s) => (
-                <div class="glass__focus">
-                  <span class="stage__focus-kicker mono">Step {s().index + 1}</span>
-                  <p class="stage__focus-title">{s().title}</p>
-                  <p class="stage__focus-hint">
+                <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2 bg-[radial-gradient(ellipse_70%_50%_at_50%_40%,color-mix(in_srgb,var(--c-accent)_14%,transparent),transparent_60%),#0c0d10] p-6 text-center">
+                  <span class="mono text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90">
+                    Step {s().index + 1}
+                  </span>
+                  <p class="m-0 max-w-[12em] text-sm font-semibold leading-snug tracking-tight text-white/[0.94]">
+                    {s().title}
+                  </p>
+                  <p class="m-0 text-[11.5px] leading-snug text-white/45">
                     {rec.interacting()
                       ? "Drive the phone or Run the test"
                       : "Run the test to capture this screen"}
@@ -565,15 +604,17 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               )}
             </Show>
             <Show when={!frame() && !focusedStep()}>
-              <div class="glass__focus glass__focus--quiet">
-                <p class="stage__focus-hint">Select a step or Run</p>
+              <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2 bg-[#0c0d10] p-6 text-center">
+                <p class="m-0 text-[11.5px] leading-snug text-white/45">Select a step or Run</p>
               </div>
             </Show>
             {/* Selected step chip over live frame */}
             <Show when={frame() && focusedStep()}>
               {(s) => (
-                <div class="stage__focus-pill">
-                  <span class="mono">{s().index + 1}</span>
+                <div class="pointer-events-none absolute right-2.5 bottom-3 left-2.5 z-[4] flex items-center gap-2 rounded-[10px] bg-black/70 px-2.5 py-2 text-xs font-medium leading-snug text-white backdrop-blur-[10px]">
+                  <span class="mono grid size-[18px] flex-none place-items-center rounded-[5px] bg-accent/40 text-[10px] font-bold">
+                    {s().index + 1}
+                  </span>
                   {s().title}
                 </div>
               )}
@@ -582,21 +623,30 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         </div>
 
         <Show when={picker() && rec.interacting() && (pickerNode() || rec.recording())}>
-          <div class="picker" style={{ left: `${picker()!.vx}px`, top: `${picker()!.vy}px` }}>
-            <div class="picker__head">
-              <span class="picker__label">{nodeLabel()}</span>
+          <div
+            class="absolute z-10 mt-[-10px] min-w-[168px] -translate-y-full rounded-card bg-layer-2 p-1.5 shadow-lg"
+            style={{ left: `${picker()!.vx}px`, top: `${picker()!.vy}px` }}
+          >
+            <div class="mb-1 flex max-w-[220px] flex-col gap-px border-b border-border px-2 pt-1 pb-1.5">
+              <span class="truncate text-body font-semibold text-text">{nodeLabel()}</span>
               <Show when={metaLine()}>
-                <span class="picker__meta mono">{metaLine()}</span>
+                <span class="mono truncate text-meta text-text-faint">{metaLine()}</span>
               </Show>
             </div>
             <Show when={ancestry().length > 1}>
-              <div class="picker__crumbs" role="group" aria-label="Element ancestry">
+              <div
+                class="flex flex-wrap items-center gap-0.5 px-0.5 pb-1"
+                role="group"
+                aria-label="Element ancestry"
+              >
                 <For each={ancestry().slice(0, 4)}>
                   {(n, i) => (
                     <button
                       type="button"
-                      class="picker__crumb"
-                      classList={{ "picker__crumb--on": i() === picker()!.index }}
+                      class={cn(
+                        "max-w-[120px] cursor-pointer truncate rounded-full border-0 bg-transparent px-1.5 py-0.5 text-meta text-text-faint transition-colors hover:bg-hover hover:text-text",
+                        i() === picker()!.index && "bg-accent/15 font-semibold text-accent-soft",
+                      )}
                       title={shortLabel(n) || n.role || "node"}
                       onClick={() => retarget(i())}
                     >
@@ -606,56 +656,76 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 </For>
               </div>
             </Show>
-            <div class="picker__mode" role="group" aria-label="Picker mode">
+            <div
+              class="mx-0.5 mb-1 flex gap-0.5 rounded-control bg-layer-1 p-0.5"
+              role="group"
+              aria-label="Picker mode"
+            >
               <button
                 type="button"
-                class="picker__mode-btn"
-                classList={{ "picker__mode-btn--on": pickMode() === "tap" }}
+                class={cn(
+                  "flex-1 cursor-pointer rounded-[calc(var(--radius-control)-2px)] border-0 bg-transparent px-1.5 py-0.5 text-meta font-medium text-text-faint transition-colors hover:text-text",
+                  pickMode() === "tap" && "bg-layer-3 text-text shadow-sm",
+                )}
                 onClick={() => setPickMode("tap")}
               >
                 Tap
               </button>
               <button
                 type="button"
-                class="picker__mode-btn"
-                classList={{ "picker__mode-btn--on": pickMode() === "select" }}
+                class={cn(
+                  "flex-1 cursor-pointer rounded-[calc(var(--radius-control)-2px)] border-0 bg-transparent px-1.5 py-0.5 text-meta font-medium text-text-faint transition-colors hover:text-text",
+                  pickMode() === "select" && "bg-layer-3 text-text shadow-sm",
+                )}
                 onClick={() => setPickMode("select")}
               >
                 Select only
               </button>
             </div>
-            <div class="picker__opts">
+            <div class="flex flex-col gap-0.5">
               <For each={strategies()}>
                 {(s) => (
-                  <button type="button" class="picker__opt" onClick={() => void pick(s)}>
+                  <button
+                    type="button"
+                    class="cursor-pointer rounded-control px-2 py-1.5 text-left font-mono text-body text-accent-soft transition-colors hover:bg-hover hover:text-text"
+                    onClick={() => void pick(s)}
+                  >
                     {s.describe}
                   </button>
                 )}
               </For>
             </div>
             <Show when={ancestry().length > 1}>
-              <div class="picker__hint mono">↑ parent · ↓ child · esc to close</div>
+              <div class="mono px-2 pt-1.5 pb-0.5 text-center text-meta text-text-faint">
+                ↑ parent · ↓ child · esc to close
+              </div>
             </Show>
           </div>
         </Show>
 
         <Show when={frame()?.caption}>
-          <div class="stage__caption mono">{frame()!.caption}</div>
+          <div class="mono z-[2] mt-3 text-center text-meta text-text-faint">
+            {frame()!.caption}
+          </div>
         </Show>
       </Show>
 
       {/* Filmstrip — Figma-style timeline under the artboard (not a peer mode). */}
       <Show when={server.frames().length > 0}>
-        <div class="scrubber">
+        <div class="z-[2] mt-3 flex w-full max-w-[560px] items-center gap-2.5 rounded-card border border-border bg-layer-1 px-2.5 py-2">
           <button
             type="button"
-            class="btn btn-ghost scrubber__play"
+            class="btn btn-ghost size-7 flex-none place-items-center rounded-md bg-layer-3 p-0 text-text hover:scale-105"
             aria-label={server.playing() ? "Pause playback" : "Replay frames"}
             onClick={() => server.togglePlayback()}
           >
             <Icon name={server.playing() ? "pause" : "play"} size={14} />
           </button>
-          <div class="ticks" role="group" aria-label="Capture timeline">
+          <div
+            class="flex h-[22px] flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="group"
+            aria-label="Capture timeline"
+          >
             <For each={server.frames()}>
               {(f, i) => {
                 const prev = () => server.frames()[i() - 1];
@@ -664,15 +734,15 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 return (
                   <>
                     <Show when={gap()}>
-                      <span class="tick gap" />
+                      <span class="h-full w-0.5 flex-none bg-transparent" />
                     </Show>
                     <button
                       type="button"
-                      class="tick"
-                      classList={{
-                        past: i() < server.frameIndex(),
-                        now: i() === server.frameIndex(),
-                      }}
+                      class={cn(
+                        "h-full min-w-1 flex-1 cursor-pointer rounded-[3px] border-0 bg-layer-3 transition hover:scale-y-110 hover:bg-text-muted",
+                        i() < server.frameIndex() && "bg-text-faint",
+                        i() === server.frameIndex() && "bg-accent",
+                      )}
                       title={f.caption}
                       aria-label={`frame ${i() + 1}: ${f.caption}`}
                       onClick={() => wb.focusFrame(i())}
@@ -682,13 +752,13 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               }}
             </For>
           </div>
-          <span class="mono scrubber__count">
+          <span class="mono flex-none pr-0.5 text-meta text-text-faint">
             {server.frameIndex() + 1}/{server.frames().length}
           </span>
           <Show when={props.onExpandBoard}>
             <button
               type="button"
-              class="btn btn-ghost scrubber__expand"
+              class="btn btn-ghost ml-1 h-7 gap-1 text-xs font-medium text-text-muted"
               data-tip="Expand board"
               aria-label="Expand frame board"
               onClick={() => props.onExpandBoard?.()}
@@ -702,12 +772,11 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
 
       {/* Mode controls only exist when a device can act — never greyed theatre. */}
       <Show when={server.health() === "online" && !server.isEmptyDevices()}>
-        <div class="stage__controls">
+        <div class="z-[2] mt-4 flex items-center justify-center gap-1">
           <div class="seg" role="group" aria-label="Stage mode">
             <button
               type="button"
-              class="seg__btn"
-              classList={{ "seg__btn--on": !rec.interacting() }}
+              class={cn("seg__btn", !rec.interacting() && "seg__btn--on")}
               aria-pressed={!rec.interacting()}
               onClick={() => setStageMode("view")}
             >
@@ -715,8 +784,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             </button>
             <button
               type="button"
-              class="seg__btn"
-              classList={{ "seg__btn--on": rec.interacting() && !rec.recording() }}
+              class={cn("seg__btn", rec.interacting() && !rec.recording() && "seg__btn--on")}
               aria-pressed={rec.interacting() && !rec.recording()}
               onClick={() => setStageMode("drive")}
             >
@@ -724,11 +792,11 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             </button>
             <button
               type="button"
-              class="seg__btn"
-              classList={{
-                "seg__btn--on": rec.interacting() && rec.recording(),
-                "seg__btn--rec": rec.interacting() && rec.recording(),
-              }}
+              class={cn(
+                "seg__btn",
+                rec.interacting() && rec.recording() && "seg__btn--on",
+                rec.interacting() && rec.recording() && "seg__btn--rec",
+              )}
               aria-pressed={rec.interacting() && rec.recording()}
               onClick={() => setStageMode("record")}
             >
@@ -738,7 +806,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           </div>
           <button
             type="button"
-            class="btn btn-ghost top__icon-btn"
+            class="btn btn-ghost h-[30px] flex-none px-1.5"
             data-tip="Screenshot (⌘⇧S)"
             aria-label="Capture screenshot"
             disabled={server.busyCapture()}
@@ -751,7 +819,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           <Show when={server.frames().length > 0}>
             <button
               type="button"
-              class="btn btn-ghost top__icon-btn"
+              class="btn btn-ghost h-[30px] flex-none px-1.5"
               data-tip="Clear frames"
               aria-label="Clear frames"
               onClick={() => server.clearFrames()}
@@ -782,14 +850,26 @@ function RecorderBar() {
   };
   return (
     <Show when={rec.interacting()}>
-      <div class="recorder" classList={{ "recorder--rec": rec.recording() }}>
-        <div class="recorder__head">
+      <div
+        class={cn(
+          "z-[3] mt-3.5 flex w-[min(420px,100%)] flex-col rounded-card bg-layer-1 px-2.5 py-1.5",
+          rec.recording() ? "shadow-sm" : "opacity-90",
+        )}
+      >
+        <div class="flex min-h-[22px] items-center gap-2 px-0.5">
           <span
-            class="recorder__dot"
-            classList={{ "recorder__dot--rec": rec.recording() }}
+            class={cn(
+              "size-2 flex-none rounded-full",
+              rec.recording() ? "animate-pulse bg-fail" : "bg-text-faint",
+            )}
             aria-hidden="true"
           />
-          <span class="recorder__status">
+          <span
+            class={cn(
+              "flex-1 truncate text-meta",
+              rec.recording() ? "font-semibold text-text" : "text-text-faint",
+            )}
+          >
             <Show
               when={rec.recording()}
               fallback="Drive mode — your input goes to the device · right-click to inspect"
@@ -798,9 +878,12 @@ function RecorderBar() {
             </Show>
           </span>
           <Show when={rec.typeBuffer()}>
-            <span class="recorder__type mono" title="Typing to device…">
+            <span
+              class="mono max-w-[45%] flex-none truncate text-meta text-text"
+              title="Typing to device…"
+            >
               “{rec.typeBuffer()}
-              <span class="recorder__caret" aria-hidden="true">
+              <span class="animate-pulse text-text" aria-hidden="true">
                 ▍
               </span>
               ”
@@ -809,7 +892,7 @@ function RecorderBar() {
           <Show when={rec.recording()}>
             <button
               type="button"
-              class="btn btn-ghost recorder__stop"
+              class="btn btn-ghost h-[22px] flex-none px-2 text-meta text-fail"
               onClick={() => rec.setRecording(false)}
             >
               <Icon name="square" size={12} />

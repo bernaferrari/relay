@@ -17,3 +17,6 @@ packages/*/out/
 packages/*/node_modules/
 *.tsbuildinfo
 runs/
+vendor/
+
+*.legacy.css.bak

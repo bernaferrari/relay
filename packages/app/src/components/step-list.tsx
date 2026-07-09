@@ -23,10 +23,25 @@ import {
   parsePoint,
   type Strategy,
 } from "../lib/step-target";
+import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 
 type AddOption = { label: string; make: () => RecipeStep };
 type AddGroup = { label: string; items: AddOption[] };
+
+/** Shared field chrome for expanded step editors. */
+const valueCls =
+  "h-[30px] min-w-[140px] flex-1 rounded-control border border-border bg-base px-2.5 text-body text-text transition-[border-color] focus:border-border-focus focus:outline-none";
+const valueTimeoutCls = cn(valueCls, "w-[72px] min-w-0 flex-none");
+const iconBtnCls =
+  "grid size-[26px] shrink-0 place-items-center rounded-control text-text-faint transition-[background,color,transform] hover:enabled:bg-hover hover:enabled:text-text active:enabled:scale-[0.94] disabled:cursor-default disabled:opacity-35";
+const stepICls =
+  "mono w-[18px] shrink-0 text-right text-xs font-medium tabular-nums text-text-faint";
+const kindCls = "block text-[10.5px] font-semibold uppercase tracking-[0.04em] text-text-faint";
+const menuItemCls =
+  "block w-full rounded-lg px-3 py-2 text-left text-body font-medium text-text transition-colors hover:bg-hover active:scale-[0.99]";
+const moreItemCls =
+  "block w-full rounded-md px-2.5 py-[7px] text-left text-body text-text transition-colors hover:enabled:bg-hover disabled:cursor-default disabled:opacity-40";
 
 /** Short kind chip — Uber-style “Instruction / Manual” density. */
 function kindLabel(kind: string): string {
@@ -159,7 +174,7 @@ function ManualTarget(props: {
           return (
             <input
               ref={inputRef}
-              class="recipe-editor__value mono"
+              class={cn(valueCls, "mono")}
               type="text"
               placeholder={st().placeholder}
               value={value()}
@@ -196,16 +211,23 @@ function AddMenu(props: { onPick: (step: RecipeStep) => void; onClose: () => voi
     });
   });
   return (
-    <div class="recipe-editor__add-menu" role="menu" aria-label="Add step" ref={ref}>
+    <div
+      class="absolute top-[calc(100%+6px)] left-0 z-[12] flex max-h-[min(420px,calc(100vh-100px))] w-[min(280px,100%)] origin-top-left flex-col overflow-y-auto rounded-xl border border-border bg-layer-1 p-1.5 shadow-[var(--v2-elevation-overlay,0_12px_40px_rgba(0,0,0,0.32))]"
+      role="menu"
+      aria-label="Add step"
+      ref={ref}
+    >
       <For each={ADD_GROUPS}>
-        {(g) => (
-          <div class="recipe-editor__add-group">
-            <div class="recipe-editor__add-group-label">{g.label}</div>
+        {(g, gi) => (
+          <div class={cn("flex flex-col", gi() > 0 && "mt-1 border-t border-border pt-1")}>
+            <div class="px-2.5 pt-1.5 pb-0.5 text-[10px] font-semibold tracking-wide text-text-faint uppercase">
+              {g.label}
+            </div>
             <For each={g.items}>
               {(o) => (
                 <button
                   type="button"
-                  class="recipe-editor__add-item"
+                  class={menuItemCls}
                   role="menuitem"
                   onClick={() => props.onPick(o.make())}
                 >
@@ -229,10 +251,30 @@ function InsertGap(props: {
   onClose: () => void;
 }): JSX.Element {
   return (
-    <div class="step-insert" classList={{ "step-insert--open": props.open }}>
+    <div
+      class={cn(
+        "group relative z-[1] -my-1 flex h-3 items-center justify-center",
+        props.open && "z-[14]",
+      )}
+    >
+      <div
+        class={cn(
+          "pointer-events-none absolute inset-x-7 h-px bg-transparent transition-colors",
+          "group-hover:bg-accent/35",
+          props.open && "bg-accent/35",
+        )}
+        aria-hidden="true"
+      />
       <button
         type="button"
-        class="step-insert__btn"
+        class={cn(
+          "z-[1] grid size-5 place-items-center rounded-full border border-border bg-layer-1 text-text-faint",
+          "scale-[0.85] opacity-0 transition-[opacity,transform,background,color,border-color]",
+          "group-hover:scale-100 group-hover:opacity-100",
+          "focus-visible:scale-100 focus-visible:opacity-100",
+          "hover:border-accent hover:bg-accent hover:text-accent-fg",
+          props.open && "scale-100 opacity-100",
+        )}
         aria-label="Insert step here"
         data-tip="Insert step here"
         onClick={() => props.onToggle()}
@@ -257,24 +299,27 @@ export function StepAnno(props: { anno: Accessor<RowAnno> }): JSX.Element {
   // Idle dots are pure noise — only render when a run left a mark.
   return (
     <Show when={props.anno().status !== "idle"}>
-      <span class="sanno" aria-hidden="true">
+      <span
+        class="inline-flex min-w-[52px] shrink-0 items-center justify-end gap-1.5 tabular-nums"
+        aria-hidden="true"
+      >
         <Show when={props.anno().status === "running"}>
-          <span class="sanno__dot sanno__dot--run" />
+          <span class="size-1.5 animate-pulse rounded-full bg-run" />
         </Show>
         <Show when={props.anno().status === "pass"}>
-          <span class="sanno__mark sanno__mark--pass">
+          <span class="inline-grid place-items-center text-pass">
             <Icon name="check" size={13} />
           </span>
           <Show when={dur()}>
-            <span class="sanno__dur">{dur()}</span>
+            <span class="mono whitespace-nowrap text-meta text-text-faint">{dur()}</span>
           </Show>
         </Show>
         <Show when={props.anno().status === "fail"}>
-          <span class="sanno__mark sanno__mark--fail">
+          <span class="inline-grid place-items-center text-fail">
             <Icon name="x" size={13} />
           </span>
           <Show when={dur()}>
-            <span class="sanno__dur">{dur()}</span>
+            <span class="mono whitespace-nowrap text-meta text-text-faint">{dur()}</span>
           </Show>
         </Show>
       </span>
@@ -307,7 +352,7 @@ function StepRow(props: {
   onMount(() => {
     const onDoc = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
-      if (!t?.closest?.(".recipe-editor__more")) setMoreOpen(false);
+      if (!t?.closest?.("[data-step-more]")) setMoreOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && moreOpen()) {
@@ -376,48 +421,57 @@ function StepRow(props: {
     props.onRemove();
   }
 
+  const selected = () => focused() || props.expanded();
+
   return (
     <div
-      class="recipe-editor__step"
-      classList={{
-        "recipe-editor__step--open": props.expanded(),
-        "recipe-editor__step--on": focused(),
+      class={cn(
+        "group relative border-b border-border transition-colors",
+        selected() && "bg-accent/10 shadow-[inset_3px_0_0_0_var(--color-accent)]",
+        !selected() && anno().status === "running" && "bg-run/[0.08]",
+        !selected() && anno().status === "pass" && "bg-pass/[0.06]",
+        !selected() && anno().status === "fail" && "bg-fail/[0.09]",
+        !selected() && anno().status === "idle" && "hover:bg-layer-2/70",
         // Red only when incomplete AND collapsed — while editing, don't scold.
-        "recipe-editor__step--err": Boolean(issue()) && !props.expanded(),
-        "recipe-editor__step--flash": props.flash(),
-        "recipe-editor__step--run": anno().status === "running",
-        "recipe-editor__step--pass": anno().status === "pass",
-        "recipe-editor__step--fail": anno().status === "fail",
-      }}
+        Boolean(issue()) && !props.expanded() && "bg-fail/[0.04]",
+        props.flash() && "bg-accent/25",
+      )}
     >
       <div
-        class="recipe-editor__row"
+        class="flex min-h-12 cursor-pointer items-center gap-2.5 px-2 py-2 pl-1.5"
         onClick={(e) => {
           // The whole row toggles the editor — except clicks meant for the
-          // action buttons / menus (they live in .recipe-editor__row-actions).
-          if (
-            (e.target as HTMLElement).closest(
-              ".recipe-editor__row-actions, .recipe-editor__more-menu",
-            )
-          )
+          // action buttons / menus.
+          if ((e.target as HTMLElement).closest("[data-step-actions], [data-step-more-menu]"))
             return;
           props.onToggleExpand();
         }}
       >
-        <span class="recipe-editor__step-i mono">{props.index + 1}</span>
-        <button type="button" class="recipe-editor__sentence" aria-expanded={props.expanded()}>
-          <span class="recipe-editor__kind">{kindLabel(kind())}</span>
-          <span class="recipe-editor__sentence-text">
+        <span class={stepICls}>{props.index + 1}</span>
+        <button
+          type="button"
+          class="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0 border-0 bg-transparent py-0 text-left text-[13.5px] font-medium tracking-[-0.012em] text-text hover:text-text-strong"
+          aria-expanded={props.expanded()}
+        >
+          <span class={kindCls}>{kindLabel(kind())}</span>
+          <span class="w-full truncate font-medium text-text">
             {sentenceForStep(props.step(), server.recipes())}
           </span>
         </button>
 
         <StepAnno anno={anno} />
 
-        <span class="recipe-editor__row-actions">
+        <span
+          data-step-actions
+          class={cn(
+            "flex shrink-0 items-center gap-px opacity-55 transition-opacity",
+            "group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
+            props.expanded() && "opacity-100",
+          )}
+        >
           <button
             type="button"
-            class="recipe-editor__btn recipe-editor__btn--run"
+            class={cn(iconBtnCls, "hover:enabled:bg-accent/15 hover:enabled:text-accent-soft")}
             data-tip={runTip()}
             aria-label="Run this step"
             disabled={!canRunStep()}
@@ -427,17 +481,17 @@ function StepRow(props: {
           </button>
           <button
             type="button"
-            class="recipe-editor__btn recipe-editor__btn--danger"
+            class={cn(iconBtnCls, "hover:enabled:bg-fail/15 hover:enabled:text-fail")}
             data-tip="Delete step"
             aria-label="Delete step"
             onClick={() => armDelete()}
           >
             <Icon name="trash" size={12} />
           </button>
-          <div class="recipe-editor__more">
+          <div class="relative" data-step-more>
             <button
               type="button"
-              class="recipe-editor__btn"
+              class={iconBtnCls}
               data-tip="More"
               aria-label="Step options"
               aria-haspopup="menu"
@@ -447,10 +501,14 @@ function StepRow(props: {
               <Icon name="more" size={12} />
             </button>
             <Show when={moreOpen()}>
-              <div class="recipe-editor__more-menu" role="menu">
+              <div
+                data-step-more-menu
+                class="absolute top-[calc(100%+4px)] right-0 z-[16] min-w-[148px] origin-top-right rounded-[10px] border border-border bg-layer-1 p-1 shadow-[var(--v2-elevation-overlay)]"
+                role="menu"
+              >
                 <button
                   type="button"
-                  class="recipe-editor__more-item"
+                  class={moreItemCls}
                   role="menuitem"
                   onClick={() => {
                     setMoreOpen(false);
@@ -461,7 +519,7 @@ function StepRow(props: {
                 </button>
                 <button
                   type="button"
-                  class="recipe-editor__more-item"
+                  class={moreItemCls}
                   role="menuitem"
                   disabled={props.index === 0}
                   onClick={() => {
@@ -473,7 +531,7 @@ function StepRow(props: {
                 </button>
                 <button
                   type="button"
-                  class="recipe-editor__more-item"
+                  class={moreItemCls}
                   role="menuitem"
                   disabled={props.index === props.total() - 1}
                   onClick={() => {
@@ -491,18 +549,18 @@ function StepRow(props: {
 
       {/* Failure auto-surfaces as one compact line — no expand needed. */}
       <Show when={anno().status === "fail" && anno().error}>
-        <p class="step-row__fail-msg">
+        <p class="mb-2 flex items-center gap-1.5 px-3 pr-3 pl-10 text-meta leading-snug text-fail">
           <Icon name="alert" size={11} />
           {anno().error}
         </p>
       </Show>
 
       <Show when={issue() && !props.expanded()}>
-        <p class="step-row__issue">Click to finish — {issue()}</p>
+        <p class="mb-2 px-3 pl-10 text-meta text-fail">Click to finish — {issue()}</p>
       </Show>
 
       <Show when={props.expanded()}>
-        <div class="recipe-editor__detail">
+        <div class="mx-1 flex flex-wrap items-center gap-2 border-t border-border px-3 pt-0.5 pb-3 pl-10">
           {/* tap — detected chain as one-click retargeting when captured */}
           <Show when={kind() === "tap"}>
             {(() => {
@@ -512,7 +570,7 @@ function StepRow(props: {
               const hasDetected = chain.some((c) => c.id !== "point");
               if (!hasDetected) {
                 return (
-                  <div class="recipe-editor__nodetect">
+                  <div class="flex w-full basis-full flex-col gap-2">
                     <ManualTarget
                       target={target}
                       strategy={strategy}
@@ -525,22 +583,38 @@ function StepRow(props: {
                 );
               }
               return (
-                <div class="recipe-editor__chain" role="radiogroup" aria-label="Retarget tap">
+                <div
+                  class="flex w-full basis-full flex-col gap-0.5"
+                  role="radiogroup"
+                  aria-label="Retarget tap"
+                >
                   <For each={chain}>
                     {(c) => (
                       <button
                         type="button"
                         role="radio"
                         aria-checked={strategy() === c.id}
-                        class="recipe-editor__chain-opt"
-                        classList={{ "recipe-editor__chain-opt--on": strategy() === c.id }}
+                        class={cn(
+                          "flex items-center gap-2 rounded-control px-2 py-[7px] text-text-muted transition-colors hover:bg-hover",
+                          strategy() === c.id && "bg-accent/10 text-text",
+                        )}
                         onClick={() => retargetTap(c.id)}
                       >
-                        <span class="recipe-editor__chain-mark mono" aria-hidden="true">
+                        <span
+                          class={cn(
+                            "mono shrink-0 text-body",
+                            strategy() === c.id ? "text-accent-soft" : "text-text-faint",
+                          )}
+                          aria-hidden="true"
+                        >
                           {strategy() === c.id ? "◉" : "○"}
                         </span>
-                        <span class="recipe-editor__chain-label">{c.label}</span>
-                        <span class="recipe-editor__chain-value mono">{c.value}</span>
+                        <span class="min-w-11 shrink-0 text-meta font-medium text-text-faint">
+                          {c.label}
+                        </span>
+                        <span class="mono min-w-0 flex-1 truncate text-body text-text">
+                          {c.value}
+                        </span>
                       </button>
                     )}
                   </For>
@@ -563,9 +637,9 @@ function StepRow(props: {
               const s = props.step();
               if (s.kind !== "wait-for") return null;
               return (
-                <span class="recipe-editor__timeout-wrap">
+                <span class="inline-flex items-center gap-1">
                   <input
-                    class="recipe-editor__value mono recipe-editor__value--timeout"
+                    class={cn(valueTimeoutCls, "mono")}
                     type="number"
                     min={0}
                     placeholder="5"
@@ -580,7 +654,7 @@ function StepRow(props: {
                       });
                     }}
                   />
-                  <span class="recipe-editor__unit mono">s</span>
+                  <span class="mono text-meta text-text-faint">s</span>
                 </span>
               );
             })()}
@@ -619,9 +693,9 @@ function StepRow(props: {
                       </button>
                     ))}
                   </div>
-                  <span class="recipe-editor__timeout-wrap">
+                  <span class="inline-flex items-center gap-1">
                     <input
-                      class="recipe-editor__value mono recipe-editor__value--timeout"
+                      class={cn(valueTimeoutCls, "mono")}
                       type="number"
                       min={0}
                       placeholder="5"
@@ -636,7 +710,7 @@ function StepRow(props: {
                         });
                       }}
                     />
-                    <span class="recipe-editor__unit mono">s</span>
+                    <span class="mono text-meta text-text-faint">s</span>
                   </span>
                 </>
               );
@@ -658,7 +732,7 @@ function StepRow(props: {
               return (
                 <input
                   ref={ref}
-                  class="recipe-editor__value mono"
+                  class={cn(valueCls, "mono")}
                   type="text"
                   placeholder="text to type"
                   value={s.text}
@@ -682,17 +756,17 @@ function StepRow(props: {
                 }
               });
               return (
-                <span class="recipe-editor__timeout-wrap">
+                <span class="inline-flex items-center gap-1">
                   <input
                     ref={ref}
-                    class="recipe-editor__value mono recipe-editor__value--timeout"
+                    class={cn(valueTimeoutCls, "mono")}
                     type="number"
                     min={0}
                     placeholder="500"
                     value={s.ms}
                     onInput={(e) => onEdit({ ...s, ms: parseInt(e.currentTarget.value, 10) || 0 })}
                   />
-                  <span class="recipe-editor__unit mono">ms</span>
+                  <span class="mono text-meta text-text-faint">ms</span>
                 </span>
               );
             })()}
@@ -713,7 +787,7 @@ function StepRow(props: {
               return (
                 <input
                   ref={ref}
-                  class="recipe-editor__value"
+                  class={valueCls}
                   type="text"
                   placeholder="instructions for the human (e.g. complete 2FA)"
                   value={s.message}
@@ -782,7 +856,7 @@ function StepRow(props: {
                     ))}
                   </div>
                   <input
-                    class="recipe-editor__value mono"
+                    class={cn(valueCls, "mono")}
                     type="number"
                     min={0}
                     placeholder="amount (optional)"
@@ -808,7 +882,7 @@ function StepRow(props: {
               if (s.kind !== "screenshot") return null;
               return (
                 <input
-                  class="recipe-editor__value"
+                  class={valueCls}
                   type="text"
                   placeholder="caption (optional)"
                   value={s.caption ?? ""}
@@ -832,7 +906,7 @@ function StepRow(props: {
               const flows = server.recipes().filter((r) => r.source === "builtin");
               return (
                 <select
-                  class="recipe-editor__value recipe-editor__select"
+                  class={valueCls}
                   aria-label="Built-in flow"
                   value={s.flow}
                   onChange={(e) => onEdit({ kind: "flow", flow: e.currentTarget.value })}
@@ -848,7 +922,9 @@ function StepRow(props: {
 
           {/* When annotated, the expanded row also shows that step's log. */}
           <Show when={anno().log}>
-            <pre class="step-row__log mono">{anno().log}</pre>
+            <pre class="mono mt-1 max-h-40 w-full basis-full overflow-y-auto rounded-control bg-base px-2.5 py-2 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted">
+              {anno().log}
+            </pre>
           </Show>
         </div>
       </Show>
@@ -932,22 +1008,25 @@ export function RecipeStepsEditor(): JSX.Element {
   const isEmpty = () => draft.steps().length === 0;
 
   return (
-    <div class="recipe-editor__steps" classList={{ "recipe-editor__steps--empty": isEmpty() }}>
+    <div class={cn("flex flex-col gap-0.5 pt-1 pb-6", isEmpty() && "pt-0")}>
       <Show when={isEmpty()}>
-        <div class="recipe-editor__guide" role="group" aria-label="Add first step">
+        <div class="flex w-full flex-col" role="group" aria-label="Add first step">
           <For each={STARTERS}>
             {(s, i) => (
               <button
                 type="button"
-                class="recipe-editor__ghost-row"
+                class="group flex w-full min-h-14 cursor-pointer items-center gap-3 border-0 border-b border-border bg-transparent px-4 py-2.5 text-left font-[inherit] text-inherit transition-colors hover:bg-accent/[0.08]"
                 onClick={() => insertAt(0, s.make())}
               >
-                <span class="recipe-editor__step-i mono">{i() + 1}</span>
-                <span class="recipe-editor__sentence">
-                  <span class="recipe-editor__kind">{s.kind}</span>
-                  <span class="recipe-editor__sentence-text">{s.title}</span>
+                <span class={cn(stepICls, "opacity-55")}>{i() + 1}</span>
+                <span class="flex min-w-0 flex-1 flex-col items-start gap-0">
+                  <span class={kindCls}>{s.kind}</span>
+                  <span class="truncate font-medium text-text-muted">{s.title}</span>
                 </span>
-                <span class="recipe-editor__ghost-add" aria-hidden="true">
+                <span
+                  class="ml-auto grid size-7 shrink-0 place-items-center rounded-lg border border-border bg-layer-2 text-text-faint transition-colors group-hover:border-accent/35 group-hover:text-accent-soft"
+                  aria-hidden="true"
+                >
                   <Icon name="plus" size={14} />
                 </span>
               </button>
@@ -1003,11 +1082,14 @@ export function RecipeStepsEditor(): JSX.Element {
         )}
       </Index>
 
-      <div class="recipe-editor__add-wrap">
+      <div class="relative mt-2 px-4 pt-2.5">
         <button
           type="button"
-          class="btn btn-ghost recipe-editor__add"
-          classList={{ "recipe-editor__add--empty": isEmpty() }}
+          class={cn(
+            "btn btn-ghost h-[38px] w-full justify-center rounded-[10px] border border-border font-medium text-text-muted",
+            "hover:border-accent/45 hover:bg-accent/[0.08] hover:text-accent-soft",
+            isEmpty() && "border-dashed",
+          )}
           aria-haspopup="menu"
           aria-expanded={addAt() === draft.steps().length}
           onClick={() =>

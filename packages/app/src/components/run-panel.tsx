@@ -12,6 +12,23 @@ import {
   resolvePlannedTitles,
   runBlocker as runBlockerOf,
 } from "../lib/run-gates";
+import { cn } from "../lib/cn";
+
+function toneText(tone: string): string {
+  if (tone === "pass") return "text-pass";
+  if (tone === "fail") return "text-fail";
+  if (tone === "heal") return "text-heal";
+  if (tone === "run") return "text-run";
+  return "text-text-muted";
+}
+
+function toneDot(tone: string): string {
+  if (tone === "pass") return "bg-pass";
+  if (tone === "fail") return "bg-fail";
+  if (tone === "heal") return "bg-heal";
+  if (tone === "run") return "bg-run";
+  return "bg-text-faint";
+}
 
 /**
  * Steps pane — the selected test's living document.
@@ -179,8 +196,8 @@ export function StepsPane() {
   onMount(() => {
     const onDoc = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
-      if (!t?.closest?.(".runpane__switcher")) setMenuOpen(false);
-      if (!t?.closest?.(".runhist")) setHistoryOpen(false);
+      if (!t?.closest?.("[data-switcher]")) setMenuOpen(false);
+      if (!t?.closest?.("[data-runhist]")) setHistoryOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -310,30 +327,38 @@ export function StepsPane() {
         SpaceX header: one switcher · status · primary actions.
         No nag captions. Empty steps are self-explanatory in the body.
       */}
-      <div class="runpane__head">
-        <div class="runpane__head-copy">
-          <div class="pick-wrap runpane__switcher">
+      <div class="relative z-40 flex min-h-12 shrink-0 items-start gap-3.5 border-b border-border bg-layer-1/90 px-4 py-3 pb-2.5 backdrop-blur-sm">
+        <div class="min-w-0 flex-1">
+          <div class="relative" data-switcher>
             <Show
               when={selectedRecipe() && titleEditing()}
               fallback={
                 <button
                   type="button"
-                  class="runpane__switch"
-                  classList={{
-                    "runpane__switch--empty": !selectedRecipe(),
-                    "runpane__switch--open": menuOpen(),
-                  }}
+                  class={cn(
+                    "inline-flex h-[34px] max-w-full items-center gap-2 rounded-[10px] border border-border bg-layer-2 py-0 pr-3 pl-3.5 text-sm font-semibold tracking-tight text-text shadow-[0_1px_0_rgb(0_0_0_/0.06)] transition-[border-color,background,box-shadow] hover:border-border-strong",
+                    !selectedRecipe() && "font-medium text-text-faint",
+                    menuOpen() &&
+                      "border-border-focus shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_18%,transparent)]",
+                  )}
                   aria-haspopup="listbox"
                   aria-expanded={menuOpen()}
                   onClick={() => setMenuOpen((o) => !o)}
                 >
-                  <span class="runpane__switch-label">{switcherLabel()}</span>
-                  <Icon name="chevron-down" size={14} class="runpane__switch-chev" />
+                  <span class="max-w-[280px] min-w-0 truncate">{switcherLabel()}</span>
+                  <Icon
+                    name="chevron-down"
+                    size={14}
+                    class={cn(
+                      "shrink-0 text-text-faint transition-transform duration-150",
+                      menuOpen() && "rotate-180",
+                    )}
+                  />
                 </button>
               }
             >
               <input
-                class="runpane__title-input"
+                class="m-0 h-8 max-w-full min-w-40 rounded-lg border border-border-focus bg-base px-2.5 text-sm font-semibold tracking-tight text-text outline-none"
                 value={titleBuf()}
                 ref={(el) =>
                   queueMicrotask(() => {
@@ -357,31 +382,40 @@ export function StepsPane() {
             </Show>
 
             <Show when={menuOpen()}>
-              <div class="pick-menu runpane__switcher-menu" role="listbox">
+              <div
+                class="absolute top-[calc(100%+8px)] left-0 z-50 max-h-[min(400px,70vh)] min-w-[min(300px,90vw)] overflow-y-auto rounded-xl border border-border bg-layer-1 p-1.5 shadow-xl"
+                role="listbox"
+              >
                 <For each={switcherGroups()}>
-                  {(g) => (
-                    <div class="pick-group">
-                      <div class="pick-group__label">{g.label}</div>
+                  {(g, gi) => (
+                    <div class={cn(gi() > 0 && "mt-1 border-t border-border pt-1")}>
+                      <div class="px-2.5 pt-1.5 pb-0.5 text-meta font-medium text-text-faint">
+                        {g.label}
+                      </div>
                       <For each={g.items}>
                         {(r) => (
-                          <div class="pick-row">
+                          <div class="group flex items-center gap-px pr-1">
                             <button
                               type="button"
                               role="option"
-                              class="pick-item"
-                              classList={{ on: server.selectedRecipeId() === r.id }}
+                              class={cn(
+                                "flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-text transition-colors hover:bg-hover",
+                                server.selectedRecipeId() === r.id && "bg-accent/12",
+                              )}
                               onClick={() => {
                                 server.setSelectedRecipeId(r.id);
                                 setMenuOpen(false);
                               }}
                             >
                               <span
-                                class="pick-item__title"
-                                classList={{ "pick-item__title--dim": !r.title.trim() }}
+                                class={cn(
+                                  "block min-w-0 truncate text-body font-medium",
+                                  !r.title.trim() && "text-text-faint",
+                                )}
                               >
                                 {displayTitle(r.title)}
                               </span>
-                              <span class="pick-item__meta mono">
+                              <span class="mono shrink-0 text-[10.5px] text-text-faint opacity-80">
                                 {(() => {
                                   const planned =
                                     server.actions().find((a) => a.id === r.id)?.planned?.length ??
@@ -397,7 +431,7 @@ export function StepsPane() {
                             <Show when={g.custom}>
                               <button
                                 type="button"
-                                class="pick-row__action pick-row__action--del"
+                                class="grid size-6 shrink-0 place-items-center rounded-md border-0 bg-transparent text-text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:bg-fail/15 hover:text-fail focus-visible:opacity-100"
                                 title="Delete"
                                 aria-label={`Delete ${r.title}`}
                                 onClick={() => void server.deleteRecipeRemote(r.id)}
@@ -413,7 +447,7 @@ export function StepsPane() {
                 </For>
                 <button
                   type="button"
-                  class="pick-item pick-item--action"
+                  class="mt-0.5 flex w-full items-center justify-center gap-2 rounded-b-[10px] border-t border-border px-2.5 pt-2.5 pb-2 font-medium text-accent-soft transition-colors hover:bg-hover"
                   onClick={() => {
                     setMenuOpen(false);
                     void createNewTest();
@@ -427,33 +461,40 @@ export function StepsPane() {
           </div>
 
           <Show when={selectedRecipe() && metaLine()}>
-            <div class="runpane__meta-row">
+            <div class="mt-1 flex min-h-5 items-center gap-2.5">
               <span
-                class="runpane__meta"
-                classList={{
-                  "runpane__meta--bad":
-                    draft.saveState() === "invalid" && draft.expandedStep() == null,
-                  "runpane__meta--pass": metaTone() === "pass" || metaTone() === "heal",
-                  "runpane__meta--fail": metaTone() === "fail",
-                  "runpane__meta--run": metaTone() === "run",
-                }}
+                class={cn(
+                  "whitespace-nowrap text-[11.5px] font-medium tracking-wide text-text-faint",
+                  draft.saveState() === "invalid" &&
+                    draft.expandedStep() == null &&
+                    "font-semibold text-fail",
+                  (metaTone() === "pass" || metaTone() === "heal") && "font-semibold text-pass",
+                  metaTone() === "fail" && "font-semibold text-fail",
+                  metaTone() === "run" && "font-semibold text-run",
+                )}
               >
                 {metaLine()}
               </span>
               <Show when={draft.source() === "custom" && draft.steps().length > 0}>
-                <button type="button" class="runpane__rename" onClick={() => startTitleEdit()}>
+                <button
+                  type="button"
+                  class="cursor-pointer border-0 bg-transparent p-0 font-inherit text-meta text-text-faint underline underline-offset-2 hover:text-text-muted"
+                  onClick={() => startTitleEdit()}
+                >
                   Rename
                 </button>
               </Show>
             </div>
           </Show>
           <Show when={selectedRecipe() && (draft.description() || selectedMeta()?.description)}>
-            <p class="runpane__desc-static">{draft.description() || selectedMeta()?.description}</p>
+            <p class="mt-1.5 mb-0 max-w-[42em] text-[12.5px] leading-snug text-text-muted">
+              {draft.description() || selectedMeta()?.description}
+            </p>
           </Show>
         </div>
 
-        <div class="runpane__head-actions-col">
-          <div class="runpane__head-actions">
+        <div class="flex shrink-0 flex-col items-end gap-1">
+          <div class="flex h-[34px] items-center gap-1 self-end">
             <Show when={wb.running()}>
               <button type="button" class="btn btn-ghost" onClick={() => wb.stop()}>
                 <Icon name="square" size={11} />
@@ -481,29 +522,34 @@ export function StepsPane() {
             <Show when={selectedRecipe()}>
               {/* Past runs live in the header — not a random chip in the step list. */}
               <Show when={wb.chips().length > 0}>
-                <div class="runhist runhist--head">
+                <div class="relative" data-runhist>
                   <button
                     type="button"
-                    class="btn btn-ghost runhist__head-btn"
-                    classList={{ "btn-ghost--on": historyOpen() }}
+                    class={cn("btn btn-ghost gap-1.5", historyOpen() && "btn-ghost--on")}
                     aria-expanded={historyOpen()}
                     onClick={() => setHistoryOpen((o) => !o)}
                   >
                     Past runs
-                    <span class="runhist__head-count mono">{wb.chips().length}</span>
+                    <span class="mono min-w-[1.1em] text-center text-[11px] opacity-70">
+                      {wb.chips().length}
+                    </span>
                   </button>
                   <Show when={historyOpen()}>
-                    <div class="runhist__list" role="listbox" aria-label="Past runs">
+                    <div
+                      class="absolute top-[calc(100%+6px)] right-0 left-auto z-50 max-h-[300px] min-w-[min(380px,92vw)] overflow-y-auto rounded-xl border border-border bg-layer-1 p-1 shadow-xl"
+                      role="listbox"
+                      aria-label="Past runs"
+                    >
                       <For each={wb.chips()}>
                         {(c) => {
                           const f = () => chipFacts(c);
                           return (
                             <button
                               type="button"
-                              class="runhist__item"
-                              classList={{
-                                "runhist__item--on": wb.reviewedRun()?.id === c.id,
-                              }}
+                              class={cn(
+                                "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left text-body text-text hover:bg-hover",
+                                wb.reviewedRun()?.id === c.id && "bg-accent/12",
+                              )}
                               role="option"
                               aria-selected={wb.reviewedRun()?.id === c.id}
                               onClick={() => {
@@ -512,13 +558,18 @@ export function StepsPane() {
                               }}
                             >
                               <span
-                                class={`hchip__dot hchip__dot--${f().tone}`}
+                                class={cn(
+                                  "mt-1.5 size-1.5 shrink-0 rounded-full",
+                                  toneDot(f().tone),
+                                )}
                                 aria-hidden="true"
                               />
-                              <span class="runhist__item-body">
-                                <span class="runhist__item-label">{f().label}</span>
+                              <span class="flex min-w-0 flex-col gap-0.5">
+                                <span class="text-meta font-medium">{f().label}</span>
                                 <Show when={f().detail}>
-                                  <span class="runhist__item-detail">{f().detail}</span>
+                                  <span class="max-w-[300px] truncate text-[11px] leading-snug text-text-faint">
+                                    {f().detail}
+                                  </span>
                                 </Show>
                               </span>
                             </button>
@@ -528,7 +579,7 @@ export function StepsPane() {
                       <Show when={wb.reviewedRun()}>
                         <button
                           type="button"
-                          class="runhist__log"
+                          class="mt-0.5 block w-full border-t border-border px-2.5 py-2 text-left text-meta text-text-faint hover:text-text"
                           onClick={() => {
                             setHistoryOpen(false);
                             setLogOpen(true);
@@ -557,7 +608,7 @@ export function StepsPane() {
 
               <button
                 type="button"
-                class="btn btn-acc runpane__run"
+                class="btn btn-acc min-w-[76px] font-semibold"
                 disabled={!canRun()}
                 data-tip={runTip()}
                 onClick={() => {
@@ -574,21 +625,27 @@ export function StepsPane() {
             </Show>
           </div>
           <Show when={showRunWhy()}>
-            <p class="runpane__run-why">{runBlocker()}</p>
+            <p class="m-0 max-w-40 text-right text-[11px] leading-tight font-medium text-text-faint">
+              {runBlocker()}
+            </p>
           </Show>
         </div>
       </div>
 
-      <div class="runpane__scroll">
+      <div class="relative z-[1] min-h-0 flex-1 overflow-y-auto p-0">
         <Show when={!selectedRecipe()}>
-          <div class="runpane__empty runpane__empty--quiet">
-            <div class="runpane__welcome">
-              <p class="runpane__welcome-kicker mono">SPECIMEN</p>
-              <p class="runpane__welcome-title">Mobile tests, step by step</p>
-              <p class="runpane__welcome-body">
+          <div class="flex min-h-[280px] flex-1 items-start justify-center px-2 py-14">
+            <div class="max-w-[360px]">
+              <p class="mono mb-2.5 text-[10px] font-bold tracking-[0.12em] text-accent-soft">
+                SPECIMEN
+              </p>
+              <p class="mb-2 text-xl font-semibold tracking-tight text-text leading-tight">
+                Mobile tests, step by step
+              </p>
+              <p class="mb-5 text-[13px] leading-normal text-text-muted">
                 Pick a test or create one. Connect a phone, hit Run — screenshots land on Canvas.
               </p>
-              <div class="runpane__welcome-actions">
+              <div class="flex flex-wrap gap-2">
                 <button type="button" class="btn btn-acc" onClick={() => void createNewTest()}>
                   <Icon name="plus" size={13} />
                   New test
@@ -617,25 +674,36 @@ export function StepsPane() {
           <Show when={reviewedFacts()}>
             {(f) => (
               <>
-                <div class="runsum">
-                  <span class={`runsum__word runsum__word--${f().tone}`}>
+                <div class="flex flex-wrap items-baseline gap-2 px-4 py-1 pb-2 text-meta text-text-faint">
+                  <span
+                    class={cn("inline-flex items-center gap-1.5 font-semibold", toneText(f().tone))}
+                  >
                     <Show when={f().live}>
-                      <span class="runsum__spin" aria-hidden="true" />
+                      <span
+                        class="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
+                        aria-hidden="true"
+                      />
                     </Show>
                     {f().word}
                   </span>
                   <Show when={f().when}>
-                    <span class="runsum__fact">{f().when}</span>
+                    <span class="before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums">
+                      {f().when}
+                    </span>
                   </Show>
                   <Show when={f().dur}>
-                    <span class="runsum__fact mono">{f().dur}</span>
+                    <span class="mono before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums">
+                      {f().dur}
+                    </span>
                   </Show>
                   <Show when={f().device}>
-                    <span class="runsum__fact">{f().device}</span>
+                    <span class="before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums">
+                      {f().device}
+                    </span>
                   </Show>
                   <button
                     type="button"
-                    class="runsum__clear"
+                    class="ml-auto h-[22px] rounded-md px-1.5 text-[11px] font-medium text-text-faint hover:bg-hover hover:text-text"
                     onClick={() => {
                       const id = wb.reviewedRun()?.id;
                       if (id) wb.toggleChip(id);
@@ -645,8 +713,14 @@ export function StepsPane() {
                   </button>
                 </div>
                 <Show when={f().error && f().tone === "fail"}>
-                  <div class="heal-box heal-box--fail heal-box--spaced" role="alert">
-                    <span class="heal-box__icon" aria-hidden="true">
+                  <div
+                    class="my-2 mx-4 flex items-start gap-2 rounded-md border border-fail/30 bg-fail/10 px-3 py-2.5 text-body leading-snug text-fail"
+                    role="alert"
+                  >
+                    <span
+                      class="mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-full bg-fail text-meta font-bold text-accent-fg"
+                      aria-hidden="true"
+                    >
                       !
                     </span>
                     <span>{f().error}</span>
@@ -657,14 +731,16 @@ export function StepsPane() {
           </Show>
 
           <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
-            <div class="panel__recipe-notice">
-              <span class="panel__recipe-notice-icon" aria-hidden="true">
+            <div class="mx-4 my-2 flex items-center gap-2 rounded-md border border-heal/30 bg-heal/10 px-2.5 py-2 text-meta leading-snug text-heal">
+              <span class="grid shrink-0 place-items-center" aria-hidden="true">
                 <Icon name="alert" size={14} />
               </span>
-              <span class="panel__recipe-notice-text">
-                Needs a prod account match (e.g. gmail.com).
-              </span>
-              <button type="button" class="btn btn-ghost" onClick={() => cmd.run("nav.settings")}>
+              <span class="flex-1">Needs a prod account match (e.g. gmail.com).</span>
+              <button
+                type="button"
+                class="btn btn-ghost shrink-0 text-heal"
+                onClick={() => cmd.run("nav.settings")}
+              >
                 Configure
               </button>
             </div>
@@ -672,24 +748,34 @@ export function StepsPane() {
 
           {/* Packaged plan (builtin or forked thin flow) — human titles, never a lone FLOW row. */}
           <Show when={showPackagedPlan()}>
-            <div class="planned" aria-label="Steps">
+            <div class="mt-1 flex flex-col" aria-label="Steps">
               <For each={plannedSteps()}>
                 {(p, i) => {
                   const anno = () => wb.rowAnno(i());
+                  const st = () => anno().status;
                   return (
                     <button
                       type="button"
-                      class="planned__row"
-                      classList={{
-                        "planned__row--run": anno().status === "running",
-                        "planned__row--pass": anno().status === "pass",
-                        "planned__row--fail": anno().status === "fail",
-                        "planned__row--on": wb.focusedIndex() === i(),
-                      }}
+                      class={cn(
+                        "flex w-full min-h-[52px] items-center gap-3 border-b border-border px-4 text-left text-inherit hover:bg-hover",
+                        wb.focusedIndex() === i()
+                          ? "border-l-2 border-l-accent bg-accent/10"
+                          : st() === "running"
+                            ? "bg-run/10"
+                            : st() === "pass"
+                              ? "bg-pass/10"
+                              : st() === "fail"
+                                ? "bg-fail/10"
+                                : undefined,
+                      )}
                       onClick={() => wb.focusStep(i())}
                     >
-                      <span class="planned__i mono">{i() + 1}</span>
-                      <span class="planned__title">{p.title}</span>
+                      <span class="mono grid size-[22px] shrink-0 place-items-center rounded-md border border-border bg-layer-1 text-[11px] font-semibold text-text-muted tabular-nums">
+                        {i() + 1}
+                      </span>
+                      <span class="min-w-0 flex-1 text-[13.5px] font-medium tracking-tight text-text">
+                        {p.title}
+                      </span>
                       <StepAnno anno={anno} />
                     </button>
                   );
@@ -740,28 +826,38 @@ function RawLogOverlay(props: { text: string; onClose: () => void }) {
   }
   return (
     <div
-      class="logpop-overlay"
+      class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 px-6 pt-[10vh] pb-6 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) props.onClose();
       }}
     >
-      <div class="logpop" role="dialog" aria-label="Raw log">
-        <div class="logpop__head">
-          <span class="logpop__title">Raw log</span>
-          <button type="button" class="btn btn-ghost logpop__copy" onClick={() => void copy()}>
+      <div
+        class="flex max-h-[70vh] w-[min(680px,100%)] flex-col overflow-hidden rounded-xl border border-border bg-layer-1 shadow-xl"
+        role="dialog"
+        aria-label="Raw log"
+      >
+        <div class="flex shrink-0 items-center gap-2 border-b border-border py-2.5 pr-3 pl-4">
+          <span class="flex-1 text-body font-semibold text-text">Raw log</span>
+          <button
+            type="button"
+            class="btn btn-ghost h-[26px] px-2 text-meta"
+            onClick={() => void copy()}
+          >
             <Icon name={copied() ? "check" : "copy"} size={12} />
             {copied() ? "Copied" : "Copy"}
           </button>
           <button
             type="button"
-            class="logpop__close"
+            class="grid size-[26px] place-items-center rounded-md text-text-faint hover:bg-hover hover:text-text"
             aria-label="Close"
             onClick={() => props.onClose()}
           >
             <Icon name="x" size={14} />
           </button>
         </div>
-        <pre class="logpop__body mono">{props.text || "— no log lines —"}</pre>
+        <pre class="mono m-0 flex-1 overflow-auto px-4 pt-3 pb-4 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted">
+          {props.text || "— no log lines —"}
+        </pre>
       </div>
     </div>
   );
