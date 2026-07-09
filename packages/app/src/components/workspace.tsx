@@ -37,7 +37,7 @@ export function Workspace() {
         )}
       >
         {/* Left: phone artboard / frame canvas */}
-        <div class="flex min-h-0 min-w-0 flex-col border-r border-border bg-deep">
+        <div class="stage-well flex min-h-0 min-w-0 flex-col border-r border-border">
           <div class="flex min-h-0 flex-1 flex-col">
             <Show
               when={boardOpen() && server.frames().length > 0}
@@ -48,7 +48,10 @@ export function Workspace() {
           </div>
         </div>
         {/* Right: steps / test editor */}
-        <section class="flex min-h-0 flex-col bg-layer-1" aria-label="Test editor">
+        <section
+          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-layer-1"
+          aria-label="Test editor"
+        >
           <StepsPane />
         </section>
       </div>

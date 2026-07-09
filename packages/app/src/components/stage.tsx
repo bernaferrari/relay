@@ -382,8 +382,8 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
       ref={stageEl}
       aria-label="Device stage"
       class={cn(
-        "relative flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden",
-        "bg-deep px-6 pt-5 pb-7",
+        "stage-well relative flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden",
+        "px-6 pt-5 pb-7",
         server.isOffline() && "opacity-55",
       )}
     >
@@ -401,7 +401,8 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         fallback={
           <div
             class={cn(
-              "bezel--seat relative z-[2] my-auto aspect-[9/19.5] w-[min(320px,46vh)] max-h-[calc(100%-96px)] rounded-[38px] p-5 text-center",
+              // Must include `.bezel` — hardware chrome (gradient/shadow) lives there.
+              "bezel bezel--seat relative z-[2] my-auto",
               focusedStep() && "gap-3.5",
             )}
           >

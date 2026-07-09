@@ -208,6 +208,44 @@ html[data-color-scheme="light"] .qa::before {
   gap: 12px;
   color: rgb(255 255 255 / 0.88);
   border: none;
+  /* Seat reuses .bezel gradient — keep white chrome readable */
+}
+.bezel--seat .btn {
+  color: rgb(255 255 255 / 0.75) !important;
+  border-color: rgb(255 255 255 / 0.14) !important;
+  background: rgb(255 255 255 / 0.06) !important;
+}
+.bezel--seat .btn:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.12) !important;
+  color: #fff !important;
+}
+.bezel--seat .ic {
+  color: rgb(255 255 255 / 0.5);
+}
+
+/* Stage well — phone sits in a recessed surface (not flat page gray) */
+.stage-well {
+  background:
+    radial-gradient(
+      ellipse 80% 60% at 50% 42%,
+      color-mix(in srgb, var(--c-accent) 8%, transparent) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 100% 80% at 50% 100%,
+      color-mix(in srgb, #000 25%, transparent),
+      transparent 50%
+    ),
+    var(--v2-background-bg-deep);
+}
+html[data-color-scheme="light"] .stage-well {
+  background:
+    radial-gradient(
+      ellipse 70% 50% at 50% 40%,
+      color-mix(in srgb, var(--c-accent) 6%, transparent),
+      transparent 60%
+    ),
+    #d8dbe3;
 }
 .glass__img {
   width: 100%;
