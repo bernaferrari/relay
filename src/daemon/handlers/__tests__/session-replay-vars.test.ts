@@ -1770,10 +1770,10 @@ test('runReplayScriptFile resolves Maestro screen swipes from the snapshot frame
   );
 });
 
-test('runReplayScriptFile uses Android content lane for Maestro horizontal screen swipes', async () => {
+test('runReplayScriptFile preserves Android Maestro horizontal screen swipe lanes', async () => {
   const calls: CapturedInvocation[] = [];
   const { response } = await runReplayFixture({
-    label: 'maestro-screen-swipe-android-content-lane',
+    label: 'maestro-screen-swipe-android-midpoint-lane',
     script: [
       'appId: demo.app',
       '---',
