@@ -7,6 +7,7 @@ import { URL } from "node:url";
 import {
   captureScreenshot,
   captureSnapshot,
+  createDevice,
   enqueueJob,
   formatSnapshotTree,
   getActiveJob,
@@ -19,6 +20,7 @@ import {
   readRecipe,
   saveRecipe,
   deleteRecipe,
+  runRecipeStep,
   validateRecipeSteps,
   listPersistedRuns,
   now,
@@ -523,6 +525,53 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    if (method === "POST" && pathname === "/step/run") {
+      const body = (await parseJsonBody(req)) as { step?: unknown; serial?: string };
+      if (!body || typeof body !== "object" || body.step === undefined) {
+        throw new HttpError(400, "body.step is required");
+      }
+      let steps;
+      try {
+        steps = validateRecipeSteps([body.step]);
+      } catch (err) {
+        throw new HttpError(400, err instanceof Error ? err.message : String(err));
+      }
+      const step = steps[0]!;
+      if (step.kind === "pause") {
+        throw new HttpError(400, "pause steps cannot run standalone");
+      }
+      if (getActiveJob()?.status === "running") {
+        throw new HttpError(
+          409,
+          "A job is running — pause or cancel it before interacting manually",
+        );
+      }
+      // No connected device would surface as a confusing step-level failure
+      // (e.g. "expect ... not visible") — report it plainly instead.
+      let deviceCount = 0;
+      try {
+        deviceCount = (await listDevices()).length;
+      } catch {
+        deviceCount = 0;
+      }
+      if (deviceCount === 0) {
+        json(res, 200, { ok: false, error: "No device connected", durationMs: 0, logs: [] });
+        return;
+      }
+      if (body.serial) selectDevice(body.serial);
+      const device = createDevice();
+      const logs: string[] = [];
+      const started = now();
+      try {
+        await runRecipeStep(device, step, { log: (line) => logs.push(line) });
+        json(res, 200, { ok: true, durationMs: now() - started, logs });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        json(res, 200, { ok: false, error: message, durationMs: now() - started, logs });
+      }
+      return;
+    }
+
     // persisted runs
     if (method === "GET" && pathname === "/runs") {
       const limit = parseLimit(url.searchParams.get("limit"), 40);
@@ -615,6 +664,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           "GET /snapshot",
           "GET /screenshot",
           "POST /interact",
+          "POST /step/run",
           "GET /runs",
           "GET /runs/:id",
           "GET /runs/:id/frames/:file",

@@ -2,6 +2,8 @@ import { createSignal, createEffect } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
 import { useServer, type SnapshotNode, type RecipeStep, type StepTarget } from "./server";
 import { nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
+import { sentenceForStep } from "../lib/step-sentence";
+import { useRecipeDraft } from "./recipe-draft";
 import { toast } from "./toast";
 
 /**
@@ -38,44 +40,11 @@ export function migrateLegacyStep(step: LegacyRecStep): RecipeStep {
   return { kind: "tap", target: { point: { x: step.x, y: step.y } } };
 }
 
-function descTarget(t: StepTarget): string {
-  const parts: string[] = [];
-  if (t.ref) parts.push(t.ref);
-  if (t.label) parts.push(`"${t.label}"`);
-  if (t.text) parts.push(`text "${t.text}"`);
-  if (t.point) parts.push(`${t.point.x},${t.point.y}`);
-  return parts.join(" · ") || "<target>";
-}
-
-/** Human-readable one-liner for a RecipeStep (stage / run-panel / editor). */
-export function describeStep(step: RecipeStep): string {
-  switch (step.kind) {
-    case "tap":
-      return `tap ${descTarget(step.target)}`;
-    case "type":
-      return step.target
-        ? `type "${step.text}" → ${descTarget(step.target)}`
-        : `type "${step.text}"`;
-    case "scroll":
-      return step.amount ? `scroll ${step.direction} ${step.amount}` : `scroll ${step.direction}`;
-    case "swipe":
-      return `swipe ${Math.round(step.from.x)},${Math.round(step.from.y)} → ${Math.round(step.to.x)},${Math.round(step.to.y)}`;
-    case "key":
-      return `key ${step.key}`;
-    case "sleep":
-      return `sleep ${step.ms}ms`;
-    case "wait-for":
-      return `wait for ${descTarget(step.target)}${
-        step.timeoutMs ? ` (${Math.round(step.timeoutMs / 1000)}s)` : ""
-      }`;
-    case "pause":
-      return `pause: ${step.message}`;
-    case "screenshot":
-      return step.caption ? `screenshot · ${step.caption}` : "screenshot";
-    case "flow":
-      return `flow: ${step.flow}`;
-  }
-}
+/** Human-readable one-liner for a RecipeStep (stage / run-panel row / log
+ *  captions) — re-exported here so existing `from "../context/recorder"`
+ *  imports keep working. Canonical implementation lives in lib/step-sentence
+ *  so it's shared by the row list without pulling in this context. */
+export const describeStep = sentenceForStep;
 
 /**
  * Build the full tap target for a click — every field that is known, so the
@@ -104,9 +73,43 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
   gate: false,
   init: () => {
     const server = useServer();
+    const draft = useRecipeDraft();
     const [interacting, setInteracting] = createSignal(false);
     const [recording, setRecording] = createSignal(false);
-    const [steps, setSteps] = createSignal<RecipeStep[]>([]);
+
+    /** "Recorded test N" — next free number, so back-to-back recordings
+     *  without a rename don't collide. */
+    function nextRecordedTitle(): string {
+      const used = new Set(
+        server
+          .recipes()
+          .map((r) => /^Recorded test (\d+)$/.exec(r.title)?.[1])
+          .filter((x): x is string => Boolean(x))
+          .map((x) => parseInt(x, 10)),
+      );
+      let n = 1;
+      while (used.has(n)) n++;
+      return `Recorded test ${n}`;
+    }
+
+    /** Where should a just-captured step land? The selected test — builtin
+     *  or custom (builtins silently auto-fork on save). Nothing selected →
+     *  auto-create + select "Recorded test N". Returns null only if the
+     *  create-recipe call itself failed (offline etc). */
+    async function ensureRecordingTarget(): Promise<string | null> {
+      return draft.ensureRecordingDraft(nextRecordedTitle);
+    }
+
+    /** Enter Record mode: arm the flag + make sure the stage has something
+     *  to show (overlays on, a snapshot if we don't have one yet). Shared by
+     *  the stage's segmented control and the empty-state's "Record from
+     *  device" action so both paths behave identically. */
+    function enterRecordMode(): void {
+      setInteracting(true);
+      setRecording(true);
+      server.setShowOverlays(true);
+      if (!server.snapshot()?.bounds) void server.captureUiSnapshot();
+    }
 
     /** Execute a tap target on the device, preferring ref → label → point. */
     async function executeTap(target: StepTarget, caption?: string): Promise<boolean> {
@@ -148,7 +151,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const target = buildTapTarget(server.snapshot()?.bounds, node, fx, fy);
       const step: RecipeStep = { kind: "tap", target };
       const ok = await executeTap(target, describeStep(step));
-      if (ok && recording()) setSteps((s) => [...s, step]);
+      if (ok && recording()) {
+        const id = await ensureRecordingTarget();
+        if (id) draft.appendSteps([step]);
+      }
       return ok;
     }
 
@@ -177,13 +183,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         { kind: "swipe", from: devFrom, to: devTo, durationMs },
         describeStep(step),
       );
-      if (ok && recording()) setSteps((s) => [...s, step]);
+      if (ok && recording()) {
+        const id = await ensureRecordingTarget();
+        if (id) draft.appendSteps([step]);
+      }
       return ok;
-    }
-
-    /** Internal: append a recorded step (no toast — the bar shows the list). */
-    function recordStep(step: RecipeStep): void {
-      setSteps((s) => [...s, step]);
     }
 
     /**
@@ -192,16 +196,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
      * as the emergency fallback); the runner's ref → label → text → point order
      * must not silently override the user's intent.
      */
-    function recordPick(strategy: PickStrategy, fx: number, fy: number): void {
+    async function recordPick(strategy: PickStrategy, fx: number, fy: number): Promise<void> {
       const target = targetFromStrategy(strategy, fx, fy, server.snapshot()?.bounds);
-      recordStep({ kind: "tap", target });
-    }
-
-    function clearSteps(): void {
-      setSteps([]);
-    }
-    function removeStep(i: number): void {
-      setSteps((s) => s.filter((_, idx) => idx !== i));
+      const id = await ensureRecordingTarget();
+      if (id) draft.appendSteps([{ kind: "tap", target }]);
     }
 
     // ── Typing capture (plan 010 step 3.3) ──────────────────────────────────
@@ -229,7 +227,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (server.health() !== "online") return;
       const step: RecipeStep = { kind: "type", text };
       const ok = await server.interactStep({ kind: "type", text }, describeStep(step));
-      if (ok && recording()) setSteps((s) => [...s, step]);
+      if (ok && recording()) {
+        const id = await ensureRecordingTarget();
+        if (id) draft.appendSteps([step]);
+      }
     }
 
     /**
@@ -259,20 +260,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         return true;
       }
       return false;
-    }
-
-    /** Save the recorded steps as a server recipe, then clear the buffer. */
-    async function saveRecipe(title: string): Promise<void> {
-      // Capture any buffered typing before freezing the step list.
-      await flushType();
-      const t = title.trim() || `Recipe ${Date.now().toString(36).slice(-4)}`;
-      const saved = await server.saveRecipeRemote({ title: t, steps: steps() });
-      if (saved) {
-        setSteps([]);
-        setRecording(false);
-        server.setSelectedRecipeId(saved.id);
-        toast(`Saved "${saved.title}" — ${saved.steps.length} steps`, "success");
-      }
     }
 
     /**
@@ -374,16 +361,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setInteracting,
       recording,
       setRecording,
-      steps,
+      enterRecordMode,
       driveTap,
       driveSwipe,
       typeBuffer,
       feedTypeKey,
       flushType,
       recordPick,
-      clearSteps,
-      removeStep,
-      saveRecipe,
       forkRecipe,
     };
   },

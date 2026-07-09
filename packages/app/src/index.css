@@ -50,8 +50,9 @@
   --motion-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-decelerate: cubic-bezier(0, 0, 0, 1);
   --top-h: 44px;
+  /* one radius scale: 6px controls · 10px cards/menus · 99px pills */
   --radius: 6px;
-  --radius-lg: 8px;
+  --radius-lg: 10px;
   --radius-xl: 10px;
   --c-accent: var(--v2-background-bg-accent);
   --c-accent-fg: var(--v2-text-text-contrast);
@@ -61,12 +62,12 @@
   --c-heal: var(--v2-state-fg-warning);
   --c-run: var(--v2-state-fg-info);
   --c-dim: var(--v2-text-text-faint);
-  /* type scale (plan 011) — five sizes, used exactly */
-  --fs-hero: 17px;
+  /* type scale — one 15px semibold title, 13px body, 11px labels */
+  --fs-hero: 15px;
   --fs-title: 14px;
   --fs-body: 13px;
   --fs-meta: 11.5px;
-  --fs-label: 10.5px;
+  --fs-label: 11px;
   font-family: var(--font-family-sans);
   font-size: var(--fs-body);
   line-height: 1.45;
@@ -802,152 +803,10 @@ html[data-color-scheme="light"] .qa::before {
   padding: 24px;
 }
 
-/* recipe rows — unified for built-in + custom + jobs */
-.nav-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  color: var(--v2-text-text-muted);
-  transition:
-    background 120ms var(--ease-out),
-    color 120ms var(--ease-out);
-}
-.nav-row:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
-  color: var(--v2-text-text-base);
-}
-.nav-row.on {
-  background: color-mix(in srgb, var(--c-accent) 9%, transparent);
-  color: var(--v2-text-text-base);
-  box-shadow: inset 2px 0 0 var(--c-accent);
-}
-.nav-row__title {
-  flex: 1;
-  font-size: var(--fs-body);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nav-row__meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-}
-.nav-row__sep {
-  color: var(--v2-border-border-strong);
-  opacity: 0.6;
-}
-.nav-row--job .nav-row__title {
-  font-weight: 450;
-}
-.nav-row--active {
-  box-shadow: inset 2px 0 0 var(--c-run);
-  background: color-mix(in srgb, var(--c-run) 9%, transparent);
-}
-.nav-row--queued {
-  color: var(--c-dim);
-}
-.nav-row__pos {
-  width: 16px;
-  flex: none;
-  text-align: center;
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  color: var(--c-dim);
-}
-.nav-row__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--c-dim);
-}
-.nav-row__dot--pass {
-  background: var(--c-pass);
-}
-.nav-row__dot--fail {
-  background: var(--c-fail);
-}
-.nav-row__dot--heal {
-  background: var(--c-heal);
-}
-.nav-row__dot--run {
-  background: var(--c-run);
-  animation: gd-blink 1.4s var(--ease-in-out) infinite;
-}
 @keyframes gd-blink {
   50% {
     opacity: 0.35;
   }
-}
-
-/* row wrapper — single hover surface (no flash) */
-.nav-row-wrap {
-  display: flex;
-  align-items: center;
-  border-radius: var(--radius);
-  transition: background 120ms var(--ease-out);
-}
-.nav-row-wrap:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
-}
-.nav-row-wrap > .nav-row {
-  flex: 1;
-  min-width: 0;
-  background: transparent !important;
-}
-.nav-row-wrap:hover > .nav-row {
-  background: transparent !important;
-}
-.nav-row-wrap > .nav-row.on {
-  background: color-mix(in srgb, var(--c-accent) 9%, transparent) !important;
-}
-
-/* hover actions */
-.nav-row__actions {
-  display: none;
-  align-items: center;
-  gap: 1px;
-  flex: none;
-  padding-right: 4px;
-}
-.nav-row-wrap:hover .nav-row__actions {
-  display: flex;
-}
-.nav-row-wrap:hover .nav-row__count {
-  display: none;
-}
-.nav-row__action {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  color: var(--c-dim);
-  cursor: pointer;
-  transition:
-    background 100ms var(--ease-out),
-    color 100ms var(--ease-out);
-}
-.nav-row__action:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
-  color: var(--v2-text-text-base);
-}
-.nav-row__action--del:hover {
-  background: var(--v2-state-bg-danger);
-  color: var(--c-fail);
-}
-.nav-row__action-sure {
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  text-transform: none;
-  color: var(--c-fail);
 }
 
 /* ════════════════════════ STAGE (device hero) ════════════════════════ */
@@ -971,6 +830,29 @@ html[data-color-scheme="light"] .qa::before {
 }
 .stage--offline {
   opacity: 0.55;
+}
+/* device identity chip — floats above the bezel */
+.stage__device-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 11px;
+  margin-bottom: 12px;
+  border-radius: 99px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-muted);
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+  flex: none;
+}
+.stage__device-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-pass);
+  flex: none;
 }
 .stage__watermark {
   position: absolute;
@@ -1362,22 +1244,62 @@ html[data-color-scheme="light"] .glass {
   flex: 1;
   min-width: 0;
 }
-.runpane__title {
-  margin: 0;
-  font-size: var(--fs-hero);
-  font-weight: 650;
-  letter-spacing: -0.01em;
+.runpane__desc {
+  display: block;
+  margin: 5px 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--v2-text-text-muted);
+  text-align: left;
+}
+.runpane__desc--editable {
+  border-radius: 4px;
+  transition: color 120ms var(--ease-out);
+}
+.runpane__desc--editable:hover {
   color: var(--v2-text-text-base);
-  line-height: 1.35;
+}
+.runpane__desc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 5px;
+}
+.runpane__desc-row .runpane__desc {
+  margin-top: 0;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.runpane__desc {
-  margin: 5px 0 0;
+.runpane__desc-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 2px;
+  border: none;
+  border-bottom: 1px solid var(--v2-border-border-focus);
+  background: none;
+  color: var(--v2-text-text-base);
   font-size: var(--fs-meta);
-  line-height: 1.5;
-  color: var(--v2-text-text-muted);
+}
+.runpane__desc-input:focus {
+  outline: none;
+}
+.runpane__save-state {
+  flex: none;
+  font-size: var(--fs-meta);
+  color: var(--c-dim);
+  white-space: nowrap;
+}
+.runpane__save-state--invalid {
+  color: var(--c-fail);
+  font-weight: 550;
 }
 .runpane__head-actions {
   display: flex;
@@ -1392,41 +1314,80 @@ html[data-color-scheme="light"] .glass {
   color: var(--c-dim);
 }
 
-/* recipe switcher — the report header's title is the nav (plan 012) */
-.runpane__title-btn {
-  display: inline-flex;
+/* recipe switcher — the report header's title is the nav (plan 012); the
+   title is ALSO inline-editable for custom tests (run-pane rebuild), so the
+   text and the chevron are two separate buttons: click text to rename,
+   click the chevron to switch — switching stays exactly one click. */
+.runpane__title-row {
+  display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
+  max-width: 100%;
+}
+.runpane__title-text {
+  display: block;
   max-width: 100%;
   margin: 0;
-  padding: 2px 0;
+  padding: 2px 4px 2px 0;
   border: none;
+  border-radius: 4px;
   background: none;
   font-family: inherit;
   font-size: var(--fs-hero);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--v2-text-text-base);
   line-height: 1.35;
   text-align: left;
   cursor: pointer;
-  transition: color 120ms var(--ease-out);
-}
-.runpane__title-btn:hover {
-  color: var(--c-accent-soft);
-}
-.runpane__title-btn > span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  min-width: 0;
+  transition:
+    color 120ms var(--ease-out),
+    background 120ms var(--ease-out);
+}
+.runpane__title-text:hover {
+  color: var(--c-accent-soft);
+}
+.runpane__title-text--editable:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
+}
+.runpane__title-input {
+  min-width: 120px;
+  max-width: 100%;
+  flex: 1;
+  margin: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--v2-border-border-focus);
+  border-radius: 4px;
+  background: var(--v2-background-bg-base);
+  font-family: inherit;
+  font-size: var(--fs-hero);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--v2-text-text-base);
+  line-height: 1.35;
+}
+.runpane__title-input:focus {
+  outline: none;
 }
 .runpane__title-chev {
   display: inline-grid;
   place-items: center;
   flex: none;
+  padding: 4px;
+  border-radius: 4px;
   color: var(--c-dim);
-  transition: transform 140ms var(--ease-out);
+  transition:
+    transform 140ms var(--ease-out),
+    color 120ms var(--ease-out),
+    background 120ms var(--ease-out);
+}
+.runpane__title-chev:hover {
+  color: var(--v2-text-text-base);
+  background: var(--v2-overlay-simple-overlay-hover);
 }
 .runpane__switcher:has(.pick-menu) .runpane__title-chev {
   transform: rotate(180deg);
@@ -1458,6 +1419,28 @@ html[data-color-scheme="light"] .glass {
   color: var(--c-heal);
 }
 
+/* builtin fork prompt — a prominent, full-width quiet banner under the
+   read-only planned-step preview (run-pane rebuild M2) */
+.builtin-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--v2-border-border-muted);
+  background: var(--v2-background-bg-layer-02);
+}
+.builtin-banner__text {
+  flex: 1;
+  font-size: var(--fs-body);
+  line-height: 1.4;
+  color: var(--v2-text-text-muted);
+}
+.builtin-banner .btn {
+  flex: none;
+}
+
 .section-label {
   font-size: var(--fs-label);
   font-weight: 600;
@@ -1473,12 +1456,13 @@ html[data-color-scheme="light"] .glass {
   margin-top: 18px;
 }
 
-/* step rows */
+/* step rows (read-only builtin planned list) — annotated via .sanno */
 .srow {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 11px;
-  padding: 12px 4px;
+  min-height: 40px;
+  padding: 8px 4px;
 }
 .srow + .srow {
   border-top: 1px solid var(--v2-border-border-muted);
@@ -1486,19 +1470,8 @@ html[data-color-scheme="light"] .glass {
 .srow--static {
   border-radius: 0;
 }
-.srow.on {
-  position: relative;
-  background: color-mix(in srgb, var(--c-accent) 9%, transparent);
-}
-.srow.on::before {
-  content: "";
-  position: absolute;
-  left: -16px;
-  top: 6px;
-  bottom: 6px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--c-accent);
+.srow .sanno {
+  margin-left: auto;
 }
 .snum {
   width: 20px;
@@ -1546,219 +1519,245 @@ html[data-color-scheme="light"] .glass {
   margin-top: 4px;
 }
 
-/* run header — status/date/duration/device (card on layer-02) */
-.run-head {
+/* ── history strip — runs as compact chips; click to review ── */
+.histrip {
   display: flex;
   align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
-  gap: 7px;
-  padding: 10px 12px;
-  margin: 10px 0;
-  border-radius: var(--radius-lg);
-  background: var(--v2-background-bg-layer-02);
-  border: 1px solid var(--v2-border-border-muted);
-  font-size: var(--fs-meta);
-  color: var(--v2-text-text-muted);
+  padding: 12px 0 4px;
 }
-.run-head__chip {
+.hchip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 99px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-muted);
+  font-size: var(--fs-meta);
   transition:
     background var(--motion-duration-base) var(--motion-ease-out),
     color var(--motion-duration-base) var(--motion-ease-out);
-  font-weight: 600;
+}
+.hchip:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
+}
+.hchip--on {
+  background: color-mix(in srgb, var(--c-accent) 12%, var(--v2-background-bg-layer-02));
+  color: var(--v2-text-text-base);
+}
+.hchip--live .hchip__dot {
+  animation: sanno-pulse 1.1s var(--ease-in-out) infinite;
+}
+.hchip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--c-dim);
+}
+.hchip__dot--pass {
+  background: var(--c-pass);
+}
+.hchip__dot--fail {
+  background: var(--c-fail);
+}
+.hchip__dot--heal {
+  background: var(--c-heal);
+}
+.hchip__dot--run {
+  background: var(--c-run);
+}
+.hchip__label {
   font-size: var(--fs-meta);
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.run-head__chip.tone--pass {
-  background: color-mix(in srgb, var(--c-pass) 18%, transparent);
+.histrip__log {
+  margin-left: 2px;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  font-size: var(--fs-meta);
+  color: var(--c-dim);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--c-dim) 45%, transparent);
+  transition: color var(--motion-duration-base) var(--motion-ease-out);
+}
+.histrip__log:hover {
+  color: var(--v2-text-text-base);
+}
+
+/* ── reviewed-run summary — one quiet line, no card ── */
+.runsum {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0 8px;
+  font-size: var(--fs-meta);
+  color: var(--c-dim);
+}
+.runsum__word {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.runsum__word--pass {
   color: var(--c-pass);
-  border-color: color-mix(in srgb, var(--c-pass) 35%, transparent);
 }
-.run-head__chip.tone--fail {
-  background: color-mix(in srgb, var(--c-fail) 18%, transparent);
+.runsum__word--fail {
   color: var(--c-fail);
-  border-color: color-mix(in srgb, var(--c-fail) 35%, transparent);
 }
-.run-head__chip.tone--heal {
-  background: color-mix(in srgb, var(--c-heal) 18%, transparent);
+.runsum__word--heal {
   color: var(--c-heal);
-  border-color: color-mix(in srgb, var(--c-heal) 35%, transparent);
 }
-.run-head__chip.tone--run {
-  background: color-mix(in srgb, var(--c-run) 18%, transparent);
+.runsum__word--run {
   color: var(--c-run);
-  border-color: color-mix(in srgb, var(--c-run) 35%, transparent);
 }
-.run-head__spinner {
-  width: 10px;
-  height: 10px;
+.runsum__spin {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
   border-top-color: currentColor;
   animation: gd-spin 0.7s linear infinite;
 }
-.run-head__fact {
-  font-size: var(--fs-meta);
-  color: var(--c-dim);
+.runsum__fact {
+  font-variant-numeric: tabular-nums;
 }
-.run-head__fact:not(:last-child)::after {
+.runsum > *:not(:last-child)::after {
   content: "·";
-  margin-left: 7px;
+  margin-left: 8px;
   color: var(--v2-border-border-strong);
   opacity: 0.5;
 }
-/* recent runs — rehomes the sidebar's History + Queue (plan 012 step 6) */
-.recent {
-  margin-top: 18px;
+
+/* ── raw log overlay — the only place the full log lives ── */
+.logpop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh 24px 24px;
+  background: var(--v2-overlay-simple-overlay-scrim);
+  backdrop-filter: blur(4px);
+  animation: gd-fade 160ms var(--ease-out);
 }
-.recent__label {
-  font-size: var(--fs-meta);
-  font-weight: 550;
-  color: var(--c-dim);
-  margin: 0 0 4px;
+.logpop {
+  width: min(680px, 100%);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: var(--v2-elevation-overlay);
+  overflow: hidden;
+  animation: gd-pop var(--motion-duration-base) var(--motion-ease-emphasized);
+  transform-origin: top center;
 }
-.recent__more {
-  margin: 6px 0 0;
-  font-size: var(--fs-meta);
-  color: var(--c-dim);
-}
-.recent .nav-row-wrap {
-  margin: 0 -4px;
-}
-/* recent-runs rows — compact, left-clustered facts (plan 013 step 4) */
-.rrow {
+.logpop__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  color: var(--v2-text-text-muted);
-}
-/* the row is transparent inside its hover wrapper (keeps the single hover
-   surface that also covers the X/Retry actions); flex:1 growth is the
-   spacer that pushes those actions to the measure edge */
-.nav-row-wrap > .rrow {
-  flex: 1;
-  min-width: 0;
-  background: transparent !important;
-}
-.nav-row-wrap:hover > .rrow {
-  background: transparent !important;
-}
-.nav-row-wrap > .rrow.on {
-  background: color-mix(in srgb, var(--c-accent) 9%, transparent) !important;
-  color: var(--v2-text-text-base);
-  box-shadow: inset 2px 0 0 var(--c-accent);
-}
-.nav-row-wrap > .rrow.rrow--active {
-  background: color-mix(in srgb, var(--c-run) 9%, transparent) !important;
-  box-shadow: inset 2px 0 0 var(--c-run);
-}
-.rrow__facts {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 7px;
-  min-width: 0;
-}
-.rrow__fact:not(:last-child)::after {
-  content: "·";
-  margin-left: 7px;
-  color: var(--v2-border-border-strong);
-  opacity: 0.55;
-}
-.rrow__word {
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  white-space: nowrap;
-}
-.rrow__word--pass {
-  color: var(--c-pass);
-}
-.rrow__word--fail {
-  color: var(--c-fail);
-}
-.rrow__word--heal {
-  color: var(--c-heal);
-}
-.rrow__word--run {
-  color: var(--c-run);
-}
-.rrow__word--dim {
-  color: var(--c-dim);
-}
-.rrow__time {
-  font-size: var(--fs-meta);
-  white-space: nowrap;
-}
-.rrow__dur {
-  font-size: var(--fs-meta);
-  white-space: nowrap;
-  color: var(--c-dim);
-}
-.rrow__pos {
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--c-dim);
-}
-
-/* console — follows theme, no hardcoded dark (C4 fix) */
-.console {
-  flex: none;
-  border-top: 1px solid var(--v2-border-border-muted);
-  background: var(--v2-background-bg-layer-01);
-  max-height: 32%;
-  display: flex;
-  flex-direction: column;
-}
-.console__head {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  padding: 7px 16px;
-  flex: none;
+  padding: 10px 12px 10px 16px;
   border-bottom: 1px solid var(--v2-border-border-muted);
-  background: transparent;
-  color: var(--c-dim);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: color 120ms var(--ease-out);
-}
-.console__head:hover {
-  color: var(--v2-text-text-base);
-  background: var(--v2-background-bg-layer-02);
-}
-.console__chev {
   flex: none;
-  opacity: 0.7;
 }
-.console__label {
+.logpop__title {
+  flex: 1;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--v2-text-text-base);
+}
+.logpop__copy {
+  height: 26px;
+  padding: 0 9px;
   font-size: var(--fs-meta);
-  font-weight: 500;
-  color: var(--v2-text-text-muted);
 }
-.console:not(.console--open) .console__head {
-  border-bottom: none;
+.logpop__close {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+  color: var(--c-dim);
+  transition:
+    background var(--motion-duration-base) var(--motion-ease-out),
+    color var(--motion-duration-base) var(--motion-ease-out);
 }
-.console pre {
+.logpop__close:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
+}
+.logpop__body {
   flex: 1;
   overflow: auto;
   margin: 0;
-  padding: 10px 16px 14px;
-  font-family: var(--font-family-mono);
+  padding: 12px 16px 16px;
   font-size: var(--fs-meta);
   line-height: 1.6;
   color: var(--v2-text-text-muted);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ── Auto-continue toggle — small switch, same control language ── */
+.autoc {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  color: var(--v2-text-text-muted);
+  transition:
+    background var(--motion-duration-base) var(--motion-ease-out),
+    color var(--motion-duration-base) var(--motion-ease-out);
+}
+.autoc:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
+}
+.autoc--on {
+  color: var(--v2-text-text-base);
+}
+.autoc__track {
+  position: relative;
+  width: 24px;
+  height: 14px;
+  flex: none;
+  border-radius: 99px;
+  background: var(--v2-background-bg-layer-03);
+  box-shadow: inset 0 0 0 1px var(--v2-border-border-muted);
+  transition: background var(--motion-duration-base) var(--motion-ease-out);
+}
+.autoc--on .autoc__track {
+  background: var(--c-accent);
+  box-shadow: none;
+}
+.autoc__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--v2-text-text-muted);
+  transition:
+    transform var(--motion-duration-base) var(--motion-ease-out),
+    background var(--motion-duration-base) var(--motion-ease-out);
+}
+.autoc--on .autoc__thumb {
+  transform: translateX(10px);
+  background: var(--c-accent-fg);
 }
 
 /* heal / error box */
@@ -2670,20 +2669,21 @@ html[data-color-scheme="light"] .glass {
   color: var(--v2-text-text-base);
 }
 /* ════════════════════════ RECORDER ════════════════════════ */
+/* Recording no longer owns a step list (M3) — it's a thin status strip:
+   dot + "Recording → <test title>" + live type-buffer echo + Stop. Drive
+   (not recording) is the same strip, quieter, one line. */
 .recorder {
-  width: min(560px, 100%);
-  max-height: 40vh;
+  width: min(420px, 100%);
   display: flex;
   flex-direction: column;
   margin-top: 14px;
-  padding: 8px 10px;
+  padding: 7px 9px;
   border-radius: var(--radius-lg);
   background: var(--v2-background-bg-layer-01);
   box-shadow: var(--v2-elevation-raised);
   z-index: 3;
 }
-/* Drive (not recording): a quiet single-line hint strip */
-.recorder:not(.recorder--rec):not(:has(.recorder__steps)) {
+.recorder:not(.recorder--rec) {
   background: var(--v2-background-bg-layer-01);
   box-shadow: none;
   opacity: 0.92;
@@ -2695,10 +2695,12 @@ html[data-color-scheme="light"] .glass {
   min-height: 22px;
   padding: 0 2px;
 }
-.recorder__head + .recorder__steps {
-  margin-top: 6px;
-  padding-top: 8px;
-  border-top: 0.5px solid var(--v2-border-border-muted);
+.recorder__stop {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--fs-meta);
+  color: var(--c-fail);
 }
 .recorder__dot {
   flex: none;
@@ -2747,78 +2749,6 @@ html[data-color-scheme="light"] .glass {
 .recorder__caret {
   color: var(--v2-text-text-base);
   animation: gd-rec-pulse 1s steps(1) infinite;
-}
-.recorder__steps {
-  overflow-y: auto;
-  padding: 0;
-  flex: 1;
-  min-height: 0;
-}
-.recorder__step {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 5px 6px;
-  border-radius: var(--radius);
-  /* pleasant arrival for newly recorded steps */
-  animation: recorder-step-in var(--motion-duration-base) var(--motion-ease-emphasized) backwards;
-}
-@keyframes recorder-step-in {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
-}
-.recorder__step:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
-}
-.recorder__step-i {
-  font-size: var(--fs-meta);
-  color: var(--c-dim);
-  flex: none;
-}
-.recorder__step-text {
-  flex: 1;
-  font-size: var(--fs-meta);
-  color: var(--v2-text-text-base);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.recorder__step-rm {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: 6px;
-  color: var(--c-dim);
-}
-.recorder__step-rm:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
-  color: var(--c-fail);
-}
-.recorder__save {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding-top: 8px;
-  margin-top: 6px;
-  border-top: 0.5px solid var(--v2-border-border-muted);
-}
-.recorder__name {
-  flex: 1;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: var(--radius);
-  border: 1px solid var(--v2-border-border-muted);
-  background: var(--v2-background-bg-base);
-  color: var(--v2-text-text-base);
-  font-size: var(--fs-body);
-}
-.recorder__name:focus {
-  outline: none;
-  border-color: var(--v2-border-border-focus);
 }
 .recorder--active .ic {
   color: var(--c-fail);
@@ -2987,28 +2917,11 @@ html[data-color-scheme="light"] .glass {
   }
 }
 
-/* ════════════════════════ RECIPE EDITOR ════════════════════════ */
-.recipe-editor {
-  padding: 18px 22px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-.recipe-editor__title {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--v2-border-border-muted);
-  background: var(--v2-background-bg-base);
-  color: var(--v2-text-text-base);
-  font-size: var(--fs-body);
-  font-weight: 500;
-}
-.recipe-editor__title:focus {
-  outline: none;
-  border-color: var(--v2-border-border-focus);
-}
+/* ════════════════════════ STEP EDITOR (run-pane) ════════════════════════
+   The run pane's step list IS the recipe editor now — no more modal. Class
+   names keep the `recipe-editor__*` prefix from the earlier dialog version;
+   only the container (a modal body) changed, the row/detail/add-menu system
+   below is unchanged and now lives inline in the run pane. */
 .recipe-editor__steps {
   display: flex;
   flex-direction: column;
@@ -3032,7 +2945,7 @@ html[data-color-scheme="light"] .glass {
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 10px;
-  min-height: 34px;
+  min-height: 40px;
 }
 .recipe-editor__step-i {
   font-size: var(--fs-meta);
@@ -3152,13 +3065,15 @@ html[data-color-scheme="light"] .glass {
 }
 .recipe-editor__add-menu {
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   left: 0;
   right: 0;
   z-index: 5;
   display: flex;
   flex-direction: column;
   padding: 4px;
+  max-height: min(320px, calc(100vh - 120px));
+  overflow-y: auto;
   border-radius: var(--radius-lg);
   border: 1px solid var(--v2-border-border-muted);
   background: var(--v2-background-bg-layer-03);
@@ -3175,24 +3090,224 @@ html[data-color-scheme="light"] .glass {
 .recipe-editor__add-item:hover {
   background: var(--v2-overlay-simple-overlay-hover);
 }
-.recipe-editor__actions {
-  display: flex;
-  gap: 8px;
-  padding-top: 4px;
+/* ── row annotation layer — idle dot · pulsing run dot · check · cross ──
+   The only place run state (and status color) lives on a step row. */
+.sanno {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 52px;
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
 }
-.recipe-editor__desc {
-  height: 30px;
-  padding: 0 12px;
-  margin-top: 6px;
+.sanno__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--c-dim) 45%, transparent);
+}
+.sanno__dot--run {
+  background: var(--c-run);
+  animation: sanno-pulse 1.1s var(--ease-in-out) infinite;
+}
+@keyframes sanno-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--c-run) 35%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-run) 12%, transparent);
+  }
+}
+.sanno__mark {
+  display: inline-grid;
+  place-items: center;
+  animation: sanno-pop 200ms var(--motion-ease-emphasized);
+}
+@keyframes sanno-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+.sanno__mark--pass {
+  color: var(--c-pass);
+}
+.sanno__mark--fail {
+  color: var(--c-fail);
+}
+.sanno__dur {
+  font-family: var(--font-family-mono);
+  font-size: var(--fs-meta);
+  color: var(--c-dim);
+  white-space: nowrap;
+}
+.step-row__fail-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0 10px 0 34px;
+  font-size: var(--fs-meta);
+  color: var(--c-fail);
+}
+.step-row__issue {
+  margin: 0 0 8px;
+  padding: 0 10px 0 34px;
+  font-size: var(--fs-meta);
+  color: var(--c-fail);
+}
+/* expanded annotated row — that step's log lines */
+.step-row__log {
+  flex-basis: 100%;
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 4px 0 0;
+  padding: 8px 10px;
   border-radius: var(--radius);
-  border: 1px solid var(--v2-border-border-muted);
-  background: var(--v2-bg-1);
+  background: var(--v2-background-bg-base);
+  font-size: var(--fs-meta);
+  line-height: 1.55;
+  color: var(--v2-text-text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* newly recorded steps flash in briefly (M3) */
+.recipe-editor__step--flash {
+  animation: step-flash 1.4s var(--motion-ease-out);
+}
+@keyframes step-flash {
+  0% {
+    background: color-mix(in srgb, var(--c-accent) 26%, var(--v2-background-bg-layer-02));
+    border-color: var(--c-accent);
+  }
+}
+
+/* one-click retarget chain (captured tap) */
+.recipe-editor__nodetect {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recipe-editor__chain {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.recipe-editor__chain-opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  color: var(--v2-text-text-muted);
+  transition: background 100ms var(--ease-out);
+}
+.recipe-editor__chain-opt:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+.recipe-editor__chain-opt--on {
+  background: color-mix(in srgb, var(--c-accent) 10%, transparent);
   color: var(--v2-text-text-base);
+}
+.recipe-editor__chain-mark {
+  flex: none;
+  color: var(--c-accent-soft);
   font-size: var(--fs-body);
 }
-.recipe-editor__desc:focus {
-  outline: none;
-  border-color: var(--v2-border-border-focus);
+.recipe-editor__chain-opt:not(.recipe-editor__chain-opt--on) .recipe-editor__chain-mark {
+  color: var(--c-dim);
+}
+.recipe-editor__chain-label {
+  flex: none;
+  font-size: var(--fs-meta);
+  font-weight: 550;
+  color: var(--c-dim);
+  min-width: 44px;
+}
+.recipe-editor__chain-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-body);
+  color: var(--v2-text-text-base);
+}
+
+/* timeout inputs — number field + explicit unit, never a bare 0 */
+.recipe-editor__timeout-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.recipe-editor__unit {
+  color: var(--c-dim);
+  font-size: var(--fs-meta);
+}
+
+/* grouped add-step menu (Act / Check / More) */
+.recipe-editor__add-group + .recipe-editor__add-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--v2-border-border-muted);
+}
+.recipe-editor__add-group-label {
+  padding: 6px 10px 3px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--c-dim);
+}
+
+/* slim hover-reveal insertion point between rows */
+.step-insert {
+  position: relative;
+  height: 9px;
+  margin: -5px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+.step-insert__btn {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--v2-border-border-muted);
+  background: var(--v2-background-bg-layer-02);
+  color: var(--c-dim);
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 120ms var(--ease-out),
+    transform 120ms var(--ease-out),
+    background 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+.step-insert:hover .step-insert__btn,
+.step-insert--open .step-insert__btn,
+.step-insert__btn:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.step-insert__btn:hover {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-accent-fg);
+}
+.step-insert--open {
+  z-index: 6;
+}
+.step-insert .recipe-editor__add-menu {
+  top: calc(100% + 2px);
 }
 
 /* ════════════════════════ REDUCED MOTION ════════════════════════ */

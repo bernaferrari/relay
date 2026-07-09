@@ -88,6 +88,8 @@ describe("validateRecipeSteps", () => {
       { kind: "key", key: "back" },
       { kind: "sleep", ms: 100 },
       { kind: "wait-for", target: { text: "Welcome" }, timeoutMs: 5000 },
+      { kind: "expect", target: { label: "Sign in" }, condition: "visible" },
+      { kind: "expect", target: { text: "Welcome" }, condition: "gone", timeoutMs: 3000 },
       { kind: "pause", message: "enter 2FA code" },
       { kind: "screenshot", caption: "after login" },
       { kind: "flow", flow: "logout" },
@@ -96,7 +98,7 @@ describe("validateRecipeSteps", () => {
     assert.equal(out.length, steps.length);
     assert.equal(out[0]!.kind, "tap");
     assert.equal(out[3]!.kind, "swipe");
-    assert.equal(out[9]!.kind, "flow");
+    assert.equal(out[11]!.kind, "flow");
   });
 
   it("rejects tap with empty target, naming the step index", () => {
@@ -110,6 +112,37 @@ describe("validateRecipeSteps", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "wait-for", target: { point: { x: 1, y: 2 } } }]),
       /step 1: wait-for target must have ref\/label\/text/,
+    );
+  });
+
+  it("accepts expect with visible/gone conditions", () => {
+    const out = validateRecipeSteps([
+      { kind: "expect", target: { label: "Sign in" }, condition: "visible" },
+      { kind: "expect", target: { text: "Welcome" }, condition: "gone" },
+    ]);
+    assert.equal(out.length, 2);
+    assert.equal(out[0]!.kind, "expect");
+    assert.deepEqual(out[0], {
+      kind: "expect",
+      target: { label: "Sign in" },
+      condition: "visible",
+    });
+  });
+
+  it("rejects expect with point-only target", () => {
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "expect", target: { point: { x: 1, y: 2 } }, condition: "visible" },
+        ]),
+      /step 1: expect target must have ref\/label\/text/,
+    );
+  });
+
+  it("rejects expect with a bad condition", () => {
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "expect", target: { label: "x" }, condition: "nope" }]),
+      /step 1: expect requires condition: "visible" \| "gone"/,
     );
   });
 
@@ -213,6 +246,14 @@ describe("describeRecipeStep", () => {
       describeRecipeStep({ kind: "wait-for", target: { text: "Done" } }),
       'Wait for text "Done"',
     );
+    assert.equal(
+      describeRecipeStep({ kind: "expect", target: { label: "Sign in" }, condition: "visible" }),
+      'check "Sign in" visible',
+    );
+    assert.equal(
+      describeRecipeStep({ kind: "expect", target: { text: "Welcome" }, condition: "gone" }),
+      'check text "Welcome" gone',
+    );
   });
 
   it("glyphsForStep maps each kind", () => {
@@ -225,6 +266,10 @@ describe("describeRecipeStep", () => {
     assert.deepEqual(glyphsForStep({ kind: "key", key: "back" }), ["tap"]);
     assert.deepEqual(glyphsForStep({ kind: "sleep", ms: 1 }), ["wait"]);
     assert.deepEqual(glyphsForStep({ kind: "wait-for", target: { text: "x" } }), ["wait"]);
+    assert.deepEqual(
+      glyphsForStep({ kind: "expect", target: { text: "x" }, condition: "visible" }),
+      ["ok"],
+    );
     assert.deepEqual(glyphsForStep({ kind: "pause", message: "x" }), ["wait"]);
     assert.deepEqual(glyphsForStep({ kind: "screenshot" }), ["shot"]);
     assert.deepEqual(glyphsForStep({ kind: "flow", flow: "logout" }), ["store"]);

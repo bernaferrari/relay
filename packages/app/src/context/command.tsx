@@ -129,7 +129,24 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
     const filtered = () => {
       const q = query().trim().toLowerCase();
       const all = commands().filter((c) => !c.disabled?.());
-      if (!q) return all;
+      if (!q) {
+        // Cluster commands by group (first-appearance order) so a group label
+        // never renders twice — registrations from different components can
+        // interleave the same group name (e.g. "Device", "Jobs").
+        const order: string[] = [];
+        const buckets = new Map<string, Command[]>();
+        for (const c of all) {
+          const g = c.group ?? "";
+          let bucket = buckets.get(g);
+          if (!bucket) {
+            bucket = [];
+            buckets.set(g, bucket);
+            order.push(g);
+          }
+          bucket.push(c);
+        }
+        return order.flatMap((g) => buckets.get(g)!);
+      }
       const scored: { c: Command; s: number }[] = [];
       for (const c of all) {
         const hay = `${c.title} ${c.subtitle ?? ""} ${c.group ?? ""} ${c.id}`.toLowerCase();
@@ -282,86 +299,91 @@ export function CommandPalette(): JSX.Element {
     <div
       class="cmd-overlay"
       classList={{ "cmd-overlay--open": cmd.open() }}
+      aria-hidden={!cmd.open()}
       onClick={(e) => {
         if (e.target === e.currentTarget) cmd.setOpen(false);
       }}
     >
-      <div class="cmd-palette" role="dialog" aria-label="Command palette" aria-modal="true">
-        <div class="cmd-palette__head">
-          <input
-            ref={inputRef}
-            class="cmd-input"
-            placeholder="Search commands, recipes…"
-            value={cmd.query()}
-            onInput={(e) => cmd.setQuery(e.currentTarget.value)}
-            autocomplete="off"
-            spellcheck={false}
-          />
-          <Show
-            when={filtered().length > 0}
-            fallback={
-              <div class="cmd-empty" role="presentation">
-                No matching commands
+      {/* Unmounted while closed so no phantom open dialog lingers in the
+          DOM / accessibility tree (the overlay stays for the backdrop fade). */}
+      <Show when={cmd.open()}>
+        <div class="cmd-palette" role="dialog" aria-label="Command palette" aria-modal="true">
+          <div class="cmd-palette__head">
+            <input
+              ref={inputRef}
+              class="cmd-input"
+              placeholder="Search commands, recipes…"
+              value={cmd.query()}
+              onInput={(e) => cmd.setQuery(e.currentTarget.value)}
+              autocomplete="off"
+              spellcheck={false}
+            />
+            <Show
+              when={filtered().length > 0}
+              fallback={
+                <div class="cmd-empty" role="presentation">
+                  No matching commands
+                </div>
+              }
+            >
+              <div class="cmd-list" role="listbox" ref={listRef}>
+                <For each={filtered()}>
+                  {(c, i) => (
+                    <>
+                      <Show when={groupStart(i())}>
+                        <div class="cmd-group" role="presentation">
+                          {c.group ?? "Commands"}
+                        </div>
+                      </Show>
+                      <button
+                        type="button"
+                        role="option"
+                        class="cmd-item"
+                        data-i={i()}
+                        classList={{ "cmd-item--active": cmd.active() === i() }}
+                        aria-selected={cmd.active() === i()}
+                        onMouseMove={(e) => {
+                          if (e.movementX || e.movementY) cmd.setActive(i());
+                        }}
+                        onClick={() => void cmd.run(c.id)}
+                      >
+                        <span class="cmd-item__main">
+                          <span class="cmd-item__title">{c.title}</span>
+                          <Show when={c.subtitle}>
+                            <span class="cmd-item__sub">{c.subtitle}</span>
+                          </Show>
+                        </span>
+                        <span class="cmd-item__meta">
+                          <Show when={c.keybind}>
+                            <kbd class="cmd-item__bind">{cmd.formatKeybind(c.keybind!)}</kbd>
+                          </Show>
+                        </span>
+                      </button>
+                    </>
+                  )}
+                </For>
               </div>
-            }
-          >
-            <div class="cmd-list" role="listbox" ref={listRef}>
-              <For each={filtered()}>
-                {(c, i) => (
-                  <>
-                    <Show when={groupStart(i())}>
-                      <div class="cmd-group" role="presentation">
-                        {c.group ?? "Commands"}
-                      </div>
-                    </Show>
-                    <button
-                      type="button"
-                      role="option"
-                      class="cmd-item"
-                      data-i={i()}
-                      classList={{ "cmd-item--active": cmd.active() === i() }}
-                      aria-selected={cmd.active() === i()}
-                      onMouseMove={(e) => {
-                        if (e.movementX || e.movementY) cmd.setActive(i());
-                      }}
-                      onClick={() => void cmd.run(c.id)}
-                    >
-                      <span class="cmd-item__main">
-                        <span class="cmd-item__title">{c.title}</span>
-                        <Show when={c.subtitle}>
-                          <span class="cmd-item__sub">{c.subtitle}</span>
-                        </Show>
-                      </span>
-                      <span class="cmd-item__meta">
-                        <Show when={c.keybind}>
-                          <kbd class="cmd-item__bind">{cmd.formatKeybind(c.keybind!)}</kbd>
-                        </Show>
-                      </span>
-                    </button>
-                  </>
-                )}
-              </For>
-            </div>
-          </Show>
+            </Show>
+          </div>
+          <div class="cmd-hint">
+            <span>
+              <kbd>↑↓</kbd> move
+            </span>
+            <span>
+              <kbd>↵</kbd> run
+            </span>
+            <span>
+              <kbd>esc</kbd> close
+            </span>
+            <span>
+              <kbd>
+                {typeof navigator !== "undefined" && /Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}K
+              </kbd>{" "}
+              toggle
+            </span>
+          </div>
         </div>
-        <div class="cmd-hint">
-          <span>
-            <kbd>↑↓</kbd> move
-          </span>
-          <span>
-            <kbd>↵</kbd> run
-          </span>
-          <span>
-            <kbd>esc</kbd> close
-          </span>
-          <span>
-            <kbd>
-              {typeof navigator !== "undefined" && /Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}K
-            </kbd>{" "}
-            toggle
-          </span>
-        </div>
-      </div>
+      </Show>
     </div>
   );
 }

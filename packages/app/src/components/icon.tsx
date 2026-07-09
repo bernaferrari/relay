@@ -124,6 +124,7 @@ const STROKE: Record<string, Path[]> = {
 
 const FILL: Record<string, Path[]> = {
   play: [{ d: "M6 4.5v15l13-7.5z", fill: true }],
+  square: [{ d: "M6 6h12v12H6z", fill: true }],
   pause: [
     { d: "M6 4.5h4v15H6z", fill: true },
     { d: "M14 4.5h4v15h-4z", fill: true },

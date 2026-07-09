@@ -9,9 +9,10 @@ import {
   strategiesFor,
   type PickStrategy,
 } from "../lib/snapshot";
-import { useRecorder, describeStep } from "../context/recorder";
+import { useRecorder } from "../context/recorder";
 import { Icon } from "./icon";
 import { useCommand } from "../context/command";
+import { displayTitle } from "../lib/job";
 
 /** Device-as-hero stage: phone bezel, frame scrubber, snapshot rect overlays. */
 export function DeviceStage() {
@@ -97,7 +98,7 @@ export function DeviceStage() {
 
     if (pickMode() === "select") {
       // Select-only: record the chosen-strategy step WITHOUT tapping.
-      rec.recordPick(strategy, p.fx, p.fy);
+      void rec.recordPick(strategy, p.fx, p.fy);
       return;
     }
     const body =
@@ -116,7 +117,7 @@ export function DeviceStage() {
       const fy = Math.round(p.fy * (b?.height ?? 1));
       ok = await server.interactStep({ kind: "point", x: fx, y: fy }, `tap ${fx},${fy}`);
     }
-    if (ok && rec.recording()) rec.recordPick(strategy, p.fx, p.fy);
+    if (ok && rec.recording()) void rec.recordPick(strategy, p.fx, p.fy);
     // Live mode: refresh the stage image + tree now, don't wait for the next tick.
     if (ok && rec.interacting()) {
       void tickLiveFrame();
@@ -302,11 +303,14 @@ export function DeviceStage() {
    *  capture. Hover-inspect is on by default in Drive/Record; ⌘O remains
    *  the power-user escape hatch (showOverlays signal kept). */
   function setStageMode(mode: "view" | "drive" | "record"): void {
-    const interacting = mode !== "view";
-    const recording = mode === "record";
-    rec.setInteracting(interacting);
-    rec.setRecording(recording);
     setPicker(null);
+    if (mode === "record") {
+      rec.enterRecordMode();
+      return;
+    }
+    const interacting = mode !== "view";
+    rec.setInteracting(interacting);
+    rec.setRecording(false);
     if (interacting) {
       server.setShowOverlays(true);
       if (!server.snapshot()?.bounds) void server.captureUiSnapshot();
@@ -337,6 +341,16 @@ export function DeviceStage() {
     });
   }
 
+  /** The device on stage — the selected one, else the first connected. */
+  const currentDevice = () =>
+    server.devices().find((d) => d.serial === server.selectedDevice()) ??
+    server.devices()[0] ??
+    null;
+
+  function deviceChipText(d: { name?: string; serial: string; kind?: string | null }): string {
+    return [d.name?.trim() || "Device", d.serial, d.kind ?? ""].filter(Boolean).join(" · ");
+  }
+
   return (
     <section
       class="stage"
@@ -356,9 +370,7 @@ export function DeviceStage() {
           <div class="bezel--seat">
             <Icon name="smartphone" size={24} strokeWidth={1.3} />
             <p class="stage__no-device-title">No device connected</p>
-            <p class="stage__no-device-hint">
-              Connect a phone over USB or wireless adb, then refresh.
-            </p>
+            <p class="stage__no-device-hint">Connect a device over USB or Wi-Fi, then refresh.</p>
             <div class="stage__connect">
               <button
                 type="button"
@@ -378,6 +390,15 @@ export function DeviceStage() {
           </div>
         }
       >
+        {/* device identity chip — floats above the bezel */}
+        <Show when={currentDevice()}>
+          {(d) => (
+            <div class="stage__device-chip" title={d().serial}>
+              <span class="stage__device-dot" aria-hidden="true" />
+              {deviceChipText(d())}
+            </div>
+          )}
+        </Show>
         <div
           class="bezel"
           data-empty={!frame() ? "1" : "0"}
@@ -666,21 +687,19 @@ export function DeviceStage() {
   );
 }
 
+/**
+ * Recording is now just appending to the selected recipe's steps (M3) — the
+ * run pane owns the list, its title, and its autosave. This bar shrinks to a
+ * thin status strip: it says WHERE steps are landing and echoes the live
+ * type buffer, nothing else. Drive (not recording) keeps its quiet one-line
+ * hint.
+ */
 function RecorderBar() {
   const rec = useRecorder();
-  const [name, setName] = createSignal("");
-  /** Head status line: red-dot + sentence when recording, hint when driving,
-   *  count when steps linger after stopping. */
-  const statusLine = () => {
-    if (rec.recording()) {
-      const s = rec.steps();
-      const last = s.length ? describeStep(s[s.length - 1]!) : "capturing…";
-      return `Recording · ${s.length} step${s.length === 1 ? "" : "s"} · ${last}`;
-    }
-    if (rec.steps().length > 0) {
-      return `Recorded · ${rec.steps().length} step${rec.steps().length === 1 ? "" : "s"}`;
-    }
-    return "Drive mode — your input goes to the device · right-click to inspect";
+  const server = useServer();
+  const recordingTitle = () => {
+    const r = server.selectedRecipe();
+    return r ? displayTitle(r.title) : "a new test";
   };
   return (
     <Show when={rec.interacting()}>
@@ -691,7 +710,14 @@ function RecorderBar() {
             classList={{ "recorder__dot--rec": rec.recording() }}
             aria-hidden="true"
           />
-          <span class="recorder__status">{statusLine()}</span>
+          <span class="recorder__status">
+            <Show
+              when={rec.recording()}
+              fallback="Drive mode — your input goes to the device · right-click to inspect"
+            >
+              Recording → {recordingTitle()}
+            </Show>
+          </span>
           <Show when={rec.typeBuffer()}>
             <span class="recorder__type mono" title="Typing to device…">
               “{rec.typeBuffer()}
@@ -701,51 +727,17 @@ function RecorderBar() {
               ”
             </span>
           </Show>
-        </div>
-        <Show when={rec.steps().length > 0}>
-          <div class="recorder__steps">
-            <For each={rec.steps()}>
-              {(step, i) => (
-                <div class="recorder__step">
-                  <span class="recorder__step-i mono">{String(i() + 1).padStart(2, "0")}</span>
-                  <span class="recorder__step-text mono">{describeStep(step)}</span>
-                  <button
-                    type="button"
-                    class="recorder__step-rm"
-                    aria-label="Remove step"
-                    onClick={() => rec.removeStep(i())}
-                  >
-                    <Icon name="x" size={12} />
-                  </button>
-                </div>
-              )}
-            </For>
-          </div>
-          <div class="recorder__save">
-            <input
-              class="recorder__name"
-              type="text"
-              placeholder="Recipe name…"
-              value={name()}
-              onInput={(e) => setName(e.currentTarget.value)}
-              spellcheck={false}
-            />
+          <Show when={rec.recording()}>
             <button
               type="button"
-              class="btn btn-acc"
-              onClick={() => {
-                void rec.saveRecipe(name());
-                setName("");
-              }}
+              class="btn btn-ghost recorder__stop"
+              onClick={() => rec.setRecording(false)}
             >
-              <Icon name="check" size={13} />
-              Save
+              <Icon name="square" size={12} />
+              Stop
             </button>
-            <button type="button" class="btn btn-ghost" onClick={() => rec.clearSteps()}>
-              Discard
-            </button>
-          </div>
-        </Show>
+          </Show>
+        </div>
       </div>
     </Show>
   );

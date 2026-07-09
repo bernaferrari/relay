@@ -54,6 +54,11 @@ export function n(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+/** Display fallback for a test title: blank/whitespace never renders empty. */
+export function displayTitle(title: string | undefined | null): string {
+  return (title ?? "").trim() || "Untitled test";
+}
+
 /** A known recipe/action id → title, for resolving slugs at render sites. */
 export type TitledId = { id: string; title: string };
 

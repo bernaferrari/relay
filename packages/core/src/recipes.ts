@@ -39,6 +39,13 @@ export type RecipeStep =
     }
   | { kind: "sleep"; ms: number; note?: string }
   | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
+  | {
+      kind: "expect";
+      target: StepTarget;
+      condition: "visible" | "gone";
+      timeoutMs?: number;
+      note?: string;
+    }
   | { kind: "pause"; message: string; note?: string }
   | { kind: "screenshot"; caption?: string; note?: string }
   | { kind: "flow"; flow: string; note?: string };
@@ -85,6 +92,17 @@ export function describeTarget(t: StepTarget): string {
   if (t.text) return `text "${t.text}"`;
   if (t.point) return `point (${t.point.x}, ${t.point.y})`;
   return "<empty>";
+}
+
+/**
+ * Sentence-style target description for `expect` steps: bare quoted label
+ * (no "label" prefix), but "text ..." kept for text-contains targets, e.g.
+ * `check "Sign in" visible` / `check text "Welcome" gone`.
+ */
+function describeExpectTarget(t: StepTarget): string {
+  if (t.label) return `"${t.label}"`;
+  if (t.text) return `text "${t.text}"`;
+  return describeTarget(t);
 }
 
 function stepErr(index: number, why: string): Error {
@@ -248,6 +266,39 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         const step: Extract<RecipeStep, { kind: "wait-for" }> = {
           kind: "wait-for",
           target,
+          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          ...(note ? { note } : {}),
+        };
+        out.push(step);
+        break;
+      }
+      case "expect": {
+        const target = parseTarget(raw.target, index, "target");
+        // point-only targets can't be "expected" (validation-time rejection)
+        if (target.point && !target.ref && !target.label && !target.text) {
+          throw stepErr(
+            index,
+            "expect target must have ref/label/text (point-only is not checkable)",
+          );
+        }
+        if (!targetHasStrategy(target)) {
+          throw stepErr(index, "expect requires target with ref/label/text");
+        }
+        if (raw.condition !== "visible" && raw.condition !== "gone") {
+          throw stepErr(index, 'expect requires condition: "visible" | "gone"');
+        }
+        let timeoutMs: number | undefined;
+        if (raw.timeoutMs !== undefined) {
+          if (!isNumber(raw.timeoutMs)) throw stepErr(index, "expect.timeoutMs must be a number");
+          if (raw.timeoutMs < 0) throw stepErr(index, "expect.timeoutMs must be >= 0");
+          if (raw.timeoutMs > MAX_WAIT_MS)
+            throw stepErr(index, `expect.timeoutMs must be <= ${MAX_WAIT_MS} (15 min)`);
+          timeoutMs = raw.timeoutMs;
+        }
+        const step: Extract<RecipeStep, { kind: "expect" }> = {
+          kind: "expect",
+          target,
+          condition: raw.condition,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
           ...(note ? { note } : {}),
         };
@@ -441,6 +492,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Sleep ${step.ms}ms`;
     case "wait-for":
       return `Wait for ${describeTarget(step.target)}`;
+    case "expect":
+      return `check ${describeExpectTarget(step.target)} ${step.condition}`;
     case "pause":
       return `Pause: ${step.message}`;
     case "screenshot":
@@ -467,6 +520,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["wait"];
     case "wait-for":
       return ["wait"];
+    case "expect":
+      return ["ok"];
     case "pause":
       return ["wait"];
     case "screenshot":

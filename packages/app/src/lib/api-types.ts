@@ -70,6 +70,13 @@ export type RecipeStep =
   | { kind: "key"; key: "back" | "home"; note?: string }
   | { kind: "sleep"; ms: number; note?: string }
   | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
+  | {
+      kind: "expect";
+      target: StepTarget;
+      condition: "visible" | "gone";
+      timeoutMs?: number;
+      note?: string;
+    }
   | { kind: "pause"; message: string; note?: string }
   | { kind: "screenshot"; caption?: string; note?: string }
   | { kind: "flow"; flow: string; note?: string };

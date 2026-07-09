@@ -4,6 +4,8 @@ import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
 import { CommandProvider } from "./context/command";
 import { ToastProvider } from "./context/toast";
+import { RecipeDraftProvider } from "./context/recipe-draft";
+import { WorkbenchProvider } from "./context/workbench";
 import { RecorderProvider } from "./context/recorder";
 import { Layout } from "./components/layout";
 import { HomePage } from "./pages/home";
@@ -29,9 +31,13 @@ export function AppBaseProviders(
       >
         <ServerProvider>
           <ToastProvider>
-            <RecorderProvider>
-              <CommandProvider>{props.children}</CommandProvider>
-            </RecorderProvider>
+            <RecipeDraftProvider>
+              <WorkbenchProvider>
+                <RecorderProvider>
+                  <CommandProvider>{props.children}</CommandProvider>
+                </RecorderProvider>
+              </WorkbenchProvider>
+            </RecipeDraftProvider>
           </ToastProvider>
         </ServerProvider>
       </ThemeProvider>

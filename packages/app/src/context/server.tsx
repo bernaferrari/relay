@@ -54,15 +54,25 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
-    const [selectedRecipeId, setSelectedRecipeId] = createSignal<string | null>(null);
+    // Selection is persisted (platform.storage "selectedRecipeId") so returning
+    // users land on their last test; brand-new users (no stored id) land on the
+    // first-run empty state — we never auto-select the first builtin.
+    const [selectedRecipeId, setSelectedRecipeIdState] = createSignal<string | null>(null);
+    function setSelectedRecipeId(id: string | null): void {
+      setSelectedRecipeIdState(id);
+      void (async () => {
+        try {
+          await platform.storage.set("selectedRecipeId", id ?? "");
+        } catch {
+          /* ignore */
+        }
+      })();
+    }
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
     const [runsRoot, setRunsRoot] = createSignal("");
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
-    // Persisted-run selection: when set, StepsPane renders a read-only view of
-    // a disk run's steps (disk runs folded into History by plan 008 step 4).
-    const [persistedRunId, setPersistedRunId] = createSignal<string | null>(null);
     const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
     const [running, setRunning] = createSignal(false);
     const [error, setError] = createSignal<string | null>(null);
@@ -236,9 +246,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         if (key !== prevRecipesKey) {
           prevRecipesKey = key;
           setRecipes(list);
-          // Auto-select the first recipe so the report opens with content, not void.
-          if (!selectedRecipeId() && list.length > 0 && list[0]) setSelectedRecipeId(list[0].id);
         }
+        // A restored selection may point at a deleted recipe — fall back to
+        // the first-run empty state, never silently to the first builtin.
+        const sel = selectedRecipeId();
+        if (sel && !list.some((r) => r.id === sel)) setSelectedRecipeId(null);
       } catch {
         /* ignore — recipes are non-critical for connectivity UX */
       }
@@ -747,6 +759,34 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    /**
+     * Run a single step in isolation (POST /step/run) — the run-pane's per-row
+     * ▶ button. The backend answers 200 with `{ ok, durationMs, logs }` either
+     * way for a step that executed (pass/fail), and 400/409 for a step that
+     * couldn't even be attempted (invalid shape, `pause`, or a job already
+     * running); both failure modes collapse to `{ ok: false, error }` here so
+     * the row only has one branch to render.
+     */
+    async function runStep(
+      step: RecipeStep,
+    ): Promise<{ ok: boolean; error?: string; durationMs?: number; logs?: string[] }> {
+      try {
+        const serial = selectedDevice() ?? undefined;
+        const data = await request<{
+          ok: boolean;
+          error?: string;
+          durationMs?: number;
+          logs?: string[];
+        }>("/step/run", {
+          method: "POST",
+          body: JSON.stringify({ step, ...(serial ? { serial } : {}) }),
+        });
+        return data;
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
     function jumpToJob(jobId: string) {
       setSelectedJobId(jobId);
       const job = jobs().find((j) => j.id === jobId);
@@ -771,6 +811,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const saved = await platform.storage.get("prodAccountMatch");
         if (saved) setProdAccountMatchState(saved);
+      } catch {
+        /* ignore */
+      }
+      // Restore the last-selected test BEFORE recipes load, so the recipes
+      // refresh can validate it (and a missing id falls back to null).
+      try {
+        const savedSel = await platform.storage.get("selectedRecipeId");
+        if (savedSel) setSelectedRecipeIdState(savedSel);
       } catch {
         /* ignore */
       }
@@ -911,6 +959,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearLogs,
       pressNode,
       interactStep,
+      runStep,
       refreshActions,
       refreshRecipes,
       refreshDevices,
@@ -928,8 +977,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       queuedJobs,
       isPaused,
       retrySelectedJob,
-      persistedRunId,
-      setPersistedRunId,
       snapshot,
       frames,
       frameIndex,
