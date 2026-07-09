@@ -16,9 +16,11 @@
     "solid-js": "catalog:"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.1.11",
     "@types/node": "^22.15.0",
     "electron": "^35.2.1",
     "esbuild": "^0.25.0",
+    "tailwindcss": "4.1.11",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-solid": "^2.11.6"

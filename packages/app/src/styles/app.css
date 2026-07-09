@@ -11,8 +11,9 @@
 @import "tailwindcss";
 @import "@grok-device/ui/styles";
 
-/* Source only this package so Tailwind scans app TSX */
+/* Scan app sources even when this CSS is imported from desktop/electron */
 @source "../**/*.{ts,tsx}";
+@source "../../../desktop/src/renderer/**/*.{ts,tsx}";
 
 @font-face {
   font-family: "Geist";
@@ -103,6 +104,88 @@
 .qa--desktop {
   --traffic-pad: 84px;
   --top-h: 44px;
+}
+
+/*
+ * Structural layout — plain CSS so the shell never collapses if Tailwind
+ * utilities fail to load (e.g. Electron without the TW Vite plugin).
+ */
+.qa-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.shell-grid {
+  position: relative;
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  grid-template-columns: minmax(380px, 46%) minmax(0, 1fr);
+}
+.shell-grid--no-device {
+  grid-template-columns: minmax(320px, 40%) minmax(0, 1fr);
+}
+.shell-grid--board {
+  grid-template-columns: minmax(440px, 54%) minmax(0, 1fr);
+}
+.shell-artboard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--v2-border-border-muted);
+}
+.shell-artboard > .shell-artboard-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.shell-runpane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--v2-background-bg-layer-01);
+}
+.runpane-head {
+  position: relative;
+  z-index: 40;
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 14px;
+  min-height: 48px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+  background: color-mix(in srgb, var(--v2-background-bg-layer-01) 90%, transparent);
+  backdrop-filter: blur(8px);
+}
+.runpane-body {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.qa-topbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  height: 46px;
+  z-index: 40;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+  background: color-mix(in srgb, var(--v2-background-bg-deep) 90%, transparent);
+  padding: 0 12px 0 var(--traffic-pad, 12px);
+  backdrop-filter: blur(12px) saturate(140%);
 }
 
 /* Atmosphere — dark only */

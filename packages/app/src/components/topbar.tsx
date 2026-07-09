@@ -40,13 +40,7 @@ export function Topbar(props: { onSettings: () => void }) {
   const pickEmpty = () => server.isEmptyDevices() || !server.selectedDevice();
 
   return (
-    <header
-      class={cn(
-        "desktop-titlebar-drag z-40 flex h-[46px] shrink-0 items-center gap-2",
-        "border-b border-border bg-deep/90 px-3 pl-[var(--traffic-pad,12px)]",
-        "backdrop-blur-md backdrop-saturate-150",
-      )}
-    >
+    <header class={cn("qa-topbar desktop-titlebar-drag")}>
       <div class="desktop-titlebar-no-drag mr-1.5 flex h-[30px] items-center gap-2.5 border-r border-border pr-3">
         <span
           class="grid size-[22px] place-items-center rounded-[7px] bg-accent/15 text-accent-soft"

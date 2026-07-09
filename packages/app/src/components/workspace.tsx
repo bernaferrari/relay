@@ -28,17 +28,14 @@ export function Workspace() {
     <OfflineGate overlay>
       <div
         class={cn(
-          "relative grid min-h-0 flex-1 bg-deep transition-[grid-template-columns] duration-200",
-          noDevice()
-            ? "grid-cols-[minmax(320px,40%)_minmax(0,1fr)]"
-            : boardOpen()
-              ? "grid-cols-[minmax(440px,54%)_minmax(0,1fr)]"
-              : "grid-cols-[minmax(380px,46%)_minmax(0,1fr)]",
+          "shell-grid stage-well",
+          noDevice() && "shell-grid--no-device",
+          !noDevice() && boardOpen() && "shell-grid--board",
         )}
       >
         {/* Left: phone artboard / frame canvas */}
-        <div class="stage-well flex min-h-0 min-w-0 flex-col border-r border-border">
-          <div class="flex min-h-0 flex-1 flex-col">
+        <div class="shell-artboard stage-well">
+          <div class="shell-artboard-body">
             <Show
               when={boardOpen() && server.frames().length > 0}
               fallback={<DeviceStage onExpandBoard={() => setBoardOpen(true)} />}
@@ -48,10 +45,7 @@ export function Workspace() {
           </div>
         </div>
         {/* Right: steps / test editor */}
-        <section
-          class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-layer-1"
-          aria-label="Test editor"
-        >
+        <section class="shell-runpane" aria-label="Test editor">
           <StepsPane />
         </section>
       </div>

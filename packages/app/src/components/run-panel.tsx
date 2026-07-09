@@ -327,7 +327,7 @@ export function StepsPane() {
         SpaceX header: one switcher · status · primary actions.
         No nag captions. Empty steps are self-explanatory in the body.
       */}
-      <div class="relative z-40 flex min-h-12 shrink-0 items-start gap-3.5 border-b border-border bg-layer-1/90 px-4 py-3 pb-2.5 backdrop-blur-sm">
+      <div class="runpane-head">
         <div class="min-w-0 flex-1">
           <div class="relative" data-switcher>
             <Show
@@ -632,7 +632,7 @@ export function StepsPane() {
         </div>
       </div>
 
-      <div class="relative z-[1] min-h-0 flex-1 overflow-y-auto p-0">
+      <div class="runpane-body">
         <Show when={!selectedRecipe()}>
           <div class="flex min-h-[280px] flex-1 items-start justify-center px-2 py-14">
             <div class="max-w-[360px]">
