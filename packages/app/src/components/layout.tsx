@@ -6,6 +6,7 @@ import { useTheme } from "@grok-device/ui/theme/context";
 import { usePlatform } from "../context/platform";
 import { Topbar } from "./topbar";
 import { ErrorBanner } from "./error-banner";
+import { cn } from "../lib/cn";
 
 export type AppView = "workspace" | "settings";
 
@@ -187,10 +188,16 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
   });
 
   return (
-    <div class="qa" classList={{ "qa--desktop": platform.platform === "desktop" }}>
+    <div
+      class={cn(
+        // `.qa` keeps token host (--c-accent, etc.) used across the product
+        "qa relative flex h-full min-h-full min-h-dvh flex-col overflow-hidden",
+        platform.platform === "desktop" && "qa--desktop",
+      )}
+    >
       <Topbar onSettings={() => props.onOpenSettings()} />
       <ErrorBanner />
-      <div class="qa-body">{props.children}</div>
+      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">{props.children}</div>
       <CommandPalette />
       <Toaster />
     </div>

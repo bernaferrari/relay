@@ -7,6 +7,7 @@ import { useCommand } from "../context/command";
 import { Icon } from "../components/icon";
 import { trapFocus } from "../lib/modal";
 import { cn } from "../lib/cn";
+import { btnGhost, mono, seg, segBtnOn, segBtn } from "../lib/ui";
 
 const rowCls =
   "flex items-center justify-between gap-4 border-b border-border py-3 last:border-b-0";
@@ -141,11 +142,12 @@ export function SettingsPage(props: { onClose: () => void }) {
                 <div class={rowCopyCls}>
                   <span class={rowTitleCls}>Color scheme</span>
                   <span class={rowDescCls}>
-                    Light, dark, or follow the OS. Active: <span class="mono">{theme.mode()}</span>
+                    Light, dark, or follow the OS. Active:{" "}
+                    <span class="font-mono tabular-nums">{theme.mode()}</span>
                   </span>
                 </div>
                 <div class="shrink-0">
-                  <div class="seg" role="group" aria-label="Color scheme">
+                  <div class={seg} role="group" aria-label="Color scheme">
                     {(
                       [
                         ["system", "System"],
@@ -155,7 +157,7 @@ export function SettingsPage(props: { onClose: () => void }) {
                     ).map(([id, label]) => (
                       <button
                         type="button"
-                        class={cn("seg__btn", theme.colorScheme() === id && "seg__btn--on")}
+                        class={cn(segBtn, theme.colorScheme() === id && segBtnOn)}
                         onClick={() => theme.setColorScheme(id as ColorScheme)}
                       >
                         {label}
@@ -278,7 +280,7 @@ export function SettingsPage(props: { onClose: () => void }) {
                   <span class="min-w-0 flex-1">{server.error()}</span>
                   <button
                     type="button"
-                    class="btn btn-ghost ml-auto"
+                    class={cn(btnGhost, "ml-auto")}
                     onClick={() => server.dismissError()}
                   >
                     Dismiss
@@ -335,7 +337,7 @@ export function SettingsPage(props: { onClose: () => void }) {
               <div class={rowCls}>
                 <div class={rowCopyCls}>
                   <span class={rowTitleCls}>Theme</span>
-                  <span class={cn(rowDescCls, "mono")}>
+                  <span class={cn(rowDescCls, mono)}>
                     {theme.themeId()} / {theme.mode()}
                   </span>
                 </div>
@@ -344,12 +346,12 @@ export function SettingsPage(props: { onClose: () => void }) {
                 <div class={rowCopyCls}>
                   <span class={rowTitleCls}>Command palette</span>
                   <span class={rowDescCls}>
-                    Press <span class="mono">⌘K</span> anywhere to run commands, jump to tests, or
-                    toggle appearance.
+                    Press <span class="font-mono">⌘K</span> anywhere to run commands, jump to tests,
+                    or toggle appearance.
                   </span>
                 </div>
                 <div class="shrink-0">
-                  <button type="button" class="btn btn-ghost" onClick={() => cmd.setOpen(true)}>
+                  <button type="button" class={btnGhost} onClick={() => cmd.setOpen(true)}>
                     <Icon name="search" size={13} />
                     Open palette
                   </button>

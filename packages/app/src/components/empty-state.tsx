@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 import { Show } from "solid-js";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
+import { btnGhost, btnAcc, mono } from "../lib/ui";
 
 export type EmptyStateProps = {
   title: string;
@@ -75,7 +76,9 @@ export function EmptyState(props: EmptyStateProps) {
           </p>
         </Show>
         <Show when={props.code}>
-          <code class="mono mt-2 rounded-md bg-layer-2 px-2 py-0.5 text-meta text-accent-soft">
+          <code
+            class={cn(mono, "mt-2 rounded-md bg-layer-2 px-2 py-0.5 text-meta text-accent-soft")}
+          >
             {props.code}
           </code>
         </Show>
@@ -83,12 +86,12 @@ export function EmptyState(props: EmptyStateProps) {
       <Show when={props.actionLabel || props.secondaryLabel || props.children}>
         <div class="mt-3 flex gap-2">
           <Show when={props.actionLabel && props.onAction}>
-            <button type="button" class="btn btn-acc" onClick={() => props.onAction?.()}>
+            <button type="button" class={btnAcc} onClick={() => props.onAction?.()}>
               {props.actionLabel}
             </button>
           </Show>
           <Show when={props.secondaryLabel && props.onSecondary}>
-            <button type="button" class="btn btn-ghost" onClick={() => props.onSecondary?.()}>
+            <button type="button" class={btnGhost} onClick={() => props.onSecondary?.()}>
               {props.secondaryLabel}
             </button>
           </Show>

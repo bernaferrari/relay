@@ -3,6 +3,7 @@ import { useServer } from "../context/server";
 import { Icon } from "./icon";
 import { fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
+import { btnGhost, mono } from "../lib/ui";
 
 /**
  * Topbar (plan 012) — brand · device picker · [spacer] · runbar pill (active
@@ -40,7 +41,13 @@ export function Topbar(props: { onSettings: () => void }) {
   const pickEmpty = () => server.isEmptyDevices() || !server.selectedDevice();
 
   return (
-    <header class={cn("qa-topbar desktop-titlebar-drag")}>
+    <header
+      class={cn(
+        "desktop-titlebar-drag z-40 flex h-[46px] shrink-0 flex-row items-center gap-2",
+        "border-b border-border bg-deep/90 px-3 pl-[var(--traffic-pad,12px)]",
+        "backdrop-blur-md backdrop-saturate-150",
+      )}
+    >
       <div class="desktop-titlebar-no-drag mr-1.5 flex h-[30px] items-center gap-2.5 border-r border-border pr-3">
         <span
           class="grid size-[22px] place-items-center rounded-[7px] bg-accent/15 text-accent-soft"
@@ -110,7 +117,12 @@ export function Topbar(props: { onSettings: () => void }) {
                 <div class="px-3 py-3.5 text-center">
                   <p class="m-0 text-body font-semibold text-text">No devices</p>
                   <p class="mt-1 mb-2 text-meta text-text-faint">Connect a phone, then refresh.</p>
-                  <code class="mono inline-block rounded-md bg-layer-2 px-2 py-0.5 text-meta text-accent-soft">
+                  <code
+                    class={cn(
+                      mono,
+                      "inline-block rounded-md bg-layer-2 px-2 py-0.5 text-meta text-accent-soft",
+                    )}
+                  >
                     adb devices
                   </code>
                 </div>
@@ -142,7 +154,9 @@ export function Topbar(props: { onSettings: () => void }) {
                       />
                       <span class="min-w-0 text-left">
                         <span class="block text-body font-medium">{d.name ?? d.serial}</span>
-                        <span class="mono mt-px block text-meta text-text-faint">{d.serial}</span>
+                        <span class={cn(mono, "mt-px block text-meta text-text-faint")}>
+                          {d.serial}
+                        </span>
                       </span>
                     </button>
                   );
@@ -207,7 +221,7 @@ export function Topbar(props: { onSettings: () => void }) {
             >
               {job().title ?? titleize(job().action, server.recipes())}
             </button>
-            <span class="mono shrink-0 text-meta text-text-faint">
+            <span class={cn(mono, "shrink-0 text-meta text-text-faint")}>
               {fmtDur(job(), server.clock())}
             </span>
             <button
@@ -244,7 +258,7 @@ export function Topbar(props: { onSettings: () => void }) {
       </Show>
       <button
         type="button"
-        class="btn btn-ghost desktop-titlebar-no-drag h-[30px] shrink-0 px-[7px]"
+        class={cn(btnGhost, "desktop-titlebar-no-drag h-[30px] shrink-0 px-[7px]")}
         data-tip="Settings (⌘,)"
         aria-label="Settings"
         onClick={props.onSettings}

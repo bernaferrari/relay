@@ -25,6 +25,7 @@ import {
 } from "../lib/step-target";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
+import { btnGhost, mono, seg, segBtnOn, segBtn } from "../lib/ui";
 
 type AddOption = { label: string; make: () => RecipeStep };
 type AddGroup = { label: string; items: AddOption[] };
@@ -140,13 +141,12 @@ function ManualTarget(props: {
   });
   return (
     <>
-      <div class="seg" role="group" aria-label="Target strategy">
+      <div class={seg} role="group" aria-label="Target strategy">
         <For each={STRATEGIES}>
           {(st) => (
             <button
               type="button"
-              class="seg__btn"
-              classList={{ "seg__btn--on": props.strategy() === st.id }}
+              class={cn(segBtn, props.strategy() === st.id && segBtnOn)}
               onClick={() => props.onStrategy(st.id)}
             >
               {st.label}
@@ -174,7 +174,7 @@ function ManualTarget(props: {
           return (
             <input
               ref={inputRef}
-              class={cn(valueCls, "mono")}
+              class={cn(valueCls, mono)}
               type="text"
               placeholder={st().placeholder}
               value={value()}
@@ -311,7 +311,7 @@ export function StepAnno(props: { anno: Accessor<RowAnno> }): JSX.Element {
             <Icon name="check" size={13} />
           </span>
           <Show when={dur()}>
-            <span class="mono whitespace-nowrap text-meta text-text-faint">{dur()}</span>
+            <span class={cn(mono, "whitespace-nowrap text-meta text-text-faint")}>{dur()}</span>
           </Show>
         </Show>
         <Show when={props.anno().status === "fail"}>
@@ -319,7 +319,7 @@ export function StepAnno(props: { anno: Accessor<RowAnno> }): JSX.Element {
             <Icon name="x" size={13} />
           </span>
           <Show when={dur()}>
-            <span class="mono whitespace-nowrap text-meta text-text-faint">{dur()}</span>
+            <span class={cn(mono, "whitespace-nowrap text-meta text-text-faint")}>{dur()}</span>
           </Show>
         </Show>
       </span>
@@ -612,7 +612,7 @@ function StepRow(props: {
                         <span class="min-w-11 shrink-0 text-meta font-medium text-text-faint">
                           {c.label}
                         </span>
-                        <span class="mono min-w-0 flex-1 truncate text-body text-text">
+                        <span class={cn(mono, "min-w-0 flex-1 truncate text-body text-text")}>
                           {c.value}
                         </span>
                       </button>
@@ -639,7 +639,7 @@ function StepRow(props: {
               return (
                 <span class="inline-flex items-center gap-1">
                   <input
-                    class={cn(valueTimeoutCls, "mono")}
+                    class={cn(valueTimeoutCls, mono)}
                     type="number"
                     min={0}
                     placeholder="5"
@@ -654,7 +654,7 @@ function StepRow(props: {
                       });
                     }}
                   />
-                  <span class="mono text-meta text-text-faint">s</span>
+                  <span class={cn(mono, "text-meta text-text-faint")}>s</span>
                 </span>
               );
             })()}
@@ -676,7 +676,7 @@ function StepRow(props: {
               if (s.kind !== "expect") return null;
               return (
                 <>
-                  <div class="seg" role="group" aria-label="Condition">
+                  <div class={seg} role="group" aria-label="Condition">
                     {(
                       [
                         ["visible", "Is visible"],
@@ -685,8 +685,7 @@ function StepRow(props: {
                     ).map(([id, label]) => (
                       <button
                         type="button"
-                        class="seg__btn"
-                        classList={{ "seg__btn--on": s.condition === id }}
+                        class={cn(segBtn, s.condition === id && segBtnOn)}
                         onClick={() => onEdit({ ...s, condition: id })}
                       >
                         {label}
@@ -695,7 +694,7 @@ function StepRow(props: {
                   </div>
                   <span class="inline-flex items-center gap-1">
                     <input
-                      class={cn(valueTimeoutCls, "mono")}
+                      class={cn(valueTimeoutCls, mono)}
                       type="number"
                       min={0}
                       placeholder="5"
@@ -710,7 +709,7 @@ function StepRow(props: {
                         });
                       }}
                     />
-                    <span class="mono text-meta text-text-faint">s</span>
+                    <span class={cn(mono, "text-meta text-text-faint")}>s</span>
                   </span>
                 </>
               );
@@ -732,7 +731,7 @@ function StepRow(props: {
               return (
                 <input
                   ref={ref}
-                  class={cn(valueCls, "mono")}
+                  class={cn(valueCls, mono)}
                   type="text"
                   placeholder="text to type"
                   value={s.text}
@@ -759,14 +758,14 @@ function StepRow(props: {
                 <span class="inline-flex items-center gap-1">
                   <input
                     ref={ref}
-                    class={cn(valueTimeoutCls, "mono")}
+                    class={cn(valueTimeoutCls, mono)}
                     type="number"
                     min={0}
                     placeholder="500"
                     value={s.ms}
                     onInput={(e) => onEdit({ ...s, ms: parseInt(e.currentTarget.value, 10) || 0 })}
                   />
-                  <span class="mono text-meta text-text-faint">ms</span>
+                  <span class={cn(mono, "text-meta text-text-faint")}>ms</span>
                 </span>
               );
             })()}
@@ -804,7 +803,7 @@ function StepRow(props: {
               const s = props.step();
               if (s.kind !== "key") return null;
               return (
-                <div class="seg" role="group" aria-label="Key">
+                <div class={seg} role="group" aria-label="Key">
                   {(
                     [
                       ["back", "Back"],
@@ -813,8 +812,7 @@ function StepRow(props: {
                   ).map(([id, label]) => (
                     <button
                       type="button"
-                      class="seg__btn"
-                      classList={{ "seg__btn--on": s.key === id }}
+                      class={cn(segBtn, s.key === id && segBtnOn)}
                       onClick={() => onEdit({ kind: "key", key: id })}
                     >
                       {label}
@@ -832,7 +830,7 @@ function StepRow(props: {
               if (s.kind !== "scroll") return null;
               return (
                 <>
-                  <div class="seg" role="group" aria-label="Direction">
+                  <div class={seg} role="group" aria-label="Direction">
                     {(
                       [
                         ["down", "Down"],
@@ -841,8 +839,7 @@ function StepRow(props: {
                     ).map(([id, label]) => (
                       <button
                         type="button"
-                        class="seg__btn"
-                        classList={{ "seg__btn--on": s.direction === id }}
+                        class={cn(segBtn, s.direction === id && segBtnOn)}
                         onClick={() =>
                           onEdit({
                             kind: "scroll",
@@ -856,7 +853,7 @@ function StepRow(props: {
                     ))}
                   </div>
                   <input
-                    class={cn(valueCls, "mono")}
+                    class={cn(valueCls, mono)}
                     type="number"
                     min={0}
                     placeholder="amount (optional)"
@@ -922,7 +919,12 @@ function StepRow(props: {
 
           {/* When annotated, the expanded row also shows that step's log. */}
           <Show when={anno().log}>
-            <pre class="mono mt-1 max-h-40 w-full basis-full overflow-y-auto rounded-control bg-base px-2.5 py-2 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted">
+            <pre
+              class={cn(
+                mono,
+                "mt-1 max-h-40 w-full basis-full overflow-y-auto rounded-control bg-base px-2.5 py-2 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted",
+              )}
+            >
               {anno().log}
             </pre>
           </Show>
@@ -1086,7 +1088,8 @@ export function RecipeStepsEditor(): JSX.Element {
         <button
           type="button"
           class={cn(
-            "btn btn-ghost h-[38px] w-full justify-center rounded-[10px] border border-border font-medium text-text-muted",
+            btnGhost,
+            "h-[38px] w-full justify-center rounded-[10px] border border-border font-medium text-text-muted",
             "hover:border-accent/45 hover:bg-accent/[0.08] hover:text-accent-soft",
             isEmpty() && "border-dashed",
           )}

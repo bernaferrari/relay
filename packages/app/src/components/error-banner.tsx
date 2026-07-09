@@ -1,6 +1,8 @@
 import { Show } from "solid-js";
 import { Icon } from "./icon";
 import { useServer } from "../context/server";
+import { btnGhost } from "../lib/ui";
+import { cn } from "../lib/cn";
 
 /** Dismissible global error strip — only when server.error() is set. */
 export function ErrorBanner() {
@@ -21,7 +23,7 @@ export function ErrorBanner() {
         <p class="m-0 min-w-0 flex-1 truncate">{server.error()}</p>
         <button
           type="button"
-          class="btn btn-ghost shrink-0"
+          class={cn(btnGhost, "shrink-0")}
           aria-label="Dismiss error"
           onClick={() => server.dismissError()}
         >

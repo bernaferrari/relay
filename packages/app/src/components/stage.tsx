@@ -18,6 +18,7 @@ import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
+import { btnBordered, btnGhost, mono, seg, segBtn, segBtnOn, segBtnRec } from "../lib/ui";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(props: { onExpandBoard?: () => void }) {
@@ -382,8 +383,9 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
       ref={stageEl}
       aria-label="Device stage"
       class={cn(
-        "stage-well relative flex min-h-0 flex-1 flex-col items-center justify-start overflow-hidden",
-        "px-6 pt-5 pb-7",
+        "relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-7",
+        "bg-[radial-gradient(ellipse_80%_60%_at_50%_42%,color-mix(in_srgb,var(--color-accent)_8%,transparent),transparent_55%),radial-gradient(ellipse_100%_80%_at_50%_100%,rgb(0_0_0/0.2),transparent_50%),var(--color-deep)]",
+        "dark:bg-[radial-gradient(ellipse_80%_60%_at_50%_42%,color-mix(in_srgb,var(--color-accent)_8%,transparent),transparent_55%),var(--color-deep)]",
         server.isOffline() && "opacity-55",
       )}
     >
@@ -401,8 +403,12 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         fallback={
           <div
             class={cn(
-              // Must include `.bezel` — hardware chrome (gradient/shadow) lives there.
-              "bezel bezel--seat relative z-[2] my-auto",
+              "relative z-[2] my-auto flex aspect-[9/19.5] w-[min(320px,46vh)] max-h-[calc(100%-96px)]",
+              "flex-col items-center justify-center gap-3 rounded-[38px] p-3 text-center text-white/90",
+              "bg-[linear-gradient(155deg,#2a2d33_0%,#12141a_45%,#0a0b0e_100%)]",
+              "shadow-[0_32px_64px_-18px_rgb(0_0_0/0.7),0_0_0_1px_rgb(255_255_255/0.07),inset_0_1px_0_rgb(255_255_255/0.12)]",
+              "before:pointer-events-none before:absolute before:top-2.5 before:left-1/2 before:h-1.5 before:w-[72px]",
+              "before:-translate-x-1/2 before:rounded-full before:bg-black before:opacity-85 before:content-['']",
               focusedStep() && "gap-3.5",
             )}
           >
@@ -422,7 +428,12 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             >
               {(s) => (
                 <div class="flex max-w-[220px] flex-col items-center gap-1.5 px-5 text-center">
-                  <span class="mono text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90">
+                  <span
+                    class={cn(
+                      mono,
+                      "text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90",
+                    )}
+                  >
                     Step {s().index + 1}
                   </span>
                   <p class="m-0 text-sm font-semibold leading-snug tracking-tight text-white/[0.94]">
@@ -437,7 +448,10 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             <div class="flex flex-col items-center gap-2.5">
               <button
                 type="button"
-                class="btn btn-ghost btn--bordered"
+                class={cn(
+                  btnBordered,
+                  "border-white/15 bg-white/5 text-white/80 hover:enabled:bg-white/12 hover:enabled:text-white",
+                )}
                 disabled={server.health() === "offline"}
                 onClick={() =>
                   void (async () => {
@@ -466,14 +480,23 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           )}
         </Show>
         <div
-          class="bezel"
+          class={cn(
+            "relative z-[2] aspect-[9/19.5] w-[min(320px,46vh)] max-h-[calc(100%-96px)] shrink-0 rounded-[38px] p-3",
+            "bg-[linear-gradient(155deg,#2a2d33_0%,#12141a_45%,#0a0b0e_100%)]",
+            "shadow-[0_32px_64px_-18px_rgb(0_0_0/0.7),0_0_0_1px_rgb(255_255_255/0.07),inset_0_1px_0_rgb(255_255_255/0.12)]",
+            "before:pointer-events-none before:absolute before:top-2.5 before:left-1/2 before:h-1.5 before:w-[72px]",
+            "before:-translate-x-1/2 before:rounded-full before:bg-black before:opacity-85 before:content-['']",
+          )}
           data-empty={!frame() ? "1" : "0"}
           style={{ "aspect-ratio": frameAspect() }}
         >
-          <div class="glass">
+          <div class="relative h-full w-full overflow-hidden rounded-[26px] bg-[#0a0a0c]">
             <Show when={frame()}>
               <img
-                class={cn("glass__img", rec.interacting() && "glass__img--interactive")}
+                class={cn(
+                  "block h-full w-full select-none object-contain",
+                  rec.interacting() && "cursor-crosshair",
+                )}
                 alt={frame()!.caption ?? "device frame"}
                 src={`data:${frame()!.mime};base64,${frame()!.base64}`}
                 onLoad={(e) => {
@@ -590,7 +613,12 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             <Show when={!frame() && focusedStep()}>
               {(s) => (
                 <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2 bg-[radial-gradient(ellipse_70%_50%_at_50%_40%,color-mix(in_srgb,var(--c-accent)_14%,transparent),transparent_60%),#0c0d10] p-6 text-center">
-                  <span class="mono text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90">
+                  <span
+                    class={cn(
+                      mono,
+                      "text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90",
+                    )}
+                  >
                     Step {s().index + 1}
                   </span>
                   <p class="m-0 max-w-[12em] text-sm font-semibold leading-snug tracking-tight text-white/[0.94]">
@@ -613,7 +641,12 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             <Show when={frame() && focusedStep()}>
               {(s) => (
                 <div class="pointer-events-none absolute right-2.5 bottom-3 left-2.5 z-[4] flex items-center gap-2 rounded-[10px] bg-black/70 px-2.5 py-2 text-xs font-medium leading-snug text-white backdrop-blur-[10px]">
-                  <span class="mono grid size-[18px] flex-none place-items-center rounded-[5px] bg-accent/40 text-[10px] font-bold">
+                  <span
+                    class={cn(
+                      mono,
+                      "grid size-[18px] flex-none place-items-center rounded-[5px] bg-accent/40 text-[10px] font-bold",
+                    )}
+                  >
                     {s().index + 1}
                   </span>
                   {s().title}
@@ -631,7 +664,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             <div class="mb-1 flex max-w-[220px] flex-col gap-px border-b border-border px-2 pt-1 pb-1.5">
               <span class="truncate text-body font-semibold text-text">{nodeLabel()}</span>
               <Show when={metaLine()}>
-                <span class="mono truncate text-meta text-text-faint">{metaLine()}</span>
+                <span class={cn(mono, "truncate text-meta text-text-faint")}>{metaLine()}</span>
               </Show>
             </div>
             <Show when={ancestry().length > 1}>
@@ -697,7 +730,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               </For>
             </div>
             <Show when={ancestry().length > 1}>
-              <div class="mono px-2 pt-1.5 pb-0.5 text-center text-meta text-text-faint">
+              <div class={cn(mono, "px-2 pt-1.5 pb-0.5 text-center text-meta text-text-faint")}>
                 ↑ parent · ↓ child · esc to close
               </div>
             </Show>
@@ -705,7 +738,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         </Show>
 
         <Show when={frame()?.caption}>
-          <div class="mono z-[2] mt-3 text-center text-meta text-text-faint">
+          <div class={cn(mono, "z-[2] mt-3 text-center text-meta text-text-faint")}>
             {frame()!.caption}
           </div>
         </Show>
@@ -716,7 +749,10 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         <div class="z-[2] mt-3 flex w-full max-w-[560px] items-center gap-2.5 rounded-card border border-border bg-layer-1 px-2.5 py-2">
           <button
             type="button"
-            class="btn btn-ghost size-7 flex-none place-items-center rounded-md bg-layer-3 p-0 text-text hover:scale-105"
+            class={cn(
+              btnGhost,
+              "size-7 flex-none place-items-center rounded-md bg-layer-3 p-0 text-text hover:scale-105",
+            )}
             aria-label={server.playing() ? "Pause playback" : "Replay frames"}
             onClick={() => server.togglePlayback()}
           >
@@ -753,13 +789,13 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               }}
             </For>
           </div>
-          <span class="mono flex-none pr-0.5 text-meta text-text-faint">
+          <span class={cn(mono, "flex-none pr-0.5 text-meta text-text-faint")}>
             {server.frameIndex() + 1}/{server.frames().length}
           </span>
           <Show when={props.onExpandBoard}>
             <button
               type="button"
-              class="btn btn-ghost ml-1 h-7 gap-1 text-xs font-medium text-text-muted"
+              class={cn(btnGhost, "ml-1 h-7 gap-1 text-xs font-medium text-text-muted")}
               data-tip="Expand board"
               aria-label="Expand frame board"
               onClick={() => props.onExpandBoard?.()}
@@ -774,10 +810,10 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
       {/* Mode controls only exist when a device can act — never greyed theatre. */}
       <Show when={server.health() === "online" && !server.isEmptyDevices()}>
         <div class="z-[2] mt-4 flex items-center justify-center gap-1">
-          <div class="seg" role="group" aria-label="Stage mode">
+          <div class={seg} role="group" aria-label="Stage mode">
             <button
               type="button"
-              class={cn("seg__btn", !rec.interacting() && "seg__btn--on")}
+              class={cn(segBtn, !rec.interacting() && segBtnOn)}
               aria-pressed={!rec.interacting()}
               onClick={() => setStageMode("view")}
             >
@@ -785,7 +821,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             </button>
             <button
               type="button"
-              class={cn("seg__btn", rec.interacting() && !rec.recording() && "seg__btn--on")}
+              class={cn(segBtn, rec.interacting() && !rec.recording() && segBtnOn)}
               aria-pressed={rec.interacting() && !rec.recording()}
               onClick={() => setStageMode("drive")}
             >
@@ -794,33 +830,36 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             <button
               type="button"
               class={cn(
-                "seg__btn",
-                rec.interacting() && rec.recording() && "seg__btn--on",
-                rec.interacting() && rec.recording() && "seg__btn--rec",
+                segBtn,
+                rec.interacting() && rec.recording() && segBtnOn,
+                rec.interacting() && rec.recording() && segBtnRec,
               )}
               aria-pressed={rec.interacting() && rec.recording()}
               onClick={() => setStageMode("record")}
             >
-              <span class="seg__dot" aria-hidden="true" />
+              <span class="mr-1 inline-block size-1.5 rounded-full bg-current" aria-hidden="true" />
               Record
             </button>
           </div>
           <button
             type="button"
-            class="btn btn-ghost h-[30px] flex-none px-1.5"
+            class={cn(btnGhost, "h-[30px] flex-none px-1.5")}
             data-tip="Screenshot (⌘⇧S)"
             aria-label="Capture screenshot"
             disabled={server.busyCapture()}
             onClick={() => void server.captureUiScreenshot()}
           >
             <Show when={server.busyCapture()} fallback={<Icon name="camera" size={15} />}>
-              <span class="btn-spinner" aria-hidden="true" />
+              <span
+                class="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                aria-hidden="true"
+              />
             </Show>
           </button>
           <Show when={server.frames().length > 0}>
             <button
               type="button"
-              class="btn btn-ghost h-[30px] flex-none px-1.5"
+              class={cn(btnGhost, "h-[30px] flex-none px-1.5")}
               data-tip="Clear frames"
               aria-label="Clear frames"
               onClick={() => server.clearFrames()}
@@ -880,7 +919,7 @@ function RecorderBar() {
           </span>
           <Show when={rec.typeBuffer()}>
             <span
-              class="mono max-w-[45%] flex-none truncate text-meta text-text"
+              class={cn(mono, "max-w-[45%] flex-none truncate text-meta text-text")}
               title="Typing to device…"
             >
               “{rec.typeBuffer()}
@@ -893,7 +932,7 @@ function RecorderBar() {
           <Show when={rec.recording()}>
             <button
               type="button"
-              class="btn btn-ghost h-[22px] flex-none px-2 text-meta text-fail"
+              class={cn(btnGhost, "h-[22px] flex-none px-2 text-meta text-fail")}
               onClick={() => rec.setRecording(false)}
             >
               <Icon name="square" size={12} />

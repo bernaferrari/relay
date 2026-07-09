@@ -1,6 +1,7 @@
 import { Show, type JSX, createSignal } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
+import { btnAcc, mono } from "../lib/ui";
 
 /**
  * Full-stage / full-workspace overlay when the API is offline.
@@ -24,7 +25,7 @@ export function OfflineGate(props: {
   }
 
   return (
-    <>
+    <div class={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", props.overlay && "h-full")}>
       {props.children}
       <Show when={server.isOffline()}>
         <div
@@ -52,25 +53,25 @@ export function OfflineGate(props: {
             <p id="offline-gate-desc" class="m-0 mt-1 text-body leading-normal text-text-muted">
               The Specimen API is not reachable. Start it locally, then retry.
             </p>
-            <code class="mono mt-2.5 rounded-md bg-layer-2 px-2.5 py-1 text-meta text-accent-soft">
+            <code
+              class={cn(
+                mono,
+                "mt-2.5 rounded-md bg-layer-2 px-2.5 py-1 text-meta text-accent-soft",
+              )}
+            >
               pnpm dev:serve
             </code>
             <Show when={server.serverUrl()}>
-              <p class="mono text-meta text-text-faint">{server.serverUrl()}</p>
+              <p class={cn(mono, "text-meta text-text-faint")}>{server.serverUrl()}</p>
             </Show>
             <div class="mt-4">
-              <button
-                type="button"
-                class="btn btn-acc"
-                disabled={busy()}
-                onClick={() => void retry()}
-              >
+              <button type="button" class={btnAcc} disabled={busy()} onClick={() => void retry()}>
                 {busy() ? "Checking…" : "Retry connection"}
               </button>
             </div>
           </div>
         </div>
       </Show>
-    </>
+    </div>
   );
 }

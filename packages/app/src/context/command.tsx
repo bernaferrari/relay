@@ -299,22 +299,19 @@ export function CommandPalette(): JSX.Element {
   const kbdCls =
     "mono rounded-md border border-border bg-layer-2 px-1.5 py-0.5 text-meta font-medium text-text-muted";
 
+  // Only mount when open — a closed "fixed" overlay was still in document
+  // flow when TW utilities failed, stealing ~126px of shell height.
   return (
-    <div
-      class={cn(
-        "fixed inset-0 z-[100] flex items-start justify-center bg-[var(--v2-overlay-simple-overlay-scrim)] pt-[14vh] backdrop-blur-[6px] transition-opacity duration-150",
-        cmd.open() ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
-      )}
-      aria-hidden={!cmd.open()}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) cmd.setOpen(false);
-      }}
-    >
-      {/* Unmounted while closed so no phantom open dialog lingers in the
-          DOM / accessibility tree (the overlay stays for the backdrop fade). */}
-      <Show when={cmd.open()}>
+    <Show when={cmd.open()}>
+      <div
+        class="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 pt-[14vh] backdrop-blur-[6px]"
+        role="presentation"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) cmd.setOpen(false);
+        }}
+      >
         <div
-          class="flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] scale-100 flex-col overflow-hidden rounded-xl bg-layer-1 opacity-100 shadow-[var(--v2-elevation-overlay,0_16px_48px_rgb(0_0_0/0.4))]"
+          class="flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl border border-border bg-layer-1 shadow-xl"
           role="dialog"
           aria-label="Command palette"
           aria-modal="true"
@@ -403,7 +400,7 @@ export function CommandPalette(): JSX.Element {
             </span>
           </div>
         </div>
-      </Show>
-    </div>
+      </div>
+    </Show>
   );
 }

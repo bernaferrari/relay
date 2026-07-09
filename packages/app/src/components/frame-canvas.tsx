@@ -4,6 +4,7 @@ import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { clamp, stepStatusFromRun } from "../lib/run-gates";
+import { btnGhost, mono } from "../lib/ui";
 
 /**
  * Infinite pan/zoom canvas of run screenshots — inspired by OpenCode's
@@ -195,24 +196,24 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
     >
       <div class="flex h-10 shrink-0 items-center gap-2.5 border-b border-border bg-deep/70 px-3.5">
         <Show when={props.onCollapse}>
-          <button type="button" class="btn btn-ghost" onClick={() => props.onCollapse?.()}>
+          <button type="button" class={btnGhost} onClick={() => props.onCollapse?.()}>
             ← Phone
           </button>
         </Show>
         <Show when={items().length > 0}>
-          <span class="mono text-meta font-semibold text-text">{items().length} frames</span>
-          <span class="mono text-[10.5px] text-text-faint">scroll · drag · ←→ · Esc</span>
-          <span class="mono rounded-md border border-border bg-layer-2 px-2 py-0.5 text-[11px] text-text-faint">
+          <span class={cn(mono, "text-meta font-semibold text-text")}>{items().length} frames</span>
+          <span class={cn(mono, "text-[10.5px] text-text-faint")}>scroll · drag · ←→ · Esc</span>
+          <span
+            class={cn(
+              mono,
+              "rounded-md border border-border bg-layer-2 px-2 py-0.5 text-[11px] text-text-faint",
+            )}
+          >
             {Math.round(viewport().scale * 100)}%
           </span>
         </Show>
         <span class="flex-1" />
-        <button
-          type="button"
-          class="btn btn-ghost"
-          onClick={() => fit()}
-          disabled={!items().length}
-        >
+        <button type="button" class={btnGhost} onClick={() => fit()} disabled={!items().length}>
           Fit
         </button>
       </div>
@@ -317,7 +318,9 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
                     />
                   </Show>
                   <div class="flex h-7 shrink-0 items-center gap-1.5 border-b border-border bg-layer-2 px-2">
-                    <span class="mono min-w-[1.2em] text-[10.5px] font-semibold text-text-faint">
+                    <span
+                      class={cn(mono, "min-w-[1.2em] text-[10.5px] font-semibold text-text-faint")}
+                    >
                       {i() + 1}
                     </span>
                     <span class="min-w-0 flex-1 truncate text-left text-[11px] font-medium text-text">

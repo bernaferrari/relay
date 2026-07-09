@@ -13,6 +13,7 @@ import {
   runBlocker as runBlockerOf,
 } from "../lib/run-gates";
 import { cn } from "../lib/cn";
+import { btnBordered, btnGhost, btnAcc, mono } from "../lib/ui";
 
 function toneText(tone: string): string {
   if (tone === "pass") return "text-pass";
@@ -327,7 +328,7 @@ export function StepsPane() {
         SpaceX header: one switcher · status · primary actions.
         No nag captions. Empty steps are self-explanatory in the body.
       */}
-      <div class="runpane-head">
+      <div class="relative z-40 flex min-h-12 shrink-0 items-start gap-3.5 border-b border-border bg-layer-1/90 px-4 py-3 pb-2.5 backdrop-blur-sm">
         <div class="min-w-0 flex-1">
           <div class="relative" data-switcher>
             <Show
@@ -415,7 +416,12 @@ export function StepsPane() {
                               >
                                 {displayTitle(r.title)}
                               </span>
-                              <span class="mono shrink-0 text-[10.5px] text-text-faint opacity-80">
+                              <span
+                                class={cn(
+                                  mono,
+                                  "shrink-0 text-[10.5px] text-text-faint opacity-80",
+                                )}
+                              >
                                 {(() => {
                                   const planned =
                                     server.actions().find((a) => a.id === r.id)?.planned?.length ??
@@ -496,7 +502,7 @@ export function StepsPane() {
         <div class="flex shrink-0 flex-col items-end gap-1">
           <div class="flex h-[34px] items-center gap-1 self-end">
             <Show when={wb.running()}>
-              <button type="button" class="btn btn-ghost" onClick={() => wb.stop()}>
+              <button type="button" class={btnGhost} onClick={() => wb.stop()}>
                 <Icon name="square" size={11} />
                 Stop
               </button>
@@ -504,7 +510,7 @@ export function StepsPane() {
             <Show when={retryableJobId()}>
               <button
                 type="button"
-                class="btn btn-ghost"
+                class={btnGhost}
                 onClick={() => void server.retrySelectedJob(retryableJobId()!)}
               >
                 <Icon name="refresh" size={13} />
@@ -513,7 +519,7 @@ export function StepsPane() {
             </Show>
 
             <Show when={!selectedRecipe()}>
-              <button type="button" class="btn btn-ghost" onClick={() => void createNewTest()}>
+              <button type="button" class={btnGhost} onClick={() => void createNewTest()}>
                 <Icon name="plus" size={13} />
                 New
               </button>
@@ -525,12 +531,16 @@ export function StepsPane() {
                 <div class="relative" data-runhist>
                   <button
                     type="button"
-                    class={cn("btn btn-ghost gap-1.5", historyOpen() && "btn-ghost--on")}
+                    class={cn(
+                      btnGhost,
+                      "gap-1.5",
+                      historyOpen() && "bg-accent/12 text-accent-soft",
+                    )}
                     aria-expanded={historyOpen()}
                     onClick={() => setHistoryOpen((o) => !o)}
                   >
                     Past runs
-                    <span class="mono min-w-[1.1em] text-center text-[11px] opacity-70">
+                    <span class={cn(mono, "min-w-[1.1em] text-center text-[11px] opacity-70")}>
                       {wb.chips().length}
                     </span>
                   </button>
@@ -594,11 +604,7 @@ export function StepsPane() {
               </Show>
 
               <Show when={draft.source() === "builtin"}>
-                <button
-                  type="button"
-                  class="btn btn-ghost"
-                  onClick={() => void draft.forkAsCustom()}
-                >
+                <button type="button" class={btnGhost} onClick={() => void draft.forkAsCustom()}>
                   <Icon name="copy" size={13} />
                   Edit
                 </button>
@@ -608,7 +614,7 @@ export function StepsPane() {
 
               <button
                 type="button"
-                class="btn btn-acc min-w-[76px] font-semibold"
+                class={cn(btnAcc, "min-w-[76px] font-semibold")}
                 disabled={!canRun()}
                 data-tip={runTip()}
                 onClick={() => {
@@ -632,11 +638,13 @@ export function StepsPane() {
         </div>
       </div>
 
-      <div class="runpane-body">
+      <div class="relative z-[1] min-h-0 flex-1 overflow-y-auto">
         <Show when={!selectedRecipe()}>
           <div class="flex min-h-[280px] flex-1 items-start justify-center px-2 py-14">
             <div class="max-w-[360px]">
-              <p class="mono mb-2.5 text-[10px] font-bold tracking-[0.12em] text-accent-soft">
+              <p
+                class={cn(mono, "mb-2.5 text-[10px] font-bold tracking-[0.12em] text-accent-soft")}
+              >
                 SPECIMEN
               </p>
               <p class="mb-2 text-xl font-semibold tracking-tight text-text leading-tight">
@@ -646,13 +654,13 @@ export function StepsPane() {
                 Pick a test or create one. Connect a phone, hit Run — screenshots land on Canvas.
               </p>
               <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn btn-acc" onClick={() => void createNewTest()}>
+                <button type="button" class={btnAcc} onClick={() => void createNewTest()}>
                   <Icon name="plus" size={13} />
                   New test
                 </button>
                 <button
                   type="button"
-                  class="btn btn-ghost btn--bordered"
+                  class={btnBordered}
                   onClick={() => {
                     const firstLib = server.recipes().find((r) => r.source === "builtin");
                     if (firstLib) {
@@ -692,7 +700,12 @@ export function StepsPane() {
                     </span>
                   </Show>
                   <Show when={f().dur}>
-                    <span class="mono before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums">
+                    <span
+                      class={cn(
+                        mono,
+                        "before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums",
+                      )}
+                    >
                       {f().dur}
                     </span>
                   </Show>
@@ -738,7 +751,7 @@ export function StepsPane() {
               <span class="flex-1">Needs a prod account match (e.g. gmail.com).</span>
               <button
                 type="button"
-                class="btn btn-ghost shrink-0 text-heal"
+                class={cn(btnGhost, "shrink-0 text-heal")}
                 onClick={() => cmd.run("nav.settings")}
               >
                 Configure
@@ -770,7 +783,12 @@ export function StepsPane() {
                       )}
                       onClick={() => wb.focusStep(i())}
                     >
-                      <span class="mono grid size-[22px] shrink-0 place-items-center rounded-md border border-border bg-layer-1 text-[11px] font-semibold text-text-muted tabular-nums">
+                      <span
+                        class={cn(
+                          mono,
+                          "grid size-[22px] shrink-0 place-items-center rounded-md border border-border bg-layer-1 text-[11px] font-semibold text-text-muted tabular-nums",
+                        )}
+                      >
                         {i() + 1}
                       </span>
                       <span class="min-w-0 flex-1 text-[13.5px] font-medium tracking-tight text-text">
@@ -840,7 +858,7 @@ function RawLogOverlay(props: { text: string; onClose: () => void }) {
           <span class="flex-1 text-body font-semibold text-text">Raw log</span>
           <button
             type="button"
-            class="btn btn-ghost h-[26px] px-2 text-meta"
+            class={cn(btnGhost, "h-[26px] px-2 text-meta")}
             onClick={() => void copy()}
           >
             <Icon name={copied() ? "check" : "copy"} size={12} />
@@ -855,7 +873,12 @@ function RawLogOverlay(props: { text: string; onClose: () => void }) {
             <Icon name="x" size={14} />
           </button>
         </div>
-        <pre class="mono m-0 flex-1 overflow-auto px-4 pt-3 pb-4 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted">
+        <pre
+          class={cn(
+            mono,
+            "m-0 flex-1 overflow-auto px-4 pt-3 pb-4 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted",
+          )}
+        >
           {props.text || "— no log lines —"}
         </pre>
       </div>
