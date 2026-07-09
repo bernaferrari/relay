@@ -20,3 +20,4 @@ runs/
 vendor/
 
 *.legacy.css.bak
+broken-ui.png
