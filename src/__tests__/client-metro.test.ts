@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { Socket } from 'node:net';
@@ -9,6 +9,10 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { prepareMetroRuntime, reloadMetro } from '../metro/client-metro.ts';
+import { resolveMetroReloadEndpoints } from '../metro/metro-reload-endpoints.ts';
+import { createAgentDeviceClient } from '../client/client.ts';
+import { readMetroSessionHints } from '../metro/metro-session-hints.ts';
+import { resolveDaemonPaths } from '../daemon/config.ts';
 import { AppError } from '../kernel/errors.ts';
 import { isProcessAlive, waitForProcessExit } from '../utils/host-process.ts';
 
@@ -235,6 +239,273 @@ for (const { configFileName, commandName } of [
   });
 }
 
+test('prepareMetroRuntime maps kind=expo to the virtual-metro-entry bundle URL', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-expo-kind-${randomUUID()}`);
+  const projectRoot = path.join(tempRoot, 'project');
+  const binDir = path.join(tempRoot, 'bin');
+  const metroPort = await findFreePort();
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'expo-kind-test',
+      private: true,
+      dependencies: { expo: '51.0.0', 'react-native': '0.0.0-test' },
+    }),
+  );
+  writeFakeNpx(binDir);
+
+  let pid = 0;
+  try {
+    const result = await prepareMetroRuntime({
+      projectRoot,
+      kind: 'expo',
+      publicBaseUrl: `http://127.0.0.1:${metroPort}`,
+      metroPort,
+      reuseExisting: false,
+      installDependenciesIfNeeded: false,
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH || ''}`,
+      },
+    });
+    pid = result.pid;
+
+    assert.equal(result.kind, 'expo');
+    assert.equal(
+      result.iosRuntime.bundleUrl,
+      `http://127.0.0.1:${metroPort}/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true&minify=false`,
+    );
+    assert.equal(
+      result.androidRuntime.bundleUrl,
+      `http://127.0.0.1:${metroPort}/.expo/.virtual-metro-entry.bundle?platform=android&dev=true&minify=false`,
+    );
+    assert.ok(!result.iosRuntime.bundleUrl.includes('index.bundle'));
+  } finally {
+    await stopProcess(pid);
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('prepareMetroRuntime keeps index.bundle for non-expo kinds', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-rn-kind-${randomUUID()}`);
+  const projectRoot = path.join(tempRoot, 'project');
+  const binDir = path.join(tempRoot, 'bin');
+  const metroPort = await findFreePort();
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'rn-kind-test',
+      private: true,
+      dependencies: { 'react-native': '0.0.0-test' },
+    }),
+  );
+  writeFakeNpx(binDir);
+
+  let pid = 0;
+  try {
+    const result = await prepareMetroRuntime({
+      projectRoot,
+      kind: 'react-native',
+      publicBaseUrl: `http://127.0.0.1:${metroPort}`,
+      metroPort,
+      reuseExisting: false,
+      installDependenciesIfNeeded: false,
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH || ''}`,
+      },
+    });
+    pid = result.pid;
+
+    assert.equal(
+      result.iosRuntime.bundleUrl,
+      `http://127.0.0.1:${metroPort}/index.bundle?platform=ios&dev=true&minify=false`,
+    );
+  } finally {
+    await stopProcess(pid);
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('prepareMetroRuntime detects the package manager from an ancestor lockfile in a monorepo', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-pm-detect-${randomUUID()}`);
+  const monorepoRoot = path.join(tempRoot, 'monorepo');
+  const projectRoot = path.join(monorepoRoot, 'example');
+  const binDir = path.join(tempRoot, 'bin');
+  const argsFile = path.join(tempRoot, 'yarn-args.json');
+  const metroPort = await findFreePort();
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  // The lockfile lives at the monorepo root, not inside the leaf "example" project root, as with
+  // a real Yarn workspaces layout.
+  writeFileSync(path.join(monorepoRoot, 'yarn.lock'), '');
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'example',
+      private: true,
+      dependencies: { 'react-native': '0.0.0-test', 'shared-lib': 'workspace:*' },
+    }),
+  );
+  writeFakeNpx(binDir);
+  writeFakePackageManager(binDir, 'yarn', argsFile);
+  writeFakePackageManager(binDir, 'npm', path.join(tempRoot, 'npm-args.json'));
+
+  let pid = 0;
+  try {
+    const result = await prepareMetroRuntime({
+      projectRoot,
+      publicBaseUrl: `http://127.0.0.1:${metroPort}`,
+      metroPort,
+      reuseExisting: false,
+      installDependenciesIfNeeded: true,
+      env: {
+        ...process.env,
+        PATH: `${binDir}:${process.env.PATH || ''}`,
+      },
+    });
+    pid = result.pid;
+
+    assert.equal(result.packageManager, 'yarn');
+    assert.equal(result.dependenciesInstalled, true);
+    assert.deepEqual(JSON.parse(readFileSync(argsFile, 'utf8')), ['install']);
+  } finally {
+    await stopProcess(pid);
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('prepareMetroRuntime install failure hints at --no-install-deps and the detected package manager', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-pm-fail-${randomUUID()}`);
+  const projectRoot = path.join(tempRoot, 'project');
+  const binDir = path.join(tempRoot, 'bin');
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(path.join(projectRoot, 'yarn.lock'), '');
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'pm-fail-test',
+      private: true,
+      dependencies: { 'react-native': '0.0.0-test' },
+    }),
+  );
+  writeFailingPackageManager(binDir, 'yarn');
+
+  await assert.rejects(
+    () =>
+      prepareMetroRuntime({
+        projectRoot,
+        publicBaseUrl: 'http://127.0.0.1:9',
+        installDependenciesIfNeeded: true,
+        env: {
+          ...process.env,
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+        },
+      }),
+    (error) => {
+      assert.ok(error instanceof AppError);
+      const hint = error.details?.hint;
+      assert.ok(typeof hint === 'string' && hint.includes('--no-install-deps'));
+      assert.ok(typeof hint === 'string' && hint.includes('yarn'));
+      assert.equal(error.details?.packageManager, 'yarn');
+      return true;
+    },
+  );
+
+  rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('prepareMetroRuntime detects bun from the text bun.lock lockfile', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-pm-bun-${randomUUID()}`);
+  const projectRoot = path.join(tempRoot, 'project');
+  const binDir = path.join(tempRoot, 'bin');
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(path.join(projectRoot, 'bun.lock'), '');
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'pm-bun-test',
+      private: true,
+      dependencies: { 'react-native': '0.0.0-test' },
+    }),
+  );
+  writeFailingPackageManager(binDir, 'bun');
+
+  await assert.rejects(
+    () =>
+      prepareMetroRuntime({
+        projectRoot,
+        publicBaseUrl: 'http://127.0.0.1:9',
+        installDependenciesIfNeeded: true,
+        env: {
+          ...process.env,
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+        },
+      }),
+    (error) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.details?.packageManager, 'bun');
+      return true;
+    },
+  );
+
+  rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('prepareMetroRuntime lockfile walk-up stops at the repo root instead of adopting an outside lockfile', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-pm-bound-${randomUUID()}`);
+  const repoRoot = path.join(tempRoot, 'repo');
+  const projectRoot = path.join(repoRoot, 'example');
+  const binDir = path.join(tempRoot, 'bin');
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(path.join(repoRoot, '.git'), { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  // A lockfile ABOVE the repo root must not be adopted; detection falls back to npm.
+  writeFileSync(path.join(tempRoot, 'yarn.lock'), '');
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'pm-bound-test',
+      private: true,
+      dependencies: { 'react-native': '0.0.0-test' },
+    }),
+  );
+  writeFakePackageManager(binDir, 'yarn', path.join(tempRoot, 'yarn-args.json'));
+  writeFailingPackageManager(binDir, 'npm');
+
+  await assert.rejects(
+    () =>
+      prepareMetroRuntime({
+        projectRoot,
+        publicBaseUrl: 'http://127.0.0.1:9',
+        installDependenciesIfNeeded: true,
+        env: {
+          ...process.env,
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+        },
+      }),
+    (error) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.details?.packageManager, 'npm');
+      return true;
+    },
+  );
+
+  rmSync(tempRoot, { recursive: true, force: true });
+});
+
 test('prepareMetroRuntime rejects incomplete proxy configuration', async () => {
   await assert.rejects(
     () =>
@@ -335,6 +606,43 @@ test('reloadMetro preserves the bundle URL route prefix', async () => {
       reloadUrl: `http://127.0.0.1:${address.port}/metro/runtime-1/reload`,
       status: 200,
       body: 'OK',
+      transport: 'http',
+    });
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('reloadMetro preserves a path-prefixed Expo virtual-entry bundle URL supplied through --bundle-url', async () => {
+  const requests: string[] = [];
+  const server = createServer((req, res) => {
+    requests.push(req.url ?? '');
+    if (req.url === '/metro/runtime-1/reload') {
+      res.statusCode = 200;
+      res.end('OK');
+      return;
+    }
+    res.statusCode = 404;
+    res.end('not found');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+
+  try {
+    const result = await reloadMetro({
+      bundleUrl: `http://127.0.0.1:${address.port}/metro/runtime-1/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true`,
+      timeoutMs: 1_000,
+    });
+
+    assert.deepEqual(requests, ['/metro/runtime-1/reload']);
+    assert.deepEqual(result, {
+      reloaded: true,
+      reloadUrl: `http://127.0.0.1:${address.port}/metro/runtime-1/reload`,
+      status: 200,
+      body: 'OK',
+      transport: 'http',
     });
   } finally {
     await closeServer(server);
@@ -365,7 +673,340 @@ test('reloadMetro defaults to local Metro host and port', async () => {
   }
 });
 
-function writeFakeNpx(binDir: string): void {
+test('reload endpoint resolution prioritizes explicit flags, then session runtime hints, then defaults', () => {
+  // no-hint default: neither an explicit flag nor a runtime hint is present.
+  assert.equal(resolveMetroReloadEndpoints({}).reloadUrl, 'http://localhost:8081/reload');
+
+  // hint-only: a session runtime hint resolves the target when no flag is given.
+  assert.equal(
+    resolveMetroReloadEndpoints({ runtime: { metroHost: '127.0.0.1', metroPort: 9200 } }).reloadUrl,
+    'http://127.0.0.1:9200/reload',
+  );
+
+  // flag-overrides-hint: an explicit flag wins over a conflicting session runtime hint.
+  assert.equal(
+    resolveMetroReloadEndpoints({
+      metroHost: '10.0.0.5',
+      metroPort: 9300,
+      runtime: { metroHost: '127.0.0.1', metroPort: 9200 },
+    }).reloadUrl,
+    'http://10.0.0.5:9300/reload',
+  );
+
+  // A single explicit flag still overrides only its own field; the hint fills the rest.
+  assert.equal(
+    resolveMetroReloadEndpoints({
+      metroPort: 9400,
+      runtime: { metroHost: '192.168.1.5', metroPort: 9200 },
+    }).reloadUrl,
+    'http://192.168.1.5:9400/reload',
+  );
+});
+
+test('resolveMetroReloadEndpoints keeps the bundle URL mount prefix instead of collapsing to the host root', () => {
+  // Expo virtual entry at the server root: the entry-module path is not a mount prefix, so the
+  // endpoints live at the root (verified live: Expo serves /message at the server root).
+  assert.deepEqual(
+    resolveMetroReloadEndpoints({
+      runtime: {
+        metroHost: '127.0.0.1',
+        metroPort: 8082,
+        bundleUrl:
+          'http://127.0.0.1:8082/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true&minify=false',
+      },
+    }),
+    {
+      reloadUrl: 'http://127.0.0.1:8082/reload',
+      messageSocketUrl: 'ws://127.0.0.1:8082/message',
+    },
+  );
+
+  // Proxy/mount prefix carrying the Expo virtual entry keeps the mount prefix only.
+  assert.deepEqual(
+    resolveMetroReloadEndpoints({
+      bundleUrl:
+        'http://proxy.example.test/tenant-42/.expo/.virtual-metro-entry.bundle?platform=android',
+    }),
+    {
+      reloadUrl: 'http://proxy.example.test/tenant-42/reload',
+      messageSocketUrl: 'ws://proxy.example.test/tenant-42/message',
+    },
+  );
+
+  // Proxy/mount prefix carrying a plain index.bundle keeps the prefix (Re.Pack/RN over a proxy);
+  // https maps the message socket to wss.
+  assert.deepEqual(
+    resolveMetroReloadEndpoints({
+      bundleUrl: 'https://proxy.example.test/metro/runtime-1/index.bundle?platform=ios',
+    }),
+    {
+      reloadUrl: 'https://proxy.example.test/metro/runtime-1/reload',
+      messageSocketUrl: 'wss://proxy.example.test/metro/runtime-1/message',
+    },
+  );
+
+  // Root index.bundle still reloads at the host root.
+  assert.deepEqual(
+    resolveMetroReloadEndpoints({
+      bundleUrl: 'http://127.0.0.1:8081/index.bundle?platform=ios',
+    }),
+    {
+      reloadUrl: 'http://127.0.0.1:8081/reload',
+      messageSocketUrl: 'ws://127.0.0.1:8081/message',
+    },
+  );
+});
+
+test('metro reload targets the dev server bound by metro prepare in the same session', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-metro-session-${randomUUID()}`);
+  const projectRoot = path.join(tempRoot, 'project');
+  const binDir = path.join(tempRoot, 'bin');
+  const stateDir = path.join(tempRoot, 'state');
+  const metroPort = await findFreePort();
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'metro-session-hints-test',
+      private: true,
+      dependencies: { 'react-native': '0.0.0-test' },
+    }),
+  );
+  writeFakeNpx(binDir);
+
+  const client = createAgentDeviceClient(
+    { session: 'metro-session-hints', stateDir, cwd: projectRoot },
+    {
+      // Only session close may reach the daemon; metro prepare/reload must stay local.
+      transport: async (req) => {
+        if (req.command === 'close') return { ok: true, data: {} };
+        throw new Error('metro prepare/reload must stay local and never call the daemon');
+      },
+    },
+  );
+
+  // The public MetroPrepareOptions doesn't expose env, so the fake npx must be on the real PATH.
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ''}`;
+
+  let pid = 0;
+  try {
+    const prepared = await client.metro.prepare({
+      projectRoot,
+      publicBaseUrl: `http://127.0.0.1:${metroPort}`,
+      port: metroPort,
+      reuseExisting: false,
+      installDependenciesIfNeeded: false,
+    });
+    pid = prepared.pid;
+
+    const storedHints = readMetroSessionHints({
+      stateDir: resolveDaemonPaths(stateDir).baseDir,
+      session: 'metro-session-hints',
+    });
+    assert.deepEqual(storedHints, {
+      metroHost: '127.0.0.1',
+      metroPort,
+      bundleUrl: `http://127.0.0.1:${metroPort}/index.bundle?platform=ios&dev=true&minify=false`,
+    });
+
+    // No explicit --metro-host/--metro-port/--bundle-url: reload must resolve against the
+    // dev server this session's `metro prepare` bound, not the Metro default (localhost:8081).
+    const hintedReload = await client.metro.reload();
+    assert.equal(hintedReload.reloadUrl, `http://127.0.0.1:${metroPort}/reload`);
+    assert.equal(hintedReload.body, 'RELOADED');
+
+    // Regression (prepare -> close -> same-name session): close clears the binding, so a later
+    // flagless reload resolves to the Metro default instead of silently hitting the stale port.
+    await client.sessions.close();
+    assert.equal(
+      readMetroSessionHints({
+        stateDir: resolveDaemonPaths(stateDir).baseDir,
+        session: 'metro-session-hints',
+      }),
+      undefined,
+    );
+    assert.equal(resolveMetroReloadEndpoints({}).reloadUrl, 'http://localhost:8081/reload');
+  } finally {
+    process.env.PATH = previousPath;
+    await stopProcess(pid);
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('metro prepare --kind expo keeps a prefixed public base URL for session reload', async () => {
+  const tempRoot = path.join(os.tmpdir(), `agent-device-metro-expo-session-${randomUUID()}`);
+  const projectRoot = path.join(tempRoot, 'project');
+  const binDir = path.join(tempRoot, 'bin');
+  const stateDir = path.join(tempRoot, 'state');
+  const metroPort = await findFreePort();
+  const publicBasePath = '/metro/runtime-expo';
+
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(binDir, { recursive: true });
+  writeFileSync(
+    path.join(projectRoot, 'package.json'),
+    JSON.stringify({
+      name: 'metro-expo-session-test',
+      private: true,
+      dependencies: { expo: '51.0.0', 'react-native': '0.0.0-test' },
+    }),
+  );
+  writeFakeNpx(binDir, `${publicBasePath}/reload`);
+
+  const client = createAgentDeviceClient(
+    { session: 'metro-expo-session', stateDir, cwd: projectRoot },
+    {
+      transport: async () => {
+        throw new Error('metro prepare/reload must stay local and never call the daemon');
+      },
+    },
+  );
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${binDir}${path.delimiter}${previousPath ?? ''}`;
+
+  let pid = 0;
+  try {
+    const prepared = await client.metro.prepare({
+      projectRoot,
+      kind: 'expo',
+      publicBaseUrl: `http://127.0.0.1:${metroPort}${publicBasePath}`,
+      port: metroPort,
+      reuseExisting: false,
+      installDependenciesIfNeeded: false,
+    });
+    pid = prepared.pid;
+
+    const storedHints = readMetroSessionHints({
+      stateDir: resolveDaemonPaths(stateDir).baseDir,
+      session: 'metro-expo-session',
+    });
+    assert.deepEqual(storedHints, {
+      metroHost: '127.0.0.1',
+      metroPort,
+      bundleUrl: `http://127.0.0.1:${metroPort}${publicBasePath}/.expo/.virtual-metro-entry.bundle?platform=ios&dev=true&minify=false`,
+    });
+
+    // The fake Metro process only serves this prefixed endpoint. A reload that discarded the
+    // public-base mount would receive 404 and fail its websocket fallback.
+    const hintedReload = await client.metro.reload();
+    assert.equal(hintedReload.reloadUrl, `http://127.0.0.1:${metroPort}${publicBasePath}/reload`);
+    assert.equal(hintedReload.body, 'RELOADED');
+    assert.equal(hintedReload.transport, 'http');
+  } finally {
+    process.env.PATH = previousPath;
+    await stopProcess(pid);
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('reloadMetro falls back to the /message websocket when the HTTP route answers with the app page', async () => {
+  const receivedMessages: string[] = [];
+  const upgradedSockets = new Set<import('node:stream').Duplex>();
+  const server = createServer((req, res) => {
+    if (req.url === '/reload') {
+      // Expo-style: no HTTP reload route; the SPA fallback answers with the app page.
+      res.statusCode = 200;
+      res.setHeader('content-type', 'text/html');
+      res.end('<!DOCTYPE html>\n<html><body>app page</body></html>');
+      return;
+    }
+    res.statusCode = 404;
+    res.end('not found');
+  });
+  server.on('upgrade', (req, socket) => {
+    if (req.url !== '/message') {
+      socket.destroy();
+      return;
+    }
+    // Upgraded sockets leave the server's connection tracking; keep them for teardown.
+    upgradedSockets.add(socket);
+    socket.on('close', () => upgradedSockets.delete(socket));
+    const key = req.headers['sec-websocket-key'] ?? '';
+    const accept = createHash('sha1')
+      .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest('base64');
+    socket.write(
+      'HTTP/1.1 101 Switching Protocols\r\n' +
+        'Upgrade: websocket\r\n' +
+        'Connection: Upgrade\r\n' +
+        `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    );
+    socket.on('data', (frame: Buffer) => {
+      const text = decodeMaskedTextFrame(frame);
+      if (text) receivedMessages.push(text);
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+
+  try {
+    const result = await reloadMetro({
+      bundleUrl: `http://127.0.0.1:${address.port}/.expo/.virtual-metro-entry.bundle?platform=ios`,
+      timeoutMs: 3_000,
+    });
+
+    assert.equal(result.transport, 'message-socket');
+    assert.equal(result.reloadUrl, `ws://127.0.0.1:${address.port}/message`);
+    assert.deepEqual(
+      receivedMessages.map((message) => JSON.parse(message)),
+      [{ version: 2, method: 'reload' }],
+    );
+  } finally {
+    for (const socket of upgradedSockets) {
+      socket.destroy();
+    }
+    await closeServer(server);
+  }
+});
+
+// Minimal RFC 6455 decode for one small (<126 byte) masked client text frame; enough for the
+// single broadcast message this suite sends without adding a websocket-server dependency.
+function decodeMaskedTextFrame(frame: Buffer): string | null {
+  if (frame.length < 6) return null;
+  const opcode = frame[0]! & 0x0f;
+  if (opcode !== 0x1) return null;
+  const length = frame[1]! & 0x7f;
+  if (length > 125 || frame.length < 6 + length) return null;
+  const mask = frame.subarray(2, 6);
+  const payload = Buffer.from(frame.subarray(6, 6 + length));
+  for (let i = 0; i < payload.length; i += 1) {
+    payload[i] = payload[i]! ^ mask[i % 4]!;
+  }
+  return payload.toString('utf8');
+}
+
+function writeFakePackageManager(binDir: string, name: string, argsFile: string): void {
+  const filePath = path.join(binDir, name);
+  writeFileSync(
+    filePath,
+    `#!/usr/bin/env node
+const fs = require("node:fs")
+fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)))
+process.exit(0)
+`,
+  );
+  chmodSync(filePath, 0o755);
+}
+
+function writeFailingPackageManager(binDir: string, name: string): void {
+  const filePath = path.join(binDir, name);
+  writeFileSync(
+    filePath,
+    `#!/usr/bin/env node
+process.stderr.write("npm error EUNSUPPORTEDPROTOCOL Unsupported URL Type \\"workspace:\\": workspace:*\\n")
+process.exit(1)
+`,
+  );
+  chmodSync(filePath, 0o755);
+}
+
+function writeFakeNpx(binDir: string, reloadPath = '/reload'): void {
   const filePath = path.join(binDir, 'npx');
   writeFileSync(
     filePath,
@@ -379,17 +1020,26 @@ if (process.env.AGENT_DEVICE_TEST_NPX_ARGS_FILE) {
 const portIndex = args.indexOf("--port")
 const hostIndex = args.indexOf("--host")
 const port = portIndex === -1 ? 8081 : Number(args[portIndex + 1] || "8081")
-const host = hostIndex === -1 ? "0.0.0.0" : String(args[hostIndex + 1] || "0.0.0.0")
+// "expo start" takes a connectivity mode ("lan", "tunnel", "localhost") for --host, not a bind
+// address; every other caller (react-native/rspack/webpack start) passes a real bind address.
+const rawHost = hostIndex === -1 ? "0.0.0.0" : String(args[hostIndex + 1] || "0.0.0.0")
+const host = rawHost === "lan" || rawHost === "tunnel" ? "0.0.0.0" : rawHost
+const reloadPath = ${JSON.stringify(reloadPath)}
 const server = http.createServer((req, res) => {
   if (req.url === "/status") {
     res.statusCode = 200
     res.end("packager-status:running")
     return
   }
-  if (req.url && req.url.startsWith("/index.bundle")) {
+  if (req.url && (req.url.startsWith("/index.bundle") || req.url.includes(".virtual-metro-entry.bundle"))) {
     res.statusCode = 200
     res.setHeader("content-type", "application/javascript")
     res.end("console.log('metro-runtime-test')")
+    return
+  }
+  if (req.url === reloadPath) {
+    res.statusCode = 200
+    res.end("RELOADED")
     return
   }
   res.statusCode = 404

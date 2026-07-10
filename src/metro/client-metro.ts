@@ -9,7 +9,7 @@ import type {
   MetroBridgeRuntimePayload,
   MetroRuntimeHints,
 } from './metro-types.ts';
-import { AppError } from '../kernel/errors.ts';
+import { AppError, asAppError } from '../kernel/errors.ts';
 import { runCmdSync, runCmdDetached } from '../utils/exec.ts';
 import { resolveUserPath } from '../utils/path-resolution.ts';
 import { waitForProcessExit } from '../utils/host-process.ts';
@@ -20,12 +20,11 @@ import {
 } from '../utils/project-runtime.ts';
 import { buildBundleUrl, normalizeBaseUrl } from '../utils/url.ts';
 import {
-  resolveRuntimeTransportHints,
-  type ResolvedRuntimeTransport,
-} from '../utils/runtime-transport.ts';
+  EXPO_VIRTUAL_ENTRY_BUNDLE_PATH,
+  parsePort,
+  resolveMetroReloadEndpoints,
+} from './metro-reload-endpoints.ts';
 
-const DEFAULT_METRO_HOST = 'localhost';
-const DEFAULT_METRO_PORT = 8081;
 const DEV_SERVER_STATUS_READY_TEXT = 'packager-status:running';
 const METRO_TERM_TIMEOUT_MS = 1_000;
 const METRO_KILL_TIMEOUT_MS = 1_000;
@@ -122,11 +121,18 @@ export type ReloadMetroOptions = {
   timeoutMs?: number | string;
 };
 
+/**
+ * `transport` says which channel delivered the reload: `http` for the classic GET /reload route,
+ * `message-socket` for the /message websocket broadcast used when the server has no HTTP reload
+ * route (Expo). `status`/`body` always describe the HTTP probe; on the websocket path `reloadUrl`
+ * is the ws(s) message-socket URL.
+ */
 export type ReloadMetroResult = {
   reloaded: true;
   reloadUrl: string;
   status: number;
   body: string;
+  transport: 'http' | 'message-socket';
 };
 
 type ProxyBridgeRequestOptions = {
@@ -179,14 +185,34 @@ function readPackageJson(projectRoot: string): PackageJsonShape {
   return packageJson;
 }
 
+// Nearest lockfile walking up from projectRoot wins (workspace monorepos keep it at the repo
+// root); the walk is bounded at the nearest .git entry.
+const LOCKFILE_PACKAGE_MANAGERS: ReadonlyArray<{ file: string; command: string }> = [
+  { file: 'pnpm-lock.yaml', command: 'pnpm' },
+  { file: 'yarn.lock', command: 'yarn' },
+  { file: 'bun.lock', command: 'bun' },
+  { file: 'bun.lockb', command: 'bun' },
+  { file: 'package-lock.json', command: 'npm' },
+];
+
+function findLockfilePackageManager(startDir: string): PackageManagerConfig | null {
+  let dir = startDir;
+  for (;;) {
+    for (const { file, command } of LOCKFILE_PACKAGE_MANAGERS) {
+      if (fileExists(path.join(dir, file))) {
+        return { command, installArgs: ['install'] };
+      }
+    }
+    // .git may be a directory (regular clone) or a file (worktree); either marks the repo root.
+    if (fileExists(path.join(dir, '.git'))) return null;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
 function detectPackageManager(projectRoot: string): PackageManagerConfig {
-  if (fileExists(path.join(projectRoot, 'pnpm-lock.yaml'))) {
-    return { command: 'pnpm', installArgs: ['install'] };
-  }
-  if (fileExists(path.join(projectRoot, 'yarn.lock'))) {
-    return { command: 'yarn', installArgs: ['install'] };
-  }
-  return { command: 'npm', installArgs: ['install'] };
+  return findLockfilePackageManager(projectRoot) ?? { command: 'npm', installArgs: ['install'] };
 }
 
 function detectMetroKind(
@@ -242,21 +268,18 @@ function parseTimeout(
   return Math.max(parsed, minimum);
 }
 
-function parsePort(value: number | string | undefined, fallback: number): number {
-  if (value === undefined || value === null || value === '') {
-    return fallback;
-  }
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    throw new AppError('INVALID_ARGS', `Invalid Metro port: ${String(value)}. Use 1-65535.`);
-  }
-  return parsed;
+function metroBundleEntryPath(kind: ResolvedMetroKind): string {
+  return kind === 'expo' ? EXPO_VIRTUAL_ENTRY_BUNDLE_PATH : 'index.bundle';
 }
 
-function buildMetroRuntimeHints(baseUrl: string, platform: 'ios' | 'android'): MetroRuntimeHints {
+function buildMetroRuntimeHints(
+  baseUrl: string,
+  platform: 'ios' | 'android',
+  kind: ResolvedMetroKind,
+): MetroRuntimeHints {
   return {
     platform,
-    bundleUrl: buildBundleUrl(baseUrl, platform),
+    bundleUrl: buildBundleUrl(baseUrl, platform, metroBundleEntryPath(kind)),
   };
 }
 
@@ -282,11 +305,33 @@ function installDependenciesIfNeeded(
   }
 
   const packageManager = detectPackageManager(projectRoot);
-  runCmdSync(packageManager.command, packageManager.installArgs, {
-    cwd: projectRoot,
-    env: env as NodeJS.ProcessEnv,
-  });
+  try {
+    runCmdSync(packageManager.command, packageManager.installArgs, {
+      cwd: projectRoot,
+      env: env as NodeJS.ProcessEnv,
+    });
+  } catch (error) {
+    throw wrapDependencyInstallError(error, packageManager);
+  }
   return { installed: true, packageManager: packageManager.command };
+}
+
+function wrapDependencyInstallError(
+  error: unknown,
+  packageManager: PackageManagerConfig,
+): AppError {
+  const appErr = asAppError(error);
+  const hint =
+    `Dependency install failed using detected package manager "${packageManager.command}". ` +
+    'If dependencies are already installed (for example via a monorepo root install), pass ' +
+    '--no-install-deps to skip this step, or install manually with ' +
+    `"${packageManager.command} ${packageManager.installArgs.join(' ')}" from the project root.`;
+  return new AppError(
+    appErr.code,
+    appErr.message,
+    { ...(appErr.details ?? {}), hint, packageManager: packageManager.command },
+    appErr,
+  );
 }
 
 async function wait(ms: number): Promise<void> {
@@ -323,65 +368,6 @@ async function isMetroReady(statusUrl: string, timeoutMs: number): Promise<boole
   } catch {
     return false;
   }
-}
-
-function buildReloadUrl(transport: ResolvedRuntimeTransport, pathName: string): string {
-  const url = new URL(`${transport.scheme}://localhost`);
-  url.hostname = transport.host;
-  url.port = String(transport.port);
-  url.pathname = pathName;
-  return url.toString();
-}
-
-function resolveMetroReloadPath(bundleUrl: string | undefined): string {
-  const value = normalizeOptionalString(bundleUrl);
-  if (!value) return '/reload';
-  const url = new URL(value);
-  const bundlePath = url.pathname.replace(/\/+$/, '');
-  if (!bundlePath.endsWith('/index.bundle')) return '/reload';
-  return `${bundlePath.slice(0, -'/index.bundle'.length)}/reload`;
-}
-
-function resolveReloadMetroHost(
-  input: ReloadMetroOptions,
-  hasExplicitBundleUrl: boolean,
-  hasBundleUrl: boolean,
-): string | undefined {
-  return (
-    normalizeOptionalString(input.metroHost) ??
-    (hasExplicitBundleUrl ? undefined : normalizeOptionalString(input.runtime?.metroHost)) ??
-    (hasBundleUrl ? undefined : DEFAULT_METRO_HOST)
-  );
-}
-
-function resolveReloadMetroPort(
-  input: ReloadMetroOptions,
-  hasExplicitBundleUrl: boolean,
-  hasBundleUrl: boolean,
-): number | undefined {
-  if (input.metroPort !== undefined) {
-    return parsePort(input.metroPort, DEFAULT_METRO_PORT);
-  }
-  if (hasExplicitBundleUrl) {
-    return undefined;
-  }
-  return input.runtime?.metroPort ?? (hasBundleUrl ? undefined : DEFAULT_METRO_PORT);
-}
-
-function resolveMetroReloadUrl(input: ReloadMetroOptions): string {
-  const explicitBundleUrl = normalizeOptionalString(input.bundleUrl);
-  const bundleUrl = explicitBundleUrl ?? input.runtime?.bundleUrl;
-  const hasExplicitBundleUrl = Boolean(explicitBundleUrl);
-  const hasBundleUrl = Boolean(normalizeOptionalString(bundleUrl));
-  const transport = resolveRuntimeTransportHints({
-    metroHost: resolveReloadMetroHost(input, hasExplicitBundleUrl, hasBundleUrl),
-    metroPort: resolveReloadMetroPort(input, hasExplicitBundleUrl, hasBundleUrl),
-    bundleUrl,
-  });
-  if (!transport) {
-    throw new AppError('INVALID_ARGS', 'Unable to resolve Metro host and port for reload.');
-  }
-  return buildReloadUrl(transport, resolveMetroReloadPath(bundleUrl));
 }
 
 function buildMetroCommand(
@@ -424,6 +410,7 @@ function startMetroProcess(
   const logFd = fs.openSync(logPath, 'a');
   let pid = 0;
   try {
+    // cwd is --project-root; monorepo-root module resolution beyond that is Expo's own behavior.
     pid = runCmdDetached(metro.command, metro.installArgs, {
       cwd: projectRoot,
       env: env as NodeJS.ProcessEnv,
@@ -981,16 +968,19 @@ async function configureProxyBridgeViaCompanion(
   }
 }
 
-function buildBaseRuntimeHints(publicBaseUrl: string): {
+function buildBaseRuntimeHints(
+  publicBaseUrl: string,
+  kind: ResolvedMetroKind,
+): {
   baseIosRuntime: MetroRuntimeHints;
   baseAndroidRuntime: MetroRuntimeHints;
 } {
   return {
     baseIosRuntime: publicBaseUrl
-      ? buildMetroRuntimeHints(publicBaseUrl, 'ios')
+      ? buildMetroRuntimeHints(publicBaseUrl, 'ios', kind)
       : { platform: 'ios' as const },
     baseAndroidRuntime: publicBaseUrl
-      ? buildMetroRuntimeHints(publicBaseUrl, 'android')
+      ? buildMetroRuntimeHints(publicBaseUrl, 'android', kind)
       : { platform: 'android' as const },
   };
 }
@@ -1014,7 +1004,10 @@ export async function prepareMetroRuntime(
     ? installDependenciesIfNeeded(settings.projectRoot, settings.env)
     : { installed: false as const };
   const processState = await ensureMetroProcessReady(settings);
-  const { baseIosRuntime, baseAndroidRuntime } = buildBaseRuntimeHints(settings.publicBaseUrl);
+  const { baseIosRuntime, baseAndroidRuntime } = buildBaseRuntimeHints(
+    settings.publicBaseUrl,
+    settings.kind,
+  );
   const bridge = await configureProxyBridgeForRuntime(input, settings);
 
   const iosRuntime = bridge?.iosRuntime ?? baseIosRuntime;
@@ -1039,26 +1032,86 @@ export async function prepareMetroRuntime(
   return result;
 }
 
+// An HTML document on a 2xx means the server has no HTTP reload route and answered with the app
+// page fallback (Expo does this), so a 200 there must not be reported as a successful reload.
+function looksLikeHtmlDocumentBody(body: string): boolean {
+  const head = body.trimStart().slice(0, 15).toLowerCase();
+  return head.startsWith('<!doctype') || head.startsWith('<html');
+}
+
+// {"version":2,"method":"reload"} on the /message websocket is the broadcast the dev-server CLIs
+// send for the `r` key; servers without an HTTP /reload route (Expo) only support this channel.
+async function broadcastReloadOverMessageSocket(
+  messageSocketUrl: string,
+  timeoutMs: number,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const socket = new WebSocket(messageSocketUrl);
+    const fail = (message: string): void => {
+      clearTimeout(timer);
+      try {
+        socket.close();
+      } catch {
+        // Socket may already be closed.
+      }
+      reject(new AppError('COMMAND_FAILED', message));
+    };
+    const timer = setTimeout(() => {
+      fail(`Timed out broadcasting reload to ${messageSocketUrl} after ${timeoutMs}ms`);
+    }, timeoutMs);
+    socket.addEventListener('open', () => {
+      socket.send(JSON.stringify({ version: 2, method: 'reload' }));
+      const settle = (): void => {
+        if (socket.bufferedAmount === 0) {
+          clearTimeout(timer);
+          socket.close();
+          resolve();
+          return;
+        }
+        setTimeout(settle, 20);
+      };
+      settle();
+    });
+    socket.addEventListener('error', () => {
+      fail(`Failed to reach the dev server message socket at ${messageSocketUrl}`);
+    });
+  });
+}
+
 export async function reloadMetro(input: ReloadMetroOptions = {}): Promise<ReloadMetroResult> {
   const timeoutMs = parseTimeout(input.timeoutMs, 10_000, 1_000);
-  const reloadUrl = resolveMetroReloadUrl(input);
+  const { reloadUrl, messageSocketUrl } = resolveMetroReloadEndpoints(input);
   const response = await fetchText(reloadUrl, timeoutMs);
-  if (!response.ok) {
+  if (response.ok && !looksLikeHtmlDocumentBody(response.body)) {
+    return {
+      reloaded: true,
+      reloadUrl,
+      status: response.status,
+      body: response.body,
+      transport: 'http',
+    };
+  }
+  try {
+    await broadcastReloadOverMessageSocket(messageSocketUrl, timeoutMs);
+  } catch (error) {
     throw new AppError(
       'COMMAND_FAILED',
       `React Native dev server reload failed (${response.status}).`,
       {
         reloadUrl,
         status: response.status,
-        body: response.body,
+        body: response.body.slice(0, 500),
+        messageSocketUrl,
         hint: 'Verify Metro or Re.Pack is running and the target React Native app is connected to this dev server instance.',
       },
+      error instanceof Error ? error : undefined,
     );
   }
   return {
     reloaded: true,
-    reloadUrl,
+    reloadUrl: messageSocketUrl,
     status: response.status,
-    body: response.body,
+    body: '',
+    transport: 'message-socket',
   };
 }
