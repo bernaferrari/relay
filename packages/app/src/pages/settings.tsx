@@ -5,17 +5,18 @@ import { usePlatform } from "../context/platform";
 import { useServer } from "../context/server";
 import { useCommand } from "../context/command";
 import { Icon } from "../components/icon";
+import { IconButton } from "@grok-device/ui/icon-button";
 import { trapFocus } from "../lib/modal";
 import { cn } from "../lib/cn";
-import { btnGhost, mono, seg, segBtnOn, segBtn } from "../lib/ui";
+import { mono, modalPanel, modalScrim, seg, segBtnOn, segBtn } from "../lib/ui";
 
 const rowCls =
-  "flex items-center justify-between gap-4 border-b border-border py-3 last:border-b-0";
+  "flex items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-b-0";
 const rowCopyCls = "flex min-w-0 flex-col gap-0.5";
-const rowTitleCls = "text-body font-medium text-text";
-const rowDescCls = "text-meta leading-snug text-text-muted";
+const rowTitleCls = "text-12-medium text-text-strong";
+const rowDescCls = "text-12-regular leading-snug text-text-weak";
 const inputCls =
-  "h-7 w-full rounded-control border border-border bg-base px-2.5 font-mono text-body text-text focus:border-border-focus focus:outline-none";
+  "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 font-mono text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
 
 export function SettingsPage(props: { onClose: () => void }) {
   const theme = useTheme();
@@ -72,9 +73,9 @@ export function SettingsPage(props: { onClose: () => void }) {
         : "Connecting…";
 
   const healthTone = () => {
-    if (server.health() === "online") return "text-pass";
-    if (server.health() === "offline") return "text-fail";
-    return "text-text-faint";
+    if (server.health() === "online") return "text-icon-success-base";
+    if (server.health() === "offline") return "text-icon-critical-base";
+    return "text-text-weak";
   };
 
   const SECTIONS = [
@@ -86,7 +87,7 @@ export function SettingsPage(props: { onClose: () => void }) {
 
   return (
     <div
-      class="fixed inset-0 z-[90] flex items-start justify-center bg-[var(--v2-overlay-simple-overlay-scrim)] px-5 pt-[8vh] pb-5 backdrop-blur-[6px]"
+      class={cn(modalScrim, "flex items-start justify-center px-5 pt-[8vh] pb-5")}
       onClick={(e) => {
         if (e.target === e.currentTarget) props.onClose();
       }}
@@ -98,26 +99,29 @@ export function SettingsPage(props: { onClose: () => void }) {
       }}
     >
       <div
-        class="flex max-h-[84vh] w-[min(620px,100%)] origin-top flex-col overflow-hidden rounded-xl bg-layer-1 shadow-[var(--v2-elevation-overlay,0_16px_48px_rgb(0_0_0/0.4))]"
-        ref={dialogRef}
+        class={cn(modalPanel, "flex max-h-[84vh] w-[min(620px,100%)] flex-col")}
+        ref={(el) => {
+          dialogRef = el;
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
       >
-        <div class="flex shrink-0 items-center justify-between border-b border-border px-[18px] pt-4 pb-3.5">
-          <h2 class="m-0 text-title font-semibold tracking-tight text-text">Settings</h2>
-          <button
-            type="button"
-            class="grid size-7 place-items-center rounded-md text-text-faint transition-colors hover:bg-hover hover:text-text"
+        <div class="flex shrink-0 items-center justify-between border-b border-border-weak-base px-[18px] pt-4 pb-3.5">
+          <h2 class="m-0 text-16-medium tracking-tight text-text-strong">Settings</h2>
+          <IconButton
+            variant="ghost"
+            size="normal"
+            class="rounded-md"
             aria-label="Close settings"
             onClick={() => props.onClose()}
           >
-            <Icon name="x" size={16} />
-          </button>
+            <Icon name="x" size={14} />
+          </IconButton>
         </div>
         <main class="grid min-h-0 flex-1 grid-cols-[160px_1fr]">
           <nav
-            class="flex flex-col gap-px border-r border-border bg-deep p-2"
+            class="flex flex-col gap-px border-r border-border-weak-base bg-background-base p-2 text-text-strong"
             aria-label="Settings sections"
           >
             <For each={SECTIONS}>
@@ -125,9 +129,8 @@ export function SettingsPage(props: { onClose: () => void }) {
                 <button
                   type="button"
                   class={cn(
-                    "rounded-control px-2.5 py-[7px] text-left text-body font-medium text-text-muted transition-colors hover:bg-hover hover:text-text",
-                    section() === id &&
-                      "bg-[var(--v2-overlay-simple-overlay-pressed,rgba(255,255,255,0.1))] text-text",
+                    "rounded-md px-2.5 py-[7px] text-left text-12-medium text-text-base transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong",
+                    section() === id && "bg-surface-base-active text-text-strong",
                   )}
                   onClick={() => setSection(id)}
                 >
@@ -136,7 +139,7 @@ export function SettingsPage(props: { onClose: () => void }) {
               )}
             </For>
           </nav>
-          <div class="flex flex-col gap-1 overflow-y-auto px-5 pt-[18px] pb-6">
+          <div class="flex flex-col gap-1 overflow-y-auto bg-surface-raised-stronger-non-alpha px-5 pt-[18px] pb-6 text-12-regular text-text-strong">
             <Show when={section() === "appearance"}>
               <div class={rowCls}>
                 <div class={rowCopyCls}>
@@ -168,16 +171,16 @@ export function SettingsPage(props: { onClose: () => void }) {
               </div>
               <div class="mt-4 flex flex-col gap-2">
                 <div class="flex items-center justify-between gap-3">
-                  <span class="text-title font-semibold text-text">Theme</span>
+                  <span class="text-14-medium text-text-strong">Theme</span>
                   <input
-                    class="h-7 w-[200px] rounded-control border border-border bg-layer-1 px-2.5 text-body text-text focus:border-border-focus focus:outline-none"
+                    class="h-7 w-[200px] rounded-control border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-regular text-text-strong focus:border-border-focus focus:outline-none"
                     type="search"
                     placeholder="Search themes…"
                     value={query()}
                     onInput={(e) => setQuery(e.currentTarget.value)}
                   />
                 </div>
-                <p class="m-0 text-meta text-text-faint">
+                <p class="m-0 text-12-regular text-text-weak">
                   {filteredThemes().length} themes available
                 </p>
                 <div class="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-2.5">
@@ -188,22 +191,24 @@ export function SettingsPage(props: { onClose: () => void }) {
                         <button
                           type="button"
                           class={cn(
-                            "flex flex-col gap-2 rounded-lg border border-border bg-layer-1 p-3 text-left transition-[border-color,transform] hover:-translate-y-px hover:border-border-strong",
+                            "ui-hover-lift flex flex-col gap-2 rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha p-3 text-left",
+                            "transition-[border-color,transform,box-shadow] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]",
+                            "hover:border-border-strong-base ",
                             theme.themeId() === id &&
-                              "border-accent shadow-[0_0_0_1px_var(--color-accent)]",
+                              "border-border-interactive-base shadow-[0_0_0_1px_var(--surface-brand-base)]",
                           )}
                           onClick={() => theme.setTheme(id)}
                           title={theme.name(id)}
                         >
                           <span
-                            class="relative h-12 overflow-hidden rounded-lg border border-border"
+                            class="relative h-12 overflow-hidden rounded-lg border border-border-weak-base"
                             style={{
                               background: sw()?.bg ?? "var(--background-base)",
                               "border-color": sw()?.primary ?? "var(--border-weak-base)",
                             }}
                           >
                             <span
-                              class="absolute top-2 right-2 size-3 rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)]"
+                              class="absolute top-2 right-2 size-3 rounded-full shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-strong)_20%,transparent)]"
                               style={{ background: sw()?.primary ?? "var(--button-primary-base)" }}
                             />
                             <span
@@ -211,7 +216,7 @@ export function SettingsPage(props: { onClose: () => void }) {
                               style={{ background: sw()?.surface ?? "var(--surface-raised-base)" }}
                             />
                           </span>
-                          <span class="truncate text-meta font-semibold text-text">
+                          <span class="truncate text-12-medium text-text-strong">
                             {theme.name(id)}
                           </span>
                         </button>
@@ -231,7 +236,7 @@ export function SettingsPage(props: { onClose: () => void }) {
                 <div class="shrink-0">
                   <span
                     class={cn(
-                      "inline-flex h-[26px] items-center gap-1.5 rounded-full border border-border bg-layer-1 px-2.5 text-meta font-medium tracking-wide",
+                      "inline-flex h-[26px] items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-medium tracking-wide",
                       healthTone(),
                     )}
                   >
@@ -269,22 +274,23 @@ export function SettingsPage(props: { onClose: () => void }) {
                   Refresh
                 </Button>
                 <Show when={serverSaved()}>
-                  <span class="text-meta text-pass">Saved</span>
+                  <span class="text-12-regular text-icon-success-base">Saved</span>
                 </Show>
               </div>
-              <Show when={server.error()}>
+              <Show when={server.error() && !server.isOffline()}>
                 <div
-                  class="mt-3 flex items-center gap-2.5 rounded-control border border-[var(--v2-state-border-danger)] bg-[var(--v2-state-bg-danger)] px-3 py-2.5 text-meta text-fail"
+                  class="mt-3 flex items-center gap-2 rounded-md bg-surface-critical-weak px-3 py-2 text-12-regular text-icon-critical-base"
                   role="alert"
                 >
                   <span class="min-w-0 flex-1">{server.error()}</span>
-                  <button
-                    type="button"
-                    class={cn(btnGhost, "ml-auto")}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    class="ml-auto"
                     onClick={() => server.dismissError()}
                   >
                     Dismiss
-                  </button>
+                  </Button>
                 </div>
               </Show>
             </Show>
@@ -313,7 +319,7 @@ export function SettingsPage(props: { onClose: () => void }) {
                   Save
                 </Button>
                 <Show when={prodSaved()}>
-                  <span class="text-meta text-pass">Saved</span>
+                  <span class="text-12-regular text-icon-success-base">Saved</span>
                 </Show>
               </div>
             </Show>
@@ -322,14 +328,14 @@ export function SettingsPage(props: { onClose: () => void }) {
               <div class={rowCls}>
                 <div class={rowCopyCls}>
                   <span class={rowTitleCls}>Product</span>
-                  <span class={rowDescCls}>Specimen · grok-device 0.1.0</span>
+                  <span class={rowDescCls}>Stage · grok-device 0.1.0</span>
                 </div>
               </div>
               <div class={rowCls}>
                 <div class={rowCopyCls}>
                   <span class={rowTitleCls}>Platform</span>
                   <span class={rowDescCls}>
-                    <strong class="font-semibold text-text">{platform.platform}</strong>
+                    <strong class="font-medium text-text-strong">{platform.platform}</strong>
                     {platform.version ? ` · v${platform.version}` : ""}
                   </span>
                 </div>
@@ -351,7 +357,13 @@ export function SettingsPage(props: { onClose: () => void }) {
                   </span>
                 </div>
                 <div class="shrink-0">
-                  <button type="button" class={btnGhost} onClick={() => cmd.setOpen(true)}>
+                  <button
+                    type="button"
+                    class={cn(
+                      "h-7 rounded-md px-2.5 text-12-medium text-text-strong hover:bg-surface-base-hover",
+                    )}
+                    onClick={() => cmd.setOpen(true)}
+                  >
                     <Icon name="search" size={13} />
                     Open palette
                   </button>

@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-/** Grok dark background (matches @grok-device/ui theme/themes/grok.json). */
-export const DARK_BG = "#050507";
-export const LIGHT_BG = "#f6f6f8";
+/**
+ * Electron chrome plate — AgentBoard applyThemeCss hard plate.
+ * Theme tokens paint the renderer; this only fills the native window flash.
+ */
+export const DARK_BG = "#080808";
+export const LIGHT_BG = "#fafafa";
 
 export function defaultBackgroundColor(): string {
   return nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG;
@@ -19,7 +22,7 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 560,
     show: false,
-    title: "Specimen",
+    title: "Stage",
     backgroundColor: defaultBackgroundColor(),
     autoHideMenuBar: true,
     ...(process.platform === "darwin"

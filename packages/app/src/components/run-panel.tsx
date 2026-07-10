@@ -4,31 +4,39 @@ import { useRecipeDraft } from "../context/recipe-draft";
 import { useWorkbench, type RunChip } from "../context/workbench";
 import { useCommand } from "../context/command";
 import { Icon } from "./icon";
-import { RecipeStepsEditor, StepAnno } from "./step-list";
+import { EmptyState } from "./empty-state";
+import { IconButton } from "@grok-device/ui/icon-button";
+import { Button } from "@grok-device/ui/button";
+import { RecipeStepsEditor } from "./step-list";
 import { statusTone, fmtDur, fmtAgo, fmtMs, titleize, displayTitle } from "../lib/job";
-import {
-  canRunRecipe,
-  isPackagedFlowSteps,
-  resolvePlannedTitles,
-  runBlocker as runBlockerOf,
-} from "../lib/run-gates";
+import { canRunRecipe, runBlocker as runBlockerOf } from "../lib/run-gates";
 import { cn } from "../lib/cn";
-import { btnBordered, btnGhost, btnAcc, mono } from "../lib/ui";
+import {
+  btnGhost,
+  mono,
+  popover,
+  modalPanel,
+  modalScrim,
+  statusPill,
+  statusPillTone,
+  menuOption,
+  menuOptionOn,
+} from "../lib/ui";
 
 function toneText(tone: string): string {
-  if (tone === "pass") return "text-pass";
-  if (tone === "fail") return "text-fail";
-  if (tone === "heal") return "text-heal";
-  if (tone === "run") return "text-run";
-  return "text-text-muted";
+  if (tone === "pass") return "text-icon-success-base";
+  if (tone === "fail") return "text-icon-critical-base";
+  if (tone === "heal") return "text-icon-warning-base";
+  if (tone === "run") return "text-icon-info-base";
+  return "text-text-weak";
 }
 
 function toneDot(tone: string): string {
-  if (tone === "pass") return "bg-pass";
-  if (tone === "fail") return "bg-fail";
-  if (tone === "heal") return "bg-heal";
-  if (tone === "run") return "bg-run";
-  return "bg-text-faint";
+  if (tone === "pass") return "bg-icon-success-base";
+  if (tone === "fail") return "bg-icon-critical-base";
+  if (tone === "heal") return "bg-icon-warning-base";
+  if (tone === "run") return "bg-icon-info-base";
+  return "bg-text-weaker";
 }
 
 /**
@@ -77,27 +85,7 @@ export function StepsPane() {
     ].filter((g) => g.items.length > 0);
   });
 
-  /**
-   * Human step list for packaged flows (builtin OR forked thin flow wrapper).
-   * Never show a single “flow” row when we know the real plan titles.
-   */
-  const plannedSteps = createMemo(() =>
-    resolvePlannedTitles({
-      source: draft.source(),
-      recipeId: server.selectedRecipeId(),
-      steps: draft.steps(),
-      actions: server.actions(),
-    }),
-  );
-  const showPackagedPlan = () => plannedSteps().length > 0;
-  /** Free-form editor only when the user is truly authoring steps. */
-  const showStepEditor = () => {
-    if (draft.source() === "builtin") return plannedSteps().length === 0;
-    // Forked packaged flow: show the plan, not the opaque flow dropdown.
-    if (isPackagedFlowSteps(draft.steps()) && plannedSteps().length > 0) return false;
-    return true;
-  };
-
+  /** Every selected test uses the same step editor — library defaults included. */
   const gate = () => ({
     hasRecipe: Boolean(selectedRecipe()),
     health: server.health(),
@@ -105,7 +93,7 @@ export function StepsPane() {
     source: draft.source(),
     stepCount: draft.steps().length,
     saveState: draft.saveState(),
-    plannedCount: plannedSteps().length,
+    plannedCount: 0,
   });
   const canRun = () => canRunRecipe(gate());
   /** Why Run is blocked — short, for the button area (not a lecture). */
@@ -121,7 +109,8 @@ export function StepsPane() {
   const [titleBuf, setTitleBuf] = createSignal("");
 
   function startTitleEdit(): void {
-    if (!selectedRecipe() || draft.source() !== "custom") return;
+    // Builtin auto-forks on save — title is editable like everything else.
+    if (!selectedRecipe()) return;
     setTitleBuf(draft.title());
     setTitleEditing(true);
   }
@@ -155,7 +144,6 @@ export function StepsPane() {
   // Do NOT auto-enter rename on create — keeps the switcher usable (SpaceX: never
   // steal a control's mode without the user asking).
 
-  const stepCount = () => draft.steps().length;
   /**
    * Always show a status strip under the title (Uber shows Passed · date · duration).
    * Never invent fake Library jargon.
@@ -171,15 +159,9 @@ export function StepsPane() {
       if (reviewed.dur) bits.push(reviewed.dur);
       return bits.join(" · ");
     }
-    const planned = plannedSteps().length;
-    const n = planned > 0 ? planned : draft.steps().length;
+    const n = draft.steps().length;
     if (n === 0) return "Draft · not run";
     return `${n} step${n === 1 ? "" : "s"} · not run`;
-  };
-  const metaTone = () => {
-    const r = reviewedFacts();
-    if (!r) return "";
-    return r.tone;
   };
   /** Only teach blockers that aren't already obvious from the stage (no device). */
   const showRunWhy = () => {
@@ -322,487 +304,582 @@ export function StepsPane() {
 
   const switcherLabel = () => (selectedRecipe() ? displayTitle(draft.title()) : "Select test");
 
+  /** Dense history strip — last few runs only; overflow lives in the menu. */
+  const recentChips = createMemo(() => wb.chips().slice(0, 3));
+  const overflowChipCount = createMemo(() => Math.max(0, wb.chips().length - 3));
+
   return (
     <>
       {/*
-        SpaceX header: one switcher · status · primary actions.
-        No nag captions. Empty steps are self-explanatory in the body.
+        Run chrome: editable title + switcher · calm meta · dense history · primary Run.
+        Steps list is the document body (matches step-list density).
       */}
-      <div class="relative z-40 flex min-h-13 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-[#0e1014]/95 px-4 py-2.5 backdrop-blur-md">
-        <div class="min-w-0 flex-1">
-          <div class="relative" data-switcher>
-            <Show
-              when={selectedRecipe() && titleEditing()}
-              fallback={
-                <button
-                  type="button"
-                  class={cn(
-                    "inline-flex h-8 max-w-full items-center gap-2 rounded-md border border-white/10 bg-white/[0.04]",
-                    "py-0 pr-2.5 pl-3 text-[13px] font-semibold tracking-tight text-white/95",
-                    "transition-colors hover:border-white/15 hover:bg-white/[0.07]",
-                    !selectedRecipe() && "font-medium text-white/40",
-                    menuOpen() &&
-                      "border-accent/50 shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]",
-                  )}
-                  aria-haspopup="listbox"
-                  aria-expanded={menuOpen()}
-                  onClick={() => setMenuOpen((o) => !o)}
-                >
-                  <span class="max-w-[280px] min-w-0 truncate">{switcherLabel()}</span>
-                  <Icon
-                    name="chevron-down"
-                    size={14}
-                    class={cn(
-                      "shrink-0 text-white/35 transition-transform duration-150",
-                      menuOpen() && "rotate-180",
-                    )}
-                  />
-                </button>
-              }
-            >
-              <input
-                class="m-0 h-8 max-w-full min-w-40 rounded-md border border-accent/50 bg-black/40 px-2.5 text-[13px] font-semibold tracking-tight text-white outline-none"
-                value={titleBuf()}
-                ref={(el) =>
-                  queueMicrotask(() => {
-                    el.focus();
-                    el.select();
-                  })
+      <div class="relative z-40 shrink-0 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-4 pt-3.5 pb-3 text-12-regular text-text-strong">
+        <div class="flex items-start gap-3">
+          {/* ── Title cluster ─────────────────────────────────────────── */}
+          <div class="min-w-0 flex-1">
+            <div class="relative" data-switcher>
+              <Show
+                when={selectedRecipe() && titleEditing()}
+                fallback={
+                  <div class="group/title -ml-1.5 flex min-w-0 max-w-full items-center gap-0.5">
+                    <button
+                      type="button"
+                      class={cn(
+                        "inline-flex min-w-0 max-w-full items-center gap-1 rounded-lg border-0 bg-transparent",
+                        "py-1 pr-1.5 pl-1.5 text-left text-16-medium tracking-tight text-text-strong",
+                        "transition-[background-color,color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]",
+                        "hover:bg-surface-raised-base-hover",
+                        !selectedRecipe() && "text-text-base",
+                        menuOpen() && "bg-surface-base-active",
+                      )}
+                      aria-haspopup="listbox"
+                      aria-expanded={menuOpen()}
+                      title={
+                        selectedRecipe() ? "Switch test · double-click to rename" : "Select test"
+                      }
+                      onClick={() => setMenuOpen((o) => !o)}
+                      onDblClick={(e) => {
+                        if (!selectedRecipe()) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setMenuOpen(false);
+                        startTitleEdit();
+                      }}
+                    >
+                      <span class="max-w-[min(320px,48vw)] min-w-0 truncate">
+                        {switcherLabel()}
+                      </span>
+                      <Icon
+                        name="chevron-down"
+                        size={14}
+                        class={cn(
+                          "shrink-0 text-text-weak transition-transform duration-150",
+                          menuOpen() && "rotate-180 text-text-weak",
+                        )}
+                      />
+                    </button>
+                    <Show when={selectedRecipe()}>
+                      <button
+                        type="button"
+                        class={cn(
+                          "h-7 shrink-0 rounded-md border-0 bg-transparent px-2",
+                          "text-12-medium text-text-weak",
+                          "opacity-0 transition-[opacity,background-color,color] duration-150",
+                          "group-hover/title:opacity-100 hover:bg-surface-raised-base-hover hover:text-text-strong",
+                          "focus-visible:opacity-100 focus-visible:bg-surface-raised-base-hover",
+                        )}
+                        aria-label="Rename test"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startTitleEdit();
+                        }}
+                      >
+                        Rename
+                      </button>
+                    </Show>
+                  </div>
                 }
-                onInput={(e) => setTitleBuf(e.currentTarget.value)}
-                onBlur={() => commitTitle()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    commitTitle();
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    setTitleEditing(false);
-                  }
-                }}
-                spellcheck={false}
-              />
-            </Show>
-
-            <Show when={menuOpen()}>
-              <div
-                class="absolute top-[calc(100%+8px)] left-0 z-50 max-h-[min(400px,70vh)] min-w-[min(300px,90vw)] overflow-y-auto rounded-xl border border-border bg-layer-1 p-1.5 shadow-xl"
-                role="listbox"
               >
-                <For each={switcherGroups()}>
-                  {(g, gi) => (
-                    <div class={cn(gi() > 0 && "mt-1 border-t border-border pt-1")}>
-                      <div class="px-2.5 pt-1.5 pb-0.5 text-meta font-medium text-text-faint">
-                        {g.label}
-                      </div>
-                      <For each={g.items}>
-                        {(r) => (
-                          <div class="group flex items-center gap-px pr-1">
-                            <button
-                              type="button"
-                              role="option"
+                <input
+                  class={cn(
+                    "m-0 h-8 max-w-full min-w-[12rem] rounded-md border-0 bg-surface-raised-stronger-non-alpha",
+                    "px-2 text-14-medium tracking-tight text-text-strong outline-none",
+                    "ring-2 ring-inset ring-border-interactive-base/45",
+                  )}
+                  value={titleBuf()}
+                  aria-label="Test title"
+                  ref={(el) =>
+                    queueMicrotask(() => {
+                      el.focus();
+                      el.select();
+                    })
+                  }
+                  onInput={(e) => setTitleBuf(e.currentTarget.value)}
+                  onBlur={() => commitTitle()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitTitle();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setTitleEditing(false);
+                    }
+                  }}
+                  spellcheck={false}
+                />
+              </Show>
+
+              <Show when={menuOpen()}>
+                <div
+                  class={cn(
+                    popover,
+                    "absolute top-[calc(100%+6px)] left-0 z-50 max-h-[min(400px,70vh)] min-w-[min(300px,90vw)] origin-top-left overflow-y-auto",
+                  )}
+                  role="listbox"
+                >
+                  <For each={switcherGroups()}>
+                    {(g, gi) => (
+                      <div class={cn(gi() > 0 && "mt-1 border-t border-border-weak-base pt-1")}>
+                        <div class="px-2.5 pt-1.5 pb-0.5 text-12-medium tracking-wide text-text-weak uppercase">
+                          {g.label}
+                        </div>
+                        <For each={g.items}>
+                          {(r) => (
+                            <div
                               class={cn(
-                                "flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left text-text transition-colors hover:bg-hover",
-                                server.selectedRecipeId() === r.id && "bg-accent/12",
+                                "group/session relative flex min-w-0 items-center gap-1 rounded-md pr-1",
+                                "hover:bg-surface-raised-base-hover",
+                                "[&:has(:focus-visible)]:bg-surface-raised-base-hover",
+                                server.selectedRecipeId() === r.id && "bg-surface-base-active",
                               )}
-                              onClick={() => {
-                                server.setSelectedRecipeId(r.id);
-                                setMenuOpen(false);
-                              }}
                             >
-                              <span
-                                class={cn(
-                                  "block min-w-0 truncate text-body font-medium",
-                                  !r.title.trim() && "text-text-faint",
-                                )}
-                              >
-                                {displayTitle(r.title)}
-                              </span>
-                              <span
-                                class={cn(
-                                  mono,
-                                  "shrink-0 text-[10.5px] text-text-faint opacity-80",
-                                )}
-                              >
-                                {(() => {
-                                  const planned =
-                                    server.actions().find((a) => a.id === r.id)?.planned?.length ??
-                                    0;
-                                  const n =
-                                    r.source === "builtin" && planned > 0
-                                      ? planned
-                                      : (r.steps?.length ?? 0);
-                                  return n > 0 ? `${n} step${n === 1 ? "" : "s"}` : "";
-                                })()}
-                              </span>
-                            </button>
-                            <Show when={g.custom}>
                               <button
                                 type="button"
-                                class="grid size-6 shrink-0 place-items-center rounded-md border-0 bg-transparent text-text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:bg-fail/15 hover:text-fail focus-visible:opacity-100"
-                                title="Delete"
-                                aria-label={`Delete ${r.title}`}
-                                onClick={() => void server.deleteRecipeRemote(r.id)}
+                                role="option"
+                                class="flex min-w-0 flex-1 items-center justify-between gap-2 py-1 pl-2 pr-1 text-left text-14-regular text-text-strong"
+                                onClick={() => {
+                                  server.setSelectedRecipeId(r.id);
+                                  setMenuOpen(false);
+                                }}
                               >
-                                <Icon name="trash" size={12} />
+                                <span
+                                  class={cn(
+                                    "block min-w-0 truncate text-14-regular",
+                                    !r.title.trim() && "text-text-weak",
+                                  )}
+                                >
+                                  {displayTitle(r.title)}
+                                </span>
+                                <span class={cn(mono, "shrink-0 text-12-regular text-text-weak")}>
+                                  {(() => {
+                                    const planned =
+                                      server.actions().find((a) => a.id === r.id)?.planned
+                                        ?.length ?? 0;
+                                    const n =
+                                      r.source === "builtin" && planned > 0
+                                        ? planned
+                                        : (r.steps?.length ?? 0);
+                                    return n > 0 ? `${n}` : "";
+                                  })()}
+                                </span>
                               </button>
-                            </Show>
-                          </div>
-                        )}
-                      </For>
-                    </div>
+                              <Show when={g.custom}>
+                                <div class="w-0 shrink-0 overflow-hidden opacity-0 pointer-events-none transition-[width,opacity] group-hover/session:w-6 group-hover/session:opacity-100 group-hover/session:pointer-events-auto group-focus-within/session:w-6 group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto">
+                                  <IconButton
+                                    variant="ghost"
+                                    size="normal"
+                                    class="rounded-md hover:text-icon-critical-base"
+                                    title="Delete"
+                                    aria-label={`Delete ${r.title}`}
+                                    onClick={() => void server.deleteRecipeRemote(r.id)}
+                                  >
+                                    <Icon name="trash" size={12} />
+                                  </IconButton>
+                                </div>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    )}
+                  </For>
+                  <button
+                    type="button"
+                    class="mt-0.5 flex w-full items-center justify-center gap-2 border-t border-border-weak-base px-2.5 py-2 text-14-regular text-text-strong transition-colors hover:bg-surface-raised-base-hover"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void createNewTest();
+                    }}
+                  >
+                    <Icon name="plus" size={12} />
+                    New test
+                  </button>
+                </div>
+              </Show>
+            </div>
+
+            {/* Calm meta: N steps · status — readable, not muddy */}
+            <Show when={selectedRecipe() && metaLine()}>
+              <div class="mt-1 flex min-h-[18px] flex-wrap items-center gap-x-2 gap-y-0.5 pl-1">
+                <Show when={reviewedFacts()}>
+                  {(f) => (
+                    <span class={cn(statusPill, statusPillTone(f().tone))}>
+                      {f().word}
+                      <Show when={f().tone === "pass" || f().tone === "heal"}>
+                        <Icon name="check" size={11} />
+                      </Show>
+                    </span>
                   )}
-                </For>
-                <button
-                  type="button"
-                  class="mt-0.5 flex w-full items-center justify-center gap-2 rounded-b-[10px] border-t border-border px-2.5 pt-2.5 pb-2 font-medium text-accent-soft transition-colors hover:bg-hover"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    void createNewTest();
-                  }}
-                >
-                  <Icon name="plus" size={12} />
-                  New test
-                </button>
+                </Show>
+                <Show when={reviewedFacts()}>
+                  {(f) => (
+                    <span class="text-12-regular tabular-nums text-text-weak">
+                      <Show when={f().when}>
+                        <span>{f().when}</span>
+                      </Show>
+                      <Show when={f().when && f().dur}>
+                        <span class="mx-1.5 text-text-weak">·</span>
+                      </Show>
+                      <Show when={f().dur}>
+                        <span>{f().dur}</span>
+                      </Show>
+                    </span>
+                  )}
+                </Show>
+                <Show when={!reviewedFacts()}>
+                  <span
+                    class={cn(
+                      "text-12-regular tabular-nums text-text-base",
+                      draft.saveState() === "invalid" &&
+                        draft.expandedStep() == null &&
+                        "text-12-medium text-icon-critical-base",
+                    )}
+                  >
+                    {metaLine()}
+                  </span>
+                </Show>
               </div>
+            </Show>
+
+            {/* Description only when it adds info beyond the title */}
+            <Show
+              when={
+                selectedRecipe() &&
+                (draft.description() || selectedMeta()?.description) &&
+                (draft.description() || selectedMeta()?.description || "")
+                  .toLowerCase()
+                  .replace(/\s+/g, " ")
+                  .trim() !== draft.title().toLowerCase().replace(/\s+/g, " ").trim()
+              }
+            >
+              <p class="mt-0.5 mb-0 max-w-[42em] truncate pl-1 text-12-regular leading-snug text-text-weak">
+                {draft.description() || selectedMeta()?.description}
+              </p>
             </Show>
           </div>
 
-          <Show when={selectedRecipe() && metaLine()}>
-            <div class="mt-1 flex min-h-5 items-center gap-2.5">
-              <span
-                class={cn(
-                  "whitespace-nowrap text-[11px] font-medium tracking-wide text-white/35",
-                  draft.saveState() === "invalid" &&
-                    draft.expandedStep() == null &&
-                    "font-semibold text-fail",
-                  (metaTone() === "pass" || metaTone() === "heal") && "font-semibold text-pass",
-                  metaTone() === "fail" && "font-semibold text-fail",
-                  metaTone() === "run" && "font-semibold text-run",
-                )}
-              >
-                {metaLine()}
-              </span>
-              <Show when={draft.source() === "custom" && draft.steps().length > 0}>
+          {/* ── Actions: secondary · history chips · primary Run ──────── */}
+          <div class="flex shrink-0 flex-col items-end gap-1 pt-px">
+            <div class="flex h-8 items-center gap-1 self-end">
+              <Show when={wb.running()}>
                 <button
                   type="button"
-                  class="cursor-pointer border-0 bg-transparent p-0 font-inherit text-[11px] text-white/30 underline underline-offset-2 hover:text-white/55"
-                  onClick={() => startTitleEdit()}
+                  class={cn(btnGhost, " px-2 text-12-regular")}
+                  onClick={() => wb.stop()}
                 >
-                  Rename
+                  <Icon name="square" size={11} />
+                  Stop
                 </button>
               </Show>
-            </div>
-          </Show>
-          <Show when={selectedRecipe() && (draft.description() || selectedMeta()?.description)}>
-            <p class="mt-1 mb-0 max-w-[42em] truncate text-[12px] leading-snug text-white/35">
-              {draft.description() || selectedMeta()?.description}
-            </p>
-          </Show>
-        </div>
+              <Show when={retryableJobId()}>
+                <button
+                  type="button"
+                  class={cn(btnGhost, " px-2 text-12-regular")}
+                  onClick={() => void server.retrySelectedJob(retryableJobId()!)}
+                >
+                  <Icon name="refresh" size={13} />
+                  Retry
+                </button>
+              </Show>
 
-        <div class="flex shrink-0 flex-col items-end gap-1">
-          <div class="flex h-8 items-center gap-1 self-end">
-            <Show when={wb.running()}>
-              <button type="button" class={btnGhost} onClick={() => wb.stop()}>
-                <Icon name="square" size={11} />
-                Stop
-              </button>
-            </Show>
-            <Show when={retryableJobId()}>
-              <button
-                type="button"
-                class={btnGhost}
-                onClick={() => void server.retrySelectedJob(retryableJobId()!)}
-              >
-                <Icon name="refresh" size={13} />
-                Retry
-              </button>
-            </Show>
+              <Show when={!selectedRecipe()}>
+                <button
+                  type="button"
+                  class={cn(btnGhost, " px-2 text-12-regular")}
+                  onClick={() => void createNewTest()}
+                >
+                  <Icon name="plus" size={13} />
+                  New
+                </button>
+              </Show>
 
-            <Show when={!selectedRecipe()}>
-              <button type="button" class={btnGhost} onClick={() => void createNewTest()}>
-                <Icon name="plus" size={13} />
-                New
-              </button>
-            </Show>
-
-            <Show when={selectedRecipe()}>
-              {/* Past runs live in the header — not a random chip in the step list. */}
-              <Show when={wb.chips().length > 0}>
-                <div class="relative" data-runhist>
-                  <button
-                    type="button"
-                    class={cn(
-                      btnGhost,
-                      "gap-1.5",
-                      historyOpen() && "bg-accent/12 text-accent-soft",
-                    )}
-                    aria-expanded={historyOpen()}
-                    onClick={() => setHistoryOpen((o) => !o)}
-                  >
-                    Past runs
-                    <span class={cn(mono, "min-w-[1.1em] text-center text-[11px] opacity-70")}>
-                      {wb.chips().length}
-                    </span>
-                  </button>
-                  <Show when={historyOpen()}>
-                    <div
-                      class="absolute top-[calc(100%+6px)] right-0 left-auto z-50 max-h-[300px] min-w-[min(380px,92vw)] overflow-y-auto rounded-xl border border-border bg-layer-1 p-1 shadow-xl"
-                      role="listbox"
-                      aria-label="Past runs"
-                    >
-                      <For each={wb.chips()}>
-                        {(c) => {
-                          const f = () => chipFacts(c);
-                          return (
-                            <button
-                              type="button"
-                              class={cn(
-                                "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left text-body text-text hover:bg-hover",
-                                wb.reviewedRun()?.id === c.id && "bg-accent/12",
-                              )}
-                              role="option"
-                              aria-selected={wb.reviewedRun()?.id === c.id}
-                              onClick={() => {
-                                wb.toggleChip(c.id);
-                                setHistoryOpen(false);
-                              }}
-                            >
-                              <span
-                                class={cn(
-                                  "mt-1.5 size-1.5 shrink-0 rounded-full",
-                                  toneDot(f().tone),
-                                )}
-                                aria-hidden="true"
-                              />
-                              <span class="flex min-w-0 flex-col gap-0.5">
-                                <span class="text-meta font-medium">{f().label}</span>
-                                <Show when={f().detail}>
-                                  <span class="max-w-[300px] truncate text-[11px] leading-snug text-text-faint">
-                                    {f().detail}
-                                  </span>
-                                </Show>
-                              </span>
-                            </button>
-                          );
-                        }}
-                      </For>
-                      <Show when={wb.reviewedRun()}>
+              <Show when={selectedRecipe() && wb.chips().length > 0}>
+                <div class="flex items-center gap-0.5" data-runhist>
+                  {/* Dense recent chips — not a spam wall */}
+                  <For each={recentChips()}>
+                    {(c) => {
+                      const f = () => chipFacts(c);
+                      const on = () => wb.reviewedRun()?.id === c.id;
+                      return (
                         <button
                           type="button"
-                          class="mt-0.5 block w-full border-t border-border px-2.5 py-2 text-left text-meta text-text-faint hover:text-text"
-                          onClick={() => {
-                            setHistoryOpen(false);
-                            setLogOpen(true);
-                          }}
+                          class={cn(
+                            "inline-flex h-7 items-center gap-1.5 rounded-md border px-2",
+                            "text-12-medium tabular-nums transition-colors",
+                            "border-border-weak-base bg-surface-raised-stronger-non-alpha text-text-base",
+                            "hover:border-border-strong-base hover:bg-surface-raised-base-hover hover:text-text-strong",
+                            on() &&
+                              "border-border-weak-base bg-surface-base-active text-text-strong",
+                          )}
+                          data-tip={f().tip}
+                          aria-pressed={on()}
+                          onClick={() => wb.toggleChip(c.id)}
                         >
-                          View log
+                          <span
+                            class={cn(
+                              "size-1.5 shrink-0 rounded-full",
+                              toneDot(f().tone),
+                              f().live && "animate-pulse",
+                            )}
+                            aria-hidden="true"
+                          />
+                          <span class="max-w-[4.5rem] truncate">{f().word}</span>
                         </button>
+                      );
+                    }}
+                  </For>
+                  <div class="relative">
+                    <button
+                      type="button"
+                      class={cn(
+                        btnGhost,
+                        "h-7 gap-1 px-1.5 text-12-regular text-text-weak",
+                        historyOpen() && "bg-surface-base-active text-text-strong",
+                      )}
+                      aria-expanded={historyOpen()}
+                      aria-label={
+                        overflowChipCount() > 0
+                          ? `All runs, ${overflowChipCount()} more`
+                          : "All runs"
+                      }
+                      data-tip={
+                        overflowChipCount() > 0 ? `+${overflowChipCount()} more` : "All runs"
+                      }
+                      onClick={() => setHistoryOpen((o) => !o)}
+                    >
+                      <Show
+                        when={overflowChipCount() > 0}
+                        fallback={<Icon name="chevron-down" size={13} />}
+                      >
+                        <span class={cn(mono, "text-12-regular")}>+{overflowChipCount()}</span>
                       </Show>
-                    </div>
-                  </Show>
+                    </button>
+                    <Show when={historyOpen()}>
+                      <div
+                        class={cn(
+                          popover,
+                          "absolute top-[calc(100%+6px)] right-0 left-auto max-h-[300px] min-w-[min(360px,92vw)] origin-top-right overflow-y-auto p-1",
+                        )}
+                        role="listbox"
+                        aria-label="Past runs"
+                      >
+                        <For each={wb.chips()}>
+                          {(c) => {
+                            const f = () => chipFacts(c);
+                            return (
+                              <button
+                                type="button"
+                                class={cn(
+                                  menuOption,
+                                  "flex w-full items-start gap-2 px-2 py-1 text-left text-14-regular text-text-strong",
+                                  wb.reviewedRun()?.id === c.id && menuOptionOn,
+                                )}
+                                role="option"
+                                aria-selected={wb.reviewedRun()?.id === c.id}
+                                onClick={() => {
+                                  wb.toggleChip(c.id);
+                                  setHistoryOpen(false);
+                                }}
+                              >
+                                <span
+                                  class={cn(
+                                    "mt-1.5 size-1.5 shrink-0 rounded-full",
+                                    toneDot(f().tone),
+                                  )}
+                                  aria-hidden="true"
+                                />
+                                <span class="flex min-w-0 flex-col gap-px">
+                                  <span class="text-14-regular text-text-strong">{f().label}</span>
+                                  <Show when={f().detail}>
+                                    <span class="max-w-[300px] truncate text-12-regular leading-snug text-text-weak">
+                                      {f().detail}
+                                    </span>
+                                  </Show>
+                                </span>
+                              </button>
+                            );
+                          }}
+                        </For>
+                        <Show when={wb.reviewedRun()}>
+                          <button
+                            type="button"
+                            class="mt-0.5 block w-full border-t border-border-weak-base px-2 py-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
+                            onClick={() => {
+                              setHistoryOpen(false);
+                              setLogOpen(true);
+                            }}
+                          >
+                            View log
+                          </button>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
                 </div>
               </Show>
 
-              <Show when={draft.source() === "builtin"}>
-                <button type="button" class={btnGhost} onClick={() => void draft.forkAsCustom()}>
-                  <Icon name="copy" size={13} />
-                  Edit
-                </button>
+              {/* Primary action — always rightmost, highest weight */}
+              <Show when={selectedRecipe()}>
+                <Button
+                  variant="primary"
+                  size="normal"
+                  class="min-w-[4.75rem] gap-1.5"
+                  disabled={!canRun()}
+                  data-tip={runTip()}
+                  onClick={() => {
+                    if (!canRun()) return;
+                    const r = server.selectedRecipe();
+                    if (r) void server.runRecipeRemote(r.id);
+                  }}
+                >
+                  <Show when={server.activeJob()} fallback={<Icon name="play" size={13} />}>
+                    <Icon name="plus" size={13} />
+                  </Show>
+                  {server.activeJob() ? "Queue" : "Run"}
+                </Button>
               </Show>
-
-              {/* Record lives on the phone artboard (View / Drive / Record) — one place. */}
-
-              <button
-                type="button"
-                class={cn(btnAcc, "min-w-[76px] font-semibold")}
-                disabled={!canRun()}
-                data-tip={runTip()}
-                onClick={() => {
-                  if (!canRun()) return;
-                  const r = server.selectedRecipe();
-                  if (r) void server.runRecipeRemote(r.id);
-                }}
-              >
-                <Show when={server.activeJob()} fallback={<Icon name="play" size={13} />}>
-                  <Icon name="plus" size={13} />
-                </Show>
-                {server.activeJob() ? "Queue" : "Run"}
-              </button>
+            </div>
+            <Show when={showRunWhy()}>
+              <p class="m-0 max-w-44 text-right text-12-regular leading-tight font-medium text-text-weak">
+                {runBlocker()}
+              </p>
             </Show>
           </div>
-          <Show when={showRunWhy()}>
-            <p class="m-0 max-w-40 text-right text-[11px] leading-tight font-medium text-text-faint">
-              {runBlocker()}
-            </p>
-          </Show>
         </div>
       </div>
 
-      <div class="relative z-[1] min-h-0 flex-1 overflow-y-auto">
+      {/* Builtin fork — one clear line, not a wall of text */}
+      <Show when={draft.forkedFrom()}>
+        {(origin) => (
+          <div class="flex shrink-0 items-center gap-2 border-b border-border-weak-base bg-surface-base px-3.5 py-1.5 text-text-strong">
+            <span
+              class="grid size-5 shrink-0 place-items-center rounded text-text-weak"
+              aria-hidden="true"
+            >
+              <Icon name="chevron-right" size={13} class="rotate-180" />
+            </span>
+            <span class="text-12-regular text-text-weak">Editing copy of</span>
+            <button
+              type="button"
+              class={cn(
+                "max-w-[240px] truncate rounded px-1 py-0.5 text-12-medium text-text-strong",
+                "transition-colors hover:bg-surface-base-hover hover:text-text-strong",
+              )}
+              onClick={() => draft.openOriginal()}
+            >
+              {displayTitle(origin().title)}
+            </button>
+            <button
+              type="button"
+              class="ml-auto shrink-0 rounded-md px-2 py-1 text-12-medium text-text-strong transition-colors hover:bg-surface-raised-base-hover"
+              onClick={() => draft.openOriginal()}
+            >
+              Open original
+            </button>
+          </div>
+        )}
+      </Show>
+
+      <div class="relative z-[1] flex min-h-0 flex-1 flex-col overflow-hidden">
         <Show when={!selectedRecipe()}>
-          <div class="flex min-h-0 flex-1 flex-col items-start justify-center px-8 py-16">
-            <div class="max-w-[340px]">
-              <p class={cn(mono, "mb-3 text-[10px] font-bold tracking-[0.14em] text-accent-soft")}>
-                SPECIMEN
-              </p>
-              <p class="mb-2 text-[22px] font-semibold tracking-tight text-white/95 leading-tight">
-                Mobile tests, step by step
-              </p>
-              <p class="mb-6 text-[13px] leading-relaxed text-white/40">
-                Pick a test or create one. Connect a phone, hit Run — screenshots land on the board.
-              </p>
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class={btnAcc} onClick={() => void createNewTest()}>
-                  <Icon name="plus" size={13} />
-                  New test
-                </button>
-                <button
-                  type="button"
-                  class={btnBordered}
-                  onClick={() => {
-                    const firstLib = server.recipes().find((r) => r.source === "builtin");
-                    if (firstLib) {
-                      server.setSelectedRecipeId(firstLib.id);
-                    } else {
-                      setMenuOpen(true);
-                    }
-                  }}
-                >
-                  Browse tests
-                </button>
-              </div>
-            </div>
+          <div class="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-8 py-16">
+            <EmptyState
+              align="start"
+              title="No test selected"
+              description="Create a test or open one from the title menu."
+              actionLabel="New test"
+              onAction={() => void createNewTest()}
+              class="px-0 py-0"
+            />
           </div>
         </Show>
 
         <Show when={selectedRecipe()}>
-          {/* Only when reviewing a specific past run — not a random "5 failed" chip. */}
-          <Show when={reviewedFacts()}>
-            {(f) => (
-              <>
-                <div class="flex flex-wrap items-baseline gap-2 px-4 py-1 pb-2 text-meta text-text-faint">
-                  <span
-                    class={cn("inline-flex items-center gap-1.5 font-semibold", toneText(f().tone))}
-                  >
-                    <Show when={f().live}>
-                      <span
-                        class="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
-                        aria-hidden="true"
-                      />
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {/* Only when reviewing a specific past run — not a random "5 failed" chip. */}
+            <Show when={reviewedFacts()}>
+              {(f) => (
+                <div class="shrink-0">
+                  <div class="flex flex-wrap items-baseline gap-2 px-3.5 py-1.5 pb-2 text-12-regular text-text-weak">
+                    <span
+                      class={cn("inline-flex items-center gap-1.5 font-medium", toneText(f().tone))}
+                    >
+                      <Show when={f().live}>
+                        <span
+                          class="size-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
+                          aria-hidden="true"
+                        />
+                      </Show>
+                      {f().word}
+                    </span>
+                    <Show when={f().when}>
+                      <span class="before:mr-2 before:text-text-weak before:content-['·'] tabular-nums">
+                        {f().when}
+                      </span>
                     </Show>
-                    {f().word}
-                  </span>
-                  <Show when={f().when}>
-                    <span class="before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums">
-                      {f().when}
-                    </span>
-                  </Show>
-                  <Show when={f().dur}>
-                    <span
-                      class={cn(
-                        mono,
-                        "before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums",
-                      )}
-                    >
-                      {f().dur}
-                    </span>
-                  </Show>
-                  <Show when={f().device}>
-                    <span class="before:mr-2 before:text-border-strong before:opacity-50 before:content-['·'] tabular-nums">
-                      {f().device}
-                    </span>
-                  </Show>
-                  <button
-                    type="button"
-                    class="ml-auto h-[22px] rounded-md px-1.5 text-[11px] font-medium text-text-faint hover:bg-hover hover:text-text"
-                    onClick={() => {
-                      const id = wb.reviewedRun()?.id;
-                      if (id) wb.toggleChip(id);
-                    }}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <Show when={f().error && f().tone === "fail"}>
-                  <div
-                    class="my-2 mx-4 flex items-start gap-2 rounded-md border border-fail/30 bg-fail/10 px-3 py-2.5 text-body leading-snug text-fail"
-                    role="alert"
-                  >
-                    <span
-                      class="mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-full bg-fail text-meta font-bold text-accent-fg"
-                      aria-hidden="true"
-                    >
-                      !
-                    </span>
-                    <span>{f().error}</span>
-                  </div>
-                </Show>
-              </>
-            )}
-          </Show>
-
-          <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
-            <div class="mx-4 my-2 flex items-center gap-2 rounded-md border border-heal/30 bg-heal/10 px-2.5 py-2 text-meta leading-snug text-heal">
-              <span class="grid shrink-0 place-items-center" aria-hidden="true">
-                <Icon name="alert" size={14} />
-              </span>
-              <span class="flex-1">Needs a prod account match (e.g. gmail.com).</span>
-              <button
-                type="button"
-                class={cn(btnGhost, "shrink-0 text-heal")}
-                onClick={() => cmd.run("nav.settings")}
-              >
-                Configure
-              </button>
-            </div>
-          </Show>
-
-          {/* Packaged plan (builtin or forked thin flow) — human titles, never a lone FLOW row. */}
-          <Show when={showPackagedPlan()}>
-            <div class="flex flex-col" aria-label="Steps">
-              <For each={plannedSteps()}>
-                {(p, i) => {
-                  const anno = () => wb.rowAnno(i());
-                  const st = () => anno().status;
-                  const on = () => wb.focusedIndex() === i();
-                  return (
-                    <button
-                      type="button"
-                      class={cn(
-                        "flex w-full min-h-[52px] items-center gap-3 border-b border-white/[0.06] px-4 text-left transition-colors",
-                        on()
-                          ? "bg-accent/[0.14] shadow-[inset_3px_0_0_0_var(--color-accent)]"
-                          : "hover:bg-white/[0.03]",
-                        !on() && st() === "running" && "bg-run/10",
-                        !on() && st() === "pass" && "bg-pass/10",
-                        !on() && st() === "fail" && "bg-fail/10",
-                      )}
-                      onClick={() => wb.focusStep(i())}
-                    >
+                    <Show when={f().dur}>
                       <span
                         class={cn(
                           mono,
-                          "grid size-6 shrink-0 place-items-center rounded-md bg-white/[0.04] text-[11px] font-semibold text-white/30",
-                          on() && "bg-accent/20 text-accent-soft",
+                          "before:mr-2 before:text-text-weak before:content-['·'] tabular-nums",
                         )}
                       >
-                        {i() + 1}
+                        {f().dur}
                       </span>
-                      <span class="min-w-0 flex-1 text-[13.5px] font-medium tracking-tight text-white/90">
-                        {p.title}
+                    </Show>
+                    <Show when={f().device}>
+                      <span class="before:mr-2 before:text-text-weak before:content-['·'] tabular-nums">
+                        {f().device}
                       </span>
-                      <StepAnno anno={anno} />
+                    </Show>
+                    <button
+                      type="button"
+                      class="ml-auto h-[22px] rounded-md px-1.5 text-12-medium text-text-weak hover:bg-surface-base-hover hover:text-text-strong"
+                      onClick={() => {
+                        const id = wb.reviewedRun()?.id;
+                        if (id) wb.toggleChip(id);
+                      }}
+                    >
+                      Clear
                     </button>
-                  );
-                }}
-              </For>
-            </div>
-          </Show>
-          <Show when={showStepEditor()}>
+                  </div>
+                  <Show when={f().error && f().tone === "fail"}>
+                    <div
+                      class="my-2 mx-3.5 flex items-start gap-2 rounded-md border border-border-critical-base/40 bg-icon-critical-base/10 px-3 py-2.5 text-12-regular leading-snug text-icon-critical-base"
+                      role="alert"
+                    >
+                      <span
+                        class="mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-full bg-icon-critical-base text-12-regular font-bold text-text-on-critical-base"
+                        aria-hidden="true"
+                      >
+                        !
+                      </span>
+                      <span>{f().error}</span>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </Show>
+
+            <Show when={selectedMeta()?.requiresProdMatch && !server.prodAccountMatch()}>
+              <div class="mx-3.5 my-2 flex shrink-0 items-center gap-2 rounded-md border border-border-warning-base/40 bg-icon-warning-base/10 px-2.5 py-2 text-12-regular leading-snug text-icon-warning-base">
+                <span class="grid shrink-0 place-items-center" aria-hidden="true">
+                  <Icon name="alert" size={14} />
+                </span>
+                <span class="flex-1">Needs a prod account match (e.g. gmail.com).</span>
+                <button
+                  type="button"
+                  class={cn(btnGhost, "shrink-0 text-icon-warning-base")}
+                  onClick={() => cmd.run("nav.settings")}
+                >
+                  Configure
+                </button>
+              </div>
+            </Show>
+
             <RecipeStepsEditor />
-          </Show>
+          </div>
         </Show>
       </div>
 
@@ -843,39 +920,39 @@ function RawLogOverlay(props: { text: string; onClose: () => void }) {
   }
   return (
     <div
-      class="fixed inset-0 z-[90] flex items-start justify-center bg-black/50 px-6 pt-[10vh] pb-6 backdrop-blur-sm"
+      class={cn(modalScrim, "flex items-start justify-center px-6 pt-[10vh] pb-6 backdrop-blur-sm")}
       onClick={(e) => {
         if (e.target === e.currentTarget) props.onClose();
       }}
     >
       <div
-        class="flex max-h-[70vh] w-[min(680px,100%)] flex-col overflow-hidden rounded-xl border border-border bg-layer-1 shadow-xl"
+        class={cn(modalPanel, "flex max-h-[70vh] w-[min(680px,100%)] flex-col")}
         role="dialog"
         aria-label="Raw log"
       >
-        <div class="flex shrink-0 items-center gap-2 border-b border-border py-2.5 pr-3 pl-4">
-          <span class="flex-1 text-body font-semibold text-text">Raw log</span>
+        <div class="flex shrink-0 items-center gap-2 border-b border-border-weak-base py-2.5 pr-3 pl-4">
+          <span class="flex-1 text-12-medium text-text-strong">Raw log</span>
           <button
             type="button"
-            class={cn(btnGhost, "h-[26px] px-2 text-meta")}
+            class={cn(btnGhost, " px-2 text-12-regular")}
             onClick={() => void copy()}
           >
             <Icon name={copied() ? "check" : "copy"} size={12} />
             {copied() ? "Copied" : "Copy"}
           </button>
-          <button
-            type="button"
-            class="grid size-[26px] place-items-center rounded-md text-text-faint hover:bg-hover hover:text-text"
+          <IconButton
+            variant="ghost"
+            size="normal"
             aria-label="Close"
             onClick={() => props.onClose()}
           >
             <Icon name="x" size={14} />
-          </button>
+          </IconButton>
         </div>
         <pre
           class={cn(
             mono,
-            "m-0 flex-1 overflow-auto px-4 pt-3 pb-4 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted",
+            "m-0 flex-1 overflow-auto px-4 pt-3 pb-4 text-12-regular leading-relaxed break-words whitespace-pre-wrap text-text-weak",
           )}
         >
           {props.text || "— no log lines —"}

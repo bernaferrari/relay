@@ -1,11 +1,19 @@
 /*
- * globals.css equivalent (shadcn-style)
- * ONLY: Tailwind, design tokens, fonts, base reset.
- * No component/layout chrome — that lives in TSX utilities.
+ * Stage product CSS — AgentBoard cascade:
+ *   layer order → TW theme/utilities (from app, which owns tailwindcss)
+ *   → @grok-device/ui FOUC + base reset + button
+ *   → v2 tokens
+ *   → product chrome
  */
 
-@import "tailwindcss";
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
 @import "@grok-device/ui/styles";
+@import "@grok-device/ui/styles/tailwind";
+@import "@grok-device/ui/v2/styles/tailwind.css";
 
 @source "../**/*.{ts,tsx}";
 @source "../../../desktop/src/renderer/**/*.{ts,tsx}";
@@ -24,42 +32,15 @@
 }
 
 @theme {
-  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-
-  --color-deep: var(--v2-background-bg-deep, #0a0a0c);
-  --color-base: var(--v2-background-bg-base, #111);
-  --color-layer-1: var(--v2-background-bg-layer-01, #141416);
-  --color-layer-2: var(--v2-background-bg-layer-02, #1a1a1e);
-  --color-layer-3: var(--v2-background-bg-layer-03, #222);
-
-  --color-text: var(--v2-text-text-base, #e8e8ea);
-  --color-text-muted: var(--v2-text-text-muted, #9a9aa0);
-  --color-text-faint: var(--v2-text-text-faint, #6a6a70);
-  --color-text-strong: var(--v2-text-text-strong, #fafafa);
-
-  --color-border: var(--v2-border-border-muted, rgba(255, 255, 255, 0.08));
-  --color-border-strong: var(--v2-border-border-strong, rgba(255, 255, 255, 0.14));
-  --color-border-focus: var(--v2-border-border-focus, #3b7dd8);
-
-  --color-accent: var(--v2-background-bg-accent, #3b7dd8);
-  --color-accent-soft: var(--v2-text-text-accent, #6aa3e8);
-  --color-accent-fg: var(--v2-text-text-contrast, #0a0a0a);
-
-  --color-pass: var(--v2-state-fg-success, #3d9a57);
-  --color-fail: var(--v2-state-fg-danger, #d1383d);
-  --color-heal: var(--v2-state-fg-warning, #d68c27);
-  --color-run: var(--v2-state-fg-info, #3b7dd8);
-
-  --color-hover: var(--v2-overlay-simple-overlay-hover, rgba(255, 255, 255, 0.06));
+  /* Fonts only — type scale comes from AgentBoard utilities (text-12-*, text-14-*) */
+  --font-sans: "Geist", var(--font-family-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", var(--font-family-mono), ui-monospace, monospace;
 
   --radius-control: 0.375rem;
   --radius-card: 0.625rem;
-
-  --text-meta: 0.71875rem;
-  --text-body: 0.8125rem;
-  --text-title: 0.875rem;
-  --text-hero: 0.9375rem;
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-hover: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
 @layer base {
@@ -67,80 +48,263 @@
   body,
   #root {
     height: 100%;
-    margin: 0;
-    padding: 0;
     overflow: hidden;
   }
 
   body {
     font-family: var(--font-sans);
-    font-size: 13px;
-    line-height: 1.45;
-    letter-spacing: -0.006em;
+    /* AB type grid: 12 / 14 / 16 — root 14 keeps unscoped chrome on-grid */
+    font-size: 14px;
+    line-height: var(--line-height-large, 1.428);
+    letter-spacing: var(--letter-spacing-normal, 0);
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
-    background: var(--v2-background-bg-deep, #0a0a0c);
-    color: var(--v2-text-text-base, #e8e8ea);
+    text-rendering: optimizeLegibility;
   }
 
-  button:not(:disabled) {
-    cursor: pointer;
+  button:focus:not(:focus-visible),
+  [role="button"]:focus:not(:focus-visible) {
+    outline: none;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
-    }
+  /*
+   * Device frame — abstract viewport only (no speaker / island).
+   * High-contrast ink on always-dark chassis (fixed v2 greys).
+   */
+  [data-device-chrome] {
+    --phone-bezel: var(--v2-grey-1000, #242424);
+    --phone-screen: var(--v2-grey-1200, #080808);
+    --phone-fg: var(--v2-grey-50, #ffffff);
+    /* Stronger hierarchy than 42–68% — previous empty-state was unreadable */
+    --phone-fg-muted: color-mix(in srgb, var(--phone-fg) 78%, transparent);
+    --phone-fg-faint: color-mix(in srgb, var(--phone-fg) 56%, transparent);
+    --phone-rim: color-mix(in srgb, var(--phone-fg) 16%, transparent);
+    --phone-rim-soft: color-mix(in srgb, var(--phone-fg) 10%, transparent);
+    --phone-fill: color-mix(in srgb, var(--phone-fg) 12%, transparent);
+    --phone-fill-strong: color-mix(in srgb, var(--phone-fg) 18%, transparent);
+    color: var(--phone-fg);
+  }
+
+  [data-device-chrome] .device-title {
+    color: var(--phone-fg);
+  }
+  [data-device-chrome] .device-body {
+    color: var(--phone-fg-muted);
+  }
+  [data-device-chrome] .device-caption {
+    color: var(--phone-fg-faint);
+  }
+  [data-device-chrome] .device-icon-well {
+    display: grid;
+    place-items: center;
+    border-radius: 0.875rem;
+    color: var(--phone-fg);
+    background: var(--phone-fill);
+    box-shadow: inset 0 0 0 1px var(--phone-rim);
+  }
+  [data-device-chrome] button,
+  [data-device-chrome] [type="button"] {
+    color: var(--phone-fg);
+    background: var(--phone-fill-strong);
+    border: 1px solid var(--phone-rim);
+    border-radius: 0.5rem;
+    font-weight: 550;
+  }
+  [data-device-chrome] button:hover:enabled,
+  [data-device-chrome] [type="button"]:hover:enabled {
+    color: var(--phone-fg);
+    background: color-mix(in srgb, var(--phone-fg) 22%, transparent);
+    border-color: color-mix(in srgb, var(--phone-fg) 28%, transparent);
+  }
+  [data-device-chrome] button:disabled {
+    color: var(--phone-fg-faint);
+    background: var(--phone-fill);
+    opacity: 1;
+  }
+
+  /* Flat product frame — no faux hardware */
+  [data-device-chrome].phone-bezel {
+    background: var(--phone-bezel);
+    box-shadow:
+      0 0 0 1px var(--phone-rim-soft),
+      0 24px 48px -18px color-mix(in srgb, var(--phone-screen) 70%, transparent),
+      0 10px 24px -10px color-mix(in srgb, var(--text-strong) 16%, transparent);
+  }
+
+  [data-device-chrome] .phone-screen {
+    background: var(--phone-screen);
   }
 }
 
-/* Token host for product chrome (theme provider writes --v2-* on document) */
 .qa {
-  --c-accent: var(--v2-background-bg-accent);
-  --c-accent-fg: var(--v2-text-text-contrast);
-  --c-accent-soft: var(--v2-text-text-accent);
-  --c-pass: var(--v2-state-fg-success);
-  --c-fail: var(--v2-state-fg-danger);
-  --c-heal: var(--v2-state-fg-warning);
-  --c-run: var(--v2-state-fg-info);
-  --c-dim: var(--v2-text-text-faint);
-  --top-h: 44px;
+  --c-accent: var(--surface-brand-base);
+  --c-accent-fg: var(--text-on-brand-base);
+  --c-accent-soft: var(--text-interactive-base);
+  --c-pass: var(--icon-success-base);
+  --c-fail: var(--icon-critical-base);
+  --c-heal: var(--icon-warning-base);
+  --c-run: var(--icon-info-base);
+  --c-dim: var(--text-weaker);
+  --top-h: 36px;
   --traffic-pad: 12px;
 }
 .qa--desktop {
   --traffic-pad: 84px;
 }
 
-/* Tooltip (data-tip) — single global affordance like shadcn */
-[data-tip] {
-  position: relative;
+/* Alias — prefer .btn-primary-ink; keep for legacy class names */
+.btn-acc {
+  background-color: var(--button-primary-base);
+  color: var(--icon-invert-base);
+  border-color: transparent;
 }
-[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  z-index: 100;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%) translateY(2px);
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--v2-border-border-muted);
-  background: var(--v2-background-bg-layer-02);
-  color: var(--v2-text-text-base);
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  opacity: 0;
+.btn-acc:hover:enabled {
+  background-color: var(--icon-strong-hover);
+}
+.btn-acc:disabled {
+  background-color: var(--icon-strong-disabled);
+  color: var(--icon-invert-base);
+}
+
+.btn-primary-ink {
+  background-color: var(--button-primary-base);
+  color: var(--icon-invert-base);
+  border: 1px solid transparent;
+}
+.btn-primary-ink:hover:enabled {
+  background-color: var(--icon-strong-hover, var(--button-primary-base));
+  color: var(--icon-invert-base);
+}
+.btn-primary-ink:disabled {
+  background-color: var(--surface-base);
+  color: var(--text-weaker);
+  box-shadow: inset 0 0 0 1px var(--border-weak-base);
+  cursor: not-allowed;
+}
+
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes ui-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes ui-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ui-check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.ui-pop {
+  animation: ui-pop-in 140ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  transform-origin: var(--ui-pop-origin, top center);
+}
+.ui-modal {
+  animation: ui-modal-in 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+}
+.ui-scrim {
+  animation: ui-scrim-in 160ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  /* AB dialog scrim — quiet, not ink blackout */
+  background: hsl(from var(--background-base) h s l / 0.2);
+}
+.ui-check {
+  animation: ui-check-in 160ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+}
+.ui-stagger > * {
+  animation: ui-pop-in 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+}
+.ui-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.ui-stagger > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+.ui-stagger > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+.ui-stagger > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+.ui-stagger > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+
+.tip-layer {
+  position: fixed;
+  z-index: 300;
   pointer-events: none;
+  max-width: 240px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text-invert-strong) 14%, transparent);
+  background: var(--surface-float-base);
+  color: var(--text-invert-strong);
+  font-size: var(--font-size-small, 13px);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--text-invert-base) 6%, transparent) inset,
+    0 8px 28px color-mix(in srgb, var(--text-strong) 22%, transparent);
+  opacity: 0;
+  transform: scale(0.97) translateY(2px);
   transition:
-    opacity 100ms ease,
-    transform 100ms ease;
+    opacity 120ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 120ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
 }
-[data-tip]:hover::after,
-[data-tip]:focus-visible::after {
+.tip-layer[data-show="true"] {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: scale(1) translateY(0);
+}
+.tip-layer[data-instant="true"] {
+  transition-duration: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-pop,
+  .ui-modal,
+  .ui-scrim,
+  .ui-check,
+  .ui-stagger > *,
+  .tip-layer {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* AB elevation tokens as utilities (border-in-shadow) */
+@utility shadow-lg-border-base {
+  box-shadow: var(--shadow-lg-border-base);
+}
+@utility shadow-xs-border-base {
+  box-shadow: var(--shadow-xs-border-base);
+}
+@utility shadow-md {
+  box-shadow: var(--shadow-md);
 }

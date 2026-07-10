@@ -51,7 +51,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
     case "sleep":
       return `Wait ${fmtDuration(step.ms)}`;
     case "pause":
-      return step.message.trim() ? `Pause: ${step.message}` : "Pause for human";
+      // Message is the whole line — kind chip already says Pause.
+      return step.message.trim() || "Pause for human";
     case "key":
       return `Press ${step.key === "back" ? "Back" : "Home"}`;
     case "scroll":

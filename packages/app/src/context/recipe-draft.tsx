@@ -2,7 +2,7 @@ import { createSignal, createEffect, on, onCleanup } from "solid-js";
 import { createSimpleContext } from "@grok-device/ui/context/helper";
 import { useServer, type RecipeInfo, type RecipeStep } from "./server";
 import { stepValid } from "../lib/step-sentence";
-import { displayTitle } from "../lib/job";
+import { collapseUnchangedFlow, expandFlowToEditableSteps } from "../lib/run-gates";
 import { toast } from "./toast";
 
 export type SaveState = "saved" | "saving" | "invalid";
@@ -10,19 +10,14 @@ export type SaveState = "saved" | "saving" | "invalid";
 /**
  * The run-pane's step list IS the test editor (no modal). This context owns a
  * local draft (title/description/steps) for whichever recipe is selected —
- * builtin or custom — autosaving 600ms after the last edit. Manual row edits
- * and recorder appends flow through the same path, so "Saved / Saving… /
- * Fix N steps to save" always reflects the true state.
+ * builtin or custom — autosaving 600ms after the last edit.
  *
- * Builtins are editable like everything else: the first edit silently
- * auto-forks the builtin into a custom copy (same title, no suffix), selects
- * it, and toasts "Now editing your copy of <title>". From the user's seat,
- * everything is simply editable, always.
+ * Builtins auto-fork into a custom copy on first successful save. We keep a
+ * `forkedFrom` pointer so the UI can offer “Open original” — silent forks
+ * must never strand the user without a way back.
  *
  * The draft reseeds only when `selectedRecipeId` changes (not on background
- * polls), so mid-edit typing and mid-recording appends survive refreshes —
- * including the refresh triggered by our own autosave and the selection
- * change triggered by our own auto-fork.
+ * polls), so mid-edit typing survives refreshes and our own auto-fork.
  */
 export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimpleContext({
   name: "RecipeDraft",
@@ -38,6 +33,8 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     const [flashSteps, setFlashSteps] = createSignal<Set<RecipeStep>>(new Set());
     /** Which step row is expanded in the editor — drives soft-invalid chrome. */
     const [expandedStep, setExpandedStep] = createSignal<number | null>(null);
+    /** When we auto-forked a library test, where to go “back”. */
+    const [forkedFrom, setForkedFrom] = createSignal<{ id: string; title: string } | null>(null);
 
     let currentId: string | null = null;
     let dirty = false;
@@ -50,25 +47,63 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
      *  draft — the user may have kept editing while the fork was in flight. */
     let skipReseedFor: string | null = null;
 
+    /** Original packaged flow id when draft rows were expanded from planned[]. */
+    let expandedFromFlow: string | null = null;
+
     function seedFrom(r: RecipeInfo | null): void {
       currentId = r?.id ?? null;
       setSource(r?.source ?? null);
       setTitleState(r?.title ?? "");
       setDescriptionState(r?.description ?? "");
-      setStepsState(r?.steps ? r.steps.map((s) => ({ ...s })) : []);
+      setExpandedStep(null);
+      // Clear back-link unless this seed is the fork we just created.
+      if (!r || skipReseedFor !== r.id) setForkedFrom(null);
+      const raw = r?.steps ? r.steps.map((s) => ({ ...s })) : [];
+      expandedFromFlow = null;
+      // Library tests are one opaque flow step — expand planned titles into the
+      // same editable list as custom tests (nothing special about defaults).
+      if (r) {
+        const flowId =
+          raw.length === 1 && raw[0]?.kind === "flow" && raw[0].flow
+            ? raw[0].flow
+            : r.source === "builtin"
+              ? r.id
+              : null;
+        const planned = flowId ? server.actions().find((a) => a.id === flowId)?.planned : undefined;
+        const expanded = expandFlowToEditableSteps({
+          steps: raw,
+          recipeId: r.id,
+          source: r.source,
+          planned,
+        });
+        if (expanded && flowId) {
+          expandedFromFlow = flowId;
+          setStepsState(expanded);
+        } else {
+          setStepsState(raw);
+        }
+      } else {
+        setStepsState([]);
+      }
       dirty = false;
       setSaveState("saved");
       clearTimeout(saveTimer);
     }
 
     createEffect(
-      on(server.selectedRecipeId, (id) => {
-        if (id && skipReseedFor === id) {
-          skipReseedFor = null;
-          return;
-        }
-        seedFrom(server.recipes().find((x) => x.id === id) ?? null);
-      }),
+      on(
+        // Also re-run when actions load so planned[] is available to expand.
+        () => [server.selectedRecipeId(), server.actions().length] as const,
+        ([id]) => {
+          if (id && skipReseedFor === id) {
+            skipReseedFor = null;
+            return;
+          }
+          // Don't clobber an in-progress edit when only actions[] length changed.
+          if (dirty && id && currentId === id) return;
+          seedFrom(server.recipes().find((x) => x.id === id) ?? null);
+        },
+      ),
     );
 
     const invalidCount = () => steps().filter((s) => !stepValid(s)).length;
@@ -93,15 +128,30 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       const myEdit = editSeq;
       setSaveState("saving");
 
+      // If the user only renamed / saved without reworking the expanded plan,
+      // persist as a single flow so Run still executes the real packaged action.
+      let persistSteps: RecipeStep[] = steps();
+      if (expandedFromFlow) {
+        const planned = server.actions().find((a) => a.id === expandedFromFlow)?.planned;
+        const collapsed = collapseUnchangedFlow({
+          steps: persistSteps,
+          flowId: expandedFromFlow,
+          planned,
+        });
+        if (collapsed) persistSteps = collapsed;
+        else expandedFromFlow = null; // user reworked the plan — free-form from here
+      }
+
       const body = {
         title: title().trim() || "Untitled test",
         description: description().trim() || undefined,
-        steps: steps(),
+        steps: persistSteps,
       };
 
-      // Editing a builtin? Silently fork it into the user's own copy first —
-      // same title, no "(copy)" suffix — then keep editing that.
+      // Editing a builtin? Fork into a custom copy, keep a back-link to original.
       const forking = source() === "builtin";
+      const originTitle = title();
+      const originId = id;
       const saved = await server.saveRecipeRemote(forking ? body : { id, ...body });
 
       // The selection (or a newer save) moved on while this was in flight.
@@ -113,9 +163,10 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       if (forking) {
         currentId = saved.id;
         setSource("custom");
+        setForkedFrom({ id: originId, title: originTitle });
         skipReseedFor = saved.id;
         server.setSelectedRecipeId(saved.id);
-        toast(`Now editing your copy of ${displayTitle(saved.title)}`, "info");
+        toast(`Saved your copy — open original anytime`, "info");
       }
       if (editSeq === myEdit) {
         dirty = false;
@@ -213,34 +264,11 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
      * same flow body (and thus the same planned step titles in the UI).
      * Title stays clean (no forced “ (copy)” suffix from us).
      */
-    async function forkAsCustom(): Promise<boolean> {
-      if (source() !== "builtin" || !currentId) return false;
-      dirty = true;
-      editSeq++;
-      // Keep the flow wrapper so Run still does the real packaged test, and the
-      // UI can expand planned[] from that flow id (not a lone “FLOW” row).
-      const body = {
-        title: title().trim() || "Untitled test",
-        description: description().trim() || undefined,
-        steps: steps().length
-          ? steps()
-          : ([{ kind: "flow" as const, flow: currentId }] as RecipeStep[]),
-      };
-      setSaveState("saving");
-      const saved = await server.saveRecipeRemote(body);
-      if (!saved) {
-        setSaveState("invalid");
-        return false;
-      }
-      currentId = saved.id;
-      setSource("custom");
-      setStepsState(body.steps.map((s) => ({ ...s })));
-      dirty = false;
-      setSaveState("saved");
-      skipReseedFor = saved.id;
-      server.setSelectedRecipeId(saved.id);
-      toast(`Editing your copy — steps stay visible`, "info");
-      return true;
+    function openOriginal(): void {
+      const origin = forkedFrom();
+      if (!origin) return;
+      setForkedFrom(null);
+      server.setSelectedRecipeId(origin.id);
     }
 
     return {
@@ -253,6 +281,8 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       flashSteps,
       expandedStep,
       setExpandedStep,
+      forkedFrom,
+      openOriginal,
       setTitle,
       setDescription,
       insertStep,
@@ -262,7 +292,6 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       moveStep,
       appendSteps,
       ensureRecordingDraft,
-      forkAsCustom,
     };
   },
 });

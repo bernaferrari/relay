@@ -1,36 +1,32 @@
-import { Show } from "solid-js";
-import { Icon } from "./icon";
+import { createEffect, on } from "solid-js";
 import { useServer } from "../context/server";
-import { btnGhost } from "../lib/ui";
-import { cn } from "../lib/cn";
 
-/** Dismissible global error strip — only when server.error() is set. */
+/**
+ * Bridge server.error() into the toast queue (AB-quiet: no global critical strip).
+ * Offline is OfflineGate only — never double-shout.
+ */
 export function ErrorBanner() {
   const server = useServer();
+  let last = "";
 
-  return (
-    <Show when={server.error() && !server.isOffline()}>
-      <div
-        class="flex h-9 shrink-0 items-center gap-2.5 border-b border-[var(--v2-state-border-danger)] bg-[var(--v2-state-bg-danger)] px-3.5 text-meta text-fail"
-        role="alert"
-      >
-        <span
-          class="grid size-[18px] shrink-0 place-items-center rounded-full bg-fail text-meta font-bold text-[var(--v2-text-text-contrast,#fff)]"
-          aria-hidden="true"
-        >
-          <Icon name="alert" size={11} />
-        </span>
-        <p class="m-0 min-w-0 flex-1 truncate">{server.error()}</p>
-        <button
-          type="button"
-          class={cn(btnGhost, "shrink-0")}
-          aria-label="Dismiss error"
-          onClick={() => server.dismissError()}
-        >
-          <Icon name="x" size={13} />
-          Dismiss
-        </button>
-      </div>
-    </Show>
+  createEffect(
+    on(
+      () => ({ msg: server.error(), offline: server.isOffline() }),
+      ({ msg, offline }) => {
+        if (!msg || offline) {
+          if (!msg) last = "";
+          return;
+        }
+        if (msg === last) return;
+        last = msg;
+        window.dispatchEvent(
+          new CustomEvent("stage:toast", {
+            detail: { text: msg, tone: "error" as const, ttl: 5600 },
+          }),
+        );
+      },
+    ),
   );
+
+  return null;
 }

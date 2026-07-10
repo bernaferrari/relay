@@ -78,6 +78,63 @@ export function isPackagedFlowSteps(steps: { kind: string; flow?: string }[]): b
   return steps.length === 1 && steps[0]?.kind === "flow" && Boolean(steps[0]?.flow);
 }
 
+export type EditableExpandedStep = {
+  kind: "tap";
+  target: { label: string };
+};
+
+/**
+ * Expand a thin `flow` wrapper into editable rows (one per planned title).
+ * Library tests use the same step editor as custom tests — nothing special.
+ * Rows start as taps with the planned title as the label (valid + editable).
+ * {@link collapseUnchangedFlow} rewrites them back to a single flow on save
+ * when the user hasn't reworked the plan, so Run still hits the real action.
+ */
+export function expandFlowToEditableSteps(input: {
+  steps: { kind: string; flow?: string; target?: { label?: string } }[];
+  recipeId: string | null;
+  source: "custom" | "builtin" | null;
+  planned: { title: string }[] | undefined | null;
+}): EditableExpandedStep[] | null {
+  const { steps, planned } = input;
+  if (!planned?.length) return null;
+  const thinFlow =
+    steps.length === 0 ||
+    (steps.length === 1 && steps[0]?.kind === "flow" && Boolean(steps[0]?.flow));
+  if (!thinFlow) return null;
+  return planned.map((p) => ({
+    kind: "tap" as const,
+    target: { label: p.title },
+  }));
+}
+
+/**
+ * If draft rows are still the expanded planned titles (untouched), save as a
+ * single flow step so Run still executes the real packaged action.
+ */
+export function collapseUnchangedFlow(input: {
+  steps: {
+    kind: string;
+    flow?: string;
+    target?: { label?: string; ref?: string; text?: string; point?: unknown };
+  }[];
+  flowId: string;
+  planned: { title: string }[] | undefined | null;
+}): { kind: "flow"; flow: string }[] | null {
+  const { steps, flowId, planned } = input;
+  if (!planned?.length || steps.length !== planned.length) return null;
+  const same = steps.every((s, i) => {
+    if (s.kind !== "tap") return false;
+    const t = s.target;
+    if (!t || t.label !== planned[i]?.title) return false;
+    // Untouched expansion has only a label — any other strategy means rework.
+    if (t.ref || t.text || t.point) return false;
+    return true;
+  });
+  if (!same) return null;
+  return [{ kind: "flow", flow: flowId }];
+}
+
 export type HistoryChipStatus = string;
 
 export type HistorySummary = {
@@ -121,13 +178,17 @@ export function summarizeRunHistory(
   return { total: chips.length, passed, failed, other, summary, latestTone };
 }
 
-/** Map a persisted/live step status onto canvas card pass/fail. */
+/**
+ * Map a persisted/live step status onto canvas card tone.
+ * `healed` is distinct so the Map can draw a heal branch (not plain pass).
+ */
 export function stepStatusFromRun(
   steps: { status?: string }[] | undefined,
   i: number,
-): "pass" | "fail" | "idle" {
+): "pass" | "fail" | "heal" | "idle" {
   const s = steps?.[i]?.status;
-  if (s === "ok" || s === "healed") return "pass";
+  if (s === "ok") return "pass";
+  if (s === "healed") return "heal";
   if (s === "error") return "fail";
   return "idle";
 }

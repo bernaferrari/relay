@@ -37,6 +37,7 @@ import tokyonightThemeJson from "./themes/tokyonight.json";
 import vercelThemeJson from "./themes/vercel.json";
 import vesperThemeJson from "./themes/vesper.json";
 import zenburnThemeJson from "./themes/zenburn.json";
+import grokThemeJson from "./themes/grok.json";
 
 export const oc2Theme = oc2ThemeJson as DesktopTheme;
 export const amoledTheme = amoledThemeJson as DesktopTheme;
@@ -75,8 +76,10 @@ export const tokyonightTheme = tokyonightThemeJson as DesktopTheme;
 export const vercelTheme = vercelThemeJson as DesktopTheme;
 export const vesperTheme = vesperThemeJson as DesktopTheme;
 export const zenburnTheme = zenburnThemeJson as DesktopTheme;
+export const grokTheme = grokThemeJson as DesktopTheme;
 
 export const DEFAULT_THEMES: Record<string, DesktopTheme> = {
+  grok: grokTheme,
   "oc-2": oc2Theme,
   amoled: amoledTheme,
   aura: auraTheme,

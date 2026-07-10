@@ -26,11 +26,13 @@ export type RunChip =
   | { kind: "live"; id: string; ts: number; job: JobInfo }
   | { kind: "disk"; id: string; ts: number; run: PersistedRun };
 
-const AUTO_KEY = "specimen:auto-continue";
+const AUTO_KEY = "stage:auto-continue";
+const AUTO_KEY_LEGACY = "specimen:auto-continue";
 
 function loadAutoContinue(): boolean {
   try {
-    return localStorage.getItem(AUTO_KEY) === "1";
+    const v = localStorage.getItem(AUTO_KEY) ?? localStorage.getItem(AUTO_KEY_LEGACY);
+    return v === "1";
   } catch {
     return false;
   }
@@ -255,24 +257,20 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
         }
         // Defer so draft has reseeded from the new recipe.
         queueMicrotask(() => {
-          const steps = draft.steps();
-          let planId = id;
-          if (draft.source() === "custom" && steps.length === 1 && steps[0]?.kind === "flow") {
-            planId = (steps[0] as { flow: string }).flow;
-          }
-          const plannedN = server.actions().find((a) => a.id === planId)?.planned?.length ?? 0;
-          const n = plannedN > 0 ? plannedN : steps.length;
+          const n = draft.steps().length;
           if (n > 0) focusStep(0);
           else setFocusedIndex(null);
         });
       }),
     );
 
-    /** Select a step — also scrubs the matching capture when frames exist. */
+    /**
+     * Select a step (phone + list highlight). Does NOT open the editor —
+     * expand is a separate affordance so users never “lose” the list context.
+     */
     function focusStep(i: number | null): void {
       setFocusedIndex(i);
       if (i == null) return;
-      draft.setExpandedStep(i);
       const n = server.frames().length;
       if (n > 0) {
         server.stopPlayback();
@@ -280,19 +278,11 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
       }
     }
 
-    /** Select a frame — also opens the matching step row when it exists. */
+    /** Select a frame — lights the matching step without forcing the editor open. */
     function focusFrame(i: number): void {
       setFocusedIndex(i);
       server.stopPlayback();
       server.setFrameIndex(i);
-      const stepCount =
-        draft.source() === "builtin"
-          ? // planned rows share index space with annotations
-            Math.max(draft.steps().length, i + 1)
-          : draft.steps().length;
-      if (i >= 0 && i < stepCount) {
-        draft.setExpandedStep(i);
-      }
     }
 
     return {

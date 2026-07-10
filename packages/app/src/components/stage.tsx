@@ -14,11 +14,27 @@ import { useRecorder } from "../context/recorder";
 import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
+import { IconButton } from "@grok-device/ui/icon-button";
 import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
-import { btnBordered, btnGhost, mono, seg, segBtn, segBtnOn, segBtnRec } from "../lib/ui";
+import {
+  btnOnDevice,
+  deviceBody,
+  deviceCaption,
+  deviceIconWell,
+  deviceTitle,
+  btnGhost,
+  mono,
+  phoneBezel,
+  phoneScreen,
+  popover,
+  seg,
+  segBtn,
+  segBtnOn,
+  segBtnRec,
+} from "../lib/ui";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(props: { onExpandBoard?: () => void }) {
@@ -32,16 +48,6 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
   const focusedStep = createMemo(() => {
     const i = wb.focusedIndex();
     if (i == null || i < 0) return null;
-    // Resolve plan from builtin id OR from a forked thin flow wrapper.
-    let planId = server.selectedRecipeId();
-    const steps = draft.steps();
-    if (draft.source() === "custom" && steps.length === 1 && steps[0]?.kind === "flow") {
-      planId = steps[0].flow;
-    }
-    const planned = planId
-      ? server.actions().find((a) => a.id === planId)?.planned?.[i]
-      : undefined;
-    if (planned?.title) return { index: i, title: planned.title };
     const step = draft.steps()[i];
     if (step) return { index: i, title: sentenceForStep(step, server.recipes()) };
     return { index: i, title: `Step ${i + 1}` };
@@ -378,78 +384,68 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
     return [d.name?.trim() || "Device", d.serial, d.kind ?? ""].filter(Boolean).join(" · ");
   }
 
+  /**
+   * Abstract device viewport — thin always-dark frame, no hardware gimmicks.
+   * Never stack workbench light-theme color recipes on the frame.
+   */
+  const phoneShell = cn(phoneBezel, "relative rounded-[24px] p-[6px]");
+
   return (
     <section
-      ref={stageEl}
+      ref={(el) => {
+        stageEl = el;
+      }}
       aria-label="Device stage"
       class={cn(
-        "relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-8",
-        server.isOffline() && "opacity-55",
+        "relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 py-6",
+        server.isOffline() && "opacity-50",
       )}
     >
-      <Show when={server.isOffline()}>
-        <div
-          class="pointer-events-none absolute top-1/2 left-1/2 z-0 -translate-x-1/2 -translate-y-1/2 -rotate-12 font-mono text-[5.5rem] font-bold tracking-wider text-fail/15 select-none"
-          aria-hidden="true"
-        >
-          Offline
-        </div>
-      </Show>
-
       <Show
         when={!server.isEmptyDevices()}
         fallback={
           <div
+            data-device-chrome
             class={cn(
-              "relative z-[2] my-auto flex aspect-[9/19.5] w-[min(320px,46vh)] max-h-[calc(100%-96px)]",
-              "flex-col items-center justify-center gap-3 rounded-[38px] p-3 text-center text-white/90",
-              "bg-[linear-gradient(155deg,#2a2d33_0%,#12141a_45%,#0a0b0e_100%)]",
-              "shadow-[0_32px_64px_-18px_rgb(0_0_0/0.7),0_0_0_1px_rgb(255_255_255/0.07),inset_0_1px_0_rgb(255_255_255/0.12)]",
-              "before:pointer-events-none before:absolute before:top-2.5 before:left-1/2 before:h-1.5 before:w-[72px]",
-              "before:-translate-x-1/2 before:rounded-full before:bg-black before:opacity-85 before:content-['']",
-              focusedStep() && "gap-3.5",
+              phoneShell,
+              "relative z-[2] my-auto flex aspect-[9/19.5] w-[min(272px,40vh)] max-h-[calc(100%-72px)]",
+              "flex-col text-center",
             )}
           >
-            <Show
-              when={focusedStep()}
-              fallback={
-                <>
-                  <Icon name="smartphone" size={24} strokeWidth={1.3} />
-                  <p class="m-0 text-[13px] font-semibold tracking-tight text-white/90">
-                    No device
-                  </p>
-                  <p class="m-0 max-w-[180px] text-[11.5px] leading-snug text-white/45">
-                    USB or Wi‑Fi · then refresh
-                  </p>
-                </>
-              }
-            >
-              {(s) => (
-                <div class="flex max-w-[220px] flex-col items-center gap-1.5 px-5 text-center">
-                  <span
-                    class={cn(
-                      mono,
-                      "text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90",
-                    )}
-                  >
-                    Step {s().index + 1}
-                  </span>
-                  <p class="m-0 text-sm font-semibold leading-snug tracking-tight text-white/[0.94]">
-                    {s().title}
-                  </p>
-                  <p class="m-0 text-[11.5px] leading-snug text-white/45">
-                    Connect a phone to run this step
-                  </p>
-                </div>
+            <div
+              class={cn(
+                phoneScreen,
+                "relative flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-[18px]",
               )}
-            </Show>
-            <div class="flex flex-col items-center gap-2.5">
+            >
+              <Show
+                when={focusedStep()}
+                fallback={
+                  <div class="flex max-w-[200px] flex-col items-center gap-1.5 px-5">
+                    <p class={cn(deviceTitle, "m-0 text-14-medium tracking-tight")}>
+                      No device connected
+                    </p>
+                    <p class={cn(deviceBody, "m-0 text-14-regular")}>
+                      Plug in over USB or join Wi‑Fi, then refresh.
+                    </p>
+                  </div>
+                }
+              >
+                {(s) => (
+                  <div class="flex max-w-[210px] flex-col items-center gap-2 px-5 text-center">
+                    <span class={cn(mono, "text-12-medium", deviceBody)}>Step {s().index + 1}</span>
+                    <p class={cn("m-0 text-14-medium leading-snug tracking-tight", deviceTitle)}>
+                      {s().title}
+                    </p>
+                    <p class={cn("m-0 text-12-regular leading-relaxed", deviceBody)}>
+                      Connect a phone to drive or run this step
+                    </p>
+                  </div>
+                )}
+              </Show>
               <button
                 type="button"
-                class={cn(
-                  btnBordered,
-                  "border-white/15 bg-white/5 text-white/80 hover:enabled:bg-white/12 hover:enabled:text-white",
-                )}
+                class={cn(btnOnDevice, "mt-1")}
                 disabled={server.health() === "offline"}
                 onClick={() =>
                   void (async () => {
@@ -465,30 +461,57 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           </div>
         }
       >
-        {/* device identity chip — floats above the bezel */}
-        <Show when={currentDevice()}>
-          {(d) => (
-            <div
-              class="z-[2] mb-3 inline-flex h-6 flex-none items-center gap-1.5 rounded-full bg-layer-2 px-2.5 text-meta text-text-muted tabular-nums"
-              title={d().serial}
-            >
-              <span class="size-1.5 flex-none rounded-full bg-pass" aria-hidden="true" />
-              {deviceChipText(d())}
-            </div>
-          )}
-        </Show>
+        {/* device identity + live/rec affordances — floats above the bezel */}
+        <div class="z-[2] mb-3 flex flex-none items-center gap-2">
+          <Show when={currentDevice()}>
+            {(d) => (
+              <div
+                class="inline-flex h-6 items-center gap-1.5 rounded-full bg-surface-raised-stronger-non-alpha px-2.5 text-12-medium text-text-base ring-1 ring-inset ring-border-weak-base tabular-nums shadow-sm"
+                data-tip={d().serial}
+              >
+                <span
+                  class={cn(
+                    "size-1.5 flex-none rounded-full",
+                    rec.recording()
+                      ? "animate-pulse bg-icon-critical-base"
+                      : rec.interacting()
+                        ? "bg-icon-success-base shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-success-base)_28%,transparent)]"
+                        : "bg-icon-success-base",
+                  )}
+                  aria-hidden="true"
+                />
+                {deviceChipText(d())}
+              </div>
+            )}
+          </Show>
+          {/* Quiet status tags — soft tint, no uppercase shout */}
+          <Show when={rec.recording()}>
+            <span class="inline-flex h-5 items-center gap-1 rounded-md bg-surface-critical-weak px-1.5 text-12-medium text-icon-critical-base ring-1 ring-inset ring-border-critical-base/30">
+              <span
+                class="size-1 animate-pulse rounded-full bg-icon-critical-base"
+                aria-hidden="true"
+              />
+              Recording
+            </span>
+          </Show>
+          <Show when={rec.interacting() && !rec.recording()}>
+            <span class="inline-flex h-5 items-center gap-1 rounded-md bg-surface-success-weak px-1.5 text-12-medium text-icon-success-base ring-1 ring-inset ring-border-success-base/30">
+              <span class="size-1 rounded-full bg-icon-success-base" aria-hidden="true" />
+              Live
+            </span>
+          </Show>
+        </div>
+
         <div
+          data-device-chrome
           class={cn(
-            "relative z-[2] aspect-[9/19.5] w-[min(320px,46vh)] max-h-[calc(100%-96px)] shrink-0 rounded-[38px] p-3",
-            "bg-[linear-gradient(155deg,#2a2d33_0%,#12141a_45%,#0a0b0e_100%)]",
-            "shadow-[0_32px_64px_-18px_rgb(0_0_0/0.7),0_0_0_1px_rgb(255_255_255/0.07),inset_0_1px_0_rgb(255_255_255/0.12)]",
-            "before:pointer-events-none before:absolute before:top-2.5 before:left-1/2 before:h-1.5 before:w-[72px]",
-            "before:-translate-x-1/2 before:rounded-full before:bg-black before:opacity-85 before:content-['']",
+            phoneShell,
+            "relative z-[2] aspect-[9/19.5] w-[min(272px,40vh)] max-h-[calc(100%-72px)] shrink-0",
           )}
           data-empty={!frame() ? "1" : "0"}
           style={{ "aspect-ratio": frameAspect() }}
         >
-          <div class="relative h-full w-full overflow-hidden rounded-[26px] bg-[#0a0a0c]">
+          <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[18px]")}>
             <Show when={frame()}>
               <img
                 class={cn(
@@ -563,12 +586,12 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 {(h) => (
                   <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
                     <div
-                      class="absolute rounded-[3px] border-[1.4px] border-accent bg-accent/10 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_30%,transparent)]"
+                      class="absolute rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12] shadow-[0_0_0_1px_color-mix(in_srgb,var(--surface-brand-base)_35%,transparent)]"
                       style={h().rect}
                     />
                     <div
                       class={cn(
-                        "absolute z-[5] max-w-[60%] overflow-hidden rounded-control bg-accent px-1.5 py-0.5 font-mono text-meta leading-snug text-ellipsis whitespace-nowrap text-accent-fg",
+                        "absolute z-[5] max-w-[62%] overflow-hidden rounded-md bg-surface-brand-base px-1.5 py-0.5 font-mono text-12-regular leading-snug text-ellipsis whitespace-nowrap text-text-on-brand-base shadow-sm",
                         h().chip.below ? "translate-y-1" : "-translate-y-[calc(100%+4px)]",
                       )}
                       style={{
@@ -584,7 +607,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               <Show when={pickedHighlight()}>
                 {(h) => (
                   <div
-                    class="pointer-events-none absolute rounded-[3px] border-[1.6px] border-accent bg-accent/[0.16] shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-accent)_40%,transparent)]"
+                    class="pointer-events-none absolute z-[5] rounded-[3px] border-[1.6px] border-border-interactive-base bg-surface-brand-base/[0.18] shadow-[0_0_0_1px_color-mix(in_srgb,var(--surface-brand-base)_45%,transparent)]"
                     aria-hidden="true"
                     style={h()}
                   />
@@ -595,34 +618,40 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               <Show when={tapFeedback()}>
                 {(fb) => (
                   <div
-                    class="pointer-events-none absolute z-[6] origin-center rounded-full border-[1.5px] border-accent bg-accent/15 animate-ping"
+                    class="pointer-events-none absolute z-[6] origin-center rounded-full border-[1.5px] border-border-interactive-base bg-surface-brand-base/20 animate-ping"
                     aria-hidden="true"
                     style={{
-                      left: `calc(${fb().x}% - 9px)`,
-                      top: `calc(${fb().y}% - 9px)`,
-                      width: "18px",
-                      height: "18px",
+                      left: `calc(${fb().x}% - 10px)`,
+                      top: `calc(${fb().y}% - 10px)`,
+                      width: "20px",
+                      height: "20px",
                     }}
                   />
                 )}
               </Show>
             </Show>
-            {/* No frame yet: still show which step is selected on the glass */}
+            {/* No frame yet: step-focused glass (Uber energy) */}
             <Show when={!frame() && focusedStep()}>
               {(s) => (
-                <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2 bg-[radial-gradient(ellipse_70%_50%_at_50%_40%,color-mix(in_srgb,var(--c-accent)_14%,transparent),transparent_60%),#0c0d10] p-6 text-center">
+                <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2.5 p-7 text-center">
                   <span
                     class={cn(
                       mono,
-                      "text-[10px] font-bold tracking-[0.1em] text-accent-soft uppercase opacity-90",
+                      "text-12-regular font-bold tracking-[0.1em] uppercase",
+                      deviceBody,
                     )}
                   >
                     Step {s().index + 1}
                   </span>
-                  <p class="m-0 max-w-[12em] text-sm font-semibold leading-snug tracking-tight text-white/[0.94]">
+                  <p
+                    class={cn(
+                      "m-0 max-w-[13em] text-14-medium leading-snug tracking-tight",
+                      deviceTitle,
+                    )}
+                  >
                     {s().title}
                   </p>
-                  <p class="m-0 text-[11.5px] leading-snug text-white/45">
+                  <p class={cn("m-0 text-12-regular leading-relaxed", deviceBody)}>
                     {rec.interacting()
                       ? "Drive the phone or Run the test"
                       : "Run the test to capture this screen"}
@@ -631,23 +660,38 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               )}
             </Show>
             <Show when={!frame() && !focusedStep()}>
-              <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2 bg-[#0c0d10] p-6 text-center">
-                <p class="m-0 text-[11.5px] leading-snug text-white/45">Select a step or Run</p>
+              <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2.5 p-7 text-center">
+                <span class={cn(deviceIconWell, "size-10 rounded-xl")} aria-hidden="true">
+                  <Icon name="play" size={16} strokeWidth={1.5} />
+                </span>
+                <p class={cn("m-0 text-14-medium tracking-tight", deviceTitle)}>
+                  Select a step or Run
+                </p>
+                <p class={cn("m-0 max-w-[12em] text-12-regular leading-relaxed", deviceBody)}>
+                  Captures land here as you drive the journey
+                </p>
               </div>
             </Show>
             {/* Selected step chip over live frame */}
             <Show when={frame() && focusedStep()}>
               {(s) => (
-                <div class="pointer-events-none absolute right-2.5 bottom-3 left-2.5 z-[4] flex items-center gap-2 rounded-[10px] bg-black/70 px-2.5 py-2 text-xs font-medium leading-snug text-white backdrop-blur-[10px]">
+                <div
+                  class={cn(
+                    "pointer-events-none absolute right-2.5 bottom-2.5 left-2.5 z-[4]",
+                    "flex items-center gap-2 rounded-[12px] px-2.5 py-2 backdrop-blur-md",
+                    "bg-[color-mix(in_srgb,var(--phone-bezel)_88%,transparent)]",
+                    "text-12-medium leading-snug",
+                    deviceTitle,
+                    "shadow-[0_10px_28px_color-mix(in_srgb,var(--phone-screen)_70%,transparent)]",
+                    "ring-1 ring-[color-mix(in_srgb,var(--phone-fg)_14%,transparent)]",
+                  )}
+                >
                   <span
-                    class={cn(
-                      mono,
-                      "grid size-[18px] flex-none place-items-center rounded-[5px] bg-accent/40 text-[10px] font-bold",
-                    )}
+                    class={cn(mono, deviceIconWell, "size-5 shrink-0 rounded-md text-12-medium")}
                   >
                     {s().index + 1}
                   </span>
-                  {s().title}
+                  <span class={cn(deviceTitle, "min-w-0 truncate")}>{s().title}</span>
                 </div>
               )}
             </Show>
@@ -656,13 +700,19 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
 
         <Show when={picker() && rec.interacting() && (pickerNode() || rec.recording())}>
           <div
-            class="absolute z-10 mt-[-10px] min-w-[168px] -translate-y-full rounded-card bg-layer-2 p-1.5 shadow-lg"
+            class={cn(
+              popover,
+              "absolute z-50 mt-[-8px] min-w-[196px] max-w-[260px] origin-bottom -translate-y-full",
+              "bg-surface-raised-stronger-non-alpha p-1.5 shadow-xl ring-1 ring-border-weak-base",
+            )}
             style={{ left: `${picker()!.vx}px`, top: `${picker()!.vy}px` }}
           >
-            <div class="mb-1 flex max-w-[220px] flex-col gap-px border-b border-border px-2 pt-1 pb-1.5">
-              <span class="truncate text-body font-semibold text-text">{nodeLabel()}</span>
+            <div class="mb-1 flex max-w-[240px] flex-col gap-0.5 border-b border-border-weak-base px-2 pt-1 pb-1.5">
+              <span class="truncate text-12-medium text-text-strong">{nodeLabel()}</span>
               <Show when={metaLine()}>
-                <span class={cn(mono, "truncate text-meta text-text-faint")}>{metaLine()}</span>
+                <span class={cn(mono, "truncate text-12-regular text-text-weak")}>
+                  {metaLine()}
+                </span>
               </Show>
             </div>
             <Show when={ancestry().length > 1}>
@@ -676,10 +726,11 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                     <button
                       type="button"
                       class={cn(
-                        "max-w-[120px] cursor-pointer truncate rounded-full border-0 bg-transparent px-1.5 py-0.5 text-meta text-text-faint transition-colors hover:bg-hover hover:text-text",
-                        i() === picker()!.index && "bg-accent/15 font-semibold text-accent-soft",
+                        "max-w-[120px] cursor-pointer truncate rounded-full border-0 bg-transparent px-1.5 py-0.5 text-12-regular text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong",
+                        i() === picker()!.index &&
+                          "bg-surface-base-active font-medium text-text-strong",
                       )}
-                      title={shortLabel(n) || n.role || "node"}
+                      data-tip={shortLabel(n) || n.role || "node"}
                       onClick={() => retarget(i())}
                     >
                       {shortLabel(n) || n.role || "node"}
@@ -689,15 +740,16 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               </div>
             </Show>
             <div
-              class="mx-0.5 mb-1 flex gap-0.5 rounded-control bg-layer-1 p-0.5"
+              class="mx-0.5 mb-1 flex gap-0.5 rounded-md bg-surface-base p-0.5 ring-1 ring-inset ring-border-weak-base"
               role="group"
               aria-label="Picker mode"
             >
               <button
                 type="button"
                 class={cn(
-                  "flex-1 cursor-pointer rounded-[calc(var(--radius-control)-2px)] border-0 bg-transparent px-1.5 py-0.5 text-meta font-medium text-text-faint transition-colors hover:text-text",
-                  pickMode() === "tap" && "bg-layer-3 text-text shadow-sm",
+                  "flex-1 cursor-pointer rounded-[5px] border-0 bg-transparent px-1.5 py-0.5 text-12-medium text-text-weak transition-colors hover:text-text-strong",
+                  pickMode() === "tap" &&
+                    "bg-surface-raised-stronger-non-alpha text-text-strong shadow-sm ring-1 ring-border-weak-base/60",
                 )}
                 onClick={() => setPickMode("tap")}
               >
@@ -706,8 +758,9 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               <button
                 type="button"
                 class={cn(
-                  "flex-1 cursor-pointer rounded-[calc(var(--radius-control)-2px)] border-0 bg-transparent px-1.5 py-0.5 text-meta font-medium text-text-faint transition-colors hover:text-text",
-                  pickMode() === "select" && "bg-layer-3 text-text shadow-sm",
+                  "flex-1 cursor-pointer rounded-[5px] border-0 bg-transparent px-1.5 py-0.5 text-12-medium text-text-weak transition-colors hover:text-text-strong",
+                  pickMode() === "select" &&
+                    "bg-surface-raised-stronger-non-alpha text-text-strong shadow-sm ring-1 ring-border-weak-base/60",
                 )}
                 onClick={() => setPickMode("select")}
               >
@@ -719,7 +772,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 {(s) => (
                   <button
                     type="button"
-                    class="cursor-pointer rounded-control px-2 py-1.5 text-left font-mono text-body text-accent-soft transition-colors hover:bg-hover hover:text-text"
+                    class="cursor-pointer rounded-md px-2 py-1.5 text-left font-mono text-12-regular text-text-strong transition-colors hover:bg-surface-raised-base-hover"
                     onClick={() => void pick(s)}
                   >
                     {s.describe}
@@ -728,7 +781,9 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               </For>
             </div>
             <Show when={ancestry().length > 1}>
-              <div class={cn(mono, "px-2 pt-1.5 pb-0.5 text-center text-meta text-text-faint")}>
+              <div
+                class={cn(mono, "px-2 pt-1.5 pb-0.5 text-center text-12-regular text-text-weak")}
+              >
                 ↑ parent · ↓ child · esc to close
               </div>
             </Show>
@@ -736,83 +791,128 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         </Show>
 
         <Show when={frame()?.caption}>
-          <div class={cn(mono, "z-[2] mt-3 text-center text-meta text-text-faint")}>
+          <div
+            class={cn(
+              mono,
+              "z-[2] mt-2.5 max-w-[280px] truncate text-center text-12-regular text-text-weak",
+            )}
+          >
             {frame()!.caption}
           </div>
         </Show>
       </Show>
 
-      {/* Filmstrip — Figma-style timeline under the artboard (not a peer mode). */}
+      {/* Dense evidence filmstrip under the phone */}
       <Show when={server.frames().length > 0}>
-        <div class="z-[2] mt-3 flex w-full max-w-[560px] items-center gap-2.5 rounded-card border border-border bg-layer-1 px-2.5 py-2">
-          <button
-            type="button"
-            class={cn(
-              btnGhost,
-              "size-7 flex-none place-items-center rounded-md bg-layer-3 p-0 text-text hover:scale-105",
-            )}
-            aria-label={server.playing() ? "Pause playback" : "Replay frames"}
-            onClick={() => server.togglePlayback()}
-          >
-            <Icon name={server.playing() ? "pause" : "play"} size={14} />
-          </button>
-          <div
-            class="flex h-[22px] flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            role="group"
-            aria-label="Capture timeline"
-          >
-            <For each={server.frames()}>
-              {(f, i) => {
-                const prev = () => server.frames()[i() - 1];
-                const gap = () =>
-                  i() > 0 && prev()?.jobId !== f.jobId && (f.jobId || prev()?.jobId);
-                return (
-                  <>
-                    <Show when={gap()}>
-                      <span class="h-full w-0.5 flex-none bg-transparent" />
+        <div class="z-[2] mt-3.5 w-full max-w-[min(340px,92%)]">
+          <div class="flex flex-col gap-2 rounded-2xl bg-surface-raised-stronger-non-alpha px-2 py-2 text-text-strong shadow-sm ring-1 ring-inset ring-border-weak-base">
+            {/* Thumbnail filmstrip — denser row, selected is unmistakable */}
+            <div
+              class="flex gap-1 overflow-x-auto px-0.5 py-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              role="listbox"
+              aria-label="Frame filmstrip"
+            >
+              <For each={server.frames()}>
+                {(f, i) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={i() === server.frameIndex()}
+                    aria-label={`frame ${i() + 1}: ${f.caption ?? "capture"}`}
+                    data-tip={f.caption || `Frame ${i() + 1}`}
+                    class={cn(
+                      "relative h-[46px] w-[26px] shrink-0 overflow-hidden rounded-[5px]",
+                      "bg-surface-weak ring-1 ring-border-weak-base transition-[box-shadow,ring-color,transform] duration-150",
+                      "hover:ring-border-strong-base",
+                      i() === server.frameIndex()
+                        ? "scale-[1.04] ring-2 ring-border-interactive-base shadow-[0_0_0_1px_color-mix(in_srgb,var(--surface-brand-base)_40%,transparent)]"
+                        : "opacity-80 hover:opacity-100",
+                    )}
+                    onClick={() => wb.focusFrame(i())}
+                  >
+                    <img
+                      class="h-full w-full object-cover object-top"
+                      alt=""
+                      draggable={false}
+                      src={`data:${f.mime};base64,${f.base64}`}
+                    />
+                    <Show when={i() === server.frameIndex()}>
+                      <span
+                        class="absolute inset-x-0 bottom-0 h-0.5 bg-surface-brand-base"
+                        aria-hidden="true"
+                      />
                     </Show>
+                  </button>
+                )}
+              </For>
+            </div>
+            <div class="flex items-center gap-2 px-0.5">
+              <button
+                type="button"
+                class={cn(
+                  "grid size-6 shrink-0 place-items-center rounded-md bg-button-primary-base text-icon-invert-base",
+                  "transition-transform ",
+                )}
+                data-tip={server.playing() ? "Pause" : "Replay"}
+                aria-label={server.playing() ? "Pause playback" : "Replay frames"}
+                onClick={() => server.togglePlayback()}
+              >
+                <Icon name={server.playing() ? "pause" : "play"} size={13} />
+              </button>
+              <div
+                class="relative flex h-1.5 flex-1 items-center gap-px overflow-hidden rounded-full bg-surface-weak"
+                role="group"
+                aria-label="Capture timeline"
+              >
+                <For each={server.frames()}>
+                  {(f, i) => (
                     <button
                       type="button"
                       class={cn(
-                        "h-full min-w-1 flex-1 cursor-pointer rounded-[3px] border-0 bg-layer-3 transition hover:scale-y-110 hover:bg-text-muted",
-                        i() < server.frameIndex() && "bg-text-faint",
-                        i() === server.frameIndex() && "bg-accent",
+                        "h-full min-w-[2px] flex-1 border-0 transition-colors",
+                        i() < server.frameIndex() && "bg-surface-brand-base/50",
+                        i() === server.frameIndex() && "bg-surface-brand-base",
+                        i() > server.frameIndex() && "bg-transparent hover:bg-text-weaker/35",
                       )}
-                      title={f.caption}
+                      data-tip={f.caption || `Frame ${i() + 1}`}
                       aria-label={`frame ${i() + 1}: ${f.caption}`}
+                      aria-current={i() === server.frameIndex() ? "true" : undefined}
                       onClick={() => wb.focusFrame(i())}
                     />
-                  </>
-                );
-              }}
-            </For>
+                  )}
+                </For>
+              </div>
+              <span class={cn(mono, "shrink-0 text-12-regular tabular-nums text-text-weak")}>
+                {server.frameIndex() + 1}
+                <span class="text-text-weaker/45">/</span>
+                {server.frames().length}
+              </span>
+              <Show when={props.onExpandBoard}>
+                <button
+                  type="button"
+                  class={cn(btnGhost, "h-7 gap-1 px-2")}
+                  data-tip="Map of captures"
+                  aria-label="Expand frame board"
+                  onClick={() => props.onExpandBoard?.()}
+                >
+                  <Icon name="grid" size={12} />
+                  Map
+                </button>
+              </Show>
+            </div>
           </div>
-          <span class={cn(mono, "flex-none pr-0.5 text-meta text-text-faint")}>
-            {server.frameIndex() + 1}/{server.frames().length}
-          </span>
-          <Show when={props.onExpandBoard}>
-            <button
-              type="button"
-              class={cn(btnGhost, "ml-1 h-7 gap-1 text-xs font-medium text-text-muted")}
-              data-tip="Expand board"
-              aria-label="Expand frame board"
-              onClick={() => props.onExpandBoard?.()}
-            >
-              <Icon name="grid" size={14} />
-              Board
-            </button>
-          </Show>
         </div>
       </Show>
 
-      {/* Mode controls only exist when a device can act — never greyed theatre. */}
+      {/* Mode toolbar — only when a device can act; never greyed theatre */}
       <Show when={server.health() === "online" && !server.isEmptyDevices()}>
-        <div class="z-[2] mt-4 flex items-center justify-center gap-1">
+        <div class="z-[2] mt-3.5 flex items-center justify-center gap-1.5">
           <div class={seg} role="group" aria-label="Stage mode">
             <button
               type="button"
               class={cn(segBtn, !rec.interacting() && segBtnOn)}
               aria-pressed={!rec.interacting()}
+              data-tip="Watch only"
               onClick={() => setStageMode("view")}
             >
               View
@@ -821,6 +921,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               type="button"
               class={cn(segBtn, rec.interacting() && !rec.recording() && segBtnOn)}
               aria-pressed={rec.interacting() && !rec.recording()}
+              data-tip="Live drive"
               onClick={() => setStageMode("drive")}
             >
               Drive
@@ -833,38 +934,51 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 rec.interacting() && rec.recording() && segBtnRec,
               )}
               aria-pressed={rec.interacting() && rec.recording()}
+              data-tip="Record steps"
               onClick={() => setStageMode("record")}
             >
-              <span class="mr-1 inline-block size-1.5 rounded-full bg-current" aria-hidden="true" />
+              <span
+                class={cn(
+                  "mr-1 inline-block size-1.5 rounded-full",
+                  rec.interacting() && rec.recording()
+                    ? "animate-pulse bg-icon-critical-base"
+                    : "bg-current",
+                )}
+                aria-hidden="true"
+              />
               Record
             </button>
           </div>
-          <button
-            type="button"
-            class={cn(btnGhost, "h-[30px] flex-none px-1.5")}
-            data-tip="Screenshot (⌘⇧S)"
-            aria-label="Capture screenshot"
-            disabled={server.busyCapture()}
-            onClick={() => void server.captureUiScreenshot()}
-          >
-            <Show when={server.busyCapture()} fallback={<Icon name="camera" size={15} />}>
-              <span
-                class="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                aria-hidden="true"
-              />
-            </Show>
-          </button>
-          <Show when={server.frames().length > 0}>
-            <button
-              type="button"
-              class={cn(btnGhost, "h-[30px] flex-none px-1.5")}
-              data-tip="Clear frames"
-              aria-label="Clear frames"
-              onClick={() => server.clearFrames()}
+          <div class="flex items-center gap-0.5 pl-0.5">
+            <IconButton
+              variant="ghost"
+              size="normal"
+              class="rounded-md"
+              data-tip="Screenshot (⌘⇧S)"
+              aria-label="Capture screenshot"
+              disabled={server.busyCapture()}
+              onClick={() => void server.captureUiScreenshot()}
             >
-              <Icon name="trash" size={15} />
-            </button>
-          </Show>
+              <Show when={server.busyCapture()} fallback={<Icon name="camera" size={14} />}>
+                <span
+                  class="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                  aria-hidden="true"
+                />
+              </Show>
+            </IconButton>
+            <Show when={server.frames().length > 0}>
+              <IconButton
+                variant="ghost"
+                size="normal"
+                class="rounded-md hover:text-icon-critical-base"
+                data-tip="Clear frames"
+                aria-label="Clear frames"
+                onClick={() => server.clearFrames()}
+              >
+                <Icon name="trash" size={14} />
+              </IconButton>
+            </Show>
+          </div>
         </div>
       </Show>
       <RecorderBar />
@@ -890,38 +1004,40 @@ function RecorderBar() {
     <Show when={rec.interacting()}>
       <div
         class={cn(
-          "z-[3] mt-3.5 flex w-[min(420px,100%)] flex-col rounded-card bg-layer-1 px-2.5 py-1.5",
-          rec.recording() ? "shadow-sm" : "opacity-90",
+          "z-[3] mt-3 flex w-[min(360px,100%)] flex-col rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 py-1.5 text-text-strong",
+          rec.recording() ? "shadow-sm ring-1 ring-icon-critical-base/15" : "",
         )}
       >
-        <div class="flex min-h-[22px] items-center gap-2 px-0.5">
+        <div class="flex min-h-[24px] items-center gap-2 px-0.5">
           <span
             class={cn(
-              "size-2 flex-none rounded-full",
-              rec.recording() ? "animate-pulse bg-fail" : "bg-text-faint",
+              "size-1.5 flex-none rounded-full",
+              rec.recording()
+                ? "animate-pulse bg-icon-critical-base shadow-[0_0_0_3px_color-mix(in_srgb,var(--icon-critical-base)_22%,transparent)]"
+                : "bg-icon-success-base",
             )}
             aria-hidden="true"
           />
           <span
             class={cn(
-              "flex-1 truncate text-meta",
-              rec.recording() ? "font-semibold text-text" : "text-text-faint",
+              "flex-1 truncate text-12-regular",
+              rec.recording() ? "font-medium text-text-strong" : "text-text-weak",
             )}
           >
             <Show
               when={rec.recording()}
-              fallback="Drive mode — your input goes to the device · right-click to inspect"
+              fallback="Drive · input goes to device · right-click inspect"
             >
               Recording → {recordingTitle()}
             </Show>
           </span>
           <Show when={rec.typeBuffer()}>
             <span
-              class={cn(mono, "max-w-[45%] flex-none truncate text-meta text-text")}
-              title="Typing to device…"
+              class={cn(mono, "max-w-[45%] flex-none truncate text-12-regular text-text-strong")}
+              data-tip="Typing to device…"
             >
               “{rec.typeBuffer()}
-              <span class="animate-pulse text-text" aria-hidden="true">
+              <span class="animate-pulse text-text-strong" aria-hidden="true">
                 ▍
               </span>
               ”
@@ -930,7 +1046,13 @@ function RecorderBar() {
           <Show when={rec.recording()}>
             <button
               type="button"
-              class={cn(btnGhost, "h-[22px] flex-none px-2 text-meta text-fail")}
+              class={cn(
+                "inline-flex h-[22px] flex-none items-center justify-center gap-1 rounded-md px-2",
+                "text-12-medium text-icon-critical-base select-none",
+                "transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]",
+                "hover:enabled:bg-surface-critical-weak",
+              )}
+              data-tip="Stop recording"
               onClick={() => rec.setRecording(false)}
             >
               <Icon name="square" size={12} />

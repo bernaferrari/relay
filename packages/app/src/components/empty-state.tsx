@@ -1,97 +1,104 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
-import { Icon, type IconName } from "./icon";
+import { Button } from "@grok-device/ui/button";
 import { cn } from "../lib/cn";
-import { btnGhost, btnAcc, mono } from "../lib/ui";
+import { mono } from "../lib/ui";
 
 export type EmptyStateProps = {
   title: string;
   description?: string;
   /** Optional mono command / path line under description */
   code?: string;
+  /** Icons dropped for chrome empties — AB quiet type-first hierarchy */
   icon?: "server" | "device" | "frame" | "run" | "artifact" | "info";
   actionLabel?: string;
   onAction?: () => void;
   secondaryLabel?: string;
   onSecondary?: () => void;
-  /** compact = list/panel; full = stage/gate */
+  /** compact = list/panel; full = stage/gate; start = document left-aligned (default for panels) */
   size?: "sm" | "md" | "lg";
+  /** left-aligned document empty (run-panel pattern) vs centered */
+  align?: "start" | "center";
   class?: string;
   children?: JSX.Element;
 };
 
-function EmptyIcon(props: {
-  kind: NonNullable<EmptyStateProps["icon"]>;
-  size: "sm" | "md" | "lg";
-}) {
-  const name = (): IconName => {
-    switch (props.kind) {
-      case "server":
-        return "server";
-      case "device":
-        return "smartphone";
-      case "frame":
-        return "camera";
-      case "run":
-        return "command";
-      case "artifact":
-        return "folder";
-      default:
-        return "info";
-    }
-  };
-  return (
-    <span
-      class={cn(
-        "mb-0.5 grid place-items-center rounded-[10px] border border-accent/20 bg-accent/10 text-accent-soft",
-        props.size === "sm" ? "size-[38px]" : "size-9",
-      )}
-      aria-hidden="true"
-    >
-      <Icon name={name()} size={22} strokeWidth={1.5} />
-    </span>
-  );
-}
-
-/** Calm empty / zero-state used across stage, panel, and pickers. */
+/**
+ * Single empty language: 14-medium title · 14-regular body · one primary CTA.
+ * Matches AgentBoard list/panel empties (no brand wells, no marketing hero).
+ */
 export function EmptyState(props: EmptyStateProps) {
   const size = () => props.size ?? "md";
+  const align = () => props.align ?? "center";
   return (
     <div
       class={cn(
-        "flex flex-col items-center gap-1 text-center",
-        size() === "sm" ? "px-3 py-6" : "px-4 py-[18px]",
+        "flex flex-col",
+        align() === "start" ? "items-start text-left" : "items-center text-center",
+        size() === "sm"
+          ? "gap-1.5 px-3 py-5"
+          : size() === "lg"
+            ? "gap-2 px-6 py-10"
+            : "gap-1.5 px-4 py-8",
         props.class,
       )}
       role="status"
     >
-      <Show when={props.icon}>
-        <EmptyIcon kind={props.icon!} size={size()} />
-      </Show>
-      <div class="flex flex-col items-center gap-0.5">
-        <p class="m-0 text-title font-semibold text-text">{props.title}</p>
+      <div
+        class={cn("flex flex-col", align() === "start" ? "items-start" : "items-center", "gap-1")}
+      >
+        <p
+          class={cn(
+            "m-0 tracking-tight text-text-strong",
+            size() === "sm"
+              ? "text-12-medium"
+              : size() === "lg"
+                ? "text-16-medium"
+                : "text-14-medium",
+          )}
+        >
+          {props.title}
+        </p>
         <Show when={props.description}>
-          <p class="m-0 max-w-[300px] text-meta leading-[1.55] text-text-faint">
+          <p
+            class={cn(
+              "m-0 text-text-base",
+              size() === "sm" ? "max-w-[260px] text-12-regular" : "max-w-[300px] text-14-regular",
+            )}
+          >
             {props.description}
           </p>
         </Show>
         <Show when={props.code}>
           <code
-            class={cn(mono, "mt-2 rounded-md bg-layer-2 px-2 py-0.5 text-meta text-accent-soft")}
+            class={cn(
+              mono,
+              "mt-2 rounded-md bg-surface-base px-2.5 py-1 text-12-regular text-text-strong shadow-xs-border-base",
+            )}
           >
             {props.code}
           </code>
         </Show>
       </div>
       <Show when={props.actionLabel || props.secondaryLabel || props.children}>
-        <div class="mt-3 flex gap-2">
+        <div
+          class={cn(
+            "flex items-center gap-2",
+            align() === "start" ? "justify-start" : "justify-center",
+            size() === "sm" ? "mt-2.5" : "mt-3.5",
+          )}
+        >
           <Show when={props.actionLabel && props.onAction}>
-            <button type="button" class={btnAcc} onClick={() => props.onAction?.()}>
+            <Button variant="primary" size="normal" onClick={() => props.onAction?.()}>
               {props.actionLabel}
-            </button>
+            </Button>
           </Show>
           <Show when={props.secondaryLabel && props.onSecondary}>
-            <button type="button" class={btnGhost} onClick={() => props.onSecondary?.()}>
+            <button
+              type="button"
+              class="h-7 px-2 text-12-medium text-text-base transition-colors hover:text-text-strong"
+              onClick={() => props.onSecondary?.()}
+            >
               {props.secondaryLabel}
             </button>
           </Show>

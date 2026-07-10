@@ -6,8 +6,7 @@ import {
   type PlatformStorage,
   type ThemeAppliedDetail,
 } from "@grok-device/app";
-import "@grok-device/ui/styles";
-/* App product CSS (workspace, panel, stage). Also imported from app root. */
+/* App CSS pulls AgentBoard-shaped @grok-device/ui/styles/tailwind + v2 */
 import "@grok-device/app/index.css";
 import "./styles.css";
 

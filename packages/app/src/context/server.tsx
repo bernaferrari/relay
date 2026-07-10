@@ -534,10 +534,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const title = recipes().find((r) => r.id === id)?.title ?? id;
         if (willQueue) {
           toast(`Queued ${title} — position ${queuedBefore + 1}`, "info");
-          void platform.notify?.("Specimen", `Queued ${title} — position ${queuedBefore + 1}`);
+          void platform.notify?.("Stage", `Queued ${title} — position ${queuedBefore + 1}`);
         } else {
           toast(`Running ${title}`, "success");
-          void platform.notify?.("Specimen", `Running ${title}`);
+          void platform.notify?.("Stage", `Running ${title}`);
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

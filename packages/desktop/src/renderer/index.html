@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="en" style="background-color: #050507">
+<html
+  lang="en"
+  style="background-color: var(--v2-background-bg-deep, var(--background-base, #fafafa))"
+>
   <head>
     <meta charset="utf-8" />
     <meta
@@ -7,14 +10,15 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; font-src 'self' data:"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#050507" />
-    <title>Specimen</title>
-    <!-- Theme flash prevention — sourced from @grok-device/ui/theme/preload -->
+    <meta name="theme-color" content="#fafafa" />
+    <title>Stage</title>
     <script src="./theme-preload.js"></script>
   </head>
-  <body class="antialiased overscroll-none">
-    <noscript>You need to enable JavaScript to run Specimen.</noscript>
-    <div id="root"></div>
+  <body
+    class="text-12-regular antialiased overscroll-none overflow-hidden bg-v2-background-bg-deep text-text-strong"
+  >
+    <noscript>You need to enable JavaScript to run Stage.</noscript>
+    <div id="root" class="flex h-dvh flex-col bg-v2-background-bg-deep text-text-strong"></div>
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>

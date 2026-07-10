@@ -1,7 +1,8 @@
 // @refresh reload
 /**
- * ThemeProvider — ported from OpenCode (`@opencode-ai/ui` theme/context.tsx).
- * Uses full resolve + v2/resolve token pipelines. Storage keys namespaced for grok-device.
+ * ThemeProvider — ported from AgentBoard / OpenCode (`@opencode-ai/ui` theme/context.tsx).
+ * Injects OpenCode v1 + v2 tokens on :root (same as AgentBoard applyThemeCss).
+ * Storage keys namespaced for grok-device.
  */
 
 import { createEffect, onMount } from "solid-js";
@@ -153,14 +154,6 @@ export type ThemeAppliedDetail = {
   theme: DesktopTheme;
 };
 
-function backgroundFromTokens(cssBlock: string, isDark: boolean): string {
-  const m = cssBlock.match(/--background-base:\s*([^;]+);/);
-  if (m?.[1]) {
-    const v = m[1].trim();
-    if (v.startsWith("#")) return v;
-  }
-  return isDark ? "#080808" : "#fafafa";
-}
 function isDarkOnlyTheme(theme: DesktopTheme): boolean {
   // A theme is "dark-only" when its `light` variant carries a dark palette
   // (ink lighter than neutral) — e.g. Catppuccin Frappe/Macchiato, whose JSON
@@ -192,14 +185,16 @@ function applyThemeCss(
   const variant = isDark ? theme.dark : theme.light;
   const tokens = resolveThemeVariant(variant, isDark);
   const css = themeToCss(tokens);
+  // AgentBoard applyThemeCss: inject v1 + v2 on :root.
+  // Components use v1 class names (text-text-strong, bg-background-base);
+  // v2 fills shell tokens (bg-v2-background-bg-deep).
   const v2 = themeV2ToCss(resolveThemeVariantV2(variant, isDark));
 
-  // Cache non-default themes for FOUC preload (OpenCode skips oc-2)
+  // Cache non-default themes for FOUC preload (AgentBoard skips oc-2)
   if (themeId !== "oc-2") {
     write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, `${css}\n  ${v2}`);
   }
 
-  // Pure OpenCode injection — no product alias layer
   const fullCss = `:root {
   color-scheme: ${mode};
   --text-mix-blend-mode: ${isDark ? "plus-lighter" : "multiply"};
@@ -213,9 +208,9 @@ function applyThemeCss(
   document.documentElement.dataset.theme = themeId;
   document.documentElement.dataset.colorScheme = mode;
 
-  const background = backgroundFromTokens(css, isDark);
+  // AgentBoard applyThemeCss: hard FOUC plate (theme tokens live in :root CSS)
+  const background = isDark ? "#080808" : "#fafafa";
   document.documentElement.style.backgroundColor = background;
-  if (document.body) document.body.style.backgroundColor = background;
 
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", background);

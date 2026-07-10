@@ -9,6 +9,7 @@ import {
   type Accessor,
   type JSX,
 } from "solid-js";
+import { Portal } from "solid-js/web";
 import { useServer, type RecipeStep, type StepTarget } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useWorkbench, type RowAnno } from "../context/workbench";
@@ -25,33 +26,73 @@ import {
 } from "../lib/step-target";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
-import { btnGhost, mono, seg, segBtnOn, segBtn } from "../lib/ui";
+import { IconButton } from "@grok-device/ui/icon-button";
+import {
+  btnBar,
+  fieldInput,
+  fieldLabel,
+  listRow,
+  listRowActive,
+  listRowExpanded,
+  mono,
+  popover,
+  propRow,
+  seg,
+  segBtn,
+  segBtnOn,
+  stepIndex,
+  stepIndexOn,
+} from "../lib/ui";
+
+/**
+ * Kind hue lives in a solid dot (can be bright). The word itself is always ink
+ * (`text-text-strong`) so light-theme selection grays never wash out "Tap" to baby-blue.
+ */
+function kindDotClass(kind: string): string {
+  switch (kind) {
+    case "tap":
+    case "type":
+    case "key":
+    case "scroll":
+    case "swipe":
+      return "bg-surface-brand-base";
+    case "expect":
+    case "wait-for":
+      return "bg-icon-success-base";
+    case "sleep":
+    case "pause":
+      return "bg-icon-warning-base";
+    case "screenshot":
+      return "bg-icon-info-base";
+    case "flow":
+      return "bg-[color-mix(in_srgb,var(--surface-brand-base)_55%,var(--text-strong)_45%)]";
+    default:
+      return "bg-text-weak";
+  }
+}
 
 type AddOption = { label: string; make: () => RecipeStep };
 type AddGroup = { label: string; items: AddOption[] };
 
-/** Shared field chrome for expanded step editors — dark instrument. */
-const valueCls = cn(
-  "h-8 min-w-[140px] flex-1 rounded-md border border-white/10 bg-black/35 px-2.5",
-  "text-body text-white/90 transition-[border-color] placeholder:text-white/25",
-  "focus:border-accent/50 focus:outline-none",
-);
-const valueTimeoutCls = cn(valueCls, "w-[72px] min-w-0 flex-none");
-const iconBtnCls = cn(
-  "grid size-7 shrink-0 place-items-center rounded-md text-white/35 transition-[background,color,transform]",
-  "hover:enabled:bg-white/[0.08] hover:enabled:text-white/90",
-  "active:enabled:scale-[0.94] disabled:cursor-default disabled:opacity-30",
-);
-const stepICls =
-  "font-mono w-5 shrink-0 text-center text-[11px] font-semibold tabular-nums text-white/30";
-const kindCls = "block text-[10px] font-bold uppercase tracking-[0.08em] text-white/30";
+const valueCls = cn(fieldInput, "min-w-0 flex-1");
+const valueTimeoutCls = cn(fieldInput, "w-[52px] min-w-0 flex-none text-center tabular-nums");
+/** Portal add-menu row — AB list hover wash */
 const menuItemCls = cn(
-  "block w-full rounded-md px-3 py-2 text-left text-body font-medium text-white/85",
-  "transition-colors hover:bg-white/[0.06] active:scale-[0.99]",
+  "block w-full rounded-md px-2.5 py-[7px] text-left text-12-medium text-text-strong",
+  "transition-colors duration-100 ease-out",
+  "hover:bg-surface-raised-base-hover",
 );
 const moreItemCls = cn(
-  "block w-full rounded-md px-2.5 py-[7px] text-left text-body text-white/80",
-  "transition-colors hover:enabled:bg-white/[0.06] disabled:cursor-default disabled:opacity-40",
+  "block w-full rounded-md px-2.5 py-[7px] text-left text-12-medium text-text-strong",
+  "transition-colors duration-100 ease-out",
+  "hover:enabled:bg-surface-raised-base-hover disabled:cursor-default disabled:opacity-40",
+);
+const menuSectionCls =
+  "px-2.5 pt-1.5 pb-1 text-12-medium tracking-[0.06em] text-text-weak uppercase";
+/** Figma properties sheet under the selected layer */
+const editorPanel = cn(
+  "flex flex-col gap-2.5 border-t border-border-weak-base",
+  "bg-background-base px-3.5 py-3 pl-3.5",
 );
 
 /** Short kind chip — Uber-style “Instruction / Manual” density. */
@@ -128,8 +169,7 @@ function isTargetKind(
   return step.kind === "tap" || step.kind === "wait-for" || step.kind === "expect";
 }
 
-/** Manual target editor: segmented strategy selector + one input for the
- *  chosen field's value. Shared by tap / wait-for / expect rows. */
+/** Target strategy + value — Figma property rows, not free-floating form soup. */
 function ManualTarget(props: {
   target: Accessor<StepTarget>;
   strategy: Accessor<Strategy>;
@@ -139,30 +179,30 @@ function ManualTarget(props: {
   onAutofocused?: () => void;
 }): JSX.Element {
   const strat = () => STRATEGIES.find((x) => x.id === props.strategy());
-  let inputRef: HTMLInputElement | undefined;
-  // createEffect (not onMount): runs after this subtree is in the DOM AND
-  // re-runs when the wants-focus flag flips, so it works whether the flag was
-  // set before or after the input mounted (the old onMount raced the flag).
+  let inputEl: HTMLInputElement | undefined;
   createEffect(() => {
     if (props.autofocus?.()) {
-      inputRef?.focus();
+      inputEl?.focus();
       props.onAutofocused?.();
     }
   });
   return (
-    <>
-      <div class={seg} role="group" aria-label="Target strategy">
-        <For each={STRATEGIES}>
-          {(st) => (
-            <button
-              type="button"
-              class={cn(segBtn, props.strategy() === st.id && segBtnOn)}
-              onClick={() => props.onStrategy(st.id)}
-            >
-              {st.label}
-            </button>
-          )}
-        </For>
+    <div class="flex flex-col gap-2">
+      <div class={propRow}>
+        <span class={fieldLabel}>Target</span>
+        <div class={cn(seg, "w-fit max-w-full")} role="group" aria-label="Target strategy">
+          <For each={STRATEGIES}>
+            {(st) => (
+              <button
+                type="button"
+                class={props.strategy() === st.id ? segBtnOn : segBtn}
+                onClick={() => props.onStrategy(st.id)}
+              >
+                {st.label}
+              </button>
+            )}
+          </For>
+        </div>
       </div>
       <Show when={strat()}>
         {(st) => {
@@ -182,28 +222,70 @@ function ManualTarget(props: {
             else props.onPatch({ point: parsePoint(v) });
           };
           return (
-            <input
-              ref={inputRef}
-              class={cn(valueCls, mono)}
-              type="text"
-              placeholder={st().placeholder}
-              value={value()}
-              onInput={(e) => onInput(e.currentTarget.value)}
-              spellcheck={false}
-            />
+            <div class={propRow}>
+              <span class={fieldLabel}>Value</span>
+              <input
+                ref={(el) => {
+                  inputEl = el;
+                }}
+                class={cn(valueCls, mono)}
+                type="text"
+                placeholder={st().placeholder}
+                value={value()}
+                onInput={(e) => onInput(e.currentTarget.value)}
+                spellcheck={false}
+              />
+            </div>
           );
         }}
       </Show>
-    </>
+    </div>
   );
 }
 
-/** Grouped add-step popover — closes on outside click, Escape, or a pick. */
-function AddMenu(props: { onPick: (step: RecipeStep) => void; onClose: () => void }): JSX.Element {
-  let ref: HTMLDivElement | undefined;
+/**
+ * Add-step menu — always portaled + position:fixed so it never:
+ *  - expands the scroll container
+ *  - gets clipped by overflow-y-auto
+ *  - triggers scrollIntoView jumps when focused
+ */
+function AddMenu(props: {
+  onPick: (step: RecipeStep) => void;
+  onClose: () => void;
+  /** Anchor rect in viewport coordinates */
+  anchor: { left: number; top: number; bottom: number; width: number };
+  /** Prefer opening above (footer) or below (insert gaps). */
+  placement?: "below" | "above";
+}): JSX.Element {
+  let menuEl: HTMLDivElement | undefined;
+  const preferAbove = () => props.placement === "above";
+
+  const pos = () => {
+    const a = props.anchor;
+    const menuW = 260;
+    const gap = 6;
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    // Center under/over the anchor, clamp into viewport
+    let left = a.left + a.width / 2 - menuW / 2;
+    left = Math.max(8, Math.min(left, vw - menuW - 8));
+    const spaceBelow = vh - a.bottom - gap;
+    const spaceAbove = a.top - gap;
+    const openAbove = preferAbove()
+      ? spaceAbove >= 120 || spaceAbove > spaceBelow
+      : spaceBelow < 160 && spaceAbove > spaceBelow;
+    const top = openAbove ? undefined : a.bottom + gap;
+    const bottom = openAbove ? vh - a.top + gap : undefined;
+    const maxH = openAbove
+      ? Math.min(360, Math.max(120, spaceAbove - 8))
+      : Math.min(360, Math.max(120, spaceBelow - 8));
+    return { left, top, bottom, maxH, openAbove };
+  };
+
   onMount(() => {
     const onDoc = (e: MouseEvent) => {
-      if (ref && !ref.contains(e.target as Node)) props.onClose();
+      const t = e.target as Node;
+      if (menuEl && !menuEl.contains(t)) props.onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -211,48 +293,73 @@ function AddMenu(props: { onPick: (step: RecipeStep) => void; onClose: () => voi
         props.onClose();
       }
     };
-    document.addEventListener("mousedown", onDoc);
+    // Defer outside-close so the opening click doesn't immediately dismiss.
+    const t = window.setTimeout(() => {
+      document.addEventListener("mousedown", onDoc);
+    }, 0);
     window.addEventListener("keydown", onKey);
-    // Focus first item so keyboard users land in the menu.
-    queueMicrotask(() => ref?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus());
+    queueMicrotask(() =>
+      menuEl?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus({ preventScroll: true }),
+    );
     onCleanup(() => {
+      window.clearTimeout(t);
       document.removeEventListener("mousedown", onDoc);
       window.removeEventListener("keydown", onKey);
     });
   });
+
   return (
-    <div
-      class="absolute top-[calc(100%+6px)] left-0 z-[12] flex max-h-[min(420px,calc(100vh-100px))] w-[min(280px,100%)] origin-top-left flex-col overflow-y-auto rounded-xl border border-border bg-layer-1 p-1.5 shadow-[var(--v2-elevation-overlay,0_12px_40px_rgba(0,0,0,0.32))]"
-      role="menu"
-      aria-label="Add step"
-      ref={ref}
-    >
-      <For each={ADD_GROUPS}>
-        {(g, gi) => (
-          <div class={cn("flex flex-col", gi() > 0 && "mt-1 border-t border-border pt-1")}>
-            <div class="px-2.5 pt-1.5 pb-0.5 text-[10px] font-semibold tracking-wide text-text-faint uppercase">
-              {g.label}
-            </div>
-            <For each={g.items}>
-              {(o) => (
-                <button
-                  type="button"
-                  class={menuItemCls}
-                  role="menuitem"
-                  onClick={() => props.onPick(o.make())}
-                >
-                  {o.label}
-                </button>
-              )}
-            </For>
-          </div>
+    <Portal>
+      <div
+        class={cn(
+          popover,
+          "fixed z-[200] flex w-[260px] flex-col overflow-y-auto",
+          pos().openAbove ? "origin-bottom" : "origin-top",
         )}
-      </For>
-    </div>
+        style={{
+          left: `${pos().left}px`,
+          ...(pos().top != null ? { top: `${pos().top}px` } : {}),
+          ...(pos().bottom != null ? { bottom: `${pos().bottom}px` } : {}),
+          "max-height": `${pos().maxH}px`,
+        }}
+        role="menu"
+        aria-label="Add step"
+        ref={(el) => {
+          menuEl = el;
+        }}
+      >
+        <For each={ADD_GROUPS}>
+          {(g, gi) => (
+            <div
+              class={cn(
+                "flex flex-col gap-px",
+                gi() > 0 && "mt-1 border-t border-border-weak-base pt-1",
+              )}
+            >
+              <div class={menuSectionCls}>{g.label}</div>
+              <For each={g.items}>
+                {(o) => (
+                  <button
+                    type="button"
+                    class={menuItemCls}
+                    role="menuitem"
+                    onClick={() => props.onPick(o.make())}
+                  >
+                    {o.label}
+                  </button>
+                )}
+              </For>
+            </div>
+          )}
+        </For>
+      </div>
+    </Portal>
   );
 }
 
-/** Slim hover-reveal insertion point between two rows. */
+/**
+ * Mid-list insert — zero layout height always. Menu portals to body.
+ */
 function InsertGap(props: {
   at: number;
   open: boolean;
@@ -260,39 +367,93 @@ function InsertGap(props: {
   onPick: (step: RecipeStep) => void;
   onClose: () => void;
 }): JSX.Element {
+  let gapBtnEl: HTMLButtonElement | undefined;
+  const [anchor, setAnchor] = createSignal({ left: 0, top: 0, bottom: 0, width: 0 });
+
+  function openMenu() {
+    // Measure the gap center for a stable anchor (not a zero-size floating btn).
+    const host = gapBtnEl?.parentElement?.parentElement ?? gapBtnEl;
+    const r = (host ?? gapBtnEl)?.getBoundingClientRect();
+    if (r) {
+      setAnchor({
+        left: r.left + r.width / 2 - 10,
+        top: r.top + r.height / 2 - 10,
+        bottom: r.top + r.height / 2 + 10,
+        width: 20,
+      });
+    }
+    props.onToggle();
+  }
+
   return (
     <div
       class={cn(
-        "group relative z-[1] -my-1 flex h-3 items-center justify-center",
+        // h-0 keeps layout stable; overflow-visible so the + paints outside the line
+        "group/gap relative z-[1] h-0 overflow-visible",
         props.open && "z-[14]",
       )}
+      aria-hidden={props.open ? undefined : true}
     >
-      <div
-        class={cn(
-          "pointer-events-none absolute inset-x-7 h-px bg-transparent transition-colors",
-          "group-hover:bg-accent/35",
-          props.open && "bg-accent/35",
-        )}
-        aria-hidden="true"
-      />
-      <button
-        type="button"
-        class={cn(
-          "z-[1] grid size-5 place-items-center rounded-full border border-border bg-layer-1 text-text-faint",
-          "scale-[0.85] opacity-0 transition-[opacity,transform,background,color,border-color]",
-          "group-hover:scale-100 group-hover:opacity-100",
-          "focus-visible:scale-100 focus-visible:opacity-100",
-          "hover:border-accent hover:bg-accent hover:text-accent-fg",
-          props.open && "scale-100 opacity-100",
-        )}
-        aria-label="Insert step here"
-        data-tip="Insert step here"
-        onClick={() => props.onToggle()}
-      >
-        <Icon name="plus" size={11} />
-      </button>
+      {/*
+        Paint box is taller than the flow gap (h-0) so the size-6 + ring isn't
+        clipped by ancestor overflow-y-auto at the top/bottom of the list.
+        Centered on the seam; list uses py-4 to reserve that space.
+      */}
+      <div class="pointer-events-none absolute inset-x-0 top-1/2 z-[1] h-8 -translate-y-1/2 overflow-visible">
+        {/* Rule: thicker on hover/open */}
+        <div
+          class={cn(
+            "pointer-events-none absolute inset-x-5 top-1/2 -translate-y-1/2 rounded-full",
+            "h-px bg-transparent transition-[height,background-color] duration-100 ease-out",
+            "group-hover/gap:h-[2px] group-hover/gap:bg-border-interactive-base",
+            props.open && "h-[2px] bg-border-interactive-base",
+          )}
+        />
+        <button
+          type="button"
+          ref={(el) => {
+            gapBtnEl = el;
+          }}
+          class={cn(
+            "pointer-events-auto absolute top-1/2 left-1/2 z-[2] flex size-6 -translate-x-1/2 -translate-y-1/2",
+            "items-center justify-center rounded-full",
+            "bg-surface-brand-base text-text-on-brand-base shadow-sm",
+            // Solid paper ring — never alpha raised-base
+            "ring-2 ring-surface-raised-stronger-non-alpha",
+            "opacity-0 scale-90 transition-[opacity,transform] duration-100 ease-out",
+            "group-hover/gap:opacity-100 group-hover/gap:scale-100",
+            "focus-visible:opacity-100 focus-visible:scale-100",
+            props.open && "opacity-100 scale-100",
+          )}
+          aria-label="Insert step"
+          aria-haspopup="menu"
+          aria-expanded={props.open}
+          onClick={(e) => {
+            e.stopPropagation();
+            openMenu();
+          }}
+        >
+          <Icon name="plus" size={13} strokeWidth={2.75} />
+        </button>
+        {/* Wider invisible hit strip for easier hover — still zero flow height */}
+        <button
+          type="button"
+          class="pointer-events-auto absolute inset-x-0 top-1/2 h-8 -translate-y-1/2 cursor-pointer border-0 bg-transparent"
+          tabindex={-1}
+          aria-hidden="true"
+          onClick={(e) => {
+            e.stopPropagation();
+            openMenu();
+          }}
+        />
+      </div>
       <Show when={props.open}>
-        <AddMenu onPick={props.onPick} onClose={props.onClose} />
+        <AddMenu
+          anchor={anchor()}
+          placement="below"
+          onPick={props.onPick}
+          onClose={props.onClose}
+        />
       </Show>
     </div>
   );
@@ -306,30 +467,30 @@ function InsertGap(props: {
  */
 export function StepAnno(props: { anno: Accessor<RowAnno> }): JSX.Element {
   const dur = () => fmtMs(props.anno().durationMs);
-  // Idle dots are pure noise — only render when a run left a mark.
+  // Idle is pure noise — only render when a run left a mark.
   return (
     <Show when={props.anno().status !== "idle"}>
       <span
-        class="inline-flex min-w-[52px] shrink-0 items-center justify-end gap-1.5 tabular-nums"
+        class="inline-flex shrink-0 items-center justify-end gap-1 tabular-nums"
         aria-hidden="true"
       >
         <Show when={props.anno().status === "running"}>
-          <span class="size-1.5 animate-pulse rounded-full bg-run" />
+          <span class="size-1.5 animate-pulse rounded-full bg-icon-info-base shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-info-base)_22%,transparent)]" />
         </Show>
         <Show when={props.anno().status === "pass"}>
-          <span class="inline-grid place-items-center text-pass">
-            <Icon name="check" size={13} />
+          <span class="ui-check grid size-4 place-items-center text-icon-success-base">
+            <Icon name="check" size={12} strokeWidth={2.5} />
           </span>
           <Show when={dur()}>
-            <span class={cn(mono, "whitespace-nowrap text-meta text-text-faint")}>{dur()}</span>
+            <span class={cn(mono, "text-12-regular leading-none text-text-weak")}>{dur()}</span>
           </Show>
         </Show>
         <Show when={props.anno().status === "fail"}>
-          <span class="inline-grid place-items-center text-fail">
-            <Icon name="x" size={13} />
+          <span class="ui-check grid size-4 place-items-center text-icon-critical-base">
+            <Icon name="x" size={12} strokeWidth={2.5} />
           </span>
           <Show when={dur()}>
-            <span class={cn(mono, "whitespace-nowrap text-meta text-text-faint")}>{dur()}</span>
+            <span class={cn(mono, "text-12-regular leading-none text-text-weak")}>{dur()}</span>
           </Show>
         </Show>
       </span>
@@ -345,7 +506,10 @@ function StepRow(props: {
   flash: Accessor<boolean>;
   autofocus: Accessor<boolean>;
   onAutofocused: () => void;
-  onToggleExpand: () => void;
+  /** Row body: select / second-click toggles editor. */
+  onRowActivate: () => void;
+  /** Chevron: always open/close editor for this step. */
+  onEditToggle: () => void;
   onChange: (next: RecipeStep) => void;
   onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
@@ -431,94 +595,139 @@ function StepRow(props: {
     props.onRemove();
   }
 
-  const selected = () => focused() || props.expanded();
+  // Selection (phone focus) is independent of editor expand — list stays navigable.
+  const selected = () => focused();
+  const dur = () => fmtMs(anno().durationMs);
+  // Duration lives on StepAnno when a run marked the row; meta only when idle.
+  const showMetaDur = () => anno().status === "idle" && Boolean(dur());
 
   return (
     <div
       class={cn(
-        "group relative border-b border-white/[0.06] transition-colors",
-        selected() && "bg-accent/[0.14] shadow-[inset_3px_0_0_0_var(--color-accent)]",
-        !selected() && anno().status === "running" && "bg-run/[0.1]",
-        !selected() && anno().status === "pass" && "bg-pass/[0.08]",
-        !selected() && anno().status === "fail" && "bg-fail/[0.1]",
-        !selected() && anno().status === "idle" && "hover:bg-white/[0.03]",
-        Boolean(issue()) && !props.expanded() && "bg-fail/[0.06]",
-        props.flash() && "bg-accent/20",
+        // AgentBoard: inset rounded chip, quiet hover/active only — status via StepAnno
+        listRow,
+        "mx-1.5",
+        selected() && listRowActive,
+        !selected() && props.expanded() && listRowExpanded,
+        props.flash() && listRowActive,
       )}
+      data-selected={selected() ? "true" : undefined}
+      data-expanded={props.expanded() ? "true" : undefined}
     >
       <div
-        class="flex min-h-[52px] cursor-pointer items-center gap-3 px-4 py-2.5"
+        class={cn("flex min-h-0 cursor-pointer items-start gap-2 px-2 py-1", "outline-none")}
+        tabindex={0}
+        aria-current={selected() ? "true" : undefined}
+        aria-expanded={props.expanded()}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("[data-step-actions], [data-step-more-menu]"))
             return;
-          props.onToggleExpand();
+          props.onRowActivate();
+        }}
+        onKeyDown={(e) => {
+          // Nested action buttons keep their own keys; only handle on the row shell.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            props.onRowActivate();
+          }
         }}
       >
-        <span
-          class={cn(
-            stepICls,
-            "grid size-6 place-items-center rounded-md bg-white/[0.04] text-[11px]",
-            selected() && "bg-accent/20 text-accent-soft",
-          )}
-        >
-          {props.index + 1}
-        </span>
-        <button
-          type="button"
-          class="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 border-0 bg-transparent py-0 text-left"
-          aria-expanded={props.expanded()}
-        >
-          <span class={kindCls}>{kindLabel(kind())}</span>
-          <span class="w-full truncate text-[13.5px] font-medium tracking-tight text-white/90">
-            {sentenceForStep(props.step(), server.recipes())}
-          </span>
-        </button>
+        {/* Exclusive recipes — never stack stepIndex + stepIndexOn (cn has no merge) */}
+        <span class={cn(selected() ? stepIndexOn : stepIndex, "mt-0.5")}>{props.index + 1}</span>
 
-        <StepAnno anno={anno} />
+        <div class="min-w-0 flex-1">
+          {/* Meta: solid hue dot + ink label (never pastel text on gray) */}
+          <div class="flex min-w-0 items-center gap-1.5 text-12-medium leading-none">
+            <span
+              class={cn("size-1.5 shrink-0 rounded-full", kindDotClass(kind()))}
+              aria-hidden="true"
+            />
+            <span class="text-text-strong">{kindLabel(kind())}</span>
+            <Show when={showMetaDur()}>
+              <span class={cn(mono, "text-text-weak")}>· {dur()}</span>
+            </Show>
+            <Show when={issue() && !props.expanded()}>
+              <span class="text-12-medium text-icon-critical-base">· incomplete</span>
+            </Show>
+          </div>
+          {/* Primary title — text-14-medium strong ink */}
+          <div class="mt-1 flex min-w-0 items-center gap-2">
+            <span class="text-14-regular min-w-0 flex-1 truncate text-text-strong">
+              {sentenceForStep(props.step(), server.recipes())}
+            </span>
+            <StepAnno anno={anno} />
+          </div>
+        </div>
 
         <span
           data-step-actions
           class={cn(
-            "flex shrink-0 items-center gap-px opacity-55 transition-opacity",
-            "group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
-            props.expanded() && "opacity-100",
+            "mt-0.5 flex w-0 shrink-0 items-center justify-end gap-0.5 overflow-hidden",
+            "transition-[width,opacity] duration-100 ease-out",
+            // AB width-collapse: 4×24 + gaps ≈ 6.75rem when open
+            selected() || props.expanded()
+              ? "w-[6.75rem] opacity-100"
+              : "opacity-0 pointer-events-none group-hover/session:w-[6.75rem] group-hover/session:opacity-100 group-hover/session:pointer-events-auto group-focus-within/session:w-[6.75rem] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto [@media(hover:none)]:w-[6.75rem] [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto",
           )}
         >
-          <button
-            type="button"
-            class={cn(iconBtnCls, "hover:enabled:bg-accent/15 hover:enabled:text-accent-soft")}
+          <IconButton
+            variant="ghost"
+            size="normal"
+            class="rounded-md"
+            active={props.expanded()}
+            data-tip={props.expanded() ? "Close (Esc)" : "Edit"}
+            aria-label={props.expanded() ? "Close step editor" : "Edit step"}
+            aria-expanded={props.expanded()}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onEditToggle();
+            }}
+          >
+            <Icon name={props.expanded() ? "chevron-down" : "chevron-right"} size={14} />
+          </IconButton>
+          <IconButton
+            variant="ghost"
+            size="normal"
+            class="rounded-md"
             data-tip={runTip()}
             aria-label="Run this step"
             disabled={!canRunStep()}
             onClick={() => void wb.runFrom(props.index)}
           >
-            <Icon name="play" size={12} />
-          </button>
-          <button
-            type="button"
-            class={cn(iconBtnCls, "hover:enabled:bg-fail/15 hover:enabled:text-fail")}
-            data-tip="Delete step"
+            <Icon name="play" size={13} />
+          </IconButton>
+          <IconButton
+            variant="ghost"
+            size="normal"
+            class="rounded-md text-icon-base hover:text-icon-critical-base"
+            data-tip="Delete"
             aria-label="Delete step"
             onClick={() => armDelete()}
           >
-            <Icon name="trash" size={12} />
-          </button>
+            <Icon name="trash" size={13} />
+          </IconButton>
           <div class="relative" data-step-more>
-            <button
-              type="button"
-              class={iconBtnCls}
+            <IconButton
+              variant="ghost"
+              size="normal"
+              class="rounded-md"
               data-tip="More"
               aria-label="Step options"
               aria-haspopup="menu"
               aria-expanded={moreOpen()}
+              active={moreOpen()}
               onClick={() => setMoreOpen((o) => !o)}
             >
-              <Icon name="more" size={12} />
-            </button>
+              <Icon name="more" size={13} />
+            </IconButton>
             <Show when={moreOpen()}>
               <div
                 data-step-more-menu
-                class="absolute top-[calc(100%+4px)] right-0 z-[16] min-w-[148px] origin-top-right rounded-[10px] border border-border bg-layer-1 p-1 shadow-[var(--v2-elevation-overlay)]"
+                class={cn(
+                  popover,
+                  "absolute top-[calc(100%+4px)] right-0 z-[16] min-w-[148px] origin-top-right p-1",
+                )}
                 role="menu"
               >
                 <button
@@ -562,20 +771,15 @@ function StepRow(props: {
         </span>
       </div>
 
-      {/* Failure auto-surfaces as one compact line — no expand needed. */}
       <Show when={anno().status === "fail" && anno().error}>
-        <p class="mb-2 flex items-center gap-1.5 px-3 pr-3 pl-10 text-meta leading-snug text-fail">
-          <Icon name="alert" size={11} />
-          {anno().error}
+        <p class="mb-2 flex items-start gap-1.5 px-3 pr-3 pl-11 text-12-regular leading-snug text-icon-critical-base">
+          <Icon name="alert" size={11} class="mt-0.5 shrink-0" />
+          <span class="min-w-0 break-words">{anno().error}</span>
         </p>
       </Show>
 
-      <Show when={issue() && !props.expanded()}>
-        <p class="mb-2 px-3 pl-10 text-meta text-fail">Click to finish — {issue()}</p>
-      </Show>
-
       <Show when={props.expanded()}>
-        <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] bg-black/20 px-4 pt-2.5 pb-3 pl-[3.25rem]">
+        <div class={editorPanel}>
           {/* tap — detected chain as one-click retargeting when captured */}
           <Show when={kind() === "tap"}>
             {(() => {
@@ -585,60 +789,70 @@ function StepRow(props: {
               const hasDetected = chain.some((c) => c.id !== "point");
               if (!hasDetected) {
                 return (
-                  <div class="flex w-full basis-full flex-col gap-2">
-                    <ManualTarget
-                      target={target}
-                      strategy={strategy}
-                      onStrategy={setStrategy}
-                      onPatch={setTarget}
-                      autofocus={props.autofocus}
-                      onAutofocused={props.onAutofocused}
-                    />
-                  </div>
+                  <ManualTarget
+                    target={target}
+                    strategy={strategy}
+                    onStrategy={setStrategy}
+                    onPatch={setTarget}
+                    autofocus={props.autofocus}
+                    onAutofocused={props.onAutofocused}
+                  />
                 );
               }
               return (
-                <div
-                  class="flex w-full basis-full flex-col gap-0.5"
-                  role="radiogroup"
-                  aria-label="Retarget tap"
-                >
-                  <For each={chain}>
-                    {(c) => (
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={strategy() === c.id}
-                        class={cn(
-                          "flex items-center gap-2 rounded-control px-2 py-[7px] text-text-muted transition-colors hover:bg-hover",
-                          strategy() === c.id && "bg-accent/10 text-text",
-                        )}
-                        onClick={() => retargetTap(c.id)}
-                      >
-                        <span
-                          class={cn(
-                            "mono shrink-0 text-body",
-                            strategy() === c.id ? "text-accent-soft" : "text-text-faint",
-                          )}
-                          aria-hidden="true"
-                        >
-                          {strategy() === c.id ? "◉" : "○"}
-                        </span>
-                        <span class="min-w-11 shrink-0 text-meta font-medium text-text-faint">
-                          {c.label}
-                        </span>
-                        <span class={cn(mono, "min-w-0 flex-1 truncate text-body text-text")}>
-                          {c.value}
-                        </span>
-                      </button>
-                    )}
-                  </For>
+                <div class={propRow} role="radiogroup" aria-label="Retarget tap">
+                  <span class={fieldLabel}>Match</span>
+                  <div class="flex min-w-0 flex-col gap-0.5 overflow-hidden rounded-md bg-surface-raised-stronger-non-alpha p-0.5 ring-1 ring-inset ring-border-weak-base">
+                    <For each={chain}>
+                      {(c) => {
+                        const on = () => strategy() === c.id;
+                        return (
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={on()}
+                            class={cn(
+                              "flex items-center gap-2 rounded-[5px] px-2 py-1.5 text-left transition-colors duration-100 ease-out",
+                              on()
+                                ? "bg-surface-base-active text-text-strong"
+                                : "text-text-strong hover:bg-surface-raised-base-hover",
+                            )}
+                            onClick={() => retargetTap(c.id)}
+                          >
+                            <span
+                              class={cn(
+                                "size-1.5 shrink-0 rounded-full",
+                                on() ? "bg-text-strong" : "bg-text-weak/45",
+                              )}
+                              aria-hidden="true"
+                            />
+                            <span
+                              class={cn(
+                                "min-w-10 shrink-0 text-12-medium leading-none",
+                                on() ? "text-text-strong" : "text-text-weak",
+                              )}
+                            >
+                              {c.label}
+                            </span>
+                            <span
+                              class={cn(
+                                mono,
+                                "min-w-0 flex-1 truncate text-12-regular leading-none",
+                                on() ? "font-medium text-text-strong" : "text-text-strong",
+                              )}
+                            >
+                              {c.value}
+                            </span>
+                          </button>
+                        );
+                      }}
+                    </For>
+                  </div>
                 </div>
               );
             })()}
           </Show>
 
-          {/* wait-for — manual strategy selector + timeout */}
           <Show when={kind() === "wait-for"}>
             <ManualTarget
               target={target}
@@ -652,62 +866,9 @@ function StepRow(props: {
               const s = props.step();
               if (s.kind !== "wait-for") return null;
               return (
-                <span class="inline-flex items-center gap-1">
-                  <input
-                    class={cn(valueTimeoutCls, mono)}
-                    type="number"
-                    min={0}
-                    placeholder="5"
-                    value={s.timeoutMs ? Math.round(s.timeoutMs / 1000) : ""}
-                    onInput={(e) => {
-                      const v = e.currentTarget.value;
-                      onEdit({
-                        ...s,
-                        ...(v
-                          ? { timeoutMs: (parseInt(v, 10) || 0) * 1000 }
-                          : { timeoutMs: undefined }),
-                      });
-                    }}
-                  />
-                  <span class={cn(mono, "text-meta text-text-faint")}>s</span>
-                </span>
-              );
-            })()}
-          </Show>
-
-          {/* expect — target + condition (implied by which add-option was
-              chosen) + timeout */}
-          <Show when={kind() === "expect"}>
-            <ManualTarget
-              target={target}
-              strategy={strategy}
-              onStrategy={setStrategy}
-              onPatch={setTarget}
-              autofocus={props.autofocus}
-              onAutofocused={props.onAutofocused}
-            />
-            {(() => {
-              const s = props.step();
-              if (s.kind !== "expect") return null;
-              return (
-                <>
-                  <div class={seg} role="group" aria-label="Condition">
-                    {(
-                      [
-                        ["visible", "Is visible"],
-                        ["gone", "Is gone"],
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        type="button"
-                        class={cn(segBtn, s.condition === id && segBtnOn)}
-                        onClick={() => onEdit({ ...s, condition: id })}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <span class="inline-flex items-center gap-1">
+                <div class={propRow}>
+                  <span class={fieldLabel}>Timeout</span>
+                  <span class="inline-flex h-7 items-center gap-1.5">
                     <input
                       class={cn(valueTimeoutCls, mono)}
                       type="number"
@@ -724,210 +885,295 @@ function StepRow(props: {
                         });
                       }}
                     />
-                    <span class={cn(mono, "text-meta text-text-faint")}>s</span>
+                    <span class="text-12-regular text-text-weak">sec</span>
                   </span>
-                </>
-              );
-            })()}
-          </Show>
-
-          {/* type */}
-          <Show when={kind() === "type"}>
-            {(() => {
-              const s = props.step();
-              if (s.kind !== "type") return null;
-              let ref: HTMLInputElement | undefined;
-              createEffect(() => {
-                if (props.autofocus()) {
-                  ref?.focus();
-                  props.onAutofocused();
-                }
-              });
-              return (
-                <input
-                  ref={ref}
-                  class={cn(valueCls, mono)}
-                  type="text"
-                  placeholder="text to type"
-                  value={s.text}
-                  onInput={(e) => onEdit({ ...s, text: e.currentTarget.value })}
-                  spellcheck={false}
-                />
-              );
-            })()}
-          </Show>
-
-          {/* sleep */}
-          <Show when={kind() === "sleep"}>
-            {(() => {
-              const s = props.step();
-              if (s.kind !== "sleep") return null;
-              let ref: HTMLInputElement | undefined;
-              createEffect(() => {
-                if (props.autofocus()) {
-                  ref?.focus();
-                  props.onAutofocused();
-                }
-              });
-              return (
-                <span class="inline-flex items-center gap-1">
-                  <input
-                    ref={ref}
-                    class={cn(valueTimeoutCls, mono)}
-                    type="number"
-                    min={0}
-                    placeholder="500"
-                    value={s.ms}
-                    onInput={(e) => onEdit({ ...s, ms: parseInt(e.currentTarget.value, 10) || 0 })}
-                  />
-                  <span class={cn(mono, "text-meta text-text-faint")}>ms</span>
-                </span>
-              );
-            })()}
-          </Show>
-
-          {/* pause */}
-          <Show when={kind() === "pause"}>
-            {(() => {
-              const s = props.step();
-              if (s.kind !== "pause") return null;
-              let ref: HTMLInputElement | undefined;
-              createEffect(() => {
-                if (props.autofocus()) {
-                  ref?.focus();
-                  props.onAutofocused();
-                }
-              });
-              return (
-                <input
-                  ref={ref}
-                  class={valueCls}
-                  type="text"
-                  placeholder="instructions for the human (e.g. complete 2FA)"
-                  value={s.message}
-                  onInput={(e) => onEdit({ ...s, message: e.currentTarget.value })}
-                  spellcheck={false}
-                />
-              );
-            })()}
-          </Show>
-
-          {/* key */}
-          <Show when={kind() === "key"}>
-            {(() => {
-              const s = props.step();
-              if (s.kind !== "key") return null;
-              return (
-                <div class={seg} role="group" aria-label="Key">
-                  {(
-                    [
-                      ["back", "Back"],
-                      ["home", "Home"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button
-                      type="button"
-                      class={cn(segBtn, s.key === id && segBtnOn)}
-                      onClick={() => onEdit({ kind: "key", key: id })}
-                    >
-                      {label}
-                    </button>
-                  ))}
                 </div>
               );
             })()}
           </Show>
 
-          {/* scroll */}
+          <Show when={kind() === "expect"}>
+            <ManualTarget
+              target={target}
+              strategy={strategy}
+              onStrategy={setStrategy}
+              onPatch={setTarget}
+              autofocus={props.autofocus}
+              onAutofocused={props.onAutofocused}
+            />
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "expect") return null;
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>When</span>
+                    <div class={seg} role="group" aria-label="Condition">
+                      {(
+                        [
+                          ["visible", "Visible"],
+                          ["gone", "Gone"],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          type="button"
+                          class={s.condition === id ? segBtnOn : segBtn}
+                          onClick={() => onEdit({ ...s, condition: id })}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Timeout</span>
+                    <span class="inline-flex h-7 items-center gap-1.5">
+                      <input
+                        class={cn(valueTimeoutCls, mono)}
+                        type="number"
+                        min={0}
+                        placeholder="5"
+                        value={s.timeoutMs ? Math.round(s.timeoutMs / 1000) : ""}
+                        onInput={(e) => {
+                          const v = e.currentTarget.value;
+                          onEdit({
+                            ...s,
+                            ...(v
+                              ? { timeoutMs: (parseInt(v, 10) || 0) * 1000 }
+                              : { timeoutMs: undefined }),
+                          });
+                        }}
+                      />
+                      <span class="text-12-regular text-text-weak">sec</span>
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "type"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "type") return null;
+              let inputEl: HTMLInputElement | undefined;
+              createEffect(() => {
+                if (props.autofocus()) {
+                  inputEl?.focus();
+                  props.onAutofocused();
+                }
+              });
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Text</span>
+                  <input
+                    ref={(el) => {
+                      inputEl = el;
+                    }}
+                    class={cn(valueCls, mono)}
+                    type="text"
+                    placeholder="text to type"
+                    value={s.text}
+                    onInput={(e) => onEdit({ ...s, text: e.currentTarget.value })}
+                    spellcheck={false}
+                  />
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "sleep"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "sleep") return null;
+              let inputEl: HTMLInputElement | undefined;
+              createEffect(() => {
+                if (props.autofocus()) {
+                  inputEl?.focus();
+                  props.onAutofocused();
+                }
+              });
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Wait</span>
+                  <span class="inline-flex h-7 items-center gap-1.5">
+                    <input
+                      ref={(el) => {
+                        inputEl = el;
+                      }}
+                      class={cn(valueTimeoutCls, mono)}
+                      type="number"
+                      min={0}
+                      placeholder="500"
+                      value={s.ms}
+                      onInput={(e) =>
+                        onEdit({ ...s, ms: parseInt(e.currentTarget.value, 10) || 0 })
+                      }
+                    />
+                    <span class="text-12-regular text-text-weak">ms</span>
+                  </span>
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "pause"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "pause") return null;
+              let inputEl: HTMLInputElement | undefined;
+              createEffect(() => {
+                if (props.autofocus()) {
+                  inputEl?.focus();
+                  props.onAutofocused();
+                }
+              });
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Message</span>
+                  <input
+                    ref={(el) => {
+                      inputEl = el;
+                    }}
+                    class={valueCls}
+                    type="text"
+                    placeholder="e.g. complete 2FA"
+                    value={s.message}
+                    onInput={(e) => onEdit({ ...s, message: e.currentTarget.value })}
+                    spellcheck={false}
+                  />
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "key"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "key") return null;
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Key</span>
+                  <div class={cn(seg, "w-fit")} role="group" aria-label="Key">
+                    {(
+                      [
+                        ["back", "Back"],
+                        ["home", "Home"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        type="button"
+                        class={s.key === id ? segBtnOn : segBtn}
+                        onClick={() => onEdit({ kind: "key", key: id })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </Show>
+
           <Show when={kind() === "scroll"}>
             {(() => {
               const s = props.step();
               if (s.kind !== "scroll") return null;
               return (
                 <>
-                  <div class={seg} role="group" aria-label="Direction">
-                    {(
-                      [
-                        ["down", "Down"],
-                        ["up", "Up"],
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        type="button"
-                        class={cn(segBtn, s.direction === id && segBtnOn)}
-                        onClick={() =>
-                          onEdit({
-                            kind: "scroll",
-                            direction: id,
-                            ...(s.amount !== undefined ? { amount: s.amount } : {}),
-                          })
-                        }
-                      >
-                        {label}
-                      </button>
-                    ))}
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Direction</span>
+                    <div class={seg} role="group" aria-label="Direction">
+                      {(
+                        [
+                          ["down", "Down"],
+                          ["up", "Up"],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          type="button"
+                          class={s.direction === id ? segBtnOn : segBtn}
+                          onClick={() =>
+                            onEdit({
+                              kind: "scroll",
+                              direction: id,
+                              ...(s.amount !== undefined ? { amount: s.amount } : {}),
+                            })
+                          }
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <input
-                    class={cn(valueCls, mono)}
-                    type="number"
-                    min={0}
-                    placeholder="amount (optional)"
-                    value={s.amount ?? ""}
-                    onInput={(e) => {
-                      const n = parseInt(e.currentTarget.value, 10);
-                      onEdit({
-                        kind: "scroll",
-                        direction: s.direction,
-                        ...(Number.isFinite(n) ? { amount: n } : {}),
-                      });
-                    }}
-                  />
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Amount</span>
+                    <input
+                      class={cn(valueCls, mono)}
+                      type="number"
+                      min={0}
+                      placeholder="optional"
+                      value={s.amount ?? ""}
+                      onInput={(e) => {
+                        const n = parseInt(e.currentTarget.value, 10);
+                        onEdit({
+                          kind: "scroll",
+                          direction: s.direction,
+                          ...(Number.isFinite(n) ? { amount: n } : {}),
+                        });
+                      }}
+                    />
+                  </div>
                 </>
               );
             })()}
           </Show>
 
-          {/* screenshot */}
           <Show when={kind() === "screenshot"}>
             {(() => {
               const s = props.step();
               if (s.kind !== "screenshot") return null;
               return (
-                <input
-                  class={valueCls}
-                  type="text"
-                  placeholder="caption (optional)"
-                  value={s.caption ?? ""}
-                  onInput={(e) =>
-                    onEdit({
-                      kind: "screenshot",
-                      ...(e.currentTarget.value ? { caption: e.currentTarget.value } : {}),
-                    })
-                  }
-                  spellcheck={false}
-                />
+                <div class={propRow}>
+                  <span class={fieldLabel}>Caption</span>
+                  <input
+                    class={valueCls}
+                    type="text"
+                    placeholder="optional"
+                    value={s.caption ?? ""}
+                    onInput={(e) =>
+                      onEdit({
+                        kind: "screenshot",
+                        ...(e.currentTarget.value ? { caption: e.currentTarget.value } : {}),
+                      })
+                    }
+                    spellcheck={false}
+                  />
+                </div>
               );
             })()}
           </Show>
 
-          {/* flow — pick which built-in flow this step runs */}
           <Show when={kind() === "flow"}>
             {(() => {
               const s = props.step();
               if (s.kind !== "flow") return null;
               const flows = server.recipes().filter((r) => r.source === "builtin");
               return (
-                <select
-                  class={valueCls}
-                  aria-label="Built-in flow"
-                  value={s.flow}
-                  onChange={(e) => onEdit({ kind: "flow", flow: e.currentTarget.value })}
-                >
-                  <Show when={s.flow && !flows.some((f) => f.id === s.flow)}>
-                    <option value={s.flow}>{titleize(s.flow, server.recipes())}</option>
-                  </Show>
-                  <For each={flows}>{(f) => <option value={f.id}>{f.title}</option>}</For>
-                </select>
+                <div class={propRow}>
+                  <span class={fieldLabel}>Flow</span>
+                  <select
+                    class={valueCls}
+                    aria-label="Built-in flow"
+                    value={s.flow}
+                    onChange={(e) => onEdit({ kind: "flow", flow: e.currentTarget.value })}
+                  >
+                    <Show when={s.flow && !flows.some((f) => f.id === s.flow)}>
+                      <option value={s.flow}>{titleize(s.flow, server.recipes())}</option>
+                    </Show>
+                    <For each={flows}>{(f) => <option value={f.id}>{f.title}</option>}</For>
+                  </select>
+                </div>
               );
             })()}
           </Show>
@@ -937,7 +1183,7 @@ function StepRow(props: {
             <pre
               class={cn(
                 mono,
-                "mt-1 max-h-40 w-full basis-full overflow-y-auto rounded-control bg-base px-2.5 py-2 text-meta leading-relaxed break-words whitespace-pre-wrap text-text-muted",
+                "max-h-40 w-full overflow-y-auto rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 py-2 text-12-regular leading-relaxed break-words whitespace-pre-wrap text-text-weak",
               )}
             >
               {anno().log}
@@ -969,25 +1215,49 @@ export function RecipeStepsEditor(): JSX.Element {
     draft.setExpandedStep(i);
   }
 
-  function toggle(i: number): void {
-    // Uber-style: click = select (and show on phone). Second click collapses detail only.
-    if (expanded() === i && wb.focusedIndex() === i) {
+  /**
+   * Click = select (phone + highlight). Second click on the selected row toggles
+   * the editor. Expanding never replaces the list — siblings stay visible.
+   * Escape always collapses the editor without changing selection.
+   */
+  function selectStep(i: number): void {
+    wb.focusStep(i);
+  }
+
+  function toggleEditor(i: number): void {
+    if (expanded() === i) {
       setOpen(null);
       return;
     }
     wb.focusStep(i);
-    setExpanded(i);
+    setOpen(i);
+  }
+
+  function onRowActivate(i: number): void {
+    // Already selected → toggle editor. Otherwise select only (stay collapsed).
+    if (wb.focusedIndex() === i) {
+      toggleEditor(i);
+      return;
+    }
+    selectStep(i);
+    // Keep editor closed when switching steps — user opts in with a second click / chevron.
+    if (expanded() != null) setOpen(null);
+  }
+
+  function onEditToggle(i: number): void {
+    // Chevron always opens/closes this row's editor (and selects it).
+    toggleEditor(i);
   }
 
   function insertAt(at: number, step: RecipeStep): void {
     draft.insertStep(at, step);
     setAddAt(null);
     wb.focusStep(at);
-    setExpanded(at);
+    setOpen(at); // new / incomplete step: open editor so they can fill it
     setFocusIndex(at);
   }
 
-  // Keep draft.expandedStep in sync on selection changes / unmount.
+  // Reset editor chrome when switching tests — never when merely focusing a step.
   createEffect(() => {
     const id = server.selectedRecipeId();
     void id;
@@ -996,136 +1266,173 @@ export function RecipeStepsEditor(): JSX.Element {
     setAddAt(null);
   });
 
-  // External focus (filmstrip / board card) opens the matching row.
-  createEffect(() => {
-    const f = wb.focusedIndex();
-    if (f != null && f >= 0 && f < draft.steps().length) {
-      setExpanded(f);
-    }
+  // Escape collapses the editor (back to list context) without deselecting.
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (addAt() != null) {
+        e.stopPropagation();
+        setAddAt(null);
+        return;
+      }
+      if (expanded() != null) {
+        e.stopPropagation();
+        setOpen(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => window.removeEventListener("keydown", onKey));
   });
 
   // Empty guide + starter chips replace the old auto-open menu (less noise).
 
-  /** Starters look like real steps (Uber density), not orphan chips in white space. */
-  const STARTERS: { kind: string; title: string; make: () => RecipeStep }[] = [
-    {
-      kind: "Tap",
-      title: "Tap an element on the phone",
-      make: () => ({ kind: "tap", target: {} }),
-    },
-    { kind: "Type", title: "Type text into a field", make: () => ({ kind: "type", text: "" }) },
+  /** Compact starter chips — not fake step rows (that confused empty vs content). */
+  const STARTERS: { kind: string; label: string; make: () => RecipeStep }[] = [
+    { kind: "Tap", label: "Tap", make: () => ({ kind: "tap", target: {} }) },
+    { kind: "Type", label: "Type", make: () => ({ kind: "type", text: "" }) },
     {
       kind: "Check",
-      title: "Check that something is visible",
+      label: "Check",
       make: () => ({ kind: "expect", target: {}, condition: "visible" }),
     },
-    { kind: "Wait", title: "Wait a moment", make: () => ({ kind: "sleep", ms: 1000 }) },
+    { kind: "Wait", label: "Wait", make: () => ({ kind: "sleep", ms: 1000 }) },
   ];
 
   const isEmpty = () => draft.steps().length === 0;
 
+  let footerBtnEl: HTMLButtonElement | undefined;
+  const [footerAnchor, setFooterAnchor] = createSignal({
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 0,
+  });
+  const footerOpen = () => addAt() === draft.steps().length;
+
   return (
-    <div class="flex min-h-0 flex-1 flex-col">
-      <Show when={isEmpty()}>
-        <div class="flex w-full flex-col" role="group" aria-label="Add first step">
-          <For each={STARTERS}>
-            {(s, i) => (
-              <button
-                type="button"
-                class={cn(
-                  "group flex w-full min-h-[52px] cursor-pointer items-center gap-3 border-0 border-b border-white/[0.06]",
-                  "bg-transparent px-4 py-2.5 text-left font-[inherit] text-inherit transition-colors",
-                  "hover:bg-white/[0.03]",
-                )}
-                onClick={() => insertAt(0, s.make())}
-              >
-                <span
-                  class={cn(stepICls, "grid size-6 place-items-center rounded-md bg-white/[0.04]")}
-                >
-                  {i() + 1}
-                </span>
-                <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                  <span class={kindCls}>{s.kind}</span>
-                  <span class="truncate text-[13.5px] font-medium text-white/55">{s.title}</span>
-                </span>
-                <span
-                  class="ml-auto grid size-7 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-white/35 transition-colors group-hover:border-accent/40 group-hover:text-accent-soft"
-                  aria-hidden="true"
-                >
-                  <Icon name="plus" size={14} />
-                </span>
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
+    <div class="flex h-full min-h-0 flex-1 flex-col">
+      {/* Full-height scroll — no floating card over a cream void */}
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <Show when={isEmpty()}>
+          <div
+            class="flex h-full min-h-[240px] flex-col items-center justify-center px-6 py-14"
+            role="group"
+            aria-label="Add first step"
+          >
+            <div class="flex w-full max-w-[280px] flex-col items-center">
+              <p class="text-14-medium m-0 tracking-tight text-text-strong">
+                Build your first step
+              </p>
+              <p class="text-14-regular mt-1.5 mb-0 max-w-[260px] text-center leading-relaxed text-text-base">
+                Tap a starter below, or drive the phone to record a flow.
+              </p>
+              <div class="mt-5 flex w-full flex-col gap-0.5">
+                <For each={STARTERS}>
+                  {(s) => (
+                    <button
+                      type="button"
+                      class={cn(
+                        "flex h-9 w-full items-center gap-2 rounded-md px-2.5",
+                        "text-left text-14-medium text-text-strong",
+                        "transition-colors duration-100 ease-out",
+                        "hover:bg-surface-raised-base-hover",
+                      )}
+                      onClick={() => insertAt(0, s.make())}
+                    >
+                      <Icon name="plus" size={14} strokeWidth={2} class="text-icon-base" />
+                      {s.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </div>
+          </div>
+        </Show>
 
-      <Show when={!isEmpty()}>
-        <InsertGap
-          at={0}
-          open={addAt() === 0}
-          onToggle={() => setAddAt((a) => (a === 0 ? null : 0))}
-          onPick={(s) => insertAt(0, s)}
-          onClose={() => setAddAt(null)}
-        />
-      </Show>
-
-      <Index each={draft.steps()}>
-        {(step, i) => (
-          <>
-            <StepRow
-              step={step}
-              index={i}
-              total={() => draft.steps().length}
-              expanded={() => expanded() === i}
-              flash={() => draft.flashSteps().has(step())}
-              autofocus={() => focusIndex() === i}
-              onAutofocused={() => setFocusIndex((f) => (f === i ? null : f))}
-              onToggleExpand={() => toggle(i)}
-              onChange={(next) => draft.updateStep(i, next)}
-              onMove={(dir) => {
-                draft.moveStep(i, dir);
-                setOpen(expanded() === i ? i + dir : expanded() === i + dir ? i : expanded());
-              }}
-              onRemove={() => {
-                draft.removeStep(i);
-                const e = expanded();
-                setOpen(e === null ? null : e === i ? null : e > i ? e - 1 : e);
-              }}
-              onDuplicate={() => draft.duplicateStep(i)}
+        <Show when={!isEmpty()}>
+          {/* Inset list — AgentBoard chip rows + gap-1 air */}
+          <div class="flex flex-col gap-1 py-4">
+            <InsertGap
+              at={0}
+              open={addAt() === 0}
+              onToggle={() => setAddAt((a) => (a === 0 ? null : 0))}
+              onPick={(s) => insertAt(0, s)}
+              onClose={() => setAddAt(null)}
             />
-            <Show when={i + 1 < draft.steps().length}>
-              <InsertGap
-                at={i + 1}
-                open={addAt() === i + 1}
-                onToggle={() => setAddAt((a) => (a === i + 1 ? null : i + 1))}
-                onPick={(s) => insertAt(i + 1, s)}
-                onClose={() => setAddAt(null)}
-              />
-            </Show>
-          </>
-        )}
-      </Index>
 
-      <div class="relative mt-auto border-t border-white/[0.06] px-3 py-2.5">
+            <Index each={draft.steps()}>
+              {(step, i) => (
+                <>
+                  <StepRow
+                    step={step}
+                    index={i}
+                    total={() => draft.steps().length}
+                    expanded={() => expanded() === i}
+                    flash={() => draft.flashSteps().has(step())}
+                    autofocus={() => focusIndex() === i}
+                    onAutofocused={() => setFocusIndex((f) => (f === i ? null : f))}
+                    onRowActivate={() => onRowActivate(i)}
+                    onEditToggle={() => onEditToggle(i)}
+                    onChange={(next) => draft.updateStep(i, next)}
+                    onMove={(dir) => {
+                      draft.moveStep(i, dir);
+                      setOpen(expanded() === i ? i + dir : expanded() === i + dir ? i : expanded());
+                    }}
+                    onRemove={() => {
+                      draft.removeStep(i);
+                      const e = expanded();
+                      setOpen(e === null ? null : e === i ? null : e > i ? e - 1 : e);
+                    }}
+                    onDuplicate={() => draft.duplicateStep(i)}
+                  />
+                  <Show when={i + 1 < draft.steps().length}>
+                    <InsertGap
+                      at={i + 1}
+                      open={addAt() === i + 1}
+                      onToggle={() => setAddAt((a) => (a === i + 1 ? null : i + 1))}
+                      onPick={(s) => insertAt(i + 1, s)}
+                      onClose={() => setAddAt(null)}
+                    />
+                  </Show>
+                </>
+              )}
+            </Index>
+          </div>
+        </Show>
+      </div>
+
+      <div class="relative shrink-0 border-t border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-2.5 text-text-strong">
         <button
           type="button"
+          ref={(el) => {
+            footerBtnEl = el;
+          }}
           class={cn(
-            btnGhost,
-            "h-9 w-full justify-center rounded-md border border-white/10 font-medium text-white/45",
-            "hover:border-accent/40 hover:bg-accent/10 hover:text-accent-soft",
+            btnBar,
+            "hover:bg-surface-raised-base-hover",
+            footerOpen() && "bg-surface-base-active",
           )}
           aria-haspopup="menu"
-          aria-expanded={addAt() === draft.steps().length}
-          onClick={() =>
-            setAddAt((a) => (a === draft.steps().length ? null : draft.steps().length))
-          }
+          aria-expanded={footerOpen()}
+          onClick={() => {
+            const r = footerBtnEl?.getBoundingClientRect();
+            if (r)
+              setFooterAnchor({
+                left: r.left,
+                top: r.top,
+                bottom: r.bottom,
+                width: r.width,
+              });
+            setAddAt((a) => (a === draft.steps().length ? null : draft.steps().length));
+          }}
         >
-          <Icon name="plus" size={14} />
-          Add Step
+          <Icon name="plus" size={14} strokeWidth={2} class="text-icon-base" />
+          Add a step…
         </button>
-        <Show when={addAt() === draft.steps().length}>
+        <Show when={footerOpen()}>
           <AddMenu
+            anchor={footerAnchor()}
+            placement="above"
             onPick={(s) => insertAt(draft.steps().length, s)}
             onClose={() => setAddAt(null)}
           />

@@ -22,6 +22,7 @@ export type LegacyRecStep =
   | { kind: "label"; label: string }
   | { kind: "point"; x: number; y: number };
 
+/** Legacy only — recipes now live on the server. Kept for one-time migration. */
 const STORAGE_KEY = "specimen:custom-recipes";
 
 /**

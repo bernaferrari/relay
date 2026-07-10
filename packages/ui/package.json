@@ -16,6 +16,8 @@
     "./theme/preload": "./src/theme/preload.js",
     "./theme/v2/*": "./src/theme/v2/*.ts",
     "./styles": "./src/styles/index.css",
+    "./styles/tailwind": "./src/styles/tailwind/index.css",
+    "./v2/styles/*": "./src/v2/styles/*",
     "./context/helper": "./src/context/helper.tsx"
   },
   "scripts": {

@@ -169,7 +169,7 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[command]", id, err);
         window.dispatchEvent(
-          new CustomEvent("specimen:toast", { detail: { text: msg, tone: "error" } }),
+          new CustomEvent("stage:toast", { detail: { text: msg, tone: "error" } }),
         );
       }
     }
@@ -296,30 +296,32 @@ export function CommandPalette(): JSX.Element {
     return (list[idx]?.group ?? "") !== (list[idx - 1]?.group ?? "");
   };
 
-  const kbdCls =
-    "mono rounded-md border border-border bg-layer-2 px-1.5 py-0.5 text-meta font-medium text-text-muted";
+  const kbdCls = "mono rounded px-1 py-px text-12-regular text-text-weak";
 
   // Only mount when open — a closed "fixed" overlay was still in document
   // flow when TW utilities failed, stealing ~126px of shell height.
+  // No enter animation: palette is 100+/day (Raycast / Emil frequency rule).
   return (
     <Show when={cmd.open()}>
       <div
-        class="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 pt-[14vh] backdrop-blur-[6px]"
+        class="ui-scrim fixed inset-0 z-[100] flex items-start justify-center pt-[14vh] text-text-strong"
         role="presentation"
         onClick={(e) => {
           if (e.target === e.currentTarget) cmd.setOpen(false);
         }}
       >
         <div
-          class="flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl border border-border bg-layer-1 shadow-xl"
+          class="ui-instant flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl bg-surface-raised-stronger-non-alpha text-12-regular text-text-strong shadow-lg-border-base"
           role="dialog"
           aria-label="Command palette"
           aria-modal="true"
         >
-          <div class="border-b border-border p-1">
+          <div class="border-b border-border-weak-base p-1">
             <input
-              ref={inputRef}
-              class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-body font-normal text-text placeholder:text-text-faint focus:outline-none"
+              ref={(el) => {
+                inputRef = el;
+              }}
+              class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-14-regular text-text-strong placeholder:text-text-weak focus:outline-none"
               placeholder="Search commands, tests…"
               value={cmd.query()}
               onInput={(e) => cmd.setQuery(e.currentTarget.value)}
@@ -329,7 +331,10 @@ export function CommandPalette(): JSX.Element {
             <Show
               when={filtered().length > 0}
               fallback={
-                <div class="px-6 py-6 text-center text-body text-text-faint" role="presentation">
+                <div
+                  class="px-6 py-8 text-center text-14-regular text-text-base"
+                  role="presentation"
+                >
                   No matching commands
                 </div>
               }
@@ -337,14 +342,16 @@ export function CommandPalette(): JSX.Element {
               <div
                 class="max-h-[min(40vh,360px)] flex-1 overflow-y-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 role="listbox"
-                ref={listRef}
+                ref={(el) => {
+                  listRef = el;
+                }}
               >
                 <For each={filtered()}>
                   {(c, i) => (
                     <>
                       <Show when={groupStart(i())}>
                         <div
-                          class="sticky top-0 z-[1] bg-layer-1 px-2.5 pt-2 pb-1 text-meta font-semibold text-text-faint"
+                          class="sticky top-0 z-[1] bg-surface-raised-stronger-non-alpha px-2.5 pt-2 pb-1 text-12-medium text-text-weak"
                           role="presentation"
                         >
                           {c.group ?? "Commands"}
@@ -354,8 +361,9 @@ export function CommandPalette(): JSX.Element {
                         type="button"
                         role="option"
                         class={cn(
-                          "flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-text transition-colors",
-                          cmd.active() === i() && "bg-hover",
+                          "flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-14-regular text-text-strong transition-colors",
+                          "hover:bg-surface-raised-base-hover",
+                          cmd.active() === i() && "bg-surface-base-active",
                         )}
                         data-i={i()}
                         aria-selected={cmd.active() === i()}
@@ -365,9 +373,9 @@ export function CommandPalette(): JSX.Element {
                         onClick={() => void cmd.run(c.id)}
                       >
                         <span class="flex min-w-0 flex-col gap-px">
-                          <span class="text-body font-medium">{c.title}</span>
+                          <span class="text-14-medium">{c.title}</span>
                           <Show when={c.subtitle}>
-                            <span class="text-meta text-text-faint">{c.subtitle}</span>
+                            <span class="text-12-regular text-text-weak">{c.subtitle}</span>
                           </Show>
                         </span>
                         <span class="flex shrink-0 items-center gap-2">
@@ -381,23 +389,6 @@ export function CommandPalette(): JSX.Element {
                 </For>
               </div>
             </Show>
-          </div>
-          <div class="flex items-center gap-4 border-t border-border px-3.5 py-2 text-meta text-text-faint">
-            <span class="inline-flex items-center gap-1">
-              <kbd class={kbdCls}>↑↓</kbd> move
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <kbd class={kbdCls}>↵</kbd> run
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <kbd class={kbdCls}>esc</kbd> close
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <kbd class={kbdCls}>
-                {typeof navigator !== "undefined" && /Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}K
-              </kbd>{" "}
-              toggle
-            </span>
           </div>
         </div>
       </div>

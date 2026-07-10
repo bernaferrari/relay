@@ -6,6 +6,8 @@ import {
   plannedStepsFromMeta,
   resolvePlannedTitles,
   isPackagedFlowSteps,
+  expandFlowToEditableSteps,
+  collapseUnchangedFlow,
   summarizeRunHistory,
   stepStatusFromRun,
   clamp,
@@ -103,6 +105,40 @@ describe("resolvePlannedTitles / isPackagedFlowSteps", () => {
     assert.equal(isPackagedFlowSteps([{ kind: "flow", flow: "x" }]), true);
     assert.equal(isPackagedFlowSteps([{ kind: "tap" }]), false);
   });
+  it("expands thin flow to editable taps", () => {
+    const out = expandFlowToEditableSteps({
+      steps: [{ kind: "flow", flow: "login-x" }],
+      recipeId: "login-x",
+      source: "builtin",
+      planned: [{ title: "Open Grok" }, { title: "Continue with X" }],
+    });
+    assert.equal(out?.length, 2);
+    assert.equal(out![0]!.kind, "tap");
+    assert.equal(out![0]!.target.label, "Open Grok");
+  });
+  it("collapses untouched expansion back to flow", () => {
+    const planned = [{ title: "A" }, { title: "B" }];
+    const collapsed = collapseUnchangedFlow({
+      steps: [
+        { kind: "tap", target: { label: "A" } },
+        { kind: "tap", target: { label: "B" } },
+      ],
+      flowId: "login-x",
+      planned,
+    });
+    assert.deepEqual(collapsed, [{ kind: "flow", flow: "login-x" }]);
+  });
+  it("does not collapse reworked steps", () => {
+    const collapsed = collapseUnchangedFlow({
+      steps: [
+        { kind: "tap", target: { label: "A" } },
+        { kind: "tap", target: { label: "rewritten" } },
+      ],
+      flowId: "login-x",
+      planned: [{ title: "A" }, { title: "B" }],
+    });
+    assert.equal(collapsed, null);
+  });
 });
 
 describe("summarizeRunHistory", () => {
@@ -125,11 +161,11 @@ describe("summarizeRunHistory", () => {
 });
 
 describe("stepStatusFromRun", () => {
-  it("maps ok/healed/error", () => {
+  it("maps ok/healed/error (heal distinct from pass)", () => {
     const steps = [{ status: "ok" }, { status: "error" }, { status: "healed" }, {}];
     assert.equal(stepStatusFromRun(steps, 0), "pass");
     assert.equal(stepStatusFromRun(steps, 1), "fail");
-    assert.equal(stepStatusFromRun(steps, 2), "pass");
+    assert.equal(stepStatusFromRun(steps, 2), "heal");
     assert.equal(stepStatusFromRun(steps, 3), "idle");
   });
 });

@@ -1,0 +1,110 @@
+/* AgentBoard icon-button — Stage port (native button, children for glyph) */
+[data-component="icon-button"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0 solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  text-decoration: none;
+  user-select: none;
+  aspect-ratio: 1;
+  flex-shrink: 0;
+  cursor: default;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  color: var(--icon-base);
+
+  &[data-variant="primary"] {
+    background-color: var(--button-primary-base, var(--icon-strong-base));
+    color: var(--icon-invert-base);
+
+    &:hover:not(:disabled) {
+      background-color: var(--icon-strong-hover);
+    }
+    &:focus-visible:not(:disabled) {
+      background-color: var(--icon-strong-focus);
+    }
+    &:active:not(:disabled) {
+      background-color: var(--icon-strong-active);
+    }
+    &:disabled {
+      background-color: var(--icon-strong-disabled);
+      cursor: not-allowed;
+    }
+  }
+
+  &[data-variant="secondary"] {
+    background-color: var(--button-secondary-base);
+    color: var(--text-strong);
+    box-shadow: var(--shadow-xs-border-base);
+
+    &:hover:not(:disabled) {
+      background-color: var(--button-secondary-hover);
+    }
+    &:focus-visible:not(:active) {
+      box-shadow: var(--shadow-xs-border-focus);
+    }
+    &:focus-visible:active {
+      box-shadow: none;
+    }
+    &:disabled {
+      background-color: var(--surface-disabled, var(--icon-strong-disabled));
+      color: var(--text-weak);
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+  }
+
+  &[data-variant="ghost"] {
+    background-color: transparent;
+    color: var(--icon-base);
+
+    &:hover:not(:disabled) {
+      background-color: var(--surface-base-hover);
+      color: var(--text-strong);
+    }
+    &:focus-visible:not(:disabled) {
+      background-color: var(--surface-base-hover);
+      color: var(--text-strong);
+    }
+    &:active:not(:disabled) {
+      background-color: var(--surface-base-active);
+    }
+    &[data-selected="true"]:not(:disabled),
+    &[data-active="true"]:not(:disabled),
+    &[aria-expanded="true"]:not(:disabled) {
+      background-color: var(--surface-base-active);
+      color: var(--text-strong);
+    }
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  &[data-size="normal"] {
+    width: 24px;
+    height: 24px;
+  }
+
+  &[data-size="small"] {
+    width: 20px;
+    height: 20px;
+  }
+
+  &[data-size="large"] {
+    width: 32px;
+    height: 32px;
+  }
+
+  &:focus {
+    outline: none;
+  }
+}
+
+[data-component="icon-button"].titlebar-icon {
+  width: 32px;
+  height: 24px;
+  aspect-ratio: auto;
+}

@@ -17,6 +17,106 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
   const platform = usePlatform();
 
   onMount(() => {
+    // Fixed tooltip layer — avoids overflow:auto clipping on step actions.
+    // Emil: first tip delays; subsequent tips in a cluster are instant.
+    const layer = document.createElement("div");
+    layer.className = "tip-layer";
+    layer.setAttribute("role", "tooltip");
+    layer.hidden = true;
+    document.body.appendChild(layer);
+
+    let tipShowTimer: number | undefined;
+    let tipLeaveTimer: number | undefined;
+    let tipDelayTimer: number | undefined;
+    let activeEl: Element | null = null;
+
+    function hideTip() {
+      window.clearTimeout(tipDelayTimer);
+      layer.removeAttribute("data-show");
+      layer.hidden = true;
+      layer.textContent = "";
+      activeEl = null;
+    }
+
+    function placeTip(el: Element) {
+      const label = el.getAttribute("data-tip");
+      if (!label) {
+        hideTip();
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      layer.textContent = label;
+      layer.hidden = false;
+      // Prefer above; flip below near the top of the viewport.
+      const above = r.top >= 40;
+      layer.style.left = `${r.left + r.width / 2}px`;
+      layer.style.top = above ? `${r.top}px` : `${r.bottom}px`;
+      layer.dataset.side = above ? "above" : "below";
+      void layer.offsetWidth;
+      layer.setAttribute("data-show", "1");
+    }
+
+    const onTipEnter = (e: Event) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      const el = t.closest("[data-tip]");
+      if (!el) return;
+      window.clearTimeout(tipLeaveTimer);
+      activeEl = el;
+      const instant = document.documentElement.hasAttribute("data-tip-instant");
+      window.clearTimeout(tipDelayTimer);
+      if (instant) {
+        placeTip(el);
+      } else {
+        tipDelayTimer = window.setTimeout(() => {
+          if (activeEl === el) placeTip(el);
+          document.documentElement.setAttribute("data-tip-instant", "");
+        }, 400);
+      }
+      if (!instant) {
+        window.clearTimeout(tipShowTimer);
+        tipShowTimer = window.setTimeout(() => {
+          document.documentElement.setAttribute("data-tip-instant", "");
+        }, 450);
+      }
+    };
+    const onTipLeave = (e: Event) => {
+      const t = e.target;
+      if (!(t instanceof Element) || !t.closest("[data-tip]")) return;
+      const next = (e as MouseEvent).relatedTarget;
+      if (next instanceof Element && next.closest("[data-tip]")) {
+        // Moving to another tip — place immediately if cluster is instant
+        const el = next.closest("[data-tip]");
+        if (el) {
+          activeEl = el;
+          if (document.documentElement.hasAttribute("data-tip-instant")) placeTip(el);
+        }
+        return;
+      }
+      window.clearTimeout(tipShowTimer);
+      window.clearTimeout(tipDelayTimer);
+      hideTip();
+      tipLeaveTimer = window.setTimeout(() => {
+        document.documentElement.removeAttribute("data-tip-instant");
+      }, 350);
+    };
+    const onScroll = () => {
+      if (activeEl) placeTip(activeEl);
+    };
+    document.addEventListener("mouseover", onTipEnter, true);
+    document.addEventListener("mouseout", onTipLeave, true);
+    window.addEventListener("scroll", onScroll, true);
+    onCleanup(() => {
+      document.removeEventListener("mouseover", onTipEnter, true);
+      document.removeEventListener("mouseout", onTipLeave, true);
+      window.removeEventListener("scroll", onScroll, true);
+      window.clearTimeout(tipShowTimer);
+      window.clearTimeout(tipDelayTimer);
+      hideTip();
+      layer.remove();
+      window.clearTimeout(tipLeaveTimer);
+    });
+
     const unsub = cmd.register([
       {
         id: "nav.settings",
@@ -190,14 +290,16 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
   return (
     <div
       class={cn(
-        // `.qa` keeps token host (--c-accent, etc.) used across the product
         "qa relative flex h-full min-h-full min-h-dvh flex-col overflow-hidden",
+        "bg-v2-background-bg-deep text-text-strong",
         platform.platform === "desktop" && "qa--desktop",
       )}
     >
       <Topbar onSettings={() => props.onOpenSettings()} />
       <ErrorBanner />
-      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">{props.children}</div>
+      <div class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-v2-background-bg-deep text-text-strong text-12-regular">
+        {props.children}
+      </div>
       <CommandPalette />
       <Toaster />
     </div>

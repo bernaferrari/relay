@@ -1,7 +1,8 @@
 import { Show, type JSX, createSignal } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
-import { btnAcc, mono } from "../lib/ui";
+import { Button } from "@grok-device/ui/button";
+import { mono, modalPanel } from "../lib/ui";
 
 /**
  * Full-stage / full-workspace overlay when the API is offline.
@@ -30,44 +31,49 @@ export function OfflineGate(props: {
       <Show when={server.isOffline()}>
         <div
           class={cn(
-            "absolute inset-0 z-30 grid place-items-center bg-deep/70 backdrop-blur-sm",
+            "ui-scrim absolute inset-0 z-40 grid place-items-center",
             props.overlay && "rounded-none",
           )}
           role="alertdialog"
           aria-labelledby="offline-gate-title"
           aria-describedby="offline-gate-desc"
         >
-          <div class="flex max-w-[360px] flex-col items-center gap-1.5 rounded-card bg-layer-1 px-10 py-9 text-center shadow-[0_16px_48px_rgb(0_0_0/0.32)]">
-            <div class="relative mb-2.5 h-10 w-14" aria-hidden="true">
-              <span class="absolute bottom-0 left-0 h-2 w-3 origin-bottom animate-pulse rounded-[3px] bg-fail opacity-35" />
-              <span class="absolute bottom-0 left-4 h-2 w-3 origin-bottom animate-pulse rounded-[3px] bg-fail opacity-35 [animation-delay:200ms]" />
-              <span class="absolute bottom-0 left-8 h-2 w-3 origin-bottom animate-pulse rounded-[3px] bg-fail opacity-35 [animation-delay:400ms]" />
-              <span class="absolute top-[-2px] left-1/2 size-1.5 -translate-x-1/2 animate-pulse rounded-full bg-fail" />
-            </div>
-            <h2
-              id="offline-gate-title"
-              class="m-0 text-title font-semibold tracking-tight text-text"
-            >
+          <div
+            class={cn(
+              modalPanel,
+              "flex max-w-[340px] flex-col items-center gap-1.5 px-9 py-8 text-center shadow-lg-border-base",
+            )}
+          >
+            <span class="mb-1 size-2 rounded-full bg-icon-critical-base" aria-hidden="true" />
+            <h2 id="offline-gate-title" class="m-0 text-14-medium tracking-tight text-text-strong">
               Server offline
             </h2>
-            <p id="offline-gate-desc" class="m-0 mt-1 text-body leading-normal text-text-muted">
-              The Specimen API is not reachable. Start it locally, then retry.
+            <p
+              id="offline-gate-desc"
+              class="m-0 max-w-[260px] text-14-regular leading-relaxed text-text-base"
+            >
+              Stage can’t reach the API. Start the local server, then retry.
             </p>
             <code
               class={cn(
                 mono,
-                "mt-2.5 rounded-md bg-layer-2 px-2.5 py-1 text-meta text-accent-soft",
+                "mt-3 rounded-md bg-surface-base px-2.5 py-1 text-12-regular text-text-strong shadow-xs-border-base",
               )}
             >
               pnpm dev:serve
             </code>
             <Show when={server.serverUrl()}>
-              <p class={cn(mono, "text-meta text-text-faint")}>{server.serverUrl()}</p>
+              <p class={cn(mono, "mt-1.5 text-12-regular text-text-weak")}>{server.serverUrl()}</p>
             </Show>
-            <div class="mt-4">
-              <button type="button" class={btnAcc} disabled={busy()} onClick={() => void retry()}>
+            <div class="mt-5">
+              <Button
+                variant="primary"
+                size="normal"
+                disabled={busy()}
+                onClick={() => void retry()}
+              >
                 {busy() ? "Checking…" : "Retry connection"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
