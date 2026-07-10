@@ -9,13 +9,42 @@ const execFileAsync = promisify(execFile);
 const ROOT = new URL('..', import.meta.url).pathname;
 const OUT_DIR = process.env.HELP_BENCH_OUT ?? join(ROOT, '.tmp', 'help-conformance-bench');
 const RUN_TIMEOUT_MS = Number(process.env.HELP_BENCH_TIMEOUT_MS ?? 90_000);
+// Runner x case pairs run concurrently, capped low: these are paid LLM calls
+// and the CLI help subprocess calls behind loadDocs share this same machine.
+const CONCURRENCY = Number(process.env.HELP_BENCH_CONCURRENCY ?? 4);
 const DEFAULT_RUNNERS = ['codex:gpt-5.4-mini', 'claude:claude-haiku-4-5'];
+const USAGE = `Usage: node scripts/help-conformance-bench.mjs [options]
+
+Feeds a help slice + task into one non-agentic LLM call per runner x case and
+regex-scores the returned command plan.
+
+Options:
+  --runner <kind:model>    Add one runner (repeatable). Default: ${DEFAULT_RUNNERS.join(', ')}
+  --runners <a,b>          Comma-separated runner list
+  --case <id>              Add one case id (repeatable). Default: all cases
+  --cases <a,b>            Comma-separated case id list
+  --out <dir>              Output directory (default: .tmp/help-conformance-bench)
+  --override-doc <topicId>=<path>
+                           Grade a DRAFT doc: load this topic's text from the file
+                           instead of the live CLI help. Repeatable; the last
+                           occurrence per topic wins. Override text goes through the
+                           same post-processing as the live source (e.g. the
+                           --help:first30 doc id is still capped to its first 30
+                           lines), so an A/B grade compares like with like.
+  --dry-run                Build prompts and write the report without any LLM calls
+  --help                   Show this usage text
+
+Environment:
+  HELP_BENCH_CONCURRENCY   Concurrent runner x case calls (default: 4)
+  HELP_BENCH_TIMEOUT_MS    Per-call timeout (default: 90000)
+  HELP_BENCH_OUT           Default output directory`;
 const OPTION_SPECS = {
   '--runner': { target: 'runners', mode: 'append' },
   '--runners': { target: 'runners', mode: 'csv' },
   '--case': { target: 'cases', mode: 'append' },
   '--cases': { target: 'cases', mode: 'csv' },
   '--out': { target: 'outDir', mode: 'value' },
+  '--override-doc': { target: 'overrideDocs', mode: 'keyvalue' },
 };
 const OPTION_APPLIERS = {
   append: (args, target, value) => {
@@ -27,7 +56,23 @@ const OPTION_APPLIERS = {
   value: (args, target, value) => {
     args[target] = value;
   },
+  keyvalue: (args, target, value) => {
+    const separatorIndex = value.indexOf('=');
+    if (separatorIndex <= 0) {
+      throw new Error(`--override-doc expects <topicId>=<path>, got: ${value}`);
+    }
+    const topicId = value.slice(0, separatorIndex);
+    const path = value.slice(separatorIndex + 1);
+    const map = args[target] ?? new Map();
+    map.set(topicId, path);
+    args[target] = map;
+  },
 };
+
+// Raw-coordinate fallback the ported skillgym quiz cases forbid: a
+// click/fill/press targeting bare numbers instead of a ref or selector.
+const RAW_COORDINATE_TARGET =
+  /(?:^|\n)(?:agent-device\s+)?(?:click|fill|press)\s+-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?/i;
 
 const CASES = [
   {
@@ -60,6 +105,92 @@ const CASES = [
     task: 'Plan commands to validate a CLI/runtime change in agent-device against an iOS app without accidentally using stale built output.',
     expectations: ['fullPrefix', 'usesValidationPrep', 'opensAndCloses'],
   },
+  // The three cases below are ported from
+  // test/skillgym/suites/agent-device-smoke-suite.ts (settle-diff-is-observation,
+  // sample-output-settled-diff-next-target, sample-output-not-settled-needs-observe).
+  // They are self-contained "next-command quiz" cases: a captured agent-device
+  // output plus a task, scored by regex instead of the named expectation
+  // scorers above. Output text mirrors the CURRENT settle rendering in
+  // src/commands/interaction/output.ts, including the "unchanged interactive
+  // (N):" tail added by #1167/#1172 for diffs with no meaningful added ref.
+  {
+    id: 'settle-diff-is-observation',
+    docs: ['--help:first30'],
+    task: `You already ran this command and observed its settled output:
+
+agent-device press @e37 --settle
+Tapped @e37 (203, 88)
+settled after 540ms: +0 -1 (~15 unchanged)
+- @e50 [text] "Suggested for you"
+unchanged interactive (4):
+= @e64 [text-field] "Search"
+= @e65 [text] "Recent searches"
+= @e12 [tab] "Home"
+= @e40 [tab] "Profile"
+
+The task was to confirm the feed-search UI is present, then close the session. The settled diff and its unchanged-interactive tail above already contain every ref and piece of evidence the task needs: the Search field and Recent searches are both listed. Plan only the next command. Do not take another snapshot, wait, find, get, or is call just to re-read evidence that is already shown above.`,
+    expectations: ['fullPrefix'],
+    matchers: [{ id: 'plansClose', pattern: /(?:^|\n)(?:agent-device\s+)?close\b/i }],
+    forbidden: [
+      { id: 'noSnapshot', pattern: /\bsnapshot\b/i },
+      { id: 'noWait', pattern: /\bwait\b/i },
+      { id: 'noFind', pattern: /\bfind\b/i },
+      { id: 'noGet', pattern: /\bget\b/i },
+      { id: 'noIs', pattern: /\bis\b/i },
+      { id: 'noPressOrClick', pattern: /\b(?:press|click)\b/i },
+    ],
+  },
+  {
+    id: 'sample-output-settled-diff-next-target',
+    docs: ['--help:first30'],
+    task: `Read this previous agent-device output, then plan the next command:
+
+agent-device fill 'id="account-search"' "callstack" --settle
+Filled 9 chars
+settled after 610ms: +2 -0 (~18 unchanged)
++ @e64 [button] "@callstack.com"
++ @e65 [text] "Callstack"
+
+Use the ref exposed by the settled diff to open the account, with --settle on this next action too. Do not re-read the same screen first.`,
+    expectations: ['fullPrefix'],
+    matchers: [
+      { id: 'pressOrClickOrTap', pattern: /\b(?:press|click|tap)\b/i },
+      { id: 'usesE64RefOrLabel', pattern: /@e64\b|label=(?:["']?@callstack\.com["']?)/i },
+      { id: 'usesSettleFlag', pattern: /--settle\b/i },
+    ],
+    forbidden: [
+      { id: 'noSnapshot', pattern: /\bsnapshot\b/i },
+      { id: 'noWaitStable', pattern: /wait\s+stable/i },
+      { id: 'noFill', pattern: /\bfill\b/i },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
+  {
+    id: 'sample-output-not-settled-needs-observe',
+    docs: ['--help:first30'],
+    task: `Read this previous agent-device output, then plan the next command:
+
+agent-device press @e12 --settle
+Tapped @e12 (166, 240)
+not settled after 10000ms
+hint: The UI kept changing for the whole settle budget (animation, carousel, or ticker?), so no settled diff is shown. Raise --timeout, wait for specific content, or take a fresh snapshot.
+
+Old refs may be stale after this mutation, and no settled diff was printed, so the next target is unknown. Follow the output hint: observe the current UI (a fresh snapshot or a wait) before attempting another ref-based action.`,
+    expectations: ['fullPrefix'],
+    matchers: [
+      {
+        id: 'observesBeforeActing',
+        pattern: /(?:^|\n)(?:agent-device\s+)?(?:wait\b|snapshot\b[^\n]*-i\b)/i,
+      },
+    ],
+    forbidden: [
+      {
+        id: 'noBareRefMutation',
+        pattern: /(?:^|\n)(?:agent-device\s+)?(?:press|click|fill|longpress)\s+@e\d+/i,
+      },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
 ];
 
 function parseArgs(argv) {
@@ -76,6 +207,10 @@ function readArgs(args, argv, index) {
 
 function readArg(args, argv, index) {
   const arg = argv[index];
+  if (arg === '--help' || arg === '-h') {
+    console.log(USAGE);
+    process.exit(0);
+  }
   if (arg === '--dry-run') return applyDryRun(args, index);
   applyOption(args, optionSpec(arg), argv[index + 1]);
   return index + 2;
@@ -88,7 +223,7 @@ function applyDryRun(args, index) {
 
 function optionSpec(arg) {
   const spec = OPTION_SPECS[arg];
-  if (!spec) throw new Error(`Unknown argument: ${arg}`);
+  if (!spec) throw new Error(`Unknown argument: ${arg}. Run with --help for usage.`);
   return spec;
 }
 
@@ -104,6 +239,7 @@ function assertOptionValue(spec, value) {
 function applyDefaultArgs(args) {
   args.runners ??= DEFAULT_RUNNERS;
   args.cases ??= CASES.map((testCase) => testCase.id);
+  args.overrideDocs ??= new Map();
 }
 
 async function main() {
@@ -111,7 +247,9 @@ async function main() {
   const outDir = resolveOutDir(args);
   await mkdir(outDir, { recursive: true });
   const selectedCases = selectCases(args.cases);
-  const docs = await loadDocs(requiredDocIds(selectedCases));
+  const docIds = requiredDocIds(selectedCases);
+  assertOverrideDocIds(args.overrideDocs, docIds);
+  const docs = await loadDocs(docIds, args.overrideDocs);
 
   const results = await runBenchmarkMatrix(args.runners, selectedCases, docs, outDir, args.dryRun);
   const reportPath = join(outDir, `report-${Date.now()}.json`);
@@ -138,19 +276,47 @@ function requiredDocIds(selectedCases) {
   return [...new Set(selectedCases.flatMap((testCase) => testCase.docs))];
 }
 
+// A typo'd or stale --override-doc topic id must not silently grade the real
+// doc while the caller believes the draft was measured: fail fast instead.
+function assertOverrideDocIds(overrideDocs, docIds) {
+  const unknown = [...overrideDocs.keys()].filter((topicId) => !docIds.includes(topicId));
+  if (unknown.length === 0) return;
+  throw new Error(
+    `--override-doc topic id(s) not used by the selected cases: ${unknown.join(', ')}. Valid doc ids: ${docIds.join(', ')}.`,
+  );
+}
+
 function updateExitCode(results, dryRun) {
   if (!dryRun && results.some((result) => !result.passed)) process.exitCode = 1;
 }
 
 async function runBenchmarkMatrix(runners, selectedCases, docs, outDir, dryRun) {
-  const results = [];
-  for (const runner of runners) {
-    for (const testCase of selectedCases) {
-      const result = await runBenchmarkEntry(runner, testCase, docs, outDir, dryRun);
-      results.push(result);
-      printResult(result, dryRun);
+  const entries = runners.flatMap((runner) =>
+    selectedCases.map((testCase) => ({ runner, testCase })),
+  );
+  // Concurrency-capped, but results print in the original runner x case
+  // matrix order (not completion order) once every entry has settled, so
+  // output stays as readable as the old sequential loop.
+  const results = await mapWithConcurrency(entries, CONCURRENCY, ({ runner, testCase }) =>
+    runBenchmarkEntry(runner, testCase, docs, outDir, dryRun),
+  );
+  for (const result of results) printResult(result, dryRun);
+  return results;
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function runNext() {
+    for (;;) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= items.length) return;
+      results[current] = await worker(items[current], current);
     }
   }
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: workerCount }, runNext));
   return results;
 }
 
@@ -168,17 +334,44 @@ function printResult(result, dryRun) {
   );
 }
 
-async function loadDocs(docIds) {
-  return Object.fromEntries(await Promise.all(docIds.map(loadDocEntry)));
+async function loadDocs(docIds, overrideDocs) {
+  return Object.fromEntries(
+    await Promise.all(docIds.map((docId) => loadDocEntry(docId, overrideDocs))),
+  );
 }
 
-async function loadDocEntry(docId) {
-  return [docId, await loadDoc(docId)];
+async function loadDocEntry(docId, overrideDocs) {
+  return [docId, await loadDoc(docId, overrideDocs)];
 }
 
-async function loadDoc(docId) {
-  if (docId === '--help:first30') return firstLines(await cliHelp(['--help']), 30);
-  return cliHelp(['help', docId]);
+async function loadDoc(docId, overrideDocs) {
+  // An override swaps only WHERE the text comes from; the per-doc
+  // post-processing below (e.g. the --help:first30 30-line cap) applies to
+  // both sources so an A/B grade compares like with like. Without this, a
+  // draft longer than 30 lines would be graded on content the live path
+  // always truncates away.
+  return postProcessDoc(docId, await loadDocSource(docId, overrideDocs));
+}
+
+async function loadDocSource(docId, overrideDocs) {
+  const overridePath = overrideDocs?.get(docId);
+  if (overridePath) return readOverrideDoc(docId, overridePath);
+  return docId === '--help:first30' ? cliHelp(['--help']) : cliHelp(['help', docId]);
+}
+
+async function readOverrideDoc(docId, overridePath) {
+  try {
+    return await readFile(overridePath, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `--override-doc file for "${docId}" is not readable: ${overridePath} (${error?.code ?? errorMessage(error)})`,
+    );
+  }
+}
+
+function postProcessDoc(docId, text) {
+  const trimmed = text.trim();
+  return docId === '--help:first30' ? firstLines(trimmed, 30) : trimmed;
 }
 
 async function cliHelp(args) {
@@ -210,16 +403,17 @@ async function runCase(runner, testCase, prompt, outDir) {
   const outputPath = join(outDir, `${safeName(runner)}-${testCase.id}.txt`);
   await writeFile(outputPath, raw);
   const commands = extractCommands(raw);
-  const checks = scoreExpectations(testCase.expectations, commands, raw);
+  const checks = scoreExpectations(testCase, commands, raw);
   const score = countPassingChecks(checks);
+  const total = countChecks(testCase);
   return {
     runner,
     caseId: testCase.id,
     commands,
     checks,
     score,
-    total: testCase.expectations.length,
-    passed: runnerError === undefined && score === testCase.expectations.length,
+    total,
+    passed: runnerError === undefined && score === total,
     ...(runnerError ? { runnerError } : {}),
     outputPath,
   };
@@ -286,8 +480,11 @@ function execFileWithInput(file, args, input, options) {
 }
 
 async function runCodex(model, prompt, outDir) {
-  const outFile = join(outDir, `codex-${model}-${Date.now()}.json`);
-  const { stdout } = await execFileAsync(
+  const outFile = join(
+    outDir,
+    `codex-${model}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`,
+  );
+  const pending = execFileAsync(
     'codex',
     [
       'exec',
@@ -306,13 +503,24 @@ async function runCodex(model, prompt, outDir) {
     ],
     { cwd: ROOT, maxBuffer: 1024 * 1024 * 20, timeout: RUN_TIMEOUT_MS },
   );
+  // codex exec reads from stdin until EOF when it isn't a TTY. execFile never
+  // closes the child's stdin pipe on its own, so without this the process
+  // blocks on "Reading additional input from stdin..." until RUN_TIMEOUT_MS
+  // kills it and every codex case reports empty/error output.
+  pending.child?.stdin?.end();
+  const { stdout } = await pending;
   let lastMessage = '';
   try {
     lastMessage = await readFile(outFile, 'utf8');
   } catch {
     // stdout still carries the transcript when -o fails.
   }
-  return `${stdout}\n${lastMessage}`;
+  // `-o` writes the same final JSON message that codex also prints to
+  // stdout when it isn't attached to a TTY. Concatenating both produces two
+  // back-to-back JSON objects, which breaks every downstream JSON.parse
+  // candidate and silently zeroes out extractCommands(). Prefer the clean
+  // -o payload and only fall back to stdout if it's missing/empty.
+  return lastMessage.trim().length > 0 ? lastMessage : stdout;
 }
 
 function extractCommands(raw) {
@@ -378,11 +586,38 @@ const EXPECTATION_SCORERS = {
   opensAndCloses: ({ joined }) => /\bopen\b/.test(joined) && /\bclose\b/.test(joined),
 };
 
-function scoreExpectations(expectations, commands, raw) {
+/**
+ * Every check a case declares, normalized to a uniform `{ id, test }` shape:
+ * - `expectations`: named lookups into EXPECTATION_SCORERS (the original 4
+ *   help-layout cases).
+ * - `matchers`: the check passes when the pattern matches the planned
+ *   commands (ported skillgym quiz cases' `outputs`).
+ * - `forbidden`: the check passes when the pattern does NOT match (ported
+ *   skillgym quiz cases' `forbiddenOutputs`).
+ */
+function resolveChecks(testCase) {
+  const named = (testCase.expectations ?? []).map((id) => ({
+    id,
+    test: (context) => scoreExpectation(id, context),
+  }));
+  const matched = (testCase.matchers ?? []).map(({ id, pattern }) => ({
+    id,
+    test: (context) => pattern.test(context.joined),
+  }));
+  const forbidden = (testCase.forbidden ?? []).map(({ id, pattern }) => ({
+    id,
+    test: (context) => !pattern.test(context.joined),
+  }));
+  return [...named, ...matched, ...forbidden];
+}
+
+function countChecks(testCase) {
+  return resolveChecks(testCase).length;
+}
+
+function scoreExpectations(testCase, commands, raw) {
   const context = { commands, joined: commands.join('\n').toLowerCase(), raw };
-  return Object.fromEntries(
-    expectations.map((expectation) => [expectation, scoreExpectation(expectation, context)]),
-  );
+  return Object.fromEntries(resolveChecks(testCase).map(({ id, test }) => [id, test(context)]));
 }
 
 function scoreExpectation(expectation, context) {
@@ -408,4 +643,11 @@ function safeName(name) {
   return basename(name).replace(/[^a-z0-9_.-]+/gi, '-');
 }
 
-await main();
+// Expected failures (bad flags, unreadable override files, unknown topic ids)
+// print as one clean line instead of an unhandled stack trace.
+try {
+  await main();
+} catch (error) {
+  console.error(`Error: ${errorMessage(error)}`);
+  process.exitCode = 1;
+}
