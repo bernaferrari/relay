@@ -45,6 +45,10 @@ import { setRunnerLeaseOwnerStateDir } from '../../platforms/apple/core/runner/r
 import { cleanupManagedAgentBrowserOrphans } from '../../platforms/web/agent-browser-lifecycle.ts';
 import { getManagedAgentBrowserStatus } from '../../platforms/web/agent-browser-tool.ts';
 import { openWebSessionNames } from '../web-session-names.ts';
+import {
+  listAndroidAdbSerialsQuick,
+  restoreOrphanedAndroidTestImeOnDaemonStartup,
+} from '../../platforms/android/ime-lifecycle.ts';
 
 const DAEMON_SESSION_TEARDOWN_TIMEOUT_MS = 5_000;
 const DAEMON_PNG_WORKER_TERMINATE_TIMEOUT_MS = 1_000;
@@ -132,7 +136,7 @@ export async function startDaemonRuntime(
   };
 
   const teardownDaemonSession = async (session: SessionState): Promise<void> => {
-    const teardown = teardownSessionResources(session, session.name).catch((error) => {
+    const teardown = teardownSessionResources(session, session.name, baseDir).catch((error) => {
       stderr.write(
         `Daemon session teardown error (${session.name}): ${
           error instanceof Error ? error.message : String(error)
@@ -246,6 +250,12 @@ export async function startDaemonRuntime(
   let httpPort: number | undefined;
   try {
     await cleanupWebBrowserOrphansForDaemonStartup({ stateDir: baseDir, sessionStore });
+    // Fire-and-forget: gated on a state-dir marker so it only touches adb when a prior run here
+    // actually activated the test IME (never on hosts that don't use it, e.g. the macOS runner).
+    void restoreOrphanedAndroidTestImeOnDaemonStartup({
+      stateDir: baseDir,
+      listSerials: listAndroidAdbSerialsQuick,
+    }).catch(() => {});
     const opened = await openDaemonServers();
     servers = opened.servers;
     socketPort = opened.socketPort;

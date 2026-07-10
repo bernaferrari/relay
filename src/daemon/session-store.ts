@@ -105,6 +105,14 @@ export class SessionStore {
     return path.join(this.sessionsDir, safeSessionName(sessionName));
   }
 
+  // Daemon state dir (parent of the `sessions/` dir), matching daemonPaths.baseDir. Called via
+  // sessionStore.resolveDaemonStateDir() in session-open.ts; fallow's class-member tracer does not
+  // resolve it inside a call argument, hence the suppression.
+  // fallow-ignore-next-line unused-class-member
+  resolveDaemonStateDir(): string {
+    return path.dirname(this.sessionsDir);
+  }
+
   ensureSessionDir(sessionName: string): string {
     const sessionDir = this.resolveSessionDir(sessionName);
     fs.mkdirSync(sessionDir, { recursive: true });
