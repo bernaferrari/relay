@@ -56,6 +56,23 @@ intentionally accepting a finding.
 - `pnpm fallow:all` — full-tree summary, includes grandfathered legacy findings
 - `pnpm fallow:baseline` — regenerate baselines (only to intentionally accept a finding)
 
+Code quality (production exports): `pnpm check:production-exports` runs Fallow's native
+production graph, which excludes test/story/dev files, and fails when a new export has no
+production consumer. This includes the test-only-export bug class that shipped in #1199's first
+revision, while also catching exports that are unreachable from every graph. Fallow's
+`ignoreExportsUsedInFile` option in the gate's inherited config keeps exports with a real
+same-file consumer out of this report without weakening the general Fallow audit. The checked-in
+native baseline lives at `fallow-baselines/production-unused-exports.json`.
+
+Fix a finding by wiring the export into production or removing the unnecessary export/code. For
+an intentional test seam, explain why in a source comment and put
+`// fallow-ignore-next-line unused-export` directly above the export. Run
+`pnpm check:production-exports:baseline` only for a deliberate reviewed baseline migration or to
+remove stale entries; additions accept new production-unreachable exports and should be rare.
+Production usage reached only through dynamic property access remains invisible to a static
+import graph, so register those exports in `.fallowrc.json` `ignoreExports` instead (as with the
+daemon route handlers loaded through `typeof import()`).
+
 Optional device selectors for tests:
 
 - `ANDROID_DEVICE=Pixel_9_Pro_XL` or `ANDROID_SERIAL=emulator-5554`
