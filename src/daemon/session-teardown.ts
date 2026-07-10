@@ -6,6 +6,7 @@ import { stopIosRunnerSession } from '../platforms/apple/core/runner/runner-clie
 import { cleanupAppleXctracePerfCapture } from '../platforms/apple/core/perf-xctrace.ts';
 import { cleanupAndroidNativePerfSession } from '../platforms/android/perf.ts';
 import { stopAndroidSnapshotHelperSessionForDevice } from '../platforms/android/snapshot-helper.ts';
+import { restoreAndroidTestIme } from '../platforms/android/ime-lifecycle.ts';
 import { cleanupRetainedMaterializedPathsForSession } from './materialized-path-registry.ts';
 import { stopSessionAudioProbe } from './audio-probe.ts';
 import type { SessionState } from './types.ts';
@@ -59,15 +60,34 @@ export async function stopSessionAndroidSnapshotHelper(session: SessionState): P
   await stopAndroidSnapshotHelperSessionForDevice(session.device);
 }
 
+export async function restoreSessionAndroidIme(
+  session: SessionState,
+  stateDir?: string,
+): Promise<void> {
+  if (session.device.platform !== 'android') return;
+  await restoreAndroidTestIme(session.device, { stateDir }).catch((error) => {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'android_test_ime_restore_failed',
+      data: {
+        session: session.name,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+  });
+}
+
 export async function teardownSessionResources(
   session: SessionState,
   sessionName: string,
+  stateDir?: string,
 ): Promise<void> {
   await stopSessionAppLog(session);
   await stopSessionAudioProbe(session, 'session-teardown');
   await stopSessionApplePerfCapture(session);
   await stopSessionAndroidNativePerfCapture(session);
   await stopSessionAndroidSnapshotHelper(session);
+  await restoreSessionAndroidIme(session, stateDir);
   if (isApplePlatform(session.device.platform)) {
     await stopAppleRunnerForClose(session);
   }
