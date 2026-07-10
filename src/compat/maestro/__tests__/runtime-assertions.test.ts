@@ -351,18 +351,7 @@ test('invokeMaestroAssertVisible does not retry stale Android taps after swipes'
     positionals: ['direction', 'left', '300'],
     invoke: async (req): Promise<DaemonResponse> => {
       calls.push([req.command, req.positionals]);
-      if (req.command === 'snapshot') {
-        return {
-          ok: true,
-          data: snapshot([
-            node('Root', {
-              type: 'android.widget.FrameLayout',
-              rect: { x: 0, y: 0, width: 390, height: 844 },
-            }),
-          ]),
-        };
-      }
-      if (req.command === 'swipe') return { ok: true, data: {} };
+      if (req.command === 'gesture') return { ok: true, data: {} };
       return { ok: false, error: { code: 'UNEXPECTED_COMMAND', message: req.command } };
     },
   });
@@ -396,19 +385,55 @@ test('invokeMaestroAssertVisible does not retry stale Android taps after swipes'
           data: snapshot([node('Contacts'), node('Albums')]),
         };
       }
-      if (req.command === 'swipe') return { ok: true, data: {} };
+      if (req.command === 'gesture') return { ok: true, data: {} };
       return { ok: false, error: { code: 'UNEXPECTED_COMMAND', message: req.command } };
     },
   });
 
   assert.equal(response.ok, false);
   assert.deepEqual(calls, [
-    ['snapshot', []],
-    ['swipe', ['332', '549', '59', '549', '300']],
+    ['gesture', ['swipe', 'left', '300']],
     ['wait', ['What is Lorem Ipsum?', '2000']],
     ['snapshot', []],
-    ['swipe', ['332', '549', '59', '549', '300']],
+    ['gesture', ['swipe', 'left', '300']],
     ['wait', ['What is Lorem Ipsum?', '2000']],
+    ['snapshot', []],
+  ]);
+});
+
+test('invokeMaestroAssertVisible does not replay a previous iOS swipe after an AX miss', async () => {
+  const scope = { values: {} };
+  const calls: Array<[string, string[] | undefined]> = [];
+  rememberMaestroRecoverableInteraction(scope, {
+    kind: 'swipe',
+    command: 'gesture',
+    positionals: ['swipe', 'left', '300'],
+  });
+
+  const response = await invokeMaestroAssertVisible({
+    baseReq: {
+      token: 't',
+      session: 's',
+      flags: { platform: 'ios' },
+    },
+    scope,
+    positionals: ['label="Second page" || text="Second page" || id="Second page"', '1000'],
+    invoke: async (req): Promise<DaemonResponse> => {
+      calls.push([req.command, req.positionals]);
+      if (req.command === 'wait') {
+        return {
+          ok: false,
+          error: { code: 'COMMAND_FAILED', message: 'wait timed out for text: Second page' },
+        };
+      }
+      if (req.command === 'snapshot') return { ok: true, data: snapshot([node('First page')]) };
+      return { ok: false, error: { code: 'UNEXPECTED_COMMAND', message: req.command } };
+    },
+  });
+
+  assert.equal(response.ok, false);
+  assert.deepEqual(calls, [
+    ['wait', ['Second page', '1000']],
     ['snapshot', []],
   ]);
 });
