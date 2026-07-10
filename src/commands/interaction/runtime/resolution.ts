@@ -492,7 +492,12 @@ export async function preflightNativeRefInteraction(
   options: CommandContext,
   target: Extract<InteractionTarget, { kind: 'ref' }>,
   action: InteractionAction,
-): Promise<{ targetHittable?: boolean; hint?: string }> {
+): Promise<{
+  targetHittable?: boolean;
+  hint?: string;
+  node?: SnapshotNode;
+  preActionNodes?: SnapshotNode[];
+}> {
   const session = await runtime.sessions.get(options.session ?? 'default');
   const nodes = session?.snapshot?.nodes;
   if (!nodes || normalizeRef(target.ref) === null) return {};
@@ -502,7 +507,13 @@ export async function preflightNativeRefInteraction(
   if (!resolved) return {};
   assertInteractionNotBlocked(resolved.node, `Ref ${target.ref}`, action);
   assertVisibleRefTarget(resolved.node, nodes, target.ref, action);
-  return describeNonHittableTarget(resolved.node, action);
+  return {
+    ...describeNonHittableTarget(resolved.node, action),
+    // ADR 0012 decision 3: the guard lookup above doubles as the record-time
+    // evidence source for the fast path, at zero extra capture cost.
+    node: resolved.node,
+    preActionNodes: nodes,
+  };
 }
 
 // isNodeVisibleOnScreen (not the effective-viewport form): items inside an

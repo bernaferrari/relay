@@ -13,6 +13,7 @@ import {
   stripInternalInteractionFlags,
 } from '../interaction-outcome-policy.ts';
 import { markPostGestureStabilization } from '../post-gesture-stabilization.ts';
+import { computeTargetEvidence, type RecordedTargetCapture } from '../session-target-evidence.ts';
 
 export type ContextFromFlags = (
   flags: CommandFlags | undefined,
@@ -37,6 +38,8 @@ export function finalizeTouchInteraction(params: {
   flags: CommandFlags | undefined;
   result: Record<string, unknown>;
   responseData: Record<string, unknown>;
+  /** ADR 0012 decision 3: record-time input for the `target-v1` annotation. */
+  recordedTarget?: RecordedTargetCapture;
   actionStartedAt: number;
   actionFinishedAt: number;
   androidFreshnessBaseline?: SnapshotState | undefined;
@@ -50,16 +53,20 @@ export function finalizeTouchInteraction(params: {
     flags,
     result,
     responseData,
+    recordedTarget,
     actionStartedAt,
     actionFinishedAt,
     androidFreshnessBaseline,
   } = params;
   const actionFlags = stripInternalInteractionFlags(flags);
+  const targetEvidence =
+    session.recordSession && recordedTarget ? computeTargetEvidence(recordedTarget) : undefined;
   sessionStore.recordAction(session, {
     command,
     positionals,
     flags: actionFlags ?? {},
     result,
+    ...(targetEvidence ? { targetEvidence } : {}),
   });
   markPendingInteractionOutcome({
     session,

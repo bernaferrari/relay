@@ -314,6 +314,7 @@ function readDirectIosSelectorTapTarget(params: {
   const { session, commandLabel, target, flags } = params;
   if (commandLabel !== 'click') return null;
   if (target.kind !== 'selector') return null;
+  if (session.recordSession) return null;
   if (hasNonDefaultClickOptions(flags)) return null;
   if (commandSupportsVerifyEvidence(commandLabel) && flags?.verify === true) return null;
   if (commandSupportsSettleObservation(commandLabel) && flags?.settle === true) return null;
@@ -634,6 +635,7 @@ function readDirectIosSelectorFillTarget(params: {
 }): DirectIosSelectorTarget | null {
   const { session, target, flags } = params;
   if (target.kind !== 'selector') return null;
+  if (session.recordSession) return null;
   if (commandSupportsVerifyEvidence('fill') && flags?.verify === true) return null;
   if (commandSupportsSettleObservation('fill') && flags?.settle === true) return null;
   return readDirectSelectorWithMaestroFallback(session, target.selector, flags);
@@ -668,9 +670,7 @@ async function dispatchRuntimeInteraction<
     afterRun?(result: TResult): Promise<void>;
     buildPayloads(
       result: TResult,
-    ):
-      | { result: Record<string, unknown>; responseData: Record<string, unknown> }
-      | Promise<{ result: Record<string, unknown>; responseData: Record<string, unknown> }>;
+    ): InteractionResponsePayloads | Promise<InteractionResponsePayloads>;
   },
 ): Promise<DaemonResponse> {
   const session = params.sessionStore.get(params.sessionName);
@@ -688,7 +688,7 @@ async function dispatchRuntimeInteraction<
       },
     );
     const actionFinishedAt = Date.now();
-    const { result, responseData } = await options.buildPayloads(runtimeResult);
+    const { result, responseData, recordedTarget } = await options.buildPayloads(runtimeResult);
     if (readiness.status === 'recovered') {
       // Append, don't clobber — the builder may already carry a warning
       // (e.g. stale-refs, #1076).
@@ -708,6 +708,7 @@ async function dispatchRuntimeInteraction<
       flags: params.req.flags,
       result,
       responseData,
+      recordedTarget,
       actionStartedAt,
       actionFinishedAt,
       androidFreshnessBaseline: options.androidFreshnessBaseline,

@@ -19,6 +19,7 @@ import type { RecordingScope } from '../core/recording-scope.ts';
 import type { DeviceInfo, Platform, PlatformSelector } from '../kernel/device.ts';
 import type { ExecBackgroundResult, ExecResult } from '../utils/exec.ts';
 import type { SnapshotState } from '../kernel/snapshot.ts';
+import type { TargetAnnotationV1 } from '../replay/target-identity.ts';
 import type { AppLogFailure, AppLogState } from './app-log-process.ts';
 import type { DeviceLease } from './lease-registry.ts';
 import type { AndroidNativePerfSession } from '../platforms/android/perf.ts';
@@ -398,4 +399,10 @@ export type SessionAction = {
     noRecord?: boolean;
   };
   result?: Record<string, unknown>;
+  /**
+   * ADR 0012 decision 3: parsed or record-time-computed `target-v1`
+   * evidence, written as a comment immediately before this action's line.
+   * Inert until migration step 4 adds enforcement.
+   */
+  targetEvidence?: TargetAnnotationV1;
 };
