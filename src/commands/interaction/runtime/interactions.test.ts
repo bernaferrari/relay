@@ -127,7 +127,10 @@ test('runtime fill uses backend ref primitive without resolving snapshot geometr
   assert.deepEqual(calls, [{ ref: '@e1', text: 'hello', delayMs: 25 }]);
   assert.equal(result.kind, 'ref');
   assert.equal(result.point, undefined);
-  assert.equal(result.node, undefined);
+  // ADR 0012 decision 3: the preflight's guard lookup supplies the
+  // record-time evidence node on the runtime result.
+  assert.equal(result.node?.ref, 'e1');
+  assert.ok(Array.isArray(result.preActionNodes));
   assert.deepEqual(result.target, { kind: 'ref', ref: '@e1' });
   assert.equal(result.text, 'hello');
   assert.deepEqual(result.backendResult, { ref: 'e1', text: 'hello' });

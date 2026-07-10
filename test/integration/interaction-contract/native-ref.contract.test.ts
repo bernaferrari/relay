@@ -4,6 +4,7 @@ import type { InteractionGuarantee } from '../../../src/contracts/interaction-gu
 import type { SnapshotState } from '../../../src/kernel/snapshot.ts';
 import { ref } from '../../../src/commands/index.ts';
 import { scenarioName } from './coverage-manifest.ts';
+import { buildInteractionResponseData } from '../../../src/daemon/handlers/interaction-touch-response.ts';
 import { NATIVE_REF_COVERAGE } from './native-ref.coverage.ts';
 import {
   closedDrawerSnapshot,
@@ -169,5 +170,25 @@ test(scenario('responseConstruction'), async () => {
   assert.deepEqual(result.target, { kind: 'ref', ref: '@e1' });
   assert.deepEqual(result.backendResult, { ref: 'e1' });
   assert.equal(result.point, undefined);
-  assert.equal(result.node, undefined);
+  // ADR 0012 decision 3: the preflight's guard lookup supplies the
+  // record-time evidence node on the runtime result.
+  assert.equal(result.node?.ref, 'e1');
+  assert.ok(Array.isArray(result.preActionNodes));
+
+  const {
+    result: visualization,
+    responseData,
+    recordedTarget,
+  } = buildInteractionResponseData({
+    source: { kind: 'runtime', result },
+    referenceFrame: undefined,
+  });
+  // The construction site routes node/tree onto the typed recordedTarget
+  // channel only; neither serialized payload carries them.
+  assert.equal(recordedTarget?.node.ref, 'e1');
+  for (const payload of [visualization, responseData]) {
+    assert.equal('node' in payload, false);
+    assert.equal('preActionNodes' in payload, false);
+    assert.equal('targetEvidence' in payload, false);
+  }
 });

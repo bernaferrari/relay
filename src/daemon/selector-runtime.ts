@@ -171,6 +171,10 @@ export async function dispatchGetViaRuntime(
       params.sessionName,
       req,
       buildGetRecordResult(result, sub),
+      {
+        node: result.node,
+        preActionNodes: result.preActionNodes,
+      },
     );
     const data = toDaemonGetData(result);
     return staleRefsWarning ? { ...data, warning: staleRefsWarning } : data;
@@ -290,23 +294,34 @@ export async function dispatchWaitViaRuntime(
   return await withSessionlessRunnerCleanup(session, device, execute);
 }
 
+function readDirectIosGetSelector(
+  session: SessionState | undefined,
+  property: 'text' | 'attrs',
+  selectorExpression: string,
+): DirectIosSelectorTarget | null {
+  // ADR 0012 decision 3: recording requires the snapshot path so target
+  // evidence can be computed from the resolution tree.
+  if (!session || session.recordSession) return null;
+  const selector = readSimpleIosSelectorTarget({ session, selectorExpression });
+  // get text intentionally disambiguates label/text/value triplets from snapshots; the runner
+  // direct query rejects those ambiguous matches before the shared selector resolver can rank them.
+  if (property === 'text' && selector?.key !== 'id') return null;
+  return selector;
+}
+
 async function dispatchDirectIosSelectorGet(
   params: SelectorRuntimeParams,
   property: 'text' | 'attrs',
   selectorExpression: string,
 ): Promise<DaemonResponse | null> {
   const session = params.sessionStore.get(params.sessionName);
-  const selector = readSimpleIosSelectorTarget({ session, selectorExpression });
+  const selector = readDirectIosGetSelector(session, property, selectorExpression);
   if (!session || !selector) return null;
-  // get text intentionally disambiguates label/text/value triplets from snapshots; the runner
-  // direct query rejects those ambiguous matches before the shared selector resolver can rank them.
-  if (property === 'text' && selector.key !== 'id') return null;
 
   const result = await queryDirectIosSelectorOrFallback(params, session, selector);
   if (isDirectIosSelectorErrorResult(result)) return result.response;
   if (!result) return null;
-  const directQuery = { session, selector, result };
-  const payload = buildDirectIosGetResult(property, directQuery.selector.raw, directQuery.result);
+  const payload = buildDirectIosGetResult(property, selector.raw, result);
   if (!payload) return null;
   recordIfSession(
     params.sessionStore,

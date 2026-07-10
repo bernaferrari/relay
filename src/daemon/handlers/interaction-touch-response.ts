@@ -5,6 +5,7 @@ import type {
   PressCommandResult,
   SettleObservation,
 } from '../../contracts/interaction.ts';
+import type { RecordedTargetCapture } from '../session-target-evidence.ts';
 import { successText } from '../../utils/success-text.ts';
 import { interactionResultExtra } from './interaction-touch-targets.ts';
 
@@ -43,6 +44,8 @@ export type InteractionResponsePayloads = {
   result: Record<string, unknown>;
   /** The public payload returned to the client. */
   responseData: Record<string, unknown>;
+  /** Typed side channel — never part of either serialized payload. */
+  recordedTarget?: RecordedTargetCapture;
 };
 
 export function buildInteractionResponseData(params: {
@@ -125,7 +128,15 @@ export function buildInteractionResponseData(params: {
     visualization.warning = warning;
     responseData.warning = warning;
   }
-  return { result: visualization, responseData };
+  return { result: visualization, responseData, ...recordedTargetCapture(result) };
+}
+
+function recordedTargetCapture(
+  result: InteractionRuntimeResult,
+): Pick<InteractionResponsePayloads, 'recordedTarget'> {
+  const node = 'node' in result ? result.node : undefined;
+  const preActionNodes = 'preActionNodes' in result ? result.preActionNodes : undefined;
+  return node && preActionNodes ? { recordedTarget: { node, preActionNodes } } : {};
 }
 
 // Attaches refsGeneration inside the settle payload when the response is
