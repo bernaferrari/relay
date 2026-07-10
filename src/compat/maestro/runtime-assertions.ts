@@ -215,17 +215,12 @@ async function recoverFromAndroidVisibleMiss(
   const recoverableInteraction = consumeMaestroRecoverableInteraction(params.scope);
   if (!recoverableInteraction) return null;
   if (recoverableInteraction.kind === 'tap') {
-    return await retryRecentAndroidTapAfterVisibleMiss(
-      params,
-      args,
-      snapshot,
-      recoverableInteraction,
-    );
+    return await retryRecentTapAfterVisibleMiss(params, args, snapshot, recoverableInteraction);
   }
-  return await retryRecentAndroidSwipeAfterVisibleMiss(params, args, recoverableInteraction);
+  return await retryRecentSwipeAfterVisibleMiss(params, args, recoverableInteraction);
 }
 
-async function retryRecentAndroidTapAfterVisibleMiss(
+async function retryRecentTapAfterVisibleMiss(
   params: MaestroAssertionRuntimeParams,
   args: MaestroVisibilityAssertionArgs,
   snapshot: SnapshotState | undefined,
@@ -250,10 +245,10 @@ async function retryRecentAndroidTapAfterVisibleMiss(
 
   const clickResponse = await invokeRecentTapRetry(params, retryTarget.target);
   if (!clickResponse.ok) return null;
-  return await confirmVisibleAfterAndroidRecovery(params, args, 'retryTap');
+  return await confirmVisibleAfterRecovery(params, args, 'retryTap');
 }
 
-async function retryRecentAndroidSwipeAfterVisibleMiss(
+async function retryRecentSwipeAfterVisibleMiss(
   params: MaestroAssertionRuntimeParams,
   args: MaestroVisibilityAssertionArgs,
   recentSwipe: MaestroRecoverableSwipe,
@@ -263,6 +258,7 @@ async function retryRecentAndroidSwipeAfterVisibleMiss(
     phase: 'maestro_assert_visible_retry_swipe',
     data: {
       selector: args.selector,
+      swipeCommand: recentSwipe.command,
       swipePositionals: recentSwipe.positionals,
       timeoutMs: MAESTRO_ASSERTION_POLICY.assertVisibleRetryTimeoutMs,
     },
@@ -270,10 +266,10 @@ async function retryRecentAndroidSwipeAfterVisibleMiss(
 
   const swipeResponse = await invokeRecentSwipeRetry(params, recentSwipe);
   if (!swipeResponse.ok) return null;
-  return await confirmVisibleAfterAndroidRecovery(params, args, 'retrySwipe');
+  return await confirmVisibleAfterRecovery(params, args, 'retrySwipe');
 }
 
-async function confirmVisibleAfterAndroidRecovery(
+async function confirmVisibleAfterRecovery(
   params: MaestroAssertionRuntimeParams,
   args: MaestroVisibilityAssertionArgs,
   recoveryFlag: MaestroVisibleRecoveryFlag,
@@ -371,7 +367,7 @@ async function invokeRecentSwipeRetry(
 ): Promise<DaemonResponse> {
   return await params.invoke({
     ...params.baseReq,
-    command: 'swipe',
+    command: swipe.command,
     positionals: swipe.positionals,
   });
 }
