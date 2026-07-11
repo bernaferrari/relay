@@ -17,6 +17,12 @@ import {
   SNAPSHOT_DAEMON_RESULT,
   SNAPSHOT_RESULT,
 } from './fixtures.ts';
+import {
+  DEBUG_SELECTION_RESULT,
+  EVENTS_SELECTION_RESULT,
+  NETWORK_SELECTION_RESULT,
+  RECORDING_SELECTION_RESULT,
+} from './selection-fixtures.ts';
 
 function interactionText(result: typeof SETTLE_ADDED_REF_RESULT): string {
   return interactionCliOutputFormatters.press({ input: {}, result }).text ?? '';
@@ -32,6 +38,7 @@ export async function renderOutputFixtures() {
   const selectorDigest = RESPONSE_VIEWS.find!(SELECTOR_READ_RESULT, 'digest');
   const screenshotDefault = RESPONSE_VIEWS.screenshot!(SCREENSHOT_RESULT, 'default');
   const screenshotDigest = RESPONSE_VIEWS.screenshot!(SCREENSHOT_RESULT, 'digest');
+  const networkDigest = RESPONSE_VIEWS.network!(NETWORK_SELECTION_RESULT, 'digest');
   const error = normalizeError(ACTIONABLE_ERROR);
   const errorPolicyNormalized = normalizeError(POLICY_NORMALIZED_ERROR);
   const mcpSnapshot = await createCommandToolExecutor({
@@ -48,6 +55,7 @@ export async function renderOutputFixtures() {
     selectorDigest,
     screenshotDefault,
     screenshotDigest,
+    networkDigest,
     error,
     errorPolicyNormalized,
     mcpSnapshot,
@@ -68,6 +76,11 @@ export async function renderOutputFixtures() {
       'error.normalized.json': { data: error },
       'error.policy-normalized.json': { data: errorPolicyNormalized },
       'mcp.snapshot.default.json': { data: mcpSnapshot },
+      'selection.network.default.json': { data: NETWORK_SELECTION_RESULT },
+      'selection.network.digest.json': { data: networkDigest },
+      'selection.events.default.json': { data: EVENTS_SELECTION_RESULT },
+      'selection.debug.default.json': { data: DEBUG_SELECTION_RESULT },
+      'selection.recording.default.json': { data: RECORDING_SELECTION_RESULT },
       ...workflow.samples,
     } satisfies Record<string, EconomySample>,
   };
