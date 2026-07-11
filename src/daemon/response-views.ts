@@ -139,6 +139,24 @@ function selectorReadView(data: DaemonResponseData, level: ResponseLevel): Daemo
   return { ...data, node: compactSelectorNode(node as SnapshotNode) };
 }
 
+// Token-cheap interaction digest: settle + resolution transforms compose;
+// non-digest levels stay byte-identical.
+function interactionDigestView(data: DaemonResponseData, level: ResponseLevel): DaemonResponseData {
+  if (level !== 'digest') return data;
+  return applySettleDigest(applyResolutionDigest(data));
+}
+
+// Like the settle digest, the verdict fields are the digest answer and the
+// verbose list (`alternatives`) is the default-level payload (ADR 0012).
+function applyResolutionDigest(data: DaemonResponseData): DaemonResponseData {
+  const resolution = data.resolution;
+  if (!resolution || typeof resolution !== 'object' || Array.isArray(resolution)) return data;
+  const record = resolution as Record<string, unknown>;
+  if (record.kind !== 'disambiguated') return data;
+  const { alternatives: _alternatives, ...rest } = record;
+  return { ...data, resolution: rest };
+}
+
 /**
  * Token-cheap settle digest for interaction commands (#1101). CONSERVATIVE:
  * only acts on a result that carries a `settle.diff` payload (the `--settle`
@@ -148,11 +166,9 @@ function selectorReadView(data: DaemonResponseData, level: ResponseLevel): Daemo
  * and drops the diff line texts — the changed-count summary is the digest
  * answer; the lines are the default-level payload. The unchanged-interactive
  * `tail` (when present) is capped to the same DIGEST_REF_LIMIT as the other
- * ref lists here. `full` returns today's shape unchanged (nothing richer is
- * computed yet).
+ * ref lists here.
  */
-function interactionSettleView(data: DaemonResponseData, level: ResponseLevel): DaemonResponseData {
-  if (level !== 'digest') return data;
+function applySettleDigest(data: DaemonResponseData): DaemonResponseData {
   const settle = data.settle;
   if (!settle || typeof settle !== 'object' || Array.isArray(settle)) return data;
   const { diff, tail, ...rest } = settle as Record<string, unknown>;
@@ -204,8 +220,8 @@ export const RESPONSE_VIEWS: Record<string, ResponseView> = {
   screenshot: screenshotView,
   find: selectorReadView,
   get: selectorReadView,
-  press: interactionSettleView,
-  click: interactionSettleView,
-  fill: interactionSettleView,
-  longpress: interactionSettleView,
+  press: interactionDigestView,
+  click: interactionDigestView,
+  fill: interactionDigestView,
+  longpress: interactionDigestView,
 };

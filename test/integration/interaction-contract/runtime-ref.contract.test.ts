@@ -4,7 +4,7 @@ import type { InteractionGuarantee } from '../../../src/contracts/interaction-gu
 import type { Point } from '../../../src/kernel/snapshot.ts';
 import { ref } from '../../../src/commands/index.ts';
 import { assertRpcOk } from '../provider-scenarios/assertions.ts';
-import { scenarioName } from './coverage-manifest.ts';
+import { scenarioName, scenarioNames } from './coverage-manifest.ts';
 import { RUNTIME_REF_COVERAGE } from './runtime-ref.coverage.ts';
 import {
   closedDrawerSnapshot,
@@ -162,4 +162,39 @@ test(scenario('responseConstruction'), async () => {
       assert.match(String(data.message), /Tapped @e2/);
     },
   );
+});
+
+test(scenarioNames(RUNTIME_REF_COVERAGE, 'resolutionDisclosure')[0]!, async () => {
+  const device = createContractDevice(continueButtonSnapshot(), {
+    tap: async () => ({ ok: true }),
+  });
+
+  const result = await device.interactions.click(ref('@e1'), { session: 'default' });
+
+  assert.equal(result.kind, 'ref');
+  assert.deepEqual(result.resolution, { source: 'ref', phase: 'pre-action', kind: 'exact' });
+});
+
+test(scenarioNames(RUNTIME_REF_COVERAGE, 'resolutionDisclosure')[1]!, async () => {
+  const taps: Point[] = [];
+  const device = createContractDevice(continueButtonSnapshot(), {
+    tap: async (_context, point) => {
+      taps.push(point);
+    },
+  });
+
+  // @e9 is not in the stored tree; the recorded trailing label recovers the
+  // Continue button by first label match.
+  const result = await device.interactions.click(ref('@e9', { fallbackLabel: 'Continue' }), {
+    session: 'default',
+  });
+
+  assert.equal(taps.length, 1);
+  assert.equal(result.kind, 'ref');
+  assert.equal(result.node?.label, 'Continue');
+  assert.deepEqual(result.resolution, {
+    source: 'ref',
+    phase: 'pre-action',
+    kind: 'label-fallback',
+  });
 });

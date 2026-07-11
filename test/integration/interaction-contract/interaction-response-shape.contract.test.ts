@@ -20,6 +20,7 @@ const REF_KEYS = [
   'refLabel',
   'referenceHeight',
   'referenceWidth',
+  'resolution',
   'selectorChain',
   'targetKind',
   'x',
@@ -31,6 +32,7 @@ const SELECTOR_KEYS = [
   'refLabel',
   'referenceHeight',
   'referenceWidth',
+  'resolution',
   'selector',
   'selectorChain',
   'targetKind',
@@ -39,6 +41,15 @@ const SELECTOR_KEYS = [
 ] as const;
 
 const POINT_KEYS = ['message', 'targetKind', 'x', 'y'] as const;
+
+// Single-match fixtures, so every envelope carries the exact/unique resolution shape (ADR 0012).
+const EXACT_REF_RESOLUTION = { source: 'ref', phase: 'pre-action', kind: 'exact' } as const;
+const UNIQUE_RUNTIME_RESOLUTION = {
+  source: 'runtime',
+  phase: 'pre-action',
+  kind: 'unique',
+} as const;
+const DIRECT_IOS_NOT_OBSERVED_RESOLUTION = { source: 'direct-ios', kind: 'not-observed' } as const;
 
 const NOISY_DEFAULT_TAP_RESULT = {
   count: 1,
@@ -214,6 +225,7 @@ function assertCanonicalRef(
       'refLabel',
       'referenceHeight',
       'referenceWidth',
+      'resolution',
       'targetKind',
       'x',
       'y',
@@ -225,6 +237,7 @@ function assertCanonicalRef(
       refLabel: 'Continue',
       referenceHeight: 800,
       referenceWidth: 400,
+      resolution: EXACT_REF_RESOLUTION,
       targetKind: 'ref',
       x: expected.x,
       y: expected.y,
@@ -246,6 +259,7 @@ function assertCanonicalSelector(
       'refLabel',
       'referenceHeight',
       'referenceWidth',
+      'resolution',
       'selector',
       'targetKind',
       'x',
@@ -257,6 +271,7 @@ function assertCanonicalSelector(
       refLabel: 'Continue',
       referenceHeight: 800,
       referenceWidth: 400,
+      resolution: UNIQUE_RUNTIME_RESOLUTION,
       selector: 'label=Continue',
       targetKind: 'selector',
       x: expected.x,
@@ -274,6 +289,7 @@ function assertCanonicalDirectSelector(
 ): void {
   assertExactKeys(data, [
     'message',
+    'resolution',
     'selector',
     'targetKind',
     'x',
@@ -283,6 +299,7 @@ function assertCanonicalDirectSelector(
   assert.deepEqual(
     pick(data, [
       'message',
+      'resolution',
       'selector',
       'targetKind',
       'x',
@@ -291,6 +308,7 @@ function assertCanonicalDirectSelector(
     ]),
     {
       message: expected.message,
+      resolution: DIRECT_IOS_NOT_OBSERVED_RESOLUTION,
       selector: 'label=Continue',
       targetKind: 'selector',
       x: expected.x,

@@ -294,6 +294,36 @@ test('MCP newly typed outputSchemas advertise public contract keys', () => {
   );
 });
 
+test('MCP click outputSchema validates default and digest resolution disclosures', () => {
+  const click = listCommandTools().find((tool) => tool.name === 'click');
+  assert.ok(click?.outputSchema);
+  assert.equal(click.outputSchema, COMMAND_OUTPUT_SCHEMAS.click);
+
+  const resolutionSchema = click.outputSchema.properties?.resolution;
+  const disambiguated = resolutionSchema?.oneOf?.find(
+    (branch) =>
+      (branch.properties?.kind as { const?: unknown } | undefined)?.const === 'disambiguated',
+  );
+  assert.ok(disambiguated);
+
+  const digestResolution = {
+    source: 'runtime',
+    phase: 'pre-action',
+    kind: 'disambiguated',
+    matchCount: 2,
+    winnerDiagnostic: { diagnosticRef: 'diag-e2' },
+    tiebreak: 'deepest',
+  };
+  for (const required of disambiguated.required ?? []) {
+    assert.ok(
+      required in digestResolution,
+      `digest resolution is missing required key: ${required}`,
+    );
+  }
+  // The verbose default/full response still exposes the bounded candidate list.
+  assert.ok('alternatives' in (disambiguated.properties ?? {}));
+});
+
 test('MCP prepare outputSchema stays complete for the typed non-exposed command', () => {
   const prepareSchema = COMMAND_OUTPUT_SCHEMAS.prepare;
   assert.ok(prepareSchema.required?.includes('runner'));
@@ -611,6 +641,66 @@ test('MCP leaves pins untouched for plain (non-settle) interaction responses', a
   await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e2' } });
 
   assert.deepEqual(runCalls[2]?.input, { session: 'demo', target: { kind: 'ref', ref: '@e2~s7' } });
+});
+
+// --- ADR 0012 decision 2: resolution diagnostics are never ref-issued/pinned ---
+
+test('MCP never pins resolution.winnerDiagnostic/alternatives — they are pre-action diagnostics, not refs', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      runCalls.push({ name, input });
+      if (name === 'snapshot') {
+        return { nodes: [{ ref: 'e2' }, { ref: 'e3' }], truncated: false, refsGeneration: 7 };
+      }
+      // A disambiguated press: no refsGeneration/settle anywhere on this
+      // payload — the resolution field must not be read as ref-issuing.
+      return {
+        ref: 'e2',
+        resolution: {
+          source: 'runtime',
+          phase: 'pre-action',
+          kind: 'disambiguated',
+          matchCount: 2,
+          winnerDiagnostic: { diagnosticRef: 'diag-e2', role: 'button', label: 'Profile' },
+          tiebreak: 'visible',
+          alternatives: [{ diagnosticRef: 'diag-e3', role: 'button', label: 'Profile' }],
+        },
+      };
+    },
+  });
+
+  await executor.execute('snapshot', { session: 'demo' });
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e2' } });
+  // e3 must stay pinned at the SNAPSHOT's generation, untouched by the press
+  // response's resolution diagnostics.
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e3' } });
+
+  assert.deepEqual(runCalls[1]?.input, { session: 'demo', target: { kind: 'ref', ref: '@e2~s7' } });
+  assert.deepEqual(runCalls[2]?.input, { session: 'demo', target: { kind: 'ref', ref: '@e3~s7' } });
+});
+
+test('MCP never resolves a resolution diagnosticRef as a usable @ref — a fresh snapshot is required', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      runCalls.push({ name, input });
+      return {};
+    },
+  });
+
+  // Never issued, so it passes through unpinned for the daemon to reject.
+  await executor.execute('press', {
+    session: 'demo',
+    target: { kind: 'ref', ref: '@diag-e3' },
+  });
+
+  assert.deepEqual(runCalls[0]?.input, {
+    session: 'demo',
+    target: { kind: 'ref', ref: '@diag-e3' },
+  });
 });
 
 test('MCP passes never-issued refs through unpinned (coarse floor, never guess)', async () => {

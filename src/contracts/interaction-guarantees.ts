@@ -61,6 +61,10 @@ export const INTERACTION_GUARANTEES = [
   // (rich selector diagnostics and hints) once direct runner paths close
   // codes earlier than full diagnostics.
   'errorTaxonomy',
+  // The additive `resolution` response field (ADR 0012 decision 2):
+  // unique/disambiguated/exact/label-fallback/not-observed provenance,
+  // pre-action diagnostics only — never ref-issued or MCP-pinned.
+  'resolutionDisclosure',
 ] as const;
 
 export type InteractionGuarantee = (typeof INTERACTION_GUARANTEES)[number];
@@ -181,6 +185,12 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
         kind: 'runtime',
         via: 'src/daemon/selectors-resolve.ts#formatSelectorFailure',
       },
+      // Full pre-action diagnostic shape; same via as `disambiguation` — the
+      // disclosure reports what the heuristic did, never changes it.
+      resolutionDisclosure: {
+        kind: 'runtime',
+        via: 'src/daemon/selectors-resolve.ts#resolveSelectorChain',
+      },
     },
   },
   'runtime-ref': {
@@ -189,12 +199,19 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
     guarantees: {
       ...RUNTIME_TREE_SHARED_GUARANTEES,
       disambiguation: {
-        kind: 'inapplicable',
-        reason: 'Refs identify exactly one node by construction.',
+        kind: 'waived',
+        reason:
+          'Intentional: a resolved @ref names exactly one node, but the replay trailing-label recovery resolves a stale @ref by FIRST label match without the visible/deepest/smallest ranking; that outcome is disclosed per-response as resolutionDisclosure label-fallback rather than silently claiming exactness.',
       },
       errorTaxonomy: {
         kind: 'runtime',
         via: 'src/daemon/selectors-resolve.ts#STALE_REF_HINT',
+      },
+      // ADR 0012 decision 2: tryResolveRefNode produces both outcomes — exact
+      // for a resolved @ref, label-fallback for trailing-label recovery.
+      resolutionDisclosure: {
+        kind: 'runtime',
+        via: 'src/commands/interaction/runtime/resolution.ts#tryResolveRefNode',
       },
     },
   },
@@ -248,6 +265,12 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
         to: 'runtime-selector',
         via: 'runner ELEMENT_NOT_FOUND/AMBIGUOUS_MATCH fall back to tree-based resolution (isDirectIosSelectorFallbackError delegateSemanticFailures; non-maestro dispatches only), which attaches the shared no-match diagnostics, ambiguous shape, and hints',
       },
+      // No daemon tree, so only the not-observed marker — no counts or
+      // candidates, and no parity table (that would imply runtime parity).
+      resolutionDisclosure: {
+        kind: 'runtime',
+        via: 'src/daemon/handlers/interaction-touch-response.ts#buildInteractionResponseData',
+      },
     },
   },
   'native-ref': {
@@ -298,6 +321,11 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
         kind: 'runtime',
         via: 'src/daemon/selectors-resolve.ts#STALE_REF_HINT',
       },
+      // An @ref names exactly one node by construction (same cell as runtime-ref).
+      resolutionDisclosure: {
+        kind: 'runtime',
+        via: 'src/commands/interaction/runtime/resolution.ts#EXACT_REF_RESOLUTION',
+      },
     },
   },
   coordinate: {
@@ -337,6 +365,10 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
       errorTaxonomy: {
         kind: 'runtime',
         via: 'src/kernel/errors.ts#normalizeError',
+      },
+      resolutionDisclosure: {
+        kind: 'inapplicable',
+        reason: 'Coordinates name a point; no element was resolved to disclose.',
       },
     },
   },
@@ -383,6 +415,11 @@ export const INTERACTION_DISPATCH_PATHS: Record<InteractionPathId, InteractionPa
         kind: 'waived',
         reason: 'gap: shares the direct path error shapes, including their missing hints.',
         trackingIssue: GAPS_UMBRELLA_ISSUE,
+      },
+      resolutionDisclosure: {
+        kind: 'inapplicable',
+        reason:
+          'Maestro owns matching; the fallback is coordinate execution. Cell membership is usage-based: only a dispatch whose runner actually executed the coordinate fallback is this path — allowed-but-not-taken is the direct path and discloses not-observed.',
       },
     },
   },

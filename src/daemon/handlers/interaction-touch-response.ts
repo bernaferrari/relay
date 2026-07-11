@@ -3,6 +3,7 @@ import type {
   FillCommandResult,
   LongPressCommandResult,
   PressCommandResult,
+  ResolutionDisclosure,
   SettleObservation,
 } from '../../contracts/interaction.ts';
 import type { RecordedTargetCapture } from '../session-target-evidence.ts';
@@ -37,7 +38,16 @@ export type InteractionResponseSource =
       data: Record<string, unknown>;
       publicData?: Record<string, unknown>;
       point: { x: number; y: number };
+      /** The runner actually EXECUTED the non-hittable coordinate fallback (never the mere permission) — that dispatch is the maestro path, whose resolutionDisclosure is inapplicable (ADR 0012). */
+      maestroFallbackUsed?: boolean;
     };
+
+// ADR 0012 decision 2: the XCTest fast path has no daemon tree, so it can only
+// disclose that resolution was not observed.
+const DIRECT_IOS_NOT_OBSERVED_RESOLUTION: ResolutionDisclosure = {
+  source: 'direct-ios',
+  kind: 'not-observed',
+};
 
 export type InteractionResponsePayloads = {
   /** Recorded in session history and used for touch visualization. */
@@ -79,6 +89,7 @@ export function buildInteractionResponseData(params: {
   if (source.kind === 'runner-payload') {
     const commonExtra = {
       targetKind: source.targetKind,
+      ...(source.maestroFallbackUsed ? {} : { resolution: DIRECT_IOS_NOT_OBSERVED_RESOLUTION }),
       ...(extra ?? {}),
     };
     const result = buildTouchPayload({
