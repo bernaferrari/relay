@@ -76,6 +76,11 @@ test('help workflow prints agent workflow topic and skips daemon dispatch', asyn
   assert.match(result.stdout, /agent-device help workflow/);
   assert.match(result.stdout, /Core loop:/);
   assert.match(result.stdout, /Do not use CSS selectors/);
+  assert.match(result.stdout, /Native \.ad interpolation is late-bound after planning/);
+  assert.match(
+    result.stdout,
+    /Maestro environment substitution occurs during compatibility parsing/,
+  );
 });
 
 test('help workflow preserves known device workaround guidance', async () => {
@@ -114,7 +119,10 @@ test('help workflow documents the selector disambiguation policy (#1037)', async
   assert.match(result.stdout, /deepest node first/);
   assert.match(result.stdout, /then smallest on-screen area/);
   assert.match(result.stdout, /Selector did not resolve uniquely/);
-  assert.match(result.stdout, /replay and replay-heal apply the same depth-then-area policy/);
+  assert.match(
+    result.stdout,
+    /replay's suggestion re-resolution.*applies the same depth-then-area policy/,
+  );
   assert.match(result.stdout, /targetHittable: false/);
 });
 

@@ -2493,11 +2493,22 @@ Treat the recovery message as a warning, not a fatal error. Use the exposed Sear
     contract: [
       'Replay path: ./replays/catalog-checkout.ad',
       'Selectors drifted after a UI label change',
-      'Goal: maintain the replay script in place',
+      '--update is accepted but retired: it never rewrites the replay file and reports healed: 0',
+      'The divergence reports resume.from=4 and resume.planDigest=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      'Workflow A: after accepting a suggestion and editing the script, the old digest is stale; run a fresh full replay with no resume flags',
+      'Workflow B: when the script and includes stay unchanged, repair app state so retrying the failed action is safe, then resume with the reported values',
+      'Output exactly the two alternative replay commands in A-then-B order; manual edits and app-state repairs happen out of band',
     ],
-    task: 'Plan the command to maintain the existing replay script after selector drift.',
-    outputs: [plannedCommand('replay'), /-u|--update/i, /\.\/replays\/catalog-checkout\.ad/i],
-    forbiddenOutputs: [/sed\s+-i/i, /open .*\.ad/i],
+    task: 'Plan both valid replay-maintenance commands after selector drift.',
+    outputs: [
+      /(?:^|\n)agent-device\s+replay\s+\.\/replays\/catalog-checkout\.ad\s*(?:\n|$)/i,
+      /(?:^|\n)agent-device\s+replay\s+\.\/replays\/catalog-checkout\.ad(?=[^\n]*--from\s+4\b)(?=[^\n]*--plan-digest\s+0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\b)[^\n]*(?:\n|$)/i,
+    ],
+    forbiddenOutputs: [
+      /(?:^|\n)agent-device\s+replay\s+\.\/replays\/catalog-checkout\.ad[^\n]*(?:-u\b|--update\b)/i,
+      /(?:^|\n)agent-device\s+replay\s+\.\/replays\/catalog-checkout\.ad(?=[^\n]*--from\b)(?![^\n]*--plan-digest\b)[^\n]*/i,
+      /(?:^|\n)agent-device\s+replay\s+\.\/replays\/catalog-checkout\.ad(?=[^\n]*--plan-digest\b)(?![^\n]*--from\b)[^\n]*/i,
+    ],
   }),
   makeCase({
     id: 'replay-maestro-compatibility-flow',
