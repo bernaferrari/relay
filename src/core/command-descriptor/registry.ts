@@ -17,6 +17,7 @@ import type {
 
 type RawCommandDescriptor = Omit<CommandDescriptor, 'mcpExposed'> & {
   mcpExposed?: boolean;
+  ownerFiles?: readonly [string, ...string[]];
 };
 
 type RawCommandCatalogGroup<T> = T extends { catalog: { group: infer Group } } ? Group : never;
@@ -199,11 +200,13 @@ function postActionObservation(command: string): PostActionObservationSupport {
 // array rather than recreating command-name sets.
 // ---------------------------------------------------------------------------
 
-const RAW_COMMAND_DESCRIPTORS = [
+const ownerFilesEnabled = typeof __OWNER_FILES__ === 'undefined' || __OWNER_FILES__;
+
+export const RAW_COMMAND_DESCRIPTORS = [
   // -- lease (route: lease) --
   {
     name: 'lease_allocate',
-    ownerFiles: ['src/daemon/handlers/lease.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseAllocate' },
     daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -211,7 +214,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'lease_heartbeat',
-    ownerFiles: ['src/daemon/handlers/lease.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseHeartbeat' },
     daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -219,7 +222,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'lease_release',
-    ownerFiles: ['src/daemon/handlers/lease.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseRelease' },
     daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -227,7 +230,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'artifacts',
-    ownerFiles: ['src/commands/management/artifacts.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/artifacts.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -237,7 +240,9 @@ const RAW_COMMAND_DESCRIPTORS = [
   // -- session (route: session) --
   {
     name: 'session_list',
-    ownerFiles: ['src/daemon/handlers/session-inventory.ts'],
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/session-inventory.ts'] as const }
+      : {}),
     catalog: { group: 'internal', key: 'sessionList' },
     daemon: { route: 'session', sessionKind: 'inventory', ...REQUEST_EXECUTION_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -245,7 +250,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'devices',
-    ownerFiles: ['src/commands/management/device.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
@@ -258,7 +263,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'capabilities',
-    ownerFiles: ['src/commands/management/device.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
@@ -272,7 +277,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'doctor',
-    ownerFiles: ['src/commands/management/doctor.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/doctor.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
@@ -286,7 +291,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'apps',
-    ownerFiles: ['src/commands/management/app.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
@@ -300,7 +305,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'boot',
-    ownerFiles: ['src/commands/management/device.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', sessionKind: 'state' },
     capability: {
@@ -313,7 +318,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'shutdown',
-    ownerFiles: ['src/commands/management/device.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', sessionKind: 'state' },
     capability: {
@@ -326,7 +331,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'appstate',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'appState' },
     daemon: { route: 'session', sessionKind: 'state' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -334,7 +339,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'perf',
-    ownerFiles: ['src/commands/perf/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/perf/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
@@ -343,7 +348,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'logs',
-    ownerFiles: ['src/commands/observability/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
@@ -352,7 +357,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'events',
-    ownerFiles: ['src/commands/observability/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
@@ -365,7 +370,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'network',
-    ownerFiles: ['src/commands/observability/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
@@ -374,7 +379,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'audio',
-    ownerFiles: ['src/commands/observability/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', sessionKind: 'observability' },
     capability: {
@@ -387,7 +392,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'replay',
-    ownerFiles: ['src/commands/replay/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/replay/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
@@ -400,7 +405,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'test',
-    ownerFiles: ['src/commands/replay/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/replay/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
@@ -414,7 +419,9 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'runtime',
-    ownerFiles: ['src/daemon/handlers/session-runtime-command.ts'],
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/session-runtime-command.ts'] as const }
+      : {}),
     catalog: { group: 'internal' },
     daemon: { route: 'session' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -422,7 +429,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'clipboard',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', replayScopedAction: true },
     dispatch: {},
@@ -436,7 +443,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'keyboard',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -450,7 +457,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'install',
-    ownerFiles: ['src/commands/management/install.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session' },
     capability: APP_INSTALL_CAPABILITY,
@@ -459,7 +466,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'reinstall',
-    ownerFiles: ['src/commands/management/install.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session' },
     capability: APP_INSTALL_CAPABILITY,
@@ -468,7 +475,9 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'install_source',
-    ownerFiles: ['src/daemon/handlers/install-source.ts'],
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/install-source.ts'] as const }
+      : {}),
     catalog: { group: 'internal', key: 'installSource' },
     daemon: { route: 'session' },
     timeoutPolicy: INSTALL_TIMEOUT_POLICY,
@@ -476,7 +485,9 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'release_materialized_paths',
-    ownerFiles: ['src/daemon/handlers/install-source.ts'],
+    ...(ownerFilesEnabled
+      ? { ownerFiles: ['src/daemon/handlers/install-source.ts'] as const }
+      : {}),
     catalog: { group: 'internal', key: 'releaseMaterializedPaths' },
     daemon: { route: 'session', ...REQUEST_EXECUTION_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -484,7 +495,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'push',
-    ownerFiles: ['src/commands/management/push.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/push.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session' },
     dispatch: {},
@@ -498,7 +509,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'trigger-app-event',
-    ownerFiles: ['src/commands/management/push.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/push.ts'] as const } : {}),
     catalog: { group: 'public', key: 'triggerAppEvent' },
     daemon: { route: 'session' },
     dispatch: {},
@@ -508,7 +519,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'open',
-    ownerFiles: ['src/commands/management/app.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', allowSessionlessDefaultDevice: allowAnyDeviceSessionless },
     dispatch: {},
@@ -518,7 +529,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'prepare',
-    ownerFiles: ['src/commands/management/prepare.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/prepare.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session' },
     // Runner warm-up builds are the longest fixed envelope; --timeout overrides.
@@ -532,7 +543,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'batch',
-    ownerFiles: ['src/commands/batch/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/batch/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -540,7 +551,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'close',
-    ownerFiles: ['src/commands/management/app.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'session', allowInvalidRecording: true },
     dispatch: {},
@@ -552,7 +563,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   // -- snapshot (route: snapshot) --
   {
     name: 'snapshot',
-    ownerFiles: ['src/commands/capture/snapshot.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/snapshot.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'snapshot', replayScopedAction: true },
     dispatch: {},
@@ -564,7 +575,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'diff',
-    ownerFiles: ['src/commands/capture/diff.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/diff.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'snapshot', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
@@ -573,7 +584,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'wait',
-    ownerFiles: ['src/commands/capture/wait.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/wait.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'snapshot', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
@@ -587,7 +598,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'alert',
-    ownerFiles: ['src/commands/capture/alert.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/alert.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'snapshot', replayScopedAction: true },
     capability: {
@@ -600,7 +611,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'settings',
-    ownerFiles: ['src/commands/capture/settings.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/settings.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'snapshot', replayScopedAction: true },
     dispatch: {},
@@ -616,7 +627,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   // -- specialized routes --
   {
     name: 'react-native',
-    ownerFiles: ['src/commands/react-native/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/react-native/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'reactNative' },
     daemon: { route: 'reactNative', replayScopedAction: true },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
@@ -625,7 +636,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'record',
-    ownerFiles: ['src/commands/recording/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/recording/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: {
       route: 'recordTrace',
@@ -639,7 +650,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'trace',
-    ownerFiles: ['src/commands/recording/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/recording/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'recordTrace' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -647,7 +658,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'find',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'find', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
@@ -664,7 +675,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   // stuck Apple runner work.
   {
     name: 'click',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
@@ -675,7 +686,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'fill',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -687,7 +698,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'longpress',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'longPress' },
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -698,7 +709,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'press',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -710,7 +721,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'type',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -720,7 +731,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'get',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'interaction', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
@@ -729,7 +740,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'read',
-    ownerFiles: ['src/daemon/handlers/interaction.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/interaction.ts'] as const } : {}),
     catalog: { group: 'dispatch-alias' },
     dispatch: {},
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -737,7 +748,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'is',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'interaction', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
@@ -748,7 +759,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   // -- generic (route: generic) --
   {
     name: 'back',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -758,7 +769,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'gesture',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -766,7 +777,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'home',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -780,7 +791,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'tv-remote',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'tvRemote' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -794,7 +805,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'rotate',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -808,7 +819,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'scroll',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -818,7 +829,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'swipe',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -828,7 +839,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'swipe-preset',
-    ownerFiles: ['src/core/dispatch.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/core/dispatch.ts'] as const } : {}),
     catalog: { group: 'dispatch-alias' },
     dispatch: {},
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -836,7 +847,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'pinch',
-    ownerFiles: ['src/core/dispatch.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/core/dispatch.ts'] as const } : {}),
     catalog: { group: 'dispatch-alias' },
     daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
@@ -850,7 +861,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'focus',
-    ownerFiles: ['src/commands/interaction/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', androidBlockingDialogGuard: true },
     dispatch: {},
@@ -860,7 +871,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'screenshot',
-    ownerFiles: ['src/commands/capture/screenshot.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/screenshot.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true },
     dispatch: {},
@@ -870,7 +881,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'viewport',
-    ownerFiles: ['src/commands/management/viewport.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/viewport.ts'] as const } : {}),
     catalog: { group: 'public' },
     daemon: { route: 'generic', replayScopedAction: true },
     dispatch: {},
@@ -880,7 +891,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'pan',
-    ownerFiles: ['src/core/dispatch.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/core/dispatch.ts'] as const } : {}),
     catalog: { group: 'dispatch-alias' },
     daemon: { route: 'generic', androidBlockingDialogGuard: true },
     dispatch: {},
@@ -890,7 +901,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'fling',
-    ownerFiles: ['src/core/dispatch.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/core/dispatch.ts'] as const } : {}),
     catalog: { group: 'dispatch-alias' },
     daemon: { route: 'generic', androidBlockingDialogGuard: true },
     dispatch: {},
@@ -900,7 +911,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'rotate-gesture',
-    ownerFiles: ['src/core/dispatch.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/core/dispatch.ts'] as const } : {}),
     catalog: { group: 'dispatch-alias' },
     daemon: { route: 'generic', androidBlockingDialogGuard: true },
     dispatch: {},
@@ -914,7 +925,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'transform-gesture',
-    ownerFiles: ['src/core/dispatch.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/core/dispatch.ts'] as const } : {}),
     catalog: { group: 'dispatch-alias' },
     daemon: { route: 'generic', androidBlockingDialogGuard: true },
     dispatch: {},
@@ -930,7 +941,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   // -- capability/batch-only commands (no daemon route) --
   {
     name: 'app-switcher',
-    ownerFiles: ['src/commands/system/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'appSwitcher' },
     dispatch: {},
     capability: {
@@ -943,7 +954,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'install-from-source',
-    ownerFiles: ['src/commands/management/install.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
     catalog: { group: 'public', key: 'installFromSource' },
     capability: APP_INSTALL_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -953,28 +964,28 @@ const RAW_COMMAND_DESCRIPTORS = [
   // -- local client-backed CLI/MCP commands (no daemon route/capability) --
   {
     name: 'debug',
-    ownerFiles: ['src/commands/debugging/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/debugging/index.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
     name: 'metro',
-    ownerFiles: ['src/commands/metro/index.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/metro/index.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
     name: 'session',
-    ownerFiles: ['src/commands/management/session.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/session.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
   {
     name: 'cdp',
-    ownerFiles: ['src/cli/commands/agent-cdp.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/agent-cdp.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -982,7 +993,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'auth',
-    ownerFiles: ['src/cli/commands/auth.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/auth.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -990,7 +1001,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'connect',
-    ownerFiles: ['src/cli/commands/connection.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/connection.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -998,7 +1009,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'connection',
-    ownerFiles: ['src/cli/commands/connection.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/connection.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -1006,7 +1017,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'disconnect',
-    ownerFiles: ['src/cli/commands/connection.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/connection.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -1014,7 +1025,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'mcp',
-    ownerFiles: ['src/bin.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/bin.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -1022,7 +1033,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'proxy',
-    ownerFiles: ['src/cli/commands/proxy.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/proxy.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -1030,7 +1041,7 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'react-devtools',
-    ownerFiles: ['src/cli/commands/react-devtools.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/react-devtools.ts'] as const } : {}),
     catalog: { group: 'local-cli', key: 'reactDevtools' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
@@ -1038,13 +1049,23 @@ const RAW_COMMAND_DESCRIPTORS = [
   },
   {
     name: 'web',
-    ownerFiles: ['src/cli/commands/web.ts'],
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/cli/commands/web.ts'] as const } : {}),
     catalog: { group: 'local-cli' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
     mcpExposed: false,
   },
 ] as const satisfies readonly RawCommandDescriptor[];
+
+/**
+ * Compile-time owner-claim totality. `keyof` on a union contains only keys
+ * shared by every member, so removing `ownerFiles` from any raw descriptor
+ * makes this resolve to `false` and fail the `AssertTrue` constraint.
+ */
+type AssertTrue<T extends true> = T;
+export type CommandOwnerFileClaimsAreComplete = AssertTrue<
+  'ownerFiles' extends keyof (typeof RAW_COMMAND_DESCRIPTORS)[number] ? true : false
+>;
 
 const CLI_CATALOG_GROUPS = new Set<CommandCatalogGroup>(['public', 'local-cli']);
 
@@ -1062,10 +1083,20 @@ const CLI_COMMAND_NAMES = new Set<string>(
  * so each entry keeps its literal `name`. That is what makes the {@link Command}
  * union below a precise set of command-name literals rather than `string`.
  */
-export const commandDescriptors = RAW_COMMAND_DESCRIPTORS.map((descriptor) => ({
-  ...descriptor,
-  mcpExposed: resolveMcpExposure(descriptor),
-})) satisfies readonly CommandDescriptor[];
+export const commandDescriptors = RAW_COMMAND_DESCRIPTORS.map((descriptor) => {
+  if (!ownerFilesEnabled) {
+    return {
+      ...descriptor,
+      mcpExposed: resolveMcpExposure(descriptor),
+    };
+  }
+
+  const { ownerFiles: _, ...runtimeDescriptor } = descriptor;
+  return {
+    ...runtimeDescriptor,
+    mcpExposed: resolveMcpExposure(descriptor),
+  };
+}) satisfies readonly CommandDescriptor[];
 
 /** The literal union of every registered command name. */
 export type Command = (typeof commandDescriptors)[number]['name'];
