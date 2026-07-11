@@ -9,18 +9,26 @@ import {
   resolveSelectorChain,
   selectorFailureHint,
   STALE_REF_HINT,
+  type SelectorResolution,
 } from '../../../daemon/selectors.ts';
 import { buildSelectorChainForNode } from '../../../utils/selector-build.ts';
-import { findNodeByLabel, resolveRefLabel } from '../../../snapshot/snapshot-processing.ts';
+import {
+  findNodeByLabel,
+  normalizeType,
+  resolveRefLabel,
+} from '../../../snapshot/snapshot-processing.ts';
 import {
   isNodeVisibleOnScreen,
   resolveEffectiveViewportRect,
 } from '../../../snapshot/mobile-snapshot-semantics.ts';
 import { containsPoint, resolveViewportRect } from '../../../utils/rect-visibility.ts';
 import { isSnapshotNodeInteractionBlocked } from '../../../snapshot/snapshot-occlusion.ts';
+import { truncateUtf8 } from '../../../utils/truncate-utf8.ts';
 import type {
   InteractionTarget,
   PointTarget,
+  ResolutionDiagnosticEntry,
+  ResolutionDisclosure,
   ResolvedInteractionTarget,
 } from '../../../contracts/interaction.ts';
 import { now, toBackendContext } from '../../runtime-common.ts';
@@ -154,7 +162,13 @@ async function resolveRefInteractionTarget(
     kind: 'ref',
     point,
     target: { kind: 'ref', ref: `@${resolved.ref}` },
-    ...describeResolvedInteractionNode(runtime, node, capture.snapshot.nodes, params.action),
+    ...describeResolvedInteractionNode(
+      runtime,
+      node,
+      capture.snapshot.nodes,
+      params.action,
+      resolved.resolution,
+    ),
   };
 }
 
@@ -218,7 +232,70 @@ async function resolveSelectorInteractionTarget(
     kind: 'selector',
     point,
     target: { kind: 'selector', selector: resolved.selector.raw },
-    ...describeResolvedInteractionNode(runtime, node, capture.snapshot.nodes, params.action),
+    ...describeResolvedInteractionNode(
+      runtime,
+      node,
+      capture.snapshot.nodes,
+      params.action,
+      buildSelectorResolutionDisclosure(resolved, capture.snapshot.nodes),
+    ),
+  };
+}
+
+// ADR 0012 decision 2 bounds: diagnostic strings and losing alternatives.
+const RESOLUTION_DIAGNOSTIC_STRING_BYTE_CAP = 256;
+const MAX_RESOLUTION_ALTERNATIVES = 5;
+
+/** A successful `@ref` lookup names exactly one node; label recovery discloses label-fallback instead. */
+export const EXACT_REF_RESOLUTION: ResolutionDisclosure = {
+  source: 'ref',
+  phase: 'pre-action',
+  kind: 'exact',
+};
+
+const LABEL_FALLBACK_REF_RESOLUTION: ResolutionDisclosure = {
+  source: 'ref',
+  phase: 'pre-action',
+  kind: 'label-fallback',
+};
+
+const UNIQUE_RUNTIME_RESOLUTION: ResolutionDisclosure = {
+  source: 'runtime',
+  phase: 'pre-action',
+  kind: 'unique',
+};
+
+// Disclosure only: the winner stays resolveSelectorChain's pick (ADR 0012).
+function buildSelectorResolutionDisclosure(
+  resolved: SelectorResolution,
+  nodes: SnapshotState['nodes'],
+): ResolutionDisclosure {
+  if (!resolved.disambiguation) return UNIQUE_RUNTIME_RESOLUTION;
+  return {
+    source: 'runtime',
+    phase: 'pre-action',
+    kind: 'disambiguated',
+    matchCount: resolved.disambiguation.matchCount,
+    winnerDiagnostic: buildResolutionDiagnosticEntry(resolved.node, nodes),
+    tiebreak: resolved.disambiguation.tiebreak,
+    alternatives: resolved.disambiguation.alternatives
+      .slice(0, MAX_RESOLUTION_ALTERNATIVES)
+      .map((node) => buildResolutionDiagnosticEntry(node, nodes)),
+  };
+}
+
+function buildResolutionDiagnosticEntry(
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+): ResolutionDiagnosticEntry {
+  const role = normalizeType(node.type ?? '');
+  const label = resolveRefLabel(node, nodes);
+  return {
+    diagnosticRef: `diag-${node.ref}`,
+    ...(role ? { role: truncateUtf8(role, RESOLUTION_DIAGNOSTIC_STRING_BYTE_CAP) } : {}),
+    ...(label !== undefined
+      ? { label: truncateUtf8(label, RESOLUTION_DIAGNOSTIC_STRING_BYTE_CAP) }
+      : {}),
   };
 }
 
@@ -229,6 +306,7 @@ function describeResolvedInteractionNode(
   node: SnapshotNode,
   nodes: SnapshotState['nodes'],
   action: InteractionAction,
+  resolution: ResolutionDisclosure,
 ): {
   node: SnapshotNode;
   selectorChain: string[];
@@ -236,6 +314,7 @@ function describeResolvedInteractionNode(
   targetHittable?: boolean;
   hint?: string;
   preActionNodes: SnapshotState['nodes'];
+  resolution: ResolutionDisclosure;
 } {
   return {
     node,
@@ -245,6 +324,7 @@ function describeResolvedInteractionNode(
     refLabel: resolveRefLabel(node, nodes),
     ...describeNonHittableTarget(node, action),
     preActionNodes: nodes,
+    resolution,
   };
 }
 
@@ -382,7 +462,7 @@ async function resolveSnapshotForRef(
   runtime: AgentDeviceRuntime,
   options: CommandContext,
   target: Extract<InteractionTarget, { kind: 'ref' }>,
-): Promise<CapturedSnapshot & { resolved: { ref: string; node: SnapshotNode } }> {
+): Promise<CapturedSnapshot & { resolved: ResolvedRefNode }> {
   const sessionName = options.session ?? 'default';
   const session = await runtime.sessions.get(sessionName);
   if (!session) throw new AppError('SESSION_NOT_FOUND', 'No active session. Run open first.');
@@ -410,24 +490,33 @@ async function resolveSnapshotForRef(
   return { ...capture, resolved: refreshed };
 }
 
-function tryResolveRefNode(
+/** The runtime-ref resolver: `exact` for a resolved `@ref`, `label-fallback` for trailing-label recovery. */
+export function tryResolveRefNode(
   nodes: SnapshotState['nodes'],
   refInput: string,
   options: {
     fallbackLabel: string;
   },
-): { ref: string; node: SnapshotNode } | null {
+): ResolvedRefNode | null {
   const ref = normalizeRef(refInput);
   if (!ref) throw new AppError('INVALID_ARGS', `Invalid ref: ${refInput}`);
   const refNode = findNodeByRef(nodes, ref);
-  if (isUsableResolvedNode(refNode)) return { ref, node: refNode };
+  if (isUsableResolvedNode(refNode)) {
+    return { ref, node: refNode, resolution: EXACT_REF_RESOLUTION };
+  }
   const fallbackNode =
     options.fallbackLabel.length > 0 ? findNodeByLabel(nodes, options.fallbackLabel) : null;
   if (isUsableResolvedNode(fallbackNode)) {
-    return { ref, node: fallbackNode };
+    return { ref, node: fallbackNode, resolution: LABEL_FALLBACK_REF_RESOLUTION };
   }
   return null;
 }
+
+type ResolvedRefNode = {
+  ref: string;
+  node: SnapshotNode;
+  resolution: ResolutionDisclosure;
+};
 
 function resolveNodeCenter(node: SnapshotNode, message: string): Point {
   const point = resolveRectCenter(node.rect);

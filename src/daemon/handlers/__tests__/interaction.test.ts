@@ -566,6 +566,7 @@ test('click simple iOS selector forwards Maestro non-hittable coordinate fallbac
 
   mockDispatch.mockResolvedValue({
     message: 'tapped via non-hittable coordinate fallback',
+    maestroNonHittableCoordinateFallbackUsed: true,
     x: 439.5,
     y: 101.5,
     referenceWidth: 440,
@@ -2637,6 +2638,11 @@ test('press @ref fallback label is used after refresh when ref bounds remain inv
   if (response?.ok) {
     expect(response.data?.x).toBe(140);
     expect(response.data?.y).toBe(220);
+    expect(response.data?.resolution).toEqual({
+      source: 'ref',
+      phase: 'pre-action',
+      kind: 'label-fallback',
+    });
   }
 });
 

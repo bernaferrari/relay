@@ -31,6 +31,44 @@ export type ResolvedTarget =
       ref: string;
     };
 
+/** The decisive criterion separating a resolveSelectorChain winner from its strongest runner-up (ADR 0012). */
+export type DisambiguationTiebreak = 'visible' | 'deepest' | 'smallest-area';
+
+/**
+ * A disambiguation winner or losing alternative. `diagnosticRef` is an opaque,
+ * non-`@` token — never a snapshot ref, never issued via `refsGeneration`,
+ * never pinnable or usable as an `@ref` target. Strings are UTF-8 truncated
+ * to 256 bytes.
+ */
+export type ResolutionDiagnosticEntry = {
+  diagnosticRef: string;
+  role?: string;
+  label?: string;
+};
+
+/**
+ * ADR 0012 decision 2: pre-action disclosure of how the acting path resolved
+ * its target, on every press/click/fill/longpress response. Never ref-issuing.
+ * `direct-ios`/`not-observed` = the XCTest fast path has no daemon tree to
+ * report from; `ref`/`label-fallback` = a stale `@ref` recovered via
+ * first-match label lookup, never exact ref provenance; `alternatives` holds
+ * at most 5 losing candidates, winner excluded.
+ */
+export type ResolutionDisclosure =
+  | { source: 'runtime'; phase: 'pre-action'; kind: 'unique' }
+  | {
+      source: 'runtime';
+      phase: 'pre-action';
+      kind: 'disambiguated';
+      matchCount: number;
+      winnerDiagnostic: ResolutionDiagnosticEntry;
+      tiebreak: DisambiguationTiebreak;
+      alternatives: ResolutionDiagnosticEntry[];
+    }
+  | { source: 'ref'; phase: 'pre-action'; kind: 'exact' }
+  | { source: 'ref'; phase: 'pre-action'; kind: 'label-fallback' }
+  | { source: 'direct-ios'; kind: 'not-observed' };
+
 export type ResolvedInteractionTarget =
   | {
       kind: 'point';
@@ -47,6 +85,7 @@ export type ResolvedInteractionTarget =
       targetHittable?: boolean;
       hint?: string;
       preActionNodes?: SnapshotNode[];
+      resolution?: ResolutionDisclosure;
     }
   | {
       kind: 'selector';
@@ -58,6 +97,7 @@ export type ResolvedInteractionTarget =
       targetHittable?: boolean;
       hint?: string;
       preActionNodes?: SnapshotNode[];
+      resolution?: ResolutionDisclosure;
     };
 
 /**

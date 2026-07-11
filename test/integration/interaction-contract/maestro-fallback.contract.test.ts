@@ -10,6 +10,7 @@ import {
   runnerSnapshotEntry,
   runnerTapEntry,
   runnerTapErrorEntry,
+  runnerTypeEntry,
   withIosContractDaemon,
 } from './daemon-harness.ts';
 
@@ -30,6 +31,7 @@ test(scenario('responseConstruction'), async () => {
         x: 50,
         y: 60,
         message: 'tapped via non-hittable coordinate fallback',
+        maestroNonHittableCoordinateFallbackUsed: true,
       }),
     ],
     async (daemon, transcript) => {
@@ -48,6 +50,79 @@ test(scenario('responseConstruction'), async () => {
       assert.equal(data.maestroNonHittableCoordinateFallbackAllowed, true);
       assert.equal(data.maestroNonHittableCoordinateFallbackUsed, true);
       assert.equal(data.maestroFallbackReason, 'non-hittable-coordinate');
+      // Fallback actually TAKEN: the inapplicable maestro cell, no resolution field.
+      assert.equal(data.resolution, undefined);
+    },
+  );
+});
+
+// Permission is not usage: with the fallback allowed but the runner hitting
+// the element normally ("tapped"), the dispatch is the direct-ios path and
+// must disclose not-observed, not classify as the maestro-fallback cell.
+test('maestro-non-hittable-fallback resolutionDisclosure: allowed-but-not-taken discloses direct-ios not-observed', async () => {
+  await withIosContractDaemon(
+    [runnerTapEntry({ x: 50, y: 60, message: 'tapped' })],
+    async (daemon, transcript) => {
+      const click = await daemon.callCommand('click', ['label=Pin'], MAESTRO_FLAGS);
+      const data = assertRpcOk(click);
+
+      const tapRequest = transcript.calls[0]?.request as Record<string, unknown> | undefined;
+      assert.equal(tapRequest?.allowNonHittableCoordinateFallback, true);
+
+      assert.equal(data.maestroNonHittableCoordinateFallbackAllowed, true);
+      assert.equal(data.maestroNonHittableCoordinateFallbackUsed, false);
+      assert.deepEqual(data.resolution, { source: 'direct-ios', kind: 'not-observed' });
+    },
+  );
+});
+
+test('maestro-non-hittable-fallback fill resolutionDisclosure: allowed-and-taken omits resolution', async () => {
+  await withIosContractDaemon(
+    [
+      runnerTypeEntry({
+        message: 'typed',
+        x: 50,
+        y: 60,
+        maestroNonHittableCoordinateFallbackUsed: true,
+      }),
+    ],
+    async (daemon, transcript) => {
+      const fill = await daemon.callCommand('fill', ['label=Pin', '1234'], MAESTRO_FLAGS);
+      const data = assertRpcOk(fill);
+
+      const typeRequest = transcript.calls[0]?.request as Record<string, unknown> | undefined;
+      assert.equal(typeRequest?.selectorValue, 'Pin');
+      assert.equal(typeRequest?.allowNonHittableCoordinateFallback, true);
+
+      assert.equal(data.maestroNonHittableCoordinateFallbackAllowed, true);
+      assert.equal(data.maestroNonHittableCoordinateFallbackUsed, true);
+      assert.equal(data.maestroFallbackReason, 'non-hittable-coordinate');
+      assert.equal(data.resolution, undefined);
+    },
+  );
+});
+
+test('maestro-non-hittable-fallback fill resolutionDisclosure: allowed-but-not-taken discloses direct-ios not-observed', async () => {
+  await withIosContractDaemon(
+    [
+      runnerTypeEntry({
+        message: 'typed after repair',
+        x: 50,
+        y: 60,
+        maestroNonHittableCoordinateFallbackUsed: false,
+      }),
+    ],
+    async (daemon, transcript) => {
+      const fill = await daemon.callCommand('fill', ['label=Pin', '1234'], MAESTRO_FLAGS);
+      const data = assertRpcOk(fill);
+
+      const typeRequest = transcript.calls[0]?.request as Record<string, unknown> | undefined;
+      assert.equal(typeRequest?.selectorValue, 'Pin');
+      assert.equal(typeRequest?.allowNonHittableCoordinateFallback, true);
+
+      assert.equal(data.maestroNonHittableCoordinateFallbackAllowed, true);
+      assert.equal(data.maestroNonHittableCoordinateFallbackUsed, false);
+      assert.deepEqual(data.resolution, { source: 'direct-ios', kind: 'not-observed' });
     },
   );
 });

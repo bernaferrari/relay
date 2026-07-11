@@ -103,3 +103,12 @@ test(scenario('responseConstruction'), async () => {
     assert.equal(data.selector, undefined);
   });
 });
+
+// Inapplicable cell (ADR 0012), so intentionally absent from the coverage manifest.
+test('coordinate resolutionDisclosure: inapplicable — no resolution field is attached', async () => {
+  await withIosContractDaemon([runnerTapEntry({ x: 100, y: 200 })], async (daemon) => {
+    const press = await daemon.callCommand('press', ['100', '200']);
+    const data = assertRpcOk(press);
+    assert.equal(data.resolution, undefined);
+  });
+});

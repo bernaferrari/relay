@@ -1,4 +1,5 @@
 import type { Platform, PublicPlatform } from '../kernel/device.ts';
+import type { DisambiguationTiebreak } from '../contracts/interaction.ts';
 import type { SnapshotNode, SnapshotState } from '../kernel/snapshot.ts';
 import { isNodeVisibleOnScreen } from '../snapshot/mobile-snapshot-semantics.ts';
 import { buildSnapshotNodeMap } from '../snapshot/snapshot-tree.ts';
@@ -10,12 +11,21 @@ export type SelectorDiagnostics = {
   matches: number;
 };
 
+/** Present only when the heuristic picked among N>1 matches (ADR 0012). */
+export type SelectorDisambiguationDisclosure = {
+  matchCount: number;
+  tiebreak: DisambiguationTiebreak;
+  /** Every losing matched node, document order, uncapped (response layer caps). */
+  alternatives: SnapshotNode[];
+};
+
 export type SelectorResolution = {
   node: SnapshotNode;
   selector: Selector;
   selectorIndex: number;
   matches: number;
   diagnostics: SelectorDiagnostics[];
+  disambiguation?: SelectorDisambiguationDisclosure;
 };
 
 export function resolveSelectorChain(
@@ -36,13 +46,20 @@ export function resolveSelectorChain(
     diagnostics.push({ selector: selector.raw, matches: summary.count });
     if (summary.count === 0 || !summary.firstNode) continue;
     if (requireUnique && summary.count !== 1) {
-      if (!options.disambiguateAmbiguous || !summary.disambiguated) continue;
+      if (!options.disambiguateAmbiguous || !summary.disambiguated || !summary.tiebreak) continue;
       return {
         node: summary.disambiguated,
         selector,
         selectorIndex: i,
         matches: summary.count,
         diagnostics,
+        disambiguation: {
+          matchCount: summary.count,
+          tiebreak: summary.tiebreak,
+          alternatives: summary.candidates.filter(
+            (candidate) => candidate !== summary.disambiguated,
+          ),
+        },
       };
     }
     return {
@@ -121,9 +138,17 @@ function analyzeSelectorMatches(
   selector: Selector,
   platform: Platform | PublicPlatform,
   requireRect: boolean,
-): { count: number; firstNode: SnapshotNode | null; disambiguated: SnapshotNode | null } {
+): {
+  count: number;
+  firstNode: SnapshotNode | null;
+  disambiguated: SnapshotNode | null;
+  tiebreak: DisambiguationTiebreak | null;
+  /** Every matched node (winner included), document order. */
+  candidates: SnapshotNode[];
+} {
   let count = 0;
   let firstNode: SnapshotNode | null = null;
+  const candidates: SnapshotNode[] = [];
   const state: DisambiguationState = { best: null, bestVisible: false, tie: false };
   // Lazily built: only ambiguous matches pay for viewport inference.
   let byIndex: Map<number, SnapshotNode> | undefined;
@@ -136,12 +161,15 @@ function analyzeSelectorMatches(
     if (!matchesSelector(node, selector, platform)) continue;
     count += 1;
     firstNode ??= node;
+    candidates.push(node);
     accumulateDisambiguationCandidate(state, node, isVisible);
   }
   return {
     count,
     firstNode,
     disambiguated: state.tie ? null : state.best,
+    tiebreak: state.tie ? null : findDecidingTiebreak(candidates, state.best, isVisible),
+    candidates,
   };
 }
 
@@ -170,12 +198,42 @@ function accumulateDisambiguationCandidate(
     return;
   }
   const comparison = compareDisambiguationCandidates(node, state.best);
-  if (comparison > 0) {
+  if (comparison.result > 0) {
     state.best = node;
     state.tie = false;
-  } else if (comparison === 0) {
+  } else if (comparison.result === 0) {
     state.tie = true;
   }
+}
+
+// Disclosure only (winner vs strongest challenger); never picks the winner.
+function findDecidingTiebreak(
+  candidates: readonly SnapshotNode[],
+  winner: SnapshotNode | null,
+  isVisible: (node: SnapshotNode) => boolean,
+): DisambiguationTiebreak | null {
+  if (!winner) return null;
+  let runnerUp: SnapshotNode | null = null;
+  for (const candidate of candidates) {
+    if (candidate === winner) continue;
+    if (!runnerUp || compareCandidatesWithVisibility(candidate, runnerUp, isVisible).result > 0) {
+      runnerUp = candidate;
+    }
+  }
+  return runnerUp ? compareCandidatesWithVisibility(winner, runnerUp, isVisible).criterion : null;
+}
+
+function compareCandidatesWithVisibility(
+  a: SnapshotNode,
+  b: SnapshotNode,
+  isVisible: (node: SnapshotNode) => boolean,
+): DisambiguationComparison {
+  const visibleA = isVisible(a);
+  const visibleB = isVisible(b);
+  if (visibleA !== visibleB) {
+    return { result: visibleA ? 1 : -1, criterion: 'visible' };
+  }
+  return compareDisambiguationCandidates(a, b);
 }
 
 function countSelectorMatchesOnly(
@@ -193,14 +251,23 @@ function countSelectorMatchesOnly(
   return count;
 }
 
-function compareDisambiguationCandidates(a: SnapshotNode, b: SnapshotNode): number {
+type DisambiguationComparison = {
+  result: number;
+  /** The criterion that decided this pairwise comparison; null only on an exact tie. */
+  criterion: DisambiguationTiebreak | null;
+};
+
+function compareDisambiguationCandidates(
+  a: SnapshotNode,
+  b: SnapshotNode,
+): DisambiguationComparison {
   const depthA = a.depth ?? 0;
   const depthB = b.depth ?? 0;
-  if (depthA !== depthB) return depthA > depthB ? 1 : -1;
+  if (depthA !== depthB) return { result: depthA > depthB ? 1 : -1, criterion: 'deepest' };
   const areaA = areaOfNode(a);
   const areaB = areaOfNode(b);
-  if (areaA !== areaB) return areaA < areaB ? 1 : -1;
-  return 0;
+  if (areaA !== areaB) return { result: areaA < areaB ? 1 : -1, criterion: 'smallest-area' };
+  return { result: 0, criterion: null };
 }
 
 function areaOfNode(node: SnapshotNode): number {
