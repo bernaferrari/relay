@@ -1,9 +1,12 @@
+import type { ResourceEvent } from "@relay/protocol";
+
 /**
  * Process-local event bus (OpenCode-style pub/sub for hosts).
  * Server fans this out over SSE; CLI/TUI can subscribe in-process.
  */
 
 export type DeviceEvent =
+  | ResourceEvent
   | { type: "server.ready"; at: number; host: string; port: number }
   | { type: "device.list"; at: number; count: number }
   | { type: "device.selected"; at: number; serial: string | null }

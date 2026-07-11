@@ -1,7 +1,7 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useServer } from "../context/server";
 import { Icon } from "./icon";
-import { IconButton } from "@grok-device/ui/icon-button";
+import { IconButton } from "@relay/ui/icon-button";
 import { fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { mono, popover } from "../lib/ui";
@@ -33,8 +33,6 @@ export function Topbar(props: { onSettings: () => void }) {
 
   const statusOn = () =>
     server.health() === "online" && Boolean(server.selectedDevice()) && !server.isEmptyDevices();
-  const statusWarn = () =>
-    server.health() !== "offline" && (server.isEmptyDevices() || !server.selectedDevice());
   const statusOff = () => server.health() === "offline";
   const pickEmpty = () => server.isEmptyDevices() || !server.selectedDevice();
 

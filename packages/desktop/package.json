@@ -1,5 +1,5 @@
 {
-  "name": "@grok-device/desktop",
+  "name": "@relay/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@grok-device/app": "workspace:*",
-    "@grok-device/ui": "workspace:*",
+    "@relay/app": "workspace:*",
+    "@relay/ui": "workspace:*",
     "solid-js": "catalog:"
   },
   "devDependencies": {

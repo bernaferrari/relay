@@ -10,7 +10,7 @@ export type ElectronAPI = {
   /** Show a native OS notification. */
   notify: (title: string, body?: string) => void;
 
-  /** URL of the local @grok-device/server HTTP API. */
+  /** URL of the local @relay/server HTTP API. */
   getServerUrl: () => Promise<string>;
 
   /** Whether the hosting BrowserWindow is focused. */

@@ -15,21 +15,21 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 <!--VITE PLUS END-->
 
-# Grok Device monorepo
+# Relay monorepo
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
 
 ## Packages
 
-| Package                | Path               | Notes                            |
-| ---------------------- | ------------------ | -------------------------------- |
-| `@grok-device/core`    | `packages/core`    | Domain recipes — no UI           |
-| `@grok-device/server`  | `packages/server`  | HTTP API over core               |
-| `@grok-device/cli`     | `packages/cli`     | Primary host                     |
-| `@grok-device/tui`     | `packages/tui`     | ANSI terminal UI                 |
-| `@grok-device/ui`      | `packages/ui`      | Solid design system + themes     |
-| `@grok-device/app`     | `packages/app`     | Solid product UI (host-agnostic) |
-| `@grok-device/desktop` | `packages/desktop` | Electron shell                   |
+| Package          | Path               | Notes                            |
+| ---------------- | ------------------ | -------------------------------- |
+| `@relay/core`    | `packages/core`    | Domain recipes — no UI           |
+| `@relay/server`  | `packages/server`  | HTTP API over core               |
+| `@relay/cli`     | `packages/cli`     | Primary host                     |
+| `@relay/tui`     | `packages/tui`     | ANSI terminal UI                 |
+| `@relay/ui`      | `packages/ui`      | Solid design system + themes     |
+| `@relay/app`     | `packages/app`     | Solid product UI (host-agnostic) |
+| `@relay/desktop` | `packages/desktop` | Electron shell                   |
 
 ## Rules
 

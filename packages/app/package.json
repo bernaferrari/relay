@@ -1,5 +1,5 @@
 {
-  "name": "@grok-device/app",
+  "name": "@relay/app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,10 +13,12 @@
     "build": "vp build",
     "preview": "vp preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/lib/step-sentence.test.ts src/lib/run-gates.test.ts"
+    "test": "tsx --test src/lib/step-sentence.test.ts src/lib/run-gates.test.ts src/lib/natural-language-plan.test.ts"
   },
   "dependencies": {
-    "@grok-device/ui": "workspace:*",
+    "@relay/client": "workspace:*",
+    "@relay/protocol": "workspace:*",
+    "@relay/ui": "workspace:*",
     "solid-js": "catalog:"
   },
   "devDependencies": {

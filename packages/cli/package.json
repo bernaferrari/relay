@@ -1,9 +1,9 @@
 {
-  "name": "@grok-device/cli",
+  "name": "@relay/cli",
   "version": "0.1.0",
   "private": true,
   "bin": {
-    "grok-device": "./src/index.ts"
+    "relay": "./src/index.ts"
   },
   "type": "module",
   "exports": {
@@ -15,9 +15,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@grok-device/core": "workspace:*",
-    "@grok-device/server": "workspace:*",
-    "@grok-device/tui": "workspace:*"
+    "@relay/core": "workspace:*",
+    "@relay/server": "workspace:*",
+    "@relay/tui": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

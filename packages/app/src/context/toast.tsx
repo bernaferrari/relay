@@ -1,5 +1,5 @@
 import { createSignal, For, onMount, onCleanup, type JSX } from "solid-js";
-import { createSimpleContext } from "@grok-device/ui/context/helper";
+import { createSimpleContext } from "@relay/ui/context/helper";
 import { Icon, type IconName } from "../components/icon";
 import { cn } from "../lib/cn";
 

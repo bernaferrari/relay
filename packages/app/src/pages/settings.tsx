@@ -1,11 +1,11 @@
 import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
-import { Button } from "@grok-device/ui/button";
-import { useTheme, type ColorScheme } from "@grok-device/ui/theme/context";
+import { Button } from "@relay/ui/button";
+import { useTheme, type ColorScheme } from "@relay/ui/theme/context";
 import { usePlatform } from "../context/platform";
 import { useServer } from "../context/server";
 import { useCommand } from "../context/command";
 import { Icon } from "../components/icon";
-import { IconButton } from "@grok-device/ui/icon-button";
+import { IconButton } from "@relay/ui/icon-button";
 import { trapFocus } from "../lib/modal";
 import { cn } from "../lib/cn";
 import { mono, modalPanel, modalScrim, seg, segBtnOn, segBtn } from "../lib/ui";
@@ -328,7 +328,7 @@ export function SettingsPage(props: { onClose: () => void }) {
               <div class={rowCls}>
                 <div class={rowCopyCls}>
                   <span class={rowTitleCls}>Product</span>
-                  <span class={rowDescCls}>Stage · grok-device 0.1.0</span>
+                  <span class={rowDescCls}>Relay · 0.1.0</span>
                 </div>
               </div>
               <div class={rowCls}>

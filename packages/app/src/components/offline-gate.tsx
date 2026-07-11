@@ -1,7 +1,7 @@
 import { Show, type JSX, createSignal } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
-import { Button } from "@grok-device/ui/button";
+import { Button } from "@relay/ui/button";
 import { mono, modalPanel } from "../lib/ui";
 
 /**

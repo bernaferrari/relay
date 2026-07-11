@@ -10,12 +10,17 @@ import {
   type JSX,
 } from "solid-js";
 import { Portal } from "solid-js/web";
-import { useServer, type RecipeStep, type StepTarget } from "../context/server";
+import {
+  useServer,
+  type RecordedSelectorCandidate,
+  type RecipeStep,
+  type StepTarget,
+} from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useWorkbench, type RowAnno } from "../context/workbench";
 // useWorkbench used in RecipeStepsEditor for step↔frame focus
 import { sentenceForStep, stepIssue } from "../lib/step-sentence";
-import { fmtMs, titleize } from "../lib/job";
+import { fmtMs, titleize, type TitledId } from "../lib/job";
 import {
   STRATEGIES,
   defaultStrategy,
@@ -25,8 +30,9 @@ import {
   type Strategy,
 } from "../lib/step-target";
 import { cn } from "../lib/cn";
-import { Icon } from "./icon";
-import { IconButton } from "@grok-device/ui/icon-button";
+import { Icon, type IconName } from "./icon";
+import { RecordingEvidencePanel } from "./recording-evidence-panel";
+import { IconButton } from "@relay/ui/icon-button";
 import {
   btnBar,
   fieldInput,
@@ -43,33 +49,6 @@ import {
   stepIndex,
   stepIndexOn,
 } from "../lib/ui";
-
-/**
- * Kind hue lives in a solid dot (can be bright). The word itself is always ink
- * (`text-text-strong`) so light-theme selection grays never wash out "Tap" to baby-blue.
- */
-function kindDotClass(kind: string): string {
-  switch (kind) {
-    case "tap":
-    case "type":
-    case "key":
-    case "scroll":
-    case "swipe":
-      return "bg-surface-brand-base";
-    case "expect":
-    case "wait-for":
-      return "bg-icon-success-base";
-    case "sleep":
-    case "pause":
-      return "bg-icon-warning-base";
-    case "screenshot":
-      return "bg-icon-info-base";
-    case "flow":
-      return "bg-[color-mix(in_srgb,var(--surface-brand-base)_55%,var(--text-strong)_45%)]";
-    default:
-      return "bg-text-weak";
-  }
-}
 
 type AddOption = { label: string; make: () => RecipeStep };
 type AddGroup = { label: string; items: AddOption[] };
@@ -91,7 +70,7 @@ const menuSectionCls =
   "px-2.5 pt-1.5 pb-1 text-12-medium tracking-[0.06em] text-text-weak uppercase";
 /** Figma properties sheet under the selected layer */
 const editorPanel = cn(
-  "flex flex-col gap-2.5 border-t border-border-weak-base",
+  "flex w-full min-w-0 flex-col gap-2.5 overflow-hidden border-t border-border-weak-base",
   "bg-background-base px-3.5 py-3 pl-3.5",
 );
 
@@ -100,6 +79,8 @@ function kindLabel(kind: string): string {
   switch (kind) {
     case "tap":
       return "Tap";
+    case "long-press":
+      return "Hold";
     case "type":
       return "Type";
     case "expect":
@@ -120,9 +101,65 @@ function kindLabel(kind: string): string {
       return "Shot";
     case "flow":
       return "Flow";
+    case "module":
+      return "Reuse";
+    case "clipboard":
+      return "Clipboard";
+    case "app":
+      return "App";
+    case "device":
+      return "Device";
+    case "rotate":
+      return "Rotate";
+    case "settings":
+      return "Setting";
+    case "location":
+      return "Location";
+    case "permission":
+      return "Permission";
+    case "alert":
+      return "Alert";
+    case "network":
+      return "Network";
+    case "logs":
+      return "Logs";
     default:
       return kind;
   }
+}
+
+/** The kind chip already names the action, so the adjacent copy only carries
+ * the useful payload. This avoids rows such as “Tap · Tap Sign in”. */
+function stepDetail(step: RecipeStep, recipes: Iterable<TitledId>): string {
+  const sentence = sentenceForStep(step, recipes);
+  const prefixes: Partial<Record<RecipeStep["kind"], string[]>> = {
+    tap: ["Tap "],
+    "long-press": ["Long press "],
+    type: ["Type "],
+    expect: ["Check "],
+    "wait-for": ["Wait until "],
+    sleep: ["Wait "],
+    key: ["Press "],
+    scroll: ["Scroll "],
+    swipe: ["Swipe "],
+    screenshot: ["Screenshot · ", "Screenshot"],
+    module: ["Run "],
+    clipboard: ["Set clipboard ", "Check clipboard ", "Read clipboard"],
+    app: ["Open app ", "Open ", "Close "],
+    device: ["Lock ", "Unlock ", "Dismiss ", "Press "],
+    rotate: ["Rotate "],
+    settings: ["Set "],
+    location: ["Set location "],
+    permission: ["Grant ", "Deny ", "Reset "],
+    alert: ["Accept ", "Dismiss ", "Wait for ", "Inspect "],
+    network: ["Capture network ", "Mark network "],
+    logs: ["Start ", "Stop ", "Mark ", "Clear "],
+  };
+  for (const prefix of prefixes[step.kind] ?? []) {
+    if (sentence === prefix) return "Capture screen";
+    if (sentence.startsWith(prefix)) return sentence.slice(prefix.length);
+  }
+  return sentence;
 }
 
 /** Add-step menu, grouped Act / Check / More. Swipe is deliberately absent —
@@ -133,10 +170,20 @@ const ADD_GROUPS: AddGroup[] = [
     label: "Act",
     items: [
       { label: "Tap element", make: () => ({ kind: "tap", target: {} }) },
+      {
+        label: "Long press element",
+        make: () => ({ kind: "long-press", target: {}, durationMs: 700 }),
+      },
       { label: "Type text", make: () => ({ kind: "type", text: "" }) },
       { label: "Scroll", make: () => ({ kind: "scroll", direction: "down" }) },
       { label: "Press Back", make: () => ({ kind: "key", key: "back" }) },
       { label: "Press Home", make: () => ({ kind: "key", key: "home" }) },
+      { label: "Open app switcher", make: () => ({ kind: "app", action: "switcher" }) },
+      { label: "Open app or deep link", make: () => ({ kind: "app", action: "open", app: "" }) },
+      { label: "Lock device", make: () => ({ kind: "device", action: "lock" }) },
+      { label: "Unlock device", make: () => ({ kind: "device", action: "unlock" }) },
+      { label: "Dismiss keyboard", make: () => ({ kind: "device", action: "keyboard-dismiss" }) },
+      { label: "Rotate device", make: () => ({ kind: "rotate", orientation: "landscape-left" }) },
     ],
   },
   {
@@ -152,6 +199,10 @@ const ADD_GROUPS: AddGroup[] = [
       },
       { label: "Wait for element", make: () => ({ kind: "wait-for", target: {} }) },
       { label: "Wait (sleep)", make: () => ({ kind: "sleep", ms: 500 }) },
+      {
+        label: "Check clipboard",
+        make: () => ({ kind: "clipboard", action: "read", expect: "", match: "exact" }),
+      },
     ],
   },
   {
@@ -159,14 +210,39 @@ const ADD_GROUPS: AddGroup[] = [
     items: [
       { label: "Screenshot", make: () => ({ kind: "screenshot" }) },
       { label: "Pause for human", make: () => ({ kind: "pause", message: "" }) },
+      { label: "Set clipboard", make: () => ({ kind: "clipboard", action: "write", text: "" }) },
+      { label: "Reuse another test", make: () => ({ kind: "module", recipeId: "" }) },
+      {
+        label: "Capture network",
+        make: () => ({ kind: "network", action: "dump", include: "headers", limit: 100 }),
+      },
+      {
+        label: "Mark device logs",
+        make: () => ({ kind: "logs", action: "mark", message: "checkpoint" }),
+      },
+      { label: "Set location", make: () => ({ kind: "location", latitude: 0, longitude: 0 }) },
+      {
+        label: "Set permission",
+        make: () => ({ kind: "permission", action: "grant", permission: "camera" }),
+      },
+      { label: "Handle system alert", make: () => ({ kind: "alert", action: "accept" }) },
+      {
+        label: "Change device setting",
+        make: () => ({ kind: "settings", setting: "wifi", state: "on" }),
+      },
     ],
   },
 ];
 
 function isTargetKind(
   step: RecipeStep,
-): step is Extract<RecipeStep, { kind: "tap" | "wait-for" | "expect" }> {
-  return step.kind === "tap" || step.kind === "wait-for" || step.kind === "expect";
+): step is Extract<RecipeStep, { kind: "tap" | "long-press" | "wait-for" | "expect" }> {
+  return (
+    step.kind === "tap" ||
+    step.kind === "long-press" ||
+    step.kind === "wait-for" ||
+    step.kind === "expect"
+  );
 }
 
 /** Target strategy + value — Figma property rows, not free-floating form soup. */
@@ -522,6 +598,10 @@ function StepRow(props: {
   const [strategy, setStrategy] = createSignal<Strategy>(
     isTargetKind(initialStep) ? defaultStrategy(initialStep.target) : "label",
   );
+  createEffect(() => {
+    const step = props.step();
+    if (isTargetKind(step)) setStrategy(defaultStrategy(step.target));
+  });
   const [moreOpen, setMoreOpen] = createSignal(false);
   onMount(() => {
     const onDoc = (e: MouseEvent) => {
@@ -545,13 +625,20 @@ function StepRow(props: {
   const kind = () => props.step().kind;
   const issue = () => stepIssue(props.step());
   const anno = () => wb.rowAnno(props.index);
+  const evidence = () => {
+    const step = props.step();
+    return "evidence" in step ? step.evidence : undefined;
+  };
 
   const target = (): StepTarget => {
     const s = props.step();
     return isTargetKind(s) ? s.target : {};
   };
   const setTarget = (patch: Partial<StepTarget>) => {
-    const s = props.step() as Extract<RecipeStep, { kind: "tap" | "wait-for" | "expect" }>;
+    const s = props.step() as Extract<
+      RecipeStep,
+      { kind: "tap" | "long-press" | "wait-for" | "expect" }
+    >;
     props.onChange({ ...s, target: { ...s.target, ...patch } } as RecipeStep);
   };
   /** One-click retarget for a captured tap: prune to the chosen strategy as
@@ -567,6 +654,13 @@ function StepRow(props: {
     if (t.point) pruned.point = t.point;
     props.onChange({ ...s, target: pruned });
     setStrategy(id);
+  };
+
+  const applyRecordedCandidate = (candidate: RecordedSelectorCandidate) => {
+    const step = props.step();
+    if (step.kind !== "tap") return;
+    props.onChange({ ...step, target: candidate.target });
+    setStrategy(candidate.strategy);
   };
 
   function onEdit(next: RecipeStep): void {
@@ -597,16 +691,12 @@ function StepRow(props: {
 
   // Selection (phone focus) is independent of editor expand — list stays navigable.
   const selected = () => focused();
-  const dur = () => fmtMs(anno().durationMs);
-  // Duration lives on StepAnno when a run marked the row; meta only when idle.
-  const showMetaDur = () => anno().status === "idle" && Boolean(dur());
-
   return (
     <div
       class={cn(
         // AgentBoard: inset rounded chip, quiet hover/active only — status via StepAnno
         listRow,
-        "mx-1.5",
+        "test-step-card",
         selected() && listRowActive,
         !selected() && props.expanded() && listRowExpanded,
         props.flash() && listRowActive,
@@ -615,7 +705,10 @@ function StepRow(props: {
       data-expanded={props.expanded() ? "true" : undefined}
     >
       <div
-        class={cn("flex min-h-0 cursor-pointer items-start gap-2 px-2 py-1", "outline-none")}
+        class={cn(
+          "test-step-card__row grid min-h-0 w-full min-w-0 cursor-pointer grid-cols-[22px_minmax(0,1fr)_5.15rem] items-center gap-2 px-2 py-1",
+          "outline-none",
+        )}
         tabindex={0}
         aria-current={selected() ? "true" : undefined}
         aria-expanded={props.expanded()}
@@ -636,39 +729,31 @@ function StepRow(props: {
         {/* Exclusive recipes — never stack stepIndex + stepIndexOn (cn has no merge) */}
         <span class={cn(selected() ? stepIndexOn : stepIndex, "mt-0.5")}>{props.index + 1}</span>
 
-        <div class="min-w-0 flex-1">
-          {/* Meta: solid hue dot + ink label (never pastel text on gray) */}
-          <div class="flex min-w-0 items-center gap-1.5 text-12-medium leading-none">
-            <span
-              class={cn("size-1.5 shrink-0 rounded-full", kindDotClass(kind()))}
-              aria-hidden="true"
-            />
-            <span class="text-text-strong">{kindLabel(kind())}</span>
-            <Show when={showMetaDur()}>
-              <span class={cn(mono, "text-text-weak")}>· {dur()}</span>
-            </Show>
-            <Show when={issue() && !props.expanded()}>
-              <span class="text-12-medium text-icon-critical-base">· incomplete</span>
-            </Show>
-          </div>
-          {/* Primary title — text-14-medium strong ink */}
-          <div class="mt-1 flex min-w-0 items-center gap-2">
-            <span class="text-14-regular min-w-0 flex-1 truncate text-text-strong">
-              {sentenceForStep(props.step(), server.recipes())}
+        <div class="test-step-card__content min-w-0 overflow-hidden">
+          <div class="test-step-card__summary flex w-full min-w-0 items-center gap-1.5 overflow-hidden leading-none">
+            <span class="test-step-card__kind">{kindLabel(kind())}</span>
+            <span class="test-step-card__divider" aria-hidden="true">
+              ·
+            </span>
+            <span class="test-step-card__detail min-w-0 flex-1 truncate">
+              {stepDetail(props.step(), server.recipes())}
             </span>
             <StepAnno anno={anno} />
           </div>
+          <Show when={issue() && !props.expanded()}>
+            <span class="test-step-card__issue">Incomplete · {issue()}</span>
+          </Show>
         </div>
 
         <span
           data-step-actions
           class={cn(
-            "mt-0.5 flex w-0 shrink-0 items-center justify-end gap-0.5 overflow-hidden",
-            "transition-[width,opacity] duration-100 ease-out",
-            // AB width-collapse: 4×24 + gaps ≈ 6.75rem when open
+            "flex w-[5.15rem] shrink-0 items-center justify-end gap-0.5 overflow-hidden",
+            "transition-opacity duration-100 ease-out",
+            // Edit, explicit run, overflow. Destructive/reorder actions live in overflow.
             selected() || props.expanded()
-              ? "w-[6.75rem] opacity-100"
-              : "opacity-0 pointer-events-none group-hover/session:w-[6.75rem] group-hover/session:opacity-100 group-hover/session:pointer-events-auto group-focus-within/session:w-[6.75rem] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto [@media(hover:none)]:w-[6.75rem] [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto",
+              ? "opacity-100"
+              : "pointer-events-none opacity-0 group-hover/session:pointer-events-auto group-hover/session:opacity-100 group-focus-within/session:pointer-events-auto group-focus-within/session:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100",
           )}
         >
           <IconButton
@@ -696,16 +781,6 @@ function StepRow(props: {
             onClick={() => void wb.runFrom(props.index)}
           >
             <Icon name="play" size={13} />
-          </IconButton>
-          <IconButton
-            variant="ghost"
-            size="normal"
-            class="rounded-md text-icon-base hover:text-icon-critical-base"
-            data-tip="Delete"
-            aria-label="Delete step"
-            onClick={() => armDelete()}
-          >
-            <Icon name="trash" size={13} />
           </IconButton>
           <div class="relative" data-step-more>
             <IconButton
@@ -765,6 +840,17 @@ function StepRow(props: {
                 >
                   Move down
                 </button>
+                <button
+                  type="button"
+                  class={cn(moreItemCls, "text-icon-critical-base")}
+                  role="menuitem"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    armDelete();
+                  }}
+                >
+                  Delete step
+                </button>
               </div>
             </Show>
           </div>
@@ -780,6 +866,15 @@ function StepRow(props: {
 
       <Show when={props.expanded()}>
         <div class={editorPanel}>
+          <Show when={evidence()}>
+            {(captured) => (
+              <RecordingEvidencePanel
+                evidence={captured()}
+                target={kind() === "tap" ? target() : undefined}
+                onApply={kind() === "tap" ? applyRecordedCandidate : undefined}
+              />
+            )}
+          </Show>
           {/* tap — detected chain as one-click retargeting when captured */}
           <Show when={kind() === "tap"}>
             {(() => {
@@ -1178,6 +1273,475 @@ function StepRow(props: {
             })()}
           </Show>
 
+          <Show when={kind() === "long-press"}>
+            <ManualTarget
+              target={target}
+              strategy={strategy}
+              onStrategy={setStrategy}
+              onPatch={setTarget}
+              autofocus={props.autofocus}
+              onAutofocused={props.onAutofocused}
+            />
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "long-press") return null;
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Duration</span>
+                  <span class="inline-flex items-center gap-1.5">
+                    <input
+                      class={cn(valueTimeoutCls, mono)}
+                      type="number"
+                      min={100}
+                      max={10000}
+                      value={s.durationMs ?? 700}
+                      onInput={(e) => onEdit({ ...s, durationMs: Number(e.currentTarget.value) })}
+                    />
+                    <span class="text-12-regular text-text-weak">ms</span>
+                  </span>
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "module"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "module") return null;
+              const choices = server.recipes().filter((r) => r.id !== server.selectedRecipeId());
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Test</span>
+                  <select
+                    class={valueCls}
+                    value={s.recipeId}
+                    onChange={(e) => onEdit({ ...s, recipeId: e.currentTarget.value })}
+                  >
+                    <option value="">Choose a reusable test…</option>
+                    <For each={choices}>{(r) => <option value={r.id}>{r.title}</option>}</For>
+                  </select>
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "clipboard"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "clipboard") return null;
+              const value = s.action === "write" ? (s.text ?? "") : (s.expect ?? "");
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Action</span>
+                    <div class={seg}>
+                      {(
+                        [
+                          ["write", "Write"],
+                          ["read", "Read & check"],
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          type="button"
+                          class={s.action === id ? segBtnOn : segBtn}
+                          onClick={() =>
+                            onEdit(
+                              id === "write"
+                                ? { kind: "clipboard", action: "write", text: value }
+                                : {
+                                    kind: "clipboard",
+                                    action: "read",
+                                    expect: value,
+                                    match: "exact",
+                                  },
+                            )
+                          }
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>{s.action === "write" ? "Text" : "Expected"}</span>
+                    <input
+                      class={cn(valueCls, mono)}
+                      value={value}
+                      placeholder="clipboard text"
+                      onInput={(e) =>
+                        onEdit(
+                          s.action === "write"
+                            ? { ...s, text: e.currentTarget.value }
+                            : { ...s, expect: e.currentTarget.value },
+                        )
+                      }
+                    />
+                  </div>
+                  <Show when={s.action === "read"}>
+                    <div class={propRow}>
+                      <span class={fieldLabel}>Match</span>
+                      <div class={seg}>
+                        {(
+                          [
+                            ["exact", "Exact"],
+                            ["contains", "Contains"],
+                          ] as const
+                        ).map(([id, label]) => (
+                          <button
+                            type="button"
+                            class={
+                              (s.match !== "contains" && id === "exact") || s.match === id
+                                ? segBtnOn
+                                : segBtn
+                            }
+                            onClick={() => onEdit({ ...s, match: id })}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </Show>
+                </>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "app"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "app") return null;
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Action</span>
+                    <select
+                      class={valueCls}
+                      value={s.action}
+                      onChange={(e) =>
+                        onEdit({
+                          kind: "app",
+                          action: e.currentTarget.value as "open" | "close" | "switcher",
+                          ...(e.currentTarget.value !== "switcher" ? { app: s.app ?? "" } : {}),
+                        })
+                      }
+                    >
+                      <option value="open">Open app / deep link</option>
+                      <option value="close">Close app</option>
+                      <option value="switcher">Open app switcher</option>
+                    </select>
+                  </div>
+                  <Show when={s.action !== "switcher"}>
+                    <div class={propRow}>
+                      <span class={fieldLabel}>App</span>
+                      <input
+                        class={cn(valueCls, mono)}
+                        value={s.app ?? s.url ?? ""}
+                        placeholder="package, app name, or URL"
+                        onInput={(e) => {
+                          const v = e.currentTarget.value;
+                          onEdit(
+                            v.includes("://")
+                              ? { ...s, app: undefined, url: v }
+                              : { ...s, app: v, url: undefined },
+                          );
+                        }}
+                      />
+                    </div>
+                  </Show>
+                </>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "device"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "device") return null;
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Action</span>
+                  <select
+                    class={valueCls}
+                    value={s.action}
+                    onChange={(e) =>
+                      onEdit({ kind: "device", action: e.currentTarget.value as typeof s.action })
+                    }
+                  >
+                    <option value="lock">Lock screen</option>
+                    <option value="unlock">Wake & unlock</option>
+                    <option value="keyboard-dismiss">Dismiss keyboard</option>
+                    <option value="keyboard-enter">Keyboard Enter</option>
+                  </select>
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "rotate"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "rotate") return null;
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Orientation</span>
+                  <select
+                    class={valueCls}
+                    value={s.orientation}
+                    onChange={(e) =>
+                      onEdit({ ...s, orientation: e.currentTarget.value as typeof s.orientation })
+                    }
+                  >
+                    <option value="portrait">Portrait</option>
+                    <option value="portrait-upside-down">Portrait upside down</option>
+                    <option value="landscape-left">Landscape left</option>
+                    <option value="landscape-right">Landscape right</option>
+                  </select>
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "settings"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "settings") return null;
+              const appearance = s.setting === "appearance";
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Setting</span>
+                    <select
+                      class={valueCls}
+                      value={s.setting}
+                      onChange={(e) => {
+                        const setting = e.currentTarget.value as typeof s.setting;
+                        onEdit({
+                          kind: "settings",
+                          setting,
+                          state: setting === "appearance" ? "light" : "on",
+                        });
+                      }}
+                    >
+                      <option value="wifi">Wi-Fi</option>
+                      <option value="airplane">Airplane mode</option>
+                      <option value="location">Location services</option>
+                      <option value="animations">Animations</option>
+                      <option value="appearance">Appearance</option>
+                    </select>
+                  </div>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>State</span>
+                    <select
+                      class={valueCls}
+                      value={s.state}
+                      onChange={(e) =>
+                        onEdit({ ...s, state: e.currentTarget.value as typeof s.state })
+                      }
+                    >
+                      {appearance ? (
+                        <>
+                          <option value="light">Light</option>
+                          <option value="dark">Dark</option>
+                          <option value="toggle">Toggle</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="on">On</option>
+                          <option value="off">Off</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "location"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "location") return null;
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Latitude</span>
+                    <input
+                      class={cn(valueCls, mono)}
+                      type="number"
+                      step="any"
+                      value={s.latitude}
+                      onInput={(e) => onEdit({ ...s, latitude: Number(e.currentTarget.value) })}
+                    />
+                  </div>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Longitude</span>
+                    <input
+                      class={cn(valueCls, mono)}
+                      type="number"
+                      step="any"
+                      value={s.longitude}
+                      onInput={(e) => onEdit({ ...s, longitude: Number(e.currentTarget.value) })}
+                    />
+                  </div>
+                </>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "permission"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "permission") return null;
+              const permissions = [
+                "camera",
+                "microphone",
+                "photos",
+                "contacts",
+                "notifications",
+                "calendar",
+                "location",
+                "location-always",
+                "media-library",
+                "motion",
+                "reminders",
+                "siri",
+              ] as const;
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Action</span>
+                    <select
+                      class={valueCls}
+                      value={s.action}
+                      onChange={(e) =>
+                        onEdit({ ...s, action: e.currentTarget.value as typeof s.action })
+                      }
+                    >
+                      <option value="grant">Grant</option>
+                      <option value="deny">Deny</option>
+                      <option value="reset">Reset</option>
+                    </select>
+                  </div>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Permission</span>
+                    <select
+                      class={valueCls}
+                      value={s.permission}
+                      onChange={(e) =>
+                        onEdit({ ...s, permission: e.currentTarget.value as typeof s.permission })
+                      }
+                    >
+                      <For each={permissions}>
+                        {(p) => <option value={p}>{p.replaceAll("-", " ")}</option>}
+                      </For>
+                    </select>
+                  </div>
+                </>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "alert"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "alert") return null;
+              return (
+                <div class={propRow}>
+                  <span class={fieldLabel}>Action</span>
+                  <select
+                    class={valueCls}
+                    value={s.action}
+                    onChange={(e) =>
+                      onEdit({ ...s, action: e.currentTarget.value as typeof s.action })
+                    }
+                  >
+                    <option value="accept">Accept</option>
+                    <option value="dismiss">Dismiss</option>
+                    <option value="wait">Wait for alert</option>
+                    <option value="get">Inspect alert</option>
+                  </select>
+                </div>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "network"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "network") return null;
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Evidence</span>
+                    <select
+                      class={valueCls}
+                      value={s.include ?? "summary"}
+                      onChange={(e) =>
+                        onEdit({
+                          ...s,
+                          include: e.currentTarget.value as NonNullable<typeof s.include>,
+                        })
+                      }
+                    >
+                      <option value="summary">Summary</option>
+                      <option value="headers">Headers</option>
+                      <option value="body">Bodies</option>
+                      <option value="all">Everything</option>
+                    </select>
+                  </div>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Limit</span>
+                    <input
+                      class={cn(valueCls, mono)}
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={s.limit ?? 100}
+                      onInput={(e) => onEdit({ ...s, limit: Number(e.currentTarget.value) })}
+                    />
+                  </div>
+                </>
+              );
+            })()}
+          </Show>
+
+          <Show when={kind() === "logs"}>
+            {(() => {
+              const s = props.step();
+              if (s.kind !== "logs") return null;
+              return (
+                <>
+                  <div class={propRow}>
+                    <span class={fieldLabel}>Action</span>
+                    <select
+                      class={valueCls}
+                      value={s.action}
+                      onChange={(e) =>
+                        onEdit({ ...s, action: e.currentTarget.value as typeof s.action })
+                      }
+                    >
+                      <option value="mark">Add marker</option>
+                      <option value="start">Start capture</option>
+                      <option value="stop">Stop capture</option>
+                      <option value="clear">Clear logs</option>
+                    </select>
+                  </div>
+                  <Show when={s.action === "mark"}>
+                    <div class={propRow}>
+                      <span class={fieldLabel}>Marker</span>
+                      <input
+                        class={valueCls}
+                        value={s.message ?? ""}
+                        onInput={(e) => onEdit({ ...s, message: e.currentTarget.value })}
+                      />
+                    </div>
+                  </Show>
+                </>
+              );
+            })()}
+          </Show>
+
           {/* When annotated, the expanded row also shows that step's log. */}
           <Show when={anno().log}>
             <pre
@@ -1215,15 +1779,6 @@ export function RecipeStepsEditor(): JSX.Element {
     draft.setExpandedStep(i);
   }
 
-  /**
-   * Click = select (phone + highlight). Second click on the selected row toggles
-   * the editor. Expanding never replaces the list — siblings stay visible.
-   * Escape always collapses the editor without changing selection.
-   */
-  function selectStep(i: number): void {
-    wb.focusStep(i);
-  }
-
   function toggleEditor(i: number): void {
     if (expanded() === i) {
       setOpen(null);
@@ -1234,14 +1789,9 @@ export function RecipeStepsEditor(): JSX.Element {
   }
 
   function onRowActivate(i: number): void {
-    // Already selected → toggle editor. Otherwise select only (stay collapsed).
-    if (wb.focusedIndex() === i) {
-      toggleEditor(i);
-      return;
-    }
-    selectStep(i);
-    // Keep editor closed when switching steps — user opts in with a second click / chevron.
-    if (expanded() != null) setOpen(null);
+    // One click has one meaning: select this step and open its editor.
+    // Running is always explicit through the play action.
+    toggleEditor(i);
   }
 
   function onEditToggle(i: number): void {
@@ -1287,15 +1837,36 @@ export function RecipeStepsEditor(): JSX.Element {
   // Empty guide + starter chips replace the old auto-open menu (less noise).
 
   /** Compact starter chips — not fake step rows (that confused empty vs content). */
-  const STARTERS: { kind: string; label: string; make: () => RecipeStep }[] = [
-    { kind: "Tap", label: "Tap", make: () => ({ kind: "tap", target: {} }) },
-    { kind: "Type", label: "Type", make: () => ({ kind: "type", text: "" }) },
+  const STARTERS: {
+    label: string;
+    description: string;
+    icon: IconName;
+    make: () => RecipeStep;
+  }[] = [
     {
-      kind: "Check",
+      label: "Tap",
+      description: "Select an element or point",
+      icon: "pointer",
+      make: () => ({ kind: "tap", target: {} }),
+    },
+    {
+      label: "Type",
+      description: "Enter text or a variable",
+      icon: "keyboard",
+      make: () => ({ kind: "type", text: "" }),
+    },
+    {
       label: "Check",
+      description: "Verify what appears on screen",
+      icon: "check",
       make: () => ({ kind: "expect", target: {}, condition: "visible" }),
     },
-    { kind: "Wait", label: "Wait", make: () => ({ kind: "sleep", ms: 1000 }) },
+    {
+      label: "Wait",
+      description: "Pause for a fixed duration",
+      icon: "clock",
+      make: () => ({ kind: "sleep", ms: 1000 }),
+    },
   ];
 
   const isEmpty = () => draft.steps().length === 0;
@@ -1310,37 +1881,33 @@ export function RecipeStepsEditor(): JSX.Element {
   const footerOpen = () => addAt() === draft.steps().length;
 
   return (
-    <div class="flex h-full min-h-0 flex-1 flex-col">
+    <div class="test-step-editor flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* Full-height scroll — no floating card over a cream void */}
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <div class="test-step-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         <Show when={isEmpty()}>
-          <div
-            class="flex h-full min-h-[240px] flex-col items-center justify-center px-6 py-14"
-            role="group"
-            aria-label="Add first step"
-          >
-            <div class="flex w-full max-w-[280px] flex-col items-center">
-              <p class="text-14-medium m-0 tracking-tight text-text-strong">
-                Build your first step
+          <div class="test-step-empty" role="group" aria-label="Add first step">
+            <div class="test-step-empty__content">
+              <span class="test-step-empty__eyebrow">Manual step</span>
+              <h3>Start with an action</h3>
+              <p>
+                Choose one to configure it. Recording on the device adds steps here automatically.
               </p>
-              <p class="text-14-regular mt-1.5 mb-0 max-w-[260px] text-center leading-relaxed text-text-base">
-                Tap a starter below, or drive the phone to record a flow.
-              </p>
-              <div class="mt-5 flex w-full flex-col gap-0.5">
+              <div class="test-step-empty__grid">
                 <For each={STARTERS}>
                   {(s) => (
                     <button
                       type="button"
-                      class={cn(
-                        "flex h-9 w-full items-center gap-2 rounded-md px-2.5",
-                        "text-left text-14-medium text-text-strong",
-                        "transition-colors duration-100 ease-out",
-                        "hover:bg-surface-raised-base-hover",
-                      )}
+                      class="test-step-empty__action"
                       onClick={() => insertAt(0, s.make())}
                     >
-                      <Icon name="plus" size={14} strokeWidth={2} class="text-icon-base" />
-                      {s.label}
+                      <span class="test-step-empty__icon" aria-hidden="true">
+                        <Icon name={s.icon} size={16} strokeWidth={1.8} />
+                      </span>
+                      <span class="test-step-empty__action-copy">
+                        <strong>{s.label}</strong>
+                        <small>{s.description}</small>
+                      </span>
+                      <Icon name="chevron-right" size={14} class="test-step-empty__arrow" />
                     </button>
                   )}
                 </For>
@@ -1351,7 +1918,7 @@ export function RecipeStepsEditor(): JSX.Element {
 
         <Show when={!isEmpty()}>
           {/* Inset list — AgentBoard chip rows + gap-1 air */}
-          <div class="flex flex-col gap-1 py-4">
+          <div class="test-step-list flex flex-col gap-2 py-4">
             <InsertGap
               at={0}
               open={addAt() === 0}
@@ -1401,7 +1968,7 @@ export function RecipeStepsEditor(): JSX.Element {
         </Show>
       </div>
 
-      <div class="relative shrink-0 border-t border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-2.5 text-text-strong">
+      <div class="test-step-footer relative shrink-0 border-t border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-2.5 text-text-strong">
         <button
           type="button"
           ref={(el) => {

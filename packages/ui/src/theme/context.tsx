@@ -2,25 +2,25 @@
 /**
  * ThemeProvider — ported from AgentBoard / OpenCode (`@opencode-ai/ui` theme/context.tsx).
  * Injects OpenCode v1 + v2 tokens on :root (same as AgentBoard applyThemeCss).
- * Storage keys namespaced for grok-device.
+ * Storage keys namespaced for relay.
  */
 
 import { createEffect, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import { createSimpleContext } from "../context/helper";
 import oc2ThemeJson from "./themes/oc-2.json";
-import grokThemeJson from "./themes/grok.json";
+import relayThemeJson from "./themes/relay.json";
 import { resolveThemeVariant, themeToCss } from "./resolve";
 import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve";
-import type { DesktopTheme, HexColor } from "./types";
+import type { DesktopTheme } from "./types";
 
 export type ColorScheme = "light" | "dark" | "system";
 
 const STORAGE_KEYS = {
-  THEME_ID: "grok-device-theme-id",
-  COLOR_SCHEME: "grok-device-color-scheme",
-  THEME_CSS_LIGHT: "grok-device-theme-css-light",
-  THEME_CSS_DARK: "grok-device-theme-css-dark",
+  THEME_ID: "relay-theme-id",
+  COLOR_SCHEME: "relay-color-scheme",
+  THEME_CSS_LIGHT: "relay-theme-css-light",
+  THEME_CSS_DARK: "relay-theme-css-dark",
 } as const;
 
 const THEME_STYLE_ID = "oc-theme";
@@ -40,7 +40,7 @@ function themeIDs() {
     .map((path) => path.slice("./themes/".length, -".json".length))
     .sort((a, b) => {
       const rank = (id: string) =>
-        id === "grok" ? 0 : id === "oc-2" ? 1 : id === "opencode" ? 2 : 10;
+        id === "relay" ? 0 : id === "oc-2" ? 1 : id === "opencode" ? 2 : 10;
       const d = rank(a) - rank(b);
       return d !== 0 ? d : a.localeCompare(b);
     });
@@ -54,7 +54,7 @@ function knownThemes() {
 }
 
 const names: Record<string, string> = {
-  grok: "Grok",
+  relay: "Relay",
   "oc-2": "OC-2",
   amoled: "AMOLED",
   aura: "Aura",
@@ -95,10 +95,12 @@ const names: Record<string, string> = {
 };
 
 const oc2Theme = oc2ThemeJson as DesktopTheme;
-const grokTheme = grokThemeJson as DesktopTheme;
+const relayTheme = relayThemeJson as DesktopTheme;
 
 function normalize(id: string | null | undefined) {
-  return id === "oc-1" ? "oc-2" : id;
+  if (id === "oc-1") return "oc-2";
+  if (id === "grok") return "relay";
+  return id;
 }
 
 function read(key: string) {
@@ -202,6 +204,7 @@ function applyThemeCss(
   ${v2}
 }`;
 
+  document.getElementById("relay-theme-preload")?.remove();
   document.getElementById("gd-theme-preload")?.remove();
   document.getElementById("oc-theme-preload")?.remove();
   ensureThemeStyleElement().textContent = fullCss;
@@ -216,9 +219,7 @@ function applyThemeCss(
   if (meta) meta.setAttribute("content", background);
 
   const detail: ThemeAppliedDetail = { themeId, mode, background, theme };
-  window.dispatchEvent(
-    new CustomEvent<ThemeAppliedDetail>("grok-device:theme-applied", { detail }),
-  );
+  window.dispatchEvent(new CustomEvent<ThemeAppliedDetail>("relay:theme-applied", { detail }));
   return detail;
 }
 
@@ -245,9 +246,13 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     defaultColorScheme?: ColorScheme;
     onThemeApplied?: (detail: ThemeAppliedDetail) => void;
   }) => {
-    const themeId = normalize(read(STORAGE_KEYS.THEME_ID) ?? props.defaultTheme) ?? "grok";
+    const legacyThemeId = read("grok-device-theme-id");
+    const legacyColorScheme = read("grok-device-color-scheme") as ColorScheme | null;
+    const themeId =
+      normalize(read(STORAGE_KEYS.THEME_ID) ?? legacyThemeId ?? props.defaultTheme) ?? "relay";
     const colorScheme =
       (read(STORAGE_KEYS.COLOR_SCHEME) as ColorScheme | null) ??
+      legacyColorScheme ??
       props.defaultColorScheme ??
       "system";
     const mode = colorScheme === "system" ? getSystemMode() : colorScheme;
@@ -255,7 +260,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     const [store, setStore] = createStore({
       themes: {
         "oc-2": oc2Theme,
-        grok: grokTheme,
+        relay: relayTheme,
       } as Record<string, DesktopTheme>,
       themeId,
       colorScheme,

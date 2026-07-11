@@ -1,5 +1,5 @@
 {
-  "name": "@grok-device/core",
+  "name": "@relay/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -19,13 +19,16 @@
     "./report": "./src/report.ts",
     "./doctor": "./src/doctor.ts",
     "./control": "./src/control.ts",
-    "./retry": "./src/retry.ts"
+    "./retry": "./src/retry.ts",
+    "./collaboration": "./src/collaboration.ts",
+    "./generation": "./src/generation.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
+    "@relay/protocol": "workspace:*",
     "agent-device": "^0.18.3"
   },
   "devDependencies": {

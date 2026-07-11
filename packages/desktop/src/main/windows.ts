@@ -54,7 +54,7 @@ export async function loadRenderer(win: BrowserWindow): Promise<void> {
   // electron-vite injects ELECTRON_RENDERER_URL in dev
   if (process.env.ELECTRON_RENDERER_URL) {
     await win.loadURL(process.env.ELECTRON_RENDERER_URL);
-    if (process.env.GROK_DEVICE_DEVTOOLS === "1") {
+    if ((process.env.RELAY_DEVTOOLS ?? process.env.GROK_DEVICE_DEVTOOLS) === "1") {
       win.webContents.openDevTools({ mode: "detach" });
     }
     return;

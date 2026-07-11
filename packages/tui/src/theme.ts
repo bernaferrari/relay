@@ -52,7 +52,7 @@ export function banner(mode: string): string {
   const line = theme.muted("─".repeat(52));
   return [
     "",
-    theme.primary(theme.bold("  Grok Device")),
+    theme.primary(theme.bold("  Relay")),
     theme.muted("  App testing shell · agent-device"),
     theme.muted(`  ${mode}`),
     line,

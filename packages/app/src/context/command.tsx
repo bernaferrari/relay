@@ -2,7 +2,7 @@
  * OpenCode-style command registry: every action is a command with a real keybind.
  */
 import { For, Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js";
-import { createSimpleContext } from "@grok-device/ui/context/helper";
+import { createSimpleContext } from "@relay/ui/context/helper";
 import { cn } from "../lib/cn";
 
 export type Command = {

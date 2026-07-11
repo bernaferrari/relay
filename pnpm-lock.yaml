@@ -237,10 +237,19 @@ importers:
       vite-plus:
         specifier: 'catalog:'
         version: 0.2.2(@types/node@22.20.0)(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@22.20.0)(@vitest/browser-preview@4.1.9)(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))
 
   packages/app:
     dependencies:
-      '@grok-device/ui':
+      '@relay/client':
+        specifier: workspace:*
+        version: link:../client
+      '@relay/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@relay/ui':
         specifier: workspace:*
         version: link:../ui
       solid-js:
@@ -265,13 +274,13 @@ importers:
 
   packages/cli:
     dependencies:
-      '@grok-device/core':
+      '@relay/core':
         specifier: workspace:*
         version: link:../core
-      '@grok-device/server':
+      '@relay/server':
         specifier: workspace:*
         version: link:../server
-      '@grok-device/tui':
+      '@relay/tui':
         specifier: workspace:*
         version: link:../tui
     devDependencies:
@@ -285,8 +294,27 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  packages/client:
+    dependencies:
+      '@relay/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.0
+      tsx:
+        specifier: ^4.20.0
+        version: 4.22.5
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/core:
     dependencies:
+      '@relay/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       agent-device:
         specifier: ^0.18.3
         version: 0.18.3
@@ -300,10 +328,10 @@ importers:
 
   packages/desktop:
     dependencies:
-      '@grok-device/app':
+      '@relay/app':
         specifier: workspace:*
         version: link:../app
-      '@grok-device/ui':
+      '@relay/ui':
         specifier: workspace:*
         version: link:../ui
       solid-js:
@@ -335,12 +363,24 @@ importers:
         specifier: ^2.11.6
         version: 2.11.12(@voidzero-dev/vite-plus-core@0.2.2(@types/node@22.20.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.22.5)(typescript@5.9.3)(yaml@2.9.0))(solid-js@1.9.14)
 
+  packages/protocol:
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/server:
     dependencies:
-      '@grok-device/core':
+      '@relay/core':
         specifier: workspace:*
         version: link:../core
+      '@relay/protocol':
+        specifier: workspace:*
+        version: link:../protocol
     devDependencies:
+      '@relay/client':
+        specifier: workspace:*
+        version: link:../client
       '@types/node':
         specifier: ^22.15.0
         version: 22.20.0
@@ -353,7 +393,10 @@ importers:
 
   packages/tui:
     dependencies:
-      '@grok-device/core':
+      '@relay/client':
+        specifier: workspace:*
+        version: link:../client
+      '@relay/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

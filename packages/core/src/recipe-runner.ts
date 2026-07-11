@@ -21,12 +21,26 @@ import {
   waitFor,
   exists,
   base,
+  longPressTarget,
+  clipboardWrite,
+  clipboardRead,
+  closeApp,
+  openApp,
+  openUrl,
+  openAppSwitcher,
+  rotateDevice,
+  keyboardAction,
+  alertAction,
+  updateSetting,
+  captureNetwork,
+  manageLogs,
+  setAndroidLockState,
 } from "./device.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled, requestPause } from "./control.js";
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
 import { captureScreenshot } from "./workspace.js";
-import { describeTarget, type RecipeStep, type StepTarget } from "./recipes.js";
+import { describeTarget, readRecipe, type RecipeStep, type StepTarget } from "./recipes.js";
 import type { TestJob } from "./session.js";
 
 export type RecipeStepContext = {
@@ -39,7 +53,26 @@ export type RecipeStepContext = {
    * captures without attaching to a job.
    */
   job?: TestJob;
+  moduleStack?: string[];
 };
+
+/** Resolve {{name}} placeholders immediately before execution. Unresolved
+ * placeholders stay visible so a bad configuration fails transparently. */
+export function resolveRecipeStep(step: RecipeStep, variables: Record<string, string>): RecipeStep {
+  const visit = (value: unknown): unknown => {
+    if (typeof value === "string") {
+      return value.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (whole, name: string) =>
+        Object.hasOwn(variables, name) ? variables[name]! : whole,
+      );
+    }
+    if (Array.isArray(value)) return value.map(visit);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, visit(item)]));
+    }
+    return value;
+  };
+  return visit(step) as RecipeStep;
+}
 
 function isCancel(err: unknown): boolean {
   return err instanceof Error && err.name === "JobCancelledError";
@@ -136,6 +169,10 @@ export async function runRecipeStep(
   switch (step.kind) {
     case "tap":
       await tapTarget(device, step.target, log);
+      break;
+
+    case "long-press":
+      await longPressTarget(device, step.target, step.durationMs);
       break;
 
     case "type": {
@@ -280,6 +317,122 @@ export async function runRecipeStep(
       }
       const result = await runAction(device, step.flow, { onLog: log });
       if (!result.ok) throw new Error(result.error);
+      break;
+    }
+
+    case "module": {
+      const stack = ctx.moduleStack ?? [];
+      if (stack.includes(step.recipeId))
+        throw new Error(`reusable test cycle: ${[...stack, step.recipeId].join(" → ")}`);
+      if (stack.length >= 12) throw new Error("reusable test nesting is limited to 12 levels");
+      const recipe = await readRecipe(step.recipeId);
+      if (!recipe) throw new Error(`reusable test not found: ${step.recipeId}`);
+      log(`↳ ${recipe.title} · ${recipe.steps.length} step(s)`);
+      for (const child of recipe.steps) {
+        await runRecipeStep(device, resolveRecipeStep(child, job?.resolvedInputs ?? {}), {
+          ...ctx,
+          moduleStack: [...stack, step.recipeId],
+        });
+      }
+      break;
+    }
+
+    case "clipboard": {
+      if (step.action === "write") {
+        await clipboardWrite(device, step.text ?? "");
+      } else {
+        const value = await clipboardRead(device);
+        log(`clipboard: ${JSON.stringify(value)}`);
+        if (step.expect !== undefined) {
+          const ok =
+            step.match === "contains" ? value.includes(step.expect) : value === step.expect;
+          if (!ok)
+            throw new Error(
+              `clipboard: expected ${step.match === "contains" ? "text containing" : "exactly"} ${JSON.stringify(step.expect)}, received ${JSON.stringify(value)}`,
+            );
+        }
+      }
+      break;
+    }
+
+    case "app":
+      if (step.action === "switcher") await openAppSwitcher(device);
+      else if (step.action === "close") await closeApp(device, step.app);
+      else if (step.url) await openUrl(device, step.url);
+      else await openApp(device, step.app!);
+      break;
+
+    case "device":
+      if (step.action === "lock" || step.action === "unlock")
+        await setAndroidLockState(step.action);
+      else await keyboardAction(device, step.action === "keyboard-dismiss" ? "dismiss" : "enter");
+      break;
+
+    case "rotate":
+      await rotateDevice(device, step.orientation);
+      break;
+
+    case "settings": {
+      const common = { ...base(), setting: step.setting };
+      const result =
+        step.setting === "appearance"
+          ? await updateSetting(device, {
+              ...common,
+              setting: "appearance",
+              state: step.state as "light" | "dark" | "toggle",
+            })
+          : await updateSetting(device, {
+              ...common,
+              setting: step.setting as "wifi" | "airplane" | "location" | "animations",
+              state: step.state as "on" | "off",
+            });
+      job?.artifacts.push({ kind: "device-setting", capturedAt: now(), data: result });
+      break;
+    }
+
+    case "location": {
+      const result = await updateSetting(device, {
+        ...base(),
+        setting: "location",
+        state: "set",
+        latitude: step.latitude,
+        longitude: step.longitude,
+      });
+      job?.artifacts.push({ kind: "location", capturedAt: now(), data: result });
+      break;
+    }
+
+    case "permission": {
+      const result = await updateSetting(device, {
+        ...base(),
+        setting: "permission",
+        state: step.action,
+        permission: step.permission,
+      });
+      job?.artifacts.push({ kind: "permission", capturedAt: now(), data: result });
+      break;
+    }
+
+    case "alert": {
+      const result = await alertAction(device, step.action, step.timeoutMs);
+      job?.artifacts.push({ kind: "alert", capturedAt: now(), data: result });
+      break;
+    }
+
+    case "network": {
+      const result = await captureNetwork(device, {
+        action: step.action,
+        include: step.include,
+        limit: step.limit,
+      });
+      job?.artifacts.push({ kind: "network", capturedAt: now(), data: result });
+      log(`network: captured ${step.include ?? "summary"}`);
+      break;
+    }
+
+    case "logs": {
+      const result = await manageLogs(device, { action: step.action, message: step.message });
+      job?.artifacts.push({ kind: "device-log", capturedAt: now(), data: result });
       break;
     }
   }

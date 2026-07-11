@@ -1,5 +1,5 @@
 import { createSignal, createEffect, on, onCleanup } from "solid-js";
-import { createSimpleContext } from "@grok-device/ui/context/helper";
+import { createSimpleContext } from "@relay/ui/context/helper";
 import { useServer, type RecipeInfo, type RecipeStep } from "./server";
 import { stepValid } from "../lib/step-sentence";
 import { collapseUnchangedFlow, expandFlowToEditableSteps } from "../lib/run-gates";
@@ -12,9 +12,8 @@ export type SaveState = "saved" | "saving" | "invalid";
  * local draft (title/description/steps) for whichever recipe is selected —
  * builtin or custom — autosaving 600ms after the last edit.
  *
- * Builtins auto-fork into a custom copy on first successful save. We keep a
- * `forkedFrom` pointer so the UI can offer “Open original” — silent forks
- * must never strand the user without a way back.
+ * Packaged defaults are editable in place. The server stores an override under
+ * the same id, so the UI never exposes a protected-template exception.
  *
  * The draft reseeds only when `selectedRecipeId` changes (not on background
  * polls), so mid-edit typing survives refreshes and our own auto-fork.
@@ -93,7 +92,8 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     createEffect(
       on(
         // Also re-run when actions load so planned[] is available to expand.
-        () => [server.selectedRecipeId(), server.actions().length] as const,
+        () =>
+          [server.selectedRecipeId(), server.actions().length, server.recipes().length] as const,
         ([id]) => {
           if (id && skipReseedFor === id) {
             skipReseedFor = null;
@@ -148,11 +148,8 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         steps: persistSteps,
       };
 
-      // Editing a builtin? Fork into a custom copy, keep a back-link to original.
-      const forking = source() === "builtin";
-      const originTitle = title();
-      const originId = id;
-      const saved = await server.saveRecipeRemote(forking ? body : { id, ...body });
+      const overridingPackaged = source() === "builtin";
+      const saved = await server.saveRecipeRemote({ id, ...body });
 
       // The selection (or a newer save) moved on while this was in flight.
       if (currentId !== id || mySeq !== saveSeq) return;
@@ -160,13 +157,9 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         setSaveState("invalid");
         return;
       }
-      if (forking) {
-        currentId = saved.id;
+      if (overridingPackaged) {
         setSource("custom");
-        setForkedFrom({ id: originId, title: originTitle });
-        skipReseedFor = saved.id;
-        server.setSelectedRecipeId(saved.id);
-        toast(`Saved your copy — open original anytime`, "info");
+        toast("Test is now customized", "info");
       }
       if (editSeq === myEdit) {
         dirty = false;

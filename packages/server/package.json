@@ -1,5 +1,5 @@
 {
-  "name": "@grok-device/server",
+  "name": "@relay/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,12 +9,15 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
+    "test": "tsx --test src/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@grok-device/core": "workspace:*"
+    "@relay/core": "workspace:*",
+    "@relay/protocol": "workspace:*"
   },
   "devDependencies": {
+    "@relay/client": "workspace:*",
     "@types/node": "^22.15.0",
     "tsx": "^4.20.0",
     "typescript": "^5.8.0"

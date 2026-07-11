@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import type { JourneyMetadata, Revisioned } from "@relay/protocol";
 import { useServer, type Frame } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
@@ -31,6 +32,15 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
   const wb = useWorkbench();
   const [viewport, setViewport] = createSignal({ x: 40, y: 40, scale: 0.55 });
   const [selected, setSelected] = createSignal(0);
+  const [selectedEdge, setSelectedEdge] = createSignal<string | null>(null);
+  const [edgeConfig, setEdgeConfig] = createSignal<
+    Record<string, { label: string; kind: EdgeKind }>
+  >({});
+  const [journeyRevision, setJourneyRevision] = createSignal<Revisioned<JourneyMetadata>>({
+    revision: 0,
+    value: { positions: {}, edgeLabels: {}, edgeKinds: {} },
+    updatedAt: 0,
+  });
   /** User-dragged positions survive re-layout of other nodes. */
   const [overrides, setOverrides] = createSignal<Map<string, { x: number; y: number }>>(new Map());
   /** Natural image aspect (w/h) discovered on load — flexible cards. */
@@ -87,8 +97,80 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
   });
 
   const nodes = createMemo(() => layoutScreenGraph(rawItems(), overrides(), undefined, aspects()));
-  const edges = createMemo(() => buildEdges(nodes()));
+  const journeyId = createMemo(() => server.selectedRecipeId() ?? rawItems()[0]?.id ?? "empty");
+  const edges = createMemo(() =>
+    buildEdges(nodes()).map((edge) => {
+      const custom = edgeConfig()[`${edge.from}:${edge.to}`];
+      return custom ? { ...edge, label: custom.label, kind: custom.kind } : edge;
+    }),
+  );
   const bounds = createMemo(() => graphBounds(nodes()));
+
+  createEffect(() => {
+    const id = journeyId();
+    void server
+      .loadJourney(id)
+      .then((metadata) => {
+        if (journeyId() !== id) return;
+        setJourneyRevision(metadata);
+        setEdgeConfig(
+          Object.fromEntries(
+            Object.keys(metadata.value.edgeLabels).map((key) => [
+              key,
+              {
+                label: metadata.value.edgeLabels[key] ?? "Continue",
+                kind: (metadata.value.edgeKinds[key] as EdgeKind | undefined) ?? "flow",
+              },
+            ]),
+          ),
+        );
+        setOverrides(new Map(Object.entries(metadata.value.positions)));
+      })
+      .catch(() => {
+        setEdgeConfig({});
+        setOverrides(new Map());
+      });
+    setSelectedEdge(null);
+  });
+
+  function persistJourney(nextEdges = edgeConfig(), nextPositions = overrides()) {
+    const id = journeyId();
+    const current = journeyRevision();
+    const value: JourneyMetadata = {
+      positions: Object.fromEntries(nextPositions),
+      edgeLabels: Object.fromEntries(
+        Object.entries(nextEdges).map(([key, config]) => [key, config.label]),
+      ),
+      edgeKinds: Object.fromEntries(
+        Object.entries(nextEdges).map(([key, config]) => [key, config.kind]),
+      ),
+    };
+    setJourneyRevision({
+      ...current,
+      revision: current.revision + 1,
+      value,
+      updatedAt: Date.now(),
+    });
+    void server
+      .saveJourney(id, current, value)
+      .then(setJourneyRevision)
+      .catch(() => setJourneyRevision(current));
+  }
+
+  function patchEdge(key: string, patch: Partial<{ label: string; kind: EdgeKind }>) {
+    const edge = edges().find((item) => `${item.from}:${item.to}` === key);
+    if (!edge) return;
+    const next = {
+      ...edgeConfig(),
+      [key]: {
+        label: edgeConfig()[key]?.label ?? edge.label ?? "Continue",
+        kind: edgeConfig()[key]?.kind ?? edge.kind,
+        ...patch,
+      },
+    };
+    setEdgeConfig(next);
+    persistJourney(next);
+  }
 
   function noteAspect(id: string, naturalW: number, naturalH: number) {
     if (!(naturalW > 0 && naturalH > 0)) return;
@@ -124,6 +206,7 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
 
   function resetLayout() {
     setOverrides(new Map());
+    persistJourney(edgeConfig(), new Map());
     requestAnimationFrame(fit);
   }
 
@@ -231,6 +314,9 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
   }
 
   function onPointerUp() {
+    if (nodeDrag?.moved) {
+      persistJourney(edgeConfig(), overrides());
+    }
     pan = undefined;
     nodeDrag = undefined;
     setDraggingId(null);
@@ -405,10 +491,10 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
             >
               {/* Edges */}
               <svg
-                class="pointer-events-none absolute z-[1] overflow-visible"
+                class="absolute z-[1] overflow-visible"
                 width={bounds().width}
                 height={bounds().height}
-                aria-hidden="true"
+                aria-label="Captured journey connections"
               >
                 <defs>
                   <marker
@@ -455,11 +541,20 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
                       <g>
                         <path
                           d={shiftPath(e.path, -ox(), -oy())}
-                          class={cn("fill-none", stroke())}
+                          class="fill-none stroke-transparent"
+                          stroke-width="18"
+                          pointer-events="stroke"
+                          data-fc-ui
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={() => setSelectedEdge(`${e.from}:${e.to}`)}
+                        />
+                        <path
+                          d={shiftPath(e.path, -ox(), -oy())}
                           stroke-width={e.kind === "flow" ? 1.75 : 2}
                           stroke-linecap="round"
                           stroke-dasharray={e.kind === "fail" ? "5 4" : undefined}
                           marker-end={marker()}
+                          class={cn("pointer-events-none fill-none", stroke())}
                         />
                         <Show when={e.label}>
                           <g transform={`translate(${e.midX - ox()}, ${e.midY - oy()})`}>
@@ -525,6 +620,54 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
                 )}
               </For>
             </div>
+
+            <Show when={selectedEdge()}>
+              {(key) => {
+                const edge = () => edges().find((item) => `${item.from}:${item.to}` === key());
+                return (
+                  <div
+                    data-fc-ui
+                    class="absolute top-3 right-3 z-[8] grid w-64 gap-2 rounded-xl border border-border-weak-base bg-surface-raised-stronger-non-alpha p-3 shadow-xl"
+                  >
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <span class="text-12-regular text-text-weak">Connection</span>
+                        <p class="m-0 text-12-medium text-text-strong">Customize arrow</p>
+                      </div>
+                      <button
+                        type="button"
+                        class={cn(btnGhost, "size-7")}
+                        onClick={() => setSelectedEdge(null)}
+                      >
+                        <Icon name="x" size={13} />
+                      </button>
+                    </div>
+                    <label class="grid gap-1 text-12-regular text-text-weak">
+                      Label
+                      <input
+                        class="h-8 rounded-md border border-border-weak-base bg-background-base px-2 text-12-regular text-text-strong"
+                        value={edge()?.label ?? "Continue"}
+                        onInput={(event) => patchEdge(key(), { label: event.currentTarget.value })}
+                      />
+                    </label>
+                    <label class="grid gap-1 text-12-regular text-text-weak">
+                      Path
+                      <select
+                        class="h-8 rounded-md border border-border-weak-base bg-background-base px-2 text-12-regular text-text-strong"
+                        value={edge()?.kind ?? "flow"}
+                        onChange={(event) =>
+                          patchEdge(key(), { kind: event.currentTarget.value as EdgeKind })
+                        }
+                      >
+                        <option value="flow">Normal</option>
+                        <option value="heal">Alternate / recovery</option>
+                        <option value="fail">Failure</option>
+                      </select>
+                    </label>
+                  </div>
+                );
+              }}
+            </Show>
 
             {/* Minimap */}
             <Minimap

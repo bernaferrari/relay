@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
-import { Button } from "@grok-device/ui/button";
+import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
 import { mono } from "../lib/ui";
 

@@ -9,7 +9,8 @@ import { createMainWindow, loadRenderer } from "./windows.js";
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
 const HEALTH_TIMEOUT_MS = 800;
 
-let serverUrl = process.env.GROK_DEVICE_URL?.trim() || DEFAULT_SERVER_URL;
+let serverUrl =
+  (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim() || DEFAULT_SERVER_URL;
 let serverChild: ChildProcess | null = null;
 
 async function isServerHealthy(url: string): Promise<boolean> {
@@ -52,11 +53,12 @@ async function waitForHealthy(url: string, attempts = 30, delayMs = 200): Promis
 }
 
 /**
- * Prefer an already-running server (user ran `grok-device serve`).
+ * Prefer an already-running server (user ran `relay serve`).
  * Otherwise spawn packages/server via tsx/node when possible.
  */
 async function ensureServer(): Promise<string> {
-  const preferred = process.env.GROK_DEVICE_URL?.trim() || DEFAULT_SERVER_URL;
+  const preferred =
+    (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim() || DEFAULT_SERVER_URL;
 
   if (await isServerHealthy(preferred)) {
     console.log(`[desktop] using existing server at ${preferred}`);
@@ -106,7 +108,7 @@ async function ensureServer(): Promise<string> {
   const ok = await waitForHealthy(preferred);
   if (!ok) {
     console.warn(
-      `[desktop] server did not become healthy at ${preferred} — connect manually with GROK_DEVICE_URL or \`pnpm dev:serve\``,
+      `[desktop] server did not become healthy at ${preferred} — connect manually with RELAY_URL or \`pnpm dev:serve\``,
     );
   } else {
     console.log(`[desktop] server ready at ${preferred}`);

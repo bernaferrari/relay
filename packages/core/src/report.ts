@@ -102,7 +102,7 @@ export function toJunitXml(reports: JobReport[]): string {
   const cases = reports.map((r) => {
     const timeSec = (r.durationMs ?? 0) / 1000;
     totalTimeSec += timeSec;
-    const classname = escapeXml(`grok-device.${r.platform}`);
+    const classname = escapeXml(`relay.${r.platform}`);
     const name = escapeXml(`${r.action}${r.serial ? ` @ ${r.serial}` : ""}`);
     const attrs = `classname="${classname}" name="${name}" time="${timeSec.toFixed(3)}"`;
 
@@ -131,7 +131,7 @@ export function toJunitXml(reports: JobReport[]): string {
     </testcase>`;
   });
 
-  const suiteName = escapeXml("grok-device");
+  const suiteName = escapeXml("relay");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <testsuites name="${suiteName}" tests="${tests}" failures="${failures}" time="${totalTimeSec.toFixed(3)}">
   <testsuite name="${suiteName}" tests="${tests}" failures="${failures}" time="${totalTimeSec.toFixed(3)}">
@@ -144,7 +144,7 @@ ${cases.join("\n")}
 export function formatJsonReport(reports: JobReport[]): string {
   return `${JSON.stringify(
     {
-      product: "grok-device",
+      product: "relay",
       generatedAt: new Date().toISOString(),
       summary: {
         total: reports.length,

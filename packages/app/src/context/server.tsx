@@ -1,8 +1,17 @@
 import { createSignal, createEffect, onCleanup } from "solid-js";
-import { createSimpleContext } from "@grok-device/ui/context/helper";
+import { createSimpleContext } from "@relay/ui/context/helper";
+import { ApiError, RelayClient } from "@relay/client";
+import type {
+  GenerationRequest,
+  GenerationResult,
+  JourneyMetadata,
+  Revisioned,
+  ServerConnection,
+  TestVariable,
+} from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
-import { asArray, apiRequest, levelFromLine, normalizeBase, uid } from "../lib/api";
+import { asArray, levelFromLine, normalizeBase, uid } from "../lib/api";
 import type {
   ActionInfo,
   DeviceInfo,
@@ -27,6 +36,9 @@ export type {
   JobInfo,
   LogLine,
   PersistedRun,
+  RecordedNodeEvidence,
+  RecordedSelectorCandidate,
+  RecordedStepEvidence,
   RecipeInfo,
   RecipeStep,
   SnapshotNode,
@@ -86,10 +98,17 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [showOverlays, setShowOverlays] = createSignal(true);
     const [liveFrame, setLiveFrame] = createSignal<Frame | null>(null);
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
+    const [projectVariables, setProjectVariables] = createSignal<Revisioned<TestVariable[]>>({
+      revision: 0,
+      value: [],
+      updatedAt: 0,
+    });
     const [clock, setClock] = createSignal(Date.now());
 
     let logSeq = 0;
-    let es: EventSource | null = null;
+    let eventAbort: AbortController | null = null;
+    let connection: ServerConnection | null = null;
+    let client: RelayClient | null = null;
     let playTimer: NodeJS.Timeout | undefined;
     let clockTimer: NodeJS.Timeout | undefined;
 
@@ -102,17 +121,34 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return list[i] ?? null;
     };
 
+    async function resolveConnection() {
+      connection = platform.getServerConnection
+        ? await platform.getServerConnection()
+        : {
+            url: await platform.getServerUrl(),
+            auth: { type: "none" },
+            organizationId: "local",
+            projectId: "default",
+          };
+      connection = { ...connection, url: normalizeBase(connection.url) };
+      client = new RelayClient(connection, { fetch: fetcher() });
+      setServerUrlState(connection.url);
+      return connection;
+    }
+
     async function resolveUrl() {
-      const url = await platform.getServerUrl();
-      setServerUrlState(normalizeBase(url));
-      return normalizeBase(url);
+      return (await resolveConnection()).url;
     }
 
     async function setServerUrl(url: string) {
       const next = normalizeBase(url);
       setServerUrlState(next);
-      await platform.setServerUrl?.(next);
-      connectSse(next);
+      if (!connection) await resolveConnection();
+      connection = { ...(connection as ServerConnection), url: next };
+      client = new RelayClient(connection, { fetch: fetcher() });
+      if (platform.setServerConnection) await platform.setServerConnection(connection);
+      else await platform.setServerUrl?.(next);
+      connectSse();
     }
     async function setProdAccountMatch(value: string) {
       const v = value.trim();
@@ -191,8 +227,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       init?: RequestInit,
       timeoutMs = 20000,
     ): Promise<T> {
-      const base = serverUrl() || (await resolveUrl());
-      return apiRequest<T>(fetcher(), base, path, init, timeoutMs);
+      if (!client) await resolveConnection();
+      return client!.request<T>(path, {
+        ...init,
+        signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
+      });
     }
 
     function dismissError() {
@@ -289,6 +328,94 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function refreshProjectVariables() {
+      if (!client || health() === "offline") return;
+      try {
+        setProjectVariables(await client.variables());
+      } catch {
+        /* project data is non-critical to device connectivity */
+      }
+    }
+
+    async function saveProjectVariables(value: TestVariable[]): Promise<void> {
+      if (!client) await resolveConnection();
+      const before = projectVariables();
+      const optimistic = { ...before, revision: before.revision + 1, value, updatedAt: Date.now() };
+      setProjectVariables(optimistic);
+      try {
+        setProjectVariables(
+          await client!.updateVariables({
+            expectedRevision: before.revision,
+            value,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          const current = (error.body as { current?: Revisioned<TestVariable[]> })?.current;
+          if (current) {
+            const localById = new Map(value.map((item) => [item.id, item]));
+            const merged = [
+              ...current.value.map((item) => localById.get(item.id) ?? item),
+              ...value.filter((item) => !current.value.some((remote) => remote.id === item.id)),
+            ];
+            setProjectVariables(
+              await client!.updateVariables({
+                expectedRevision: current.revision,
+                value: merged,
+                idempotencyKey: crypto.randomUUID(),
+              }),
+            );
+            toast("Variables merged with newer project changes", "info");
+            return;
+          }
+        }
+        setProjectVariables(before);
+        throw error;
+      }
+    }
+
+    async function loadJourney(recipeId: string): Promise<Revisioned<JourneyMetadata>> {
+      if (!client) await resolveConnection();
+      return client!.journey(recipeId);
+    }
+
+    async function saveJourney(
+      recipeId: string,
+      current: Revisioned<JourneyMetadata>,
+      value: JourneyMetadata,
+    ): Promise<Revisioned<JourneyMetadata>> {
+      if (!client) await resolveConnection();
+      try {
+        return await client!.updateJourney(recipeId, {
+          expectedRevision: current.revision,
+          value,
+          idempotencyKey: crypto.randomUUID(),
+        });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          const latest = (error.body as { current?: Revisioned<JourneyMetadata> })?.current;
+          if (latest) {
+            return client!.updateJourney(recipeId, {
+              expectedRevision: latest.revision,
+              value: {
+                positions: { ...latest.value.positions, ...value.positions },
+                edgeLabels: { ...latest.value.edgeLabels, ...value.edgeLabels },
+                edgeKinds: { ...latest.value.edgeKinds, ...value.edgeKinds },
+              },
+              idempotencyKey: crypto.randomUUID(),
+            });
+          }
+        }
+        throw error;
+      }
+    }
+
+    async function generate(input: GenerationRequest): Promise<GenerationResult> {
+      if (!client) await resolveConnection();
+      return client!.generate(input);
+    }
+
     async function pollHealth() {
       try {
         const h = await request<{ runsDir?: string }>("/health", undefined, 8000);
@@ -313,6 +440,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshRecipes(),
         refreshJobs(),
         refreshRuns(),
+        refreshProjectVariables(),
       ]);
       connectSse();
     }
@@ -416,43 +544,19 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    function connectSse(base?: string) {
-      const url = base ?? serverUrl();
-      if (!url || typeof EventSource === "undefined") return;
-      try {
-        es?.close();
-      } catch {
-        /* ignore */
-      }
-      es = new EventSource(`${url}/events`);
-      es.onopen = () => setSseConnected(true);
-      es.onerror = () => setSseConnected(false);
-      for (const t of [
-        "job.queued",
-        "job.started",
-        "job.log",
-        "job.finished",
-        "job.cancelled",
-        "job.resumed",
-        "job.paused",
-        "job.healed",
-        "job.step",
-        "job.frame",
-        "device.selected",
-        "snapshot.captured",
-        "screenshot.captured",
-        "error",
-        "server.ready",
-        "hello",
-      ]) {
-        es.addEventListener(t, (e) => {
-          try {
-            handleBusEvent(JSON.parse((e as MessageEvent).data));
-          } catch {
-            /* ignore */
-          }
+    function connectSse() {
+      eventAbort?.abort();
+      if (!client) return;
+      eventAbort = new AbortController();
+      setSseConnected(false);
+      void client
+        .events(handleBusEvent, {
+          signal: eventAbort.signal,
+          onOpen: () => setSseConnected(true),
+        })
+        .catch((error: unknown) => {
+          if ((error as { name?: string }).name !== "AbortError") setSseConnected(false);
         });
-      }
     }
 
     async function selectDeviceRemote(serial: string | null) {
@@ -521,12 +625,18 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
 
       try {
+        const variables: Record<string, string> = {};
+        for (const definition of projectVariables().value) {
+          if (!definition.name.trim()) continue;
+          variables[definition.name.trim()] = definition.values?.[0] ?? definition.fallback ?? "";
+        }
         await captureUiScreenshot(`before · ${id}`, undefined, id).catch(() => undefined);
         const data = await request<{ job: JobInfo }>("/jobs", {
           method: "POST",
           body: JSON.stringify({
             recipe: id,
             serial,
+            variables,
             ...(prodAccountMatch() ? { prodAccountMatch: prodAccountMatch() } : {}),
           }),
         });
@@ -587,7 +697,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function captureUiScreenshot(caption?: string, jobId?: string, actionId?: string) {
+    async function captureUiScreenshot(
+      caption?: string,
+      jobId?: string,
+      actionId?: string,
+      quiet = false,
+    ) {
       setBusyCapture(true);
       try {
         const serial = selectedDevice() ?? undefined;
@@ -619,7 +734,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           path: data.framePath,
         });
         appendLog(`screenshot ${data.bytes} bytes`, "info", data.jobId ?? jobId);
-        toast("Screenshot captured", "success");
+        if (!quiet) toast("Screenshot captured", "success");
         return data;
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
@@ -627,6 +742,31 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       } finally {
         setBusyCapture(false);
       }
+    }
+
+    async function persistRecordingEvidence(
+      recipeId: string,
+      evidenceId: string,
+      frame: Frame,
+    ): Promise<boolean> {
+      try {
+        await request(`/recipes/${encodeURIComponent(recipeId)}/evidence`, {
+          method: "POST",
+          body: JSON.stringify({ evidenceId, mime: frame.mime, base64: frame.base64 }),
+        });
+        appendLog(`saved recording evidence ${evidenceId}`, "success");
+        return true;
+      } catch (err) {
+        appendLog(
+          `recording evidence not saved · ${err instanceof Error ? err.message : String(err)}`,
+          "error",
+        );
+        return false;
+      }
+    }
+
+    function recordingEvidenceUrl(recipeId: string, evidenceId: string): string {
+      return `${serverUrl()}/recipes/${encodeURIComponent(recipeId)}/evidence/${encodeURIComponent(evidenceId)}`;
     }
 
     /** Quiet live-capture: refreshes the stage image without touching the
@@ -830,6 +970,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshRecipes(),
           refreshJobs(),
           refreshRuns(),
+          refreshProjectVariables(),
         ]);
         connectSse();
       }
@@ -867,7 +1008,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearInterval(poll);
       clearInterval(clockTimer);
       stopPlayback();
-      es?.close();
+      eventAbort?.abort();
     });
 
     async function cancelJobRemote(jobId?: string) {
@@ -931,6 +1072,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,
+      projectVariables,
+      refreshProjectVariables,
+      saveProjectVariables,
+      loadJourney,
+      saveJourney,
+      generate,
       health,
       isOffline,
       isEmptyDevices,
@@ -989,6 +1136,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       busyCapture,
       captureUiSnapshot,
       captureUiScreenshot,
+      persistRecordingEvidence,
+      recordingEvidenceUrl,
       jumpToJob,
       showOverlays,
       setShowOverlays,

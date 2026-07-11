@@ -1,4 +1,5 @@
-import { createSimpleContext } from "@grok-device/ui/context/helper";
+import { createSimpleContext } from "@relay/ui/context/helper";
+import type { ServerConnection } from "@relay/protocol";
 
 export type PlatformName = "web" | "desktop";
 
@@ -16,6 +17,10 @@ export type Platform = {
   notify?(title: string, body?: string): void | Promise<void>;
   /** Current server base URL (no trailing slash) */
   getServerUrl(): string | Promise<string>;
+  /** Canonical authenticated, project-scoped server connection. */
+  getServerConnection?(): ServerConnection | Promise<ServerConnection>;
+  /** Persist the complete connection; hosts should use secure storage for auth. */
+  setServerConnection?(connection: ServerConnection): void | Promise<void>;
   /** Persist preferred server URL (optional) */
   setServerUrl?(url: string): void | Promise<void>;
   /** Key/value storage (defaults to localStorage on web) */
@@ -46,7 +51,7 @@ export function createWebPlatform(opts?: {
   defaultServerUrl?: string;
   storagePrefix?: string;
 }): Platform {
-  const prefix = opts?.storagePrefix ?? "grok-device:";
+  const prefix = opts?.storagePrefix ?? "relay:";
   const defaultUrl = opts?.defaultServerUrl ?? envServerUrl() ?? "http://localhost:8787";
 
   const storage: PlatformStorage = {
@@ -93,6 +98,28 @@ export function createWebPlatform(opts?: {
         return stored.then((value) => value ?? defaultUrl);
       }
       return stored ?? defaultUrl;
+    },
+    async getServerConnection() {
+      const url = await Promise.resolve(this.getServerUrl());
+      const token = await Promise.resolve(storage.get("authToken"));
+      const organizationId = (await Promise.resolve(storage.get("organizationId"))) || "local";
+      const projectId = (await Promise.resolve(storage.get("projectId"))) || "default";
+      return {
+        url,
+        auth: token ? { type: "bearer" as const, token } : { type: "none" as const },
+        organizationId,
+        projectId,
+      };
+    },
+    async setServerConnection(connection) {
+      await Promise.all([
+        Promise.resolve(storage.set("serverUrl", connection.url.replace(/\/+$/, ""))),
+        Promise.resolve(storage.set("organizationId", connection.organizationId)),
+        Promise.resolve(storage.set("projectId", connection.projectId)),
+        connection.auth.type === "none"
+          ? Promise.resolve(storage.remove?.("authToken"))
+          : Promise.resolve(storage.set("authToken", connection.auth.token)),
+      ]);
     },
     setServerUrl(url) {
       storage.set("serverUrl", url.replace(/\/+$/, ""));

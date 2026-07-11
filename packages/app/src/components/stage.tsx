@@ -14,15 +14,13 @@ import { useRecorder } from "../context/recorder";
 import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
-import { IconButton } from "@grok-device/ui/icon-button";
+import { IconButton } from "@relay/ui/icon-button";
 import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
 import {
-  btnOnDevice,
   deviceBody,
-  deviceCaption,
   deviceIconWell,
   deviceTitle,
   btnGhost,
@@ -123,6 +121,8 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
   async function pick(strategy: PickStrategy): Promise<void> {
     const p = picker();
     if (!p) return;
+    // Preserve the recorded order when a picker tap follows buffered typing.
+    await rec.flushType();
     setPicker(null);
     // feedback for deliberate picker taps too
     setTapFeedback({ x: p.fx * 100, y: p.fy * 100 });
@@ -343,7 +343,8 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
     }
     const interacting = mode !== "view";
     rec.setInteracting(interacting);
-    rec.setRecording(false);
+    if (rec.recording()) void rec.stopRecording();
+    else rec.setRecording(false);
     if (interacting) {
       server.setShowOverlays(true);
       if (!server.snapshot()?.bounds) void server.captureUiSnapshot();
@@ -396,67 +397,82 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         stageEl = el;
       }}
       aria-label="Device stage"
-      class={cn(
-        "relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 py-6",
-        server.isOffline() && "opacity-50",
-      )}
+      class="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 py-6"
     >
       <Show
         when={!server.isEmptyDevices()}
         fallback={
-          <div
-            data-device-chrome
-            class={cn(
-              phoneShell,
-              "relative z-[2] my-auto flex aspect-[9/19.5] w-[min(272px,40vh)] max-h-[calc(100%-72px)]",
-              "flex-col text-center",
-            )}
-          >
-            <div
-              class={cn(
-                phoneScreen,
-                "relative flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-[18px]",
-              )}
-            >
-              <Show
-                when={focusedStep()}
-                fallback={
-                  <div class="flex max-w-[200px] flex-col items-center gap-1.5 px-5">
-                    <p class={cn(deviceTitle, "m-0 text-14-medium tracking-tight")}>
-                      No device connected
-                    </p>
-                    <p class={cn(deviceBody, "m-0 text-14-regular")}>
-                      Plug in over USB or join Wi‑Fi, then refresh.
-                    </p>
+          <div class="device-connect-state" data-device-chrome>
+            <div class="device-connect-preview" aria-hidden="true">
+              <div class={cn(phoneShell, "device-connect-preview__phone")}>
+                <div class={cn(phoneScreen, "device-connect-preview__screen")}>
+                  <span class="device-connect-preview__speaker" />
+                  <span class="device-connect-preview__glow">
+                    <Icon name="smartphone" size={24} />
+                  </span>
+                  <div class="device-connect-preview__lines">
+                    <i />
+                    <i />
+                    <i />
                   </div>
-                }
+                  <Show when={focusedStep()}>
+                    {(s) => (
+                      <div class="device-connect-preview__step">
+                        <span>{s().index + 1}</span>
+                        <strong>{s().title}</strong>
+                      </div>
+                    )}
+                  </Show>
+                </div>
+              </div>
+            </div>
+            <div class="device-connect-copy">
+              <div class="device-connect-copy__mark" aria-hidden="true">
+                <span>
+                  <Icon name="smartphone" size={24} />
+                </span>
+                <i />
+                <i />
+              </div>
+              <span class="relay-eyebrow">Live device</span>
+              <h3>Connect a device</h3>
+              <p>
+                Plug in over USB or join over Wi‑Fi to record, inspect, and replay on the real app.
+              </p>
+              <p
+                class="device-connect-status"
+                data-state={server.health() === "offline" ? "offline" : "waiting"}
+                role="status"
               >
-                {(s) => (
-                  <div class="flex max-w-[210px] flex-col items-center gap-2 px-5 text-center">
-                    <span class={cn(mono, "text-12-medium", deviceBody)}>Step {s().index + 1}</span>
-                    <p class={cn("m-0 text-14-medium leading-snug tracking-tight", deviceTitle)}>
-                      {s().title}
-                    </p>
-                    <p class={cn("m-0 text-12-regular leading-relaxed", deviceBody)}>
-                      Connect a phone to drive or run this step
-                    </p>
-                  </div>
-                )}
-              </Show>
-              <button
-                type="button"
-                class={cn(btnOnDevice, "mt-1")}
-                disabled={server.health() === "offline"}
-                onClick={() =>
-                  void (async () => {
-                    await server.pollHealth();
-                    if (server.health() === "online") await server.refreshDevices();
-                  })()
-                }
-              >
-                <Icon name="refresh" size={14} />
-                Refresh devices
-              </button>
+                <span aria-hidden="true" />
+                {server.health() === "offline" ? "Server offline" : "Waiting for a device"}
+              </p>
+              <div class="device-connect-actions">
+                <button
+                  type="button"
+                  class="relay-primary"
+                  onClick={() =>
+                    void (async () => {
+                      await server.pollHealth();
+                      if (server.health() === "online") await server.refreshDevices();
+                    })()
+                  }
+                >
+                  <Icon name="refresh" size={14} />
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  class="relay-secondary"
+                  onClick={() => void cmd.run("nav.settings")}
+                >
+                  <Icon name="sliders" size={14} />
+                  Device setup
+                </button>
+              </div>
+              <p class="device-connect-hint">
+                Android: enable USB debugging · iOS: trust this computer
+              </p>
             </div>
           </div>
         }
@@ -1053,7 +1069,7 @@ function RecorderBar() {
                 "hover:enabled:bg-surface-critical-weak",
               )}
               data-tip="Stop recording"
-              onClick={() => rec.setRecording(false)}
+              onClick={() => void rec.stopRecording()}
             >
               <Icon name="square" size={12} />
               Stop

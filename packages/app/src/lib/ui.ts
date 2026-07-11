@@ -8,7 +8,7 @@
  * 3. Primary ink = text-text-strong. Actions/icons on rows = text-text-strong.
  *    text-text-weak / text-text-weaker only for true secondary meta.
  * 4. List selection = AB: hover:bg-surface-raised-base-hover + active:bg-surface-base-active.
- * 5. Buttons = recipes below (or @grok-device/ui Button data-component). One system.
+ * 5. Buttons = recipes below (or @relay/ui Button data-component). One system.
  * 6. Type = AB scale: text-12-regular/medium, text-14-regular/medium, text-16-medium.
  * 7. cn() does NOT merge — never stack exclusive color recipes.
  */
@@ -78,7 +78,7 @@ export const listRowExpanded = "bg-surface-raised-base-hover";
 
 /* ─── Buttons (single system) ─── */
 /**
- * Text buttons — color wash only (no press scale). Prefer @grok-device/ui Button
+ * Text buttons — color wash only (no press scale). Prefer @relay/ui Button
  * when adding new surfaces; recipes remain for dense product chrome.
  */
 export const btn = cn(
@@ -118,7 +118,7 @@ export const btnBordered = cn(
   "hover:enabled:bg-button-secondary-hover",
 );
 
-/** @deprecated Prefer <IconButton variant="ghost" size="normal"> from @grok-device/ui */
+/** @deprecated Prefer <IconButton variant="ghost" size="normal"> from @relay/ui */
 export const iconBtn = cn(
   "grid size-6 shrink-0 place-items-center rounded-md select-none",
   "text-icon-base",

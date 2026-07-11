@@ -1,9 +1,10 @@
 /**
- * HTTP + SSE API over @grok-device/core.
+ * HTTP + SSE API over @relay/core.
  * Jobs, traces, heal retries, persisted runs/, live capture.
  */
 import http from "node:http";
 import { URL } from "node:url";
+import { assertSafeBinding, authorizationMatches } from "./security.js";
 import {
   captureScreenshot,
   captureSnapshot,
@@ -18,7 +19,9 @@ import {
   listJobs,
   listRecipes,
   readRecipe,
+  readRecipeEvidenceImage,
   saveRecipe,
+  saveRecipeEvidenceImage,
   deleteRecipe,
   runRecipeStep,
   validateRecipeSteps,
@@ -42,11 +45,36 @@ import {
   type DeviceEvent,
   type InteractInput,
   type JobReport,
-} from "@grok-device/core";
+  generateValues,
+  leaseDevice,
+  listBuilds,
+  listDeviceLeases,
+  listDevicePools,
+  listProjects,
+  readJourney,
+  readProjectVariables,
+  releaseDeviceLease,
+  saveBuild,
+  saveDevicePool,
+  saveProject,
+  writeJourney,
+  writeProjectVariables,
+} from "@relay/core";
+import { RevisionConflict } from "@relay/protocol";
+import type {
+  Build,
+  DevicePool,
+  GenerationRequest,
+  JourneyMetadata,
+  Project,
+  RevisionWrite,
+  TestVariable,
+} from "@relay/protocol";
 
 export type StartServerOptions = {
   port?: number;
   host?: string;
+  token?: string;
 };
 
 export type StartedServer = {
@@ -59,7 +87,8 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   // PUT/DELETE are used by recipe CRUD; browsers preflight them.
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Organization-Id, X-Project-Id, Idempotency-Key",
 };
 
 /** Reject oversized bodies early — screenshots/recipe JSON stay well under this. */
@@ -100,6 +129,17 @@ function parseLimit(raw: string | null, fallback: number, max = 200): number {
   return Math.min(Math.floor(n), max);
 }
 
+function requestScope(req: http.IncomingMessage): { organizationId: string; projectId: string } {
+  const header = (name: string) => {
+    const value = req.headers[name];
+    return Array.isArray(value) ? value[0] : value;
+  };
+  return {
+    organizationId: header("x-organization-id")?.trim() || "local",
+    projectId: header("x-project-id")?.trim() || "default",
+  };
+}
+
 /** In-memory job reports, newest first. Falls back empty when none. */
 function collectReports(limit: number): JobReport[] {
   return listJobs(limit).map(toJobReport);
@@ -136,8 +176,11 @@ function readBody(req: http.IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise
   });
 }
 
-async function parseJsonBody(req: http.IncomingMessage): Promise<unknown> {
-  const raw = await readBody(req);
+async function parseJsonBody(
+  req: http.IncomingMessage,
+  maxBytes = MAX_BODY_BYTES,
+): Promise<unknown> {
+  const raw = await readBody(req, maxBytes);
   if (!raw.trim()) return {};
   try {
     return JSON.parse(raw) as unknown;
@@ -212,7 +255,11 @@ function attachSse(req: http.IncomingMessage, res: http.ServerResponse): void {
   req.on("error", cleanup);
 }
 
-async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+async function handleRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  token?: string,
+): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
   const url = new URL(req.url ?? "/", `http://${host}`);
@@ -224,7 +271,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  if (!authorizationMatches(req.headers.authorization, token)) {
+    res.setHeader("WWW-Authenticate", 'Bearer realm="relay"');
+    json(res, 401, { error: "Authentication required" });
+    return;
+  }
+
   try {
+    const scope = requestScope(req);
     if (method === "GET" && pathname === "/health") {
       let deviceCount: number | null = null;
       try {
@@ -235,7 +289,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       const active = getActiveJob();
       json(res, 200, {
         ok: true,
-        product: "grok-device",
+        product: "relay",
         version: PRODUCT_VERSION,
         mode: "app-testing",
         at: now(),
@@ -271,6 +325,143 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (method === "GET" && pathname === "/devices") {
       const devices = await listDevices();
       json(res, 200, { devices });
+      return;
+    }
+
+    // ---- Project-scoped control plane ----
+    if (method === "GET" && pathname === "/projects") {
+      json(res, 200, { projects: await listProjects(scope.organizationId) });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/projects") {
+      const body = (await parseJsonBody(req)) as Partial<Project>;
+      if (!body.id?.trim() || !body.name?.trim())
+        throw new HttpError(400, "id and name are required");
+      const project = await saveProject({
+        id: body.id.trim(),
+        name: body.name.trim(),
+        organizationId: scope.organizationId,
+      });
+      json(res, 201, { project });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/builds") {
+      json(res, 200, { builds: await listBuilds(scope.projectId) });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/builds") {
+      const body = (await parseJsonBody(req)) as Partial<Build>;
+      if (!body.id || !body.name || (body.platform !== "android" && body.platform !== "ios")) {
+        throw new HttpError(400, "id, name, and a valid platform are required");
+      }
+      const build = await saveBuild({
+        id: body.id,
+        projectId: scope.projectId,
+        name: body.name,
+        platform: body.platform,
+        sourceUrl: body.sourceUrl,
+        status: body.status ?? "uploaded",
+      });
+      json(res, 201, { build });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/device-pools") {
+      json(res, 200, { pools: await listDevicePools(scope.projectId) });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/device-pools") {
+      const body = (await parseJsonBody(req)) as Partial<DevicePool>;
+      if (!body.id || !body.name || !Array.isArray(body.deviceSerials)) {
+        throw new HttpError(400, "id, name, and deviceSerials are required");
+      }
+      const pool = await saveDevicePool({
+        id: body.id,
+        projectId: scope.projectId,
+        name: body.name,
+        platform: body.platform ?? "mixed",
+        deviceSerials: body.deviceSerials.map(String),
+      });
+      json(res, 201, { pool });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/device-leases") {
+      json(res, 200, { leases: await listDeviceLeases(scope.projectId) });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/device-leases") {
+      const body = (await parseJsonBody(req)) as {
+        poolId?: string;
+        deviceSerial?: string;
+        ownerId?: string;
+        expiresAt?: number;
+      };
+      if (!body.poolId || !body.deviceSerial || !body.ownerId)
+        throw new HttpError(400, "poolId, deviceSerial, and ownerId are required");
+      const lease = await leaseDevice({
+        projectId: scope.projectId,
+        poolId: body.poolId,
+        deviceSerial: body.deviceSerial,
+        ownerId: body.ownerId,
+        expiresAt: body.expiresAt ?? now() + 15 * 60_000,
+      });
+      json(res, 201, { lease });
+      return;
+    }
+
+    const releaseLeaseMatch = matchPath(pathname, "/device-leases/:id/release");
+    if (method === "POST" && releaseLeaseMatch) {
+      json(res, 200, { lease: await releaseDeviceLease(releaseLeaseMatch.id!) });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/project/variables") {
+      json(res, 200, await readProjectVariables(scope.projectId));
+      return;
+    }
+
+    if (method === "PUT" && pathname === "/project/variables") {
+      const body = (await parseJsonBody(req)) as RevisionWrite<TestVariable[]>;
+      if (!Number.isInteger(body.expectedRevision) || !Array.isArray(body.value)) {
+        throw new HttpError(400, "expectedRevision and value are required");
+      }
+      body.idempotencyKey ||= req.headers["idempotency-key"] as string | undefined;
+      json(res, 200, await writeProjectVariables(scope.projectId, body));
+      return;
+    }
+
+    const journeyMatch = matchPath(pathname, "/recipes/:id/journey");
+    if (method === "GET" && journeyMatch) {
+      json(res, 200, await readJourney(scope.projectId, journeyMatch.id!));
+      return;
+    }
+    if (method === "PUT" && journeyMatch) {
+      const body = (await parseJsonBody(req)) as RevisionWrite<JourneyMetadata>;
+      if (
+        !Number.isInteger(body.expectedRevision) ||
+        !body.value?.positions ||
+        !body.value?.edgeLabels ||
+        !body.value?.edgeKinds
+      ) {
+        throw new HttpError(400, "expectedRevision and Journey metadata are required");
+      }
+      body.idempotencyKey ||= req.headers["idempotency-key"] as string | undefined;
+      json(res, 200, await writeJourney(scope.projectId, journeyMatch.id!, body));
+      return;
+    }
+
+    if (method === "POST" && pathname === "/generate") {
+      const body = (await parseJsonBody(req)) as GenerationRequest;
+      if (!body.prompt?.trim() || (body.purpose !== "variable" && body.purpose !== "test-plan")) {
+        throw new HttpError(400, "purpose and prompt are required");
+      }
+      json(res, 200, await generateValues(body));
       return;
     }
 
@@ -340,6 +531,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         serial?: string;
         prodAccountMatch?: string;
         retryOf?: string;
+        variables?: Record<string, string>;
       };
       if (!body.action && !body.recipe && !body.retryOf) {
         throw new HttpError(400, "action or recipe is required");
@@ -353,6 +545,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
               recipe: body.recipe,
               serial: body.serial,
               prodAccountMatch: body.prodAccountMatch,
+              variables: body.variables,
             });
       } catch (err) {
         // enqueueJob throws "Unknown action: <id>" for bad action ids — surface as 400, not 500.
@@ -366,6 +559,48 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     // ---- Recipe CRUD ----
     if (method === "GET" && pathname === "/recipes") {
       json(res, 200, { recipes: await listRecipes() });
+      return;
+    }
+
+    const recipeEvidenceImageMatch = matchPath(pathname, "/recipes/:id/evidence/:evidenceId");
+    if (method === "GET" && recipeEvidenceImageMatch) {
+      const image = await readRecipeEvidenceImage(
+        recipeEvidenceImageMatch.id!,
+        recipeEvidenceImageMatch.evidenceId!,
+      );
+      if (!image) throw new HttpError(404, "Recording evidence not found");
+      res.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": image.byteLength,
+        "Cache-Control": "private, max-age=31536000, immutable",
+        ...CORS_HEADERS,
+      });
+      res.end(image);
+      return;
+    }
+
+    const recipeEvidenceMatch = matchPath(pathname, "/recipes/:id/evidence");
+    if (method === "POST" && recipeEvidenceMatch) {
+      const recipe = await readRecipe(recipeEvidenceMatch.id!);
+      if (!recipe) throw new HttpError(404, "Recipe not found");
+      const body = (await parseJsonBody(req, 12 * 1024 * 1024)) as {
+        evidenceId?: string;
+        mime?: string;
+        base64?: string;
+      };
+      if (!body.evidenceId || body.mime !== "image/png" || !body.base64) {
+        throw new HttpError(400, "evidenceId, image/png mime, and base64 are required");
+      }
+      try {
+        const saved = await saveRecipeEvidenceImage({
+          recipeId: recipe.id,
+          evidenceId: body.evidenceId,
+          base64: body.base64,
+        });
+        json(res, 201, { ok: true, ...saved });
+      } catch (err) {
+        throw new HttpError(400, err instanceof Error ? err.message : String(err));
+      }
       return;
     }
 
@@ -634,8 +869,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     if (method === "GET" && pathname === "/meta") {
       json(res, 200, {
-        name: "grok-device",
-        description: "App testing shell for Grok Android (agent-device)",
+        name: "relay",
+        description: "Relay mobile app testing server (agent-device)",
         version: PRODUCT_VERSION,
         runsDir: runsRoot(),
         endpoints: [
@@ -647,6 +882,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           "GET /events (SSE)",
           "GET /actions",
           "GET /devices",
+          "GET/POST /projects",
+          "GET/POST /builds",
+          "GET/POST /device-pools",
+          "GET/POST /device-leases",
+          "POST /device-leases/:id/release",
+          "GET/PUT /project/variables",
+          "GET/PUT /recipes/:id/journey",
+          "POST /generate",
           "POST /device/select",
           "GET /jobs",
           "GET /jobs/:id",
@@ -675,6 +918,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     json(res, 404, { error: `Not found: ${method} ${pathname}` });
   } catch (err) {
+    if (err instanceof RevisionConflict) {
+      json(res, 409, { error: err.message, current: err.current });
+      return;
+    }
     if (err instanceof HttpError) {
       json(res, err.status, { error: err.message });
       return;
@@ -685,24 +932,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 }
 
-function isLoopbackHost(host: string): boolean {
-  const h = host.toLowerCase();
-  return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "0:0:0:0:0:0:0:1";
-}
-
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
-
-  if (!isLoopbackHost(host)) {
-    // No auth on this API — non-loopback binds expose device control to the LAN.
-    console.warn(
-      `[grok-device] WARNING: binding ${host} (not loopback). This API has no auth; anyone on the network can run jobs and interact with devices.`,
-    );
-  }
+  const token = opts.token ?? process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
+  assertSafeBinding(host, token);
 
   const server = http.createServer((req, res) => {
-    void handleRequest(req, res);
+    void handleRequest(req, res, token);
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -739,17 +976,22 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const portIdx = argv.indexOf("--port");
   const hostIdx = argv.indexOf("--host");
+  const tokenIdx = argv.indexOf("--token");
   const port = portIdx >= 0 ? Number(argv[portIdx + 1]) : 8787;
   const host = hostIdx >= 0 ? (argv[hostIdx + 1] ?? "127.0.0.1") : "127.0.0.1";
-  const started = await startServer({ port, host });
-  console.log(`@grok-device/server listening on http://${started.host}:${started.port}`);
+  const token =
+    tokenIdx >= 0
+      ? argv[tokenIdx + 1]
+      : (process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN);
+  const started = await startServer({ port, host, token });
+  console.log(`@relay/server listening on http://${started.host}:${started.port}`);
   console.log(`  runs → ${runsRoot()}`);
 }
 
 const invokedDirectly =
   process.argv[1]?.endsWith("/server/src/index.ts") ||
   process.argv[1]?.endsWith("\\server\\src\\index.ts") ||
-  process.argv[1]?.includes("@grok-device/server");
+  process.argv[1]?.includes("@relay/server");
 
 if (invokedDirectly) {
   main().catch((err: unknown) => {

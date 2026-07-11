@@ -45,7 +45,7 @@ async function main() {
     env: {
       ...process.env,
       ELECTRON_RENDERER_URL: rendererUrl,
-      GROK_DEVICE_DESKTOP_ROOT: root,
+      RELAY_DESKTOP_ROOT: root,
     },
     stdio: "inherit",
   });

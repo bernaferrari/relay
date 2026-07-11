@@ -1,31 +1,32 @@
 {
-  "name": "grok-device",
+  "name": "relay",
   "version": "0.1.0",
   "private": true,
-  "description": "Grok Android device actions — CLI, TUI, and desktop (agent-device SDK)",
+  "description": "Relay — record, automate, and inspect mobile app tests on real devices",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @grok-device/cli exec tsx src/index.ts",
-    "dev:cli": "pnpm --filter @grok-device/cli exec tsx src/index.ts",
-    "dev:tui": "pnpm --filter @grok-device/cli exec tsx src/index.ts tui",
-    "dev:serve": "pnpm --filter @grok-device/cli exec tsx src/index.ts serve",
-    "dev:app": "pnpm --filter @grok-device/app dev",
-    "dev:desktop": "pnpm --filter @grok-device/desktop dev",
+    "dev": "pnpm --filter @relay/cli exec tsx src/index.ts",
+    "dev:cli": "pnpm --filter @relay/cli exec tsx src/index.ts",
+    "dev:tui": "pnpm --filter @relay/cli exec tsx src/index.ts tui",
+    "dev:serve": "pnpm --filter @relay/cli exec tsx src/index.ts serve",
+    "dev:app": "pnpm --filter @relay/app dev",
+    "dev:desktop": "pnpm --filter @relay/desktop dev",
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",
     "typecheck": "pnpm -r --if-present run typecheck",
     "pack": "vp pack",
     "prepare": "vp config",
-    "doctor": "pnpm --filter @grok-device/cli exec tsx src/index.ts doctor",
-    "test": "pnpm --filter @grok-device/core test"
+    "doctor": "pnpm --filter @relay/cli exec tsx src/index.ts doctor",
+    "test": "pnpm --filter @relay/core test"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "^4.1.9"
   },
   "devEngines": {
     "packageManager": {

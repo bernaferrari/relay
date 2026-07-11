@@ -1,15 +1,20 @@
-/* AgentBoard FOUC preload — namespaced for grok-device */
+/* AgentBoard FOUC preload — namespaced for relay */
 (function () {
   try {
-    var key = "grok-device-theme-id";
-    var themeId = localStorage.getItem(key) || "grok";
+    var key = "relay-theme-id";
+    var themeId =
+      localStorage.getItem(key) || localStorage.getItem("grok-device-theme-id") || "relay";
+    if (themeId === "grok") themeId = "relay";
     if (themeId === "oc-1") {
       themeId = "oc-2";
       localStorage.setItem(key, themeId);
-      localStorage.removeItem("grok-device-theme-css-light");
-      localStorage.removeItem("grok-device-theme-css-dark");
+      localStorage.removeItem("relay-theme-css-light");
+      localStorage.removeItem("relay-theme-css-dark");
     }
-    var scheme = localStorage.getItem("grok-device-color-scheme") || "system";
+    var scheme =
+      localStorage.getItem("relay-color-scheme") ||
+      localStorage.getItem("grok-device-color-scheme") ||
+      "system";
     var isDark =
       scheme === "dark" ||
       (scheme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
@@ -26,10 +31,12 @@
     // Static theme.css FOUC is OC-2; skip cache only when default plate matches
     if (themeId === "oc-2") return;
 
-    var css = localStorage.getItem("grok-device-theme-css-" + mode);
+    var css =
+      localStorage.getItem("relay-theme-css-" + mode) ||
+      localStorage.getItem("grok-device-theme-css-" + mode);
     if (!css) return;
     var style = document.createElement("style");
-    style.id = "gd-theme-preload";
+    style.id = "relay-theme-preload";
     style.textContent =
       ":root{color-scheme:" +
       mode +
@@ -46,5 +53,5 @@
       document.documentElement.style.backgroundColor = bg;
       if (metas.length > 0) metas[0].setAttribute("content", bg);
     }
-  } catch (e) {}
+  } catch {}
 })();

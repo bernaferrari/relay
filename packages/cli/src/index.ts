@@ -1,12 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * grok-device CLI — app testing host (PostHog/Uber bar).
+ * relay CLI — app testing host (PostHog/Uber bar).
  *
- *   grok-device                              # TTY → TUI workspace
- *   grok-device doctor
- *   grok-device run <action> [flags]
- *   grok-device <action> [flags]             # direct (compat)
- *   grok-device serve | tui | interactive
+ *   relay                              # TTY → TUI workspace
+ *   relay doctor
+ *   relay run <action> [flags]
+ *   relay <action> [flags]             # direct (compat)
+ *   relay serve | tui | interactive
  */
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
@@ -29,7 +29,7 @@ import {
   toJunitXml,
   type ActionId,
   type TestJob,
-} from "@grok-device/core";
+} from "@relay/core";
 import { runInteractive } from "./interactive.js";
 
 const DEFAULT_SERVE_PORT = 8787;
@@ -37,20 +37,20 @@ const DEFAULT_SERVE_PORT = 8787;
 function usage(exitCode = 2): never {
   const actionLines = ACTIONS.map((a) => `  ${a.id.padEnd(22)} ${a.description}`).join("\n");
 
-  console.log(`grok-device — Grok Android app testing
+  console.log(`Relay — mobile app testing on real devices
 
 Usage:
-  grok-device                              TTY → testing TUI (OpenCode-style)
-  grok-device doctor                       Environment checks (exit 1 if any fail)
-  grok-device cancel [jobId]               Cancel active or specific job
-  grok-device pause [jobId]                Pause running job
-  grok-device resume [jobId]               Resume paused job
-  grok-device run <action> [flags]         Run via job session (JSON / JUnit)
-  grok-device <action> [flags]             Direct action (compat)
-  grok-device serve [--port n] [--host h]  HTTP API
-  grok-device tui [--server url]           Explicit TUI
-  grok-device interactive | i              Classic readline picker
-  grok-device help | -h | --help
+  relay                              TTY → testing TUI (OpenCode-style)
+  relay doctor                       Environment checks (exit 1 if any fail)
+  relay cancel [jobId]               Cancel active or specific job
+  relay pause [jobId]                Pause running job
+  relay resume [jobId]               Resume paused job
+  relay run <action> [flags]         Run via job session (JSON / JUnit)
+  relay <action> [flags]             Direct action (compat)
+  relay serve [--port n] [--host h] [--token value]  HTTP API
+  relay tui [--server url]           Explicit TUI
+  relay interactive | i              Classic readline picker
+  relay help | -h | --help
 
 Actions:
 ${actionLines}
@@ -60,18 +60,20 @@ run flags:
   --junit <path>             Write JUnit XML to path
   --serial <s>               Target device serial
   --all-devices              Run on every connected Android device
-  --retries <n>              Device op retries (default 3, env GROK_DEVICE_RETRY_ATTEMPTS)
+  --retries <n>              Device op retries (default 3, env RELAY_RETRY_ATTEMPTS)
 
 serve:
   --port <n>                 Listen port (default ${DEFAULT_SERVE_PORT})
   --host <h>                 Bind host (default 127.0.0.1)
+  --token <value>            Bearer token (required outside loopback; prefer env)
 
 Env:
   WORK_ACCOUNT_MATCH=${WORK_ACCOUNT_MATCH}
   HOME_ACCOUNT_MATCH=${HOME_ACCOUNT_MATCH}
   PROD_ACCOUNT_MATCH         required for *-prod actions
   AGENT_DEVICE_SERIAL        default device serial
-  GROK_DEVICE_RUNS_DIR       override runs/ directory
+  RELAY_RUNS_DIR             override runs/ directory
+  RELAY_AUTH_TOKEN           HTTP bearer token for non-loopback serving
 `);
   process.exit(exitCode);
 }
@@ -181,7 +183,7 @@ async function runActionViaJob(action: ActionId, argv: string[]): Promise<void> 
   const asJson = hasFlag(argv, "--json");
   const allDevices = hasFlag(argv, "--all-devices");
   const retries = parseFlagValue(argv, "--retries");
-  if (retries) process.env.GROK_DEVICE_RETRY_ATTEMPTS = retries;
+  if (retries) process.env.RELAY_RETRY_ATTEMPTS = retries;
 
   let serials: (string | undefined)[] = [serialFlag];
   if (allDevices) {
@@ -231,14 +233,18 @@ async function runDirect(action: ActionId, argv: string[]): Promise<void> {
 async function runServe(argv: string[]): Promise<void> {
   const portRaw = parseFlagValue(argv, "--port");
   const host = parseFlagValue(argv, "--host") ?? "127.0.0.1";
+  const token =
+    parseFlagValue(argv, "--token") ??
+    process.env.RELAY_AUTH_TOKEN ??
+    process.env.GROK_DEVICE_AUTH_TOKEN;
   const port = portRaw ? Number(portRaw) : DEFAULT_SERVE_PORT;
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid --port: ${portRaw}`);
   }
 
-  const { startServer } = await import("@grok-device/server");
-  const server = await startServer({ port, host });
-  console.log(`grok-device server listening on http://${server.host}:${server.port}`);
+  const { startServer } = await import("@relay/server");
+  const server = await startServer({ port, host, token });
+  console.log(`relay server listening on http://${server.host}:${server.port}`);
   console.log("  GET  /health  /doctor  /meta  /events(SSE)");
   console.log("  GET  /report  /report/:id  /report/junit");
   console.log("  GET  /devices  /actions  /jobs  /snapshot  /screenshot  /runs");
@@ -258,7 +264,7 @@ async function runServe(argv: string[]): Promise<void> {
 
 async function runTui(argv: string[]): Promise<void> {
   try {
-    const mod = (await import("@grok-device/tui")) as {
+    const mod = (await import("@relay/tui")) as {
       main?: (argv: string[]) => void | Promise<void>;
       default?: (argv: string[]) => void | Promise<void>;
       run?: (argv: string[]) => void | Promise<void>;
@@ -266,7 +272,7 @@ async function runTui(argv: string[]): Promise<void> {
     const entry = mod.main ?? mod.run ?? mod.default;
     if (typeof entry !== "function") {
       throw new Error(
-        "@grok-device/tui loaded but has no main/run/default export. Check the package version.",
+        "@relay/tui loaded but has no main/run/default export. Check the package version.",
       );
     }
     await entry(argv);
@@ -279,10 +285,10 @@ async function runTui(argv: string[]): Promise<void> {
       /Failed to resolve/i.test(message);
 
     if (isMissing) {
-      console.error(`error: @grok-device/tui is not installed or not built yet.
+      console.error(`error: @relay/tui is not installed or not built yet.
   Install/build the monorepo package, then retry:
     pnpm install
-    grok-device tui
+    relay tui
 
   Underlying error: ${message}`);
       process.exit(1);
@@ -368,7 +374,7 @@ if (isDirectRun()) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`error: ${message}`);
     if (err instanceof Error && err.stack) console.error(err.stack);
-    console.error("\nHint: grok-device doctor && agent-device devices --platform android");
+    console.error("\nHint: relay doctor && agent-device devices --platform android");
     process.exit(1);
   });
 }

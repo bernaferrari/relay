@@ -2,7 +2,7 @@
  * Live device workspace helpers for the testing shell:
  * snapshot UI tree, screenshot, basic interactions.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -206,7 +206,7 @@ export async function captureScreenshot(opts?: {
 }): Promise<ScreenshotPayload> {
   if (opts?.serial) selectDevice(opts.serial);
   const device = opts?.device ?? createDevice();
-  const dir = join(tmpdir(), "grok-device");
+  const dir = join(tmpdir(), "relay");
   await mkdir(dir, { recursive: true });
   const path = join(dir, `shot-${now()}.png`);
   try {

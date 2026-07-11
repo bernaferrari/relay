@@ -5,6 +5,11 @@ import { defineConfig } from "vite-plus";
  * Package-level apps (app, desktop) use their own vite configs.
  */
 export default defineConfig({
+  test: {
+    include: ["tests/vp/**/*.test.ts"],
+    exclude: ["vendor/**", "**/node_modules/**"],
+    testTimeout: 30_000,
+  },
   pack: {
     entry: "packages/cli/src/index.ts",
     format: ["esm"],
@@ -13,7 +18,7 @@ export default defineConfig({
     dts: false,
     sourcemap: true,
     deps: {
-      neverBundle: ["agent-device", "@grok-device/core", "@grok-device/server", "@grok-device/tui"],
+      neverBundle: ["agent-device", "@relay/core", "@relay/server", "@relay/tui"],
     },
   },
   staged: {

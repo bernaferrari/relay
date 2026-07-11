@@ -1,6 +1,6 @@
-# Grok Device
+# Relay
 
-Production-minded **Android app testing** for Grok (Play Store + login flows), built on
+Production-minded **Android and iOS app testing** on physical devices, built on
 [agent-device](https://oss.callstack.com/agent-device/docs/quick-start).
 
 Architecture and theming follow [OpenCode](https://github.com/anomalyco/opencode) patterns
@@ -9,6 +9,8 @@ teams like PostHog: clear empty states, CI exits, doctor checks, evidence on dis
 
 ```
 packages/
+  protocol/  connections · resources · revisions · generation schemas
+  client/    authenticated project-scoped HTTP + SSE client
   core/      recipes · jobs · traces · doctor · JUnit/JSON reports · runs/
   server/    HTTP + SSE API
   cli/       doctor · run --json · serve · tui
@@ -36,15 +38,15 @@ Evidence lands in `runs/<timestamp>_<action>_<device>_<id>/`.
 pnpm doctor
 
 # Structured run (exit 0 = ok/healed, 1 = failed)
-pnpm --filter @grok-device/cli exec tsx src/index.ts run logout --json
-pnpm --filter @grok-device/cli exec tsx src/index.ts run update-last-alpha \
+pnpm --filter @relay/cli exec tsx src/index.ts run logout --json
+pnpm --filter @relay/cli exec tsx src/index.ts run update-last-alpha \
   --serial "$SERIAL" --junit ./junit.xml
 
 # Matrix: every connected device
-pnpm --filter @grok-device/cli exec tsx src/index.ts run logout --all-devices --json --junit ./matrix.xml
+pnpm --filter @relay/cli exec tsx src/index.ts run logout --all-devices --json --junit ./matrix.xml
 
 # Flake retries (default 3)
-GROK_DEVICE_RETRY_ATTEMPTS=5 pnpm --filter @grok-device/cli exec tsx src/index.ts run login-google
+RELAY_RETRY_ATTEMPTS=5 pnpm --filter @relay/cli exec tsx src/index.ts run login-google
 
 # API
 pnpm dev:serve
@@ -86,6 +88,9 @@ runs/<iso>_<action>_<device>_<id8>/
 GET  /health /doctor /meta /events
 GET  /devices /actions /jobs /jobs/:id
 POST /jobs  POST /jobs/:id/retry
+GET/POST /projects /builds /device-pools /device-leases
+GET/PUT  /project/variables /recipes/:id/journey
+POST /generate
 GET  /report  GET /report/:id  GET /report/junit
 GET  /snapshot /screenshot
 POST /interact /device/select
@@ -94,22 +99,29 @@ GET  /runs /runs/:id /runs/:id/frames/:file
 
 ## Env
 
-| Variable               | Default                 | Meaning               |
-| ---------------------- | ----------------------- | --------------------- |
-| `WORK_ACCOUNT_MATCH`   | `teachx.ai`             | Alpha Play account    |
-| `HOME_ACCOUNT_MATCH`   | `gmail.com`             | Restore after alpha   |
-| `PROD_ACCOUNT_MATCH`   | —                       | Required for `*-prod` |
-| `AGENT_DEVICE_SERIAL`  | —                       | Default device        |
-| `GROK_DEVICE_URL`      | `http://127.0.0.1:8787` | App/TUI server        |
-| `GROK_DEVICE_RUNS_DIR` | `<repo>/runs`           | Evidence root         |
-| `INSTALL_TIMEOUT_MS`   | `300000`                | Install/update wait   |
+| Variable              | Default                 | Meaning                                             |
+| --------------------- | ----------------------- | --------------------------------------------------- |
+| `WORK_ACCOUNT_MATCH`  | `teachx.ai`             | Alpha Play account                                  |
+| `HOME_ACCOUNT_MATCH`  | `gmail.com`             | Restore after alpha                                 |
+| `PROD_ACCOUNT_MATCH`  | —                       | Required for `*-prod`                               |
+| `AGENT_DEVICE_SERIAL` | —                       | Default device                                      |
+| `RELAY_URL`           | `http://127.0.0.1:8787` | App/TUI server                                      |
+| `RELAY_RUNS_DIR`      | `<repo>/runs`           | Evidence root                                       |
+| `RELAY_AUTH_TOKEN`    | —                       | Bearer token required for non-loopback HTTP serving |
+
+The former `GROK_DEVICE_*` environment variables remain accepted as compatibility aliases.
+| `INSTALL_TIMEOUT_MS` | `300000` | Install/update wait |
+
+The HTTP server refuses non-loopback bindings without a bearer token. For LAN or remote access,
+set a long random `RELAY_AUTH_TOKEN` (24+ characters) or pass `--token`. Keep the default
+loopback binding for local desktop development.
 
 ## Develop
 
 ```bash
 pnpm typecheck
 pnpm test                  # core unit tests (reports)
-pnpm --filter @grok-device/app typecheck
+pnpm --filter @relay/app typecheck
 ```
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md).

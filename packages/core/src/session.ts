@@ -7,7 +7,6 @@ import {
   getAction,
   isActionId,
   runAction,
-  type ActionId,
   type RunActionOptions,
   type RunActionResult,
 } from "./actions.js";
@@ -37,8 +36,8 @@ import {
   raceCancel,
   hardStopDeviceSession,
 } from "./control.js";
-import { readRecipe, describeRecipeStep, glyphsForStep } from "./recipes.js";
-import { runRecipeStep } from "./recipe-runner.js";
+import { readRecipe, describeRecipeStep, glyphsForStep, type Recipe } from "./recipes.js";
+import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -106,6 +105,10 @@ export type TestJob = {
   title: string;
   runDir?: string;
   persisted?: boolean;
+  /** Frozen authoring input and evidence payloads written once with the run. */
+  recipeSnapshot?: Recipe;
+  artifacts: { kind: string; capturedAt: number; data: unknown }[];
+  resolvedInputs: Record<string, string>;
   options?: {
     prodAccountMatch?: string;
   };
@@ -155,6 +158,7 @@ export type EnqueueJobInput = {
   retryOf?: string;
   /** provisional title for recipe jobs (recipe id is used if absent) */
   title?: string;
+  variables?: Record<string, string>;
 };
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
@@ -173,6 +177,8 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     previousError: parent?.error ?? parent?.previousError,
     steps: [] as TraceStep[],
     frames: [] as TraceFrameRef[],
+    artifacts: [] as { kind: string; capturedAt: number; data: unknown }[],
+    resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
     options: {
       prodAccountMatch: input.prodAccountMatch ?? parent?.options?.prodAccountMatch,
     },
@@ -240,6 +246,7 @@ export function retryJob(id: string): TestJob {
     prodAccountMatch: parent.options?.prodAccountMatch,
     retryOf: parent.id,
     title: parent.title,
+    variables: parent.resolvedInputs,
   });
 }
 
@@ -455,6 +462,7 @@ async function runRecipeSteps(
   if (!recipeId) throw new Error("recipe job has no recipeId");
   const recipe = await readRecipe(recipeId);
   if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
+  job.recipeSnapshot = structuredClone(recipe);
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   for (const step of recipe.steps) {
     await cooperativeCheckpoint(job.id);
@@ -467,7 +475,10 @@ async function runRecipeSteps(
     });
     setCurrentStep(ts);
     try {
-      await runRecipeStep(device, step, { log: pushLog, job });
+      await runRecipeStep(device, resolveRecipeStep(step, job.resolvedInputs), {
+        log: pushLog,
+        job,
+      });
       finishStep(ts, "ok");
     } catch (err) {
       finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);

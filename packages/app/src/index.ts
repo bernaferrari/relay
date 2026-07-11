@@ -25,4 +25,4 @@ export type {
   TraceStep,
 } from "./lib/api-types";
 export { CommandProvider, useCommand, type Command } from "./context/command";
-export type { ThemeAppliedDetail } from "@grok-device/ui/theme/context";
+export type { ThemeAppliedDetail } from "@relay/ui/theme/context";

@@ -15,7 +15,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 const invoked =
   process.argv[1]?.includes("/tui/src/index.ts") ||
   process.argv[1]?.includes("\\tui\\src\\index.ts") ||
-  process.argv[1]?.includes("@grok-device/tui");
+  process.argv[1]?.includes("@relay/tui");
 
 if (invoked) {
   main().catch((err: unknown) => {

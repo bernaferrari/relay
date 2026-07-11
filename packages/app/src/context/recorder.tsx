@@ -1,7 +1,23 @@
 import { createSignal, createEffect } from "solid-js";
-import { createSimpleContext } from "@grok-device/ui/context/helper";
-import { useServer, type SnapshotNode, type RecipeStep, type StepTarget } from "./server";
-import { nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
+import { createSimpleContext } from "@relay/ui/context/helper";
+import {
+  useServer,
+  type Frame,
+  type RecordedNodeEvidence,
+  type RecordedSelectorCandidate,
+  type RecordedStepEvidence,
+  type SnapshotNode,
+  type SnapshotState,
+  type RecipeStep,
+  type StepTarget,
+} from "./server";
+import {
+  ancestryOf,
+  nodeAtPoint,
+  strategiesFor,
+  targetFromStrategy,
+  type PickStrategy,
+} from "../lib/snapshot";
 import { sentenceForStep } from "../lib/step-sentence";
 import { useRecipeDraft } from "./recipe-draft";
 import { toast } from "./toast";
@@ -69,6 +85,96 @@ export function buildTapTarget(
   return target;
 }
 
+function evidenceId(): string {
+  const suffix =
+    globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10);
+  return `ev-${Date.now().toString(36)}-${suffix}`;
+}
+
+function recordedNode(node: SnapshotNode): RecordedNodeEvidence {
+  return {
+    ...(node.label ? { label: node.label } : {}),
+    ...(node.value ? { value: node.value } : {}),
+    ...(node.identifier ? { identifier: node.identifier } : {}),
+    ...(node.role ? { role: node.role } : {}),
+    ...(node.type ? { type: node.type } : {}),
+    ...(node.ref ? { ref: node.ref.startsWith("@") ? node.ref : `@${node.ref}` } : {}),
+    ...(node.index !== undefined ? { index: node.index } : {}),
+    ...(node.rect ? { rect: { ...node.rect } } : {}),
+  };
+}
+
+function recordedCandidates(
+  snap: SnapshotState,
+  node: SnapshotNode | null,
+  fx: number,
+  fy: number,
+): RecordedSelectorCandidate[] {
+  const candidates: RecordedSelectorCandidate[] = [];
+  const seen = new Set<string>();
+  const chain = node && snap ? ancestryOf(snap, node).slice(0, 8) : [];
+  chain.forEach((candidateNode, index) => {
+    for (const strategy of strategiesFor(candidateNode, snap, fx, fy)) {
+      if (strategy.kind === "point") continue;
+      const target = targetFromStrategy(strategy, fx, fy, snap?.bounds);
+      const key = `${strategy.kind}:${JSON.stringify(target)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({
+        strategy: strategy.kind,
+        label: strategy.describe,
+        source: index === 0 ? "element" : "ancestor",
+        confidence: index === 0 ? "high" : "medium",
+        target,
+      });
+    }
+  });
+  const point = targetFromStrategy(
+    {
+      id: "point",
+      kind: "point",
+      x: Math.round(fx * (snap?.bounds?.width ?? 1)),
+      y: Math.round(fy * (snap?.bounds?.height ?? 1)),
+      describe: "Coordinate",
+    },
+    fx,
+    fy,
+    snap?.bounds,
+  );
+  candidates.push({
+    strategy: "point",
+    label: `coordinate ${point.point?.x ?? 0}, ${point.point?.y ?? 0}`,
+    source: "coordinate",
+    confidence: "fallback",
+    target: point,
+  });
+  return candidates;
+}
+
+function recordedEvidence(
+  snap: SnapshotState,
+  node: SnapshotNode | null,
+  fx?: number,
+  fy?: number,
+  serial?: string | null,
+): RecordedStepEvidence {
+  const id = evidenceId();
+  const bounds = snap?.bounds;
+  const hasPointer = fx !== undefined && fy !== undefined;
+  return {
+    id,
+    recordedAt: Date.now(),
+    ...(serial ? { serial } : {}),
+    ...(bounds ? { deviceBounds: { ...bounds } } : {}),
+    ...(hasPointer && bounds
+      ? { pointer: { x: Math.round(fx * bounds.width), y: Math.round(fy * bounds.height) } }
+      : {}),
+    ...(node ? { node: recordedNode(node) } : {}),
+    ...(node && snap ? { ancestors: ancestryOf(snap, node).slice(1, 9).map(recordedNode) } : {}),
+    ...(hasPointer ? { candidates: recordedCandidates(snap, node, fx, fy) } : {}),
+  };
+}
+
 export const { use: useRecorder, provider: RecorderProvider } = createSimpleContext({
   name: "Recorder",
   gate: false,
@@ -101,15 +207,44 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return draft.ensureRecordingDraft(nextRecordedTitle);
     }
 
+    function latestFrame(since = 0): Frame | undefined {
+      return [...server.frames()].reverse().find((frame) => frame.capturedAt >= since);
+    }
+
+    async function attachEvidenceScreenshot(
+      evidence: RecordedStepEvidence,
+      recipeId: string,
+      frame: Frame | undefined,
+    ): Promise<void> {
+      if (!frame || frame.mime !== "image/png") return;
+      const saved = await server.persistRecordingEvidence(recipeId, evidence.id, frame);
+      if (!saved) return;
+      evidence.screenshot = {
+        recipeId,
+        id: evidence.id,
+        capturedAt: frame.capturedAt,
+        mime: "image/png",
+      };
+    }
+
     /** Enter Record mode: arm the flag + make sure the stage has something
      *  to show (overlays on, a snapshot if we don't have one yet). Shared by
      *  the stage's segmented control and the empty-state's "Record from
      *  device" action so both paths behave identically. */
     function enterRecordMode(): void {
+      if (recording()) return;
       setInteracting(true);
       setRecording(true);
       server.setShowOverlays(true);
-      if (!server.snapshot()?.bounds) void server.captureUiSnapshot();
+      void Promise.all([
+        server.captureUiSnapshot(),
+        server.captureUiScreenshot("Recording started", undefined, undefined, true),
+      ]).catch(() => undefined);
+    }
+
+    async function stopRecording(): Promise<void> {
+      await flushType();
+      setRecording(false);
     }
 
     /** Execute a tap target on the device, preferring ref → label → point. */
@@ -150,11 +285,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       const node = nodeAtPoint(server.snapshot(), fx, fy);
       const target = buildTapTarget(server.snapshot()?.bounds, node, fx, fy);
-      const step: RecipeStep = { kind: "tap", target };
+      const evidence = recordedEvidence(server.snapshot(), node, fx, fy, server.selectedDevice());
+      const step: Extract<RecipeStep, { kind: "tap" }> = { kind: "tap", target };
       const ok = await executeTap(target, describeStep(step));
       if (ok && recording()) {
         const id = await ensureRecordingTarget();
-        if (id) draft.appendSteps([step]);
+        if (id) {
+          await attachEvidenceScreenshot(evidence, id, latestFrame(evidence.recordedAt));
+          draft.appendSteps([{ ...step, evidence }]);
+        }
       }
       return ok;
     }
@@ -179,14 +318,29 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const h = b?.height ?? 1;
       const devFrom = { x: Math.round(from.x * w), y: Math.round(from.y * h) };
       const devTo = { x: Math.round(to.x * w), y: Math.round(to.y * h) };
-      const step: RecipeStep = { kind: "swipe", from: devFrom, to: devTo, durationMs };
+      const evidence = recordedEvidence(
+        server.snapshot(),
+        nodeAtPoint(server.snapshot(), from.x, from.y),
+        from.x,
+        from.y,
+        server.selectedDevice(),
+      );
+      const step: Extract<RecipeStep, { kind: "swipe" }> = {
+        kind: "swipe",
+        from: devFrom,
+        to: devTo,
+        durationMs,
+      };
       const ok = await server.interactStep(
         { kind: "swipe", from: devFrom, to: devTo, durationMs },
         describeStep(step),
       );
       if (ok && recording()) {
         const id = await ensureRecordingTarget();
-        if (id) draft.appendSteps([step]);
+        if (id) {
+          await attachEvidenceScreenshot(evidence, id, latestFrame(evidence.recordedAt));
+          draft.appendSteps([{ ...step, evidence }]);
+        }
       }
       return ok;
     }
@@ -200,7 +354,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     async function recordPick(strategy: PickStrategy, fx: number, fy: number): Promise<void> {
       const target = targetFromStrategy(strategy, fx, fy, server.snapshot()?.bounds);
       const id = await ensureRecordingTarget();
-      if (id) draft.appendSteps([{ kind: "tap", target }]);
+      if (!id) return;
+      const frame = latestFrame();
+      const node = nodeAtPoint(server.snapshot(), fx, fy);
+      const evidence = recordedEvidence(server.snapshot(), node, fx, fy, server.selectedDevice());
+      if (frame) evidence.recordedAt = Math.min(evidence.recordedAt, frame.capturedAt);
+      await attachEvidenceScreenshot(evidence, id, frame);
+      draft.appendSteps([{ kind: "tap", target, evidence }]);
     }
 
     // ── Typing capture (plan 010 step 3.3) ──────────────────────────────────
@@ -226,11 +386,21 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!text) return;
       setTypeBuffer("");
       if (server.health() !== "online") return;
-      const step: RecipeStep = { kind: "type", text };
+      const evidence = recordedEvidence(
+        server.snapshot(),
+        null,
+        undefined,
+        undefined,
+        server.selectedDevice(),
+      );
+      const step: Extract<RecipeStep, { kind: "type" }> = { kind: "type", text };
       const ok = await server.interactStep({ kind: "type", text }, describeStep(step));
       if (ok && recording()) {
         const id = await ensureRecordingTarget();
-        if (id) draft.appendSteps([step]);
+        if (id) {
+          await attachEvidenceScreenshot(evidence, id, latestFrame(evidence.recordedAt));
+          draft.appendSteps([{ ...step, evidence }]);
+        }
       }
     }
 
@@ -363,6 +533,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       recording,
       setRecording,
       enterRecordMode,
+      stopRecording,
       driveTap,
       driveSwipe,
       typeBuffer,

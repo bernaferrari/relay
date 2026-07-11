@@ -4,6 +4,8 @@
  * All long waits honor job cancel/pause via control.ts.
  */
 import { createAgentDeviceClient } from "agent-device";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry } from "./retry.js";
 
@@ -13,6 +15,7 @@ export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
 
 export type Device = ReturnType<typeof createAgentDeviceClient>;
+const execFileAsync = promisify(execFile);
 
 export type SnapshotNode = {
   label?: string;
@@ -64,8 +67,12 @@ async function controlled<T>(op: () => Promise<T>): Promise<T> {
       return await raceCancel(op());
     },
     {
-      attempts: Number(process.env.GROK_DEVICE_RETRY_ATTEMPTS ?? 3),
-      baseDelayMs: Number(process.env.GROK_DEVICE_RETRY_DELAY_MS ?? 350),
+      attempts: Number(
+        process.env.RELAY_RETRY_ATTEMPTS ?? process.env.GROK_DEVICE_RETRY_ATTEMPTS ?? 3,
+      ),
+      baseDelayMs: Number(
+        process.env.RELAY_RETRY_DELAY_MS ?? process.env.GROK_DEVICE_RETRY_DELAY_MS ?? 350,
+      ),
     },
   );
 }
@@ -128,6 +135,137 @@ export async function pressLabel(device: Device, label: string): Promise<void> {
 
 export async function pressPoint(device: Device, x: number, y: number): Promise<void> {
   await controlled(() => device.interactions.press({ ...base(), x, y }));
+}
+
+export async function longPressTarget(
+  device: Device,
+  target: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } },
+  durationMs = 700,
+): Promise<void> {
+  if (target.ref) {
+    await controlled(() =>
+      device.interactions.longPress({
+        ...base(),
+        ref: target.ref!.startsWith("@") ? target.ref! : `@${target.ref!}`,
+        durationMs,
+      }),
+    );
+  } else if (target.label) {
+    const label = target.label;
+    await controlled(() =>
+      device.interactions.longPress({
+        ...base(),
+        selector: `label="${label.replaceAll('"', '\\"')}"`,
+        durationMs,
+      }),
+    );
+  } else if (target.text) {
+    const text = target.text;
+    await controlled(() =>
+      device.interactions.longPress({
+        ...base(),
+        selector: `label*="${text.replaceAll('"', '\\"')}"`,
+        durationMs,
+      }),
+    );
+  } else if (target.point) {
+    await controlled(() =>
+      device.interactions.longPress({
+        ...base(),
+        x: target.point!.x,
+        y: target.point!.y,
+        durationMs,
+      }),
+    );
+  } else {
+    throw new Error("long-press requires a target");
+  }
+}
+
+export async function clipboardWrite(device: Device, text: string): Promise<void> {
+  await controlled(() => device.command.clipboard({ ...base(), action: "write", text }));
+}
+
+export async function clipboardRead(device: Device): Promise<string> {
+  const result = await controlled(() => device.command.clipboard({ ...base(), action: "read" }));
+  if (result.action !== "read") throw new Error("clipboard read returned an unexpected result");
+  return result.text;
+}
+
+export async function closeApp(device: Device, app?: string): Promise<void> {
+  await controlled(() => device.apps.close({ ...base(), ...(app ? { app } : {}) }));
+}
+
+export async function openAppSwitcher(device: Device): Promise<void> {
+  await controlled(() => device.command.appSwitcher({ ...base() }));
+}
+
+export async function rotateDevice(
+  device: Device,
+  orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right",
+): Promise<void> {
+  await controlled(() => device.command.rotate({ ...base(), orientation }));
+}
+
+export async function keyboardAction(device: Device, action: "dismiss" | "enter"): Promise<void> {
+  await controlled(() => device.command.keyboard({ ...base(), action }));
+}
+
+export async function alertAction(
+  device: Device,
+  action: "get" | "accept" | "dismiss" | "wait",
+  timeoutMs?: number,
+): Promise<unknown> {
+  return await controlled(() =>
+    device.command.alert({ ...base(), action, ...(timeoutMs !== undefined ? { timeoutMs } : {}) }),
+  );
+}
+
+export async function updateSetting(
+  device: Device,
+  input: Parameters<Device["settings"]["update"]>[0],
+): Promise<unknown> {
+  return await controlled(() => device.settings.update(input));
+}
+
+export async function captureNetwork(
+  device: Device,
+  options: {
+    action: "dump" | "log";
+    include?: "summary" | "headers" | "body" | "all";
+    limit?: number;
+  },
+): Promise<unknown> {
+  return await controlled(() => device.observability.network({ ...base(), ...options }));
+}
+
+export async function manageLogs(
+  device: Device,
+  options: { action: "start" | "stop" | "mark" | "clear"; message?: string },
+): Promise<unknown> {
+  return await controlled(() => device.observability.logs({ ...base(), ...options }));
+}
+
+/** agent-device intentionally has no public lock-screen command yet. Its own
+ * CLI guidance allows a platform bridge for command gaps; keep that bridge
+ * isolated here so recipes still have one capability surface. */
+export async function setAndroidLockState(action: "lock" | "unlock"): Promise<void> {
+  const serial = base().serial;
+  const args = [
+    ...(serial ? ["-s", serial] : []),
+    "shell",
+    "input",
+    "keyevent",
+    action === "lock" ? "223" : "224",
+  ];
+  await cooperativeCheckpoint();
+  throwIfCancelled();
+  await raceCancel(execFileAsync("adb", args));
+  if (action === "unlock") {
+    await raceCancel(
+      execFileAsync("adb", [...(serial ? ["-s", serial] : []), "shell", "input", "keyevent", "82"]),
+    );
+  }
 }
 
 /** Swipe from one point to another over `durationMs`. Follows pressPoint style. */

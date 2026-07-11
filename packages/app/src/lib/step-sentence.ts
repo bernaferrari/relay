@@ -37,6 +37,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
   switch (step.kind) {
     case "tap":
       return `Tap ${targetPhrase(step.target)}`;
+    case "long-press":
+      return `Long press ${targetPhrase(step.target)}`;
     case "type":
       return step.text.trim() ? `Type "${step.text}"` : "Type text";
     case "wait-for": {
@@ -66,6 +68,40 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
     case "flow":
       // Human title only — "Built-in:" was opaque jargon in the step list.
       return titleize(step.flow, recipes);
+    case "module":
+      return `Run ${titleize(step.recipeId, recipes)}`;
+    case "clipboard":
+      return step.action === "write"
+        ? `Set clipboard to "${step.text ?? ""}"`
+        : step.expect !== undefined
+          ? `Check clipboard ${step.match === "contains" ? "contains" : "equals"} "${step.expect}"`
+          : "Read clipboard";
+    case "app":
+      return step.action === "switcher"
+        ? "Open app switcher"
+        : `${cap(step.action)} ${step.app ?? step.url ?? "app"}`;
+    case "device":
+      return step.action === "keyboard-dismiss"
+        ? "Dismiss keyboard"
+        : step.action === "keyboard-enter"
+          ? "Press keyboard Enter"
+          : `${cap(step.action)} device`;
+    case "rotate":
+      return `Rotate to ${step.orientation.replaceAll("-", " ")}`;
+    case "settings":
+      return `Set ${step.setting} ${step.state}`;
+    case "location":
+      return `Set location to ${step.latitude}, ${step.longitude}`;
+    case "permission":
+      return `${cap(step.action)} ${step.permission} permission`;
+    case "alert":
+      return `${cap(step.action)} system alert`;
+    case "network":
+      return step.action === "dump"
+        ? `Capture network ${step.include ?? "summary"}`
+        : "Mark network log";
+    case "logs":
+      return `${cap(step.action)} device logs`;
   }
 }
 
@@ -73,6 +109,7 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
 export function stepValid(step: RecipeStep): boolean {
   switch (step.kind) {
     case "tap":
+    case "long-press":
     case "wait-for":
     case "expect":
       return targetValid(step.target);
@@ -84,10 +121,25 @@ export function stepValid(step: RecipeStep): boolean {
       return step.message.trim().length > 0;
     case "flow":
       return step.flow.trim().length > 0;
+    case "module":
+      return step.recipeId.trim().length > 0;
+    case "clipboard":
+      return step.action === "read" || step.text !== undefined;
+    case "app":
+      return step.action !== "open" || Boolean(step.app?.trim() || step.url?.trim());
+    case "location":
+      return Number.isFinite(step.latitude) && Number.isFinite(step.longitude);
     case "scroll":
     case "key":
     case "swipe":
     case "screenshot":
+    case "device":
+    case "rotate":
+    case "settings":
+    case "permission":
+    case "alert":
+    case "network":
+    case "logs":
       return true;
   }
 }
@@ -97,6 +149,7 @@ export function stepIssue(step: RecipeStep): string | null {
   if (stepValid(step)) return null;
   switch (step.kind) {
     case "tap":
+    case "long-press":
     case "wait-for":
     case "expect":
       return "Needs a target — a label, ref, text, or point.";
@@ -108,6 +161,14 @@ export function stepIssue(step: RecipeStep): string | null {
       return "Needs instructions for the human.";
     case "flow":
       return "Needs a flow — pick one from the list.";
+    case "module":
+      return "Needs a reusable test.";
+    case "clipboard":
+      return "Needs clipboard text.";
+    case "app":
+      return "Needs an app id or deep link.";
+    case "location":
+      return "Needs valid latitude and longitude.";
     default:
       return "Invalid step.";
   }

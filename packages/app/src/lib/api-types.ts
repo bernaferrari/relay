@@ -1,5 +1,5 @@
 /**
- * Client-side shapes matching the HTTP/SSE API from @grok-device/server.
+ * Client-side shapes matching the HTTP/SSE API from @relay/server.
  * Kept in the app package (no core import) so the UI stays host-agnostic.
  */
 
@@ -56,15 +56,60 @@ export type StepTarget = {
   point?: { x: number; y: number };
 };
 
+export type RecordedSelectorCandidate = {
+  strategy: "ref" | "label" | "text" | "point";
+  label: string;
+  source: "element" | "ancestor" | "coordinate";
+  confidence: "high" | "medium" | "fallback";
+  target: StepTarget;
+};
+
+export type RecordedNodeEvidence = {
+  label?: string;
+  value?: string;
+  identifier?: string;
+  role?: string;
+  type?: string;
+  ref?: string;
+  index?: number;
+  rect?: { x: number; y: number; width: number; height: number };
+};
+
+/** Durable context captured while a manual desktop interaction is recorded. */
+export type RecordedStepEvidence = {
+  id: string;
+  recordedAt: number;
+  serial?: string;
+  deviceBounds?: { width: number; height: number };
+  pointer?: { x: number; y: number };
+  node?: RecordedNodeEvidence;
+  ancestors?: RecordedNodeEvidence[];
+  candidates?: RecordedSelectorCandidate[];
+  screenshot?: {
+    recipeId: string;
+    id: string;
+    capturedAt: number;
+    mime: "image/png";
+  };
+};
+
 export type RecipeStep =
-  | { kind: "tap"; target: StepTarget; note?: string }
-  | { kind: "type"; text: string; target?: StepTarget; note?: string }
+  | { kind: "tap"; target: StepTarget; evidence?: RecordedStepEvidence; note?: string }
+  | { kind: "long-press"; target: StepTarget; durationMs?: number; note?: string }
+  | {
+      kind: "type";
+      text: string;
+      target?: StepTarget;
+      evidence?: RecordedStepEvidence;
+      note?: string;
+    }
   | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
   | {
       kind: "swipe";
       from: { x: number; y: number };
       to: { x: number; y: number };
       durationMs?: number;
+      evidence?: RecordedStepEvidence;
       note?: string;
     }
   | { kind: "key"; key: "back" | "home"; note?: string }
@@ -79,7 +124,72 @@ export type RecipeStep =
     }
   | { kind: "pause"; message: string; note?: string }
   | { kind: "screenshot"; caption?: string; note?: string }
-  | { kind: "flow"; flow: string; note?: string };
+  | { kind: "flow"; flow: string; note?: string }
+  | { kind: "module"; recipeId: string; note?: string }
+  | {
+      kind: "clipboard";
+      action: "write" | "read";
+      text?: string;
+      expect?: string;
+      match?: "exact" | "contains";
+      note?: string;
+    }
+  | {
+      kind: "app";
+      action: "open" | "close" | "switcher";
+      app?: string;
+      url?: string;
+      note?: string;
+    }
+  | {
+      kind: "device";
+      action: "lock" | "unlock" | "keyboard-dismiss" | "keyboard-enter";
+      note?: string;
+    }
+  | {
+      kind: "rotate";
+      orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right";
+      note?: string;
+    }
+  | {
+      kind: "settings";
+      setting: "wifi" | "airplane" | "location" | "animations" | "appearance";
+      state: "on" | "off" | "light" | "dark" | "toggle";
+      note?: string;
+    }
+  | { kind: "location"; latitude: number; longitude: number; note?: string }
+  | {
+      kind: "permission";
+      action: "grant" | "deny" | "reset";
+      permission:
+        | "camera"
+        | "microphone"
+        | "photos"
+        | "contacts"
+        | "notifications"
+        | "calendar"
+        | "location"
+        | "location-always"
+        | "media-library"
+        | "motion"
+        | "reminders"
+        | "siri";
+      note?: string;
+    }
+  | {
+      kind: "alert";
+      action: "get" | "accept" | "dismiss" | "wait";
+      timeoutMs?: number;
+      note?: string;
+    }
+  | {
+      kind: "network";
+      action: "dump" | "log";
+      include?: "summary" | "headers" | "body" | "all";
+      limit?: number;
+      note?: string;
+    }
+  | { kind: "logs"; action: "start" | "stop" | "mark" | "clear"; message?: string; note?: string };
 
 export type RecipeInfo = {
   id: string;
@@ -116,9 +226,13 @@ export type JobInfo = {
   title?: string;
   runDir?: string;
   persisted?: boolean;
+  recipeSnapshot?: RecipeInfo;
+  artifacts?: { kind: string; capturedAt: number; data: unknown }[];
+  resolvedInputs?: Record<string, string>;
 };
 
 export type PersistedRun = {
+  schemaVersion?: number;
   id: string;
   action: string;
   serial?: string;
@@ -133,6 +247,10 @@ export type PersistedRun = {
   durationMs?: number;
   error?: string;
   writtenAt: number;
+  recipeSnapshot?: RecipeInfo;
+  artifacts?: { kind: string; capturedAt: number; data: unknown }[];
+  inputDigest?: string;
+  resolvedInputs?: Record<string, string>;
 };
 
 export type HealthState = "unknown" | "online" | "offline";

@@ -1,5 +1,5 @@
 {
-  "name": "@grok-device/tui",
+  "name": "@relay/tui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@grok-device/core": "workspace:*"
+    "@relay/client": "workspace:*",
+    "@relay/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

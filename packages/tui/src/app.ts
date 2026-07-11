@@ -185,7 +185,7 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
 
     if (choice === null) {
       // Esc on main menu = quit confirm
-      const leave = await confirm("Quit Grok Device?", false);
+      const leave = await confirm("Quit Relay?", false);
       if (leave) break;
       continue;
     }

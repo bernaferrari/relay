@@ -4,11 +4,13 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, readdir, stat } from "node:fs/promises";
 import { join, basename, dirname } from "node:path";
+import { createHash } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import { now } from "./events.js";
 
 export type PersistedRun = {
+  schemaVersion: 2;
   id: string;
   action: string;
   title?: string;
@@ -33,6 +35,10 @@ export type PersistedRun = {
   frameCount?: number;
   dir: string;
   writtenAt: number;
+  recipeSnapshot?: TestJob["recipeSnapshot"];
+  artifacts: TestJob["artifacts"];
+  inputDigest: string;
+  resolvedInputs: Record<string, string>;
 };
 
 function slug(s: string): string {
@@ -56,7 +62,7 @@ export function findWorkspaceRoot(start = process.cwd()): string {
 }
 
 export function runsRoot(): string {
-  const env = process.env.GROK_DEVICE_RUNS_DIR?.trim();
+  const env = (process.env.RELAY_RUNS_DIR ?? process.env.GROK_DEVICE_RUNS_DIR)?.trim();
   if (env) return env;
   return join(findWorkspaceRoot(), "runs");
 }
@@ -121,7 +127,14 @@ export async function persistRun(job: TestJob): Promise<PersistedRun> {
     frames: s.frames.map(({ base64: _b, ...rest }) => rest),
   }));
 
+  const frozenInput = JSON.stringify({
+    action: job.action,
+    serial: job.serial,
+    recipe: job.recipeSnapshot ?? null,
+    variables: job.resolvedInputs,
+  });
   const payload: PersistedRun = {
+    schemaVersion: 2,
     id: job.id,
     action: job.action,
     title: job.title,
@@ -146,10 +159,22 @@ export async function persistRun(job: TestJob): Promise<PersistedRun> {
     frameCount: frames.length,
     dir,
     writtenAt: now(),
+    recipeSnapshot: job.recipeSnapshot,
+    artifacts: job.artifacts,
+    inputDigest: createHash("sha256").update(frozenInput).digest("hex"),
+    resolvedInputs: job.resolvedInputs,
   };
 
-  await writeFile(join(dir, "run.json"), JSON.stringify(payload, null, 2), "utf8");
-  await writeFile(join(dir, "log.txt"), job.logs.join("\n"), "utf8");
+  const json = JSON.stringify(payload, null, 2);
+  // A completed report is evidence, not mutable workspace state. Never rewrite
+  // an existing manifest if a duplicate finalization path races in.
+  try {
+    await writeFile(join(dir, "run.json"), json, { encoding: "utf8", flag: "wx" });
+    await writeFile(join(dir, "report-manifest.json"), json, { encoding: "utf8", flag: "wx" });
+    await writeFile(join(dir, "log.txt"), job.logs.join("\n"), { encoding: "utf8", flag: "wx" });
+  } catch (err) {
+    if (!(err instanceof Error && "code" in err && err.code === "EEXIST")) throw err;
+  }
   job.persisted = true;
   return payload;
 }

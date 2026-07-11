@@ -12,12 +12,12 @@ import {
   listJobs,
   pauseJob,
   resumeJob,
-  runAction,
   selectDevice,
   type ActionMeta,
   type ListedDevice,
   type TestJob,
-} from "@grok-device/core";
+} from "@relay/core";
+import { RelayClient } from "@relay/client";
 
 export type DeviceClient = {
   mode: "http" | "in-process";
@@ -42,28 +42,6 @@ export type DeviceClient = {
   resume: (jobId?: string) => Promise<void>;
   getActiveJobId: () => Promise<string | null>;
 };
-
-async function httpJson<T>(base: string, path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
-  if (!res.ok) {
-    let msg = `${res.status}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) msg = body.error;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(msg);
-  }
-  return (await res.json()) as T;
-}
 
 async function probe(url: string): Promise<boolean> {
   try {
@@ -151,39 +129,48 @@ function inProcessClient(): DeviceClient {
 
 function httpClient(baseUrl: string): DeviceClient {
   const base = baseUrl.replace(/\/+$/, "");
+  const token = process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
+  const relay = new RelayClient({
+    url: base,
+    auth: token ? { type: "bearer", token } : { type: "none" },
+    organizationId:
+      process.env.RELAY_ORGANIZATION_ID ?? process.env.GROK_DEVICE_ORGANIZATION_ID ?? "local",
+    projectId: process.env.RELAY_PROJECT_ID ?? process.env.GROK_DEVICE_PROJECT_ID ?? "default",
+  });
+  const json = <T>(path: string, init?: RequestInit) => relay.request<T>(path, init);
   return {
     mode: "http",
     baseUrl: base,
     async listDevices() {
-      const data = await httpJson<{ devices: ListedDevice[] }>(base, "/devices");
+      const data = await json<{ devices: ListedDevice[] }>("/devices");
       return data.devices;
     },
     async listActions() {
-      const data = await httpJson<{ actions: ActionMeta[] }>(base, "/actions");
+      const data = await json<{ actions: ActionMeta[] }>("/actions");
       return data.actions;
     },
     async listJobs() {
-      const data = await httpJson<{ jobs: TestJob[] }>(base, "/jobs");
+      const data = await json<{ jobs: TestJob[] }>("/jobs");
       return data.jobs;
     },
     async selectDevice(serial) {
-      await httpJson(base, "/device/select", {
+      await json("/device/select", {
         method: "POST",
         body: JSON.stringify({ serial }),
       });
     },
     async snapshot(serial) {
       const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-      return httpJson(base, `/snapshot${q}`);
+      return json(`/snapshot${q}`);
     },
     async screenshot(serial) {
       const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-      const data = await httpJson<{ path: string; bytes: number }>(base, `/screenshot${q}`);
+      const data = await json<{ path: string; bytes: number }>(`/screenshot${q}`);
       return data;
     },
     async runAction(opts) {
       // Async job so cancel/pause work against the same server process
-      const { job } = await httpJson<{ job: TestJob }>(base, "/jobs", {
+      const { job } = await json<{ job: TestJob }>("/jobs", {
         method: "POST",
         body: JSON.stringify({
           action: opts.action,
@@ -192,7 +179,7 @@ function httpClient(baseUrl: string): DeviceClient {
       });
       let seen = 0;
       for (;;) {
-        const data = await httpJson<{ job: TestJob }>(base, `/jobs/${job.id}`);
+        const data = await json<{ job: TestJob }>(`/jobs/${job.id}`);
         const current = data.job;
         if (opts.onLog && current.logs) {
           const fresh = current.logs.slice(seen);
@@ -217,18 +204,18 @@ function httpClient(baseUrl: string): DeviceClient {
     },
     async cancel(jobId) {
       if (jobId) {
-        await httpJson(base, `/jobs/${encodeURIComponent(jobId)}/cancel`, {
+        await json(`/jobs/${encodeURIComponent(jobId)}/cancel`, {
           method: "POST",
           body: "{}",
         });
       } else {
-        await httpJson(base, `/jobs/active/cancel`, { method: "POST", body: "{}" });
+        await json(`/jobs/active/cancel`, { method: "POST", body: "{}" });
       }
     },
     async pause(jobId) {
       const id = jobId ?? (await this.getActiveJobId());
       if (!id) throw new Error("No active job");
-      await httpJson(base, `/jobs/${encodeURIComponent(id)}/pause`, {
+      await json(`/jobs/${encodeURIComponent(id)}/pause`, {
         method: "POST",
         body: "{}",
       });
@@ -236,13 +223,13 @@ function httpClient(baseUrl: string): DeviceClient {
     async resume(jobId) {
       const id = jobId ?? (await this.getActiveJobId());
       if (!id) throw new Error("No active job");
-      await httpJson(base, `/jobs/${encodeURIComponent(id)}/resume`, {
+      await json(`/jobs/${encodeURIComponent(id)}/resume`, {
         method: "POST",
         body: "{}",
       });
     },
     async getActiveJobId() {
-      const data = await httpJson<{ active: TestJob | null }>(base, "/jobs?limit=1");
+      const data = await json<{ active: TestJob | null }>("/jobs?limit=1");
       const a = data.active;
       if (a && (a.status === "running" || a.status === "paused")) return a.id;
       return null;
@@ -251,7 +238,7 @@ function httpClient(baseUrl: string): DeviceClient {
 }
 
 export async function createClient(serverUrl?: string): Promise<DeviceClient> {
-  const envUrl = process.env.GROK_DEVICE_URL?.trim();
+  const envUrl = (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim();
   const candidate = (serverUrl ?? envUrl ?? "http://127.0.0.1:8787").replace(/\/+$/, "");
   if (serverUrl || envUrl || (await probe(candidate))) {
     if (await probe(candidate)) return httpClient(candidate);

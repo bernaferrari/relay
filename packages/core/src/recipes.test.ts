@@ -12,6 +12,8 @@ import {
   builtinRecipes,
   describeRecipeStep,
   glyphsForStep,
+  readRecipeEvidenceImage,
+  saveRecipeEvidenceImage,
 } from "./recipes.js";
 
 // Isolate the on-disk store in a temp dir for the whole suite.
@@ -63,22 +65,79 @@ describe("recipe store roundtrip", () => {
     assert.equal(logout!.source, "builtin");
     assert.deepEqual(logout!.steps, [{ kind: "flow", flow: "logout" }]);
   });
+
+  it("persists recorder screenshots outside recipe JSON", async () => {
+    const saved = await saveRecipe({ title: "Evidence", steps: [] });
+    const image = Buffer.from("recorded-image");
+    const result = await saveRecipeEvidenceImage({
+      recipeId: saved.id,
+      evidenceId: "ev-test",
+      base64: image.toString("base64"),
+    });
+    assert.equal(result.bytes, image.byteLength);
+    assert.deepEqual(await readRecipeEvidenceImage(saved.id, "ev-test"), image);
+    await deleteRecipe(saved.id);
+    assert.equal(await readRecipeEvidenceImage(saved.id, "ev-test"), null);
+  });
 });
 
-describe("builtin protection", () => {
-  it("saveRecipe with a builtin id throws", async () => {
-    await assert.rejects(
-      () => saveRecipe({ id: "logout", title: "x", steps: [] }),
-      /cannot overwrite builtin recipe: logout/,
-    );
+describe("packaged recipe CRUD", () => {
+  it("allows a packaged recipe to be edited in place", async () => {
+    const saved = await saveRecipe({ id: "logout", title: "Custom logout", steps: [] });
+    assert.equal(saved.id, "logout");
+    assert.equal(saved.source, "custom");
+    assert.equal((await readRecipe("logout"))?.title, "Custom logout");
   });
 
-  it("deleteRecipe with a builtin id throws", async () => {
-    await assert.rejects(() => deleteRecipe("logout"), /cannot delete builtin recipe: logout/);
+  it("allows a packaged recipe to be deleted", async () => {
+    await deleteRecipe("logout");
+    assert.equal(await readRecipe("logout"), null);
+    assert.equal(
+      (await listRecipes()).some((recipe) => recipe.id === "logout"),
+      false,
+    );
   });
 });
 
 describe("validateRecipeSteps", () => {
+  it("preserves validated recording evidence and selector candidates", () => {
+    const [step] = validateRecipeSteps([
+      {
+        kind: "tap",
+        target: { ref: "@e1", point: { x: 10, y: 20 } },
+        evidence: {
+          id: "ev-1",
+          recordedAt: 123,
+          serial: "pixel",
+          deviceBounds: { width: 1080, height: 2400 },
+          pointer: { x: 10, y: 20 },
+          node: { label: "Sign in", role: "button", ref: "@e1" },
+          candidates: [
+            {
+              strategy: "label",
+              label: 'label "Sign in"',
+              source: "element",
+              confidence: "high",
+              target: { label: "Sign in", point: { x: 10, y: 20 } },
+            },
+          ],
+          screenshot: {
+            recipeId: "custom-test",
+            id: "ev-1",
+            capturedAt: 124,
+            mime: "image/png",
+          },
+        },
+      },
+    ]);
+    assert.equal(step?.kind, "tap");
+    assert.equal(step?.kind === "tap" ? step.evidence?.node?.label : undefined, "Sign in");
+    assert.equal(
+      step?.kind === "tap" ? step.evidence?.candidates?.[0]?.strategy : undefined,
+      "label",
+    );
+  });
+
   it("accepts every step kind with valid fields", () => {
     const steps = [
       { kind: "tap", target: { ref: "@e1" } },
@@ -196,6 +255,34 @@ describe("validateRecipeSteps", () => {
       { kind: "swipe", from: { x: 540, y: 1600 }, to: { x: 540, y: 600 } },
     ]);
     assert.equal(out[0]!.kind, "swipe");
+  });
+
+  it("accepts device, clipboard, observability, and reusable test steps", () => {
+    const out = validateRecipeSteps([
+      { kind: "long-press", target: { label: "Copy" }, durationMs: 700 },
+      { kind: "clipboard", action: "write", text: "hello" },
+      { kind: "clipboard", action: "read", expect: "hello", match: "exact" },
+      { kind: "app", action: "switcher" },
+      { kind: "app", action: "open", url: "myapp://settings" },
+      { kind: "device", action: "lock" },
+      { kind: "rotate", orientation: "landscape-left" },
+      { kind: "settings", setting: "appearance", state: "dark" },
+      { kind: "location", latitude: 48.8566, longitude: 2.3522 },
+      { kind: "permission", action: "grant", permission: "camera" },
+      { kind: "alert", action: "accept" },
+      { kind: "network", action: "dump", include: "headers", limit: 100 },
+      { kind: "logs", action: "mark", message: "after sign in" },
+      { kind: "module", recipeId: "custom-login" },
+    ]);
+    assert.equal(out.length, 14);
+    assert.equal(out.at(-1)?.kind, "module");
+  });
+
+  it("rejects invalid cross-field device settings", () => {
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "settings", setting: "wifi", state: "dark" }]),
+      /settings state is not valid/,
+    );
   });
 
   it("rejects non-array steps", () => {

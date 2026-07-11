@@ -2,9 +2,8 @@ import { type JSX, onMount, onCleanup, createEffect } from "solid-js";
 import { useServer } from "../context/server";
 import { useCommand, CommandPalette } from "../context/command";
 import { Toaster } from "../context/toast";
-import { useTheme } from "@grok-device/ui/theme/context";
+import { useTheme } from "@relay/ui/theme/context";
 import { usePlatform } from "../context/platform";
-import { Topbar } from "./topbar";
 import { ErrorBanner } from "./error-banner";
 import { cn } from "../lib/cn";
 
@@ -295,7 +294,6 @@ export function Layout(props: { children: JSX.Element; onOpenSettings: () => voi
         platform.platform === "desktop" && "qa--desktop",
       )}
     >
-      <Topbar onSettings={() => props.onOpenSettings()} />
       <ErrorBanner />
       <div class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-v2-background-bg-deep text-text-strong text-12-regular">
         {props.children}

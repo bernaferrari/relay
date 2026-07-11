@@ -6,7 +6,7 @@
  * UI has a uniform list; custom recipes live as files under `recipes/`.
  */
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, writeFile, unlink } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile, unlink, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { ACTIONS, isActionId } from "./actions.js";
 import { findWorkspaceRoot } from "./runs.js";
@@ -25,9 +25,52 @@ export type StepTarget = {
   point?: { x: number; y: number };
 };
 
+export type RecordedSelectorCandidate = {
+  strategy: "ref" | "label" | "text" | "point";
+  label: string;
+  source: "element" | "ancestor" | "coordinate";
+  confidence: "high" | "medium" | "fallback";
+  target: StepTarget;
+};
+
+export type RecordedNodeEvidence = {
+  label?: string;
+  value?: string;
+  identifier?: string;
+  role?: string;
+  type?: string;
+  ref?: string;
+  index?: number;
+  rect?: { x: number; y: number; width: number; height: number };
+};
+
+export type RecordedStepEvidence = {
+  id: string;
+  recordedAt: number;
+  serial?: string;
+  deviceBounds?: { width: number; height: number };
+  pointer?: { x: number; y: number };
+  node?: RecordedNodeEvidence;
+  ancestors?: RecordedNodeEvidence[];
+  candidates?: RecordedSelectorCandidate[];
+  screenshot?: {
+    recipeId: string;
+    id: string;
+    capturedAt: number;
+    mime: "image/png";
+  };
+};
+
 export type RecipeStep =
-  | { kind: "tap"; target: StepTarget; note?: string }
-  | { kind: "type"; text: string; target?: StepTarget; note?: string }
+  | { kind: "tap"; target: StepTarget; evidence?: RecordedStepEvidence; note?: string }
+  | { kind: "long-press"; target: StepTarget; durationMs?: number; note?: string }
+  | {
+      kind: "type";
+      text: string;
+      target?: StepTarget;
+      evidence?: RecordedStepEvidence;
+      note?: string;
+    }
   | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
   | { kind: "key"; key: "back" | "home"; note?: string }
   | {
@@ -35,6 +78,7 @@ export type RecipeStep =
       from: { x: number; y: number };
       to: { x: number; y: number };
       durationMs?: number;
+      evidence?: RecordedStepEvidence;
       note?: string;
     }
   | { kind: "sleep"; ms: number; note?: string }
@@ -48,7 +92,72 @@ export type RecipeStep =
     }
   | { kind: "pause"; message: string; note?: string }
   | { kind: "screenshot"; caption?: string; note?: string }
-  | { kind: "flow"; flow: string; note?: string };
+  | { kind: "flow"; flow: string; note?: string }
+  | { kind: "module"; recipeId: string; note?: string }
+  | {
+      kind: "clipboard";
+      action: "write" | "read";
+      text?: string;
+      expect?: string;
+      match?: "exact" | "contains";
+      note?: string;
+    }
+  | {
+      kind: "app";
+      action: "open" | "close" | "switcher";
+      app?: string;
+      url?: string;
+      note?: string;
+    }
+  | {
+      kind: "device";
+      action: "lock" | "unlock" | "keyboard-dismiss" | "keyboard-enter";
+      note?: string;
+    }
+  | {
+      kind: "rotate";
+      orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right";
+      note?: string;
+    }
+  | {
+      kind: "settings";
+      setting: "wifi" | "airplane" | "location" | "animations" | "appearance";
+      state: "on" | "off" | "light" | "dark" | "toggle";
+      note?: string;
+    }
+  | { kind: "location"; latitude: number; longitude: number; note?: string }
+  | {
+      kind: "permission";
+      action: "grant" | "deny" | "reset";
+      permission:
+        | "camera"
+        | "microphone"
+        | "photos"
+        | "contacts"
+        | "notifications"
+        | "calendar"
+        | "location"
+        | "location-always"
+        | "media-library"
+        | "motion"
+        | "reminders"
+        | "siri";
+      note?: string;
+    }
+  | {
+      kind: "alert";
+      action: "get" | "accept" | "dismiss" | "wait";
+      timeoutMs?: number;
+      note?: string;
+    }
+  | {
+      kind: "network";
+      action: "dump" | "log";
+      include?: "summary" | "headers" | "body" | "all";
+      limit?: number;
+      note?: string;
+    }
+  | { kind: "logs"; action: "start" | "stop" | "mark" | "clear"; message?: string; note?: string };
 
 export type Recipe = {
   /** slug, unique; custom ones are "custom-<slug>" */
@@ -65,9 +174,47 @@ const MAX_WAIT_MS = 15 * 60 * 1000;
 
 /** Directory for custom recipes — mirrors runsRoot()'s convention. */
 export function recipesRoot(): string {
-  const env = process.env.GROK_DEVICE_RECIPES_DIR?.trim();
+  const env = (process.env.RELAY_RECIPES_DIR ?? process.env.GROK_DEVICE_RECIPES_DIR)?.trim();
   if (env) return env;
   return join(findWorkspaceRoot(), "recipes");
+}
+
+function evidencePart(value: string, field: string): string {
+  if (!/^[a-zA-Z0-9._-]+$/.test(value)) throw new Error(`${field} contains invalid characters`);
+  return value;
+}
+
+function evidenceDir(recipeId: string): string {
+  return join(recipesRoot(), ".evidence", evidencePart(recipeId, "recipeId"));
+}
+
+/** Persist a recorder screenshot outside recipe JSON so tests stay small and editable. */
+export async function saveRecipeEvidenceImage(input: {
+  recipeId: string;
+  evidenceId: string;
+  base64: string;
+}): Promise<{ bytes: number }> {
+  const dir = evidenceDir(input.recipeId);
+  const id = evidencePart(input.evidenceId, "evidenceId");
+  const data = Buffer.from(input.base64, "base64");
+  if (data.byteLength === 0) throw new Error("evidence image is empty");
+  if (data.byteLength > 8 * 1024 * 1024) throw new Error("evidence image exceeds 8 MB");
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${id}.png`), data);
+  return { bytes: data.byteLength };
+}
+
+export async function readRecipeEvidenceImage(
+  recipeId: string,
+  evidenceId: string,
+): Promise<Buffer | null> {
+  try {
+    return await readFile(
+      join(evidenceDir(recipeId), `${evidencePart(evidenceId, "evidenceId")}.png`),
+    );
+  } catch {
+    return null;
+  }
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -141,6 +288,119 @@ function parsePoint(raw: unknown, index: number, field: string): { x: number; y:
   return { x: raw.x, y: raw.y };
 }
 
+function parseRecordedNode(raw: unknown, index: number, field: string): RecordedNodeEvidence {
+  if (!isObject(raw)) throw stepErr(index, `${field} must be an object`);
+  const node: RecordedNodeEvidence = {};
+  for (const key of ["label", "value", "identifier", "role", "type", "ref"] as const) {
+    if (raw[key] === undefined) continue;
+    if (!isString(raw[key])) throw stepErr(index, `${field}.${key} must be a string`);
+    node[key] = raw[key];
+  }
+  if (raw.index !== undefined) {
+    if (!isNumber(raw.index)) throw stepErr(index, `${field}.index must be a number`);
+    node.index = raw.index;
+  }
+  if (raw.rect !== undefined) {
+    if (
+      !isObject(raw.rect) ||
+      !isNumber(raw.rect.x) ||
+      !isNumber(raw.rect.y) ||
+      !isNumber(raw.rect.width) ||
+      !isNumber(raw.rect.height)
+    ) {
+      throw stepErr(index, `${field}.rect must be { x, y, width, height }`);
+    }
+    node.rect = {
+      x: raw.rect.x,
+      y: raw.rect.y,
+      width: raw.rect.width,
+      height: raw.rect.height,
+    };
+  }
+  return node;
+}
+
+function parseRecordedEvidence(raw: unknown, index: number): RecordedStepEvidence | undefined {
+  if (raw === undefined) return undefined;
+  if (!isObject(raw)) throw stepErr(index, "evidence must be an object");
+  if (!isString(raw.id) || !raw.id.trim()) throw stepErr(index, "evidence.id is required");
+  if (!isNumber(raw.recordedAt)) throw stepErr(index, "evidence.recordedAt must be a number");
+  const evidence: RecordedStepEvidence = { id: raw.id, recordedAt: raw.recordedAt };
+  if (raw.serial !== undefined) {
+    if (!isString(raw.serial)) throw stepErr(index, "evidence.serial must be a string");
+    evidence.serial = raw.serial;
+  }
+  if (raw.deviceBounds !== undefined) {
+    if (
+      !isObject(raw.deviceBounds) ||
+      !isNumber(raw.deviceBounds.width) ||
+      !isNumber(raw.deviceBounds.height)
+    ) {
+      throw stepErr(index, "evidence.deviceBounds must be { width, height }");
+    }
+    evidence.deviceBounds = {
+      width: raw.deviceBounds.width,
+      height: raw.deviceBounds.height,
+    };
+  }
+  if (raw.pointer !== undefined)
+    evidence.pointer = parsePoint(raw.pointer, index, "evidence.pointer");
+  if (raw.node !== undefined) evidence.node = parseRecordedNode(raw.node, index, "evidence.node");
+  if (raw.ancestors !== undefined) {
+    if (!Array.isArray(raw.ancestors) || raw.ancestors.length > 16) {
+      throw stepErr(index, "evidence.ancestors must be an array with at most 16 nodes");
+    }
+    evidence.ancestors = raw.ancestors.map((node, i) =>
+      parseRecordedNode(node, index, `evidence.ancestors[${i}]`),
+    );
+  }
+  if (raw.candidates !== undefined) {
+    if (!Array.isArray(raw.candidates) || raw.candidates.length > 24) {
+      throw stepErr(index, "evidence.candidates must be an array with at most 24 entries");
+    }
+    evidence.candidates = raw.candidates.map((candidate, i) => {
+      const field = `evidence.candidates[${i}]`;
+      if (!isObject(candidate)) throw stepErr(index, `${field} must be an object`);
+      if (!(["ref", "label", "text", "point"] as unknown[]).includes(candidate.strategy)) {
+        throw stepErr(index, `${field}.strategy is invalid`);
+      }
+      if (!isString(candidate.label)) throw stepErr(index, `${field}.label must be a string`);
+      if (!(["element", "ancestor", "coordinate"] as unknown[]).includes(candidate.source)) {
+        throw stepErr(index, `${field}.source is invalid`);
+      }
+      if (!(["high", "medium", "fallback"] as unknown[]).includes(candidate.confidence)) {
+        throw stepErr(index, `${field}.confidence is invalid`);
+      }
+      return {
+        strategy: candidate.strategy as RecordedSelectorCandidate["strategy"],
+        label: candidate.label,
+        source: candidate.source as RecordedSelectorCandidate["source"],
+        confidence: candidate.confidence as RecordedSelectorCandidate["confidence"],
+        target: parseTarget(candidate.target, index, `${field}.target`),
+      };
+    });
+  }
+  if (raw.screenshot !== undefined) {
+    const shot = raw.screenshot;
+    if (
+      !isObject(shot) ||
+      !isString(shot.recipeId) ||
+      !isString(shot.id) ||
+      !isNumber(shot.capturedAt) ||
+      shot.mime !== "image/png"
+    ) {
+      throw stepErr(index, "evidence.screenshot is invalid");
+    }
+    evidence.screenshot = {
+      recipeId: shot.recipeId,
+      id: shot.id,
+      capturedAt: shot.capturedAt,
+      mime: "image/png",
+    };
+  }
+  return evidence;
+}
+
 /**
  * Validate an unknown steps array field-by-field. Throws `Error` naming the
  * first invalid step index and why. Returns the narrowed `RecipeStep[]`.
@@ -164,9 +424,29 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         const step: Extract<RecipeStep, { kind: "tap" }> = {
           kind: "tap",
           target,
+          ...(raw.evidence !== undefined
+            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
+            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
+        break;
+      }
+      case "long-press": {
+        const target = parseTarget(raw.target, index, "target");
+        if (!targetHasStrategy(target)) throw stepErr(index, "long-press requires a target");
+        if (
+          raw.durationMs !== undefined &&
+          (!isNumber(raw.durationMs) || raw.durationMs < 100 || raw.durationMs > 10_000)
+        ) {
+          throw stepErr(index, "long-press.durationMs must be between 100 and 10000");
+        }
+        out.push({
+          kind: "long-press",
+          target,
+          ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs as number } : {}),
+          ...(note ? { note } : {}),
+        });
         break;
       }
       case "type": {
@@ -175,6 +455,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           kind: "type",
           text: raw.text,
           ...(raw.target !== undefined ? { target: parseTarget(raw.target, index, "target") } : {}),
+          ...(raw.evidence !== undefined
+            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
+            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -215,6 +498,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           from,
           to,
           ...(durationMs !== undefined ? { durationMs } : {}),
+          ...(raw.evidence !== undefined
+            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
+            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -337,6 +623,190 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "module": {
+        if (!isString(raw.recipeId) || !raw.recipeId.trim())
+          throw stepErr(index, "module requires recipeId: string");
+        out.push({ kind: "module", recipeId: raw.recipeId, ...(note ? { note } : {}) });
+        break;
+      }
+      case "clipboard": {
+        if (raw.action !== "read" && raw.action !== "write")
+          throw stepErr(index, 'clipboard requires action: "read" | "write"');
+        if (raw.action === "write" && !isString(raw.text))
+          throw stepErr(index, "clipboard write requires text: string");
+        if (raw.expect !== undefined && !isString(raw.expect))
+          throw stepErr(index, "clipboard.expect must be a string");
+        if (raw.match !== undefined && raw.match !== "exact" && raw.match !== "contains")
+          throw stepErr(index, 'clipboard.match must be "exact" | "contains"');
+        out.push({
+          kind: "clipboard",
+          action: raw.action,
+          ...(isString(raw.text) ? { text: raw.text } : {}),
+          ...(isString(raw.expect) ? { expect: raw.expect } : {}),
+          ...(raw.match === "contains" || raw.match === "exact" ? { match: raw.match } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "app": {
+        if (raw.action !== "open" && raw.action !== "close" && raw.action !== "switcher")
+          throw stepErr(index, 'app requires action: "open" | "close" | "switcher"');
+        if (raw.app !== undefined && !isString(raw.app))
+          throw stepErr(index, "app.app must be a string");
+        if (raw.url !== undefined && !isString(raw.url))
+          throw stepErr(index, "app.url must be a string");
+        if (raw.action === "open" && !isString(raw.app) && !isString(raw.url))
+          throw stepErr(index, "app open requires app or url");
+        out.push({
+          kind: "app",
+          action: raw.action,
+          ...(isString(raw.app) ? { app: raw.app } : {}),
+          ...(isString(raw.url) ? { url: raw.url } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "device": {
+        if (!["lock", "unlock", "keyboard-dismiss", "keyboard-enter"].includes(String(raw.action)))
+          throw stepErr(index, "device has an unknown action");
+        out.push({
+          kind: "device",
+          action: raw.action as "lock" | "unlock" | "keyboard-dismiss" | "keyboard-enter",
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "rotate": {
+        if (
+          !["portrait", "portrait-upside-down", "landscape-left", "landscape-right"].includes(
+            String(raw.orientation),
+          )
+        )
+          throw stepErr(index, "rotate has an invalid orientation");
+        out.push({
+          kind: "rotate",
+          orientation: raw.orientation as
+            | "portrait"
+            | "portrait-upside-down"
+            | "landscape-left"
+            | "landscape-right",
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "settings": {
+        if (
+          !["wifi", "airplane", "location", "animations", "appearance"].includes(
+            String(raw.setting),
+          )
+        )
+          throw stepErr(index, "settings has an invalid setting");
+        if (!["on", "off", "light", "dark", "toggle"].includes(String(raw.state)))
+          throw stepErr(index, "settings has an invalid state");
+        if (
+          raw.setting === "appearance"
+            ? !["light", "dark", "toggle"].includes(String(raw.state))
+            : !["on", "off"].includes(String(raw.state))
+        )
+          throw stepErr(index, "settings state is not valid for this setting");
+        out.push({
+          kind: "settings",
+          setting: raw.setting as "wifi" | "airplane" | "location" | "animations" | "appearance",
+          state: raw.state as "on" | "off" | "light" | "dark" | "toggle",
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "location": {
+        if (!isNumber(raw.latitude) || !isNumber(raw.longitude))
+          throw stepErr(index, "location requires latitude and longitude numbers");
+        if (raw.latitude < -90 || raw.latitude > 90 || raw.longitude < -180 || raw.longitude > 180)
+          throw stepErr(index, "location coordinates are out of range");
+        out.push({
+          kind: "location",
+          latitude: raw.latitude,
+          longitude: raw.longitude,
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "permission": {
+        const permissions = [
+          "camera",
+          "microphone",
+          "photos",
+          "contacts",
+          "notifications",
+          "calendar",
+          "location",
+          "location-always",
+          "media-library",
+          "motion",
+          "reminders",
+          "siri",
+        ] as const;
+        if (!["grant", "deny", "reset"].includes(String(raw.action)))
+          throw stepErr(index, "permission has an invalid action");
+        if (!permissions.includes(raw.permission as (typeof permissions)[number]))
+          throw stepErr(index, "permission has an invalid target");
+        out.push({
+          kind: "permission",
+          action: raw.action as "grant" | "deny" | "reset",
+          permission: raw.permission as (typeof permissions)[number],
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "alert": {
+        if (!["get", "accept", "dismiss", "wait"].includes(String(raw.action)))
+          throw stepErr(index, "alert has an invalid action");
+        if (
+          raw.timeoutMs !== undefined &&
+          (!isNumber(raw.timeoutMs) || raw.timeoutMs < 0 || raw.timeoutMs > MAX_WAIT_MS)
+        )
+          throw stepErr(index, "alert.timeoutMs is invalid");
+        out.push({
+          kind: "alert",
+          action: raw.action as "get" | "accept" | "dismiss" | "wait",
+          ...(isNumber(raw.timeoutMs) ? { timeoutMs: raw.timeoutMs } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "network": {
+        if (raw.action !== "dump" && raw.action !== "log")
+          throw stepErr(index, 'network requires action: "dump" | "log"');
+        if (
+          raw.include !== undefined &&
+          !["summary", "headers", "body", "all"].includes(String(raw.include))
+        )
+          throw stepErr(index, "network.include is invalid");
+        if (raw.limit !== undefined && (!isNumber(raw.limit) || raw.limit < 1 || raw.limit > 1000))
+          throw stepErr(index, "network.limit must be between 1 and 1000");
+        out.push({
+          kind: "network",
+          action: raw.action,
+          ...(raw.include
+            ? { include: raw.include as "summary" | "headers" | "body" | "all" }
+            : {}),
+          ...(isNumber(raw.limit) ? { limit: raw.limit } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "logs": {
+        if (!["start", "stop", "mark", "clear"].includes(String(raw.action)))
+          throw stepErr(index, "logs has an invalid action");
+        if (raw.message !== undefined && !isString(raw.message))
+          throw stepErr(index, "logs.message must be a string");
+        out.push({
+          kind: "logs",
+          action: raw.action as "start" | "stop" | "mark" | "clear",
+          ...(isString(raw.message) ? { message: raw.message } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
       default:
         throw stepErr(index, `unknown step kind: ${kind}`);
     }
@@ -357,12 +827,24 @@ export function builtinRecipes(): Recipe[] {
   }));
 }
 
-function customId(id: string): boolean {
-  // builtin ids are the ACTION_IDS; anything else is treated as custom.
-  return !isActionId(id);
+type StoredRecipe = Recipe | { id: string; hidden: true };
+
+async function readStoredRecipe(id: string): Promise<StoredRecipe | null> {
+  try {
+    const raw = await readFile(join(recipesRoot(), `${id}.json`), "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isObject(parsed) || !isString(parsed.id)) return null;
+    if (parsed.hidden === true) return { id: parsed.id, hidden: true };
+    const recipe = parsed as unknown as Recipe;
+    recipe.source = "custom";
+    return recipe;
+  } catch {
+    return null;
+  }
 }
 
-/** Builtins first, then custom recipes read from disk, sorted by updatedAt desc. */
+/** Packaged flows and disk recipes share one editable catalog. Disk entries with
+ * the same id override a packaged default; tombstones hide deleted defaults. */
 export async function listRecipes(): Promise<Recipe[]> {
   const builtins = builtinRecipes();
   let entries: string[] = [];
@@ -372,36 +854,39 @@ export async function listRecipes(): Promise<Recipe[]> {
     return builtins;
   }
   const customs: Recipe[] = [];
+  const overrides = new Map<string, Recipe>();
+  const hidden = new Set<string>();
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
     try {
       const raw = await readFile(join(recipesRoot(), name), "utf8");
       const parsed = JSON.parse(raw) as unknown;
       if (!isObject(parsed) || !isString(parsed.id)) continue;
+      if (parsed.hidden === true) {
+        hidden.add(parsed.id);
+        continue;
+      }
       const recipe = parsed as unknown as Recipe;
       recipe.source = "custom";
-      customs.push(recipe);
+      if (isActionId(recipe.id)) overrides.set(recipe.id, recipe);
+      else customs.push(recipe);
     } catch {
       /* skip unreadable files — tolerant like listPersistedRuns */
     }
   }
   customs.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  return [...builtins, ...customs];
+  const included = builtins
+    .filter((recipe) => !hidden.has(recipe.id))
+    .map((recipe) => overrides.get(recipe.id) ?? recipe);
+  return [...included, ...customs];
 }
 
 export async function readRecipe(id: string): Promise<Recipe | null> {
+  const stored = await readStoredRecipe(id);
+  if (stored) return "hidden" in stored ? null : stored;
   const builtin = builtinRecipes().find((r) => r.id === id);
   if (builtin) return builtin;
-  try {
-    const raw = await readFile(join(recipesRoot(), `${id}.json`), "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!isObject(parsed) || !isString(parsed.id)) return null;
-    const recipe = parsed as unknown as Recipe;
-    recipe.source = "custom";
-    return recipe;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 function slugify(s: string): string {
@@ -424,8 +909,8 @@ export type SaveRecipeInput = {
 };
 
 /**
- * Create or overwrite a custom recipe. Refuses builtin ids. When `id` is
- * absent, generates `custom-<slug(title)>-<base36 time>`.
+ * Create or overwrite a recipe. Packaged ids are persisted as user overrides,
+ * so every catalog item has the same edit semantics.
  */
 export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
   const steps = validateRecipeSteps(input.steps);
@@ -434,14 +919,12 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
   }
   const ts = now();
   let id = input.id?.trim();
-  if (id && !customId(id)) {
-    throw new Error(`cannot overwrite builtin recipe: ${id}`);
-  }
   if (!id) {
     id = `custom-${slugify(input.title)}-${ts.toString(36)}`;
   }
   // If overwriting, preserve createdAt.
-  const existing = await readRecipe(id);
+  const stored = await readStoredRecipe(id);
+  const existing = stored && !("hidden" in stored) ? stored : null;
   const recipe: Recipe = {
     id,
     title: input.title,
@@ -456,10 +939,18 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
   return recipe;
 }
 
-/** Delete a custom recipe. Deleting a builtin id throws. */
+/** Delete any recipe. Packaged defaults receive a tombstone so they remain
+ * deleted instead of reappearing on the next list operation. */
 export async function deleteRecipe(id: string): Promise<void> {
-  if (!customId(id)) {
-    throw new Error(`cannot delete builtin recipe: ${id}`);
+  await ensureRecipesRoot();
+  await rm(evidenceDir(id), { recursive: true, force: true });
+  if (isActionId(id)) {
+    await writeFile(
+      join(recipesRoot(), `${id}.json`),
+      JSON.stringify({ id, hidden: true }, null, 2),
+      "utf8",
+    );
+    return;
   }
   const path = join(recipesRoot(), `${id}.json`);
   if (existsSync(path)) {
@@ -480,6 +971,8 @@ export function describeRecipeStep(step: RecipeStep): string {
   switch (step.kind) {
     case "tap":
       return `Tap ${describeTarget(step.target)}`;
+    case "long-press":
+      return `Long press ${describeTarget(step.target)}`;
     case "type":
       return step.target ? `Type into ${describeTarget(step.target)}` : "Type text";
     case "scroll":
@@ -500,6 +993,40 @@ export function describeRecipeStep(step: RecipeStep): string {
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
     case "flow":
       return `Flow: ${step.flow}`;
+    case "module":
+      return `Run reusable test: ${step.recipeId}`;
+    case "clipboard":
+      return step.action === "write"
+        ? "Set clipboard text"
+        : step.expect !== undefined
+          ? "Check clipboard text"
+          : "Read clipboard text";
+    case "app":
+      return step.action === "switcher"
+        ? "Open app switcher"
+        : `${step.action === "open" ? "Open" : "Close"} ${step.app ?? step.url ?? "app"}`;
+    case "device":
+      return step.action === "keyboard-dismiss"
+        ? "Dismiss keyboard"
+        : step.action === "keyboard-enter"
+          ? "Press keyboard Enter"
+          : `${step.action === "lock" ? "Lock" : "Unlock"} device`;
+    case "rotate":
+      return `Rotate ${step.orientation}`;
+    case "settings":
+      return `Set ${step.setting} ${step.state}`;
+    case "location":
+      return `Set location ${step.latitude}, ${step.longitude}`;
+    case "permission":
+      return `${step.action} ${step.permission} permission`;
+    case "alert":
+      return `${step.action} system alert`;
+    case "network":
+      return step.action === "dump"
+        ? `Capture network ${step.include ?? "summary"}`
+        : "Mark network log";
+    case "logs":
+      return `${step.action} device logs`;
   }
 }
 
@@ -507,6 +1034,8 @@ export function describeRecipeStep(step: RecipeStep): string {
 export function glyphsForStep(step: RecipeStep): Glyph[] {
   switch (step.kind) {
     case "tap":
+      return ["tap"];
+    case "long-press":
       return ["tap"];
     case "type":
       return ["type"];
@@ -527,6 +1056,22 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "screenshot":
       return ["shot"];
     case "flow":
+      return ["store"];
+    case "module":
+      return ["re", "store"];
+    case "clipboard":
+      return ["type"];
+    case "app":
+      return ["tap"];
+    case "device":
+    case "rotate":
+    case "settings":
+    case "location":
+    case "permission":
+    case "alert":
+      return ["tap"];
+    case "network":
+    case "logs":
       return ["store"];
   }
 }

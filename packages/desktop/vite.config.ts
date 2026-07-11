@@ -7,7 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   root: resolve("src/renderer"),
   base: "./",
-  // Tailwind must process @grok-device/app styles (utility classes in app TSX).
+  // Tailwind must process @relay/app styles (utility classes in app TSX).
   plugins: [solid(), tailwindcss()],
   resolve: {
     alias: {
@@ -24,6 +24,6 @@ export default defineConfig({
   },
   // Workspace packages ship TypeScript sources
   optimizeDeps: {
-    exclude: ["@grok-device/app", "@grok-device/ui"],
+    exclude: ["@relay/app", "@relay/ui"],
   },
 });

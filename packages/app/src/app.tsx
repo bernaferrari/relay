@@ -1,5 +1,5 @@
 import { type ParentProps, createSignal, Show } from "solid-js";
-import { ThemeProvider, type ThemeAppliedDetail } from "@grok-device/ui/theme/context";
+import { ThemeProvider, type ThemeAppliedDetail } from "@relay/ui/theme/context";
 import { PlatformProvider, type Platform } from "./context/platform";
 import { ServerProvider } from "./context/server";
 import { CommandProvider } from "./context/command";
@@ -25,8 +25,8 @@ export function AppBaseProviders(
   return (
     <PlatformProvider value={props.platform}>
       <ThemeProvider
-        defaultTheme={props.defaultTheme ?? "grok"}
-        defaultColorScheme={props.defaultColorScheme ?? "system"}
+        defaultTheme={props.defaultTheme ?? "relay"}
+        defaultColorScheme={props.defaultColorScheme ?? "dark"}
         onThemeApplied={props.onThemeApplied}
       >
         <ServerProvider>
@@ -51,7 +51,7 @@ export function AppInterface() {
 
   return (
     <Layout onOpenSettings={() => setSettingsOpen(true)}>
-      <HomePage />
+      <HomePage onOpenSettings={() => setSettingsOpen(true)} />
       <Show when={settingsOpen()}>
         <SettingsPage onClose={() => setSettingsOpen(false)} />
       </Show>

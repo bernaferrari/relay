@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { runRecipeStep } from "./recipe-runner.js";
+import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { Device } from "./device.js";
 
 // Keep controlled() single-attempt so error paths are fast and deterministic.
@@ -26,6 +26,35 @@ function stubDevice(impl: {
 }
 
 const noLog = { log: () => {} };
+
+describe("resolveRecipeStep", () => {
+  it("substitutes variables in nested targets and action text", () => {
+    assert.deepEqual(
+      resolveRecipeStep(
+        {
+          kind: "clipboard",
+          action: "read",
+          expect: "Hello {{user_name}}",
+          note: "run {{run_id}}",
+        },
+        { user_name: "Ada", run_id: "42" },
+      ),
+      {
+        kind: "clipboard",
+        action: "read",
+        expect: "Hello Ada",
+        note: "run 42",
+      },
+    );
+  });
+
+  it("keeps missing placeholders visible", () => {
+    assert.equal(
+      (resolveRecipeStep({ kind: "type", text: "{{missing}}" }, {}) as { text: string }).text,
+      "{{missing}}",
+    );
+  });
+});
 
 describe("runRecipeStep expect — error classification", () => {
   it('gone passes when find reports "No match" (element absent)', async () => {

@@ -11,7 +11,7 @@ import {
   WORK_ACCOUNT_MATCH,
   runAction,
   type ActionMeta,
-} from "@grok-device/core";
+} from "@relay/core";
 
 export type ListedDevice = {
   name: string;
@@ -56,7 +56,7 @@ function actionLabel(meta: ActionMeta): string {
 export async function runInteractive(): Promise<void> {
   const rl = readline.createInterface({ input, output });
   try {
-    console.log("Grok device actions (agent-device SDK)\n");
+    console.log("Relay actions (agent-device SDK)\n");
 
     const devices = await listAndroidDevices().catch((err: unknown) => {
       throw new Error(
