@@ -38,11 +38,7 @@ const publicSdkChunkGroups = [
     /src[\\/]remote[\\/]remote-config-schema\.d\.[cm]?ts$/,
     /src[\\/]remote[\\/]remote-config-schema\.ts$/,
   ],
-  [
-    'sdk-selectors',
-    /src[\\/]daemon[\\/]selectors-parse\.d\.[cm]?ts$/,
-    /src[\\/]daemon[\\/]selectors-parse\.ts$/,
-  ],
+  ['sdk-selectors', /src[\\/]selectors[\\/]index\.d\.[cm]?ts$/, /src[\\/]selectors[\\/]index\.ts$/],
 ] as const;
 
 export default defineConfig({
