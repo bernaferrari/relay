@@ -519,6 +519,215 @@ onFlowComplete:
   );
 });
 
+// ADR 0012 migration step 2: a `runFlow` include must not lose provenance —
+// every inlined action reports the INCLUDE's own resolved path + line, not
+// the including `runFlow:` command's line. Regression coverage for the
+// live-reproduced "Replay failed at step 5 (__maestroTapOn ...)" bug, where
+// no file or line appeared anywhere in the failure.
+test('parseMaestroReplayFlow preserves the include file path and line through runFlow inlining', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-maestro-provenance-'));
+  const launchPath = path.join(root, 'launch.yml');
+  const flowsDir = path.join(root, 'flows');
+  fs.mkdirSync(flowsDir, { recursive: true });
+  const mainPath = path.join(flowsDir, 'main.yaml');
+  fs.writeFileSync(
+    launchPath,
+    `appId: com.callstack.agentdevicelab
+---
+- launchApp
+- tapOn: Welcome
+- tapOn: Push Input
+`,
+  );
+  fs.writeFileSync(
+    mainPath,
+    `appId: com.callstack.agentdevicelab
+---
+- tapOn: Before
+- runFlow:
+    file: ../launch.yml
+- tapOn: After
+`,
+  );
+
+  const parsed = parseMaestroReplayFlow(fs.readFileSync(mainPath, 'utf8'), {
+    sourcePath: mainPath,
+    platform: 'ios',
+  });
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => entry.command),
+    ['__maestroTapOn', 'open', '__maestroTapOn', '__maestroTapOn', '__maestroTapOn'],
+  );
+  // "tapOn: Before" (main.yaml line 3) — no include, so the top-level path
+  // stays `undefined` (the caller's own file).
+  assert.equal(parsed.actionSourcePaths?.[0], undefined);
+  assert.equal(parsed.actionLines[0], 3);
+  // Every action inlined from the include (launchApp/tapOn Welcome/tapOn
+  // Push Input) reports launch.yml's OWN path and its OWN line — never
+  // main.yaml's `runFlow:` line (4).
+  for (const index of [1, 2, 3]) {
+    assert.equal(parsed.actionSourcePaths?.[index], launchPath);
+  }
+  assert.equal(parsed.actionLines[1], 3); // launchApp
+  assert.equal(parsed.actionLines[2], 4); // tapOn: Welcome
+  assert.equal(parsed.actionLines[3], 5); // tapOn: Push Input — the live-bug target
+  // "tapOn: After" (main.yaml line 6) returns to the top-level file.
+  assert.equal(parsed.actionSourcePaths?.[4], undefined);
+  assert.equal(parsed.actionLines[4], 6);
+});
+
+test('parseMaestroReplayFlow preserves provenance through a nested (include-of-include) runFlow', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-maestro-provenance-nested-'));
+  const grandchildPath = path.join(root, 'grandchild.yaml');
+  const childPath = path.join(root, 'child.yaml');
+  const mainPath = path.join(root, 'main.yaml');
+  fs.writeFileSync(
+    grandchildPath,
+    `appId: com.callstack.agentdevicelab
+---
+- tapOn: Deepest
+`,
+  );
+  fs.writeFileSync(
+    childPath,
+    `appId: com.callstack.agentdevicelab
+---
+- tapOn: Shallow
+- runFlow:
+    file: grandchild.yaml
+`,
+  );
+  fs.writeFileSync(
+    mainPath,
+    `appId: com.callstack.agentdevicelab
+---
+- runFlow:
+    file: child.yaml
+`,
+  );
+
+  const parsed = parseMaestroReplayFlow(fs.readFileSync(mainPath, 'utf8'), {
+    sourcePath: mainPath,
+    platform: 'ios',
+  });
+
+  assert.deepEqual(
+    parsed.actions.map((entry) => entry.command),
+    ['__maestroTapOn', '__maestroTapOn'],
+  );
+  assert.equal(parsed.actionSourcePaths?.[0], childPath);
+  assert.equal(parsed.actionLines[0], 3); // tapOn: Shallow, in child.yaml
+  assert.equal(parsed.actionSourcePaths?.[1], grandchildPath);
+  assert.equal(parsed.actionLines[1], 3); // tapOn: Deepest, in grandchild.yaml
+});
+
+// Regression: provenance travels ONLY in the parallel structures
+// (actionSourcePaths / replayControl.actionSources) — no per-action
+// provenance field may (re)appear anywhere in parsed output.
+function collectReplaySourceLeaks(actions: unknown[], leaks: string[] = [], prefix = ''): string[] {
+  for (const [index, entry] of actions.entries()) {
+    const action = entry as {
+      command?: string;
+      replaySource?: unknown;
+      replayControl?: { actions?: unknown[] };
+    };
+    if (action.replaySource !== undefined) {
+      leaks.push(`${prefix}[${index}] ${String(action.command)}`);
+    }
+    if (Array.isArray(action.replayControl?.actions)) {
+      collectReplaySourceLeaks(action.replayControl.actions, leaks, `${prefix}[${index}].control`);
+    }
+  }
+  return leaks;
+}
+
+test('parseMaestroReplayFlow carries retry-wrapped include provenance in replayControl.actionSources', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-maestro-retry-provenance-'));
+  const childPath = path.join(root, 'child.yaml');
+  const mainPath = path.join(root, 'main.yaml');
+  fs.writeFileSync(
+    childPath,
+    `appId: com.callstack.agentdevicelab
+---
+- back
+- tapOn: Push Input
+`,
+  );
+  fs.writeFileSync(
+    mainPath,
+    `appId: com.callstack.agentdevicelab
+---
+- retry:
+    maxRetries: 2
+    commands:
+      - runFlow:
+          file: child.yaml
+`,
+  );
+
+  const parsed = parseMaestroReplayFlow(fs.readFileSync(mainPath, 'utf8'), {
+    sourcePath: mainPath,
+    platform: 'ios',
+  });
+
+  // One wrapping retry action; the wrapper itself is a root-file step.
+  assert.equal(parsed.actions.length, 1);
+  const wrapper = parsed.actions[0]!;
+  assert.equal(wrapper.command, 'retry');
+  assert.equal(parsed.actionSourcePaths?.[0], undefined);
+  assert.equal(parsed.actionLines[0], 3);
+
+  // No per-action provenance field anywhere in the parsed output.
+  assert.deepEqual(collectReplaySourceLeaks(parsed.actions), []);
+
+  // The include's provenance lives in replayControl.actionSources.
+  const control = wrapper.replayControl;
+  if (control?.kind !== 'retry') throw new Error('expected retry control');
+  assert.equal(control.actions.length, 2);
+  assert.deepEqual(control.actionSources, [
+    { path: childPath, line: 3 }, // back
+    { path: childPath, line: 4 }, // tapOn: Push Input
+  ]);
+});
+
+test('parseMaestroReplayFlow carries when-wrapped include provenance in replayControl.actionSources', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-maestro-when-provenance-'));
+  const childPath = path.join(root, 'child.yaml');
+  const mainPath = path.join(root, 'main.yaml');
+  fs.writeFileSync(
+    childPath,
+    `appId: com.callstack.agentdevicelab
+---
+- back
+`,
+  );
+  fs.writeFileSync(
+    mainPath,
+    `appId: com.callstack.agentdevicelab
+---
+- runFlow:
+    file: child.yaml
+    when:
+      visible: Continue
+`,
+  );
+
+  const parsed = parseMaestroReplayFlow(fs.readFileSync(mainPath, 'utf8'), {
+    sourcePath: mainPath,
+    platform: 'ios',
+  });
+
+  assert.equal(parsed.actions.length, 1);
+  const wrapper = parsed.actions[0]!;
+  assert.equal(wrapper.command, 'runFlow.when');
+  assert.deepEqual(collectReplaySourceLeaks(parsed.actions), []);
+
+  const control = wrapper.replayControl;
+  if (control?.kind !== 'maestroRunFlowWhen') throw new Error('expected runFlow.when control');
+  assert.deepEqual(control.actionSources, [{ path: childPath, line: 3 }]);
+});
+
 test('parseMaestroReplayFlow skips platform-gated runFlow commands for other platforms', () => {
   const parsed = parseMaestroReplayFlow(
     `appId: com.callstack.agentdevicelab

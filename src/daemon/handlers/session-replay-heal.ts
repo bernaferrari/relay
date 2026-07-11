@@ -36,7 +36,7 @@ function parseSelectorWaitPositionals(positionals: string[]): {
 }
 
 // fallow-ignore-next-line complexity
-function collectReplaySelectorCandidates(action: SessionAction): string[] {
+export function collectReplaySelectorCandidates(action: SessionAction): string[] {
   const result: string[] = [];
   const explicitChain =
     Array.isArray(action.result?.selectorChain) &&

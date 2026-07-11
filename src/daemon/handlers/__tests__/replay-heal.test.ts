@@ -457,7 +457,11 @@ test('replay without --update does not heal or rewrite', async () => {
     expect(response!.error.diagnosticId).toBe('diag-replay-1');
     expect(response!.error.logPath).toBe('/tmp/diag-replay-1.ndjson');
   }
-  expect(mockDispatchCommand).not.toHaveBeenCalled();
+  // No --update, so healReplayAction never runs (0 of its own capture calls) —
+  // but the divergence report's single shared capture (screen digest +
+  // suggestion re-resolution, ADR 0012 migration step 2) still fires
+  // unconditionally on failure.
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(1);
   expect(fs.readFileSync(replayPath, 'utf8')).toBe(originalPayload);
 });
 
@@ -499,12 +503,24 @@ test('replay --update skips malformed selector candidates and preserves replay e
   expect(response).toBeTruthy();
   expect(response!.ok).toBe(false);
   if (!response!.ok) {
-    expect(response!.error.code).toBe('COMMAND_FAILED');
+    // ADR 0012 migration step 2: the wire-level code is now REPLAY_DIVERGENCE;
+    // the malformed candidate's original COMMAND_FAILED lives in cause.
+    expect(response!.error.code).toBe('REPLAY_DIVERGENCE');
     expect(response!.error.message).toMatch(/Replay failed at step 1/);
     expect(response!.error.details?.step).toBe(1);
     expect(response!.error.details?.action).toBe('click');
+    const divergence = response!.error.details?.divergence as
+      | { cause: { code: string; message: string } }
+      | undefined;
+    expect(divergence?.cause.code).toBe('COMMAND_FAILED');
+    // The malformed selector candidate is still skipped by suggestion
+    // ranking (tryParseSelectorChain rejects it), so no suggestion is produced.
+    expect((divergence as unknown as { suggestions: unknown[] })?.suggestions).toEqual([]);
   }
-  expect(mockDispatchCommand).not.toHaveBeenCalled();
+  // The divergence report's single shared capture still fires on every
+  // failure, even when heal itself would have skipped (malformed candidate) —
+  // ADR 0012 migration step 2 behavior, not a heal regression.
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(1);
   expect(fs.readFileSync(replayPath, 'utf8')).toBe('click "id=\\"old_continue\\" ||"\n');
 });
 
@@ -642,8 +658,17 @@ test('replay --update does not heal clicks from stored ref labels alone', async 
     expect(response!.error.message).toMatch(/Replay failed at step 1/);
     expect(response!.error.details?.step).toBe(1);
     expect(response!.error.details?.action).toBe('click');
+    const divergence = response!.error.details?.divergence as
+      | { suggestions: unknown[] }
+      | undefined;
+    // @refs are never selector candidates, so no suggestion is produced —
+    // same non-healing guarantee this test title asserts, now for suggestions.
+    expect(divergence?.suggestions).toEqual([]);
   }
-  expect(mockDispatchCommand).not.toHaveBeenCalled();
+  // The divergence report's single shared capture still fires on every
+  // failure (ADR 0012 migration step 2) even though no suggestion candidate
+  // exists for an @ref-targeted action.
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(1);
   expect(invokeCalls).toEqual(['@e1']);
   expect(fs.readFileSync(replayPath, 'utf8')).toBe(originalPayload);
 });
@@ -721,8 +746,17 @@ test('replay --update does not heal numeric get text drift from snapshot text al
     expect(response!.error.message).toMatch(/Replay failed at step 1/);
     expect(response!.error.details?.step).toBe(1);
     expect(response!.error.details?.action).toBe('get');
+    const divergence = response!.error.details?.divergence as
+      | { suggestions: unknown[] }
+      | undefined;
+    // Same non-healing guarantee as heal itself: a numeric label drift is not
+    // isolated by re-resolving the recorded selector, so no suggestion either.
+    expect(divergence?.suggestions).toEqual([]);
   }
-  expect(mockDispatchCommand).toHaveBeenCalledTimes(1);
+  // 1 capture from healReplayAction's own (unsuccessful) attempt, plus the
+  // divergence report's single shared capture (ADR 0012 migration step 2)
+  // once heal gives up and the step fails.
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(2);
   expect(invokeCalls.length).toBe(1);
   expect(fs.readFileSync(replayPath, 'utf8')).toBe(originalPayload);
 });

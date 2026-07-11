@@ -5,6 +5,7 @@ import {
 } from './android-helper-snapshot-presentation.ts';
 import { AppError, normalizeError, type NormalizedError } from '../kernel/errors.ts';
 import { detectPossibleRepeatedNavSubtree } from './repeated-nav-subtree.ts';
+import { formatReplayDivergenceReport } from '../replay/divergence.ts';
 import { buildSnapshotDisplayLines, formatSnapshotLine } from '../snapshot/snapshot-lines.ts';
 import {
   isSnapshotBackend,
@@ -45,6 +46,12 @@ export function printHumanError(
   }
   if (normalized.logPath) {
     process.stderr.write(`Diagnostics Log: ${normalized.logPath}\n`);
+  }
+  // ADR 0012: the divergence compact report always renders; --debug's raw
+  // details dump below remains the full-object view.
+  const divergenceText = formatReplayDivergenceReport(normalized.details);
+  if (divergenceText) {
+    process.stderr.write(`${divergenceText}\n`);
   }
   if (options.showDetails && normalized.details) {
     process.stderr.write(`${JSON.stringify(normalized.details, null, 2)}\n`);

@@ -9,6 +9,7 @@ import {
 } from '../commands/command-metadata.ts';
 import { COMMAND_OUTPUT_SCHEMAS } from './command-output-schemas.ts';
 import { AppError } from '../kernel/errors.ts';
+import { formatToolErrorText, normalizeToolError } from './tool-error.ts';
 
 export type ToolResult = {
   isError: boolean;
@@ -72,28 +73,67 @@ export function createCommandToolExecutor(deps: CommandToolExecutorDeps = {}): C
       const scopeKey = readPinScopeKey(config, commandInput);
       const pinnedInput = pinPlainRefArguments(name, commandInput, refPinsByScope.get(scopeKey));
       const client = await createClient(deps, config.client);
-      const result = await (deps.runCommand ?? runCommand)(client, name, pinnedInput);
-      mergeIssuedRefPins(refPinsByScope, scopeKey, name, result);
-      return {
-        isError: false,
-        structuredContent: result,
-        content: [
-          {
-            type: 'text',
-            // Render from the UNPINNED input: the model typed plain refs and
-            // must never see generation suffixes (zero token cost).
-            text: renderToolText({
-              name,
-              input: commandInput,
-              result,
-              outputFormat: config.outputFormat,
-              responseLevel: config.client.responseLevel,
-            }),
-          },
-        ],
-      };
+      try {
+        const result = await (deps.runCommand ?? runCommand)(client, name, pinnedInput);
+        mergeIssuedRefPins(refPinsByScope, scopeKey, name, result);
+        return {
+          isError: false,
+          structuredContent: result,
+          content: [
+            {
+              type: 'text',
+              // Render from the UNPINNED input: the model typed plain refs and
+              // must never see generation suffixes (zero token cost).
+              text: renderToolText({
+                name,
+                input: commandInput,
+                result,
+                outputFormat: config.outputFormat,
+                responseLevel: config.client.responseLevel,
+              }),
+            },
+          ],
+        };
+      } catch (error) {
+        return buildErrorToolResult(error, refPinsByScope, scopeKey);
+      }
     },
   };
+}
+
+/**
+ * ADR 0012: a command error is a ref-issuing result — `isError: true`, the
+ * normalized error as `structuredContent`, and an `available`
+ * `divergence.screen`'s refs merged/pinned at `refsGeneration` like any
+ * ref-issuing success. Merge-only; never clears existing pins.
+ */
+function buildErrorToolResult(
+  error: unknown,
+  refPinsByScope: Map<string, Map<string, number>>,
+  scopeKey: string,
+): ToolResult {
+  const normalized = normalizeToolError(error);
+  mergeDivergenceScreenRefPins(refPinsByScope, scopeKey, normalized.details);
+  return {
+    isError: true,
+    structuredContent: normalized,
+    content: [{ type: 'text', text: formatToolErrorText(normalized) }],
+  };
+}
+
+function mergeDivergenceScreenRefPins(
+  refPinsByScope: Map<string, Map<string, number>>,
+  scopeKey: string,
+  details: Record<string, unknown> | undefined,
+): void {
+  const divergence = asOptionalRecord(details?.divergence);
+  const screen = asOptionalRecord(divergence?.screen);
+  if (!screen || screen.state !== 'available') return;
+  const refsGeneration = screen.refsGeneration;
+  if (typeof refsGeneration !== 'number') return;
+  const issuedRefs: string[] = [];
+  collectRefBodies(screen.refs, issuedRefs);
+  mergeIntoScopedPins(refPinsByScope, scopeKey, issuedRefs, refsGeneration);
 }
 
 /**
@@ -182,11 +222,7 @@ function mergeIssuedRefPins(
     refPinsByScope.delete(scopeKey);
     return;
   }
-  const issuedRefs = readIssuedRefBodies(record);
-  if (issuedRefs.length === 0) return;
-  const pins = refPinsByScope.get(scopeKey) ?? new Map<string, number>();
-  refPinsByScope.set(scopeKey, pins);
-  recordIssuedPins(pins, issuedRefs, refsGeneration);
+  mergeIntoScopedPins(refPinsByScope, scopeKey, readIssuedRefBodies(record), refsGeneration);
 }
 
 /**
@@ -211,6 +247,16 @@ function mergeSettleIssuedRefPins(
   collectRefBodies(lines, issuedRefs);
   collectRefBodies(settle.refs, issuedRefs);
   collectRefBodies(settle.tail, issuedRefs);
+  mergeIntoScopedPins(refPinsByScope, scopeKey, issuedRefs, refsGeneration);
+}
+
+/** Shared merge-only tail: skip empty issuance, else create-or-reuse the scope's pin map and record. */
+function mergeIntoScopedPins(
+  refPinsByScope: Map<string, Map<string, number>>,
+  scopeKey: string,
+  issuedRefs: string[],
+  refsGeneration: number,
+): void {
   if (issuedRefs.length === 0) return;
   const pins = refPinsByScope.get(scopeKey) ?? new Map<string, number>();
   refPinsByScope.set(scopeKey, pins);
