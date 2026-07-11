@@ -1,22 +1,27 @@
-import type { DaemonResponse, SessionAction } from '../daemon/types.ts';
+import type { DaemonResponse, ReplayControlActionSource, SessionAction } from '../daemon/types.ts';
 
 export type ReplayActionBlockInvoker = (params: {
   action: SessionAction;
   line: number;
   step: number;
+  /** From `replayControl.actionSources`; `undefined` = the wrapper's own file. */
+  sourcePath?: string;
 }) => Promise<DaemonResponse>;
 
 export async function invokeReplayActionBlock(params: {
   actions: SessionAction[];
+  actionSources?: (ReplayControlActionSource | undefined)[];
   line: number;
   step: number;
   invokeReplayAction: ReplayActionBlockInvoker;
 }): Promise<DaemonResponse> {
   for (const [index, action] of params.actions.entries()) {
+    const source = params.actionSources?.[index];
     const response = await params.invokeReplayAction({
       action,
-      line: params.line,
+      line: source?.line ?? params.line,
       step: params.step + index / 1000,
+      ...(source?.path ? { sourcePath: source.path } : {}),
     });
     if (!response.ok) return response;
   }
@@ -25,6 +30,7 @@ export async function invokeReplayActionBlock(params: {
 
 export async function invokeReplayRetryBlock(params: {
   actions: SessionAction[];
+  actionSources?: (ReplayControlActionSource | undefined)[];
   maxRetries: number;
   line: number;
   step: number;
@@ -34,6 +40,7 @@ export async function invokeReplayRetryBlock(params: {
   for (let attempt = 0; attempt <= params.maxRetries; attempt += 1) {
     const response = await invokeReplayActionBlock({
       actions: params.actions,
+      actionSources: params.actionSources,
       line: params.line,
       step: params.step + attempt,
       invokeReplayAction: params.invokeReplayAction,

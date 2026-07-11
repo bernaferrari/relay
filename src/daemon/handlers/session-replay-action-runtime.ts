@@ -26,11 +26,14 @@ export async function invokeReplayAction(params: {
   filePath: string;
   line: number;
   step: number;
+  /** Resolved source file when it differs from `filePath` (a `runFlow` include's path). */
+  sourcePath?: string;
   tracePath?: string;
   invoke: DaemonInvokeFn;
 }): Promise<DaemonResponse> {
-  const { req, sessionName, action, scope, filePath, line, step, tracePath, invoke } = params;
-  const resolved = resolveReplayAction(action, scope, { file: filePath, line });
+  const { req, sessionName, action, scope, filePath, line, step, sourcePath, tracePath, invoke } =
+    params;
+  const resolved = resolveReplayAction(action, scope, { file: sourcePath ?? filePath, line });
   const invokeNestedReplayAction: ReplayActionInvoker = (nested) =>
     invokeReplayAction({
       req,
@@ -40,6 +43,8 @@ export async function invokeReplayAction(params: {
       filePath,
       line: nested.line,
       step: nested.step,
+      // No recorded source on a nested action = same file as its wrapper.
+      sourcePath: nested.sourcePath ?? sourcePath,
       tracePath,
       invoke,
     });
@@ -48,6 +53,7 @@ export async function invokeReplayAction(params: {
     type: 'replay_action_start',
     ts: new Date(startedAt).toISOString(),
     replayPath: filePath,
+    ...(sourcePath ? { sourcePath } : {}),
     line,
     step,
     command: resolved.command,
@@ -70,6 +76,7 @@ export async function invokeReplayAction(params: {
     type: 'replay_action_stop',
     ts: new Date(finishedAt).toISOString(),
     replayPath: filePath,
+    ...(sourcePath ? { sourcePath } : {}),
     line,
     step,
     command: resolved.command,
@@ -78,7 +85,27 @@ export async function invokeReplayAction(params: {
     resultTiming: response.ok ? readResponseTiming(response.data) : undefined,
     errorCode: response.ok ? undefined : response.error.code,
   });
-  return response;
+  return withReplayFailureSource(response, sourcePath ?? filePath, line);
+}
+
+/**
+ * Attaches the failing action's resolved source for the top-level failure
+ * context; deepest failure wins (never overwrites an inner attachment).
+ */
+function withReplayFailureSource(
+  response: DaemonResponse,
+  path: string,
+  line: number,
+): DaemonResponse {
+  if (response.ok) return response;
+  if (response.error.details?.replaySource !== undefined) return response;
+  return {
+    ok: false,
+    error: {
+      ...response.error,
+      details: { ...(response.error.details ?? {}), replaySource: { path, line } },
+    },
+  };
 }
 
 async function invokeResolvedReplayAction(params: {
@@ -146,6 +173,7 @@ async function invokeReplayControl(params: {
     case 'retry':
       return await invokeReplayRetryBlock({
         actions: control.actions,
+        actionSources: control.actionSources,
         maxRetries: control.maxRetries,
         line,
         step,

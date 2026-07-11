@@ -3,6 +3,8 @@ import type { SessionAction } from '../daemon/types.ts';
 
 export type ReplayVarScope = {
   values: Readonly<Record<string, string>>;
+  /** Built-ins resolved into an action, tracked for divergence redaction. */
+  expandedBuiltinNames?: Set<string>;
 };
 
 export type ReplayVarSources = {
@@ -50,7 +52,7 @@ export function buildReplayVarScope(sources: ReplayVarSources): ReplayVarScope {
       merged[key] = value;
     }
   }
-  return { values: merged };
+  return { values: merged, expandedBuiltinNames: new Set() };
 }
 
 export function mergeReplayVarScopeValues(
@@ -131,6 +133,9 @@ export function resolveReplayString(
       if (escapedLiteral) return '${';
       if (!key) return match;
       if (Object.prototype.hasOwnProperty.call(scope.values, key)) {
+        if (isReservedNamespaceKey(key)) {
+          (scope.expandedBuiltinNames ??= new Set()).add(key);
+        }
         return String(scope.values[key]);
       }
       if (fallback !== undefined) {
@@ -199,4 +204,23 @@ function resolveStringValue(
     );
   }
   return value;
+}
+
+/**
+ * Values of every non-builtin scope variable, plus built-ins that were
+ * expanded into a replay action. ADR 0012 forbids serializing expanded
+ * variables into a divergence report. Tracking built-in expansion avoids
+ * redacting ordinary static text that merely matches an unused runtime label.
+ * Longest values first so overlapping values scrub deterministically.
+ */
+export function collectReplayScrubbableVarValues(
+  scope: ReplayVarScope,
+): Array<{ name: string; value: string }> {
+  return Object.entries(scope.values)
+    .filter(
+      ([key, value]) =>
+        value.length > 0 && (!isReservedNamespaceKey(key) || scope.expandedBuiltinNames?.has(key)),
+    )
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value.length - a.value.length);
 }

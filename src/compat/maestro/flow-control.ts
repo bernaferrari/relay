@@ -1,4 +1,4 @@
-import type { SessionAction } from '../../daemon/types.ts';
+import type { ReplayControlActionSource, SessionAction } from '../../daemon/types.ts';
 import { AppError } from '../../kernel/errors.ts';
 import { maestroSelector } from './interactions.ts';
 import {
@@ -13,8 +13,10 @@ import {
 import type {
   MaestroCommand,
   MaestroCommandMapperDeps,
+  MaestroConvertedActions,
   MaestroFlowConfig,
   MaestroParseContext,
+  MaestroReplayFlow,
 } from './types.ts';
 
 // repeat.times is expanded at parse time for deterministic replay traces. Keep
@@ -28,7 +30,20 @@ type ConvertCommandList = (
   config: MaestroFlowConfig,
   context: MaestroParseContext,
   deps: MaestroCommandMapperDeps,
-) => SessionAction[];
+) => MaestroConvertedActions;
+
+const NO_CONVERTED_ACTIONS: MaestroConvertedActions = { actions: [], sources: [] };
+
+/** A parsed `runFlow` include's actions, paired with their own file+line. */
+function includeConvertedActions(flow: MaestroReplayFlow): MaestroConvertedActions {
+  return {
+    actions: flow.actions,
+    sources: flow.actions.map((_, index) => {
+      const path = flow.actionSourcePaths?.[index];
+      return path ? { path, line: flow.actionLines[index] ?? 1 } : undefined;
+    }),
+  };
+}
 
 export function convertRunFlow(
   value: unknown,
@@ -36,23 +51,25 @@ export function convertRunFlow(
   context: MaestroParseContext,
   deps: MaestroCommandMapperDeps,
   convertCommandList: ConvertCommandList,
-): SessionAction[] {
+): MaestroConvertedActions {
   if (typeof value === 'string') {
-    return deps.parseRunFlowFile(resolveMaestroString(value, context), context).actions;
+    return includeConvertedActions(
+      deps.parseRunFlowFile(resolveMaestroString(value, context), context),
+    );
   }
   if (!isPlainRecord(value)) {
     throw new AppError('INVALID_ARGS', 'runFlow expects a file path string or map.');
   }
   assertOnlyKeys(value, 'runFlow', ['file', 'commands', 'env', 'when', 'label']);
   const condition = readRunFlowCondition(value.when, context);
-  if (!condition.shouldRun) return [];
+  if (!condition.shouldRun) return NO_CONVERTED_ACTIONS;
 
   const runContext = {
     ...context,
     env: { ...context.env, ...readEnvMap(value.env, 'runFlow.env'), ...context.envOverrides },
   };
-  const actions = readRunFlowActions(value, config, runContext, deps, convertCommandList);
-  return wrapRunFlowCondition(actions, condition);
+  const converted = readRunFlowActions(value, config, runContext, deps, convertCommandList);
+  return wrapRunFlowCondition(converted, condition);
 }
 
 export function convertRepeat(
@@ -61,7 +78,7 @@ export function convertRepeat(
   context: MaestroParseContext,
   deps: MaestroCommandMapperDeps,
   convertCommandList: ConvertCommandList,
-): SessionAction[] {
+): MaestroConvertedActions {
   if (!isPlainRecord(value)) {
     throw new AppError('INVALID_ARGS', 'repeat expects a map.');
   }
@@ -82,9 +99,13 @@ export function convertRepeat(
     );
   }
   const commands = normalizeCommandList(value.commands);
-  return Array.from({ length: times }).flatMap(() =>
+  const iterations = Array.from({ length: times }, () =>
     convertCommandList(commands, config, context, deps),
   );
+  return {
+    actions: iterations.flatMap((entry) => entry.actions),
+    sources: iterations.flatMap((entry) => entry.sources),
+  };
 }
 
 export function convertRetry(
@@ -93,7 +114,7 @@ export function convertRetry(
   context: MaestroParseContext,
   deps: MaestroCommandMapperDeps,
   convertCommandList: ConvertCommandList,
-): SessionAction[] {
+): MaestroConvertedActions {
   if (!isPlainRecord(value)) {
     throw new AppError('INVALID_ARGS', 'retry expects a map.');
   }
@@ -103,14 +124,15 @@ export function convertRetry(
   }
   const maxRetries = readRetryMaxRetries(value.maxRetries, context);
   const commands = normalizeCommandList(value.commands);
-  const actions = convertCommandList(commands, config, context, deps);
-  return [
+  const converted = convertCommandList(commands, config, context, deps);
+  return controlWrapperActions(
     replayControlAction('retry', [String(maxRetries)], {
       kind: 'retry',
       maxRetries,
-      actions,
+      actions: converted.actions,
+      ...actionSourcesEntry(converted.sources),
     }),
-  ];
+  );
 }
 
 function readRunFlowActions(
@@ -119,14 +141,27 @@ function readRunFlowActions(
   context: MaestroParseContext,
   deps: MaestroCommandMapperDeps,
   convertCommandList: ConvertCommandList,
-): SessionAction[] {
+): MaestroConvertedActions {
   if (typeof value.file === 'string') {
-    return deps.parseRunFlowFile(resolveMaestroString(value.file, context), context).actions;
+    return includeConvertedActions(
+      deps.parseRunFlowFile(resolveMaestroString(value.file, context), context),
+    );
   }
   if (Array.isArray(value.commands)) {
     return convertCommandList(normalizeCommandList(value.commands), config, context, deps);
   }
   throw new AppError('INVALID_ARGS', 'runFlow map requires either file or commands.');
+}
+
+/** A control wrapper is itself a same-file action; its nested sources live in the control. */
+function controlWrapperActions(wrapper: SessionAction): MaestroConvertedActions {
+  return { actions: [wrapper], sources: [undefined] };
+}
+
+function actionSourcesEntry(sources: (ReplayControlActionSource | undefined)[]): {
+  actionSources?: (ReplayControlActionSource | undefined)[];
+} {
+  return sources.some((entry) => entry !== undefined) ? { actionSources: sources } : {};
 }
 
 type RunFlowCondition = {
@@ -409,11 +444,11 @@ class MaestroBooleanExpressionParser {
 }
 
 function wrapRunFlowCondition(
-  actions: SessionAction[],
+  converted: MaestroConvertedActions,
   condition: RunFlowCondition,
-): SessionAction[] {
+): MaestroConvertedActions {
   const { visibleSelector, notVisibleSelector } = condition;
-  if (!visibleSelector && !notVisibleSelector) return actions;
+  if (!visibleSelector && !notVisibleSelector) return converted;
   if (visibleSelector && notVisibleSelector) {
     throw unsupportedMaestroSyntax(
       'Maestro runFlow.when cannot combine visible and notVisible yet.',
@@ -421,14 +456,15 @@ function wrapRunFlowCondition(
   }
   const mode = visibleSelector ? 'visible' : 'notVisible';
   const selector = visibleSelector ?? notVisibleSelector ?? '';
-  return [
+  return controlWrapperActions(
     replayControlAction('runFlow.when', [mode, selector], {
       kind: 'maestroRunFlowWhen',
       mode,
       selector,
-      actions,
+      actions: converted.actions,
+      ...actionSourcesEntry(converted.sources),
     }),
-  ];
+  );
 }
 
 function replayControlAction(
