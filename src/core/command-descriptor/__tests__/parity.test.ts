@@ -47,7 +47,6 @@ const NO_CAPABILITY_PUBLIC_COMMANDS = new Set<string>([
   PUBLIC_COMMANDS.devices,
   PUBLIC_COMMANDS.doctor,
   PUBLIC_COMMANDS.events,
-  PUBLIC_COMMANDS.gesture,
   PUBLIC_COMMANDS.prepare,
   PUBLIC_COMMANDS.replay,
   PUBLIC_COMMANDS.test,
@@ -169,11 +168,10 @@ test('platform dispatch command list is built from descriptor dispatch facets', 
 
   assert.deepEqual(listRegisteredDispatchCommandNames(), dispatchCommands);
   assert.ok(dispatchCommands.includes('read'), 'read stays dispatch-only');
-  assert.ok(dispatchCommands.includes('swipe-preset'), 'swipe-preset stays dispatch-only');
   assert.equal(
     (dispatchCommands as readonly string[]).includes(PUBLIC_COMMANDS.gesture),
     false,
-    'gesture remains a daemon command that expands before platform dispatch',
+    'gesture executes through the typed runtime/backend seam',
   );
 });
 
@@ -224,12 +222,7 @@ const NON_BATCHABLE_COMMANDS = [
   PUBLIC_COMMANDS.batch,
   PUBLIC_COMMANDS.replay,
   PUBLIC_COMMANDS.prepare,
-  'pinch',
   'viewport',
-  'pan',
-  'fling',
-  'rotate-gesture',
-  'transform-gesture',
 ];
 
 test('structured-batch allowlist is built from descriptors', () => {
@@ -291,6 +284,7 @@ test('capability-checked command list is built from descriptor capabilities', ()
 
   assert.deepEqual(listCapabilityCheckedCommandNames(), expected);
   assert.ok(expectedNames.has(PUBLIC_COMMANDS.snapshot), 'snapshot remains capability-checked');
+  assert.ok(expectedNames.has(PUBLIC_COMMANDS.gesture), 'gesture remains capability-checked');
   assert.equal(
     expectedNames.has(PUBLIC_COMMANDS.capabilities),
     false,

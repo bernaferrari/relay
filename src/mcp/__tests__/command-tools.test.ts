@@ -131,6 +131,76 @@ test('MCP tool schemas add MCP client config fields at the MCP boundary', () => 
   );
 });
 
+test('MCP gesture tool exposes and forwards two-finger pan topology', async () => {
+  const gesture = listCommandTools().find((tool) => tool.name === 'gesture');
+  assert.ok(gesture);
+  assert.deepEqual(gesture.inputSchema.properties?.pointerCount, {
+    type: 'integer',
+    description: 'Pan touch pointer count (1 or 2).',
+    minimum: 1,
+    maximum: 2,
+  });
+
+  const calls: unknown[] = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      calls.push({ name, input });
+      return { message: 'Panned' };
+    },
+  });
+  await executor.execute('gesture', {
+    kind: 'pan',
+    origin: { x: 100, y: 200 },
+    delta: { x: 40, y: -20 },
+    pointerCount: 2,
+  });
+
+  assert.deepEqual(calls, [
+    {
+      name: 'gesture',
+      input: {
+        kind: 'pan',
+        origin: { x: 100, y: 200 },
+        delta: { x: 40, y: -20 },
+        pointerCount: 2,
+      },
+    },
+  ]);
+});
+
+test('MCP gesture compatibility metadata accepts numeric rotate velocity', () => {
+  const gesture = listCommandTools().find((tool) => tool.name === 'gesture');
+  assert.ok(gesture);
+  assert.deepEqual(gesture.inputSchema.properties?.velocity, {
+    type: 'number',
+    description: 'Deprecated: rotation pacing is derived from degrees; must be non-zero.',
+  });
+  assert.deepEqual(gesture.inputSchema.properties?.durationMs, {
+    type: 'integer',
+    description: 'Pan/transform duration. Deprecated on swipe/fling; timed movement is a pan.',
+    minimum: 16,
+    maximum: 10_000,
+  });
+});
+
+test('MCP swipe tool exposes bounded repetition inputs', () => {
+  const swipe = listCommandTools().find((tool) => tool.name === 'swipe');
+  assert.ok(swipe);
+  assert.deepEqual(swipe.inputSchema.properties?.count, {
+    type: 'integer',
+    description: 'Number of swipe repetitions.',
+    minimum: 1,
+    maximum: 200,
+  });
+  assert.deepEqual(swipe.inputSchema.properties?.pauseMs, {
+    type: 'integer',
+    description: 'Pause between repeated swipes.',
+    minimum: 0,
+    maximum: 10_000,
+  });
+});
+
 test('MCP includeCost:true opts into agent-cost: sets client.cost, strips the arg, surfaces cost', async () => {
   const createdConfigs: unknown[] = [];
   const calls: unknown[] = [];

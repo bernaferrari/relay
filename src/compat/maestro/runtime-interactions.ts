@@ -16,7 +16,6 @@ import {
   clearMaestroRecoverableInteraction,
   clearMaestroVisibleContext,
   errorResponse,
-  readCachedMaestroReferenceFrame,
   readMaestroVisibleContext,
   readSnapshotState,
   rememberMaestroRecoverableInteraction,
@@ -173,17 +172,22 @@ async function maybeInvokeMaestroDirectionalSwipePreset(params: {
       'Maestro swipe direction must be UP, DOWN, LEFT, or RIGHT.',
     );
   }
-  const positionals = ['swipe', direction, ...(durationMs ? [durationMs] : [])];
+  const input = {
+    kind: 'swipe',
+    preset: direction,
+    ...(durationMs === undefined ? {} : { durationMs: Number(durationMs) }),
+  };
   const response = await params.invoke({
     ...params.baseReq,
     command: 'gesture',
-    positionals,
+    positionals: [],
+    input,
   });
   if (response.ok) {
     rememberMaestroRecoverableInteraction(params.scope, {
       kind: 'swipe',
       command: 'gesture',
-      positionals,
+      input,
     });
   }
   return response;
@@ -238,23 +242,22 @@ async function invokeSwipeGesture(
   },
   durationMs: string | undefined,
 ): Promise<DaemonResponse> {
-  const responsePositionals = [
-    String(swipe.start.x),
-    String(swipe.start.y),
-    String(swipe.end.x),
-    String(swipe.end.y),
-    ...(durationMs ? [durationMs] : []),
-  ];
+  const input = {
+    from: swipe.start,
+    to: swipe.end,
+    ...(durationMs === undefined ? {} : { durationMs: Number(durationMs) }),
+  };
   const response = await params.invoke({
     ...params.baseReq,
     command: 'swipe',
-    positionals: responsePositionals,
+    positionals: [],
+    input,
   });
   if (response.ok) {
     rememberMaestroRecoverableInteraction(params.scope, {
       kind: 'swipe',
       command: 'swipe',
-      positionals: responsePositionals,
+      input,
     });
   }
   return response;
@@ -266,8 +269,7 @@ async function resolveMaestroScreenSwipe(params: {
   invoke: MaestroRuntimeInvoke;
   scope?: ReplayVarScope;
 }): Promise<MaestroScreenSwipeResolution> {
-  const cachedFrame = readCachedMaestroReferenceFrame(params.scope);
-  const frame = cachedFrame ?? (await captureFrameForMaestroScreenSwipe(params));
+  const frame = await captureFrameForMaestroScreenSwipe(params);
   if (!frame) {
     return {
       ok: false,

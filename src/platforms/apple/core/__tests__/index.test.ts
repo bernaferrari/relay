@@ -75,7 +75,7 @@ import {
   prepareSimulatorStatusBarForScreenshot,
 } from '../screenshot-status-bar.ts';
 import { runAppleRunnerCommand } from '../runner/runner-client.ts';
-import { iosRunnerOverrides } from '../../interactions.ts';
+import { iosRunnerOverrides, performGestureApple } from '../../interactions.ts';
 import {
   IOS_DEVICE_INSTALL_TIMEOUT_MS,
   IOS_SIMULATOR_FOCUS_TIMEOUT_MS,
@@ -88,6 +88,8 @@ import { runCmd } from '../../../../utils/exec.ts';
 import { retryWithPolicy } from '../../../../utils/retry.ts';
 import { parseIosDeviceAppsPayload, parseIosDeviceProcessesPayload } from '../devicectl.ts';
 import { PNG } from '../../../../utils/png.ts';
+import type { GesturePlan } from '../../../../contracts/gesture-plan.ts';
+import { requireGestureSupported } from '../../../../core/capabilities.ts';
 
 const IOS_TEST_DEVICE: DeviceInfo = {
   platform: 'apple',
@@ -196,28 +198,6 @@ test('resolveMacOsHelperPackageRootFrom finds helper package from source and dis
   }
 });
 
-test('iosRunnerOverrides maps iOS fling duration to synthesized drag', async () => {
-  mockRunAppleRunnerCommand.mockResolvedValue({});
-
-  const { overrides } = iosRunnerOverrides(IOS_TEST_SIMULATOR, {
-    appBundleId: 'com.example.App',
-  });
-
-  await overrides.fling(100, 200, 180, 200, undefined);
-
-  assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[0]?.[1], {
-    command: 'drag',
-    x: 100,
-    y: 200,
-    x2: 180,
-    y2: 200,
-    durationMs: 16,
-    synthesized: true,
-    dragSemantics: 'fling',
-    appBundleId: 'com.example.App',
-  });
-});
-
 test('iosRunnerOverrides uses synthesized iOS coordinate taps', async () => {
   mockRunAppleRunnerCommand.mockResolvedValue({});
 
@@ -244,6 +224,21 @@ test('iosRunnerOverrides uses synthesized iOS coordinate taps', async () => {
   });
 });
 
+test('iosRunnerOverrides reads and validates the fresh gesture viewport', async () => {
+  mockRunAppleRunnerCommand.mockResolvedValue({ x: 10, y: 20, x2: 300, y2: 500 });
+  const { overrides } = iosRunnerOverrides(IOS_TEST_SIMULATOR, {
+    appBundleId: 'com.example.App',
+  });
+  assert.ok(overrides.gestureViewport);
+  assert.deepEqual(await overrides.gestureViewport(), { x: 10, y: 20, width: 300, height: 500 });
+  assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[0]?.[1], {
+    command: 'gestureViewport',
+    appBundleId: 'com.example.App',
+  });
+  mockRunAppleRunnerCommand.mockResolvedValue({ x: 0, y: 0, x2: 0, y2: 500 });
+  await assert.rejects(() => overrides.gestureViewport!(), { code: 'COMMAND_FAILED' });
+});
+
 for (const [name, device] of [
   ['macOS', MACOS_TEST_DEVICE],
   ['tvOS', TVOS_TEST_SIMULATOR],
@@ -266,96 +261,81 @@ for (const [name, device] of [
   });
 }
 
-test('iosRunnerOverrides maps iOS swipe and pan durations to synthesized drag', async () => {
-  mockRunAppleRunnerCommand.mockResolvedValue({});
+test('performGestureApple sends exact two-pointer pan samples through gesture', async () => {
+  mockRunAppleRunnerCommand.mockResolvedValue({ transformed: true });
+  const plan = twoFingerPanPlan();
 
-  const { overrides } = iosRunnerOverrides(IOS_TEST_SIMULATOR, {
+  const result = await performGestureApple(
+    IOS_TEST_SIMULATOR,
+    { appBundleId: 'com.example.App' },
+    {},
+    plan,
+  );
+
+  assert.deepEqual(result, { transformed: true });
+  assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[0]?.[1], {
+    command: 'gesture',
+    gesturePlan: plan,
     appBundleId: 'com.example.App',
   });
+});
 
-  await overrides.swipe(100, 200, 180, 200, 300);
-  await overrides.swipe(100, 200, 180, 200, undefined);
-  await overrides.pan(100, 200, 180, 200, 300);
+test('Apple admission and execution share the same multi-touch refusal', async () => {
+  let admissionError: AppError | undefined;
+  try {
+    requireGestureSupported(
+      {
+        intent: 'pan',
+        origin: { x: 100, y: 200 },
+        delta: { x: 80, y: -40 },
+        pointerCount: 2,
+      },
+      IOS_TEST_DEVICE,
+    );
+  } catch (error) {
+    if (error instanceof AppError) admissionError = error;
+  }
+  assert.ok(admissionError);
+
+  await assert.rejects(
+    () => performGestureApple(IOS_TEST_DEVICE, {}, {}, twoFingerPanPlan()),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.code === 'UNSUPPORTED_OPERATION' &&
+      error.message === admissionError.message &&
+      error.details?.hint === admissionError.details?.hint,
+  );
+  assert.equal(mockRunAppleRunnerCommand.mock.calls.length, 0);
+});
+
+test('performGestureApple composes macOS one-contact plans with the drag executor', async () => {
+  mockRunAppleRunnerCommand.mockResolvedValue({ dragged: true });
+  const plan = singlePanPlan();
+
+  await performGestureApple(MACOS_TEST_DEVICE, { appBundleId: 'com.example.App' }, {}, plan);
 
   assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[0]?.[1], {
     command: 'drag',
     x: 100,
     y: 200,
     x2: 180,
-    y2: 200,
-    durationMs: 300,
-    synthesized: true,
-    dragSemantics: 'swipe',
-    appBundleId: 'com.example.App',
-  });
-  assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[1]?.[1], {
-    command: 'drag',
-    x: 100,
-    y: 200,
-    x2: 180,
-    y2: 200,
-    durationMs: 250,
-    synthesized: true,
-    dragSemantics: 'swipe',
-    appBundleId: 'com.example.App',
-  });
-  assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[2]?.[1], {
-    command: 'drag',
-    x: 100,
-    y: 200,
-    x2: 180,
-    y2: 200,
-    durationMs: 300,
-    synthesized: true,
-    dragSemantics: 'pan',
+    y2: 160,
+    durationMs: 500,
     appBundleId: 'com.example.App',
   });
 });
 
-for (const [name, device] of [
-  ['macOS', MACOS_TEST_DEVICE],
-  ['tvOS', TVOS_TEST_SIMULATOR],
-] as const) {
-  test(`iosRunnerOverrides keeps ${name} drag gestures on the standard path`, async () => {
-    mockRunAppleRunnerCommand.mockResolvedValue({});
+test('performGestureApple composes tvOS one-contact plans with remote direction', async () => {
+  mockRunAppleRunnerCommand.mockResolvedValue({ swiped: true });
 
-    const { overrides } = iosRunnerOverrides(device, {
-      appBundleId: 'com.example.App',
-    });
+  await performGestureApple(TVOS_TEST_SIMULATOR, {}, {}, singlePanPlan());
 
-    await overrides.swipe(100, 200, 180, 200, 300);
-    await overrides.pan(100, 200, 180, 200, 300);
-    await overrides.fling(100, 200, 180, 200, 300);
-
-    assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[0]?.[1], {
-      command: 'drag',
-      x: 100,
-      y: 200,
-      x2: 180,
-      y2: 200,
-      durationMs: 300,
-      appBundleId: 'com.example.App',
-    });
-    assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[1]?.[1], {
-      command: 'drag',
-      x: 100,
-      y: 200,
-      x2: 180,
-      y2: 200,
-      durationMs: 300,
-      appBundleId: 'com.example.App',
-    });
-    assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[2]?.[1], {
-      command: 'drag',
-      x: 100,
-      y: 200,
-      x2: 180,
-      y2: 200,
-      durationMs: 300,
-      appBundleId: 'com.example.App',
-    });
+  assert.deepEqual(mockRunAppleRunnerCommand.mock.calls[0]?.[1], {
+    command: 'swipe',
+    direction: 'right',
+    appBundleId: undefined,
   });
-}
+});
 
 test('iosRunnerOverrides maps iOS scroll to a single fused scroll command', async () => {
   // The fused scroll resolves the frame and performs the duration-aware drag in one runner
@@ -3409,3 +3389,48 @@ exit 1
     },
   );
 });
+
+function twoFingerPanPlan(): Extract<GesturePlan, { topology: 'two' }> {
+  return {
+    topology: 'two',
+    intent: 'pan',
+    durationMs: 32,
+    viewport: { x: 0, y: 0, width: 400, height: 800 },
+    pointers: [
+      {
+        pointerId: 0,
+        samples: [
+          { offsetMs: 0, point: { x: 100, y: 80 } },
+          { offsetMs: 16, point: { x: 110, y: 85 } },
+          { offsetMs: 32, point: { x: 120, y: 90 } },
+        ],
+      },
+      {
+        pointerId: 1,
+        samples: [
+          { offsetMs: 0, point: { x: 100, y: 120 } },
+          { offsetMs: 16, point: { x: 110, y: 125 } },
+          { offsetMs: 32, point: { x: 120, y: 130 } },
+        ],
+      },
+    ],
+  };
+}
+
+function singlePanPlan(): Extract<GesturePlan, { topology: 'single' }> {
+  return {
+    topology: 'single',
+    intent: 'pan',
+    durationMs: 500,
+    viewport: { x: 0, y: 0, width: 400, height: 800 },
+    pointers: [
+      {
+        pointerId: 0,
+        samples: [
+          { offsetMs: 0, point: { x: 100, y: 200 } },
+          { offsetMs: 500, point: { x: 180, y: 160 } },
+        ],
+      },
+    ],
+  };
+}

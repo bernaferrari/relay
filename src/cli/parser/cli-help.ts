@@ -193,7 +193,7 @@ Command shape:
   Snapshot refs look like @e12. After snapshot -i, use the exact @eN ref from that output.
   If the exact ref is not known yet, first output snapshot -i, then use a concrete example shape like press @e12 in the next command; do not write @<ref>, @ref, @Label_Name, or @eN placeholders.
   Close means agent-device close. App-owned back means back; system back means back --system.
-  Taps are press or click; tap is an alias for press. On Android TV and tvOS, read help tv and use tv-remote press up|down|left|right|select to move D-pad/remote focus before activating controls; use tv-remote longpress <button> for a held remote button. Gestures use swipe, longpress, or gesture <pan|fling|swipe|pinch|rotate|transform>. Use gesture swipe left|right for reliable in-page horizontal swipes, and gesture swipe right-edge for left-edge navigation/back gestures. Android swipe, pinch, rotate, and transform use provider-native touch injection when available, then the bundled touch helper. iOS simulator transform uses private XCTest synthesis for a continuous two-finger pan/scale/rotation path; otherwise it reports UNSUPPORTED_OPERATION.
+  Taps are press or click; tap is an alias for press. On Android TV and tvOS, read help tv and use tv-remote press up|down|left|right|select to move D-pad/remote focus before activating controls; use tv-remote longpress <button> for a held remote button. Gestures use swipe, longpress, or gesture <pan|fling|swipe|pinch|rotate|transform>. Use gesture swipe left|right for reliable in-page horizontal swipes, and gesture swipe right-edge for left-edge navigation/back gestures. gesture pan is one finger by default; add --pointer-count 2 for a parallel two-finger pan. Android swipe and multi-touch gestures use provider-native touch injection when available, then the bundled touch helper. iOS simulator multi-touch uses private XCTest synthesis for a continuous two-pointer path; otherwise it reports UNSUPPORTED_OPERATION.
 
 Bootstrap:
   agent-device devices --platform ios
@@ -280,20 +280,21 @@ Read-only and waits:
   Ambiguous find: add --first or --last. If info is not visible/exposed, report that gap instead of typing/searching/navigating to reveal it.
 
 Navigation and gestures:
-  Use scroll for lists; swipe for coordinate gestures/carousels; gesture pan for deliberate drags; gesture fling for fast directional throws.
+  Use scroll for lists; swipe for quick coordinate gestures/carousels; gesture pan for deliberate timed drags; gesture fling for fast directional throws. Historical swipe/fling duration arguments remain compatibility aliases to pan and are deprecated.
   For fast macOS desktop list traversal, prefer fixed pixel wheel steps and batch them when no snapshot is needed between passes:
     agent-device scroll down --pixels 200 --duration-ms 50 --platform macos
     agent-device batch --steps '[{"command":"scroll","input":{"direction":"down","pixels":200,"durationMs":50}},{"command":"scroll","input":{"direction":"down","pixels":200,"durationMs":50}}]' --platform macos
   For raw coordinate gestures, run snapshot -i first and choose a point near the center of the intended app-owned target. Avoid screen edges, tab bars, navigation bars, and home indicators because those areas can trigger system or app navigation instead of the gesture under test.
   If app-owned back is ambiguous or has just misrouted, prefer a visible nav/back button ref, tab-bar ref, or deep link over repeated back/system back.
   App-owned action sheets, menus, and camera/scan screens are normal UI. After opening one, run snapshot -i or wait for the option, press by label/ref, handle visible permission sheets through UI or platform-supported native alerts, then wait for a concrete result before returning to chat/form state.
-  Keep count/pause/pattern on one swipe; flags are --count, --pause-ms, --pattern ping-pong.
+  Keep count/pause/pattern on one swipe; flags are --count, --pause-ms, --pattern ping-pong. Count is capped at 200, pause at 10000ms, and the combined swipe/pause schedule at 60000ms.
   For repeated iOS gesture smoke checks, use press <x> <y> --count <n> --jitter-px <n> for tap series and swipe <x1> <y1> <x2> <y2> --count <n> for drag series.
   longpress accepts coordinates, @refs, or selectors. Prefer @ref/selector from snapshot -i; use coordinates only as a fallback when accessibility refs miss the exact target. Duration and gesture scale/center are positional:
     agent-device longpress 300 500 800
     agent-device longpress @e12 800
     agent-device swipe 320 500 40 500 --count 8 --pause-ms 30 --pattern ping-pong
     agent-device gesture pan 200 420 0 -80 500
+    agent-device gesture pan 200 420 80 -40 700 --pointer-count 2
     agent-device gesture fling right 200 420 180
     agent-device gesture pinch 0.5 200 400
     agent-device gesture rotate 35 200 420
@@ -304,7 +305,9 @@ Navigation and gestures:
     agent-device wait text "pan changed yes" 3000 --platform android
     agent-device wait text "pinch changed yes" 3000 --platform android
     agent-device wait text "rotate changed yes" 3000 --platform android
-  If Android needs exact app-state values, prefer isolated gesture pan, gesture pinch, or gesture rotate commands over one combined transform.
+  If Android needs exact app-state values, prefer isolated gesture pan --pointer-count 2, gesture pinch, or gesture rotate commands over one combined transform.
+  Gesture planning prefers the active-app frame. A backend without a gesture viewport resolver falls back to the visible snapshot union, which can be less accurate near edges.
+  tvOS coordinate pan and fling preserve only the dominant direction as a remote swipe; authored endpoints and duration are not preserved.
   macOS context menus are secondary clicks, not long presses:
     agent-device click @e66 --button secondary --platform macos
     agent-device snapshot -i --platform macos

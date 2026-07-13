@@ -34,6 +34,7 @@ import type {
   NavigationCommandOptions,
   ProjectedNavigationCommandClient,
 } from '../commands/system/navigation-projection.ts';
+import type { GesturePointerCount } from '../contracts/gesture-plan.ts';
 import type { LogAction } from '../contracts/logs.ts';
 import type { SessionSurface } from '../contracts/session-surface.ts';
 import type { FindLocator } from '../selectors/find.ts';
@@ -704,6 +705,7 @@ export type LongPressOptions = DeviceCommandBaseOptions &
 export type SwipeOptions = DeviceCommandBaseOptions & {
   from: { x: number; y: number };
   to: { x: number; y: number };
+  /** @deprecated Timed movement is a pan. Omit this field for swipe/fling semantics. */
   durationMs?: number;
   count?: number;
   pauseMs?: number;
@@ -715,6 +717,7 @@ export type PanOptions = DeviceCommandBaseOptions & {
   y: number;
   dx: number;
   dy: number;
+  pointerCount?: GesturePointerCount;
   durationMs?: number;
 };
 
@@ -723,11 +726,13 @@ export type FlingOptions = DeviceCommandBaseOptions & {
   x: number;
   y: number;
   distance?: number;
+  /** @deprecated Timed movement is a pan. Omit this field for fling semantics. */
   durationMs?: number;
 };
 
 export type SwipeGestureOptions = DeviceCommandBaseOptions & {
   preset: SwipePreset;
+  /** @deprecated Timed movement is a pan. Omit this field for swipe/fling semantics. */
   durationMs?: number;
 };
 
@@ -767,6 +772,7 @@ export type RotateGestureOptions = DeviceCommandBaseOptions & {
   degrees: number;
   x?: number;
   y?: number;
+  /** @deprecated Rotation pacing is derived from degrees. */
   velocity?: number;
 };
 

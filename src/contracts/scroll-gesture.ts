@@ -8,9 +8,9 @@ export const SWIPE_PRESETS = ['left', 'right', 'left-edge', 'right-edge'] as con
 export type SwipePreset = (typeof SWIPE_PRESETS)[number];
 export const SWIPE_PATTERNS = ['one-way', 'ping-pong'] as const;
 export type SwipePattern = (typeof SWIPE_PATTERNS)[number];
-const SWIPE_PRESET_ENUM = defineStringEnum(SWIPE_PRESETS, {
-  message: 'gesture swipe requires left, right, left-edge, or right-edge',
-});
+export const SWIPE_REPETITION_MAX = 200;
+export const SWIPE_PAUSE_MAX_MS = 10_000;
+export const SWIPE_SERIES_MAX_SCHEDULED_DURATION_MS = 60_000;
 const SCROLL_DIRECTION_ENUM = defineStringEnum(SCROLL_DIRECTIONS, {
   message: (direction) => `Unknown direction: ${direction}`,
 });
@@ -30,7 +30,7 @@ export type GestureReferenceFrame = {
   referenceHeight: number;
 };
 
-export type GesturePoint = {
+type GesturePoint = {
   x: number;
   y: number;
 };
@@ -159,8 +159,17 @@ export function buildSwipePresetGesturePlan(
   };
 }
 
-export function parseSwipePreset(input: string | undefined): SwipePreset {
-  return SWIPE_PRESET_ENUM.parse(input);
+export function gestureDirectionDelta(direction: ScrollDirection, distance: number): GesturePoint {
+  switch (direction) {
+    case 'up':
+      return { x: 0, y: -distance };
+    case 'down':
+      return { x: 0, y: distance };
+    case 'left':
+      return { x: -distance, y: 0 };
+    case 'right':
+      return { x: distance, y: 0 };
+  }
 }
 
 export function inferGestureReferenceFrame(

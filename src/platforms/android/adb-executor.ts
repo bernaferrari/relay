@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Readable, Writable } from 'node:stream';
 import type { DeviceInfo } from '../../kernel/device.ts';
+import type { Rect } from '../../kernel/snapshot.ts';
+import type { GesturePlan } from '../../contracts/gesture-plan.ts';
 import {
   coerceExecResult,
   execFailureDetails,
@@ -123,43 +125,11 @@ export type AndroidTextInjectionRequest = {
 
 export type AndroidTextInjector = (request: AndroidTextInjectionRequest) => Promise<void>;
 
-export type AndroidTouchGestureRequest =
-  | {
-      kind: 'swipe';
-      x1: number;
-      y1: number;
-      x2: number;
-      y2: number;
-      durationMs?: number;
-    }
-  | {
-      kind: 'pinch';
-      x: number;
-      y: number;
-      scale: number;
-      durationMs?: number;
-    }
-  | {
-      kind: 'rotate';
-      x: number;
-      y: number;
-      degrees: number;
-      durationMs?: number;
-    }
-  | {
-      kind: 'transform';
-      x: number;
-      y: number;
-      dx: number;
-      dy: number;
-      scale: number;
-      degrees: number;
-      durationMs?: number;
-    };
-
 export type AndroidTouchInjector = (
-  request: AndroidTouchGestureRequest,
+  request: GesturePlan,
 ) => Promise<Record<string, unknown> | void>;
+
+export type AndroidGestureViewportProvider = () => Promise<Rect>;
 
 export type AndroidAdbProvider = {
   /**
@@ -174,6 +144,7 @@ export type AndroidAdbProvider = {
   installBundle?: AndroidBundleInstaller;
   text?: AndroidTextInjector;
   touch?: AndroidTouchInjector;
+  gestureViewport?: AndroidGestureViewportProvider;
 };
 
 export type AndroidAdbProviderScopeOptions = {
@@ -505,6 +476,13 @@ export function resolveAndroidTextInjector(device: DeviceInfo): AndroidTextInjec
 export function resolveAndroidTouchInjector(device: DeviceInfo): AndroidTouchInjector | undefined {
   const scoped = androidAdbProviderScope.getStore();
   return scoped?.serial === device.id ? scoped.provider.touch : undefined;
+}
+
+export function resolveAndroidGestureViewportProvider(
+  device: DeviceInfo,
+): AndroidGestureViewportProvider | undefined {
+  const scoped = androidAdbProviderScope.getStore();
+  return scoped?.serial === device.id ? scoped.provider.gestureViewport : undefined;
 }
 
 export function createAndroidPortReverseManager(

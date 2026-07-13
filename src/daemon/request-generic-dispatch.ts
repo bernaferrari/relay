@@ -1,5 +1,4 @@
 import { dispatchCommand, type CommandFlags } from '../core/dispatch.ts';
-import { GESTURE_SUBCOMMAND_ERROR } from '../command-catalog.ts';
 import { requireCommandSupported } from './handlers/response.ts';
 import { SessionStore } from './session-store.ts';
 import type { DaemonCommandContext } from './context.ts';
@@ -32,15 +31,6 @@ import {
   readScreenshotResultMetadata,
 } from '../utils/screenshot-density.ts';
 
-const GESTURE_PLATFORM_COMMANDS: Readonly<Record<string, string>> = {
-  pan: 'pan',
-  fling: 'fling',
-  swipe: 'swipe-preset',
-  pinch: 'pinch',
-  rotate: 'rotate-gesture',
-  transform: 'transform-gesture',
-};
-
 export async function dispatchGenericCommand(params: {
   req: DaemonRequest;
   session: SessionState;
@@ -54,17 +44,7 @@ export async function dispatchGenericCommand(params: {
   ) => DaemonCommandContext;
 }): Promise<DaemonResponse> {
   const { req, session, logPath, sessionStore, contextFromFlags } = params;
-  const commandResolution = resolveDispatchCommand(req);
-  if (!commandResolution.ok) {
-    return {
-      ok: false,
-      error: {
-        code: 'INVALID_ARGS',
-        message: commandResolution.message,
-      },
-    };
-  }
-  const { platformCommand, dispatchRequest, recordedCommand } = commandResolution;
+  const platformCommand = req.command;
 
   const readinessResponse = await ensureGenericCommandReady(session, platformCommand);
   if (readinessResponse) return readinessResponse;
@@ -72,7 +52,7 @@ export async function dispatchGenericCommand(params: {
   if ('response' in preflightReadiness) return preflightReadiness.response;
 
   const { resolvedPositionals, resolvedOut, recordedPositionals, recordedFlags } =
-    resolveCommandPositionals(dispatchRequest);
+    resolveCommandPositionals(req);
 
   const actionStartedAt = Date.now();
   const dispatchContext = {
@@ -84,7 +64,7 @@ export async function dispatchGenericCommand(params: {
     sessionName: params.sessionName,
     logPath,
     command: platformCommand,
-    request: dispatchRequest,
+    request: req,
     positionals: resolvedPositionals,
     out: resolvedOut,
     dispatchContext,
@@ -105,18 +85,13 @@ export async function dispatchGenericCommand(params: {
   }
 
   const actionFinishedAt = Date.now();
-  const actionRecordedPositionals =
-    recordedCommand === platformCommand ? recordedPositionals : (req.positionals ?? []);
-  const actionRecordedFlags =
-    recordedCommand === platformCommand ? recordedFlags : (req.flags ?? {});
   recordVisualizationAndAction({
     session,
     sessionStore,
     command: platformCommand,
-    recordedCommand,
     resolvedPositionals,
-    recordedPositionals: actionRecordedPositionals,
-    recordedFlags: actionRecordedFlags,
+    recordedPositionals,
+    recordedFlags,
     data,
     actionStartedAt,
     actionFinishedAt,
@@ -234,49 +209,6 @@ async function executeScreenshotPlatformCommand(params: {
   return data;
 }
 
-type DispatchCommandResolution =
-  | {
-      ok: true;
-      platformCommand: string;
-      dispatchRequest: DaemonRequest;
-      recordedCommand: string;
-    }
-  | { ok: false; message: string };
-
-function resolveDispatchCommand(req: DaemonRequest): DispatchCommandResolution {
-  if (
-    req.command === 'pan' ||
-    req.command === 'fling' ||
-    req.command === 'rotate-gesture' ||
-    req.command === 'transform-gesture'
-  ) {
-    return {
-      ok: false,
-      message:
-        'Use gesture pan, gesture fling, gesture swipe, gesture rotate, or gesture transform.',
-    };
-  }
-  if (req.command !== 'gesture') {
-    return {
-      ok: true,
-      platformCommand: req.command,
-      dispatchRequest: req,
-      recordedCommand: req.command,
-    };
-  }
-  const [subcommand, ...positionals] = req.positionals ?? [];
-  const platformCommand = subcommand ? GESTURE_PLATFORM_COMMANDS[subcommand] : undefined;
-  if (!platformCommand) {
-    return { ok: false, message: GESTURE_SUBCOMMAND_ERROR };
-  }
-  return {
-    ok: true,
-    platformCommand,
-    dispatchRequest: { ...req, command: platformCommand, positionals },
-    recordedCommand: req.command,
-  };
-}
-
 function resolveScreenshotOutputPlacement(req: DaemonRequest): ScreenshotOutputPlacement {
   if (req.command !== 'screenshot') return 'default';
   if ((req.positionals ?? [])[0]) return 'positional';
@@ -367,7 +299,6 @@ function recordVisualizationAndAction(params: {
   session: SessionState;
   sessionStore: SessionStore;
   command: string;
-  recordedCommand: string;
   resolvedPositionals: string[];
   recordedPositionals: string[];
   recordedFlags: Record<string, unknown>;
@@ -380,7 +311,6 @@ function recordVisualizationAndAction(params: {
     session,
     sessionStore,
     command,
-    recordedCommand,
     resolvedPositionals,
     recordedPositionals,
     recordedFlags,
@@ -405,7 +335,7 @@ function recordVisualizationAndAction(params: {
     actionFinishedAt,
   );
   sessionStore.recordAction(session, {
-    command: recordedCommand,
+    command,
     positionals: recordedPositionals,
     flags: recordedFlags,
     result: data ?? {},

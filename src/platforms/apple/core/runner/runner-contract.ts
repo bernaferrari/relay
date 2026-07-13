@@ -3,12 +3,11 @@ import { AppError } from '../../../../kernel/errors.ts';
 import type { ClickButton } from '../../../../core/click-button.ts';
 import type { DeviceRotation } from '../../../../contracts/device-rotation.ts';
 import type { ScrollDirection } from '../../../../contracts/scroll-gesture.ts';
+import type { GesturePlan } from '../../../../contracts/gesture-plan.ts';
 import type { ElementSelectorKey } from '../../../../core/interactor-types.ts';
 import { createRequestCanceledError, isRequestCanceled } from '../../../../request/cancel.ts';
 import { bootFailureHint, classifyBootFailure } from '../../../boot-diagnostics.ts';
 import type { RunnerSession } from './runner-session-types.ts';
-
-export type SynthesizedDragSemantics = 'swipe' | 'pan' | 'fling';
 
 const RUNNER_CACHE_RECOVERY_HINT =
   'If runner build products look stale or corrupted, run `pnpm clean:xcuitest` in a local checkout, or remove ~/.agent-device/apple-runner/derived, then retry.';
@@ -39,13 +38,12 @@ export type RunnerCommand = {
     | 'backSystem'
     | 'home'
     | 'rotate'
-    | 'rotateGesture'
-    | 'transformGesture'
+    | 'gesture'
+    | 'gestureViewport'
     | 'appSwitcher'
     | 'keyboardDismiss'
     | 'keyboardReturn'
     | 'alert'
-    | 'pinch'
     | 'sequence'
     | 'recordStart'
     | 'recordStop'
@@ -68,16 +66,13 @@ export type RunnerCommand = {
   remoteButton?: 'select' | 'menu' | 'home' | 'up' | 'down' | 'left' | 'right';
   x2?: number;
   y2?: number;
-  dx?: number;
-  dy?: number;
   durationMs?: number;
   direction?: ScrollDirection;
   amount?: number;
   pixels?: number;
   orientation?: DeviceRotation;
-  scale?: number;
-  degrees?: number;
-  velocity?: number;
+  /** Canonical pointer samples planned by the portable gesture runtime. */
+  gesturePlan?: GesturePlan;
   outPath?: string;
   fps?: number;
   maxSize?: number;
@@ -87,8 +82,6 @@ export type RunnerCommand = {
   raw?: boolean;
   fullscreen?: boolean;
   synthesized?: boolean;
-  /** Preserves the public gesture's timing semantics after it is lowered to runner `drag`. */
-  dragSemantics?: SynthesizedDragSemantics;
   steps?: RunnerSequenceStep[];
   /**
    * @deprecated Use textEntryMode: 'replace'. Kept for compatibility with older local runner clients.
@@ -98,15 +91,13 @@ export type RunnerCommand = {
 
 /**
  * One allowlisted coordinate gesture step inside a fused `sequence` runner command.
- * The kind set is intentionally narrow (tap/longPress/drag) and validated on both the
+ * The kind set is intentionally narrow (tap/doubleTap/longPress) and validated on both the
  * daemon and runner sides — see runner-sequence.ts (the single interpretation point).
  */
 export type RunnerSequenceStep = {
-  kind: 'tap' | 'doubleTap' | 'longPress' | 'drag';
+  kind: 'tap' | 'doubleTap' | 'longPress';
   x: number;
   y: number;
-  x2?: number;
-  y2?: number;
   durationMs?: number;
   pauseMs?: number;
   /**
@@ -114,8 +105,6 @@ export type RunnerSequenceStep = {
    * instead of the drag-based XCUICoordinate tapAt, matching the individual `tap` command.
    */
   synthesized?: boolean;
-  /** Preserves one-shot swipe timing when repeated swipes are fused into a sequence. */
-  dragSemantics?: SynthesizedDragSemantics;
 };
 
 export function isRetryableRunnerError(err: unknown): boolean {

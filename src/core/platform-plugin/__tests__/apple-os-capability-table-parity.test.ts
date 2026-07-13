@@ -4,6 +4,7 @@ import { isAudioProbeSupportedDevice } from '../../../kernel/audio-probe-support
 import {
   isIosFamily,
   isMacOs,
+  resolveDeviceAppleOs,
   DEVICE_TARGETS,
   PLATFORMS,
   type AppleOS,
@@ -23,10 +24,7 @@ import {
   VISIONOS_SIMULATOR,
   WEB_DESKTOP_DEVICE,
 } from '../../../__tests__/test-utils/index.ts';
-import {
-  APPLE_OS_CAPABILITIES,
-  resolveDeviceAppleOs,
-} from '../../../platforms/apple/capabilities.ts';
+import { APPLE_OS_CAPABILITIES } from '../../../platforms/apple/capabilities.ts';
 import { getPlugin } from '../plugin.ts';
 import { registerBuiltinPlatformPlugins } from '../../interactors/register-builtins.ts';
 
@@ -49,25 +47,11 @@ registerBuiltinPlatformPlugins();
 const isNotMacOs = (device: DeviceInfo): boolean => !isMacOs(device);
 const isMacOsOrAppleSimulator = (device: DeviceInfo): boolean =>
   isMacOs(device) || device.kind === 'simulator';
-const isIosMobileSimulator = (device: DeviceInfo): boolean =>
-  isIosFamily(device) && device.kind === 'simulator' && device.target !== 'tv';
-const supportsSynthesisGesture = (device: DeviceInfo): boolean =>
-  device.platform === 'android' || isIosMobileSimulator(device);
 const supportsAndroidOrIosNonTv = (device: DeviceInfo): boolean =>
   device.platform === 'android' || (isIosFamily(device) && device.target !== 'tv');
 const supportsTvRemote = (device: DeviceInfo): boolean =>
   (device.platform === 'android' && device.target === 'tv') ||
   (isIosFamily(device) && device.target === 'tv');
-const synthesisGestureUnsupportedHint = (device: DeviceInfo): string | undefined => {
-  if (isMacOs(device))
-    return 'macOS automation has no multi-touch input — this gesture is supported on Android and the iOS simulator only.';
-  if (isIosFamily(device) && device.target === 'tv')
-    return 'tvOS has no touch input — this gesture is supported on Android and the iOS simulator only.';
-  if (isIosFamily(device) && device.kind === 'device')
-    return 'Two-finger gesture synthesis is iOS-simulator only — not available on physical iOS devices.';
-  return undefined;
-};
-
 const SUPPORTS_REF: Record<string, (device: DeviceInfo) => boolean> = {
   boot: isNotMacOs,
   install: isNotMacOs,
@@ -92,9 +76,6 @@ const SUPPORTS_REF: Record<string, (device: DeviceInfo) => boolean> = {
   // assertion stays strict (catches a dropped command) and confirms the rebase
   // did not alter it.
   audio: isAudioProbeSupportedDevice,
-  pinch: supportsSynthesisGesture,
-  'rotate-gesture': supportsSynthesisGesture,
-  'transform-gesture': supportsSynthesisGesture,
 };
 const HINT_REF: Record<string, (device: DeviceInfo) => string | undefined> = {
   'tv-remote': (device) => {
@@ -108,9 +89,6 @@ const HINT_REF: Record<string, (device: DeviceInfo) => string | undefined> = {
     }
     return isMacOs(device) ? 'tv-remote is supported only on tvOS devices.' : undefined;
   },
-  pinch: synthesisGestureUnsupportedHint,
-  'rotate-gesture': synthesisGestureUnsupportedHint,
-  'transform-gesture': synthesisGestureUnsupportedHint,
 };
 
 // ---------------------------------------------------------------------------
@@ -165,16 +143,13 @@ const SAMPLE_DEVICES: DeviceInfo[] = [
   ...buildSyntheticMatrix(),
 ];
 
-test('the per-AppleOS table row keys are exhaustive and iOS/iPadOS/visionOS share one row', () => {
+test('the per-AppleOS capability table row keys are exhaustive', () => {
   const rows: AppleOS[] = ['ios', 'ipados', 'tvos', 'watchos', 'visionos', 'macos'];
   for (const os of rows) {
     assert.ok(APPLE_OS_CAPABILITIES[os], `capability row present for ${os}`);
   }
-  // The iOS family is capability-identical today; sharing ONE frozen row is the
-  // invariant that makes a stored `appleOs: 'ipados' | 'visionos'` read exactly what
-  // the legacy target-inference produced for an unlabeled iOS record.
+  // iOS/iPadOS share the same platform capability profile.
   assert.equal(APPLE_OS_CAPABILITIES.ios, APPLE_OS_CAPABILITIES.ipados);
-  assert.equal(APPLE_OS_CAPABILITIES.ios, APPLE_OS_CAPABILITIES.visionos);
 });
 
 test('resolveDeviceAppleOs prefers the stored discriminant, else infers from target', () => {

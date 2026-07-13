@@ -1,7 +1,13 @@
 import type { AlertAction, AlertInfo } from './alert-contract.ts';
 import type { AppsFilter } from './contracts/app-inventory.ts';
 import type { JsonObject } from './contracts/json.ts';
-import type { Point, SnapshotNode, SnapshotOptions, SnapshotState } from './kernel/snapshot.ts';
+import type {
+  Point,
+  Rect,
+  SnapshotNode,
+  SnapshotOptions,
+  SnapshotState,
+} from './kernel/snapshot.ts';
 import type { NetworkIncludeMode } from './kernel/contracts.ts';
 import type { DeviceTarget, Platform, PlatformSelector, PublicPlatform } from './kernel/device.ts';
 import type { BackMode } from './contracts/back-mode.ts';
@@ -11,6 +17,7 @@ import type { DeviceRotation } from './contracts/device-rotation.ts';
 import type { ScrollDirection } from './contracts/scroll-gesture.ts';
 import type { SessionSurface } from './contracts/session-surface.ts';
 import type { TvRemoteButton } from './contracts/tv-remote.ts';
+import type { GesturePlan } from './contracts/gesture-plan-types.ts';
 import type { RecordingExportQuality } from './core/recording-export-quality.ts';
 import type { SnapshotDiagnosticsSummary } from './snapshot-diagnostics.ts';
 import type {
@@ -155,10 +162,6 @@ export type BackendLongPressOptions = {
   durationMs?: number;
 };
 
-export type BackendSwipeOptions = {
-  durationMs?: number;
-};
-
 export type BackendScrollTarget =
   | {
       kind: 'viewport';
@@ -173,11 +176,6 @@ export type BackendScrollOptions = {
   amount?: number;
   pixels?: number;
   durationMs?: number;
-};
-
-export type BackendPinchOptions = {
-  scale: number;
-  center?: Point;
 };
 
 export type BackendOpenTarget = {
@@ -434,6 +432,7 @@ export type AgentDeviceBackend = {
     context: BackendCommandContext,
     options?: BackendSnapshotOptions,
   ): Promise<BackendSnapshotResult>;
+  resolveGestureViewport?(context: BackendCommandContext): Promise<Rect | undefined>;
   captureScreenshot?(
     context: BackendCommandContext,
     outPath: string,
@@ -474,21 +473,12 @@ export type AgentDeviceBackend = {
     point: Point,
     options?: BackendLongPressOptions,
   ): Promise<BackendActionResult>;
-  swipe?(
-    context: BackendCommandContext,
-    from: Point,
-    to: Point,
-    options?: BackendSwipeOptions,
-  ): Promise<BackendActionResult>;
   scroll?(
     context: BackendCommandContext,
     target: BackendScrollTarget,
     options: BackendScrollOptions,
   ): Promise<BackendActionResult>;
-  pinch?(
-    context: BackendCommandContext,
-    options: BackendPinchOptions,
-  ): Promise<BackendActionResult>;
+  performGesture?(context: BackendCommandContext, plan: GesturePlan): Promise<BackendActionResult>;
   pressKey?(
     context: BackendCommandContext,
     key: string,

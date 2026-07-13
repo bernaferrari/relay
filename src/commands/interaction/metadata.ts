@@ -1,5 +1,4 @@
 import { defineCommandMetadata } from '../command-contract.ts';
-import { GESTURE_KINDS } from '../../command-catalog.ts';
 import {
   booleanField,
   elementTargetField,
@@ -8,32 +7,27 @@ import {
   integerField,
   interactionTargetField,
   numberField,
-  optionalInteger,
   pointField,
   readCommonInput,
   readFieldInput,
   readInputRecord,
-  readPoint,
   repeatedFields,
-  requiredEnum,
   requiredField,
-  requiredNumber,
   selectorSnapshotFields,
   stringField,
   type CommandFieldMap,
   type CommonCommandInput,
   type InferCommandInput,
-  type PointInput,
 } from '../command-input.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import { CLICK_BUTTONS } from '../../core/click-button.ts';
 import { SCROLL_DURATION_MAX_MS } from '../../contracts/scroll-command.ts';
 import {
   SCROLL_DIRECTIONS,
+  SWIPE_PAUSE_MAX_MS,
   SWIPE_PATTERNS,
   SWIPE_PRESETS,
-  type ScrollDirection,
-  type SwipePreset,
+  SWIPE_REPETITION_MAX,
 } from '../../contracts/scroll-gesture.ts';
 import { SCROLL_INPUT_DIRECTIONS } from './runtime/gestures.ts';
 import { FIND_LOCATORS } from '../../selectors/find.ts';
@@ -42,6 +36,16 @@ import {
   commandSupportsVerifyEvidence,
 } from '../../core/command-descriptor/registry.ts';
 import type { PostActionObservationSupportFor } from '../../core/command-descriptor/post-action-observation.ts';
+import {
+  GESTURE_KINDS,
+  readGesturePayload,
+  type FlingGesturePayload,
+  type PanGesturePayload,
+  type PinchGesturePayload,
+  type RotateGesturePayload,
+  type SwipeGesturePayload,
+  type TransformGesturePayload,
+} from '../../contracts/gesture-input.ts';
 
 const FIND_ACTION_VALUES = [
   'click',
@@ -135,9 +139,12 @@ const longPressFields = {
 const swipeFields = {
   from: requiredField(pointField('Swipe start point.')),
   to: requiredField(pointField('Swipe end point.')),
-  durationMs: integerField('Swipe duration in milliseconds.', { min: 0 }),
-  count: integerField('Number of swipe repetitions.', { min: 1 }),
-  pauseMs: integerField('Pause between repeated swipes.', { min: 0 }),
+  durationMs: integerField('Deprecated: timed movement is a pan; omit for swipe.', {
+    min: 16,
+    max: 10_000,
+  }),
+  count: integerField('Number of swipe repetitions.', { min: 1, max: SWIPE_REPETITION_MAX }),
+  pauseMs: integerField('Pause between repeated swipes.', { min: 0, max: SWIPE_PAUSE_MAX_MS }),
   pattern: enumField(SWIPE_PATTERNS),
 };
 
@@ -197,8 +204,12 @@ const gestureFields = {
   distance: integerField('Fling distance.', { min: 0 }),
   scale: numberField('Pinch or transform scale.'),
   degrees: numberField('Rotation in degrees.'),
-  velocity: integerField('Rotate gesture velocity.', { min: 0 }),
-  durationMs: integerField('Gesture duration in milliseconds.', { min: 0 }),
+  velocity: numberField('Deprecated: rotation pacing is derived from degrees; must be non-zero.'),
+  durationMs: integerField(
+    'Pan/transform duration. Deprecated on swipe/fling; timed movement is a pan.',
+    { min: 16, max: 10_000 },
+  ),
+  pointerCount: integerField('Pan touch pointer count (1 or 2).', { min: 1, max: 2 }),
 };
 
 export type ClickInput = InferCommandInput<typeof clickFields>;
@@ -207,48 +218,12 @@ export type FillInput = InferCommandInput<typeof fillFields>;
 export type LongPressInput = InferCommandInput<typeof longPressFields>;
 export type GetInput = InferCommandInput<typeof getFields>;
 
-export type PanInput = CommonCommandInput & {
-  kind: 'pan';
-  origin: PointInput;
-  delta: PointInput;
-  durationMs?: number;
-};
-
-export type FlingInput = CommonCommandInput & {
-  kind: 'fling';
-  direction: ScrollDirection;
-  origin: PointInput;
-  distance?: number;
-  durationMs?: number;
-};
-
-export type SwipeGestureInput = CommonCommandInput & {
-  kind: 'swipe';
-  preset: SwipePreset;
-  durationMs?: number;
-};
-
-export type PinchInput = CommonCommandInput & {
-  kind: 'pinch';
-  scale: number;
-  origin?: PointInput;
-};
-
-export type RotateInput = CommonCommandInput & {
-  kind: 'rotate';
-  degrees: number;
-  origin?: PointInput;
-  velocity?: number;
-};
-
-export type TransformInput = CommonCommandInput & {
-  kind: 'transform';
-  origin: PointInput;
-  delta: PointInput;
-  scale: number;
-  degrees: number;
-  durationMs?: number;
-};
+export type PanInput = CommonCommandInput & PanGesturePayload;
+export type FlingInput = CommonCommandInput & FlingGesturePayload;
+export type SwipeGestureInput = CommonCommandInput & SwipeGesturePayload;
+export type PinchInput = CommonCommandInput & PinchGesturePayload;
+export type RotateInput = CommonCommandInput & RotateGesturePayload;
+export type TransformInput = CommonCommandInput & TransformGesturePayload;
 
 export type GestureInput =
   | PanInput
@@ -293,63 +268,9 @@ export const interactionCommandMetadata = [
   }),
 ] as const;
 
-function readGestureInput(input: unknown): GestureInput {
+export function readGestureInput(input: unknown): GestureInput {
   const record = readInputRecord(input);
-  const common = readCommonInput(record);
-  const kind = requiredEnum(record, 'kind', GESTURE_KINDS);
-  if (kind === 'pan') {
-    return {
-      ...common,
-      kind,
-      origin: readPoint(record, 'origin'),
-      delta: readPoint(record, 'delta'),
-      durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-    };
-  }
-  if (kind === 'fling') {
-    return {
-      ...common,
-      kind,
-      direction: requiredEnum(record, 'direction', SCROLL_DIRECTIONS),
-      origin: readPoint(record, 'origin'),
-      distance: optionalInteger(record, 'distance', { min: 0 }),
-      durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-    };
-  }
-  if (kind === 'swipe') {
-    return {
-      ...common,
-      kind,
-      preset: requiredEnum(record, 'preset', SWIPE_PRESETS),
-      durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-    };
-  }
-  if (kind === 'pinch') {
-    return {
-      ...common,
-      kind,
-      scale: requiredNumber(record, 'scale'),
-      origin: optionalPoint(record, 'origin'),
-    };
-  }
-  if (kind === 'rotate') {
-    return {
-      ...common,
-      kind,
-      degrees: requiredNumber(record, 'degrees'),
-      origin: optionalPoint(record, 'origin'),
-      velocity: optionalInteger(record, 'velocity', { min: 0 }),
-    };
-  }
-  return {
-    ...common,
-    kind,
-    origin: readPoint(record, 'origin'),
-    delta: readPoint(record, 'delta'),
-    scale: requiredNumber(record, 'scale'),
-    degrees: requiredNumber(record, 'degrees'),
-    durationMs: optionalInteger(record, 'durationMs', { min: 0 }),
-  };
+  return { ...readCommonInput(record), ...readGesturePayload(record) } as GestureInput;
 }
 
 function defineInteractionCommandMetadata<
@@ -357,8 +278,4 @@ function defineInteractionCommandMetadata<
   const TFields extends CommandFieldMap,
 >(name: TName, fields: TFields) {
   return defineFieldCommandMetadata(name, interactionCommandDescriptions[name], fields);
-}
-
-function optionalPoint(record: Record<string, unknown>, key: string): PointInput | undefined {
-  return record[key] === undefined ? undefined : readPoint(record, key);
 }
