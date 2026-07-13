@@ -29,6 +29,7 @@ test('runner command manifest pins lifecycle-sensitive command groups', () => {
   assert.deepEqual(commandsForClass('preflightSkippableTouchMutation'), [
     'desktopScroll',
     'drag',
+    'gesture',
     'longPress',
     'scroll',
     'sequence',
@@ -38,6 +39,7 @@ test('runner command manifest pins lifecycle-sensitive command groups', () => {
   assert.deepEqual(commandsForClass('readOnly'), [
     'alert',
     'findText',
+    'gestureViewport',
     'querySelector',
     'readText',
     'screenshot',

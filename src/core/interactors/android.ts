@@ -17,10 +17,8 @@ import {
   typeAndroid,
 } from '../../platforms/android/input-actions.ts';
 import {
-  pinchAndroid,
-  rotateGestureAndroid,
-  swipeGestureAndroid,
-  transformGestureAndroid,
+  performGestureAndroid,
+  readAndroidGestureViewport,
 } from '../../platforms/android/multitouch-helper.ts';
 import {
   readAndroidClipboardText,
@@ -50,18 +48,13 @@ export function createAndroidInteractor(device: DeviceInfo): Interactor {
       await pressAndroid(device, x, y);
       await pressAndroid(device, x, y);
     },
-    swipe: (x1, y1, x2, y2, durationMs) =>
-      swipeGestureAndroid(device, { x1, y1, x2, y2, durationMs }),
-    pan: (x1, y1, x2, y2, durationMs) =>
-      swipeGestureAndroid(device, { x1, y1, x2, y2, durationMs }),
-    fling: (x1, y1, x2, y2, durationMs) =>
-      swipeGestureAndroid(device, { x1, y1, x2, y2, durationMs }),
     longPress: (x, y, durationMs) => longPressAndroid(device, x, y, durationMs),
     focus: (x, y) => focusAndroid(device, x, y),
     type: (text, delayMs) => typeAndroid(device, text, delayMs),
     fill: (x, y, text, delayMs) => fillAndroid(device, x, y, text, delayMs),
     scroll: (direction, options) => scrollAndroid(device, direction, options),
-    pinch: (scale, x, y) => pinchAndroid(device, { scale, x, y }),
+    performGesture: (plan) => performGestureAndroid(device, plan),
+    gestureViewport: () => readAndroidGestureViewport(device),
     screenshot: (outPath, options) => screenshotAndroid(device, outPath, options),
     snapshot: async (options) => {
       const result = await withDiagnosticTimer(
@@ -89,9 +82,6 @@ export function createAndroidInteractor(device: DeviceInfo): Interactor {
     back: (_mode) => backAndroid(device),
     home: () => homeAndroid(device),
     rotate: (orientation) => rotateAndroid(device, orientation),
-    rotateGesture: (degrees, x, y, velocity) =>
-      rotateGestureAndroid(device, { degrees, x, y, velocity }),
-    transformGesture: (options) => transformGestureAndroid(device, options),
     appSwitcher: () => appSwitcherAndroid(device),
     tvRemote: (button, durationMs) => pressAndroidTvRemote(device, button, durationMs),
     readClipboard: () => readAndroidClipboardText(device),

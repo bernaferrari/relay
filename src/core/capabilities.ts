@@ -3,6 +3,9 @@ import { commandDescriptors } from './command-descriptor/registry.ts';
 import { tryGetPlugin } from './platform-plugin/plugin.ts';
 import { registerBuiltinPlatformPlugins } from './interactors/register-builtins.ts';
 import type { DeviceInfo } from '../kernel/device.ts';
+import { AppError } from '../kernel/errors.ts';
+import type { GestureSemanticInput } from '../contracts/gesture-plan-types.ts';
+import { assertAppleMultiTouchSupported } from '../contracts/apple-multitouch-support.ts';
 
 // Populate the PlatformPlugin registry once at module load (idempotent; registers
 // only lazy closures, so no leaf code is imported and CLI cold-start is unaffected
@@ -135,4 +138,53 @@ export function supportedPlatformsForCommand(command: string): string[] {
     if (kinds && Object.values(kinds).some((value) => value === true)) supported.push(family);
   }
   return supported;
+}
+
+export function requireGestureSupported(input: GestureSemanticInput, device: DeviceInfo): void {
+  if (device.platform === 'web' || device.appleOs === 'watchos') {
+    throw unsupportedGesture(input, gesturePlatformMessage(input, device));
+  }
+  if (isMultiTouchGesture(input)) {
+    requireMultiTouchGestureSupported(input, device);
+    return;
+  }
+  if (device.appleOs === 'visionos') {
+    throw unsupportedGesture(input, gesturePlatformMessage(input, device));
+  }
+  // Linux can preserve public coordinate/preset swipe through its drag primitive, but cannot
+  // honor the velocity semantics authored by `gesture fling`.
+  if (input.intent === 'fling' && 'direction' in input && device.platform === 'linux') {
+    throw unsupportedGesture(input, 'gesture fling is not supported on Linux');
+  }
+}
+
+function isMultiTouchGesture(input: GestureSemanticInput): boolean {
+  if (input.intent === 'pan') return ('pointerCount' in input ? input.pointerCount : 1) === 2;
+  return input.intent === 'pinch' || input.intent === 'rotate' || input.intent === 'transform';
+}
+
+function requireMultiTouchGestureSupported(input: GestureSemanticInput, device: DeviceInfo): void {
+  if (device.platform === 'android') {
+    if (device.target !== 'tv') return;
+    throw unsupportedGesture(
+      input,
+      `gesture ${input.intent} is not supported on Android TV`,
+      'Android TV has no touch input — this gesture is supported on Android phones, tablets, and the iOS simulator only.',
+    );
+  }
+  if (device.platform !== 'apple') {
+    throw unsupportedGesture(input, gesturePlatformMessage(input, device));
+  }
+  assertAppleMultiTouchSupported(device, input.intent);
+}
+
+function gesturePlatformMessage(input: GestureSemanticInput, device: DeviceInfo): string {
+  return `gesture ${input.intent} is not supported on ${device.appleOs ?? device.platform}`;
+}
+
+function unsupportedGesture(input: GestureSemanticInput, message: string, hint?: string): AppError {
+  return new AppError('UNSUPPORTED_OPERATION', message, {
+    gesture: input.intent,
+    ...(hint ? { hint } : {}),
+  });
 }

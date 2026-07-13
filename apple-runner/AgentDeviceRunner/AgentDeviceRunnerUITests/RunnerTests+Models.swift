@@ -24,21 +24,14 @@ enum CommandType: String, Codable {
   case keyboardDismiss
   case keyboardReturn
   case alert
-  case pinch
   case sequence
-  case rotateGesture
-  case transformGesture
+  case gesture
+  case gestureViewport
   case recordStart
   case recordStop
   case status
   case uptime
   case shutdown
-}
-
-enum SynthesizedDragSemantics: String, Codable {
-  case swipe
-  case pan
-  case fling
 }
 
 /// Runner command traits — see CONTEXT.md ("Runner command traits").
@@ -80,11 +73,11 @@ extension CommandType {
     // .sequence is the fused multi-step gesture batch.
     case .tap, .longPress, .drag, .remotePress, .type, .swipe, .scroll, .desktopScroll,
          .back, .backInApp, .backSystem, .rotate, .appSwitcher,
-         .keyboardDismiss, .keyboardReturn, .pinch, .sequence, .rotateGesture, .transformGesture:
+         .keyboardDismiss, .keyboardReturn, .sequence, .gesture:
       return CommandTraits(isInteraction: true, readOnly: .never, isLifecycle: false)
 
     // Read-only reads: eligible for the session-invalidating retry.
-    case .findText, .readText, .snapshot:
+    case .findText, .readText, .snapshot, .gestureViewport:
       return CommandTraits(isInteraction: false, readOnly: .always, isLifecycle: false)
 
     // Screenshot is both a read and a runner-lifecycle command (skips app-activation preflight).
@@ -132,16 +125,12 @@ struct Command: Codable {
   let remoteButton: String?
   let x2: Double?
   let y2: Double?
-  let dx: Double?
-  let dy: Double?
   let durationMs: Double?
   let direction: String?
   let amount: Double?
   let pixels: Double?
   let orientation: String?
-  let scale: Double?
-  let degrees: Double?
-  let velocity: Double?
+  let gesturePlan: RunnerGesturePlan?
   let outPath: String?
   let fps: Int?
   let maxSize: Int?
@@ -151,9 +140,38 @@ struct Command: Codable {
   let raw: Bool?
   let fullscreen: Bool?
   let synthesized: Bool?
-  /// Preserves the public gesture's timing semantics after it is lowered to runner `drag`.
-  let dragSemantics: SynthesizedDragSemantics?
   let steps: [SequenceStep]?
+}
+
+/// Canonical one- or two-pointer plan produced by the portable TypeScript planner.
+struct RunnerGesturePlan: Codable {
+  let topology: String
+  let intent: String
+  let durationMs: Double
+  let viewport: RunnerGestureViewport
+  let pointers: [RunnerGesturePointer]
+}
+
+struct RunnerGestureViewport: Codable {
+  let x: Double
+  let y: Double
+  let width: Double
+  let height: Double
+}
+
+struct RunnerGesturePointer: Codable {
+  let pointerId: Int
+  let samples: [RunnerGestureSample]
+}
+
+struct RunnerGestureSample: Codable {
+  let offsetMs: Double
+  let point: RunnerGesturePoint
+}
+
+struct RunnerGesturePoint: Codable {
+  let x: Double
+  let y: Double
 }
 
 /// One allowlisted coordinate gesture step inside a fused `sequence` command.
@@ -163,15 +181,11 @@ struct SequenceStep: Codable {
   let kind: String
   let x: Double?
   let y: Double?
-  let x2: Double?
-  let y2: Double?
   let durationMs: Double?
   let pauseMs: Double?
-  /// For `tap`/`drag` steps on iOS non-tv: use the synthesized HID fast path instead of the
+  /// For `tap` steps on iOS non-tv: use the synthesized HID fast path instead of the
   /// drag-based XCUICoordinate path, matching the individual command behavior.
   let synthesized: Bool?
-  /// Preserves one-shot swipe timing when repeated swipes are fused into a sequence.
-  let dragSemantics: SynthesizedDragSemantics?
 }
 
 /// Per-step result for a `sequence` response. `ok:false` carries the failing step's

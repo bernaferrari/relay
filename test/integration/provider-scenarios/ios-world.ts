@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DeviceInventoryRequest } from '../../../src/core/dispatch-resolve.ts';
+import { buildGesturePlan } from '../../../src/contracts/gesture-plan.ts';
 import type { RawSnapshotNode } from '../../../src/kernel/snapshot.ts';
 import type { ProviderScenarioTranscript } from './transcript.ts';
 import {
@@ -26,6 +27,8 @@ type IosSettingsWorld = {
   close: () => Promise<void>;
 };
 
+const IOS_SETTINGS_VIEWPORT = { x: 0, y: 0, width: 393, height: 852 } as const;
+
 export async function createIosSettingsWorld(): Promise<IosSettingsWorld> {
   const { tempRoot, appPath } = createDemoIosApp('agent-device-provider-scenario-ios-deploy-');
   const inventoryRequests: DeviceInventoryRequest[] = [];
@@ -37,7 +40,6 @@ export async function createIosSettingsWorld(): Promise<IosSettingsWorld> {
       request: { command: 'uptime' },
       result: { uptimeMs: 42 },
     },
-    runnerSnapshot(),
     runnerSnapshot(),
     {
       command: 'ios.runner.tap',
@@ -52,85 +54,94 @@ export async function createIosSettingsWorld(): Promise<IosSettingsWorld> {
       },
       result: { tapped: true },
     },
+    runnerSnapshot(),
+    runnerGestureViewport(),
     {
-      command: 'ios.runner.pinch',
+      command: 'ios.runner.gesture',
       deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
       platform: 'apple',
       request: {
-        command: 'pinch',
-        scale: 0.8,
-        x: 196,
-        y: 122,
+        command: 'gesture',
+        gesturePlan: buildGesturePlan(
+          { intent: 'pinch', origin: { x: 196, y: 122 }, scale: 0.8 },
+          IOS_SETTINGS_VIEWPORT,
+        ),
         appBundleId: 'com.apple.Preferences',
       },
       result: { pinched: true },
     },
+    runnerGestureViewport(),
     {
-      command: 'ios.runner.drag',
+      command: 'ios.runner.gesture',
       deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
       platform: 'apple',
       request: {
-        command: 'drag',
-        x: 196,
-        y: 122,
-        x2: 276,
-        y2: 122,
-        durationMs: 500,
-        synthesized: true,
-        dragSemantics: 'pan',
+        command: 'gesture',
+        gesturePlan: buildGesturePlan(
+          {
+            intent: 'pan',
+            origin: { x: 196, y: 122 },
+            delta: { x: 80, y: 0 },
+            durationMs: 500,
+          },
+          IOS_SETTINGS_VIEWPORT,
+        ),
         appBundleId: 'com.apple.Preferences',
       },
       result: { dragged: true },
     },
+    runnerGestureViewport(),
     {
-      command: 'ios.runner.drag',
+      command: 'ios.runner.gesture',
       deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
       platform: 'apple',
       request: {
-        command: 'drag',
-        x: 196,
-        y: 122,
-        x2: 376,
-        y2: 122,
-        durationMs: 50,
-        synthesized: true,
-        dragSemantics: 'fling',
+        command: 'gesture',
+        gesturePlan: buildGesturePlan(
+          { intent: 'fling', direction: 'right', origin: { x: 196, y: 122 }, distance: 180 },
+          IOS_SETTINGS_VIEWPORT,
+        ),
         appBundleId: 'com.apple.Preferences',
       },
       result: { flung: true },
     },
+    runnerGestureViewport(),
     {
-      command: 'ios.runner.rotateGesture',
+      command: 'ios.runner.gesture',
       deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
       platform: 'apple',
       request: {
-        command: 'rotateGesture',
-        degrees: 35,
-        x: 196,
-        y: 122,
-        velocity: 1,
+        command: 'gesture',
+        gesturePlan: buildGesturePlan(
+          { intent: 'rotate', origin: { x: 196, y: 122 }, degrees: 35 },
+          IOS_SETTINGS_VIEWPORT,
+        ),
         appBundleId: 'com.apple.Preferences',
       },
       result: { rotated: true },
     },
+    runnerGestureViewport(),
     {
-      command: 'ios.runner.transformGesture',
+      command: 'ios.runner.gesture',
       deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
       platform: 'apple',
       request: {
-        command: 'transformGesture',
-        x: 196,
-        y: 122,
-        dx: 40,
-        dy: -20,
-        scale: 1.5,
-        degrees: 35,
-        durationMs: 700,
+        command: 'gesture',
+        gesturePlan: buildGesturePlan(
+          {
+            intent: 'transform',
+            origin: { x: 196, y: 122 },
+            delta: { x: 40, y: -20 },
+            scale: 1.5,
+            degrees: 35,
+            durationMs: 700,
+          },
+          IOS_SETTINGS_VIEWPORT,
+        ),
         appBundleId: 'com.apple.Preferences',
       },
       result: { transformed: true },
     },
-    runnerSnapshot(),
     {
       command: 'ios.runner.querySelector',
       deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
@@ -156,6 +167,7 @@ export async function createIosSettingsWorld(): Promise<IosSettingsWorld> {
         ],
       },
     },
+    runnerSnapshot(),
     {
       command: 'ios.runner.findText',
       deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
@@ -369,8 +381,35 @@ function runnerSnapshot() {
           enabled: true,
           hittable: true,
         },
+        {
+          index: 1,
+          type: 'XCUIElementTypeApplication',
+          label: 'Settings',
+          identifier: 'com.apple.Preferences',
+          rect: IOS_SETTINGS_VIEWPORT,
+          enabled: true,
+          hittable: true,
+        },
       ],
       truncated: false,
+    },
+  };
+}
+
+function runnerGestureViewport() {
+  return {
+    command: 'ios.runner.gestureViewport',
+    deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
+    platform: 'apple' as const,
+    request: {
+      command: 'gestureViewport',
+      appBundleId: 'com.apple.Preferences',
+    },
+    result: {
+      x: IOS_SETTINGS_VIEWPORT.x,
+      y: IOS_SETTINGS_VIEWPORT.y,
+      x2: IOS_SETTINGS_VIEWPORT.width,
+      y2: IOS_SETTINGS_VIEWPORT.height,
     },
   };
 }

@@ -13,6 +13,16 @@ private enum RunnerInterfaceOrientation {
 }
 
 extension RunnerTests {
+  enum PlannedGestureExecution: Equatable {
+    case fastSwipe
+    case sampled
+  }
+
+  enum SynthesizedDragProfile {
+    case continuous
+    case fastSwipe
+  }
+
   struct TouchVisualizationFrame {
     let x: Double
     let y: Double
@@ -775,7 +785,7 @@ extension RunnerTests {
     x2: Double,
     y2: Double,
     durationMs: Double,
-    semantics: SynthesizedDragSemantics?,
+    profile: SynthesizedDragProfile = .continuous,
     context: SynthesizedCoordinateContext? = nil
   ) -> RunnerInteractionOutcome {
 #if os(iOS)
@@ -795,8 +805,9 @@ extension RunnerTests {
     let frame = context.referenceFrame
     let start = nativeSynthesizedPoint(orientedX: x, orientedY: y, in: frame, interfaceOrientation: orientation)
     let end = nativeSynthesizedPoint(orientedX: x2, orientedY: y2, in: frame, interfaceOrientation: orientation)
-    let message = if semantics == .swipe {
-      RunnerSynthesizedGesture.synthesizeSwipe(
+    let message = switch profile {
+    case .continuous:
+      RunnerSynthesizedGesture.synthesizeContinuousDrag(
         withApplication: app,
         x: Double(start.x),
         y: Double(start.y),
@@ -804,8 +815,8 @@ extension RunnerTests {
         y2: Double(end.y),
         durationMs: durationMs
       )
-    } else {
-      RunnerSynthesizedGesture.synthesizeContinuousDrag(
+    case .fastSwipe:
+      RunnerSynthesizedGesture.synthesizeSwipe(
         withApplication: app,
         x: Double(start.x),
         y: Double(start.y),
@@ -1166,123 +1177,132 @@ extension RunnerTests {
     }
   }
 
-  func pinch(app: XCUIApplication, scale: Double, x: Double?, y: Double?) -> RunnerInteractionOutcome {
-#if os(iOS)
-    // A coordinate tap+drag is a single-finger gesture: React Native reads it as a pan
-    // and the pinch scale never changes (#629). Drive the two-finger XCTest synthesis
-    // path (the same one transformGesture uses) with zero translation/rotation so RN's
-    // pinch recognizer actually fires.
-    let frame = interactionRoot(app: app).frame
-    let centerX = x ?? Double(frame.midX)
-    let centerY = y ?? Double(frame.midY)
-    return transformGesture(
-      app: app,
-      x: centerX,
-      y: centerY,
-      dx: 0,
-      dy: 0,
-      scale: scale,
-      degrees: 0,
-      durationMs: 300
-    )
-#elseif os(tvOS)
-    return .unsupported(
-      message: "pinch is not supported on tvOS",
-      hint: "tvOS has no touch input; pinch requires a touchscreen (run on iOS)."
-    )
-#else
-    return .unsupported(
-      message: "pinch is not supported on macOS",
-      hint: "macOS automation has no multi-touch input; pinch requires a touchscreen (run on iOS)."
-    )
-#endif
+  func plannedGestureValidationError(_ plan: RunnerGesturePlan) -> String? {
+    guard plan.topology == "single" || plan.topology == "two" else {
+      return "planned gesture topology must be single or two"
+    }
+    let supportedIntent = plan.topology == "single"
+      ? plan.intent == "fling" || plan.intent == "pan"
+      : plan.intent == "pan" || plan.intent == "pinch" || plan.intent == "rotate"
+        || plan.intent == "transform"
+    guard supportedIntent else { return "planned gesture has unsupported intent for its topology" }
+    guard plan.durationMs.isFinite, plan.durationMs >= 16, plan.durationMs <= 10_000 else {
+      return "planned gesture durationMs must be between 16 and 10000"
+    }
+    let viewport = plan.viewport
+    guard viewport.x.isFinite, viewport.y.isFinite, viewport.width.isFinite,
+      viewport.height.isFinite, viewport.width > 0, viewport.height > 0
+    else {
+      return "planned gesture viewport must be finite and positive"
+    }
+    let expectedPointerCount = plan.topology == "single" ? 1 : 2
+    guard plan.pointers.count == expectedPointerCount else {
+      return "planned gesture pointer count does not match topology"
+    }
+    for (index, pointer) in plan.pointers.enumerated() where pointer.pointerId != index {
+      return "planned gesture requires ordered pointer ids"
+    }
+    let firstSamples = plan.pointers[0].samples
+    guard firstSamples.count >= 2 else { return "planned pointer paths require at least two samples" }
+    for pointer in plan.pointers {
+      guard pointer.samples.count == firstSamples.count else {
+        return "planned pointer paths require matching samples"
+      }
+      var previousOffset = -1.0
+      for (index, sample) in pointer.samples.enumerated() {
+        guard sample.offsetMs.isFinite,
+          sample.offsetMs == firstSamples[index].offsetMs,
+          sample.offsetMs > previousOffset
+        else {
+          return "planned pointer sample offsets must match and strictly increase"
+        }
+        let point = sample.point
+        guard point.x.isFinite, point.y.isFinite,
+          point.x >= viewport.x,
+          point.x <= viewport.x + viewport.width,
+          point.y >= viewport.y,
+          point.y <= viewport.y + viewport.height
+        else {
+          return "planned pointer sample lies outside the viewport"
+        }
+        previousOffset = sample.offsetMs
+      }
+      guard pointer.samples.first?.offsetMs == 0,
+        pointer.samples.last?.offsetMs == plan.durationMs
+      else {
+        return "planned pointer paths must start at 0 and end at durationMs"
+      }
+    }
+    if plan.topology == "two" {
+      guard let firstStart = firstSamples.first?.point,
+        let secondStart = plan.pointers[1].samples.first?.point,
+        hypot(firstStart.x - secondStart.x, firstStart.y - secondStart.y) > 0
+      else {
+        return "planned pointer paths require a positive initial span"
+      }
+    }
+    return nil
   }
 
-  func rotateGesture(app: XCUIApplication, degrees: Double, x: Double?, y: Double?, velocity: Double) -> RunnerInteractionOutcome {
-#if os(iOS)
-    // Drive the two-finger XCTest synthesis path (the same one pinch/transformGesture use, #634)
-    // with zero translation/scale so React Native's rotation recognizer actually fires. The native
-    // XCUIElement.rotate(withVelocity:) injects a single synthetic rotation that RN's gesture
-    // handler does not read reliably — the same class of problem #629/#634 fixed for pinch.
-    // velocity is unused on iOS (synthesis speed is governed by durationMs); the wire contract
-    // keeps it for compatibility and direction is carried entirely by the sign of `degrees`.
-    let frame = interactionRoot(app: app).frame
-    let centerX = x ?? Double(frame.midX)
-    let centerY = y ?? Double(frame.midY)
-    return transformGesture(
-      app: app,
-      x: centerX,
-      y: centerY,
-      dx: 0,
-      dy: 0,
-      scale: 1,
-      degrees: degrees,
-      durationMs: 300
-    )
-#elseif os(tvOS)
-    return .unsupported(
-      message: "rotate-gesture is not supported on tvOS",
-      hint: "tvOS has no touch input; rotation gestures require a touchscreen (run on iOS)."
-    )
-#else
-    return .unsupported(
-      message: "rotate-gesture is not supported on macOS",
-      hint: "macOS automation has no multi-touch input; rotation gestures require a touchscreen (run on iOS)."
-    )
-#endif
+  func plannedGestureExecution(for plan: RunnerGesturePlan) -> PlannedGestureExecution {
+    plan.topology == "single" && plan.intent == "fling" ? .fastSwipe : .sampled
   }
 
-  func transformGesture(
+  func sampledPlannedGesture(
     app: XCUIApplication,
-    x: Double,
-    y: Double,
-    dx: Double,
-    dy: Double,
-    scale: Double,
-    degrees: Double,
-    durationMs: Double
+    plan: RunnerGesturePlan
   ) -> RunnerInteractionOutcome {
 #if os(iOS)
-    let target = interactionRoot(app: app)
     let orientation = Int(RunnerSynthesizedGesture.interfaceOrientation(forApplication: app))
-    let point = nativeSynthesizedPoint(orientedX: x, orientedY: y, in: app.frame, interfaceOrientation: orientation)
-    let vector = nativeSynthesizedVector(orientedDx: dx, orientedDy: dy, interfaceOrientation: orientation)
-    if let message = RunnerSynthesizedGesture.synthesizeTransform(
+    // The portable planner and validation use this exact viewport. Using app.frame here can
+    // diverge when XCTest unions transformed/off-screen descendants into the application frame.
+    let frame = CGRect(
+      x: plan.viewport.x,
+      y: plan.viewport.y,
+      width: plan.viewport.width,
+      height: plan.viewport.height
+    )
+    let pointerSamples: [[[String: NSNumber]]] = plan.pointers.map { pointer in
+      pointer.samples.map { sample in
+        let point = nativeSynthesizedPoint(
+          orientedX: sample.point.x,
+          orientedY: sample.point.y,
+          in: frame,
+          interfaceOrientation: orientation
+        )
+        return [
+          "x": NSNumber(value: Double(point.x)),
+          "y": NSNumber(value: Double(point.y)),
+          "offsetMs": NSNumber(value: sample.offsetMs),
+        ]
+      }
+    }
+    if let message = RunnerSynthesizedGesture.synthesizeGesture(
       withApplication: app,
-      x: Double(point.x),
-      y: Double(point.y),
-      dx: Double(vector.dx),
-      dy: Double(vector.dy),
-      scale: scale,
-      degrees: degrees,
-      radius: transformGestureRadius(frame: target.frame, scale: scale),
-      durationMs: durationMs
+      pointerSamples: pointerSamples
     ) {
       return .unsupported(
         message: message,
-        hint: "This gesture uses private XCTest event-synthesis APIs; rebuild the runner with a supported Xcode (these APIs can change across Xcode versions)."
+        hint: "This gesture uses private XCTest event-synthesis APIs; rebuild the runner with a supported Xcode if this persists."
       )
     }
     return .performed
 #elseif os(tvOS)
     return .unsupported(
-      message: "transformGesture is not supported on tvOS",
-      hint: "tvOS has no touch input; transform gestures require a touchscreen (run on iOS)."
+      message: "two-finger gestures are not supported on tvOS",
+      hint: "tvOS has no touch input; use remote-driven navigation."
+    )
+#elseif os(visionOS)
+    return .unsupported(
+      message: "two-finger touch gestures are not supported on visionOS",
+      hint: "The current XCTest synthesizer supports iOS and iPadOS touch simulators only."
     )
 #else
     return .unsupported(
-      message: "transformGesture is not supported on macOS",
-      hint: "macOS automation has no multi-touch input; transform gestures require a touchscreen (run on iOS)."
+      message: "two-finger gestures are not supported on macOS",
+      hint: "macOS automation has no multi-touch input; run on an iOS simulator."
     )
 #endif
-  }
-
-  private func transformGestureRadius(frame: CGRect, scale: Double) -> Double {
-    let shorterSide = Double(min(frame.width, frame.height))
-    let frameRadius = shorterSide * 0.20
-    let minimumEndRadius = shorterSide * 0.08
-    let scaleAdjustedRadius = scale < 1.0 ? max(frameRadius, minimumEndRadius / scale) : frameRadius
-    return min(max(scaleAdjustedRadius, 48.0), shorterSide * 0.35)
   }
 
   private func interactionRoot(app: XCUIApplication) -> XCUIElement {
@@ -1428,6 +1448,53 @@ extension RunnerTests {
         screenshotSize: { CGSize(width: CGFloat.infinity, height: 932) }
       )
     )
+  }
+
+  func testPlannedMultiTouchGestureAcceptsMatchingInBoundsTrajectories() throws {
+    let plan = try JSONDecoder().decode(
+      RunnerGesturePlan.self,
+      from: Data(
+        #"{"topology":"two","intent":"pan","durationMs":32,"viewport":{"x":0,"y":0,"width":200,"height":300},"pointers":[{"pointerId":0,"samples":[{"offsetMs":0,"point":{"x":80,"y":80}},{"offsetMs":16,"point":{"x":90,"y":85}},{"offsetMs":32,"point":{"x":100,"y":90}}]},{"pointerId":1,"samples":[{"offsetMs":0,"point":{"x":80,"y":120}},{"offsetMs":16,"point":{"x":90,"y":125}},{"offsetMs":32,"point":{"x":100,"y":130}}]}]}"#.utf8
+      )
+    )
+
+    XCTAssertNil(plannedGestureValidationError(plan))
+  }
+
+  func testPlannedMultiTouchGestureRejectsMismatchedOffsets() throws {
+    let plan = try JSONDecoder().decode(
+      RunnerGesturePlan.self,
+      from: Data(
+        #"{"topology":"two","intent":"transform","durationMs":32,"viewport":{"x":0,"y":0,"width":200,"height":300},"pointers":[{"pointerId":0,"samples":[{"offsetMs":0,"point":{"x":80,"y":80}},{"offsetMs":32,"point":{"x":100,"y":90}}]},{"pointerId":1,"samples":[{"offsetMs":0,"point":{"x":80,"y":120}},{"offsetMs":31,"point":{"x":100,"y":130}}]}]}"#.utf8
+      )
+    )
+
+    XCTAssertEqual(
+      plannedGestureValidationError(plan),
+      "planned pointer sample offsets must match and strictly increase"
+    )
+  }
+
+  func testSinglePointerFlingUsesFastSwipeExecution() throws {
+    let plan = try JSONDecoder().decode(
+      RunnerGesturePlan.self,
+      from: Data(
+        #"{"topology":"single","intent":"fling","durationMs":100,"viewport":{"x":0,"y":0,"width":200,"height":300},"pointers":[{"pointerId":0,"samples":[{"offsetMs":0,"point":{"x":160,"y":150}},{"offsetMs":100,"point":{"x":40,"y":150}}]}]}"#.utf8
+      )
+    )
+
+    XCTAssertEqual(plannedGestureExecution(for: plan), .fastSwipe)
+  }
+
+  func testSinglePointerTimedPanUsesSampledExecution() throws {
+    let plan = try JSONDecoder().decode(
+      RunnerGesturePlan.self,
+      from: Data(
+        #"{"topology":"single","intent":"pan","durationMs":500,"viewport":{"x":0,"y":0,"width":200,"height":300},"pointers":[{"pointerId":0,"samples":[{"offsetMs":0,"point":{"x":160,"y":150}},{"offsetMs":250,"point":{"x":100,"y":150}},{"offsetMs":500,"point":{"x":40,"y":150}}]}]}"#.utf8
+      )
+    )
+
+    XCTAssertEqual(plannedGestureExecution(for: plan), .sampled)
   }
 
   func testDesktopScrollWheelDeltasMapDirections() throws {

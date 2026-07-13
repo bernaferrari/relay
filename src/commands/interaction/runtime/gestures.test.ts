@@ -6,7 +6,6 @@ import {
   createInteractionDevice,
   runtimeScrollSnapshot,
   selectorSnapshot,
-  snapshotWithOffscreenContent,
 } from './__tests__/test-utils/index.ts';
 
 test('runtime focus and longPress share selector/ref target resolution', async () => {
@@ -278,117 +277,13 @@ test('runtime scroll bottom keeps scoped snapshot failures scoped', async () => 
   assert.equal(snapshotCount, 2);
 });
 
-test('runtime swipe supports explicit and viewport-derived targets', async () => {
-  const calls: unknown[] = [];
-  const device = createInteractionDevice(selectorSnapshot(), {
-    swipe: async (_context, from, to, options) => {
-      calls.push({ from, to, durationMs: options?.durationMs });
-    },
-  });
-
-  const explicit = await device.interactions.swipe({
-    from: selector('label=Continue'),
-    to: { x: 200, y: 40 },
-    durationMs: 300,
-    session: 'default',
-  });
-  const directional = await device.interactions.swipe({
-    direction: 'left',
-    distance: 25,
-    session: 'default',
-  });
-
-  assert.deepEqual(explicit.from, { x: 60, y: 40 });
-  assert.deepEqual(directional.from, { x: 60, y: 40 });
-  assert.deepEqual(directional.to, { x: 35, y: 40 });
-  assert.deepEqual(calls, [
-    { from: { x: 60, y: 40 }, to: { x: 200, y: 40 }, durationMs: 300 },
-    { from: { x: 60, y: 40 }, to: { x: 35, y: 40 }, durationMs: undefined },
-  ]);
-});
-
-test('runtime directional swipe uses the visible viewport instead of off-screen content bounds', async () => {
-  const calls: unknown[] = [];
-  const device = createInteractionDevice(snapshotWithOffscreenContent(), {
-    swipe: async (_context, from, to) => {
-      calls.push({ from, to });
-    },
-  });
-
-  const result = await device.interactions.swipe({
-    direction: 'left',
-    distance: 25,
-    session: 'default',
-  });
-
-  assert.deepEqual(result.from, { x: 50, y: 50 });
-  assert.deepEqual(result.to, { x: 25, y: 50 });
-  assert.deepEqual(calls, [{ from: { x: 50, y: 50 }, to: { x: 25, y: 50 } }]);
-});
-
-test('runtime gesture swipe presets use stable viewport lanes', async () => {
-  const calls: unknown[] = [];
-  const device = createInteractionDevice(snapshotWithOffscreenContent(), {
-    platform: 'android',
-    swipe: async (_context, from, to, options) => {
-      calls.push({ from, to, durationMs: options?.durationMs });
-    },
-  });
-
-  const pageSwipe = await device.interactions.swipe({
-    preset: 'left',
-    durationMs: 300,
-    session: 'default',
-  });
-  const edgeSwipe = await device.interactions.swipe({
-    preset: 'right-edge',
-    durationMs: 350,
-    session: 'default',
-  });
-
-  assert.deepEqual(pageSwipe.from, { x: 85, y: 50 });
-  assert.deepEqual(pageSwipe.to, { x: 15, y: 50 });
-  assert.deepEqual(edgeSwipe.from, { x: 8, y: 50 });
-  assert.deepEqual(edgeSwipe.to, { x: 85, y: 50 });
-  assert.deepEqual(calls, [
-    { from: { x: 85, y: 50 }, to: { x: 15, y: 50 }, durationMs: 300 },
-    { from: { x: 8, y: 50 }, to: { x: 85, y: 50 }, durationMs: 350 },
-  ]);
-});
-
-test('runtime iOS in-page swipe presets avoid edge-navigation lanes', async () => {
-  const calls: unknown[] = [];
-  const device = createInteractionDevice(snapshotWithOffscreenContent(), {
-    platform: 'ios',
-    swipe: async (_context, from, to, options) => {
-      calls.push({ from, to, durationMs: options?.durationMs });
-    },
-  });
-
-  const pageSwipe = await device.interactions.swipe({
-    preset: 'right',
-    durationMs: 300,
-    session: 'default',
-  });
-
-  assert.deepEqual(pageSwipe.from, { x: 15, y: 50 });
-  assert.deepEqual(pageSwipe.to, { x: 85, y: 50 });
-  assert.deepEqual(calls, [{ from: { x: 15, y: 50 }, to: { x: 85, y: 50 }, durationMs: 300 }]);
-});
-
-test('runtime viewport gestures reject inspect-only macOS surfaces', async () => {
+test('runtime viewport scroll rejects inspect-only macOS surfaces', async () => {
   for (const surface of ['desktop', 'menubar'] as const) {
     const device = createInteractionDevice(selectorSnapshot(), {
       platform: 'macos',
       sessionMetadata: { surface },
       scroll: async () => {
         throw new Error(`${surface} scroll should be rejected before backend call`);
-      },
-      swipe: async () => {
-        throw new Error(`${surface} swipe should be rejected before backend call`);
-      },
-      pinch: async () => {
-        throw new Error(`${surface} pinch should be rejected before backend call`);
       },
     });
 
@@ -401,55 +296,35 @@ test('runtime viewport gestures reject inspect-only macOS surfaces', async () =>
         }),
       new RegExp(`scroll is not supported on macOS ${surface}`),
     );
-    await assert.rejects(
-      () =>
-        device.interactions.swipe({
-          direction: 'left',
-          session: 'default',
-        }),
-      new RegExp(`swipe is not supported on macOS ${surface}`),
-    );
-    await assert.rejects(
-      () =>
-        device.interactions.swipe({
-          from: { x: 10, y: 20 },
-          to: { x: 30, y: 20 },
-          session: 'default',
-        }),
-      new RegExp(`swipe is not supported on macOS ${surface}`),
-    );
-    await assert.rejects(
-      () =>
-        device.interactions.pinch({
-          scale: 1.2,
-          session: 'default',
-        }),
-      new RegExp(`pinch is not supported on macOS ${surface}`),
-    );
   }
 });
 
-test('runtime pinch is backend-gated and resolves optional center targets', async () => {
-  const calls: unknown[] = [];
-  const unsupported = createInteractionDevice(selectorSnapshot());
-  await assert.rejects(
-    () => unsupported.interactions.pinch({ scale: 1.2 }),
-    /pinch is not supported/,
-  );
-
+test('runtime multi-touch planning prefers backend viewport geometry without a snapshot capture', async () => {
+  let capturedPlan: unknown;
   const device = createInteractionDevice(selectorSnapshot(), {
-    pinch: async (_context, options) => {
-      calls.push(options);
+    platform: 'android',
+    captureSnapshot: async () => {
+      throw new Error('gesture viewport must not capture Android accessibility state');
+    },
+    resolveGestureViewport: async () => ({ x: 0, y: 0, width: 300, height: 600 }),
+    performGesture: async (_context, plan) => {
+      capturedPlan = plan;
     },
   });
 
-  const result = await device.interactions.pinch({
-    scale: 0.8,
-    center: ref('@e1'),
-    session: 'default',
+  await device.interactions.gesture({
+    gesture: {
+      intent: 'pan',
+      origin: { x: 150, y: 300 },
+      delta: { x: 20, y: 0 },
+      pointerCount: 2,
+    },
   });
 
-  assert.equal(result.kind, 'pinch');
-  assert.deepEqual(result.center, { x: 60, y: 40 });
-  assert.deepEqual(calls, [{ scale: 0.8, center: { x: 60, y: 40 } }]);
+  assert.deepEqual(
+    capturedPlan && typeof capturedPlan === 'object' && 'viewport' in capturedPlan
+      ? capturedPlan.viewport
+      : undefined,
+    { x: 0, y: 0, width: 300, height: 600 },
+  );
 });

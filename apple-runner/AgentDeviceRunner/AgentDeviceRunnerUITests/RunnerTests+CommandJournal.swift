@@ -146,7 +146,7 @@ final class RunnerCommandJournal {
     case .tap, .mouseClick, .longPress, .drag,
          .remotePress, .type, .swipe, .scroll, .desktopScroll, .findText, .querySelector, .readText, .back,
          .backInApp, .backSystem, .home, .rotate, .appSwitcher, .keyboardDismiss, .keyboardReturn,
-         .alert, .pinch, .sequence, .rotateGesture, .transformGesture, .recordStart, .recordStop,
+         .alert, .sequence, .gesture, .gestureViewport, .recordStart, .recordStop,
          .status, .uptime, .shutdown:
       return true
     }
@@ -383,7 +383,7 @@ extension RunnerTests {
                          gestureStartUptimeMs: 100, gestureEndUptimeMs: 120),
       SequenceStepResult(ok: true, kind: "tap", errorCode: nil, errorMessage: nil,
                          gestureStartUptimeMs: 130, gestureEndUptimeMs: 150),
-      SequenceStepResult(ok: false, kind: "drag", errorCode: "UNSUPPORTED_OPERATION",
+      SequenceStepResult(ok: false, kind: "longPress", errorCode: "UNSUPPORTED_OPERATION",
                          errorMessage: longError, gestureStartUptimeMs: 160, gestureEndUptimeMs: 180),
     ]
 

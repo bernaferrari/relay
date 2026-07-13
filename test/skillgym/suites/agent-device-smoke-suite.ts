@@ -2113,6 +2113,7 @@ Treat the recovery message as a warning, not a fatal error. Use the exposed Sear
       'Need to advance and return across pages repeatedly',
       'Gesture should use a swipe series, not scroll',
       'Use one direct swipe command with --count and --pattern; do not use batch',
+      'Swipe series are bounded to 200 repetitions, 10000ms pauses, and 60000ms scheduled time',
     ],
     task: 'Plan one direct gesture command to swipe horizontally across the carousel eight times with a 30ms pause and ping-pong pattern.',
     outputs: [
@@ -2199,6 +2200,26 @@ Treat the recovery message as a warning, not a fatal error. Use the exposed Sear
       topLevelPlannedCommand('rotate'),
       topLevelPlannedCommand('rotate-gesture'),
       /--duration-ms/i,
+      /--pointer-count/i,
+    ],
+  }),
+  makeCase({
+    id: 'gesture-two-finger-pan',
+    contract: [
+      'Platform: Android',
+      'Current screen: map tilt canary',
+      'Target center is x=200 y=420',
+      'The recognizer requires exactly two fingers moving in parallel',
+      'Pan delta is dx=80 dy=-40 over 700ms',
+      'Do not add scale or rotation',
+    ],
+    task: 'Plan the direct agent-device gesture command for the two-finger pan.',
+    outputs: [plannedCommand('gesture pan'), /200\s+420\s+80\s+-40\s+700/i, /--pointer-count\s+2/i],
+    forbiddenOutputs: [
+      plannedCommand('gesture transform'),
+      plannedCommand('gesture pinch'),
+      plannedCommand('gesture rotate'),
+      /(?:^|\s)--count(?:\s|=)/i,
     ],
   }),
   makeCase({

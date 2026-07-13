@@ -42,13 +42,11 @@ test('catalog commands use generic routing only when intentionally passthrough o
     PUBLIC_COMMANDS.appSwitcher,
     PUBLIC_COMMANDS.back,
     PUBLIC_COMMANDS.focus,
-    PUBLIC_COMMANDS.gesture,
     PUBLIC_COMMANDS.home,
     PUBLIC_COMMANDS.installFromSource,
     PUBLIC_COMMANDS.rotate,
     PUBLIC_COMMANDS.screenshot,
     PUBLIC_COMMANDS.scroll,
-    PUBLIC_COMMANDS.swipe,
     PUBLIC_COMMANDS.tvRemote,
     PUBLIC_COMMANDS.viewport,
   ].sort();
@@ -60,9 +58,6 @@ test('catalog commands use generic routing only when intentionally passthrough o
     .sort();
 
   assert.deepEqual(genericCatalogCommands, intentionalGenericCatalogCommands);
-  for (const command of ['fling', 'pan', 'pinch', 'rotate-gesture', 'transform-gesture']) {
-    assert.equal(getDaemonCommandRoute(command), 'generic', `${command} passthrough route`);
-  }
 });
 
 test('lease handler executes commands owned by the lease route', async () => {

@@ -1,5 +1,23 @@
 import XCTest
 
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS && os(iOS)
+import ObjectiveC.runtime
+
+private final class RunnerSynthesizedSwipeFailureStub: NSObject {
+  @objc(synthesizeSwipeWithApplication:x:y:x2:y2:durationMs:)
+  class func synthesizeSwipe(
+    application: XCUIApplication,
+    x: Double,
+    y: Double,
+    x2: Double,
+    y2: Double,
+    durationMs: Double
+  ) -> String? {
+    "forced private synthesis failure"
+  }
+}
+#endif
+
 extension RunnerTests {
   // MARK: - Main Thread Dispatch
 
@@ -58,7 +76,7 @@ extension RunnerTests {
 
   /// Runs a gesture action with uniform timing capture. Touch gestures pass `idleTimeout: true`
   /// (the default) to run inside the scroll idle-timeout + quiescence-skip wrapper; synthesis
-  /// gestures (pinch/rotate/transform) pass `false` because RunnerSynthesizedGesture governs its
+  /// pointer-plan gestures pass `false` because RunnerSynthesizedGesture governs their
   /// own timing. Returns the captured timing and the action's outcome.
   ///
   /// NOTE: a new SYNTHESIS gesture must pass `idleTimeout: false` — the default `true` would wrap
@@ -133,6 +151,24 @@ extension RunnerTests {
     return Response(ok: true, data: data)
   }
 
+  /// Gesture plans already return canonical centroid endpoints from the portable runtime.
+  /// Keep runner timing/fallback diagnostics, but do not leak the coordinate-drag adapter's
+  /// visualization frame into only the fast-fling response shape.
+  private func canonicalPlannedGestureResponse(_ response: Response) -> Response {
+    guard response.ok, let data = response.data else { return response }
+    return Response(
+      ok: true,
+      data: DataPayload(
+        message: data.message,
+        gestureStartUptimeMs: data.gestureStartUptimeMs,
+        gestureEndUptimeMs: data.gestureEndUptimeMs,
+        gestureFallback: data.gestureFallback,
+        gestureFallbackMessage: data.gestureFallbackMessage,
+        gestureFallbackHint: data.gestureFallbackHint
+      )
+    )
+  }
+
 #if AGENT_DEVICE_RUNNER_UNIT_TESTS
   func testGestureResponseIncludesSynthesizedTapFallbackDiagnostics() {
     let response = gestureResponse(
@@ -165,6 +201,89 @@ extension RunnerTests {
     XCTAssertEqual(response.data?.maestroNonHittableCoordinateFallbackUsed, true)
   }
 
+  func testCanonicalPlannedGestureResponseOmitsDragFrameAndPreservesDiagnostics() {
+    let response = gestureResponse(
+      message: "fling",
+      timing: (gestureStartUptimeMs: 1, gestureEndUptimeMs: 2),
+      frame: .drag(
+        DragVisualizationFrame(
+          x: 160,
+          y: 150,
+          x2: 40,
+          y2: 150,
+          referenceWidth: 200,
+          referenceHeight: 300
+        )
+      ),
+      fallback: GestureFallback(
+        strategy: "xctest-coordinate-drag",
+        message: "Private synthesis unavailable",
+        hint: "Using XCTest coordinate fallback."
+      )
+    )
+
+    let canonical = canonicalPlannedGestureResponse(response)
+
+    XCTAssertEqual(canonical.data?.gestureStartUptimeMs, 1)
+    XCTAssertEqual(canonical.data?.gestureEndUptimeMs, 2)
+    XCTAssertEqual(canonical.data?.gestureFallback, "xctest-coordinate-drag")
+    XCTAssertEqual(canonical.data?.gestureFallbackMessage, "Private synthesis unavailable")
+    XCTAssertEqual(canonical.data?.gestureFallbackHint, "Using XCTest coordinate fallback.")
+    XCTAssertNil(canonical.data?.x)
+    XCTAssertNil(canonical.data?.y)
+    XCTAssertNil(canonical.data?.x2)
+    XCTAssertNil(canonical.data?.y2)
+    XCTAssertNil(canonical.data?.referenceWidth)
+    XCTAssertNil(canonical.data?.referenceHeight)
+  }
+
+#if os(iOS)
+  func testSinglePointerFlingFallsBackToXCTestCoordinateDragWhenPrivateSynthesisFails() throws {
+    let selector = NSSelectorFromString(
+      "synthesizeSwipeWithApplication:x:y:x2:y2:durationMs:"
+    )
+    guard
+      let synthesizedSwipeMethod = class_getClassMethod(RunnerSynthesizedGesture.self, selector),
+      let failureStubMethod = class_getClassMethod(RunnerSynthesizedSwipeFailureStub.self, selector)
+    else {
+      XCTFail("unable to install synthesized swipe failure stub")
+      return
+    }
+    let originalImplementation = method_getImplementation(synthesizedSwipeMethod)
+    method_setImplementation(
+      synthesizedSwipeMethod,
+      method_getImplementation(failureStubMethod)
+    )
+    app.launch()
+    runnerAccessibilityHealth = .healthy
+    defer {
+      method_setImplementation(synthesizedSwipeMethod, originalImplementation)
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+    let command = try runnerCommandFixture(
+      """
+      {"command":"gesture","commandId":"gesture-fling-fallback","gesturePlan":{"topology":"single","intent":"fling","durationMs":100,"viewport":{"x":0,"y":0,"width":200,"height":300},"pointers":[{"pointerId":0,"samples":[{"offsetMs":0,"point":{"x":160,"y":150}},{"offsetMs":100,"point":{"x":40,"y":150}}]}]}}
+      """
+    )
+
+    let response = try executeOnMainPrepared(command: command, activeApp: app)
+
+    XCTAssertTrue(response.ok)
+    XCTAssertEqual(response.data?.message, "fling")
+    XCTAssertEqual(response.data?.gestureFallback, "xctest-coordinate-drag")
+    XCTAssertEqual(response.data?.gestureFallbackMessage, "forced private synthesis failure")
+    XCTAssertEqual(
+      response.data?.gestureFallbackHint,
+      "Private XCTest event synthesis is required for AX-free coordinate drag on iOS; update Xcode if this persists."
+    )
+    XCTAssertNil(response.data?.x)
+    XCTAssertNil(response.data?.y)
+    XCTAssertNil(response.data?.x2)
+    XCTAssertNil(response.data?.y2)
+  }
+#endif
+
   func testXCTestRecordedFailureResponseFailsMutatingSuccesses() throws {
     let command = try runnerCommandFixture(#"{"command":"tap","commandId":"tap-1"}"#)
     let response = Response(ok: true, data: DataPayload(message: "tapped"))
@@ -194,6 +313,28 @@ extension RunnerTests {
       )
     )
     XCTAssertNil(xctestRecordedFailureResponse(command: tapCommand, response: runnerFatalResponse))
+  }
+
+  func testMissingBundleCommandInvalidatesCompleteCachedTargetState() throws {
+    app.launch()
+    currentApp = app
+    currentBundleId = "com.example.stale-target"
+    currentAppProcessIdentifier = 42
+    snapshotXCTestPenaltyWarmupExemptionPending = true
+    defer {
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+    let command = try runnerCommandFixture(
+      #"{"command":"snapshot","commandId":"snapshot-without-bundle"}"#
+    )
+
+    _ = prepareActiveCommandContext(command: command)
+
+    XCTAssertNil(currentApp)
+    XCTAssertNil(currentBundleId)
+    XCTAssertNil(currentAppProcessIdentifier)
+    XCTAssertFalse(snapshotXCTestPenaltyWarmupExemptionPending)
   }
 
   func testSkipAppActivationPreflightOnlyIncludesCoordinateOnlySynthesizedTaps() throws {
@@ -264,7 +405,7 @@ extension RunnerTests {
       """
       {"command":"sequence","commandId":"seq-1","steps":[
         {"kind":"tap","x":10,"y":20,"synthesized":true},
-        {"kind":"drag","x":10,"y":200,"x2":10,"y2":100,"synthesized":true}
+        {"kind":"longPress","x":10,"y":200,"durationMs":300}
       ]}
       """
     )
@@ -945,11 +1086,12 @@ extension RunnerTests {
       if let bundleId = requestedBundleId {
         if currentBundleId != bundleId || currentApp == nil {
           _ = activateTarget(bundleId: bundleId, reason: "bundle_changed")
+        } else {
+          refreshCachedTargetIfProcessChanged(bundleId: bundleId)
         }
       } else {
         // Do not reuse stale bundle targets when the caller does not explicitly request one.
-        currentApp = nil
-        currentBundleId = nil
+        invalidateCachedTarget(reason: "missing_app_bundle")
       }
 
       activeApp = currentApp ?? app
@@ -1150,7 +1292,6 @@ extension RunnerTests {
         durationMs: command.durationMs,
         synthesized: command.synthesized == true,
         message: "dragged",
-        dragSemantics: command.dragSemantics,
         synthesizedPolicyKind: .synthesizedDrag
       )
     case .scroll:
@@ -1470,79 +1611,53 @@ extension RunnerTests {
         return Response(ok: false, error: ErrorPayload(message: "alert not found"))
       }
       return handleAlert(alert, action: action)
-    case .pinch:
-      guard let scale = command.scale, scale > 0 else {
-        return Response(ok: false, error: ErrorPayload(message: "pinch requires scale > 0"))
+    case .gesture:
+      guard let plan = command.gesturePlan else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "INVALID_ARGS", message: "gesture requires gesturePlan")
+        )
+      }
+      if let validationError = plannedGestureValidationError(plan) {
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "INVALID_ARGS", message: validationError)
+        )
+      }
+      if plannedGestureExecution(for: plan) == .fastSwipe {
+        // Validation above guarantees a non-empty, single-pointer path for this execution kind.
+        let first = plan.pointers[0].samples.first!.point
+        let last = plan.pointers[0].samples.last!.point
+        return canonicalPlannedGestureResponse(
+          executeDragGesture(
+            activeApp: activeApp,
+            x: first.x,
+            y: first.y,
+            x2: last.x,
+            y2: last.y,
+            durationMs: plan.durationMs,
+            synthesized: true,
+            message: plan.intent,
+            synthesizedPolicyKind: .synthesizedDrag,
+            synthesizedProfile: .fastSwipe
+          )
+        )
       }
       let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
-        pinch(app: activeApp, scale: scale, x: command.x, y: command.y)
+        sampledPlannedGesture(app: activeApp, plan: plan)
       }
       if let response = unsupportedResponse(for: outcome) {
         return response
       }
-      return gestureResponse(message: "pinched", timing: timing)
+      return gestureResponse(message: plan.intent, timing: timing)
+    case .gestureViewport:
+      let frame = resolvedTouchReferenceFrame(app: activeApp, appFrame: activeApp.frame)
+      guard !frame.isNull, !frame.isInfinite, !frame.isEmpty else {
+        return Response(ok: false, error: ErrorPayload(code: "COMMAND_FAILED", message: "Active app interaction viewport is unavailable"))
+      }
+      return Response(ok: true, data: DataPayload(message: "gestureViewport", x: frame.minX, y: frame.minY, x2: frame.width, y2: frame.height))
     case .sequence:
       return executeSequence(command: command, activeApp: activeApp)
-    case .rotateGesture:
-      guard let degrees = command.degrees, degrees.isFinite else {
-        return Response(ok: false, error: ErrorPayload(message: "rotateGesture requires degrees"))
-      }
-      let velocity = command.velocity ?? (degrees >= 0 ? 1.0 : -1.0)
-      guard velocity.isFinite && velocity != 0 else {
-        return Response(ok: false, error: ErrorPayload(message: "rotateGesture velocity must be non-zero"))
-      }
-      let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
-        rotateGesture(
-          app: activeApp,
-          degrees: degrees,
-          x: command.x,
-          y: command.y,
-          velocity: velocity
-        )
-      }
-      if let response = unsupportedResponse(for: outcome) {
-        return response
-      }
-      return gestureResponse(message: "rotatedGesture", timing: timing)
-    case .transformGesture:
-      guard
-        let x = command.x,
-        let y = command.y,
-        let dx = command.dx,
-        let dy = command.dy,
-        x.isFinite,
-        y.isFinite,
-        dx.isFinite,
-        dy.isFinite
-      else {
-        return Response(ok: false, error: ErrorPayload(message: "transformGesture requires finite x y dx dy"))
-      }
-      guard let scale = command.scale, scale.isFinite, scale > 0 else {
-        return Response(ok: false, error: ErrorPayload(message: "transformGesture requires scale > 0"))
-      }
-      guard let degrees = command.degrees, degrees.isFinite else {
-        return Response(ok: false, error: ErrorPayload(message: "transformGesture requires finite degrees"))
-      }
-      let durationMs = command.durationMs ?? 300
-      guard durationMs.isFinite && durationMs >= 16 else {
-        return Response(ok: false, error: ErrorPayload(message: "transformGesture durationMs must be >= 16"))
-      }
-      let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
-        transformGesture(
-          app: activeApp,
-          x: x,
-          y: y,
-          dx: dx,
-          dy: dy,
-          scale: scale,
-          degrees: degrees,
-          durationMs: durationMs
-        )
-      }
-      if let response = unsupportedResponse(for: outcome) {
-        return response
-      }
-      return gestureResponse(message: "transformedGesture", timing: timing)
     }
   }
 
@@ -1558,9 +1673,9 @@ extension RunnerTests {
     durationMs: Double?,
     synthesized: Bool,
     message: String,
-    dragSemantics: SynthesizedDragSemantics? = nil,
     synthesizedContext: SynthesizedCoordinateContext? = nil,
-    synthesizedPolicyKind: SynthesizedGesturePolicyKind
+    synthesizedPolicyKind: SynthesizedGesturePolicyKind,
+    synthesizedProfile: SynthesizedDragProfile = .continuous
   ) -> Response {
     let commandName = dragCommandName(message: message)
     guard x.isFinite, y.isFinite, x2.isFinite, y2.isFinite else {
@@ -1577,9 +1692,9 @@ extension RunnerTests {
       y2: y2,
       durationMs: durationMs,
       message: message,
-      dragSemantics: dragSemantics,
       context: synthesizedContext,
-      policyKind: synthesizedPolicyKind
+      policyKind: synthesizedPolicyKind,
+      profile: synthesizedProfile
     ) {
       return synthesizedResponse
     }
@@ -1603,7 +1718,7 @@ extension RunnerTests {
           x2: dragPoints.x2,
           y2: dragPoints.y2,
           durationMs: durationMs,
-          semantics: dragSemantics,
+          profile: synthesizedProfile,
           context: context
         )
       }
@@ -1644,9 +1759,9 @@ extension RunnerTests {
     y2: Double,
     durationMs: Double?,
     message: String,
-    dragSemantics: SynthesizedDragSemantics?,
     context: SynthesizedCoordinateContext?,
-    policyKind: SynthesizedGesturePolicyKind
+    policyKind: SynthesizedGesturePolicyKind,
+    profile: SynthesizedDragProfile
   ) -> Response? {
 #if os(iOS)
     let policy = synthesizedGesturePolicy(policyKind)
@@ -1698,7 +1813,7 @@ extension RunnerTests {
         x2: plan.points.x2,
         y2: plan.points.y2,
         durationMs: durationMs,
-        semantics: dragSemantics,
+        profile: profile,
         context: plan.context
       )
     }

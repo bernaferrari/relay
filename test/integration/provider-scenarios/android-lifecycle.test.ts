@@ -92,13 +92,38 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         ...world.selection,
       });
 
+      const oneFingerPan = await client.interactions.pan({
+        x: 195,
+        y: 320,
+        dx: 20,
+        dy: 0,
+        durationMs: 500,
+        ...world.selection,
+      });
+      assert.equal(oneFingerPan.pointerCount, 1);
+      assert.equal(world.daemon.session()?.actions.at(-1)?.flags.pointerCount, undefined);
+
+      const twoFingerPan = await client.interactions.pan({
+        x: 195,
+        y: 320,
+        dx: 40,
+        dy: -20,
+        pointerCount: 2,
+        durationMs: 500,
+        ...world.selection,
+      });
+      assert.equal(twoFingerPan.pointerCount, 2);
+      assert.equal(twoFingerPan.backend, 'provider-native-touch');
+      assert.equal(world.daemon.session()?.actions.at(-1)?.flags.pointerCount, 2);
+
       const pinch = await client.interactions.pinch({
         scale: 2,
         x: 195,
         y: 320,
         ...world.selection,
       });
-      assert.equal(pinch.scale, 2);
+      assert.equal(pinch.kind, 'pinch');
+      assert.equal(pinch.pointerCount, 2);
       assert.equal(pinch.backend, 'provider-native-touch');
 
       const rotate = await client.interactions.rotateGesture({
@@ -107,7 +132,8 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         y: 320,
         ...world.selection,
       });
-      assert.equal(rotate.degrees, 145);
+      assert.equal(rotate.kind, 'rotate');
+      assert.equal(rotate.pointerCount, 2);
       assert.equal(rotate.backend, 'provider-native-touch');
 
       const transform = await client.interactions.transformGesture({
@@ -120,28 +146,32 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         durationMs: 700,
         ...world.selection,
       });
-      assert.equal(transform.scale, 1.5);
-      assert.equal(transform.degrees, 35);
+      assert.equal(transform.kind, 'transform');
+      assert.equal(transform.pointerCount, 2);
       assert.equal(transform.backend, 'provider-native-touch');
 
-      assert.deepEqual(world.touchInjectionCalls, [
-        { kind: 'swipe', x1: 340, y1: 400, x2: 60, y2: 400, durationMs: 300 },
-        { kind: 'pinch', x: 195, y: 320, scale: 2, durationMs: undefined },
-        { kind: 'rotate', x: 195, y: 320, degrees: 145, durationMs: undefined },
-        {
-          kind: 'transform',
-          x: 195,
-          y: 320,
-          dx: 40,
-          dy: -20,
-          scale: 1.5,
-          degrees: 35,
-          durationMs: 700,
-        },
+      const touchCalls = world.touchInjectionCalls.map((plan) => ({
+        topology: plan.topology,
+        intent: plan.intent,
+        pointerCount: plan.pointers.length,
+        durationMs: plan.durationMs,
+      }));
+      assert.deepEqual(touchCalls, [
+        { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 300 },
+        { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 500 },
+        { topology: 'two', intent: 'pan', pointerCount: 2, durationMs: 500 },
+        { topology: 'two', intent: 'pinch', pointerCount: 2, durationMs: 300 },
+        { topology: 'two', intent: 'rotate', pointerCount: 2, durationMs: 784 },
+        { topology: 'two', intent: 'transform', pointerCount: 2, durationMs: 700 },
       ]);
+      assert.equal(world.gestureViewportCalls, 6);
       assert.equal(
         world.adbCalls.some(
-          (call) => call[0] === 'shell' && call[1] === 'am' && call[2] === 'instrument',
+          (call) =>
+            call[0] === 'shell' &&
+            call[1] === 'am' &&
+            call[2] === 'instrument' &&
+            call.includes('com.callstack.agentdevice.multitouchhelper/.MultiTouchInstrumentation'),
         ),
         false,
         JSON.stringify(world.adbCalls),
@@ -1067,6 +1097,15 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     pattern: 'ping-pong',
     ...selection,
   });
+  assert.deepEqual(swipe.from, { x: 20, y: 200 });
+  assert.deepEqual(swipe.to, { x: 20, y: 100 });
+  assert.equal(swipe.x1, 20);
+  assert.equal(swipe.y1, 200);
+  assert.equal(swipe.x2, 20);
+  assert.equal(swipe.y2, 100);
+  assert.equal(swipe.durationMs, 100);
+  assert.equal(swipe.effectiveDurationMs, 100);
+  assert.equal(swipe.timingMode, 'direct');
   assert.equal(swipe.count, 2);
   assert.equal(swipe.pauseMs, 1);
   assert.equal(swipe.pattern, 'ping-pong');
@@ -1079,10 +1118,10 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     durationMs: 400,
     ...selection,
   });
-  assert.equal(pan.x, 100);
-  assert.equal(pan.y, 200);
-  assert.equal(pan.x2, 150);
-  assert.equal(pan.y2, 180);
+  assert.equal(pan.kind, 'pan');
+  assert.equal(pan.pointerCount, 1);
+  assert.deepEqual(pan.from, { x: 100, y: 200 });
+  assert.deepEqual(pan.to, { x: 150, y: 180 });
   assert.equal(pan.durationMs, 400);
 
   const fling = await client.interactions.fling({
@@ -1092,12 +1131,11 @@ async function runAndroidCaptureInteractionAndReplayWorkflow(
     distance: 180,
     ...selection,
   });
-  assert.equal(fling.direction, 'right');
-  assert.equal(fling.x, 100);
-  assert.equal(fling.y, 200);
-  assert.equal(fling.x2, 280);
-  assert.equal(fling.y2, 200);
-  assert.equal(fling.distance, 180);
+  assert.equal(fling.kind, 'fling');
+  assert.equal(fling.pointerCount, 1);
+  assert.deepEqual(fling.from, { x: 100, y: 200 });
+  assert.deepEqual(fling.to, { x: 280, y: 200 });
+  assert.equal(fling.durationMs, 100);
 
   const batch = await client.batch.run({
     steps: [
@@ -1440,10 +1478,10 @@ function assertAndroidInteractionContract(world: AndroidSettingsWorld): void {
   assertCommandCall(adbCalls, ['shell', 'input', 'tap', '50', '60']);
   assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '30', '40', '30', '40', '5']);
   assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '31', '40', '31', '40', '5']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '200', '20', '100', '250']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '100', '20', '200', '250']);
+  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '200', '20', '100', '100']);
+  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '100', '20', '200', '100']);
   assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '100', '200', '150', '180', '400']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '100', '200', '280', '200', '50']);
+  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '100', '200', '280', '200', '100']);
   assert.equal(
     adbCalls.filter((call) => arrayEqual(call, ['shell', 'input', 'tap', '88', '151'])).length,
     5,

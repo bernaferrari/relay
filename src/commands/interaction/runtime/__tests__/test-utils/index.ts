@@ -318,6 +318,7 @@ export function createInteractionDevice(
     Pick<
       AgentDeviceBackend,
       | 'captureSnapshot'
+      | 'resolveGestureViewport'
       | 'tap'
       | 'tapTarget'
       | 'fill'
@@ -326,8 +327,7 @@ export function createInteractionDevice(
       | 'focus'
       | 'longPress'
       | 'scroll'
-      | 'swipe'
-      | 'pinch'
+      | 'performGesture'
     >
   > & {
     platform?: AgentDeviceBackend['platform'];
@@ -339,6 +339,9 @@ export function createInteractionDevice(
       platform: overrides.platform ?? 'ios',
       captureSnapshot: async (...args) =>
         overrides.captureSnapshot ? await overrides.captureSnapshot(...args) : { snapshot },
+      resolveGestureViewport: overrides.resolveGestureViewport
+        ? async (...args) => await overrides.resolveGestureViewport?.(...args)
+        : undefined,
       tap: async (...args) => await overrides.tap?.(...args),
       tapTarget: overrides.tapTarget
         ? async (...args) => await overrides.tapTarget?.(...args)
@@ -353,8 +356,7 @@ export function createInteractionDevice(
         ? async (...args) => await overrides.longPress?.(...args)
         : undefined,
       scroll: overrides.scroll ? async (...args) => await overrides.scroll?.(...args) : undefined,
-      swipe: overrides.swipe ? async (...args) => await overrides.swipe?.(...args) : undefined,
-      pinch: overrides.pinch ? async (...args) => await overrides.pinch?.(...args) : undefined,
+      performGesture: overrides.performGesture,
     } satisfies AgentDeviceBackend,
     artifacts: createLocalArtifactAdapter(),
     sessions: createMemorySessionStore([
