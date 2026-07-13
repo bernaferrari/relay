@@ -61,6 +61,7 @@ import { dispatchCommand } from '../../../core/dispatch.ts';
 import { cleanupAppleXctracePerfCapture } from '../../../platforms/apple/core/perf-xctrace.ts';
 import { cleanupAndroidNativePerfSession } from '../../../platforms/android/perf.ts';
 import { stopAndroidSnapshotHelperSessionForDevice } from '../../../platforms/android/snapshot-helper.ts';
+import { stopIosRunnerSession } from '../../../platforms/apple/core/runner/runner-client.ts';
 import { WEB_DESKTOP_DEVICE } from '../../../__tests__/test-utils/index.ts';
 
 const mockShutdownSimulator = vi.mocked(shutdownSimulator);
@@ -71,6 +72,7 @@ const mockCleanupAndroidNativePerfSession = vi.mocked(cleanupAndroidNativePerfSe
 const mockStopAndroidSnapshotHelperSessionForDevice = vi.mocked(
   stopAndroidSnapshotHelperSessionForDevice,
 );
+const mockStopIosRunnerSession = vi.mocked(stopIosRunnerSession);
 
 const noopInvoke = async (_req: DaemonRequest): Promise<DaemonResponse> => ({ ok: true, data: {} });
 
@@ -729,4 +731,216 @@ test('close --shutdown returns success and failure payload when shutdownSimulato
     expect(shutdown?.error?.code).toBe('COMMAND_FAILED');
     expect(shutdown?.error?.message).toBe('simctl shutdown failed');
   }
+});
+
+test('daemon session teardown attempts every resource after an earlier cleanup rejects', async () => {
+  const sessionName = 'android-teardown-isolation-session';
+  const activeCapture = {
+    type: 'trace',
+    kind: 'perfetto',
+    packageName: 'com.example.app',
+    appPid: '1234',
+    profilerPid: '5678',
+    remotePath: '/data/misc/perfetto-traces/app.perfetto-trace',
+    outPath: '/tmp/app.perfetto-trace',
+    startedAt: Date.now(),
+    state: 'running',
+  };
+  const session = {
+    ...makeSession(sessionName, {
+      platform: 'android',
+      id: 'emulator-5554',
+      name: 'Pixel',
+      kind: 'emulator',
+      booted: true,
+    }),
+    appBundleId: 'com.example.app',
+    nativePerf: {
+      android: activeCapture,
+    },
+  } as unknown as SessionState;
+
+  // The native-perf cleanup runs before the snapshot-helper cleanup.
+  mockCleanupAndroidNativePerfSession.mockRejectedValueOnce(
+    new AppError('COMMAND_FAILED', 'perfetto stop failed'),
+  );
+
+  await expect(teardownSessionResources(session, sessionName)).rejects.toMatchObject({
+    code: 'COMMAND_FAILED',
+    details: expect.objectContaining({
+      reason: 'session_cleanup_incomplete',
+      failedSteps: ['android_native_perf'],
+    }),
+  });
+
+  // The later resource still runs despite the earlier rejection.
+  expect(mockStopAndroidSnapshotHelperSessionForDevice).toHaveBeenCalledWith(session.device);
+});
+
+test('close still runs later cleanup and deletes the session after an earlier cleanup rejects', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'android-close-isolation-session';
+  const activeCapture = {
+    type: 'trace',
+    kind: 'perfetto',
+    packageName: 'com.example.app',
+    appPid: '1234',
+    profilerPid: '5678',
+    remotePath: '/data/misc/perfetto-traces/app.perfetto-trace',
+    outPath: '/tmp/app.perfetto-trace',
+    startedAt: Date.now(),
+    state: 'running',
+  };
+  const session = {
+    ...makeSession(sessionName, {
+      platform: 'android',
+      id: 'emulator-5554',
+      name: 'Pixel',
+      kind: 'emulator',
+      booted: true,
+    }),
+    appBundleId: 'com.example.app',
+    nativePerf: {
+      android: activeCapture,
+    },
+  } as unknown as SessionState;
+  sessionStore.set(sessionName, session);
+
+  mockCleanupAndroidNativePerfSession.mockRejectedValueOnce(
+    new AppError('COMMAND_FAILED', 'perfetto stop failed'),
+  );
+
+  await expect(
+    handleSessionCommands({
+      req: {
+        token: 't',
+        session: sessionName,
+        command: 'close',
+        positionals: [],
+        flags: {},
+      },
+      sessionName,
+      logPath: path.join(os.tmpdir(), 'daemon.log'),
+      sessionStore,
+      invoke: noopInvoke,
+    }),
+  ).rejects.toMatchObject({
+    details: expect.objectContaining({
+      reason: 'session_cleanup_incomplete',
+      failedSteps: ['android_native_perf'],
+    }),
+  });
+
+  // A later cleanup step still ran, and the session was still deleted.
+  expect(mockStopAndroidSnapshotHelperSessionForDevice).toHaveBeenCalledWith(session.device);
+  expect(sessionStore.get(sessionName)).toBeUndefined();
+});
+
+test('targeted close preserves the platform-close AppError and still runs later cleanup', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'targeted-close-error-session';
+  const session = {
+    ...makeSession(sessionName, {
+      platform: 'apple',
+      id: 'sim-udid-close-error',
+      name: 'iPhone 15',
+      kind: 'simulator',
+      booted: true,
+    }),
+    // Recording defeats runner retention so the apple_runner cleanup runs after
+    // the failed platform close, proving subsequent cleanup is still attempted.
+    recording: { outPath: '/tmp/recording.mp4' },
+  } as unknown as SessionState;
+  sessionStore.set(sessionName, session);
+
+  const platformCloseError = new AppError('DEVICE_UNAVAILABLE', 'platform close failed', {
+    reason: 'device_disconnected',
+    hint: 'Reconnect the device and retry close.',
+  });
+  mockDispatchCommand.mockRejectedValueOnce(platformCloseError);
+
+  await expect(
+    handleSessionCommands({
+      req: {
+        token: 't',
+        session: sessionName,
+        command: 'close',
+        positionals: ['com.example.app'],
+        flags: {},
+      },
+      sessionName,
+      logPath: path.join(os.tmpdir(), 'daemon.log'),
+      sessionStore,
+      invoke: noopInvoke,
+    }),
+  ).rejects.toBe(platformCloseError);
+
+  // The original AppError code/details/hint are preserved, not collapsed into a
+  // generic cleanup aggregate.
+  expect(platformCloseError.code).toBe('DEVICE_UNAVAILABLE');
+  expect(platformCloseError.details).toMatchObject({
+    reason: 'device_disconnected',
+    hint: 'Reconnect the device and retry close.',
+  });
+  // A failed close is not recorded as `Closed`.
+  expect(session.actions.some((action) => action.command === 'close')).toBe(false);
+  // Subsequent independent cleanup still ran, and the session was still deleted.
+  expect(mockStopIosRunnerSession).toHaveBeenCalledWith(session.device.id);
+  expect(sessionStore.get(sessionName)).toBeUndefined();
+});
+
+test('targeted close skips platform dispatch and preserves the error when the required pre-close runner stop fails', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'targeted-close-preclose-failure-session';
+  // A physical Apple target (non-simulator) must stop its runner before the
+  // platform close is dispatched — the runner owns the device connection.
+  const session = {
+    ...makeSession(sessionName, {
+      platform: 'apple',
+      id: 'physical-device-close',
+      name: 'My iPhone',
+      kind: 'device',
+      booted: true,
+    }),
+    appBundleId: 'com.example.app',
+  } as unknown as SessionState;
+  sessionStore.set(sessionName, session);
+
+  const preCloseError = new AppError('RUNNER_UNAVAILABLE', 'runner stop failed', {
+    reason: 'runner_stop_failed',
+    hint: 'Retry once the runner is reachable.',
+  });
+  mockStopIosRunnerSession.mockRejectedValue(preCloseError);
+
+  await expect(
+    handleSessionCommands({
+      req: {
+        token: 't',
+        session: sessionName,
+        command: 'close',
+        positionals: ['com.example.app'],
+        flags: {},
+      },
+      sessionName,
+      logPath: path.join(os.tmpdir(), 'daemon.log'),
+      sessionStore,
+      invoke: noopInvoke,
+    }),
+  ).rejects.toBe(preCloseError);
+
+  // The platform close must not be dispatched after a required pre-close stop fails.
+  expect(mockDispatchCommand).not.toHaveBeenCalled();
+  // The original failure code/details/hint are preserved, not collapsed into a
+  // generic cleanup aggregate.
+  expect(preCloseError.code).toBe('RUNNER_UNAVAILABLE');
+  expect(preCloseError.details).toMatchObject({
+    reason: 'runner_stop_failed',
+    hint: 'Retry once the runner is reachable.',
+  });
+  // A skipped close is not recorded as `Closed`.
+  expect(session.actions.some((action) => action.command === 'close')).toBe(false);
+  // Later independent cleanup still ran (runner stop re-attempted), and the
+  // session was still deleted.
+  expect(mockStopIosRunnerSession.mock.calls.length).toBeGreaterThan(1);
+  expect(sessionStore.get(sessionName)).toBeUndefined();
 });

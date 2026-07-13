@@ -3,7 +3,7 @@ import type { Server as HttpServer } from 'node:http';
 import { AppError, normalizeError } from '../../kernel/errors.ts';
 import type { DaemonInvokeFn, DaemonRequest, DaemonResponse } from '../types.ts';
 import {
-  clearRequestCanceled,
+  clearRequestAbortRegistration,
   createRequestCanceledError,
   isRequestCanceled,
   markRequestCanceled,
@@ -12,16 +12,12 @@ import {
 } from '../../request/cancel.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import { consumeTextLines } from '../../utils/line-stream.ts';
-import { sleep } from '../../utils/timeouts.ts';
 import { withRequestProgressSink } from '../../request/progress.ts';
 import {
   serializeDaemonProgressEnvelope,
   serializeDaemonResponseEnvelope,
   shouldStreamRequestProgress,
 } from '../request-progress-protocol.ts';
-
-const disconnectAbortPollIntervalMs = 200;
-const disconnectAbortMaxWindowMs = 15_000;
 
 export type DaemonServer = (net.Server | HttpServer) & {
   destroyConnections?: () => void;
@@ -36,7 +32,11 @@ export function createSocketServer(handleRequest: DaemonInvokeFn): DaemonServer 
     let inFlightRequests = 0;
     const activeRequestIds = new Set<string>();
     let canceledInFlight = false;
-    const cancelInFlightRunnerSessions = () => {
+    // On disconnect, cancel only this connection's in-flight requests via their
+    // request-scoped AbortSignals. That aborts runner work owned by those requests
+    // without a global Apple runner abort, so an unrelated request's runner work
+    // (or non-Apple work) is never torn down by another client's disconnect.
+    const cancelInFlightRequests = () => {
       if (canceledInFlight || inFlightRequests === 0) return;
       canceledInFlight = true;
       for (const requestId of activeRequestIds) {
@@ -49,31 +49,10 @@ export function createSocketServer(handleRequest: DaemonInvokeFn): DaemonServer 
           inFlightRequests,
         },
       });
-      void (async () => {
-        try {
-          const deadline = Date.now() + disconnectAbortMaxWindowMs;
-          while (inFlightRequests > 0 && Date.now() < deadline) {
-            const { abortAllIosRunnerSessions } =
-              await import('../../platforms/apple/core/runner/runner-client.ts');
-            await abortAllIosRunnerSessions();
-            if (inFlightRequests <= 0) break;
-            await sleep(disconnectAbortPollIntervalMs);
-          }
-        } catch (err) {
-          emitDiagnostic({
-            level: 'error',
-            phase: 'request_client_disconnect_abort_failed',
-            data: {
-              message: err instanceof Error ? err.message : String(err),
-              inFlightRequests,
-            },
-          });
-        }
-      })();
     };
     socket.setEncoding('utf8');
-    socket.on('close', cancelInFlightRunnerSessions);
-    socket.on('error', cancelInFlightRunnerSessions);
+    socket.on('close', cancelInFlightRequests);
+    socket.on('error', cancelInFlightRequests);
     socket.on('data', async (chunk) => {
       const parsed = consumeTextLines(buffer, chunk);
       buffer = parsed.buffer;
@@ -81,6 +60,7 @@ export function createSocketServer(handleRequest: DaemonInvokeFn): DaemonServer 
         let response: DaemonResponse;
         inFlightRequests += 1;
         let requestIdForCleanup: string | undefined;
+        let requestAbortRegistration: ReturnType<typeof registerRequestAbort>;
         let streamProgress = false;
         try {
           const req = JSON.parse(line) as DaemonRequest;
@@ -90,8 +70,8 @@ export function createSocketServer(handleRequest: DaemonInvokeFn): DaemonServer 
             ...req.meta,
             requestId: requestIdForCleanup,
           };
+          requestAbortRegistration = registerRequestAbort(requestIdForCleanup);
           activeRequestIds.add(requestIdForCleanup);
-          registerRequestAbort(requestIdForCleanup);
           if (isRequestCanceled(requestIdForCleanup)) {
             throw createRequestCanceledError();
           }
@@ -109,10 +89,10 @@ export function createSocketServer(handleRequest: DaemonInvokeFn): DaemonServer 
           response = { ok: false, error: normalizeError(err) };
         } finally {
           inFlightRequests -= 1;
-          if (requestIdForCleanup) {
-            activeRequestIds.delete(requestIdForCleanup);
-            clearRequestCanceled(requestIdForCleanup);
+          if (requestAbortRegistration) {
+            activeRequestIds.delete(requestAbortRegistration.requestId);
           }
+          clearRequestAbortRegistration(requestAbortRegistration);
         }
         if (!socket.destroyed) {
           socket.write(

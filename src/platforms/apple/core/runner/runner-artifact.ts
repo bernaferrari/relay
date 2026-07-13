@@ -6,6 +6,7 @@ import { AppError } from '../../../../kernel/errors.ts';
 import { runCmdStreaming, type ExecBackgroundResult } from '../../../../utils/exec.ts';
 import type { DeviceInfo } from '../../../../kernel/device.ts';
 import { withKeyedLock } from '../../../../utils/keyed-lock.ts';
+import { isRequestCanceledError } from '../../../../request/cancel.ts';
 import { emitRequestProgress } from '../../../../request/progress.ts';
 import { findProjectRoot } from '../../../../utils/version.ts';
 import { resolveRunnerBuildFailureHint } from './runner-contract.ts';
@@ -72,6 +73,7 @@ export async function ensureXctestrunArtifact(
     traceLogPath?: string;
     buildTimeoutMs?: number;
     forceRunnerXctestrunRebuild?: boolean;
+    signal?: AbortSignal;
   } & ExternalXctestRunnerOptions,
 ): Promise<RunnerXctestrunArtifact> {
   const external = resolveExternalXctestrunArtifact(options);
@@ -142,7 +144,13 @@ function resolveExternalXctestDerivedDataPath(xctestrunPath: string): string {
 
 async function ensureXctestrunUnderCacheLock(params: {
   device: DeviceInfo;
-  options: { verbose?: boolean; logPath?: string; traceLogPath?: string; buildTimeoutMs?: number };
+  options: {
+    verbose?: boolean;
+    logPath?: string;
+    traceLogPath?: string;
+    buildTimeoutMs?: number;
+    signal?: AbortSignal;
+  };
   projectRoot: string;
   expectedCacheMetadata: RunnerXctestrunCacheMetadata;
   derived: string;
@@ -215,7 +223,13 @@ async function resolveReusableXctestrunArtifact(params: {
 
 async function buildXctestrunArtifact(params: {
   device: DeviceInfo;
-  options: { verbose?: boolean; logPath?: string; traceLogPath?: string; buildTimeoutMs?: number };
+  options: {
+    verbose?: boolean;
+    logPath?: string;
+    traceLogPath?: string;
+    buildTimeoutMs?: number;
+    signal?: AbortSignal;
+  };
   projectRoot: string;
   expectedCacheMetadata: RunnerXctestrunCacheMetadata;
   derived: string;
@@ -441,7 +455,13 @@ async function buildRunnerXctestrun(
   device: DeviceInfo,
   projectPath: string,
   derived: string,
-  options: { verbose?: boolean; logPath?: string; traceLogPath?: string; buildTimeoutMs?: number },
+  options: {
+    verbose?: boolean;
+    logPath?: string;
+    traceLogPath?: string;
+    buildTimeoutMs?: number;
+    signal?: AbortSignal;
+  },
 ): Promise<void> {
   const runnerBundleBuildSettings = resolveRunnerBundleBuildSettings(process.env);
   const signingBuildSettings = resolveRunnerSigningBuildSettings(
@@ -479,6 +499,7 @@ async function buildRunnerXctestrun(
       {
         detached: true,
         timeoutMs: options.buildTimeoutMs,
+        signal: options.signal,
         onSpawn: (child) => {
           runnerPrepProcesses.add(child);
           child.on('close', () => {
@@ -494,6 +515,7 @@ async function buildRunnerXctestrun(
       },
     );
   } catch (err) {
+    if (isRequestCanceledError(err)) throw err;
     const appErr = err instanceof AppError ? err : new AppError('COMMAND_FAILED', String(err));
     const hint = resolveRunnerBuildFailureHint(appErr);
     throw new AppError('COMMAND_FAILED', 'xcodebuild build-for-testing failed', {
