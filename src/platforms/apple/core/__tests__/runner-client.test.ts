@@ -35,6 +35,7 @@ import {
   type RequestProgressEvent,
   withRequestProgressSink,
 } from '../../../../request/progress.ts';
+import { createRequestCanceledError, isRequestCanceledError } from '../../../../request/cancel.ts';
 import {
   flushDiagnosticsToSessionFile,
   withDiagnosticsScope,
@@ -1183,6 +1184,94 @@ test('ensureXctestrunArtifact ignores manifest artifacts outside the cache root'
 
   assert.equal(result, rebuiltXctestrunPath);
   assert.equal(mockRunCmdStreaming.mock.calls.length, 1);
+});
+
+test('ensureXctestrunArtifact aborts only the disconnected request build and preserves concurrent unrelated builds', async () => {
+  // The request AbortSignal must reach the xctestrun build (killProcessTree via
+  // runCmdStreaming); removing global abort must not orphan a disconnected prep.
+  // Request-scoped: aborting one request's build leaves an unrelated concurrent
+  // build (different device -> different derived, different signal) untouched.
+  withoutRunnerDerivedPathEnv();
+  const canceledDevice = iosSimulator;
+  const survivorDevice = macOsDevice;
+  for (const device of [canceledDevice, survivorDevice]) {
+    const derived = resolveRunnerDerivedPath(
+      device,
+      resolveExpectedRunnerCacheMetadata(device, repoRoot),
+    );
+    onTestFinished(async () => {
+      await fs.promises.rm(derived, { recursive: true, force: true });
+    });
+  }
+
+  const canceledController = new AbortController();
+  const survivorController = new AbortController();
+  const deferred = <T>(): { promise: Promise<T>; resolve: (value: T) => void } => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  };
+  const waitForAbort = (signal: AbortSignal): Promise<void> =>
+    signal.aborted
+      ? Promise.resolve()
+      : new Promise<void>((resolve) =>
+          signal.addEventListener('abort', () => resolve(), {
+            once: true,
+          }),
+        );
+  const canceledBuildStarted = deferred<void>();
+  const survivorBuildStarted = deferred<void>();
+  const releaseSurvivor = deferred<void>();
+  const cancellationError = createRequestCanceledError();
+
+  mockRunCmdStreaming.mockImplementation(async (_cmd, args, options) => {
+    const derived = args[args.indexOf('-derivedDataPath') + 1];
+    if (options?.signal === canceledController.signal) {
+      canceledBuildStarted.resolve();
+      await waitForAbort(options.signal);
+      throw cancellationError;
+    }
+    survivorBuildStarted.resolve();
+    await releaseSurvivor.promise;
+    await fs.promises.mkdir(path.join(derived, 'rebuilt', 'Runner.app'), { recursive: true });
+    writeXctestrunFixture(path.join(derived, 'rebuilt', 'rebuilt.xctestrun'), {
+      projectRoot: repoRoot,
+      productRelativePaths: ['Runner.app'],
+    });
+  });
+
+  const canceledPromise = ensureXctestrunArtifact(canceledDevice, {
+    signal: canceledController.signal,
+  });
+  const survivorPromise = ensureXctestrunArtifact(survivorDevice, {
+    signal: survivorController.signal,
+  });
+
+  await Promise.all([canceledBuildStarted.promise, survivorBuildStarted.promise]);
+
+  canceledController.abort();
+  await assert.rejects(canceledPromise, (error: unknown) => {
+    assert.equal(error, cancellationError);
+    assert.ok(isRequestCanceledError(error));
+    return true;
+  });
+  // The unrelated concurrent build's signal was never aborted.
+  assert.equal(survivorController.signal.aborted, false);
+
+  releaseSurvivor.resolve();
+  const survivorResult = await survivorPromise;
+  assert.ok(survivorResult.xctestrunPath.endsWith('rebuilt.xctestrun'));
+
+  const canceledCall = mockRunCmdStreaming.mock.calls.find(
+    (call) => call[2]?.signal === canceledController.signal,
+  );
+  const survivorCall = mockRunCmdStreaming.mock.calls.find(
+    (call) => call[2]?.signal === survivorController.signal,
+  );
+  assert.ok(canceledCall, 'canceled build received its request signal');
+  assert.ok(survivorCall, 'survivor build received its request signal');
 });
 
 test('ensureXctestrunArtifact rebuilds after cached macOS runner repair failure', async () => {
