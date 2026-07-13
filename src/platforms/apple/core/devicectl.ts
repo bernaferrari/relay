@@ -26,12 +26,30 @@ export type IosDeviceProcessInfo = {
   pid: number;
 };
 
+export type IosDeviceAppProcesses = {
+  appBundleUrl: string;
+  processes: IosDeviceProcessInfo[];
+};
+
 type IosDeviceProcessesPayload = {
   result?: {
     runningProcesses?: Array<{
       executable?: unknown;
       processIdentifier?: unknown;
     }>;
+  };
+};
+
+type IosDevicectlErrorPayload = {
+  error?: {
+    userInfo?: {
+      NSUnderlyingError?: {
+        error?: {
+          code?: unknown;
+          domain?: unknown;
+        };
+      };
+    };
   };
 };
 
@@ -82,15 +100,79 @@ export async function listIosDeviceApps(
   return filterIosDeviceApps(parseIosDeviceAppsPayload(payload), filter);
 }
 
-export async function listIosDeviceProcesses(device: DeviceInfo): Promise<IosDeviceProcessInfo[]> {
-  return parseIosDeviceProcessesPayload(
-    await runIosDevicectlJsonCommand(device, {
-      jsonPrefix: 'agent-device-ios-processes',
-      args: ['devicectl', 'device', 'info', 'processes', '--device', device.id],
-      failureMessage: 'Failed to list iOS processes',
-      parseFailureMessage: 'Failed to parse iOS process list',
-    }),
+async function listIosDeviceProcesses(device: DeviceInfo): Promise<IosDeviceProcessInfo[]> {
+  const payload = await runIosDevicectlJsonCommand(device, {
+    jsonPrefix: 'agent-device-ios-processes',
+    args: ['devicectl', 'device', 'info', 'processes', '--device', device.id],
+    failureMessage: 'Failed to list iOS processes',
+    parseFailureMessage: 'Failed to parse iOS process list',
+    fallbackHint: IOS_DEVICE_PROCESS_LIST_HINT,
+  });
+  if (!isIosDeviceProcessesPayload(payload)) {
+    throw new AppError('COMMAND_FAILED', 'Unsupported iOS process list response', {
+      deviceId: device.id,
+      hint: IOS_DEVICE_PROCESS_LIST_HINT,
+    });
+  }
+  return parseIosDeviceProcessesPayload(payload);
+}
+
+export async function terminateIosDeviceApp(device: DeviceInfo, bundleId: string): Promise<void> {
+  const { appBundleUrl, processes } = await resolveIosDeviceAppProcesses(device, bundleId);
+  // Extensions share the app bundle URL, but closing the app targets its shallowest main process.
+  const process = processes.sort(
+    (left, right) => processPathDepth(left, appBundleUrl) - processPathDepth(right, appBundleUrl),
+  )[0];
+  // No match means the installed app is already closed.
+  if (!process) return;
+
+  await runIosDevicectlJsonCommand(device, {
+    jsonPrefix: 'agent-device-ios-process-terminate',
+    args: [
+      'devicectl',
+      'device',
+      'process',
+      'terminate',
+      '--device',
+      device.id,
+      '--pid',
+      String(process.pid),
+      '--kill',
+    ],
+    failureMessage: 'Failed to terminate iOS app',
+    parseFailureMessage: 'Failed to parse iOS process termination response',
+    // The process may exit after discovery but before CoreDevice sends the signal.
+    tolerateFailurePayload: isMissingIosDeviceProcessPayload,
+  });
+}
+
+export async function resolveIosDeviceAppProcesses(
+  device: DeviceInfo,
+  bundleId: string,
+): Promise<IosDeviceAppProcesses> {
+  const app = (await listIosDeviceApps(device, 'all')).find(
+    (candidate) => candidate.bundleId === bundleId,
   );
+  if (!app) {
+    throw new AppError('APP_NOT_INSTALLED', `No iOS device app found for ${bundleId}`, {
+      appBundleId: bundleId,
+      deviceId: device.id,
+    });
+  }
+  if (!app.url) {
+    throw new AppError('COMMAND_FAILED', `Missing app bundle URL for ${bundleId}`, {
+      appBundleId: bundleId,
+      deviceId: device.id,
+      hint: 'Installed-app metadata from devicectl did not include the bundle URL required to match running processes. Use an Xcode/CoreDevice toolchain that reports app URLs.',
+    });
+  }
+
+  const appBundleUrl = app.url.replace(/\/+$/, '');
+  // CoreDevice reports app URLs and process executables in the same file-URL form.
+  const processes = (await listIosDeviceProcesses(device)).filter((process) =>
+    process.executable.startsWith(`${appBundleUrl}/`),
+  );
+  return { appBundleUrl, processes };
 }
 
 async function runIosDevicectlJsonCommand(
@@ -100,6 +182,8 @@ async function runIosDevicectlJsonCommand(
     args: string[];
     failureMessage: string;
     parseFailureMessage: string;
+    fallbackHint?: string;
+    tolerateFailurePayload?: (payload: unknown) => boolean;
   },
 ): Promise<unknown> {
   const jsonPath = path.join(
@@ -115,6 +199,12 @@ async function runIosDevicectlJsonCommand(
   try {
     if (result.exitCode !== 0) {
       const { stdout, stderr } = result;
+      if (options.tolerateFailurePayload) {
+        const failurePayload = await readJsonFile(jsonPath).catch(() => undefined);
+        if (failurePayload !== undefined && options.tolerateFailurePayload(failurePayload)) {
+          return failurePayload;
+        }
+      }
       throw new AppError(
         'COMMAND_FAILED',
         options.failureMessage,
@@ -124,11 +214,14 @@ async function runIosDevicectlJsonCommand(
           stdout,
           stderr,
           deviceId: device.id,
-          hint: resolveIosDevicectlHint(stdout, stderr) ?? IOS_DEVICECTL_DEFAULT_HINT,
+          hint:
+            resolveIosDevicectlHint(stdout, stderr) ??
+            options.fallbackHint ??
+            IOS_DEVICECTL_DEFAULT_HINT,
         }),
       );
     }
-    return JSON.parse(await fs.readFile(jsonPath, 'utf8'));
+    return await readJsonFile(jsonPath);
   } catch (error) {
     if (error instanceof AppError) throw error;
     throw new AppError('COMMAND_FAILED', options.parseFailureMessage, {
@@ -138,6 +231,26 @@ async function runIosDevicectlJsonCommand(
   } finally {
     await fs.unlink(jsonPath).catch(() => {});
   }
+}
+
+async function readJsonFile(jsonPath: string): Promise<unknown> {
+  return JSON.parse(await fs.readFile(jsonPath, 'utf8'));
+}
+
+function processPathDepth(process: IosDeviceProcessInfo, appBundleUrl: string): number {
+  return process.executable.slice(appBundleUrl.length + 1).split('/').length;
+}
+
+function isIosDeviceProcessesPayload(payload: unknown): payload is IosDeviceProcessesPayload {
+  return Array.isArray(
+    (payload as IosDeviceProcessesPayload | null | undefined)?.result?.runningProcesses,
+  );
+}
+
+function isMissingIosDeviceProcessPayload(payload: unknown): boolean {
+  const underlyingError = (payload as IosDevicectlErrorPayload | null | undefined)?.error?.userInfo
+    ?.NSUnderlyingError?.error;
+  return underlyingError?.domain === 'NSPOSIXErrorDomain' && underlyingError.code === 3;
 }
 
 export function parseIosDeviceAppsPayload(payload: unknown): IosAppInfo[] {
@@ -184,6 +297,9 @@ function filterIosDeviceApps(apps: IosAppInfo[], filter: 'user-installed' | 'all
 
 export const IOS_DEVICECTL_DEFAULT_HINT =
   'Ensure the iOS device is unlocked, trusted, and available in Xcode > Devices, then retry.';
+
+const IOS_DEVICE_PROCESS_LIST_HINT =
+  "This Xcode/CoreDevice toolchain must support 'devicectl device info processes' with JSON runningProcesses so agent-device can resolve app process IDs. Inspect diagnostics for the exact devicectl API failure.";
 
 export function resolveIosDevicectlHint(stdout: string, stderr: string): string | null {
   const text = `${stdout}\n${stderr}`.toLowerCase();
