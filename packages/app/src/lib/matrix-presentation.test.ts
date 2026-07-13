@@ -13,7 +13,7 @@ const target = (id: string, name: string): TargetProfile => ({
   observedAt: 1,
 });
 
-test("summarizes the exact environment × trial expansion", () => {
+test("summarizes the exact target × repeat expansion", () => {
   const expansion: MatrixExpansion = {
     matrixId: "release",
     matrixName: "Release devices",
@@ -21,7 +21,7 @@ test("summarizes the exact environment × trial expansion", () => {
     profiles: [target("iphone-15", "iPhone 15"), target("iphone-16", "iPhone 16")],
     excluded: [],
   };
-  assert.equal(matrixRunPreview(expansion, 3).summary, "2 environments · 3 trials · 6 runs");
+  assert.equal(matrixRunPreview(expansion, 3).summary, "2 targets × 3 repeats = 6 runs");
   assert.deepEqual(matrixRunPreview(expansion, 3).profiles, [
     { name: "iPhone 15", platform: "ios" },
     { name: "iPhone 16", platform: "ios" },

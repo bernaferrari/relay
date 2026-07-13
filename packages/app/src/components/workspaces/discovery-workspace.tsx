@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import type { DiscoveryControl, DiscoverySession } from "@relay/protocol";
 import { useServer } from "../../context/server";
 import { toast } from "../../context/toast";
@@ -9,8 +9,8 @@ import { modalPanel, modalScrim } from "../../lib/ui";
 import { Icon } from "../icon";
 
 export const DISCOVERY_NODE_DIMENSIONS = {
-  width: 236,
-  height: 288,
+  width: 204,
+  height: 252,
 } as const;
 
 function discoveryPathTo(session: DiscoverySession, targetScreenId: string | null): string[] {
@@ -53,7 +53,6 @@ function discoveryPathTo(session: DiscoverySession, targetScreenId: string | nul
 
 export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   const server = useServer();
-  const [name, setName] = createSignal("");
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [selectedScreenId, setSelectedScreenId] = createSignal<string | null>(null);
   const [projection, setProjection] = createSignal<"canvas" | "list">("canvas");
@@ -64,12 +63,17 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
   } | null>(null);
   const [coverageOpen, setCoverageOpen] = createSignal(false);
   const [actionsOpen, setActionsOpen] = createSignal(false);
+  const [autoExploring, setAutoExploring] = createSignal(false);
+  const [autoExplored, setAutoExplored] = createSignal(0);
   const [promotionOpen, setPromotionOpen] = createSignal(false);
   const [promotionTitle, setPromotionTitle] = createSignal("");
+  const [mapNameDraft, setMapNameDraft] = createSignal("");
   const [promotionLabels, setPromotionLabels] = createSignal<Record<string, string>>({});
   const [coverage, setCoverage] = createSignal<
     import("@relay/protocol").DiscoveryCoverageReport | null
   >(null);
+  let stopAutoExploration = false;
+  let mapNameDraftForId: string | null = null;
   const selectedTarget = () =>
     server.devices().find((device) => device.serial === server.selectedDevice());
   const targetReady = () => targetIsReady(selectedTarget(), server.health() === "online");
@@ -78,9 +82,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
     server.discoverySessions()[0] ??
     null;
   const selectedScreen = () =>
-    active()?.screens.find((screen) => screen.id === selectedScreenId()) ??
-    active()?.screens.at(-1) ??
-    null;
+    active()?.screens.find((screen) => screen.id === selectedScreenId()) ?? null;
   const availableControls = () => {
     const screen = selectedScreen();
     if (!screen) return [];
@@ -93,6 +95,14 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
     );
     return (screen.controls ?? []).filter((control) => !used.has(JSON.stringify(control.target)));
   };
+  const remainingControls = () => {
+    const suggested = suggestion()?.control;
+    if (!suggested) return availableControls();
+    const suggestedTarget = JSON.stringify(suggested.target);
+    return availableControls().filter(
+      (control) => JSON.stringify(control.target) !== suggestedTarget,
+    );
+  };
 
   createEffect(() => {
     if (!activeId() && server.discoverySessions()[0])
@@ -103,8 +113,17 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
     const session = active();
     if (!session) return;
     if (!session.screens.some((screen) => screen.id === selectedScreenId())) {
-      setSelectedScreenId(session.screens.at(-1)?.id ?? null);
+      setSelectedScreenId(null);
     }
+  });
+
+  createEffect(() => {
+    if (!selectedScreenId()) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedScreenId(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    onCleanup(() => window.removeEventListener("keydown", closeOnEscape));
   });
 
   createEffect(() => {
@@ -133,6 +152,14 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       .catch(() => setSuggestion(null));
   });
 
+  createEffect(() => {
+    const session = active();
+    if (session && mapNameDraftForId !== session.id) {
+      mapNameDraftForId = session.id;
+      setMapNameDraft(session.name);
+    }
+  });
+
   async function start(): Promise<void> {
     const targetId = selectedTarget();
     if (!targetId || !targetReady()) {
@@ -140,7 +167,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       return;
     }
     const session = await server.createDiscoverySession({
-      name: name().trim() || `Map · ${targetId}`,
+      name: `Map · ${targetId.name}`,
       targetId: targetId.serial,
     });
     await server.setDiscoveryStatus(session.id, "running");
@@ -151,7 +178,18 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       );
     server.setActiveDiscoverySessionId(session.id);
     setActiveId(session.id);
-    setName("");
+  }
+
+  async function rename(session: DiscoverySession, nextName: string): Promise<void> {
+    const trimmed = nextName.trim();
+    if (!trimmed || trimmed === session.name) return;
+    try {
+      await server.renameDiscoverySession(session.id, trimmed);
+      setMapNameDraft(trimmed);
+      toast("Map renamed", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
   }
 
   function reviewPromotion(session: DiscoverySession): void {
@@ -215,6 +253,56 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
     }
   }
 
+  async function exploreAutomatically(sessionId: string): Promise<void> {
+    if (autoExploring()) return;
+    const current = server.discoverySessions().find((item) => item.id === sessionId);
+    if (!current || current.status !== "running") return;
+    stopAutoExploration = false;
+    setAutoExplored(0);
+    setAutoExploring(true);
+    try {
+      for (let index = 0; index < current.scope.maxTransitions; index += 1) {
+        if (stopAutoExploration) break;
+        const latest = server.discoverySessions().find((item) => item.id === sessionId);
+        if (!latest || latest.status !== "running") break;
+        const next = await server.discoverySuggestion(sessionId);
+        if (!next) {
+          const rootId = latest.screens[0]?.id;
+          if (!rootId || !latest.currentScreenId || latest.currentScreenId === rootId) break;
+          const changed = await server.backtrackDiscovery(sessionId);
+          if (!changed) break;
+          const returned = server.discoverySessions().find((item) => item.id === sessionId);
+          if (returned?.currentScreenId) setSelectedScreenId(returned.currentScreenId);
+          setAutoExplored(index + 1);
+          continue;
+        }
+        const before = new Set(latest.screens.map((screen) => screen.id));
+        await server.approveDiscoverySuggestion({ sessionId, control: next.control });
+        const fresh = server.discoverySessions().find((item) => item.id === sessionId);
+        if (!fresh) break;
+        const reached = fresh.screens.find((screen) => !before.has(screen.id));
+        if (reached) setSelectedScreenId(reached.id);
+        setAutoExplored(index + 1);
+      }
+      if (!stopAutoExploration) {
+        const count = autoExplored();
+        toast(
+          count > 0 ? `Explored ${count} safe paths` : "No new safe paths found",
+          count > 0 ? "success" : "warning",
+        );
+      }
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      setAutoExploring(false);
+      stopAutoExploration = false;
+    }
+  }
+
+  function stopAutomaticExploration(): void {
+    stopAutoExploration = true;
+  }
+
   async function toggleCoverage(): Promise<void> {
     const session = active();
     if (!session) return;
@@ -230,21 +318,13 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
   }
 
   return (
-    <div class="relay-discovery">
+    <div class={cn("relay-discovery", active() && selectedScreen() && "has-inspector")}>
       <aside class="relay-discovery__sessions" aria-label="Discovery sessions">
         <div>
-          <span class="relay-eyebrow">Explore</span>
-          <h3>Map the product</h3>
-          <p>Record the screens you visit. Relay never explores the product on its own.</p>
+          <span class="relay-eyebrow">Product map</span>
+          <h3>Observed screens</h3>
+          <p>Drive the app yourself or let Relay safely discover reachable screens and branches.</p>
         </div>
-        <label>
-          <span class="sr-only">Discovery session name</span>
-          <input
-            value={name()}
-            placeholder="Path name (optional)"
-            onInput={(event) => setName(event.currentTarget.value)}
-          />
-        </label>
         <div class="relay-discovery__target" aria-live="polite">
           <Icon
             name={selectedTarget()?.platform === "browser" ? "server" : "smartphone"}
@@ -306,8 +386,8 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
               <span class="relay-eyebrow">Product map</span>
               <strong>See the path as you record it</strong>
               <p>
-                Start mapping from the left. Each screen you visit becomes a card, and branches stay
-                side by side.
+                Start a guided map or let Relay explore safe paths. Every observed screen becomes
+                evidence, even when the app takes a different path next time.
               </p>
             </div>
           }
@@ -325,7 +405,13 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                           ? "Stopped"
                           : "Map"}
                   </span>
-                  <h3>{session().name}</h3>
+                  <input
+                    aria-label="Map name"
+                    class="relay-discovery__title-input"
+                    value={mapNameDraft()}
+                    onInput={(event) => setMapNameDraft(event.currentTarget.value)}
+                    onChange={() => void rename(session(), mapNameDraft())}
+                  />
                   <p>
                     {session().screens.length} screens · {session().transitions.length} paths
                   </p>
@@ -356,14 +442,6 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     onClick={() => void server.captureDiscoveryScreen(session().id)}
                   >
                     <Icon name="camera" size={14} /> Capture screen
-                  </button>
-                  <button
-                    type="button"
-                    class="relay-secondary"
-                    disabled={discoveryPathTo(session(), selectedScreenId()).length === 0}
-                    onClick={() => reviewPromotion(session())}
-                  >
-                    <Icon name="pointer" size={14} /> Create test
                   </button>
                   <button
                     type="button"
@@ -415,45 +493,6 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   </Show>
                 </div>
               </header>
-              <Show when={selectedScreen()}>
-                {(screen) => (
-                  <section class="relay-discovery__branch-bar" aria-label="Explore observed screen">
-                    <div>
-                      <span class="relay-eyebrow">Selected screen</span>
-                      <strong>{screen().title ?? "Observed screen"}</strong>
-                    </div>
-                    <div class="relay-discovery__branch-actions">
-                      <Show when={suggestion()}>
-                        {(next) => (
-                          <button
-                            type="button"
-                            class="relay-primary"
-                            disabled={session().status !== "running"}
-                            onClick={() => void explore(next().control)}
-                          >
-                            <Icon name="pointer" size={13} /> Explore “{next().control.label}”
-                          </button>
-                        )}
-                      </Show>
-                      <For each={availableControls().slice(0, 5)}>
-                        {(control) => (
-                          <button
-                            type="button"
-                            class="relay-secondary"
-                            disabled={session().status !== "running"}
-                            onClick={() => void explore(control)}
-                          >
-                            <Icon name="pointer" size={12} /> {control.label}
-                          </button>
-                        )}
-                      </For>
-                      <Show when={availableControls().length === 0}>
-                        <small>All safe controls from this screen are already mapped.</small>
-                      </Show>
-                    </div>
-                  </section>
-                )}
-              </Show>
               <Show
                 when={projection() === "canvas"}
                 fallback={
@@ -476,6 +515,106 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
           )}
         </Show>
       </main>
+      <Show when={active() && selectedScreen()}>
+        <button
+          type="button"
+          class="relay-discovery__inspector-dismiss"
+          aria-label="Close selected screen"
+          onClick={() => setSelectedScreenId(null)}
+        />
+        <aside class="relay-discovery__inspector" aria-label="Selected screen details">
+          <div class="relay-discovery__screen-preview">
+            <Show
+              when={selectedScreen()!.screenshotPath}
+              fallback={<Icon name="smartphone" size={24} />}
+            >
+              <img
+                src={server.discoveryScreenUrl(active()!.id, selectedScreen()!.id)}
+                alt={`Captured ${selectedScreen()!.title ?? "screen"}`}
+              />
+            </Show>
+          </div>
+          <header>
+            <div>
+              <span class="relay-eyebrow">Selected screen</span>
+              <button
+                type="button"
+                class="relay-icon-button"
+                aria-label="Close selected screen"
+                onClick={() => setSelectedScreenId(null)}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            </div>
+            <strong>{selectedScreen()!.title ?? "Observed screen"}</strong>
+            <small>
+              {selectedScreen()!.controls?.length ?? 0} available action
+              {(selectedScreen()!.controls?.length ?? 0) === 1 ? "" : "s"}
+            </small>
+          </header>
+          <button
+            type="button"
+            class="relay-primary relay-discovery__create-test"
+            disabled={discoveryPathTo(active()!, selectedScreenId()).length === 0}
+            onClick={() => reviewPromotion(active()!)}
+          >
+            <Icon name="pointer" size={14} /> Create test from this path
+          </button>
+          <Show when={active()!.status === "running"}>
+            <button
+              type="button"
+              class="relay-secondary relay-discovery__auto"
+              onClick={() =>
+                autoExploring()
+                  ? stopAutomaticExploration()
+                  : void exploreAutomatically(active()!.id)
+              }
+            >
+              <Icon name={autoExploring() ? "square" : "scan"} size={13} />
+              {autoExploring() ? `Stop exploring (${autoExplored()})` : "Explore automatically"}
+            </button>
+          </Show>
+          <div class="relay-discovery__next-actions">
+            <span class="relay-eyebrow">Continue from here</span>
+            <Show when={suggestion()}>
+              {(next) => (
+                <button
+                  type="button"
+                  class="is-suggested"
+                  disabled={active()!.status !== "running"}
+                  onClick={() => void explore(next().control)}
+                >
+                  <span>
+                    <strong>{next().control.label}</strong>
+                    <small>Suggested next action</small>
+                  </span>
+                  <Icon name="arrow-right" size={14} />
+                </button>
+              )}
+            </Show>
+            <For each={remainingControls().slice(0, 5)}>
+              {(control) => (
+                <button
+                  type="button"
+                  disabled={active()!.status !== "running"}
+                  onClick={() => void explore(control)}
+                >
+                  <span>
+                    <strong>{control.label}</strong>
+                    <small>Open this branch</small>
+                  </span>
+                  <Icon name="chevron-right" size={14} />
+                </button>
+              )}
+            </For>
+            <Show when={remainingControls().length === 0 && !suggestion()}>
+              <small class="relay-discovery__mapped">
+                Every safe action here is already mapped.
+              </small>
+            </Show>
+          </div>
+        </aside>
+      </Show>
       <Show when={promotionOpen() && active()}>
         {(session) => {
           const transitionIds = () => discoveryPathTo(session(), selectedScreenId());
@@ -718,6 +857,7 @@ function DiscoveryCanvas(props: {
   onView: (view: { x: number; y: number; scale: number }) => void;
 }) {
   const server = useServer();
+  let canvas: HTMLElement | undefined;
   let drag: { x: number; y: number; view: { x: number; y: number; scale: number } } | null = null;
   const layout = () =>
     discoveryCanvasLayout(props.session, {
@@ -741,14 +881,58 @@ function DiscoveryCanvas(props: {
         ) + 100,
     };
   };
-  function zoom(delta: number): void {
+  function zoom(delta: number, clientPoint?: { x: number; y: number }): void {
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const origin = clientPoint ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const localX = origin.x - rect.left;
+    const localY = origin.y - rect.top;
+    const nextScale = Math.max(0.42, Math.min(1.16, props.view.scale + delta));
+    const worldX = (localX - props.view.x) / props.view.scale;
+    const worldY = (localY - props.view.y) / props.view.scale;
     props.onView({
-      ...props.view,
-      scale: Math.max(0.42, Math.min(1.16, props.view.scale + delta)),
+      x: localX - worldX * nextScale,
+      y: localY - worldY * nextScale,
+      scale: nextScale,
+    });
+  }
+  function fit(): void {
+    if (!canvas) return;
+    const positions = Object.values(layout());
+    if (positions.length === 0) {
+      props.onView({ x: 48, y: 48, scale: 0.8 });
+      return;
+    }
+    const minX = Math.min(...positions.map((position) => position.x));
+    const minY = Math.min(...positions.map((position) => position.y));
+    const maxX = Math.max(
+      ...positions.map((position) => position.x + DISCOVERY_NODE_DIMENSIONS.width),
+    );
+    const maxY = Math.max(
+      ...positions.map((position) => position.y + DISCOVERY_NODE_DIMENSIONS.height),
+    );
+    const padding = 48;
+    const width = Math.max(1, maxX - minX);
+    const height = Math.max(1, maxY - minY);
+    const scale = Math.max(
+      0.42,
+      Math.min(
+        1.16,
+        (canvas.clientWidth - padding * 2) / width,
+        (canvas.clientHeight - padding * 2) / height,
+      ),
+    );
+    props.onView({
+      x: (canvas.clientWidth - width * scale) / 2 - minX * scale,
+      y: (canvas.clientHeight - height * scale) / 2 - minY * scale,
+      scale,
     });
   }
   return (
     <section
+      ref={(element) => {
+        canvas = element;
+      }}
       class="relay-discovery-canvas"
       aria-label="Observed screen map"
       style={{
@@ -756,9 +940,16 @@ function DiscoveryCanvas(props: {
         "--relay-discovery-node-height": `${DISCOVERY_NODE_DIMENSIONS.height}px`,
       }}
       onWheel={(event) => {
-        if (!event.ctrlKey && !event.metaKey) return;
         event.preventDefault();
-        zoom(event.deltaY > 0 ? -0.08 : 0.08);
+        if (event.ctrlKey || event.metaKey) {
+          zoom(event.deltaY > 0 ? -0.08 : 0.08, { x: event.clientX, y: event.clientY });
+          return;
+        }
+        props.onView({
+          ...props.view,
+          x: props.view.x - event.deltaX,
+          y: props.view.y - event.deltaY,
+        });
       }}
       onPointerDown={(event) => {
         if ((event.target as HTMLElement).closest("button")) return;
@@ -785,7 +976,7 @@ function DiscoveryCanvas(props: {
         <button type="button" aria-label="Zoom in" onClick={() => zoom(0.1)}>
           +
         </button>
-        <button type="button" onClick={() => props.onView({ x: 56, y: 56, scale: 0.8 })}>
+        <button type="button" onClick={fit}>
           Fit
         </button>
       </div>

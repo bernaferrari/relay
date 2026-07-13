@@ -20,7 +20,7 @@ export function matrixRunPreview(
     targetCount,
     repetitions: trials,
     runCount,
-    summary: `${targetCount} environment${targetCount === 1 ? "" : "s"} · ${trials} trial${trials === 1 ? "" : "s"} · ${runCount} run${runCount === 1 ? "" : "s"}`,
+    summary: `${targetCount} target${targetCount === 1 ? "" : "s"} × ${trials} repeat${trials === 1 ? "" : "s"} = ${runCount} run${runCount === 1 ? "" : "s"}`,
     profiles: expansion.profiles.map((profile) => ({
       name: profile.name,
       platform: profile.platform,

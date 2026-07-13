@@ -29,9 +29,10 @@ pnpm dev:serve             # terminal 1 — API on :8787
 pnpm dev:app               # terminal 2 — Stage UI
 ```
 
-In the UI: choose a target → use **Check** to verify readiness → choose **Record**, **Build**, or
-**Import YAML** → run once. The in-product checklist only marks each item complete after Relay has
-observed the target or preflight result; it can be resumed safely after closing the app.
+In the UI, open **Tests** and follow the single primary action: connect a device, start recording,
+and use the app normally. Relay turns the interaction into editable steps. Review the steps and
+press **Run** to create the first report. If recording is not appropriate, **Build without
+recording** opens the same editor with manual and AI-assisted steps.
 
 ### Reusable recorded setups and app builds
 
@@ -103,6 +104,7 @@ For a Git-first path:
 ```bash
 pnpm --filter @relay/cli exec tsx src/index.ts init
 # edit tests/<id>.relay.yaml
+pnpm --filter @relay/cli exec tsx src/index.ts test format --check
 pnpm --filter @relay/cli exec tsx src/index.ts test validate
 pnpm --filter @relay/cli exec tsx src/index.ts test run <id> --target <target-id>
 ```

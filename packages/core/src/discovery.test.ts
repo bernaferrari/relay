@@ -196,4 +196,47 @@ test("discovery suggests only safe unexplored semantic controls", async () => {
   // A semantic locator is consumed within its source screen, not globally: a
   // different screen may legitimately expose its own “Continue” control.
   assert.equal(suggestDiscoveryControl(branched)?.screenId, "screen-b");
+
+  const currentFirst = {
+    ...branched,
+    currentScreenId: "screen-a",
+    screens: [
+      {
+        ...branched.screens[0]!,
+        controls: [...controls, { ...controls[0]!, label: "Help", target: { ref: "@help" } }],
+      },
+      branched.screens[1]!,
+    ],
+  };
+  assert.equal(suggestDiscoveryControl(currentFirst)?.screenId, "screen-a");
+});
+
+test("discovery tracks the screen currently visible on the target", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-current-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const session = await createDiscoverySession({
+      id: "current",
+      name: "Current screen",
+      targetId: "phone",
+    });
+    await setDiscoveryStatus(session.id, "running");
+    const first = await recordObservedScreen({
+      sessionId: session.id,
+      nodes: [{ role: "button", label: "Continue", visibleToUser: true }],
+      makeCurrent: true,
+    });
+    assert.equal((await readDiscoverySession(session.id))?.currentScreenId, first.screen.id);
+    const second = await recordObservedScreen({
+      sessionId: session.id,
+      nodes: [{ role: "button", label: "Done", visibleToUser: true }],
+      makeCurrent: true,
+    });
+    assert.equal((await readDiscoverySession(session.id))?.currentScreenId, second.screen.id);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
 });

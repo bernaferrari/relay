@@ -36,6 +36,18 @@ export async function setDiscoveryStatus(
   return data.session;
 }
 
+export async function renameDiscoverySession(
+  request: ServerRequest,
+  id: string,
+  name: string,
+): Promise<DiscoverySession> {
+  const data = await request<{ session: DiscoverySession }>(
+    `/discovery/${encodeURIComponent(id)}/name`,
+    { method: "POST", body: JSON.stringify({ name }) },
+  );
+  return data.session;
+}
+
 export async function captureDiscoveryScreen(
   request: ServerRequest,
   id: string,
@@ -107,4 +119,16 @@ export async function approveDiscoverySuggestion(
     method: "POST",
     body: JSON.stringify(action),
   });
+}
+
+/** Return to the previous screen while autonomous exploration backtracks. */
+export async function backtrackDiscovery(
+  request: ServerRequest,
+  sessionId: string,
+): Promise<boolean> {
+  const data = await request<{ transition: { changedScreen: boolean } }>(
+    `/discovery/${encodeURIComponent(sessionId)}/interact`,
+    { method: "POST", body: JSON.stringify({ kind: "back" }) },
+  );
+  return data.transition.changedScreen;
 }

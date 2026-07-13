@@ -67,51 +67,28 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   };
 
   return (
-    <section class="relay-page">
-      <div class="relay-page__hero">
-        <div>
-          <h2>
-            {mode() === "atlas"
-              ? "Test health"
-              : mode() === "workflows"
-                ? "Reusable flows"
-                : "Product map"}
-          </h2>
-          <p>
-            {mode() === "atlas"
-              ? "Find coverage gaps and consolidation opportunities without losing the original tests."
-              : mode() === "workflows"
-                ? "Chain tests into reliable journeys without duplicating a single step."
-                : "Explore the real app, then turn observed screens and paths into regression tests."}
-          </p>
-        </div>
-        <div class="inline-flex rounded-lg bg-surface-weak p-1" role="group" aria-label="Flow view">
-          {(
-            [
-              ["discovery", "Product map"],
-              ["workflows", "Workflows"],
-              ["atlas", "Coverage"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              type="button"
-              class={cn(
-                "min-h-9 rounded-md px-3 text-[11px]/[1.25] text-text-weak hover:text-text-base",
-                mode() === id && "bg-surface-base-active text-text-base",
-              )}
-              aria-pressed={mode() === id}
-              onClick={() => setMode(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+    <section class="relay-page relay-explore-page">
+      <header class="relay-explore-toolbar">
+        <label class="relay-map-view-picker">
+          <span>View</span>
+          <select
+            aria-label="Product map view"
+            value={mode()}
+            onChange={(event) =>
+              setMode(event.currentTarget.value as "atlas" | "workflows" | "discovery")
+            }
+          >
+            <option value="discovery">Observed screens</option>
+            <option value="workflows">Reusable flows</option>
+            <option value="atlas">Coverage</option>
+          </select>
+        </label>
         <Show when={mode() === "workflows" && workflows().length > 0}>
           <button type="button" class="relay-primary" onClick={() => void createWorkflow()}>
             <Icon name="plus" size={15} /> New workflow
           </button>
         </Show>
-      </div>
+      </header>
       <Show
         when={mode() === "discovery"}
         fallback={

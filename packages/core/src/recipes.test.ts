@@ -141,6 +141,47 @@ describe("recipe YAML", () => {
     assert.equal(recipe.title, "YAML roundtrip");
   });
 
+  it("canonicalizes unordered values to avoid noisy Git diffs", () => {
+    const first = parseRecipeYaml(
+      [
+        "schemaVersion: 1",
+        "id: stable-diff",
+        "name: Stable diff",
+        "variables:",
+        "  z_account: secondary",
+        "  a_account: primary",
+        "steps:",
+        "  - kind: module",
+        "    recipeId: sign-in",
+        "    bindings:",
+        "      z_account: '{{z_account}}'",
+        "      a_account: '{{a_account}}'",
+      ].join("\n"),
+    );
+    const second = parseRecipeYaml(
+      [
+        "schemaVersion: 1",
+        "id: stable-diff",
+        "name: Stable diff",
+        "variables:",
+        "  a_account: primary",
+        "  z_account: secondary",
+        "steps:",
+        "  - kind: module",
+        "    recipeId: sign-in",
+        "    bindings:",
+        "      a_account: '{{a_account}}'",
+        "      z_account: '{{z_account}}'",
+      ].join("\n"),
+    );
+
+    assert.equal(formatRecipeYaml(first), formatRecipeYaml(second));
+    assert.match(
+      formatRecipeYaml(first),
+      /variables:\n  a_account: primary\n  z_account: secondary/,
+    );
+  });
+
   it("keeps reusable-flow parameters and module bindings reviewable in YAML", () => {
     const recipe = parseRecipeYaml(
       [

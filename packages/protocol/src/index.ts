@@ -202,6 +202,8 @@ export type DiscoverySession = {
   status: DiscoveryStatus;
   createdAt: number;
   updatedAt: number;
+  /** Last screen observed on the connected target. Older maps may omit this. */
+  currentScreenId?: string;
   screens: ObservedScreen[];
   transitions: ObservedTransition[];
 };

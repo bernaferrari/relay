@@ -31,12 +31,14 @@ import {
 } from "../lib/server-matrix-remote";
 import {
   approveDiscoverySuggestion as approveDiscoverySuggestionRemote,
+  backtrackDiscovery as backtrackDiscoveryRemote,
   captureDiscoveryScreen,
   createDiscoverySession,
   discoveryScreenUrl as buildDiscoveryScreenUrl,
   getDiscoveryCoverage,
   getDiscoverySuggestion,
   listDiscoverySessions,
+  renameDiscoverySession,
   promoteDiscoveryPath,
   setDiscoveryStatus,
 } from "../lib/server-discovery-remote";
@@ -389,6 +391,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return session;
     }
 
+    async function renameDiscoverySessionRemote(
+      id: string,
+      name: string,
+    ): Promise<DiscoverySession> {
+      const session = await renameDiscoverySession(request, id, name);
+      await refreshDiscoverySessions();
+      return session;
+    }
+
     async function captureDiscoveryScreenRemote(id: string): Promise<DiscoverySession> {
       const session = await captureDiscoveryScreen(request, id);
       await refreshDiscoverySessions();
@@ -429,6 +440,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }): Promise<void> {
       await approveDiscoverySuggestionRemote(request, input);
       await refreshDiscoverySessions();
+    }
+
+    async function backtrackDiscovery(id: string): Promise<boolean> {
+      const changed = await backtrackDiscoveryRemote(request, id);
+      await refreshDiscoverySessions();
+      return changed;
     }
 
     async function saveCompatibilityMatrixRemote(input: {
@@ -1254,6 +1271,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshMatrices,
       refreshDiscoverySessions,
       createDiscoverySession: createDiscoverySessionRemote,
+      renameDiscoverySession: renameDiscoverySessionRemote,
       setDiscoveryStatus: setDiscoveryStatusRemote,
       captureDiscoveryScreen: captureDiscoveryScreenRemote,
       discoveryScreenUrl,
@@ -1261,6 +1279,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       discoverySuggestion,
       loadDiscoveryCoverage,
       approveDiscoverySuggestion,
+      backtrackDiscovery,
       saveCompatibilityMatrix: saveCompatibilityMatrixRemote,
       deleteCompatibilityMatrix: deleteCompatibilityMatrixRemote,
       resolveCompatibilityMatrix: resolveCompatibilityMatrixRemote,

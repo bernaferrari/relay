@@ -18,7 +18,6 @@ import { AgentTestComposer } from "./agent-test-composer";
 import { DataWorkspace } from "./workspaces/data-workspace";
 import { MapsWorkspace } from "./workspaces/maps-workspace";
 import { RunSummary } from "./run-summary";
-import { FirstTestProgress } from "./first-test-progress";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, displayTitle, titleize } from "../lib/job";
@@ -26,17 +25,15 @@ import { toast } from "../context/toast";
 import { presentTarget } from "../lib/target-presentation";
 import { matrixRunPreview } from "../lib/matrix-presentation";
 import { nextRovingIndex } from "../lib/roving-focus";
-import { deriveFirstTestState } from "../lib/onboarding";
 import { modalPanel, modalScrim } from "../lib/ui";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
 import type { SettingsSection } from "../pages/settings";
 
-type ProductArea = "tests" | "workflows" | "runs" | "data";
-type StudioView = "live" | "journey";
+type ProductArea = "tests" | "runs" | "data";
+type StudioView = "live" | "journey" | "map";
 
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
-  { id: "workflows", label: "Maps", icon: "move" },
   { id: "runs", label: "Runs", icon: "wave" },
   { id: "data", label: "Data", icon: "sparkle" },
 ];
@@ -132,6 +129,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function openRecipe(id: string): void {
     server.setSelectedRecipeId(id);
     setArea("tests");
+    setStudioView("live");
   }
 
   return (
@@ -149,17 +147,20 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         </button>
         <nav class="relay-rail__nav">
           <For each={AREA_ITEMS}>
-            {(item) => (
-              <button
-                type="button"
-                class={cn("relay-rail__item", area() === item.id && "is-active")}
-                aria-current={area() === item.id ? "page" : undefined}
-                onClick={() => setArea(item.id)}
-              >
-                <Icon name={item.icon} size={18} />
-                <span>{item.label}</span>
-              </button>
-            )}
+            {(item) => {
+              const active = () => area() === item.id;
+              return (
+                <button
+                  type="button"
+                  class={cn("relay-rail__item", active() && "is-active")}
+                  aria-current={active() ? "page" : undefined}
+                  onClick={() => setArea(item.id)}
+                >
+                  <Icon name={item.icon} size={18} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            }}
           </For>
         </nav>
         <div class="relay-rail__foot">
@@ -205,21 +206,21 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <span>Relay</span>
               <Icon name="chevron-right" size={13} />
               <strong>
-                {area() === "tests"
-                  ? selected()
-                    ? displayTitle(selected()!.title)
-                    : "Test studio"
-                  : area() === "runs"
-                    ? "Run history"
-                    : area() === "workflows"
-                      ? "Maps"
-                      : "Test data"}
+                {area() === "runs"
+                  ? "Run history"
+                  : area() === "data"
+                    ? "Test data"
+                    : studioView() === "map"
+                      ? "Product map"
+                      : selected()
+                        ? displayTitle(selected()!.title)
+                        : "Test studio"}
               </strong>
             </div>
           </div>
           <div class="relay-topbar__actions">
             <DevicePicker />
-            <Show when={area() === "tests"}>
+            <Show when={area() === "tests" && studioView() !== "map"}>
               <button
                 type="button"
                 class={cn("relay-record", recorder.recording() && "is-recording")}
@@ -260,44 +261,47 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         </header>
 
         <Show when={area() === "tests"}>
-          <Show
-            when={selected()}
-            fallback={
-              <TestWelcome
-                onCreate={() => void createTest(false)}
-                onRecord={() => void createTest(true)}
-                onOpenSettings={props.onOpenSettings}
-                recordBlockedReason={recordBlockedReason()}
-              />
-            }
-          >
-            <section class="relay-studio">
-              <div class="relay-studio__bar">
-                <div class="relay-view-tabs" role="tablist" aria-label="Test view">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={studioView() === "live"}
-                    class={cn(studioView() === "live" && "is-active")}
-                    onClick={() => setStudioView("live")}
-                  >
-                    <Icon name="smartphone" size={15} /> Live device
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={studioView() === "journey"}
-                    class={cn(studioView() === "journey" && "is-active")}
-                    disabled={draft.steps().length === 0 && server.frames().length === 0}
-                    onClick={() => setStudioView("journey")}
-                  >
-                    <Icon name="move" size={15} /> Journey
-                    <span class="relay-count">
-                      {server.frames().length || draft.steps().length}
-                    </span>
-                  </button>
-                </div>
-                <div class="relay-studio__tools">
+          <section class="relay-studio">
+            <div class="relay-studio__bar">
+              <div class="relay-view-tabs" role="tablist" aria-label="Test view">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={studioView() === "live"}
+                  class={cn(studioView() === "live" && "is-active")}
+                  disabled={!selected()}
+                  onClick={() => setStudioView("live")}
+                >
+                  <Icon name="smartphone" size={15} /> Live device
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={studioView() === "journey"}
+                  class={cn(studioView() === "journey" && "is-active")}
+                  disabled={
+                    !selected() || (draft.steps().length === 0 && server.frames().length === 0)
+                  }
+                  onClick={() => setStudioView("journey")}
+                >
+                  <Icon name="move" size={15} /> Journey
+                  <span class="relay-count">{server.frames().length || draft.steps().length}</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={studioView() === "map"}
+                  class={cn(studioView() === "map" && "is-active")}
+                  onClick={() => {
+                    setStudioView("map");
+                    setLibraryOpen(false);
+                  }}
+                >
+                  <Icon name="grid" size={15} /> Product map
+                </button>
+              </div>
+              <div class="relay-studio__tools">
+                <Show when={selected() && studioView() !== "map"}>
                   <span class="relay-save-state">
                     {draft.saveState() === "saving"
                       ? "Saving…"
@@ -339,35 +343,47 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       </button>
                     </div>
                   </Show>
-                </div>
+                </Show>
               </div>
-              <div class="relay-studio__body">
-                <div class="relay-stage-wrap">
+            </div>
+            <div class={cn("relay-studio__body", studioView() === "map" && "is-map")}>
+              <Show
+                when={studioView() === "map"}
+                fallback={
                   <Show
-                    when={studioView() === "live"}
-                    fallback={<JourneyWorkspace onLive={() => setStudioView("live")} />}
+                    when={selected()}
+                    fallback={
+                      <TestWelcome
+                        onCreate={() => void createTest(false)}
+                        onRecord={() => void createTest(true)}
+                        onOpenSettings={props.onOpenSettings}
+                        recordBlockedReason={recordBlockedReason()}
+                      />
+                    }
                   >
-                    <DeviceStage onExpandBoard={() => setStudioView("journey")} />
+                    <div class="relay-stage-wrap">
+                      <Show
+                        when={studioView() === "live"}
+                        fallback={<JourneyWorkspace onLive={() => setStudioView("live")} />}
+                      >
+                        <DeviceStage onExpandBoard={() => setStudioView("journey")} />
+                      </Show>
+                    </div>
+                    <StepDocument
+                      onOpenData={() => setArea("data")}
+                      onOpenTargets={() => props.onOpenSettings("matrices")}
+                    />
                   </Show>
-                </div>
-                <StepDocument
-                  onOpenData={() => setArea("data")}
-                  onOpenTargets={() => props.onOpenSettings("matrices")}
-                  onOpenRun={(id) => {
-                    server.setSelectedJobId(id);
-                    setArea("runs");
-                  }}
-                />
-              </div>
-            </section>
-          </Show>
+                }
+              >
+                <MapsWorkspace onOpenRecipe={openRecipe} />
+              </Show>
+            </div>
+          </section>
         </Show>
 
         <Show when={area() === "runs"}>
           <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
-        </Show>
-        <Show when={area() === "workflows"}>
-          <MapsWorkspace onOpenRecipe={openRecipe} />
         </Show>
         <Show when={area() === "data"}>
           <DataWorkspace onConfigureProvider={props.onOpenSettings} />
@@ -454,11 +470,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   );
 }
 
-function StepDocument(props: {
-  onOpenData: () => void;
-  onOpenTargets: () => void;
-  onOpenRun: (id: string) => void;
-}) {
+function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const [tab, setTab] = createSignal<"steps" | "inputs" | "yaml">("steps");
@@ -481,23 +493,6 @@ function StepDocument(props: {
     import("../context/server").RecipeStability | null
   >(null);
   const selected = () => server.selectedRecipe();
-  const selectedTarget = () =>
-    server.devices().find((device) => device.serial === server.selectedDevice()) ?? null;
-  const completedRuns = () => [...server.jobs(), ...server.persistedRuns()];
-  const firstTestState = () =>
-    deriveFirstTestState({
-      serverOnline: server.health() === "online",
-      targetSelected: Boolean(selectedTarget()),
-      targetAvailable: selectedTarget()?.booted !== false,
-      recipeSource: selected()?.source,
-      recipeId: selected()?.id,
-      stepCount: draft.steps().length,
-      runs: completedRuns(),
-    });
-  const completedRun = () =>
-    completedRuns().find(
-      (run) => run.action === selected()?.id && (run.status === "ok" || run.status === "healed"),
-    ) ?? null;
   const canRun = () =>
     server.health() === "online" &&
     !server.isEmptyDevices() &&
@@ -656,38 +651,39 @@ function StepDocument(props: {
               class="relay-run relay-run--menu"
               disabled={!canRun()}
               aria-label="Run options"
+              aria-haspopup="dialog"
               aria-expanded={runMenuOpen()}
               onClick={() => setRunMenuOpen((open) => !open)}
             >
               <Icon name="chevron-down" size={12} />
             </button>
             <Show when={runMenuOpen()}>
-              <div class="relay-run-menu" role="menu">
-                <button type="button" role="menuitem" onClick={() => runTrials(1)}>
+              <div class="relay-run-menu" role="dialog" aria-label="Run options">
+                <button type="button" onClick={() => runTrials(1)}>
                   <Icon name="play" size={14} />
                   <span>
                     <strong>Smoke run</strong>
                     <small>One fast execution</small>
                   </span>
                 </button>
-                <button type="button" role="menuitem" onClick={() => runTrials(3)}>
+                <button type="button" onClick={() => runTrials(3)}>
                   <Icon name="refresh" size={14} />
                   <span>
                     <strong>Reliability check</strong>
-                    <small>3 repeat runs</small>
+                    <small>Repeat 3 times</small>
                   </span>
                 </button>
-                <button type="button" role="menuitem" onClick={() => runTrials(matrixSize())}>
+                <button type="button" onClick={() => runTrials(matrixSize())}>
                   <Icon name="grid" size={14} />
                   <span>
-                    <strong>Full data matrix</strong>
+                    <strong>All test data</strong>
                     <small>{matrixSize()} approved or generated cases</small>
                   </span>
                 </button>
                 <Show when={server.matrices().length > 0}>
-                  <section class="relay-run-menu__matrices" aria-label="Device and OS matrices">
+                  <section class="relay-run-menu__matrices" aria-label="Test environments">
                     <header>
-                      <span>Device matrices</span>
+                      <span>Test environments</span>
                       <div role="group" aria-label="Trials per environment">
                         <button
                           type="button"
@@ -716,7 +712,6 @@ function StepDocument(props: {
                           <div class="relay-run-matrix">
                             <button
                               type="button"
-                              role="menuitem"
                               disabled={!expansion() || expansion()!.profiles.length === 0}
                               onClick={() => runOnMatrix(matrix.id)}
                             >
@@ -739,7 +734,7 @@ function StepDocument(props: {
                             <Show when={preview()?.exclusions.length}>
                               <details>
                                 <summary>
-                                  {preview()!.exclusions.length} environment
+                                  {preview()!.exclusions.length} target
                                   {preview()!.exclusions.length === 1 ? "" : "s"} excluded
                                 </summary>
                                 <ul>
@@ -757,7 +752,7 @@ function StepDocument(props: {
                             <Show when={preview()?.profiles.length}>
                               <details>
                                 <summary>
-                                  {preview()!.profiles.length} environment
+                                  {preview()!.profiles.length} target
                                   {preview()!.profiles.length === 1 ? "" : "s"} included
                                 </summary>
                                 <ul>
@@ -783,7 +778,7 @@ function StepDocument(props: {
                 </Show>
                 <Show when={server.matrices().length === 0}>
                   <div class="relay-run-menu__empty">
-                    <strong>No device matrix yet</strong>
+                    <strong>No test environment yet</strong>
                     <small>
                       Save a set of devices and OS versions to run this test across them.
                     </small>
@@ -791,7 +786,6 @@ function StepDocument(props: {
                 </Show>
                 <button
                   type="button"
-                  role="menuitem"
                   onClick={() => {
                     setRunMenuOpen(false);
                     props.onOpenTargets();
@@ -799,13 +793,12 @@ function StepDocument(props: {
                 >
                   <Icon name="sliders" size={14} />
                   <span>
-                    <strong>Manage device matrices</strong>
+                    <strong>Manage test environments</strong>
                     <small>Choose devices, OS versions, and capabilities</small>
                   </span>
                 </button>
                 <button
                   type="button"
-                  role="menuitem"
                   onClick={() => {
                     const recipe = selected();
                     if (!recipe) return;
@@ -902,14 +895,6 @@ function StepDocument(props: {
             </div>
           </Show>
         </div>
-        <Show when={selected()?.source === "custom"}>
-          <FirstTestProgress
-            state={firstTestState()}
-            runId={completedRun()?.id}
-            onOpenRun={props.onOpenRun}
-            onOpenYaml={() => setTab("yaml")}
-          />
-        </Show>
         <Show when={historyOpen()}>
           <div class="relay-history-popover">
             <header>
@@ -1070,29 +1055,24 @@ function TestWelcome(props: {
   const targetCopy = () => (target() ? presentTarget(target()!) : null);
   const targetReady = () =>
     Boolean(target()) && server.health() === "online" && target()!.booted !== false;
-  const firstTestState = () =>
-    deriveFirstTestState({
-      serverOnline: server.health() === "online",
-      targetSelected: Boolean(target()),
-      targetAvailable: target()?.booted !== false,
-    });
-
   return (
     <section class="relay-welcome relay-first-test" aria-labelledby="test-welcome-title">
       <div class="relay-first-test__content">
         <span class="relay-eyebrow">Test studio</span>
-        <h2 id="test-welcome-title">Create your first test.</h2>
+        <h2 id="test-welcome-title">Turn a manual flow into a repeatable test.</h2>
         <p>
-          {target()
-            ? "Record a real interaction or describe the flow. Every step stays editable."
-            : "Connect a device or browser, then record the flow exactly as a customer would."}
+          {targetReady()
+            ? "Press record and use the app normally. Relay captures editable steps as you go."
+            : target()
+              ? "Start this device, then record the flow exactly as a customer would."
+              : "Connect a device or browser. Every tap, swipe, and typed value becomes an editable step."}
         </p>
         <Show when={target()}>
           <div class="relay-first-test__target" aria-live="polite">
             <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={17} />
             <div>
               <strong>{targetCopy()!.displayName}</strong>
-              <span>{targetReady() ? targetCopy()!.statusLabel : "Unavailable"}</span>
+              <span>{targetReady() ? "Ready to record" : "Needs setup"}</span>
             </div>
             <button
               type="button"
@@ -1112,7 +1092,7 @@ function TestWelcome(props: {
                 class="relay-primary"
                 onClick={() => props.onOpenSettings("targets")}
               >
-                Connect a target <Icon name="arrow-right" size={14} />
+                Connect device or browser <Icon name="arrow-right" size={14} />
               </button>
             }
           >
@@ -1135,15 +1115,14 @@ function TestWelcome(props: {
                 data-tip={props.recordBlockedReason || "Record device interactions"}
                 onClick={props.onRecord}
               >
-                <span class="relay-record__dot" /> Record a test
+                <span class="relay-record__dot" /> Start recording
               </button>
             </Show>
           </Show>
           <button class="relay-first-test__manual" type="button" onClick={props.onCreate}>
-            {target() ? "Describe the flow instead" : "Build without a target"}
+            Build without recording
           </button>
         </div>
-        <FirstTestProgress state={firstTestState()} />
       </div>
       <div class="relay-welcome__visual relay-first-test__visual" aria-hidden="true">
         <div class="relay-welcome__phone">
@@ -1265,7 +1244,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
           </button>
         </Show>
       </div>
-      <Show when={rows().length > 0}>
+      <Show when={rows().length > 0 && !selected()}>
         <div class="mx-auto mb-4 grid w-full max-w-[1180px] grid-cols-3 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger [&>*+*]:border-l [&>*+*]:border-border-weak-base">
           <Metric label="Total runs" value={rows().length} detail="all time" />
           <Metric
@@ -1285,8 +1264,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
       <div
         class={cn(
           "mx-auto grid w-full max-w-[1180px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
-          selected() &&
-            "grid-cols-[minmax(520px,1.25fr)_minmax(360px,0.75fr)] max-[1050px]:grid-cols-1",
+          selected() && "relay-run-workspace max-w-[1320px]",
           rows().length === 0 && "place-items-center px-6 py-16",
         )}
       >
@@ -1294,9 +1272,10 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
           class={cn(
             "w-full max-w-none overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger",
             rows().length === 0 && "max-w-[680px] rounded-[20px]",
+            selected() && "max-h-[650px] overflow-y-auto max-[820px]:max-h-[260px]",
           )}
         >
-          <Show when={rows().length > 0}>
+          <Show when={rows().length > 0 && !selected()}>
             <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase [&>span]:min-w-0 [&>span]:truncate">
               <span>Test</span>
               <span>Status</span>
@@ -1357,24 +1336,54 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
               </div>
             }
           >
-            {(job) => (
-              <RunRow
-                job={job}
-                selected={selectedId() === job.id}
-                onOpen={() => {
-                  setSelectedId(job.id);
-                  setTab("summary");
-                }}
-              />
-            )}
+            {(job) => {
+              const open = () => {
+                setSelectedId(job.id);
+                setTab("summary");
+              };
+              return (
+                <Show
+                  when={selected()}
+                  fallback={<RunRow job={job} selected={selectedId() === job.id} onOpen={open} />}
+                >
+                  <RunNavigatorRow job={job} selected={selectedId() === job.id} onOpen={open} />
+                </Show>
+              );
+            }}
           </For>
         </div>
         <Show when={selected()}>
           {(job) => (
-            <aside class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger">
+            <section class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger">
+              <header class="flex min-h-18 items-center justify-between gap-3 border-b border-border-weak-base px-4 py-3">
+                <div class="grid min-w-0 gap-1">
+                  <span class="relay-eyebrow">Replay</span>
+                  <strong class="truncate text-[15px]/[1.25] font-semibold text-text-base">
+                    {server.recipes().find((recipe) => recipe.id === job().action)?.title ??
+                      job().title ??
+                      job().action}
+                  </strong>
+                </div>
+                <span class={cn("relay-status", `is-${job().status}`)}>
+                  {job().status === "ok" || job().status === "healed"
+                    ? "Passed"
+                    : job().status === "error"
+                      ? "Needs attention"
+                      : titleize(job().status)}
+                </span>
+              </header>
+              <div class="max-h-[578px] overflow-auto p-3.5">
+                <RunReplay job={job()} workspace />
+              </div>
+            </section>
+          )}
+        </Show>
+        <Show when={selected()}>
+          {(job) => (
+            <aside class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger max-[1120px]:col-span-2 max-[820px]:col-span-1">
               <header class="flex min-h-18 items-center justify-between gap-3 px-4 py-3">
                 <div class="grid min-w-0 gap-1">
-                  <span class="relay-eyebrow">Result</span>
+                  <span class="relay-eyebrow">Diagnosis</span>
                   <strong class="truncate text-[16px]/[1.25] font-semibold text-text-base">
                     {server.recipes().find((r) => r.id === job().action)?.title ??
                       job().title ??
@@ -1424,7 +1433,6 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                 {(
                   [
                     ["summary", "Summary"],
-                    ["replay", "Replay"],
                     ["evaluation", "Evaluation"],
                     ["network", "Network"],
                     ["logs", "Logs"],
@@ -1700,7 +1708,7 @@ function formatDurationDelta(value: number | null): string {
   return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
 }
 
-function RunReplay(props: { job: JobInfo }) {
+function RunReplay(props: { job: JobInfo; workspace?: boolean }) {
   const server = useServer();
   let video: HTMLVideoElement | undefined;
   const files = createMemo(() => {
@@ -1722,15 +1730,24 @@ function RunReplay(props: { job: JobInfo }) {
   };
 
   return (
-    <div class="relay-replay">
+    <div class={cn("relay-replay", props.workspace && "is-workspace")}>
       <Show
         when={firstVideo()}
         fallback={
           <div class="relay-replay__empty">
-            <Icon name="camera" size={18} />
+            <div class="relay-replay__empty-device" aria-hidden="true">
+              <span />
+              <Icon name={props.job.status === "error" ? "alert" : "camera"} size={22} />
+            </div>
             <div>
-              <strong>No video for this run</strong>
-              <span>Step timing and screenshots are still available below.</span>
+              <strong>
+                {props.job.status === "error" ? "This run stopped before replay" : "No replay yet"}
+              </strong>
+              <span>
+                {props.job.status === "error"
+                  ? "Review the diagnosis to fix the setup, then run the test again."
+                  : "Run this test again with recording enabled to keep the complete interaction."}
+              </span>
             </div>
           </div>
         }
@@ -1750,12 +1767,18 @@ function RunReplay(props: { job: JobInfo }) {
             </video>
             <div>
               <span class="relay-eyebrow">Device replay</span>
-              <strong>Actions and evidence, on one clock</strong>
+              <strong>Every action stays aligned with its evidence</strong>
             </div>
           </div>
         )}
       </Show>
       <div class="relay-replay-list" aria-label="Run steps">
+        <Show when={(props.job.steps?.length ?? 0) > 0}>
+          <div class="relay-replay-list__heading">
+            <span>Timeline</span>
+            <small>{props.job.steps!.length} steps</small>
+          </div>
+        </Show>
         <For
           each={props.job.steps ?? []}
           fallback={<div class="relay-table-empty">No replay steps captured.</div>}
@@ -1844,6 +1867,41 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
       <span>{targetName()}</span>
       <span>{fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}</span>
       <span>{fmtDur(props.job, server.clock()) || "—"}</span>
+    </button>
+  );
+}
+
+function RunNavigatorRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) {
+  const server = useServer();
+  const recipe = () => server.recipes().find((item) => item.id === props.job.action);
+  const passed = () => props.job.status === "ok" || props.job.status === "healed";
+  return (
+    <button
+      type="button"
+      class={cn(
+        "grid min-h-14 w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2.5 border-b border-border-weak-base px-3 text-left transition-colors last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
+        props.selected && "bg-surface-base-active",
+      )}
+      aria-current={props.selected ? "true" : undefined}
+      onClick={props.onOpen}
+    >
+      <span
+        class={cn(
+          "size-2 rounded-full bg-text-weaker",
+          passed() && "bg-text-success-base",
+          props.job.status === "error" && "bg-text-critical-base",
+        )}
+        aria-hidden="true"
+      />
+      <span class="grid min-w-0 gap-1">
+        <strong class="truncate text-[11px]/[1.25] font-[550] text-text-base">
+          {recipe()?.title ?? props.job.title ?? props.job.action}
+        </strong>
+        <small class="truncate text-[9px]/[1.25] text-text-weaker">
+          {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"} ·{" "}
+          {fmtDur(props.job, server.clock()) || "—"}
+        </small>
+      </span>
     </button>
   );
 }

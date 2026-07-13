@@ -73,11 +73,13 @@ Usage:
   relay init [--dry-run]             Create git-friendly Relay test layout
   relay test list [--json]           List editable tests
   relay test validate [path...]      Validate tracked YAML test definitions
+  relay test format [path...] [--check] Canonicalize YAML or fail when formatting is needed
   relay test run <id> [flags]        Run an editable test by id
   relay test import <path> [--force] Import YAML; replacing an existing test requires --force
   relay test export <id> [--out p]   Print or write canonical YAML
   relay matrix list [--json]         List named compatibility matrices
   relay matrix validate <id>         Preview a compatibility matrix against observed targets
+  relay matrix format <path> [--check] Canonicalize a matrix YAML file
   relay matrix import <path> [--force] Import a Git-friendly matrix YAML file
   relay matrix export <id> [--out p] Print or write canonical matrix YAML
   relay discover start <target>      Start a bounded Discovery Map session
@@ -397,6 +399,26 @@ async function cmdMatrix(argv: string[]): Promise<void> {
     }
     return;
   }
+  if (command === "format") {
+    const file = argv[1];
+    if (!file) throw new Error("relay matrix format requires a YAML file path");
+    const resolved = path.resolve(file);
+    const source = await readFile(resolved, "utf8");
+    const formatted = formatMatrixYaml(
+      parseMatrixYaml(source, { projectId: "default", createdAt: 0, updatedAt: 0 }),
+    );
+    if (source === formatted) {
+      console.log(`ok     ${resolved}`);
+      return;
+    }
+    if (hasFlag(argv.slice(2), "--check")) {
+      console.error(`format ${resolved}`);
+      process.exit(1);
+    }
+    await writeFile(resolved, formatted, "utf8");
+    console.log(`wrote  ${resolved}`);
+    return;
+  }
   if (command === "import") {
     const file = argv[1];
     if (!file) throw new Error("relay matrix import requires a YAML file path");
@@ -546,6 +568,35 @@ async function cmdTestValidate(paths: string[]): Promise<void> {
   process.exit(invalid === 0 ? 0 : 1);
 }
 
+async function cmdTestFormat(argv: string[]): Promise<void> {
+  const check = hasFlag(argv, "--check");
+  const requested = argv.filter((value) => value !== "--check");
+  const files =
+    requested.length > 0
+      ? requested.map((file) => path.resolve(file))
+      : await listYamlRecipeFiles(testsRoot());
+  if (files.length === 0) {
+    console.log("No Relay YAML tests to format.");
+    return;
+  }
+  let changed = 0;
+  for (const file of files) {
+    const source = await readFile(file, "utf8");
+    const formatted = formatRecipeYaml(parseRecipeYaml(source));
+    if (source === formatted) {
+      console.log(`ok     ${file}`);
+      continue;
+    }
+    changed += 1;
+    if (check) console.error(`format ${file}`);
+    else {
+      await writeFile(file, formatted, "utf8");
+      console.log(`wrote  ${file}`);
+    }
+  }
+  if (check && changed > 0) process.exit(1);
+}
+
 async function cmdTestImport(file: string, argv: string[]): Promise<void> {
   if (!file) throw new Error("relay test import requires a YAML file path");
   const recipe = parseRecipeYaml(await readFile(file, "utf8"));
@@ -613,6 +664,7 @@ async function cmdTest(argv: string[]): Promise<void> {
   const command = argv[0];
   if (command === "list") return await cmdTestList(argv.slice(1));
   if (command === "validate") return await cmdTestValidate(argv.slice(1));
+  if (command === "format") return await cmdTestFormat(argv.slice(1));
   if (command === "run") {
     const id = argv[1];
     if (!id) throw new Error("relay test run requires a test id");

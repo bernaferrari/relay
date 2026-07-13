@@ -87,6 +87,7 @@ import {
   preflightTarget,
   buildTargetProfiles,
   createDiscoverySession,
+  renameDiscoverySession,
   listDiscoverySessions,
   readDiscoverySession,
   readDiscoveryScreenAsset,
@@ -548,6 +549,16 @@ async function handleRequest(
       return;
     }
 
+    const discoveryRenameMatch = matchPath(pathname, "/discovery/:id/name");
+    if (method === "POST" && discoveryRenameMatch) {
+      const body = (await parseJsonBody(req)) as { name?: string };
+      if (!body.name?.trim()) throw new HttpError(400, "name is required");
+      json(res, 200, {
+        session: await renameDiscoverySession(discoveryRenameMatch.id!, body.name),
+      });
+      return;
+    }
+
     const discoveryMatch = matchPath(pathname, "/discovery/:id");
     if (method === "GET" && discoveryMatch) {
       const session = await readDiscoverySession(discoveryMatch.id!);
@@ -592,6 +603,7 @@ async function handleRequest(
         sessionId: session.id,
         nodes: snap.nodes,
         screenshotPath: shot.path,
+        makeCurrent: true,
       });
       json(res, 201, { screen: captured.screen, isNew: captured.isNew, session: captured.session });
       return;
@@ -620,6 +632,7 @@ async function handleRequest(
         sessionId: session.id,
         nodes: beforeSnapshot.nodes,
         screenshotPath: beforeShot.path,
+        makeCurrent: true,
       });
       await interact(input, { serial: session.targetId });
       const afterSnapshot = await captureSnapshot({ serial: session.targetId });
@@ -628,6 +641,7 @@ async function handleRequest(
         sessionId: session.id,
         nodes: afterSnapshot.nodes,
         screenshotPath: afterShot.path,
+        makeCurrent: true,
       });
       const transition = await recordObservedTransition({
         sessionId: session.id,

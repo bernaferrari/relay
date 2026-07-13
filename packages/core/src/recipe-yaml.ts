@@ -68,6 +68,17 @@ export function validateRecipeVariables(value: unknown): Record<string, string> 
   return Object.keys(variables).length > 0 ? variables : undefined;
 }
 
+function sortedStringRecord(value: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function canonicalStep(step: RecipeStep): RecipeStep {
+  if (step.kind !== "module" || !step.bindings) return step;
+  return { ...step, bindings: sortedStringRecord(step.bindings) };
+}
+
 function documentFromRecipe(recipe: Recipe): RecipeYamlDocument {
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -75,10 +86,10 @@ function documentFromRecipe(recipe: Recipe): RecipeYamlDocument {
     name: recipe.title,
     ...(recipe.description?.trim() ? { description: recipe.description } : {}),
     ...(recipe.variables && Object.keys(recipe.variables).length > 0
-      ? { variables: recipe.variables }
+      ? { variables: sortedStringRecord(recipe.variables) }
       : {}),
     ...(recipe.parameters?.length ? { parameters: recipe.parameters } : {}),
-    steps: recipe.steps,
+    steps: recipe.steps.map(canonicalStep),
     ...(recipe.quarantined ? { quarantined: true } : {}),
     ...(recipe.quarantineReason?.trim() ? { quarantineReason: recipe.quarantineReason } : {}),
   };
@@ -142,17 +153,15 @@ export function parseRecipeYaml(
   if (value.quarantineReason !== undefined && typeof value.quarantineReason !== "string") {
     throw new Error("quarantineReason must be a string");
   }
+  const variables = validateRecipeVariables(value.variables);
+  const parameters = validateRecipeParameters(value.parameters);
   return {
     id: value.id,
     title: value.name,
     ...(typeof value.description === "string" ? { description: value.description } : {}),
     source: "custom",
-    ...(validateRecipeVariables(value.variables)
-      ? { variables: validateRecipeVariables(value.variables) }
-      : {}),
-    ...(validateRecipeParameters(value.parameters)
-      ? { parameters: validateRecipeParameters(value.parameters) }
-      : {}),
+    ...(variables ? { variables } : {}),
+    ...(parameters ? { parameters } : {}),
     steps: validateRecipeSteps(value.steps),
     createdAt: metadata.createdAt,
     updatedAt: metadata.updatedAt,

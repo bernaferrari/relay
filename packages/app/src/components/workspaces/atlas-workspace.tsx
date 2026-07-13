@@ -5,7 +5,7 @@ import { Icon } from "../icon";
 export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: string) => void }) {
   const title = (id: string) => props.atlas?.nodes.find((node) => node.id === id)?.title ?? id;
   return (
-    <div class="mx-auto grid w-full max-w-[1180px] gap-4">
+    <div class="relay-atlas mx-auto grid w-full max-w-[1180px] content-start gap-4">
       <section class="grid grid-cols-3 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger [&>*+*]:border-l [&>*+*]:border-border-weak-base">
         {[
           [props.atlas?.nodes.length ?? 0, "Tests"],

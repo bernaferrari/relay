@@ -167,6 +167,18 @@ export async function readDiscoverySession(id: string): Promise<DiscoverySession
   }
 }
 
+/** Rename a saved map without changing its captured evidence or run state. */
+export async function renameDiscoverySession(id: string, name: string): Promise<DiscoverySession> {
+  const session = await readDiscoverySession(id);
+  if (!session) throw new Error("Discovery map not found");
+  const nextName = name.trim();
+  if (!nextName) throw new Error("Map name is required");
+  if (nextName.length > 120) throw new Error("Map name is too long");
+  const renamed = { ...session, name: nextName, updatedAt: Date.now() };
+  await writeSession(renamed);
+  return renamed;
+}
+
 export async function listDiscoverySessions(): Promise<DiscoverySession[]> {
   try {
     const files = (await readdir(discoveryRoot())).filter((file) => file.endsWith(".json"));
@@ -210,13 +222,21 @@ export async function recordObservedScreen(input: {
   screenshotPath?: string;
   screenshotDigest?: string;
   snapshotDigest?: string;
+  makeCurrent?: boolean;
 }): Promise<{ session: DiscoverySession; screen: ObservedScreen; isNew: boolean }> {
   const session = await readDiscoverySession(input.sessionId);
   if (!session) throw new Error("discovery session not found");
   assertMutable(session);
   const fingerprint = fingerprintDiscoveryScreen(input.nodes, input.screenshotDigest);
   const existing = session.screens.find((screen) => screen.fingerprint === fingerprint);
-  if (existing) return { session, screen: existing, isNew: false };
+  if (existing) {
+    if (input.makeCurrent && session.currentScreenId !== existing.id) {
+      session.currentScreenId = existing.id;
+      session.updatedAt = Date.now();
+      await writeSession(session);
+    }
+    return { session, screen: existing, isNew: false };
+  }
   if (session.screens.length >= session.scope.maxScreens)
     throw new Error("discovery screen budget is exhausted");
   const screen: ObservedScreen = {
@@ -234,6 +254,7 @@ export async function recordObservedScreen(input: {
     screen.screenshotPath = `screens/${screen.id}.png`;
   }
   session.screens.push(screen);
+  if (input.makeCurrent) session.currentScreenId = screen.id;
   session.updatedAt = screen.capturedAt;
   await writeSession(session);
   return { session, screen, isNew: true };
@@ -248,7 +269,14 @@ export function suggestDiscoveryControl(session: DiscoverySession): {
       .filter((transition) => transition.target)
       .map((transition) => `${transition.fromScreenId}:${JSON.stringify(transition.target)}`),
   );
-  for (const screen of session.screens) {
+  const currentScreen = session.currentScreenId
+    ? session.screens.find((screen) => screen.id === session.currentScreenId)
+    : undefined;
+  // Once the session knows what is visible, never suggest a control from a
+  // different screen. Legacy maps without currentScreenId retain the old
+  // best-effort ordering until the next capture records one.
+  const orderedScreens = currentScreen ? [currentScreen] : session.screens;
+  for (const screen of orderedScreens) {
     const control = screen.controls?.find(
       (item) => !used.has(`${screen.id}:${JSON.stringify(item.target)}`),
     );
@@ -298,6 +326,7 @@ export async function recordObservedTransition(
     changedScreen: input.changedScreen,
   };
   session.transitions.push(transition);
+  session.currentScreenId = input.toScreenId ?? input.fromScreenId;
   session.updatedAt = transition.capturedAt;
   await writeSession(session);
   return transition;

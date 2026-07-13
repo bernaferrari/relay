@@ -23,7 +23,7 @@ const rowCopyCls = "flex min-w-0 flex-col gap-0.5";
 const rowTitleCls = "text-12-medium text-text-strong";
 const rowDescCls = "text-12-regular leading-snug text-text-weak";
 const inputCls =
-  "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 font-mono text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
+  "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
 
 const matrixPlatforms: TargetProfile["platform"][] = ["android", "ios", "browser"];
 const matrixCapabilities: TargetCapability[] = [
@@ -135,9 +135,14 @@ function MatrixSelectorEditor(props: {
           Remove
         </Button>
       </div>
-      <div class="grid grid-cols-2 gap-1 rounded-md bg-surface-raised-stronger-non-alpha p-1">
+      <div
+        class="grid grid-cols-2 gap-1 rounded-md bg-surface-raised-stronger-non-alpha p-1"
+        role="group"
+        aria-label={`How rule ${props.index} finds targets`}
+      >
         <button
           type="button"
+          aria-pressed={props.draft.mode === "targets"}
           class={cn(
             "h-7 rounded text-10-medium transition-colors",
             props.draft.mode === "targets"
@@ -146,10 +151,11 @@ function MatrixSelectorEditor(props: {
           )}
           onClick={() => update({ mode: "targets" })}
         >
-          Choose targets
+          Choose devices
         </button>
         <button
           type="button"
+          aria-pressed={props.draft.mode === "rules"}
           class={cn(
             "h-7 rounded text-10-medium transition-colors",
             props.draft.mode === "rules"
@@ -158,7 +164,7 @@ function MatrixSelectorEditor(props: {
           )}
           onClick={() => update({ mode: "rules" })}
         >
-          Match by rules
+          Match automatically
         </button>
       </div>
       <Show when={props.draft.mode === "targets"}>
@@ -196,7 +202,7 @@ function MatrixSelectorEditor(props: {
             <div class="mt-1.5 flex flex-wrap gap-1">
               <For each={matrixPlatforms}>
                 {(platformName) => (
-                  <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-weak-base px-2 py-0.5 text-10-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong">
+                  <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-weak-base px-2 py-0.5 text-10-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
                     <input
                       class="sr-only"
                       type="checkbox"
@@ -234,7 +240,7 @@ function MatrixSelectorEditor(props: {
             <div class="mt-1.5 flex flex-wrap gap-1">
               <For each={matrixCapabilities}>
                 {(capability) => (
-                  <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-weak-base px-2 py-0.5 text-10-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong">
+                  <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-border-weak-base px-2 py-0.5 text-10-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
                     <input
                       class="sr-only"
                       type="checkbox"
@@ -305,7 +311,9 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
     [],
   );
   const [editingMatrixId, setEditingMatrixId] = createSignal<string | null>(null);
+  const [matrixComposerOpen, setMatrixComposerOpen] = createSignal(false);
   const [matrixBusy, setMatrixBusy] = createSignal(false);
+  const [matrixError, setMatrixError] = createSignal("");
   const [matrixPreview, setMatrixPreview] = createSignal<{
     id: string;
     included: string[];
@@ -413,12 +421,15 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
     setMatrixCapabilitiesSelected([]);
     setMatrixAdditionalDrafts([]);
     setEditingMatrixId(null);
+    setMatrixComposerOpen(false);
+    setMatrixError("");
   }
 
   function editMatrix(matrix: CompatibilityMatrix): void {
     const selector = matrix.selectors[0] ?? {};
     setMatrixAdditionalDrafts(matrix.selectors.slice(1).map(selectorDraftFrom));
     setEditingMatrixId(matrix.id);
+    setMatrixComposerOpen(true);
     setMatrixName(matrix.name);
     if (selector.targetIds?.length) {
       setMatrixMode("targets");
@@ -496,6 +507,9 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
     return primaryValid && matrixAdditionalDrafts().every(selectorDraftValid);
   };
 
+  const matrixComposerVisible = () =>
+    matrixComposerOpen() || editingMatrixId() !== null || server.matrices().length === 0;
+
   async function createMatrix(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     const name = matrixName().trim();
@@ -509,6 +523,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
         .replace(/^-+|-+$/g, "")
         .slice(0, 96);
     if (!id) return;
+    setMatrixError("");
     setMatrixBusy(true);
     try {
       await server.saveCompatibilityMatrix({
@@ -517,29 +532,43 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
         selectors,
       });
       resetMatrixForm();
+    } catch (error) {
+      setMatrixError(
+        error instanceof Error ? error.message : "Could not save this test environment.",
+      );
     } finally {
       setMatrixBusy(false);
     }
   }
 
   async function previewMatrix(id: string): Promise<void> {
-    const expansion = await server.resolveCompatibilityMatrix(id);
-    setMatrixPreview({
-      id,
-      included: expansion.profiles.map((profile) => profile.name),
-      excluded: expansion.excluded.map((item) => `${item.profile.name}: ${item.reason}`),
-    });
+    setMatrixError("");
+    try {
+      const expansion = await server.resolveCompatibilityMatrix(id);
+      setMatrixPreview({
+        id,
+        included: expansion.profiles.map((profile) => profile.name),
+        excluded: expansion.excluded.map((item) => `${item.profile.name}: ${item.reason}`),
+      });
+    } catch (error) {
+      setMatrixError(error instanceof Error ? error.message : "Could not preview these targets.");
+    }
   }
 
   async function downloadMatrixYaml(id: string): Promise<void> {
-    const yaml = await server.loadCompatibilityMatrixYaml(id);
-    if (!yaml) return;
-    const url = URL.createObjectURL(new Blob([yaml], { type: "application/yaml" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${id}.relay.matrix.yaml`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setMatrixError("");
+    try {
+      const yaml = await server.loadCompatibilityMatrixYaml(id);
+      if (!yaml) throw new Error("This environment could not be exported.");
+      const url = URL.createObjectURL(new Blob([yaml], { type: "application/yaml" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${id}.relay.matrix.yaml`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setMatrixError(error instanceof Error ? error.message : "Could not export this environment.");
+    }
   }
 
   async function importMatrixYaml(event: Event): Promise<void> {
@@ -547,7 +576,12 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
     const file = input.files?.[0];
     input.value = "";
     if (!file) return;
-    await server.importCompatibilityMatrixYaml(await file.text());
+    setMatrixError("");
+    try {
+      await server.importCompatibilityMatrixYaml(await file.text());
+    } catch (error) {
+      setMatrixError(error instanceof Error ? error.message : "Could not import this YAML file.");
+    }
   }
 
   async function checkForUpdates(): Promise<void> {
@@ -874,230 +908,274 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                 </div>
               </Show>
 
-              <details
-                class="mt-6 border-t border-border-weak-base pt-3"
-                open={section() === "matrices"}
-              >
-                <summary class="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md px-2 text-12-medium text-text-strong hover:bg-surface-raised-base-hover">
-                  <span class="min-w-0 flex-1">Test environments</span>
-                  <span class="text-12-regular tabular-nums text-text-weak">
-                    {server.matrices().length}
-                  </span>
-                  <Icon name="chevron-down" size={13} />
-                </summary>
-                <div class="pt-4">
-                  <h3 class="sr-only">Test environments</h3>
-                  <div class="mb-3 flex items-start justify-between gap-3">
-                    <p class="m-0 max-w-[34rem] text-12-regular leading-relaxed text-text-weak">
-                      Save the exact devices and OS versions a release test should cover. Relay
-                      explains anything unavailable before a run starts.
-                    </p>
-                    <input
-                      ref={(element) => (matrixFileInput = element)}
-                      class="sr-only"
-                      type="file"
-                      accept=".yaml,.yml,text/yaml,application/yaml"
-                      onChange={(event) => void importMatrixYaml(event)}
-                    />
-                    <Button variant="ghost" size="sm" onClick={() => matrixFileInput?.click()}>
-                      Import YAML
-                    </Button>
-                  </div>
-                  <form class="flex flex-col gap-3" onSubmit={createMatrix}>
-                    <label class="flex flex-col gap-1.5">
-                      <span class={rowTitleCls}>
-                        {editingMatrixId() ? "Edit environment set" : "Environment set name"}
-                      </span>
-                      <input
-                        class={inputCls}
-                        value={matrixName()}
-                        placeholder="Release smoke"
-                        autocomplete="off"
-                        onInput={(event) => setMatrixName(event.currentTarget.value)}
-                      />
-                    </label>
-                    <div class="grid grid-cols-2 gap-1 rounded-lg bg-surface-raised-stronger-non-alpha p-1">
-                      <button
-                        type="button"
-                        class={cn(
-                          "h-8 rounded-md text-11-medium transition-colors",
-                          matrixMode() === "targets"
-                            ? "bg-surface-base text-text-strong shadow-sm"
-                            : "text-text-weak hover:text-text-strong",
-                        )}
-                        onClick={() => setMatrixMode("targets")}
-                      >
-                        Choose targets
-                      </button>
-                      <button
-                        type="button"
-                        class={cn(
-                          "h-8 rounded-md text-11-medium transition-colors",
-                          matrixMode() === "rules"
-                            ? "bg-surface-base text-text-strong shadow-sm"
-                            : "text-text-weak hover:text-text-strong",
-                        )}
-                        onClick={() => setMatrixMode("rules")}
-                      >
-                        Match by rules
-                      </button>
+              <Show when={section() === "matrices"}>
+                <section class="flex flex-col gap-4">
+                  <header class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                      <h3 class="m-0 text-14-medium text-text-strong">Test environments</h3>
+                      <p class="mt-1 mb-0 max-w-[34rem] text-12-regular leading-relaxed text-text-weak">
+                        Save the devices and OS versions you test together, then run any test across
+                        the full set.
+                      </p>
                     </div>
-                    <Show when={matrixMode() === "targets"}>
-                      <div class="rounded-lg border border-border-weak-base bg-background-base p-2">
-                        <Show
-                          when={server.targetProfiles().length > 0}
-                          fallback={
-                            <p class="m-2 text-12-regular text-text-weak">
-                              Connect a device or add a browser target first.
-                            </p>
-                          }
-                        >
-                          <For each={server.targetProfiles()}>
-                            {(profile) => (
-                              <label class="flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-12-regular text-text-strong hover:bg-surface-raised-stronger-non-alpha">
-                                <input
-                                  type="checkbox"
-                                  checked={matrixTargets().includes(profile.targetId)}
-                                  onChange={() => toggleMatrixTarget(profile.targetId)}
-                                />
-                                <span class="min-w-0 flex-1 truncate">{profile.name}</span>
-                                <span class="text-10-regular text-text-weak">
-                                  {platformLabel(profile.platform)}
-                                </span>
-                              </label>
-                            )}
-                          </For>
-                        </Show>
-                      </div>
-                    </Show>
-                    <Show when={matrixMode() === "rules"}>
-                      <div class="grid gap-3 rounded-lg border border-border-weak-base bg-background-base p-3">
-                        <div>
-                          <span class={rowTitleCls}>Platform</span>
-                          <div class="mt-2 flex flex-wrap gap-1.5">
-                            <For each={matrixPlatforms}>
-                              {(platformName) => (
-                                <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong">
-                                  <input
-                                    class="sr-only"
-                                    type="checkbox"
-                                    checked={matrixPlatformsSelected().includes(platformName)}
-                                    onChange={() => toggleMatrixPlatform(platformName)}
-                                  />
-                                  {platformLabel(platformName)}
-                                </label>
-                              )}
-                            </For>
-                          </div>
-                        </div>
-                        <label class="flex flex-col gap-1.5">
-                          <span class={rowTitleCls}>OS version starts with</span>
-                          <input
-                            class={inputCls}
-                            value={matrixOsPrefix()}
-                            placeholder="18, 19 (optional)"
-                            onInput={(event) => setMatrixOsPrefix(event.currentTarget.value)}
-                          />
-                          <span class="text-10-regular text-text-weak">
-                            Use commas for more than one version prefix.
-                          </span>
-                        </label>
-                        <label class="flex flex-col gap-1.5">
-                          <span class={rowTitleCls}>Name or model contains</span>
-                          <input
-                            class={inputCls}
-                            value={matrixNameIncludes()}
-                            placeholder="iPhone, Pixel, Chrome (optional)"
-                            onInput={(event) => setMatrixNameIncludes(event.currentTarget.value)}
-                          />
-                        </label>
-                        <div>
-                          <span class={rowTitleCls}>Required capabilities</span>
-                          <div class="mt-2 flex flex-wrap gap-1.5">
-                            <For each={matrixCapabilities}>
-                              {(capability) => (
-                                <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong">
-                                  <input
-                                    class="sr-only"
-                                    type="checkbox"
-                                    checked={matrixCapabilitiesSelected().includes(capability)}
-                                    onChange={() => toggleMatrixCapability(capability)}
-                                  />
-                                  {readableCapability(capability)}
-                                </label>
-                              )}
-                            </For>
-                          </div>
-                        </div>
-                      </div>
-                    </Show>
-                    <Show when={matrixAdditionalDrafts().length > 0}>
-                      <div class="grid gap-2.5">
-                        <div class="flex items-center justify-between gap-3">
-                          <div class="min-w-0">
-                            <span class={rowTitleCls}>Additional matching rules</span>
-                            <p class="mt-0.5 mb-0 text-10-regular text-text-weak">
-                              A target is included when any rule matches.
-                            </p>
-                          </div>
-                          <span class="shrink-0 text-10-regular tabular-nums text-text-weak">
-                            {matrixAdditionalDrafts().length}{" "}
-                            {matrixAdditionalDrafts().length === 1 ? "rule" : "rules"}
-                          </span>
-                        </div>
-                        <For each={matrixAdditionalDrafts()}>
-                          {(draft, index) => (
-                            <MatrixSelectorEditor
-                              index={index() + 2}
-                              draft={draft}
-                              profiles={server.targetProfiles()}
-                              onChange={(next) =>
-                                setMatrixAdditionalDrafts((current) =>
-                                  current.map((item, itemIndex) =>
-                                    itemIndex === index() ? next : item,
-                                  ),
-                                )
-                              }
-                              onRemove={() =>
-                                setMatrixAdditionalDrafts((current) =>
-                                  current.filter((_, itemIndex) => itemIndex !== index()),
-                                )
-                              }
-                            />
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                    <Button variant="ghost" size="sm" type="button" onClick={addMatrixRule}>
-                      Add another rule
-                    </Button>
-                    <div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        type="submit"
-                        disabled={!matrixFormValid() || matrixBusy()}
-                      >
-                        {matrixBusy()
-                          ? "Saving…"
-                          : editingMatrixId()
-                            ? "Save changes"
-                            : "Save environment set"}
+                    <div class="flex shrink-0 items-center gap-1.5">
+                      <input
+                        ref={(element) => (matrixFileInput = element)}
+                        class="sr-only"
+                        type="file"
+                        accept=".yaml,.yml,text/yaml,application/yaml"
+                        onChange={(event) => void importMatrixYaml(event)}
+                      />
+                      <Button variant="ghost" size="sm" onClick={() => matrixFileInput?.click()}>
+                        Import YAML
                       </Button>
-                      <Show when={editingMatrixId()}>
-                        <Button variant="ghost" size="sm" type="button" onClick={resetMatrixForm}>
-                          Cancel
+                      <Show when={!matrixComposerVisible()}>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            resetMatrixForm();
+                            setMatrixComposerOpen(true);
+                          }}
+                        >
+                          New environment
                         </Button>
                       </Show>
                     </div>
-                  </form>
-                  <div class="mt-4 flex flex-col gap-2">
-                    <Show
-                      when={server.matrices().length > 0}
-                      fallback={
-                        <p class="m-0 text-12-regular text-text-weak">No environment sets yet.</p>
-                      }
+                  </header>
+
+                  <Show when={matrixError()}>
+                    <p
+                      class="m-0 rounded-md bg-surface-critical-weak px-3 py-2 text-11-regular text-icon-critical-base"
+                      role="alert"
                     >
+                      {matrixError()}
+                    </p>
+                  </Show>
+
+                  <Show when={matrixComposerVisible()}>
+                    <form
+                      class="flex flex-col gap-3 rounded-lg border border-border-weak-base bg-background-base p-3.5"
+                      onSubmit={createMatrix}
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <strong class="block text-12-medium text-text-strong">
+                            {editingMatrixId() ? "Edit environment" : "New environment"}
+                          </strong>
+                          <span class="mt-0.5 block text-11-regular text-text-weak">
+                            Choose specific devices or let Relay match compatible ones
+                            automatically.
+                          </span>
+                        </div>
+                        <Show when={server.matrices().length > 0 || editingMatrixId()}>
+                          <IconButton
+                            variant="ghost"
+                            size="normal"
+                            type="button"
+                            aria-label="Close environment editor"
+                            onClick={resetMatrixForm}
+                          >
+                            <Icon name="x" size={14} />
+                          </IconButton>
+                        </Show>
+                      </div>
+                      <label class="flex flex-col gap-1.5">
+                        <span class={rowTitleCls}>Name</span>
+                        <input
+                          class={inputCls}
+                          value={matrixName()}
+                          placeholder="Release smoke"
+                          autocomplete="off"
+                          onInput={(event) => setMatrixName(event.currentTarget.value)}
+                        />
+                      </label>
+                      <div
+                        class="grid grid-cols-2 gap-1 rounded-lg bg-surface-raised-stronger-non-alpha p-1"
+                        role="group"
+                        aria-label="How this environment finds targets"
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={matrixMode() === "targets"}
+                          class={cn(
+                            "h-8 rounded-md text-11-medium transition-colors",
+                            matrixMode() === "targets"
+                              ? "bg-surface-base text-text-strong shadow-sm"
+                              : "text-text-weak hover:text-text-strong",
+                          )}
+                          onClick={() => setMatrixMode("targets")}
+                        >
+                          Choose devices
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={matrixMode() === "rules"}
+                          class={cn(
+                            "h-8 rounded-md text-11-medium transition-colors",
+                            matrixMode() === "rules"
+                              ? "bg-surface-base text-text-strong shadow-sm"
+                              : "text-text-weak hover:text-text-strong",
+                          )}
+                          onClick={() => setMatrixMode("rules")}
+                        >
+                          Match automatically
+                        </button>
+                      </div>
+                      <Show when={matrixMode() === "targets"}>
+                        <div class="max-h-56 overflow-y-auto rounded-lg border border-border-weak-base bg-background-base p-2">
+                          <Show
+                            when={server.targetProfiles().length > 0}
+                            fallback={
+                              <p class="m-2 text-12-regular text-text-weak">
+                                Connect a device or add a browser target first.
+                              </p>
+                            }
+                          >
+                            <For each={server.targetProfiles()}>
+                              {(profile) => (
+                                <label class="flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-12-regular text-text-strong hover:bg-surface-raised-stronger-non-alpha">
+                                  <input
+                                    type="checkbox"
+                                    checked={matrixTargets().includes(profile.targetId)}
+                                    onChange={() => toggleMatrixTarget(profile.targetId)}
+                                  />
+                                  <span class="min-w-0 flex-1 truncate">{profile.name}</span>
+                                  <span class="text-10-regular text-text-weak">
+                                    {platformLabel(profile.platform)}
+                                  </span>
+                                </label>
+                              )}
+                            </For>
+                          </Show>
+                        </div>
+                      </Show>
+                      <Show when={matrixMode() === "rules"}>
+                        <div class="grid gap-3 rounded-lg border border-border-weak-base bg-background-base p-3">
+                          <div>
+                            <span class={rowTitleCls}>Platform</span>
+                            <div class="mt-2 flex flex-wrap gap-1.5">
+                              <For each={matrixPlatforms}>
+                                {(platformName) => (
+                                  <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
+                                    <input
+                                      class="sr-only"
+                                      type="checkbox"
+                                      checked={matrixPlatformsSelected().includes(platformName)}
+                                      onChange={() => toggleMatrixPlatform(platformName)}
+                                    />
+                                    {platformLabel(platformName)}
+                                  </label>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                          <label class="flex flex-col gap-1.5">
+                            <span class={rowTitleCls}>OS version starts with</span>
+                            <input
+                              class={inputCls}
+                              value={matrixOsPrefix()}
+                              placeholder="18, 19 (optional)"
+                              onInput={(event) => setMatrixOsPrefix(event.currentTarget.value)}
+                            />
+                            <span class="text-10-regular text-text-weak">
+                              Use commas for more than one version prefix.
+                            </span>
+                          </label>
+                          <label class="flex flex-col gap-1.5">
+                            <span class={rowTitleCls}>Name or model contains</span>
+                            <input
+                              class={inputCls}
+                              value={matrixNameIncludes()}
+                              placeholder="iPhone, Pixel, Chrome (optional)"
+                              onInput={(event) => setMatrixNameIncludes(event.currentTarget.value)}
+                            />
+                          </label>
+                          <div>
+                            <span class={rowTitleCls}>Required capabilities</span>
+                            <div class="mt-2 flex flex-wrap gap-1.5">
+                              <For each={matrixCapabilities}>
+                                {(capability) => (
+                                  <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border-weak-base px-2.5 py-1 text-11-regular text-text-weak hover:border-border-strong-base hover:text-text-strong has-[:checked]:border-border-focus has-[:checked]:bg-surface-interactive-weak has-[:checked]:text-text-strong has-[:focus-visible]:outline has-[:focus-visible]:outline-1 has-[:focus-visible]:outline-offset-2">
+                                    <input
+                                      class="sr-only"
+                                      type="checkbox"
+                                      checked={matrixCapabilitiesSelected().includes(capability)}
+                                      onChange={() => toggleMatrixCapability(capability)}
+                                    />
+                                    {readableCapability(capability)}
+                                  </label>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                        </div>
+                      </Show>
+                      <Show when={matrixAdditionalDrafts().length > 0}>
+                        <div class="grid gap-2.5">
+                          <div class="flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                              <span class={rowTitleCls}>More matches</span>
+                              <p class="mt-0.5 mb-0 text-10-regular text-text-weak">
+                                Devices are included when any of these matches apply.
+                              </p>
+                            </div>
+                            <span class="shrink-0 text-10-regular tabular-nums text-text-weak">
+                              {matrixAdditionalDrafts().length}{" "}
+                              {matrixAdditionalDrafts().length === 1 ? "rule" : "rules"}
+                            </span>
+                          </div>
+                          <For each={matrixAdditionalDrafts()}>
+                            {(draft, index) => (
+                              <MatrixSelectorEditor
+                                index={index() + 2}
+                                draft={draft}
+                                profiles={server.targetProfiles()}
+                                onChange={(next) =>
+                                  setMatrixAdditionalDrafts((current) =>
+                                    current.map((item, itemIndex) =>
+                                      itemIndex === index() ? next : item,
+                                    ),
+                                  )
+                                }
+                                onRemove={() =>
+                                  setMatrixAdditionalDrafts((current) =>
+                                    current.filter((_, itemIndex) => itemIndex !== index()),
+                                  )
+                                }
+                              />
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                      <Show when={matrixMode() === "rules"}>
+                        <Button variant="ghost" size="sm" type="button" onClick={addMatrixRule}>
+                          Add another match
+                        </Button>
+                      </Show>
+                      <div>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          type="submit"
+                          disabled={!matrixFormValid() || matrixBusy()}
+                        >
+                          {matrixBusy()
+                            ? "Saving…"
+                            : editingMatrixId()
+                              ? "Save changes"
+                              : "Save environment"}
+                        </Button>
+                        <Show when={editingMatrixId()}>
+                          <Button variant="ghost" size="sm" type="button" onClick={resetMatrixForm}>
+                            Cancel
+                          </Button>
+                        </Show>
+                      </div>
+                    </form>
+                  </Show>
+                  <div class="flex flex-col gap-2">
+                    <Show when={server.matrices().length > 0}>
                       <For each={server.matrices()}>
                         {(matrix) => (
                           <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
@@ -1123,7 +1201,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                                   size="sm"
                                   onClick={() => void previewMatrix(matrix.id)}
                                 >
-                                  Preview
+                                  Preview targets
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -1159,8 +1237,8 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                       </For>
                     </Show>
                   </div>
-                </div>
-              </details>
+                </section>
+              </Show>
             </Show>
 
             <Show when={section() === "server"}>
