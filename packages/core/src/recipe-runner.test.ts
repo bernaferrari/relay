@@ -1,7 +1,14 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { Device } from "./device.js";
+import type { TestJob } from "./session.js";
+import { registerEvaluationProvider } from "./evaluation.js";
+import { saveRecipe } from "./recipes.js";
+import { clearControl, requestResume } from "./control.js";
 
 // Keep controlled() single-attempt so error paths are fast and deterministic.
 before(() => {
@@ -17,11 +24,19 @@ after(() => {
  */
 function stubDevice(impl: {
   find?: () => Promise<unknown>;
+  press?: (options: unknown) => Promise<unknown>;
+  type?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
+  snapshot?: () => Promise<unknown>;
 }): Device {
   return {
-    interactions: { find: impl.find ?? (() => Promise.resolve({})) },
+    interactions: {
+      find: impl.find ?? (() => Promise.resolve({})),
+      press: impl.press ?? (() => Promise.resolve({})),
+      type: impl.type ?? (() => Promise.resolve({})),
+    },
     command: { wait: impl.wait ?? (() => Promise.resolve({})) },
+    capture: { snapshot: impl.snapshot ?? (() => Promise.resolve({ nodes: [] })) },
   } as unknown as Device;
 }
 
@@ -119,5 +134,355 @@ describe("runRecipeStep expect — error classification", () => {
         return true;
       },
     );
+  });
+});
+
+describe("runRecipeStep conversational evidence", () => {
+  function job(): TestJob {
+    return { resolvedInputs: {}, artifacts: [] } as unknown as TestJob;
+  }
+
+  it("extracts accessible response content into a frozen run variable", async () => {
+    const owner = job();
+    const device = stubDevice({
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [{ ref: "@answer", label: "Assistant response", value: "Paris is in France." }],
+        }),
+    });
+    await runRecipeStep(
+      device,
+      { kind: "extract", as: "response", target: { ref: "@answer" }, role: "assistant" },
+      { log: () => {}, job: owner },
+    );
+    assert.equal(owner.resolvedInputs.response, "Assistant response\nParis is in France.");
+    assert.equal(owner.artifacts[0]?.kind, "conversation-turn");
+  });
+
+  it("waits for a human checkpoint and records the handoff", async () => {
+    const owner = {
+      id: "human-checkpoint-test",
+      status: "running",
+      resolvedInputs: {},
+      artifacts: [],
+    } as unknown as TestJob;
+    try {
+      const pending = runRecipeStep(
+        stubDevice({}),
+        {
+          kind: "pause",
+          message: "Approve the Okta sign-in on the device",
+          reason: "consent",
+          resumeLabel: "Approved",
+          timeoutMs: 5_000,
+          verifyAfter: { target: { label: "Welcome" }, timeoutMs: 2_000 },
+        },
+        { log: () => {}, job: owner },
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.deepEqual(owner.waitingFor, {
+        kind: "human",
+        message: "Approve the Okta sign-in on the device",
+        reason: "consent",
+        resumeLabel: "Approved",
+        since: owner.waitingFor?.since,
+        timeoutMs: 5_000,
+        verifyAfter: { target: { label: "Welcome" }, condition: "visible", timeoutMs: 2_000 },
+      });
+      requestResume(owner.id);
+      await pending;
+      assert.equal(owner.waitingFor, undefined);
+      assert.equal(owner.artifacts[0]?.kind, "human-intervention-requested");
+      assert.equal(owner.artifacts[1]?.kind, "human-intervention-completed");
+      assert.equal(owner.artifacts[2]?.kind, "human-intervention-verified");
+    } finally {
+      clearControl(owner.id);
+    }
+  });
+
+  it("times out an abandoned human checkpoint without leaving a waiter behind", async () => {
+    const owner = {
+      id: "human-checkpoint-timeout-test",
+      status: "running",
+      resolvedInputs: {},
+      artifacts: [],
+    } as unknown as TestJob;
+    try {
+      await assert.rejects(
+        () =>
+          runRecipeStep(
+            stubDevice({}),
+            { kind: "pause", message: "Approve the sign-in", reason: "consent", timeoutMs: 25 },
+            { log: () => {}, job: owner },
+          ),
+        /human checkpoint timed out/,
+      );
+      assert.equal(owner.waitingFor, undefined);
+    } finally {
+      clearControl(owner.id);
+    }
+  });
+
+  it("records deterministic content assertions", async () => {
+    const owner = job();
+    owner.resolvedInputs.response = "Paris is in France.";
+    await runRecipeStep(
+      stubDevice({}),
+      { kind: "assert-content", input: "response", expected: "France", match: "contains" },
+      { log: () => {}, job: owner },
+    );
+    assert.deepEqual(owner.artifacts[0]?.data, {
+      input: "response",
+      expected: "France",
+      match: "contains",
+      passed: true,
+    });
+  });
+
+  it("classifies independent judge disagreement as uncertain", async () => {
+    const unregisterFirst = registerEvaluationProvider({
+      id: "judge-pass",
+      evaluate: async () => ({
+        status: "pass",
+        confidence: 0.95,
+        score: 1,
+        summary: "meets intent",
+        criteria: [],
+        provider: "judge-pass",
+        model: "pass-v1",
+        evaluatedAt: Date.now(),
+      }),
+    });
+    const unregisterSecond = registerEvaluationProvider({
+      id: "judge-fail",
+      evaluate: async () => ({
+        status: "fail",
+        confidence: 0.9,
+        score: 0,
+        summary: "misses intent",
+        criteria: [],
+        provider: "judge-fail",
+        model: "fail-v1",
+        evaluatedAt: Date.now(),
+      }),
+    });
+    const owner = job();
+    owner.resolvedInputs.response = "Paris is in France.";
+    try {
+      await assert.rejects(
+        () =>
+          runRecipeStep(
+            stubDevice({}),
+            {
+              kind: "evaluate-semantic",
+              input: "response",
+              criteria: ["Correctly locate Paris"],
+              provider: "judge-pass",
+              requireAgreement: true,
+              secondProvider: "judge-fail",
+            },
+            { log: () => {}, job: owner },
+          ),
+        /judge uncertain: judges disagree/,
+      );
+      assert.equal(owner.artifacts.at(-1)?.kind, "judge-consensus");
+    } finally {
+      unregisterFirst();
+      unregisterSecond();
+    }
+  });
+
+  it("runs safe variable scripts and records the transform", async () => {
+    const owner = job();
+    owner.resolvedInputs.source = "Ada";
+    await runRecipeStep(
+      stubDevice({}),
+      {
+        kind: "script",
+        source: "copy user = source\nset greeting = Hello Ada\nassert greeting contains Hello",
+      },
+      { log: () => {}, job: owner },
+    );
+    assert.equal(owner.resolvedInputs.user, "Ada");
+    assert.equal(owner.resolvedInputs.greeting, "Hello Ada");
+    assert.equal(owner.artifacts.at(-1)?.kind, "variable-script");
+  });
+
+  it("records branch decisions that continue without an alternate path", async () => {
+    const owner = job();
+    owner.resolvedInputs.response = "Try again";
+    await runRecipeStep(
+      stubDevice({}),
+      {
+        kind: "branch",
+        input: "response",
+        operator: "contains",
+        expected: "success",
+        thenRecipeId: "success-path",
+      },
+      { log: () => {}, job: owner },
+    );
+    assert.deepEqual(owner.artifacts.at(-1)?.data, {
+      input: "response",
+      operator: "contains",
+      expected: "success",
+      matched: false,
+      recipeId: undefined,
+    });
+  });
+
+  it("uses recorded locator fallbacks without rewriting the saved test", async () => {
+    const owner = job();
+    const used: unknown[] = [];
+    await runRecipeStep(
+      stubDevice({
+        press: async (options) => {
+          used.push(options);
+          if ((options as { ref?: string }).ref) throw new Error("stale ref");
+          return {};
+        },
+      }),
+      {
+        kind: "tap",
+        target: { ref: "@old" },
+        evidence: {
+          id: "evidence",
+          recordedAt: Date.now(),
+          candidates: [
+            {
+              strategy: "label",
+              label: "Sign in",
+              source: "element",
+              confidence: "high",
+              target: { label: "Sign in" },
+            },
+          ],
+        },
+      },
+      { log: () => {}, job: owner },
+    );
+    assert.equal(used.length, 2);
+    const heal = owner.artifacts.at(-1);
+    assert.equal(heal?.kind, "locator-heal");
+    assert.equal((heal?.data as { persisted: boolean } | undefined)?.persisted, false);
+  });
+
+  it("binds declared reusable-flow inputs without leaking them into the parent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-flow-inputs-"));
+    const oldRecipes = process.env.RELAY_RECIPES_DIR;
+    const oldTests = process.env.RELAY_TESTS_DIR;
+    process.env.RELAY_RECIPES_DIR = root;
+    process.env.RELAY_TESTS_DIR = join(root, "tests");
+    try {
+      const flow = await saveRecipe({
+        title: "Recorded email sign-in",
+        parameters: [
+          {
+            name: "login_email",
+            label: "Test account",
+            description: "Approved QA email address",
+            required: true,
+          },
+        ],
+        steps: [{ kind: "type", text: "{{login_email}}" }],
+      });
+      const owner = job();
+      const typed: unknown[] = [];
+      await runRecipeStep(
+        stubDevice({
+          type: async (input) => {
+            typed.push(input);
+            return {};
+          },
+        }),
+        {
+          kind: "module",
+          recipeId: flow.id,
+          bindings: { login_email: "qa.secondary@example.test" },
+        },
+        { log: () => {}, job: owner },
+      );
+      assert.equal((typed[0] as { text?: string }).text, "qa.secondary@example.test");
+      assert.equal(owner.resolvedInputs.login_email, undefined);
+      const evidence = owner.artifacts.find((artifact) => artifact.kind === "reusable-flow-inputs");
+      assert.ok(evidence);
+      assert.deepEqual((evidence.data as { resolved?: Record<string, string> }).resolved, {
+        login_email: "qa.secondary@example.test",
+      });
+    } finally {
+      if (oldRecipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+      else process.env.RELAY_RECIPES_DIR = oldRecipes;
+      if (oldTests === undefined) delete process.env.RELAY_TESTS_DIR;
+      else process.env.RELAY_TESTS_DIR = oldTests;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a reusable flow whose required input is not bound", async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-flow-required-"));
+    const oldRecipes = process.env.RELAY_RECIPES_DIR;
+    const oldTests = process.env.RELAY_TESTS_DIR;
+    process.env.RELAY_RECIPES_DIR = root;
+    process.env.RELAY_TESTS_DIR = join(root, "tests");
+    try {
+      const flow = await saveRecipe({
+        title: "Required input flow",
+        parameters: [{ name: "account", required: true }],
+        steps: [],
+      });
+      await assert.rejects(
+        () =>
+          runRecipeStep(
+            stubDevice({}),
+            { kind: "module", recipeId: flow.id },
+            { log: () => {}, job: job() },
+          ),
+        /requires input account/,
+      );
+    } finally {
+      if (oldRecipes === undefined) delete process.env.RELAY_RECIPES_DIR;
+      else process.env.RELAY_RECIPES_DIR = oldRecipes;
+      if (oldTests === undefined) delete process.env.RELAY_TESTS_DIR;
+      else process.env.RELAY_TESTS_DIR = oldTests;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("waits for response content to change and stabilize", async () => {
+    const owner = job();
+    let sample = 0;
+    const device = stubDevice({
+      wait: () => new Promise((resolve) => setTimeout(resolve, 25)),
+      snapshot: () => {
+        sample += 1;
+        const value = sample < 2 ? "" : sample < 4 ? "Paris" : "Paris is in France.";
+        return Promise.resolve({
+          nodes: value
+            ? [
+                { ref: "@answer", label: "Assistant response", value },
+                { label: "Send", value: "Ready" },
+              ]
+            : [],
+        });
+      },
+    });
+    await runRecipeStep(
+      device,
+      {
+        kind: "wait-response",
+        target: { ref: "@answer" },
+        idleTarget: { label: "Send" },
+        timeoutMs: 2_000,
+        stableForMs: 500,
+      },
+      { log: () => {}, job: owner },
+    );
+    const evidence = owner.artifacts.find((item) => item.kind === "response-completion");
+    assert.equal((evidence?.data as { status?: string } | undefined)?.status, "complete");
+    assert.deepEqual((evidence?.data as { signals?: string[] } | undefined)?.signals, [
+      "response-started",
+      "text-stable",
+      "idle-visible",
+    ]);
   });
 });

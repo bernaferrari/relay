@@ -26,6 +26,7 @@ function fakeJob(partial: Partial<TestJob> & Pick<TestJob, "status">): TestJob {
     serial: partial.serial,
     deviceName: partial.deviceName,
     platform: partial.platform ?? "android",
+    targetProfile: partial.targetProfile,
   } as TestJob;
 }
 
@@ -35,6 +36,27 @@ describe("toJobReport", () => {
     assert.equal(r.ok, true);
     assert.equal(r.durationMs, 1000);
     assert.equal(r.platform, "android");
+    assert.equal(r.outcome, "passed");
+  });
+
+  it("retains a frozen compatibility profile in JSON and JUnit output", () => {
+    const report = toJobReport(
+      fakeJob({
+        status: "ok",
+        targetProfile: {
+          id: "profile-pixel",
+          targetId: "pixel-9",
+          source: "device",
+          platform: "android",
+          name: "Pixel 9 · Android 16",
+          osVersion: "16",
+          capabilities: ["tap"],
+          observedAt: 1,
+        },
+      }),
+    );
+    assert.equal(report.targetProfile?.name, "Pixel 9 · Android 16");
+    assert.match(toJunitXml([report]), /Pixel 9 · Android 16/);
   });
 
   it("marks ok for healed jobs", () => {
@@ -49,6 +71,7 @@ describe("toJobReport", () => {
     const r = toJobReport(fakeJob({ status: "error", error: "boom", errorCode: "ACTION_FAILED" }));
     assert.equal(r.ok, false);
     assert.equal(r.errorCode, "ACTION_FAILED");
+    assert.equal(r.outcome, "harness-failure");
   });
 });
 

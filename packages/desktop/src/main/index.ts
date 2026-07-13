@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
+import { DesktopUpdater } from "./updates.js";
 import { createMainWindow, loadRenderer } from "./windows.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
@@ -12,6 +13,7 @@ const HEALTH_TIMEOUT_MS = 800;
 let serverUrl =
   (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim() || DEFAULT_SERVER_URL;
 let serverChild: ChildProcess | null = null;
+const updates = new DesktopUpdater();
 
 async function isServerHealthy(url: string): Promise<boolean> {
   const controller = new AbortController();
@@ -148,7 +150,9 @@ async function bootstrap(): Promise<void> {
 
   registerIpcHandlers({
     getServerUrl: () => serverUrl,
+    updates,
   });
+  updates.start();
 
   const win = createMainWindow();
   await loadRenderer(win);
@@ -166,6 +170,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  updates.stop();
   killServerChild();
 });
 

@@ -24,7 +24,9 @@ import {
   longPressTarget,
   clipboardWrite,
   clipboardRead,
+  changeAndroidAppBuild,
   closeApp,
+  inspectAndroidApp,
   openApp,
   openUrl,
   openAppSwitcher,
@@ -35,13 +37,137 @@ import {
   captureNetwork,
   manageLogs,
   setAndroidLockState,
+  snapshot,
+  type SnapshotNode,
 } from "./device.js";
-import { cooperativeCheckpoint, raceCancel, throwIfCancelled, requestPause } from "./control.js";
+import {
+  cooperativeCheckpointWithTimeout,
+  cooperativeCheckpoint,
+  raceCancel,
+  throwIfCancelled,
+  requestPause,
+  requestResume,
+} from "./control.js";
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
 import { captureScreenshot } from "./workspace.js";
 import { describeTarget, readRecipe, type RecipeStep, type StepTarget } from "./recipes.js";
 import type { TestJob } from "./session.js";
+import { evaluateSemantic } from "./evaluation.js";
+
+function nodeText(node: SnapshotNode): string[] {
+  return [node.label, node.value]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+}
+
+function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boolean {
+  if (target.ref && node.ref?.replace(/^@/, "") === target.ref.replace(/^@/, "")) return true;
+  if (target.label && node.label === target.label) return true;
+  if (target.text) {
+    const query = target.text.toLowerCase();
+    return nodeText(node).some((value) => value.toLowerCase().includes(query));
+  }
+  return false;
+}
+
+function textForTarget(nodes: SnapshotNode[], target: StepTarget): string {
+  return [
+    ...new Set(nodes.filter((node) => nodeMatchesTarget(node, target)).flatMap(nodeText)),
+  ].join("\n");
+}
+
+async function waitForResponseCompletion(
+  device: Device,
+  step: Extract<RecipeStep, { kind: "wait-response" }>,
+  ctx: RecipeStepContext,
+): Promise<void> {
+  const timeoutMs = Math.min(step.timeoutMs ?? 90_000, MAX_WAIT_MS);
+  const stableForMs = step.stableForMs ?? 2_000;
+  const pollMs = 250;
+  const beganAt = now();
+  const deadline = beganAt + timeoutMs;
+  const initialNodes = await snapshot(device);
+  const initialText = textForTarget(initialNodes, step.target);
+  let previousText = initialText;
+  let startedAt: number | undefined;
+  let stableSince: number | undefined;
+  let samples = 1;
+  let lastSignals: string[] = [];
+
+  const record = (status: "complete" | "timeout", completedAt: number, text: string) => {
+    ctx.job?.artifacts.push({
+      kind: "response-completion",
+      capturedAt: completedAt,
+      data: {
+        status,
+        beganAt,
+        startedAt,
+        completedAt,
+        durationMs: completedAt - beganAt,
+        stableForMs,
+        timeoutMs,
+        samples,
+        signals: lastSignals,
+        observedCharacters: text.length,
+        usedBusyTarget: Boolean(step.busyTarget),
+        usedIdleTarget: Boolean(step.idleTarget),
+      },
+    });
+  };
+
+  while (now() < deadline) {
+    await sleep(pollMs, device);
+    const capturedAt = now();
+    const nodes = await snapshot(device);
+    samples += 1;
+    const text = textForTarget(nodes, step.target);
+    const changedFromInitial = text.length > 0 && text !== initialText;
+
+    if (!startedAt && (changedFromInitial || (!initialText && text.length > 0))) {
+      startedAt = capturedAt;
+      stableSince = capturedAt;
+      ctx.log(`response completion: content started (${text.length} characters)`);
+    }
+    if (startedAt) {
+      if (text !== previousText) stableSince = capturedAt;
+      const stable = Boolean(text && stableSince && capturedAt - stableSince >= stableForMs);
+      const busyGone = step.busyTarget
+        ? !nodes.some((node) => nodeMatchesTarget(node, step.busyTarget!))
+        : false;
+      const idleVisible = step.idleTarget
+        ? nodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
+        : false;
+      lastSignals = [
+        "response-started",
+        ...(stable ? ["text-stable"] : []),
+        ...(busyGone ? ["busy-gone"] : []),
+        ...(idleVisible ? ["idle-visible"] : []),
+      ];
+      const hasIndependentCompletionTarget = Boolean(step.busyTarget || step.idleTarget);
+      if (stable && (!hasIndependentCompletionTarget || busyGone || idleVisible)) {
+        record("complete", capturedAt, text);
+        ctx.log(`response completion: complete · ${lastSignals.join(" + ")}`);
+        return;
+      }
+    }
+    previousText = text;
+  }
+
+  record("timeout", now(), previousText);
+  throw new Error(
+    `response completion: timed out after ${Math.round(timeoutMs / 1000)}s (${lastSignals.join(" + ") || "no response observed"})`,
+  );
+}
+
+function readInput(job: TestJob | undefined, input: string): string {
+  if (!job) throw new Error("extract: conversational steps require an owning job");
+  const key = input.replace(/^\{\{\s*|\s*\}\}$/g, "");
+  if (!Object.hasOwn(job.resolvedInputs, key)) {
+    throw new Error(`extract: input variable is missing (${key})`);
+  }
+  return job.resolvedInputs[key]!;
+}
 
 export type RecipeStepContext = {
   log: (line: string) => void;
@@ -55,6 +181,132 @@ export type RecipeStepContext = {
   job?: TestJob;
   moduleStack?: string[];
 };
+
+async function runReusableRecipe(
+  device: Device,
+  recipeId: string,
+  ctx: RecipeStepContext,
+  bindings?: Record<string, string>,
+): Promise<void> {
+  const stack = ctx.moduleStack ?? [];
+  if (stack.includes(recipeId))
+    throw new Error(`reusable test cycle: ${[...stack, recipeId].join(" → ")}`);
+  if (stack.length >= 12) throw new Error("reusable test nesting is limited to 12 levels");
+  const recipe = await readRecipe(recipeId);
+  if (!recipe) throw new Error(`reusable test not found: ${recipeId}`);
+  const current = ctx.job?.resolvedInputs;
+  const parameters = recipe.parameters ?? [];
+  const declared = new Set(parameters.map((parameter) => parameter.name));
+  for (const name of Object.keys(bindings ?? {})) {
+    if (!declared.has(name)) {
+      throw new Error(`reusable flow ${recipe.title} does not declare input ${name}`);
+    }
+  }
+
+  const touched = new Map<string, string | undefined>();
+  const resolved: Record<string, string> = {};
+  if (current) {
+    const overlay: Record<string, string> = { ...recipe.variables };
+    for (const parameter of parameters) {
+      const value =
+        bindings?.[parameter.name] ??
+        current[parameter.name] ??
+        parameter.default ??
+        recipe.variables?.[parameter.name];
+      if (value === undefined && parameter.required) {
+        throw new Error(`reusable flow ${recipe.title} requires input ${parameter.name}`);
+      }
+      if (value !== undefined) {
+        overlay[parameter.name] = value;
+        resolved[parameter.name] = value;
+      }
+    }
+    for (const [name, value] of Object.entries(overlay)) {
+      touched.set(name, current[name]);
+      current[name] = value;
+    }
+    if (parameters.length > 0) {
+      ctx.job?.artifacts.push({
+        kind: "reusable-flow-inputs",
+        capturedAt: now(),
+        data: {
+          recipeId: recipe.id,
+          title: recipe.title,
+          declared: parameters.map(({ name, required, default: defaultValue }) => ({
+            name,
+            ...(required ? { required: true } : {}),
+            ...(defaultValue !== undefined ? { default: defaultValue } : {}),
+          })),
+          bindings: bindings ?? {},
+          resolved,
+        },
+      });
+    }
+  }
+  ctx.log(
+    `↳ ${recipe.title} · ${recipe.steps.length} step(s)${parameters.length ? ` · ${Object.keys(resolved).length}/${parameters.length} inputs` : ""}`,
+  );
+  try {
+    for (const child of recipe.steps) {
+      await runRecipeStep(device, resolveRecipeStep(child, ctx.job?.resolvedInputs ?? {}), {
+        ...ctx,
+        moduleStack: [...stack, recipeId],
+      });
+    }
+  } finally {
+    if (current) {
+      for (const [name, previous] of touched) {
+        if (previous === undefined) delete current[name];
+        else current[name] = previous;
+      }
+    }
+  }
+}
+
+function runVariableScript(source: string, ctx: RecipeStepContext): void {
+  const values = ctx.job?.resolvedInputs;
+  if (!values) throw new Error("script: variable transforms require an owning job");
+  for (const [index, raw] of source.split("\n").entries()) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const set = line.match(/^set\s+([a-zA-Z0-9_.-]+)\s*=\s*(.*)$/);
+    if (set) {
+      values[set[1]!] = set[2]!;
+      continue;
+    }
+    const copy = line.match(/^copy\s+([a-zA-Z0-9_.-]+)\s*=\s*([a-zA-Z0-9_.-]+)$/);
+    if (copy) {
+      if (!Object.hasOwn(values, copy[2]!))
+        throw new Error(`script line ${index + 1}: source variable ${copy[2]} is missing`);
+      values[copy[1]!] = values[copy[2]!]!;
+      continue;
+    }
+    const remove = line.match(/^delete\s+([a-zA-Z0-9_.-]+)$/);
+    if (remove) {
+      delete values[remove[1]!];
+      continue;
+    }
+    const assertion = line.match(
+      /^assert\s+([a-zA-Z0-9_.-]+)\s+(exists|equals|contains)(?:\s+(.*))?$/,
+    );
+    if (assertion) {
+      const actual = values[assertion[1]!];
+      const operator = assertion[2];
+      const expected = assertion[3] ?? "";
+      const passed =
+        operator === "exists"
+          ? actual !== undefined && actual.length > 0
+          : operator === "equals"
+            ? actual === expected
+            : actual?.includes(expected) === true;
+      if (!passed) throw new Error(`script line ${index + 1}: assertion failed`);
+      continue;
+    }
+    throw new Error(
+      `script line ${index + 1}: use set, copy, delete, or assert (arbitrary code is not allowed)`,
+    );
+  }
+}
 
 /** Resolve {{name}} placeholders immediately before execution. Unresolved
  * placeholders stay visible so a bad configuration fails transparently. */
@@ -86,7 +338,7 @@ async function tapTarget(
   device: Device,
   target: StepTarget,
   log: (line: string) => void,
-): Promise<void> {
+): Promise<string> {
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
   if (target.ref) attempts.push({ strategy: "ref", run: () => pressRef(device, target.ref!) });
   if (target.label)
@@ -100,7 +352,7 @@ async function tapTarget(
     const a = attempts[i]!;
     try {
       await a.run();
-      return;
+      return a.strategy;
     } catch (err) {
       if (isCancel(err)) throw err;
       const msg = err instanceof Error ? err.message : String(err);
@@ -110,6 +362,51 @@ async function tapTarget(
       log(`tap: ${a.strategy} failed (${msg}) — trying next`);
     }
   }
+  throw new Error(`tap failed: target has no usable strategy (${describeTarget(target)})`);
+}
+
+async function tapRecordedTarget(
+  device: Device,
+  input: {
+    target: StepTarget;
+    evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
+  },
+  ctx: RecipeStepContext,
+): Promise<void> {
+  const candidates = [
+    input.target,
+    ...(input.evidence?.candidates?.map((candidate) => candidate.target) ?? []),
+  ];
+  const unique = candidates.filter(
+    (candidate, index) =>
+      candidates.findIndex((other) => JSON.stringify(other) === JSON.stringify(candidate)) ===
+      index,
+  );
+  const failures: string[] = [];
+  for (const [index, candidate] of unique.entries()) {
+    try {
+      const strategy = await tapTarget(device, candidate, ctx.log);
+      if (index > 0) {
+        ctx.job?.artifacts.push({
+          kind: "locator-heal",
+          capturedAt: now(),
+          data: {
+            original: input.target,
+            replacement: candidate,
+            strategy,
+            reason: failures.join("; "),
+            persisted: false,
+          },
+        });
+        ctx.log(`locator: used recorded fallback ${index + 1}/${unique.length} (${strategy})`);
+      }
+      return;
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  throw new Error(`tap failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
 }
 
 /** Scroll up — mirrors scrollDown but via the SDK's direction field. */
@@ -168,7 +465,7 @@ export async function runRecipeStep(
   const { log, job } = ctx;
   switch (step.kind) {
     case "tap":
-      await tapTarget(device, step.target, log);
+      await tapRecordedTarget(device, step, ctx);
       break;
 
     case "long-press":
@@ -176,7 +473,7 @@ export async function runRecipeStep(
       break;
 
     case "type": {
-      if (step.target) await tapTarget(device, step.target, log);
+      if (step.target) await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
       await typeText(device, step.text);
       break;
     }
@@ -231,6 +528,10 @@ export async function runRecipeStep(
       }
       break;
     }
+
+    case "wait-response":
+      await waitForResponseCompletion(device, step, ctx);
+      break;
 
     case "expect": {
       const target = step.target;
@@ -289,24 +590,213 @@ export async function runRecipeStep(
       break;
     }
 
+    case "extract": {
+      if (!job) throw new Error("extract: no owning job");
+      const nodes = await snapshot(device);
+      const matches = nodes.filter((node) => nodeMatchesTarget(node, step.target));
+      const values = [...new Set(matches.flatMap(nodeText))];
+      if (values.length === 0) {
+        throw new Error(`extract: no accessible content matched ${describeTarget(step.target)}`);
+      }
+      const text = values.join("\n");
+      job.resolvedInputs[step.as] = text;
+      job.artifacts.push({
+        kind: "conversation-turn",
+        capturedAt: now(),
+        data: {
+          role: step.role ?? "assistant",
+          capturedAt: now(),
+          source: "accessibility",
+          blocks: [{ type: "text", text }],
+          variable: step.as,
+        },
+      });
+      log(`extract: saved ${step.as} (${text.length} characters)`);
+      break;
+    }
+
+    case "assert-content": {
+      const actual = readInput(job, step.input);
+      const passed =
+        step.match === "exact"
+          ? actual === step.expected
+          : step.match === "contains"
+            ? actual.includes(step.expected)
+            : !actual.includes(step.expected);
+      job?.artifacts.push({
+        kind: "content-assertion",
+        capturedAt: now(),
+        data: { input: step.input, expected: step.expected, match: step.match, passed },
+      });
+      if (!passed) {
+        throw new Error(
+          `content assertion: ${step.input} did not satisfy ${step.match} ${JSON.stringify(step.expected)}`,
+        );
+      }
+      log(`content assertion: passed (${step.match})`);
+      break;
+    }
+
+    case "evaluate-semantic": {
+      const input = readInput(job, step.input);
+      const result = await evaluateSemantic({
+        input,
+        criteria: step.criteria,
+        threshold: step.threshold,
+        provider: step.provider,
+        model: step.model,
+      });
+      job?.artifacts.push({ kind: "semantic-evaluation", capturedAt: now(), data: result });
+      log(`semantic evaluation: ${result.status} · ${result.score.toFixed(2)} · ${result.summary}`);
+      if (step.requireAgreement) {
+        let second;
+        try {
+          second = await evaluateSemantic({
+            input,
+            criteria: step.criteria,
+            threshold: step.threshold,
+            provider: step.secondProvider,
+            model: step.secondModel,
+          });
+          job?.artifacts.push({
+            kind: "semantic-evaluation",
+            capturedAt: now(),
+            data: { ...second, judge: "independent" },
+          });
+        } catch (error) {
+          const summary = `Independent judge unavailable: ${error instanceof Error ? error.message : String(error)}`;
+          job?.artifacts.push({
+            kind: "judge-consensus",
+            capturedAt: now(),
+            data: { status: "uncertain", first: result, error: summary },
+          });
+          throw new Error(`judge uncertain: ${summary}`);
+        }
+        const agreed = result.status === second.status;
+        job?.artifacts.push({
+          kind: "judge-consensus",
+          capturedAt: now(),
+          data: { status: agreed ? result.status : "uncertain", agreed, first: result, second },
+        });
+        if (!agreed) {
+          throw new Error(
+            `judge uncertain: judges disagree (${result.provider}: ${result.status}; ${second.provider}: ${second.status})`,
+          );
+        }
+      }
+      if (result.status === "uncertain") {
+        throw new Error(`judge uncertain: ${result.summary}`);
+      }
+      if (result.status === "fail") {
+        throw new Error(`semantic assertion: ${result.summary}`);
+      }
+      break;
+    }
+
     case "pause": {
       if (!job) throw new Error("pause: no job to pause (standalone step execution)");
+      const checkpointStartedAt = now();
+      const reason = step.reason ?? "other";
+      const resumeLabel = step.resumeLabel ?? "Continue test";
       log(`⏸ ${step.message}`);
       job.status = "paused";
+      job.waitingFor = {
+        kind: "human",
+        message: step.message,
+        reason,
+        resumeLabel,
+        since: checkpointStartedAt,
+        ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
+        ...(step.verifyAfter
+          ? {
+              verifyAfter: {
+                ...step.verifyAfter,
+                condition: step.verifyAfter.condition ?? "visible",
+              },
+            }
+          : {}),
+      };
+      job.artifacts.push({
+        kind: "human-intervention-requested",
+        capturedAt: checkpointStartedAt,
+        data: {
+          reason,
+          message: step.message,
+          resumeLabel,
+          ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
+        },
+      });
       requestPause(job.id);
       publish({ type: "job.paused", at: now(), jobId: job.id, action: job.action });
       publish({
         type: "job.log",
         at: now(),
         jobId: job.id,
-        line: `==> paused: ${step.message}`,
+        line: `==> waiting for you: ${step.message}`,
         level: "info",
       });
       // Blocks until resumeJob (POST /jobs/:id/resume) calls requestResume.
       // On cancel, throws JobCancelledError and propagates up — never sets running.
-      await cooperativeCheckpoint(job.id);
+      try {
+        await cooperativeCheckpointWithTimeout(job.id, step.timeoutMs);
+      } finally {
+        // A timeout or cancellation must also wake the cooperative waiter.
+        requestResume(job.id);
+        job.waitingFor = undefined;
+      }
+      job.artifacts.push({
+        kind: "human-intervention-completed",
+        capturedAt: now(),
+        data: {
+          reason,
+          message: step.message,
+          waitedMs: now() - checkpointStartedAt,
+        },
+      });
       // resumeJob already set status="running" + published job.resumed; ensure it.
       job.status = "running";
+      if (step.verifyAfter) {
+        const verificationStartedAt = now();
+        const condition = step.verifyAfter.condition ?? "visible";
+        try {
+          await runRecipeStep(
+            device,
+            {
+              kind: "expect",
+              target: step.verifyAfter.target,
+              condition,
+              ...(step.verifyAfter.timeoutMs !== undefined
+                ? { timeoutMs: step.verifyAfter.timeoutMs }
+                : {}),
+            },
+            ctx,
+          );
+          job.artifacts.push({
+            kind: "human-intervention-verified",
+            capturedAt: now(),
+            data: {
+              passed: true,
+              target: step.verifyAfter.target,
+              condition,
+              durationMs: now() - verificationStartedAt,
+            },
+          });
+          log(`human checkpoint: verified ${describeTarget(step.verifyAfter.target)} ${condition}`);
+        } catch (error) {
+          job.artifacts.push({
+            kind: "human-intervention-verified",
+            capturedAt: now(),
+            data: {
+              passed: false,
+              target: step.verifyAfter.target,
+              condition,
+              durationMs: now() - verificationStartedAt,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+          throw error;
+        }
+      }
       break;
     }
 
@@ -321,19 +811,58 @@ export async function runRecipeStep(
     }
 
     case "module": {
-      const stack = ctx.moduleStack ?? [];
-      if (stack.includes(step.recipeId))
-        throw new Error(`reusable test cycle: ${[...stack, step.recipeId].join(" → ")}`);
-      if (stack.length >= 12) throw new Error("reusable test nesting is limited to 12 levels");
-      const recipe = await readRecipe(step.recipeId);
-      if (!recipe) throw new Error(`reusable test not found: ${step.recipeId}`);
-      log(`↳ ${recipe.title} · ${recipe.steps.length} step(s)`);
-      for (const child of recipe.steps) {
-        await runRecipeStep(device, resolveRecipeStep(child, job?.resolvedInputs ?? {}), {
-          ...ctx,
-          moduleStack: [...stack, step.recipeId],
-        });
+      await runReusableRecipe(device, step.recipeId, ctx, step.bindings);
+      break;
+    }
+
+    case "branch": {
+      const key = step.input.replace(/^\{\{\s*|\s*\}\}$/g, "");
+      const actual = job?.resolvedInputs[key];
+      const matched =
+        step.operator === "exists"
+          ? actual !== undefined && actual.length > 0
+          : step.operator === "equals"
+            ? actual === step.expected
+            : step.operator === "not-equals"
+              ? actual !== step.expected
+              : actual?.includes(step.expected ?? "") === true;
+      const recipeId = matched ? step.thenRecipeId : step.elseRecipeId;
+      job?.artifacts.push({
+        kind: "branch-decision",
+        capturedAt: now(),
+        data: { input: key, operator: step.operator, expected: step.expected, matched, recipeId },
+      });
+      log(
+        `branch: ${matched ? "matched" : "otherwise"}${recipeId ? ` → ${recipeId}` : " → continue"}`,
+      );
+      if (recipeId) await runReusableRecipe(device, recipeId, ctx);
+      break;
+    }
+
+    case "repeat": {
+      for (let iteration = 0; iteration < step.count; iteration += 1) {
+        await cooperativeCheckpoint(job?.id);
+        if (job) job.resolvedInputs.iteration = String(iteration + 1);
+        log(`repeat: ${iteration + 1}/${step.count}`);
+        await runReusableRecipe(device, step.recipeId, ctx);
       }
+      job?.artifacts.push({
+        kind: "loop",
+        capturedAt: now(),
+        data: { recipeId: step.recipeId, count: step.count },
+      });
+      break;
+    }
+
+    case "script": {
+      const before = { ...job?.resolvedInputs };
+      runVariableScript(step.source, ctx);
+      job?.artifacts.push({
+        kind: "variable-script",
+        capturedAt: now(),
+        data: { source: step.source, before, after: { ...job?.resolvedInputs } },
+      });
+      log("script: variables transformed safely");
       break;
     }
 
@@ -355,12 +884,77 @@ export async function runRecipeStep(
       break;
     }
 
-    case "app":
-      if (step.action === "switcher") await openAppSwitcher(device);
-      else if (step.action === "close") await closeApp(device, step.app);
-      else if (step.url) await openUrl(device, step.url);
-      else await openApp(device, step.app!);
+    case "app": {
+      if (step.action === "switcher") {
+        await openAppSwitcher(device);
+        break;
+      }
+      if (step.action === "close") {
+        await closeApp(device, step.app);
+        break;
+      }
+      if (step.action === "open") {
+        if (step.url) await openUrl(device, step.url);
+        else await openApp(device, step.app!);
+        break;
+      }
+
+      const build =
+        step.action === "install" || step.action === "update" || step.action === "uninstall"
+          ? await changeAndroidAppBuild({
+              action: step.action,
+              packageName: step.app!,
+              artifact: step.artifact,
+            })
+          : await inspectAndroidApp(step.app!);
+      const expected = step.version;
+      const versionMatches =
+        expected === undefined
+          ? undefined
+          : step.versionMatch === "contains"
+            ? build.versionName?.includes(expected) === true
+            : build.versionName === expected;
+
+      job?.artifacts.push({
+        kind: "app-build",
+        capturedAt: now(),
+        data: {
+          action: step.action,
+          ...build,
+          ...(expected !== undefined
+            ? {
+                expectedVersion: expected,
+                versionMatch: step.versionMatch ?? "exact",
+                versionMatches,
+              }
+            : {}),
+          ...(step.artifact ? { artifact: step.artifact } : {}),
+        },
+      });
+      if (build.versionName) {
+        if (job) {
+          job.appVersion = build.versionName;
+          job.resolvedInputs[step.as ?? "app_version"] = build.versionName;
+        }
+      }
+      log(
+        `app build: ${build.packageName} · ${build.installed ? (build.versionName ?? "installed (version unavailable)") : "not installed"}`,
+      );
+      if (step.action === "assert-installed" && !build.installed) {
+        throw new Error(`app build: ${step.app} is not installed`);
+      }
+      if (step.action === "assert-not-installed" && build.installed) {
+        throw new Error(
+          `app build: ${step.app} is installed (${build.versionName ?? "version unavailable"})`,
+        );
+      }
+      if (expected !== undefined && versionMatches === false) {
+        throw new Error(
+          `app build: ${step.app} version ${JSON.stringify(build.versionName ?? "unknown")} does not ${step.versionMatch === "contains" ? "contain" : "equal"} ${JSON.stringify(expected)}`,
+        );
+      }
       break;
+    }
 
     case "device":
       if (step.action === "lock" || step.action === "unlock")

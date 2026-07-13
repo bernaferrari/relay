@@ -1,0 +1,28 @@
+{
+  "id": "custom-reinstall-last-alpha-copy-mrdx3lr8",
+  "title": "Reinstall last alpha (copy)",
+  "description": "Switches to the teachx account, reinstalls Grok from scratch, restores your account.",
+  "source": "custom",
+  "steps": [
+    {
+      "kind": "tap",
+      "target": {
+        "label": "Ensure teachx Play account"
+      }
+    },
+    {
+      "kind": "tap",
+      "target": {
+        "label": "Uninstall → Install"
+      }
+    },
+    {
+      "kind": "tap",
+      "target": {
+        "label": "Restore home Play account"
+      }
+    }
+  ],
+  "createdAt": 1783626388964,
+  "updatedAt": 1783638986607
+}

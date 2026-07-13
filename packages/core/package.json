@@ -10,6 +10,7 @@
     "./grok": "./src/grok.ts",
     "./actions": "./src/actions.ts",
     "./recipes": "./src/recipes.ts",
+    "./recipe-yaml": "./src/recipe-yaml.ts",
     "./recipe-runner": "./src/recipe-runner.ts",
     "./events": "./src/events.ts",
     "./session": "./src/session.ts",
@@ -21,7 +22,16 @@
     "./control": "./src/control.ts",
     "./retry": "./src/retry.ts",
     "./collaboration": "./src/collaboration.ts",
-    "./generation": "./src/generation.ts"
+    "./generation": "./src/generation.ts",
+    "./evaluation": "./src/evaluation.ts",
+    "./outcomes": "./src/outcomes.ts",
+    "./run-evidence": "./src/run-evidence.ts",
+    "./run-matrix": "./src/run-matrix.ts",
+    "./matrix-yaml": "./src/matrix-yaml.ts",
+    "./atlas": "./src/atlas.ts",
+    "./schedules": "./src/schedules.ts",
+    "./targets": "./src/targets.ts",
+    "./browser-target": "./src/browser-target.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -29,7 +39,9 @@
   },
   "dependencies": {
     "@relay/protocol": "workspace:*",
-    "agent-device": "^0.18.3"
+    "agent-device": "^0.18.3",
+    "playwright-core": "^1.61.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

@@ -6,10 +6,14 @@ import { useTheme } from "@relay/ui/theme/context";
 import { usePlatform } from "../context/platform";
 import { ErrorBanner } from "./error-banner";
 import { cn } from "../lib/cn";
+import type { SettingsSection } from "../pages/settings";
 
 export type AppView = "workspace" | "settings";
 
-export function Layout(props: { children: JSX.Element; onOpenSettings: () => void }) {
+export function Layout(props: {
+  children: JSX.Element;
+  onOpenSettings: (section?: SettingsSection) => void;
+}) {
   const server = useServer();
   const cmd = useCommand();
   const theme = useTheme();

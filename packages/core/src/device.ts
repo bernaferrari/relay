@@ -9,7 +9,11 @@ import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry } from "./retry.js";
 
+export type DevicePlatform = "android" | "ios";
 export const PLATFORM = "android" as const;
+export function selectedPlatform(): DevicePlatform {
+  return process.env.AGENT_DEVICE_PLATFORM === "ios" ? "ios" : "android";
+}
 export const GROK_PACKAGE = "ai.x.grok";
 export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
@@ -43,19 +47,19 @@ let _device: Device | null = null;
 export function createDevice(): Device {
   if (!_device) {
     _device = createAgentDeviceClient({
-      session: process.env.AGENT_DEVICE_SESSION?.trim() || "grok-actions",
+      session: process.env.AGENT_DEVICE_SESSION?.trim() || "relay-actions",
     });
   }
   return _device;
 }
 
 export function base() {
+  const platform = selectedPlatform();
   const serial =
     process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim() || undefined;
-  return {
-    platform: PLATFORM,
-    ...(serial ? { serial, device: serial } : {}),
-  } as const;
+  return platform === "ios"
+    ? ({ platform, ...(serial ? { udid: serial, device: serial } : {}) } as const)
+    : ({ platform, ...(serial ? { serial, device: serial } : {}) } as const);
 }
 
 /** Run a device promise under cancel race, pause checkpoints, and flake retries. */
@@ -196,6 +200,97 @@ export async function closeApp(device: Device, app?: string): Promise<void> {
   await controlled(() => device.apps.close({ ...base(), ...(app ? { app } : {}) }));
 }
 
+export type AndroidAppBuild = {
+  packageName: string;
+  installed: boolean;
+  versionName?: string;
+  versionCode?: string;
+};
+
+function androidAdbArgs(args: string[]): string[] {
+  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  return [...(serial ? ["-s", serial] : []), ...args];
+}
+
+function requireAndroidBuildControl(): void {
+  if (selectedPlatform() !== "android") {
+    throw new Error(
+      "capability unavailable: app build inspection and APK installation currently require Android",
+    );
+  }
+}
+
+/** Parse the stable fields from `adb shell dumpsys package`. Exported so the
+ * evidence reader remains testable without a connected device. */
+export function parseAndroidAppBuild(packageName: string, output: string): AndroidAppBuild {
+  const versionName = output.match(/\bversionName=([^\s]+)/)?.[1];
+  const versionCode = output.match(/\bversionCode=(\d+)/)?.[1];
+  return {
+    packageName,
+    installed: Boolean(versionName || versionCode || output.includes(`Package [${packageName}]`)),
+    ...(versionName ? { versionName } : {}),
+    ...(versionCode ? { versionCode } : {}),
+  };
+}
+
+/** Inspect the build that is really installed on the selected Android device.
+ * This is deliberately a narrow adb bridge: it never uses a shell string and
+ * the output becomes immutable run evidence rather than mutable test state. */
+export async function inspectAndroidApp(packageName: string): Promise<AndroidAppBuild> {
+  requireAndroidBuildControl();
+  if (!/^[A-Za-z0-9._-]+$/.test(packageName)) {
+    throw new Error("app package name contains unsupported characters");
+  }
+  await cooperativeCheckpoint();
+  throwIfCancelled();
+  try {
+    const { stdout } = await raceCancel(
+      execFileAsync("adb", androidAdbArgs(["shell", "dumpsys", "package", packageName])),
+    );
+    return parseAndroidAppBuild(packageName, String(stdout));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/unknown package|not found|does not exist|can't find/i.test(message)) {
+      return { packageName, installed: false };
+    }
+    throw error;
+  }
+}
+
+async function runAndroidInstall(
+  action: "install" | "update" | "uninstall",
+  packageName: string,
+  artifact?: string,
+): Promise<AndroidAppBuild> {
+  requireAndroidBuildControl();
+  if (!/^[A-Za-z0-9._-]+$/.test(packageName)) {
+    throw new Error("app package name contains unsupported characters");
+  }
+  if ((action === "install" || action === "update") && !artifact?.trim()) {
+    throw new Error(`${action} requires a local APK artifact path`);
+  }
+  await cooperativeCheckpoint();
+  throwIfCancelled();
+  if (action === "uninstall") {
+    await raceCancel(execFileAsync("adb", androidAdbArgs(["uninstall", packageName])));
+    return { packageName, installed: false };
+  }
+  const args = action === "update" ? ["install", "-r", artifact!] : ["install", artifact!];
+  await raceCancel(execFileAsync("adb", androidAdbArgs(args)));
+  return await inspectAndroidApp(packageName);
+}
+
+/** Install, update, or uninstall a known local Android APK. iOS and browser
+ * targets fail explicitly instead of pretending those lifecycle operations
+ * are portable. */
+export async function changeAndroidAppBuild(input: {
+  action: "install" | "update" | "uninstall";
+  packageName: string;
+  artifact?: string;
+}): Promise<AndroidAppBuild> {
+  return await runAndroidInstall(input.action, input.packageName, input.artifact);
+}
+
 export async function openAppSwitcher(device: Device): Promise<void> {
   await controlled(() => device.command.appSwitcher({ ...base() }));
 }
@@ -250,7 +345,12 @@ export async function manageLogs(
  * CLI guidance allows a platform bridge for command gaps; keep that bridge
  * isolated here so recipes still have one capability surface. */
 export async function setAndroidLockState(action: "lock" | "unlock"): Promise<void> {
-  const serial = base().serial;
+  if (selectedPlatform() !== "android") {
+    throw new Error(
+      "capability unavailable: lock-screen control is not supported by this iOS runner",
+    );
+  }
+  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
   const args = [
     ...(serial ? ["-s", serial] : []),
     "shell",

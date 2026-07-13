@@ -6,12 +6,19 @@
  * UI has a uniform list; custom recipes live as files under `recipes/`.
  */
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, writeFile, unlink, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile, unlink, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { ACTIONS, isActionId } from "./actions.js";
 import { findWorkspaceRoot } from "./runs.js";
 import { now } from "./events.js";
 import type { Glyph } from "./trace.js";
+import {
+  formatRecipeYaml,
+  listYamlRecipeFiles,
+  readYamlRecipeFile,
+  recipeYamlPath,
+  validateRecipeVariables,
+} from "./recipe-yaml.js";
 
 /** How to find a target on screen — ordered fallbacks, most robust first. */
 export type StepTarget = {
@@ -61,6 +68,28 @@ export type RecordedStepEvidence = {
   };
 };
 
+/** A declared input turns an ordinary recorded recipe into a reusable,
+ * parameterized flow. Inputs are plain, reviewable test data—not a place for
+ * passwords or tokens. Sensitive values belong in a future host credential
+ * store and must never be committed to YAML or immutable run evidence. */
+export type RecipeParameter = {
+  name: string;
+  label?: string;
+  description?: string;
+  default?: string;
+  required?: boolean;
+};
+
+/** Why a run is intentionally waiting for a person to act on the target. */
+export type HumanCheckpointReason =
+  | "authentication"
+  | "consent"
+  | "verification"
+  | "captcha"
+  | "permission"
+  | "review"
+  | "other";
+
 export type RecipeStep =
   | { kind: "tap"; target: StepTarget; evidence?: RecordedStepEvidence; note?: string }
   | { kind: "long-press"; target: StepTarget; durationMs?: number; note?: string }
@@ -84,16 +113,81 @@ export type RecipeStep =
   | { kind: "sleep"; ms: number; note?: string }
   | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
   | {
+      kind: "wait-response";
+      target: StepTarget;
+      busyTarget?: StepTarget;
+      idleTarget?: StepTarget;
+      timeoutMs?: number;
+      stableForMs?: number;
+      note?: string;
+    }
+  | {
       kind: "expect";
       target: StepTarget;
       condition: "visible" | "gone";
       timeoutMs?: number;
       note?: string;
     }
-  | { kind: "pause"; message: string; note?: string }
+  | {
+      kind: "extract";
+      as: string;
+      target: StepTarget;
+      role?: "user" | "assistant" | "system";
+      note?: string;
+    }
+  | {
+      kind: "assert-content";
+      input: string;
+      expected: string;
+      match: "exact" | "contains" | "not-contains";
+      note?: string;
+    }
+  | {
+      kind: "evaluate-semantic";
+      input: string;
+      criteria: string[];
+      threshold?: number;
+      provider?: string;
+      model?: string;
+      requireAgreement?: boolean;
+      secondProvider?: string;
+      secondModel?: string;
+      note?: string;
+    }
+  | {
+      kind: "pause";
+      message: string;
+      reason?: HumanCheckpointReason;
+      resumeLabel?: string;
+      timeoutMs?: number;
+      /** State Relay must observe after the operator resumes the run. */
+      verifyAfter?: {
+        target: StepTarget;
+        condition?: "visible" | "gone";
+        timeoutMs?: number;
+      };
+      note?: string;
+    }
   | { kind: "screenshot"; caption?: string; note?: string }
   | { kind: "flow"; flow: string; note?: string }
-  | { kind: "module"; recipeId: string; note?: string }
+  | {
+      kind: "module";
+      recipeId: string;
+      /** Explicit values passed into declared parameters of the attached flow. */
+      bindings?: Record<string, string>;
+      note?: string;
+    }
+  | {
+      kind: "branch";
+      input: string;
+      operator: "exists" | "equals" | "not-equals" | "contains";
+      expected?: string;
+      thenRecipeId: string;
+      elseRecipeId?: string;
+      note?: string;
+    }
+  | { kind: "repeat"; count: number; recipeId: string; note?: string }
+  | { kind: "script"; source: string; note?: string }
   | {
       kind: "clipboard";
       action: "write" | "read";
@@ -104,9 +198,25 @@ export type RecipeStep =
     }
   | {
       kind: "app";
-      action: "open" | "close" | "switcher";
+      action:
+        | "open"
+        | "close"
+        | "switcher"
+        | "inspect"
+        | "assert-installed"
+        | "assert-not-installed"
+        | "install"
+        | "update"
+        | "uninstall";
       app?: string;
       url?: string;
+      /** Local APK used only by Android install/update. Never uploaded by Relay. */
+      artifact?: string;
+      /** Capture the observed version into a frozen run variable. */
+      as?: string;
+      /** Optional expected version for inspect/assert-installed. */
+      version?: string;
+      versionMatch?: "exact" | "contains";
       note?: string;
     }
   | {
@@ -164,10 +274,16 @@ export type Recipe = {
   id: string;
   title: string;
   description?: string;
+  /** Test-scoped static values, frozen into the recipe source for Git review. */
+  variables?: Record<string, string>;
+  /** Declared inputs when this recipe is used as a reusable flow. */
+  parameters?: RecipeParameter[];
   source: "builtin" | "custom";
   steps: RecipeStep[];
   createdAt: number;
   updatedAt: number;
+  quarantined?: boolean;
+  quarantineReason?: string;
 };
 
 const MAX_WAIT_MS = 15 * 60 * 1000;
@@ -177,6 +293,12 @@ export function recipesRoot(): string {
   const env = (process.env.RELAY_RECIPES_DIR ?? process.env.GROK_DEVICE_RECIPES_DIR)?.trim();
   if (env) return env;
   return join(findWorkspaceRoot(), "recipes");
+}
+
+/** Git-tracked YAML definitions live separately from legacy local JSON recipes. */
+export function testsRoot(): string {
+  const env = process.env.RELAY_TESTS_DIR?.trim();
+  return env || join(findWorkspaceRoot(), "tests");
 }
 
 function evidencePart(value: string, field: string): string {
@@ -227,6 +349,41 @@ function isString(v: unknown): v is string {
 
 function isNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
+}
+
+const PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
+
+export function validateRecipeParameters(value: unknown): RecipeParameter[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("parameters must be an array");
+  if (value.length > 32) throw new Error("parameters are limited to 32 per reusable flow");
+  const names = new Set<string>();
+  const parameters = value.map((raw, index) => {
+    if (!isObject(raw)) throw new Error(`parameters[${index}] must be an object`);
+    if (!isString(raw.name) || !PARAMETER_NAME.test(raw.name)) {
+      throw new Error(`parameters[${index}].name is invalid`);
+    }
+    if (names.has(raw.name)) throw new Error(`parameters contain duplicate name ${raw.name}`);
+    names.add(raw.name);
+    if (raw.label !== undefined && !isString(raw.label))
+      throw new Error(`parameters[${index}].label must be a string`);
+    if (raw.description !== undefined && !isString(raw.description))
+      throw new Error(`parameters[${index}].description must be a string`);
+    if (raw.default !== undefined && !isString(raw.default))
+      throw new Error(`parameters[${index}].default must be a string`);
+    if (raw.required !== undefined && typeof raw.required !== "boolean")
+      throw new Error(`parameters[${index}].required must be a boolean`);
+    return {
+      name: raw.name,
+      ...(isString(raw.label) && raw.label.trim() ? { label: raw.label.trim() } : {}),
+      ...(isString(raw.description) && raw.description.trim()
+        ? { description: raw.description.trim() }
+        : {}),
+      ...(isString(raw.default) ? { default: raw.default } : {}),
+      ...(raw.required === true ? { required: true } : {}),
+    };
+  });
+  return parameters.length ? parameters : undefined;
 }
 
 function targetHasStrategy(t: StepTarget): boolean {
@@ -558,6 +715,44 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "wait-response": {
+        const target = parseTarget(raw.target, index, "target");
+        if (!target.ref && !target.label && !target.text) {
+          throw stepErr(index, "wait-response target requires ref/label/text");
+        }
+        const parseOptionalSemanticTarget = (value: unknown, field: string) => {
+          if (value === undefined) return undefined;
+          const parsed = parseTarget(value, index, field);
+          if (!parsed.ref && !parsed.label && !parsed.text) {
+            throw stepErr(index, `${field} requires ref/label/text`);
+          }
+          return parsed;
+        };
+        const busyTarget = parseOptionalSemanticTarget(raw.busyTarget, "busyTarget");
+        const idleTarget = parseOptionalSemanticTarget(raw.idleTarget, "idleTarget");
+        const timeoutMs = raw.timeoutMs === undefined ? undefined : raw.timeoutMs;
+        const stableForMs = raw.stableForMs === undefined ? undefined : raw.stableForMs;
+        if (!isNumber(timeoutMs) && timeoutMs !== undefined)
+          throw stepErr(index, "wait-response.timeoutMs must be a number");
+        if (timeoutMs !== undefined && (timeoutMs < 1_000 || timeoutMs > MAX_WAIT_MS)) {
+          throw stepErr(index, `wait-response.timeoutMs must be between 1000 and ${MAX_WAIT_MS}`);
+        }
+        if (!isNumber(stableForMs) && stableForMs !== undefined)
+          throw stepErr(index, "wait-response.stableForMs must be a number");
+        if (stableForMs !== undefined && (stableForMs < 500 || stableForMs > 30_000)) {
+          throw stepErr(index, "wait-response.stableForMs must be between 500 and 30000");
+        }
+        out.push({
+          kind: "wait-response",
+          target,
+          ...(busyTarget ? { busyTarget } : {}),
+          ...(idleTarget ? { idleTarget } : {}),
+          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          ...(stableForMs !== undefined ? { stableForMs } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
       case "expect": {
         const target = parseTarget(raw.target, index, "target");
         // point-only targets can't be "expected" (validation-time rejection)
@@ -591,11 +786,169 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "extract": {
+        if (!isString(raw.as) || !/^[a-zA-Z_][a-zA-Z0-9_.-]*$/.test(raw.as)) {
+          throw stepErr(index, "extract.as must be a valid variable name");
+        }
+        const target = parseTarget(raw.target, index, "target");
+        if (!target.ref && !target.label && !target.text) {
+          throw stepErr(index, "extract target requires ref/label/text");
+        }
+        if (
+          raw.role !== undefined &&
+          raw.role !== "user" &&
+          raw.role !== "assistant" &&
+          raw.role !== "system"
+        ) {
+          throw stepErr(index, 'extract.role must be "user" | "assistant" | "system"');
+        }
+        out.push({
+          kind: "extract",
+          as: raw.as,
+          target,
+          ...(raw.role ? { role: raw.role } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "assert-content": {
+        if (!isString(raw.input) || !raw.input.trim())
+          throw stepErr(index, "assert-content.input is required");
+        if (!isString(raw.expected))
+          throw stepErr(index, "assert-content.expected must be a string");
+        if (!["exact", "contains", "not-contains"].includes(String(raw.match))) {
+          throw stepErr(
+            index,
+            'assert-content.match must be "exact" | "contains" | "not-contains"',
+          );
+        }
+        out.push({
+          kind: "assert-content",
+          input: raw.input,
+          expected: raw.expected,
+          match: raw.match as "exact" | "contains" | "not-contains",
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "evaluate-semantic": {
+        if (!isString(raw.input) || !raw.input.trim())
+          throw stepErr(index, "evaluate-semantic.input is required");
+        if (
+          !Array.isArray(raw.criteria) ||
+          raw.criteria.length === 0 ||
+          !raw.criteria.every(isString)
+        ) {
+          throw stepErr(index, "evaluate-semantic.criteria must be a non-empty string array");
+        }
+        if (
+          raw.threshold !== undefined &&
+          (!isNumber(raw.threshold) || raw.threshold < 0 || raw.threshold > 1)
+        ) {
+          throw stepErr(index, "evaluate-semantic.threshold must be between 0 and 1");
+        }
+        if (raw.provider !== undefined && !isString(raw.provider))
+          throw stepErr(index, "evaluate-semantic.provider must be a string");
+        if (raw.model !== undefined && !isString(raw.model))
+          throw stepErr(index, "evaluate-semantic.model must be a string");
+        if (raw.requireAgreement !== undefined && typeof raw.requireAgreement !== "boolean")
+          throw stepErr(index, "evaluate-semantic.requireAgreement must be a boolean");
+        if (raw.secondProvider !== undefined && !isString(raw.secondProvider))
+          throw stepErr(index, "evaluate-semantic.secondProvider must be a string");
+        if (raw.secondModel !== undefined && !isString(raw.secondModel))
+          throw stepErr(index, "evaluate-semantic.secondModel must be a string");
+        if (
+          raw.requireAgreement === true &&
+          (!isString(raw.secondProvider) || !raw.secondProvider.trim())
+        )
+          throw stepErr(index, "evaluate-semantic.secondProvider is required for agreement");
+        out.push({
+          kind: "evaluate-semantic",
+          input: raw.input,
+          criteria: raw.criteria,
+          ...(raw.threshold !== undefined ? { threshold: raw.threshold } : {}),
+          ...(isString(raw.provider) ? { provider: raw.provider } : {}),
+          ...(isString(raw.model) ? { model: raw.model } : {}),
+          ...(raw.requireAgreement === true ? { requireAgreement: true } : {}),
+          ...(isString(raw.secondProvider) ? { secondProvider: raw.secondProvider } : {}),
+          ...(isString(raw.secondModel) ? { secondModel: raw.secondModel } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
       case "pause": {
         if (!isString(raw.message)) throw stepErr(index, "pause requires message: string");
+        const reasons: HumanCheckpointReason[] = [
+          "authentication",
+          "consent",
+          "verification",
+          "captcha",
+          "permission",
+          "review",
+          "other",
+        ];
+        if (raw.reason !== undefined && !reasons.includes(raw.reason as HumanCheckpointReason)) {
+          throw stepErr(index, "pause.reason is invalid");
+        }
+        if (raw.resumeLabel !== undefined && !isString(raw.resumeLabel)) {
+          throw stepErr(index, "pause.resumeLabel must be a string");
+        }
+        if (
+          raw.timeoutMs !== undefined &&
+          (!isNumber(raw.timeoutMs) ||
+            !Number.isInteger(raw.timeoutMs) ||
+            raw.timeoutMs < 1_000 ||
+            raw.timeoutMs > 86_400_000)
+        ) {
+          throw stepErr(index, "pause.timeoutMs must be an integer from 1000 to 86400000");
+        }
+        let verifyAfter: Extract<RecipeStep, { kind: "pause" }>["verifyAfter"];
+        if (raw.verifyAfter !== undefined) {
+          if (!isObject(raw.verifyAfter)) {
+            throw stepErr(index, "pause.verifyAfter must be an object");
+          }
+          const target = parseTarget(raw.verifyAfter.target, index, "pause.verifyAfter.target");
+          if (!target.ref && !target.label && !target.text) {
+            throw stepErr(index, "pause.verifyAfter.target must have ref, label, or text");
+          }
+          if (
+            raw.verifyAfter.condition !== undefined &&
+            raw.verifyAfter.condition !== "visible" &&
+            raw.verifyAfter.condition !== "gone"
+          ) {
+            throw stepErr(index, 'pause.verifyAfter.condition must be "visible" or "gone"');
+          }
+          if (
+            raw.verifyAfter.timeoutMs !== undefined &&
+            (!isNumber(raw.verifyAfter.timeoutMs) ||
+              !Number.isInteger(raw.verifyAfter.timeoutMs) ||
+              raw.verifyAfter.timeoutMs < 1_000 ||
+              raw.verifyAfter.timeoutMs > 900_000)
+          ) {
+            throw stepErr(
+              index,
+              "pause.verifyAfter.timeoutMs must be an integer from 1000 to 900000",
+            );
+          }
+          verifyAfter = {
+            target,
+            ...(raw.verifyAfter.condition === "gone" ? { condition: "gone" as const } : {}),
+            ...(isNumber(raw.verifyAfter.timeoutMs)
+              ? { timeoutMs: raw.verifyAfter.timeoutMs }
+              : {}),
+          };
+        }
         const step: Extract<RecipeStep, { kind: "pause" }> = {
           kind: "pause",
           message: raw.message,
+          ...(reasons.includes(raw.reason as HumanCheckpointReason)
+            ? { reason: raw.reason as HumanCheckpointReason }
+            : {}),
+          ...(isString(raw.resumeLabel) && raw.resumeLabel.trim()
+            ? { resumeLabel: raw.resumeLabel.trim() }
+            : {}),
+          ...(isNumber(raw.timeoutMs) ? { timeoutMs: raw.timeoutMs } : {}),
+          ...(verifyAfter ? { verifyAfter } : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -626,7 +979,67 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       case "module": {
         if (!isString(raw.recipeId) || !raw.recipeId.trim())
           throw stepErr(index, "module requires recipeId: string");
-        out.push({ kind: "module", recipeId: raw.recipeId, ...(note ? { note } : {}) });
+        let bindings: Record<string, string> | undefined;
+        if (raw.bindings !== undefined) {
+          if (!isObject(raw.bindings)) throw stepErr(index, "module.bindings must be a mapping");
+          bindings = {};
+          for (const [name, value] of Object.entries(raw.bindings)) {
+            if (!PARAMETER_NAME.test(name))
+              throw stepErr(index, `module.bindings.${name} is invalid`);
+            if (!isString(value)) throw stepErr(index, `module.bindings.${name} must be a string`);
+            bindings[name] = value;
+          }
+        }
+        out.push({
+          kind: "module",
+          recipeId: raw.recipeId,
+          ...(bindings && Object.keys(bindings).length ? { bindings } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "branch": {
+        if (!isString(raw.input) || !raw.input.trim())
+          throw stepErr(index, "branch.input is required");
+        if (!["exists", "equals", "not-equals", "contains"].includes(String(raw.operator)))
+          throw stepErr(index, "branch.operator is invalid");
+        if (!isString(raw.thenRecipeId) || !raw.thenRecipeId.trim())
+          throw stepErr(index, "branch.thenRecipeId is required");
+        if (raw.elseRecipeId !== undefined && !isString(raw.elseRecipeId))
+          throw stepErr(index, "branch.elseRecipeId must be a string");
+        if (raw.operator !== "exists" && !isString(raw.expected))
+          throw stepErr(index, "branch.expected is required for this operator");
+        out.push({
+          kind: "branch",
+          input: raw.input,
+          operator: raw.operator as "exists" | "equals" | "not-equals" | "contains",
+          ...(isString(raw.expected) ? { expected: raw.expected } : {}),
+          thenRecipeId: raw.thenRecipeId,
+          ...(isString(raw.elseRecipeId) && raw.elseRecipeId.trim()
+            ? { elseRecipeId: raw.elseRecipeId }
+            : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "repeat": {
+        if (!isNumber(raw.count) || !Number.isInteger(raw.count) || raw.count < 1 || raw.count > 20)
+          throw stepErr(index, "repeat.count must be an integer from 1 to 20");
+        if (!isString(raw.recipeId) || !raw.recipeId.trim())
+          throw stepErr(index, "repeat.recipeId is required");
+        out.push({
+          kind: "repeat",
+          count: raw.count,
+          recipeId: raw.recipeId,
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
+      case "script": {
+        if (!isString(raw.source) || !raw.source.trim())
+          throw stepErr(index, "script.source is required");
+        if (raw.source.length > 20_000) throw stepErr(index, "script.source is too large");
+        out.push({ kind: "script", source: raw.source, ...(note ? { note } : {}) });
         break;
       }
       case "clipboard": {
@@ -649,19 +1062,67 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "app": {
-        if (raw.action !== "open" && raw.action !== "close" && raw.action !== "switcher")
-          throw stepErr(index, 'app requires action: "open" | "close" | "switcher"');
+        const actions = [
+          "open",
+          "close",
+          "switcher",
+          "inspect",
+          "assert-installed",
+          "assert-not-installed",
+          "install",
+          "update",
+          "uninstall",
+        ] as const;
+        if (!actions.includes(raw.action as (typeof actions)[number]))
+          throw stepErr(index, "app has an invalid action");
         if (raw.app !== undefined && !isString(raw.app))
           throw stepErr(index, "app.app must be a string");
         if (raw.url !== undefined && !isString(raw.url))
           throw stepErr(index, "app.url must be a string");
+        if (raw.artifact !== undefined && !isString(raw.artifact))
+          throw stepErr(index, "app.artifact must be a string");
+        if (
+          raw.as !== undefined &&
+          (!isString(raw.as) || !/^[a-zA-Z_][a-zA-Z0-9_.-]*$/.test(raw.as))
+        )
+          throw stepErr(index, "app.as must be a valid variable name");
+        if (raw.version !== undefined && !isString(raw.version))
+          throw stepErr(index, "app.version must be a string");
+        if (
+          raw.versionMatch !== undefined &&
+          raw.versionMatch !== "exact" &&
+          raw.versionMatch !== "contains"
+        )
+          throw stepErr(index, 'app.versionMatch must be "exact" | "contains"');
         if (raw.action === "open" && !isString(raw.app) && !isString(raw.url))
           throw stepErr(index, "app open requires app or url");
+        if (
+          raw.action !== "open" &&
+          raw.action !== "switcher" &&
+          (!isString(raw.app) || !raw.app.trim())
+        ) {
+          throw stepErr(index, `${raw.action} requires app package or bundle identifier`);
+        }
+        if (
+          (raw.action === "install" || raw.action === "update") &&
+          (!isString(raw.artifact) || !raw.artifact.trim())
+        ) {
+          throw stepErr(index, `${raw.action} requires a local APK artifact path`);
+        }
+        if (raw.action === "assert-not-installed" && raw.version !== undefined) {
+          throw stepErr(index, "assert-not-installed cannot include a version");
+        }
         out.push({
           kind: "app",
-          action: raw.action,
+          action: raw.action as Extract<RecipeStep, { kind: "app" }>["action"],
           ...(isString(raw.app) ? { app: raw.app } : {}),
           ...(isString(raw.url) ? { url: raw.url } : {}),
+          ...(isString(raw.artifact) ? { artifact: raw.artifact } : {}),
+          ...(isString(raw.as) ? { as: raw.as } : {}),
+          ...(isString(raw.version) ? { version: raw.version } : {}),
+          ...(raw.versionMatch === "exact" || raw.versionMatch === "contains"
+            ? { versionMatch: raw.versionMatch }
+            : {}),
           ...(note ? { note } : {}),
         });
         break;
@@ -830,6 +1291,8 @@ export function builtinRecipes(): Recipe[] {
 type StoredRecipe = Recipe | { id: string; hidden: true };
 
 async function readStoredRecipe(id: string): Promise<StoredRecipe | null> {
+  const yaml = await readYamlRecipeFile(recipeYamlPath(testsRoot(), id));
+  if (yaml) return yaml;
   try {
     const raw = await readFile(join(recipesRoot(), `${id}.json`), "utf8");
     const parsed = JSON.parse(raw) as unknown;
@@ -847,13 +1310,25 @@ async function readStoredRecipe(id: string): Promise<StoredRecipe | null> {
  * the same id override a packaged default; tombstones hide deleted defaults. */
 export async function listRecipes(): Promise<Recipe[]> {
   const builtins = builtinRecipes();
+  const yamlRecipes = new Map<string, Recipe>();
+  for (const path of await listYamlRecipeFiles(testsRoot())) {
+    try {
+      const recipe = await readYamlRecipeFile(path);
+      if (recipe) yamlRecipes.set(recipe.id, recipe);
+    } catch {
+      /* Invalid YAML is surfaced on direct open/import, but must not break the library. */
+    }
+  }
   let entries: string[] = [];
   try {
     entries = await readdir(recipesRoot());
   } catch {
-    return builtins;
+    return [
+      ...builtins.map((recipe) => yamlRecipes.get(recipe.id) ?? recipe),
+      ...yamlRecipes.values(),
+    ];
   }
-  const customs: Recipe[] = [];
+  const customs = new Map<string, Recipe>();
   const overrides = new Map<string, Recipe>();
   const hidden = new Set<string>();
   for (const name of entries) {
@@ -869,16 +1344,20 @@ export async function listRecipes(): Promise<Recipe[]> {
       const recipe = parsed as unknown as Recipe;
       recipe.source = "custom";
       if (isActionId(recipe.id)) overrides.set(recipe.id, recipe);
-      else customs.push(recipe);
+      else customs.set(recipe.id, recipe);
     } catch {
       /* skip unreadable files — tolerant like listPersistedRuns */
     }
   }
-  customs.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  for (const [id, recipe] of yamlRecipes) {
+    if (isActionId(id)) overrides.set(id, recipe);
+    else customs.set(id, recipe);
+  }
+  const customList = [...customs.values()].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const included = builtins
     .filter((recipe) => !hidden.has(recipe.id))
     .map((recipe) => overrides.get(recipe.id) ?? recipe);
-  return [...included, ...customs];
+  return [...included, ...customList];
 }
 
 export async function readRecipe(id: string): Promise<Recipe | null> {
@@ -901,11 +1380,19 @@ async function ensureRecipesRoot(): Promise<void> {
   await mkdir(recipesRoot(), { recursive: true });
 }
 
+async function ensureTestsRoot(): Promise<void> {
+  await mkdir(testsRoot(), { recursive: true });
+}
+
 export type SaveRecipeInput = {
   id?: string;
   title: string;
   description?: string;
+  variables?: Record<string, string>;
+  parameters?: RecipeParameter[];
   steps: RecipeStep[];
+  quarantined?: boolean;
+  quarantineReason?: string;
 };
 
 /**
@@ -914,6 +1401,8 @@ export type SaveRecipeInput = {
  */
 export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
   const steps = validateRecipeSteps(input.steps);
+  const variables = validateRecipeVariables(input.variables ?? undefined);
+  const parameters = validateRecipeParameters(input.parameters ?? undefined);
   if (!isString(input.title) || input.title.trim().length === 0) {
     throw new Error("title is required");
   }
@@ -925,25 +1414,105 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
   // If overwriting, preserve createdAt.
   const stored = await readStoredRecipe(id);
   const existing = stored && !("hidden" in stored) ? stored : null;
+  const quarantineReason = input.quarantineReason ?? existing?.quarantineReason;
   const recipe: Recipe = {
     id,
     title: input.title,
     ...(input.description !== undefined ? { description: input.description } : {}),
+    ...(input.variables !== undefined
+      ? variables
+        ? { variables }
+        : {}
+      : existing?.variables
+        ? { variables: existing.variables }
+        : {}),
+    ...(input.parameters !== undefined
+      ? parameters
+        ? { parameters }
+        : {}
+      : existing?.parameters
+        ? { parameters: existing.parameters }
+        : {}),
     source: "custom",
     steps,
     createdAt: existing?.createdAt ?? ts,
     updatedAt: ts,
+    ...((input.quarantined ?? existing?.quarantined) ? { quarantined: true } : {}),
+    ...(quarantineReason?.trim() ? { quarantineReason: quarantineReason.trim() } : {}),
   };
   await ensureRecipesRoot();
-  await writeFile(join(recipesRoot(), `${id}.json`), JSON.stringify(recipe, null, 2), "utf8");
+  await ensureTestsRoot();
+  if (existing) {
+    const historyDir = join(recipesRoot(), ".history", id);
+    await mkdir(historyDir, { recursive: true });
+    const existingYaml = await stat(recipeYamlPath(testsRoot(), id)).then(
+      () => true,
+      () => false,
+    );
+    await writeFile(
+      join(historyDir, `${existing.updatedAt}.${existingYaml ? "relay.yaml" : "json"}`),
+      existingYaml ? formatRecipeYaml(existing) : JSON.stringify(existing, null, 2),
+      { encoding: "utf8", flag: "wx" },
+    ).catch((error: unknown) => {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+    });
+  }
+  await writeFile(recipeYamlPath(testsRoot(), id), formatRecipeYaml(recipe), "utf8");
   return recipe;
+}
+
+export async function listRecipeHistory(id: string): Promise<Recipe[]> {
+  const dir = join(recipesRoot(), ".history", evidencePart(id, "recipeId"));
+  try {
+    const entries = (await readdir(dir))
+      // History is written in the same format as the current recipe. Keep both
+      // extensions discoverable so git-native YAML has the same version history
+      // guarantees as the legacy JSON format.
+      .filter((file) => file.endsWith(".json") || file.endsWith(".relay.yaml"))
+      .sort()
+      .reverse();
+    const versions: Recipe[] = [];
+    for (const file of entries.slice(0, 50)) {
+      if (file.endsWith(".relay.yaml")) {
+        const parsed = await readYamlRecipeFile(join(dir, file));
+        if (parsed) versions.push(parsed);
+      } else {
+        const parsed = JSON.parse(await readFile(join(dir, file), "utf8")) as Recipe;
+        versions.push(parsed);
+      }
+    }
+    return versions;
+  } catch {
+    return [];
+  }
+}
+
+export async function restoreRecipeHistory(id: string, updatedAt: number): Promise<Recipe> {
+  const versions = await listRecipeHistory(id);
+  const version = versions.find((item) => item.updatedAt === updatedAt);
+  if (!version) throw new Error("recipe version not found");
+  return saveRecipe({
+    id,
+    title: version.title,
+    description: version.description,
+    variables: version.variables,
+    parameters: version.parameters,
+    steps: version.steps,
+    quarantined: version.quarantined,
+    quarantineReason: version.quarantineReason,
+  });
 }
 
 /** Delete any recipe. Packaged defaults receive a tombstone so they remain
  * deleted instead of reappearing on the next list operation. */
 export async function deleteRecipe(id: string): Promise<void> {
   await ensureRecipesRoot();
+  await ensureTestsRoot();
   await rm(evidenceDir(id), { recursive: true, force: true });
+  const yamlPath = recipeYamlPath(testsRoot(), id);
+  await unlink(yamlPath).catch((error: unknown) => {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  });
   if (isActionId(id)) {
     await writeFile(
       join(recipesRoot(), `${id}.json`),
@@ -985,16 +1554,32 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Sleep ${step.ms}ms`;
     case "wait-for":
       return `Wait for ${describeTarget(step.target)}`;
+    case "wait-response":
+      return `Wait for ${describeTarget(step.target)} to finish responding`;
     case "expect":
       return `check ${describeExpectTarget(step.target)} ${step.condition}`;
+    case "extract":
+      return `Extract ${describeTarget(step.target)} as ${step.as}`;
+    case "assert-content":
+      return `Check ${step.input} ${step.match} ${JSON.stringify(step.expected)}`;
+    case "evaluate-semantic":
+      return `Evaluate ${step.input} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "pause":
-      return `Pause: ${step.message}`;
+      return step.reason
+        ? `Wait for human (${step.reason}): ${step.message}`
+        : `Pause: ${step.message}`;
     case "screenshot":
       return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
     case "flow":
       return `Flow: ${step.flow}`;
     case "module":
       return `Run reusable test: ${step.recipeId}`;
+    case "branch":
+      return `Branch when ${step.input} ${step.operator}${step.expected ? ` ${JSON.stringify(step.expected)}` : ""}`;
+    case "repeat":
+      return `Repeat ${step.recipeId} ${step.count}×`;
+    case "script":
+      return "Transform test variables";
     case "clipboard":
       return step.action === "write"
         ? "Set clipboard text"
@@ -1002,9 +1587,15 @@ export function describeRecipeStep(step: RecipeStep): string {
           ? "Check clipboard text"
           : "Read clipboard text";
     case "app":
-      return step.action === "switcher"
-        ? "Open app switcher"
-        : `${step.action === "open" ? "Open" : "Close"} ${step.app ?? step.url ?? "app"}`;
+      if (step.action === "switcher") return "Open app switcher";
+      if (step.action === "inspect") return `Record installed version of ${step.app}`;
+      if (step.action === "assert-installed")
+        return `Check ${step.app} is installed${step.version ? ` (${step.version})` : ""}`;
+      if (step.action === "assert-not-installed") return `Check ${step.app} is not installed`;
+      if (step.action === "install" || step.action === "update")
+        return `${step.action === "install" ? "Install" : "Update"} ${step.app} from APK`;
+      if (step.action === "uninstall") return `Uninstall ${step.app}`;
+      return `${step.action === "open" ? "Open" : "Close"} ${step.app ?? step.url ?? "app"}`;
     case "device":
       return step.action === "keyboard-dismiss"
         ? "Dismiss keyboard"
@@ -1049,8 +1640,15 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["wait"];
     case "wait-for":
       return ["wait"];
+    case "wait-response":
+      return ["ai", "wait"];
     case "expect":
       return ["ok"];
+    case "extract":
+      return ["store"];
+    case "assert-content":
+    case "evaluate-semantic":
+      return ["ai", "ok"];
     case "pause":
       return ["wait"];
     case "screenshot":
@@ -1059,6 +1657,12 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["store"];
     case "module":
       return ["re", "store"];
+    case "branch":
+      return ["re", "ai"];
+    case "repeat":
+      return ["re", "wait"];
+    case "script":
+      return ["type", "store"];
     case "clipboard":
       return ["type"];
     case "app":

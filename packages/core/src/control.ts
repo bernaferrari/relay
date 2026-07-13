@@ -146,12 +146,42 @@ export async function cooperativeCheckpoint(jobId?: string | null): Promise<void
   if (c.cancel) throw new JobCancelledError();
 }
 
+/**
+ * Wait for a cooperative resume, optionally failing when a human checkpoint
+ * has been left unattended for too long. The timer is always cleared so a
+ * completed checkpoint cannot keep the process alive.
+ */
+export async function cooperativeCheckpointWithTimeout(
+  jobId: string,
+  timeoutMs?: number,
+): Promise<void> {
+  if (!timeoutMs) {
+    await cooperativeCheckpoint(jobId);
+    return;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      cooperativeCheckpoint(jobId),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(new Error(`human checkpoint timed out after ${Math.round(timeoutMs / 1000)}s`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Best-effort: close agent-device session so in-flight commands drop. */
 export async function hardStopDeviceSession(): Promise<void> {
   try {
     const { createAgentDeviceClient } = await import("agent-device");
     const client = createAgentDeviceClient({
-      session: process.env.AGENT_DEVICE_SESSION?.trim() || "grok-actions",
+      session: process.env.AGENT_DEVICE_SESSION?.trim() || "relay-actions",
     });
     await client.sessions.close({ shutdown: false });
   } catch {

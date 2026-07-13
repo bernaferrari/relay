@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   RevisionConflict,
   type Build,
+  type CompatibilityMatrix,
   type DeviceLease,
   type DevicePool,
   type JourneyMetadata,
@@ -19,6 +20,7 @@ type CollaborationState = {
   projects: Project[];
   builds: Build[];
   pools: DevicePool[];
+  matrices: CompatibilityMatrix[];
   leases: DeviceLease[];
   variables: Record<string, Revisioned<TestVariable[]>>;
   journeys: Record<string, Revisioned<JourneyMetadata>>;
@@ -47,6 +49,7 @@ function emptyState(): CollaborationState {
     ],
     builds: [],
     pools: [],
+    matrices: [],
     leases: [],
     variables: {},
     journeys: {},
@@ -56,7 +59,10 @@ function emptyState(): CollaborationState {
 
 async function readState(): Promise<CollaborationState> {
   try {
-    return JSON.parse(await readFile(statePath(), "utf8")) as CollaborationState;
+    const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<CollaborationState>;
+    // State files are intentionally forwards-compatible. New resources do not
+    // make an existing local project unreadable after an upgrade.
+    return { ...emptyState(), ...parsed, matrices: parsed.matrices ?? [] };
   } catch {
     return emptyState();
   }
@@ -167,6 +173,78 @@ export async function saveDevicePool(
       resourceId: input.id,
     });
     return pool;
+  });
+}
+
+export async function listCompatibilityMatrices(projectId: string): Promise<CompatibilityMatrix[]> {
+  return (await readState()).matrices.filter((item) => item.projectId === projectId);
+}
+
+export async function readCompatibilityMatrix(
+  projectId: string,
+  id: string,
+): Promise<CompatibilityMatrix | null> {
+  return (await listCompatibilityMatrices(projectId)).find((item) => item.id === id) ?? null;
+}
+
+export async function saveCompatibilityMatrix(
+  input: Omit<CompatibilityMatrix, "createdAt" | "updatedAt">,
+): Promise<CompatibilityMatrix> {
+  const { validateCompatibilityMatrix } = await import("./matrix.js");
+  validateCompatibilityMatrix(input);
+  return mutate((state) => {
+    const at = now();
+    const existing = state.matrices.find(
+      (item) => item.id === input.id && item.projectId === input.projectId,
+    );
+    const matrix: CompatibilityMatrix = {
+      ...input,
+      selectors: input.selectors.map((selector) => ({
+        ...selector,
+        ...(selector.targetIds ? { targetIds: [...selector.targetIds] } : {}),
+        ...(selector.platforms ? { platforms: [...selector.platforms] } : {}),
+        ...(selector.osVersionPrefixes
+          ? { osVersionPrefixes: [...selector.osVersionPrefixes] }
+          : {}),
+        ...(selector.nameIncludes ? { nameIncludes: [...selector.nameIncludes] } : {}),
+        ...(selector.requiredCapabilities
+          ? { requiredCapabilities: [...selector.requiredCapabilities] }
+          : {}),
+      })),
+      createdAt: existing?.createdAt ?? at,
+      updatedAt: at,
+    };
+    state.matrices = [
+      ...state.matrices.filter(
+        (item) => item.id !== matrix.id || item.projectId !== matrix.projectId,
+      ),
+      matrix,
+    ];
+    emit({
+      type: existing ? "resource.updated" : "resource.created",
+      at,
+      projectId: matrix.projectId,
+      resource: "matrix",
+      resourceId: matrix.id,
+    });
+    return matrix;
+  });
+}
+
+export async function deleteCompatibilityMatrix(projectId: string, id: string): Promise<void> {
+  return mutate((state) => {
+    const existing = state.matrices.find((item) => item.projectId === projectId && item.id === id);
+    if (!existing) throw new Error("Compatibility matrix not found");
+    state.matrices = state.matrices.filter(
+      (item) => item.projectId !== projectId || item.id !== id,
+    );
+    emit({
+      type: "resource.deleted",
+      at: now(),
+      projectId,
+      resource: "matrix",
+      resourceId: id,
+    });
   });
 }
 

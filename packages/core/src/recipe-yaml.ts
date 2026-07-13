@@ -1,0 +1,206 @@
+import { readFile, readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, stringify } from "yaml";
+import {
+  validateRecipeParameters,
+  validateRecipeSteps,
+  type Recipe,
+  type RecipeParameter,
+  type RecipeStep,
+} from "./recipes.js";
+
+const SCHEMA_VERSION = 1;
+const MAX_RECIPE_YAML_BYTES = 1_000_000;
+const YAML_SUFFIX = ".relay.yaml";
+
+export type RecipeYamlDocument = {
+  schemaVersion: number;
+  id: string;
+  name: string;
+  description?: string;
+  variables?: Record<string, string>;
+  parameters?: RecipeParameter[];
+  steps: RecipeStep[];
+  quarantined?: boolean;
+  quarantineReason?: string;
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function assertString(value: unknown, field: string): asserts value is string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${field} must be a non-empty string`);
+  }
+}
+
+function assertSafeNode(node: unknown): void {
+  if (!node) return;
+  if (!isNode(node)) throw new Error("unsupported YAML node in Relay test file");
+  if (isAlias(node) || ("anchor" in node && Boolean(node.anchor))) {
+    throw new Error("YAML anchors and aliases are not supported in Relay test files");
+  }
+  if (node.tag) throw new Error("custom YAML tags are not supported in Relay test files");
+  if (isMap(node)) {
+    for (const item of node.items) {
+      assertSafeNode(item.key);
+      assertSafeNode(item.value);
+    }
+  } else if (isSeq(node)) {
+    for (const item of node.items) assertSafeNode(item);
+  } else if (!isScalar(node)) {
+    throw new Error("unsupported YAML node in Relay test file");
+  }
+}
+
+export function validateRecipeVariables(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!isObject(value)) throw new Error("variables must be a key/value mapping");
+  const variables: Record<string, string> = {};
+  for (const [name, raw] of Object.entries(value)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(name)) {
+      throw new Error(`variables.${name} is not a valid variable name`);
+    }
+    if (typeof raw !== "string") throw new Error(`variables.${name} must be a string`);
+    variables[name] = raw;
+  }
+  return Object.keys(variables).length > 0 ? variables : undefined;
+}
+
+function documentFromRecipe(recipe: Recipe): RecipeYamlDocument {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: recipe.id,
+    name: recipe.title,
+    ...(recipe.description?.trim() ? { description: recipe.description } : {}),
+    ...(recipe.variables && Object.keys(recipe.variables).length > 0
+      ? { variables: recipe.variables }
+      : {}),
+    ...(recipe.parameters?.length ? { parameters: recipe.parameters } : {}),
+    steps: recipe.steps,
+    ...(recipe.quarantined ? { quarantined: true } : {}),
+    ...(recipe.quarantineReason?.trim() ? { quarantineReason: recipe.quarantineReason } : {}),
+  };
+}
+
+export function parseRecipeYaml(
+  source: string,
+  metadata: Pick<Recipe, "createdAt" | "updatedAt"> = { createdAt: 0, updatedAt: 0 },
+): Recipe {
+  if (Buffer.byteLength(source, "utf8") > MAX_RECIPE_YAML_BYTES) {
+    throw new Error("Relay test YAML exceeds the 1 MB limit");
+  }
+  const document = parseDocument(source, {
+    version: "1.2",
+    schema: "core",
+    strict: true,
+    uniqueKeys: true,
+    prettyErrors: true,
+    stringKeys: true,
+    merge: false,
+  });
+  if (document.errors.length > 0) throw new Error(document.errors[0]!.message);
+  assertSafeNode(document.contents);
+  const value = document.toJS({ maxAliasCount: 0 });
+  if (!isObject(value))
+    throw new Error("Relay test YAML must contain an object at the document root");
+
+  const allowed = new Set([
+    "schemaVersion",
+    "id",
+    "name",
+    "description",
+    "variables",
+    "parameters",
+    "steps",
+    "quarantined",
+    "quarantineReason",
+  ]);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw new Error(`unknown Relay test field: ${key}`);
+  }
+  if (value.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error(
+      typeof value.schemaVersion === "number"
+        ? `unsupported Relay test schemaVersion: ${value.schemaVersion}`
+        : "schemaVersion must be 1",
+    );
+  }
+  assertString(value.id, "id");
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,95}$/.test(value.id)) {
+    throw new Error("id must use letters, numbers, and hyphens only");
+  }
+  assertString(value.name, "name");
+  if (value.description !== undefined && typeof value.description !== "string") {
+    throw new Error("description must be a string");
+  }
+  if (!Array.isArray(value.steps)) throw new Error("steps must be an array");
+  if (value.quarantined !== undefined && typeof value.quarantined !== "boolean") {
+    throw new Error("quarantined must be a boolean");
+  }
+  if (value.quarantineReason !== undefined && typeof value.quarantineReason !== "string") {
+    throw new Error("quarantineReason must be a string");
+  }
+  return {
+    id: value.id,
+    title: value.name,
+    ...(typeof value.description === "string" ? { description: value.description } : {}),
+    source: "custom",
+    ...(validateRecipeVariables(value.variables)
+      ? { variables: validateRecipeVariables(value.variables) }
+      : {}),
+    ...(validateRecipeParameters(value.parameters)
+      ? { parameters: validateRecipeParameters(value.parameters) }
+      : {}),
+    steps: validateRecipeSteps(value.steps),
+    createdAt: metadata.createdAt,
+    updatedAt: metadata.updatedAt,
+    ...(value.quarantined === true ? { quarantined: true } : {}),
+    ...(typeof value.quarantineReason === "string"
+      ? { quarantineReason: value.quarantineReason }
+      : {}),
+  };
+}
+
+export function formatRecipeYaml(recipe: Recipe): string {
+  return stringify(documentFromRecipe(recipe), {
+    indent: 2,
+    lineWidth: 100,
+    sortMapEntries: false,
+    aliasDuplicateObjects: false,
+  });
+}
+
+export function recipeYamlFilename(id: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,95}$/.test(id)) throw new Error("invalid recipe id");
+  return `${id}${YAML_SUFFIX}`;
+}
+
+export function recipeYamlPath(testsRoot: string, id: string): string {
+  return join(testsRoot, recipeYamlFilename(id));
+}
+
+export async function readYamlRecipeFile(path: string): Promise<Recipe | null> {
+  try {
+    const [source, info] = await Promise.all([readFile(path, "utf8"), stat(path)]);
+    return parseRecipeYaml(source, {
+      createdAt: info.birthtimeMs || info.mtimeMs,
+      updatedAt: info.mtimeMs,
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export async function listYamlRecipeFiles(testsRoot: string): Promise<string[]> {
+  try {
+    return (await readdir(testsRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.endsWith(YAML_SUFFIX))
+      .map((entry) => join(testsRoot, entry.name))
+      .sort();
+  } catch {
+    return [];
+  }
+}

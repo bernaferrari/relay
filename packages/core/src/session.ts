@@ -10,7 +10,7 @@ import {
   type RunActionOptions,
   type RunActionResult,
 } from "./actions.js";
-import { createDevice, type Device } from "./device.js";
+import { createDevice, type Device, type DevicePlatform } from "./device.js";
 import {
   glyphsFromLogLine,
   planForAction,
@@ -21,7 +21,6 @@ import {
   type StepTone,
 } from "./trace.js";
 import { persistRun, writeFramePng, ensureRunDir } from "./runs.js";
-import { PLATFORM } from "./device.js";
 import { classifyJobError } from "./report.js";
 import {
   JobCancelledError,
@@ -36,24 +35,40 @@ import {
   raceCancel,
   hardStopDeviceSession,
 } from "./control.js";
-import { readRecipe, describeRecipeStep, glyphsForStep, type Recipe } from "./recipes.js";
+import {
+  readRecipe,
+  describeRecipeStep,
+  glyphsForStep,
+  type HumanCheckpointReason,
+  type Recipe,
+  type StepTarget,
+} from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
+import { classifyRunOutcome } from "./outcomes.js";
+import { startRunEvidence, stopRunEvidence, type RunEvidenceHandle } from "./run-evidence.js";
+import { getBrowserDevice } from "./browser-target.js";
+import { preflightTarget, readTarget } from "./targets.js";
+import type { FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
 }
 
 /** Avoid importing workspace (session↔workspace cycle). */
-async function resolveDeviceMeta(serial?: string): Promise<{ deviceName?: string }> {
+async function resolveDeviceMeta(
+  serial?: string,
+  platform?: DevicePlatform,
+): Promise<{ deviceName?: string; deviceAvailable?: boolean }> {
   if (!serial) return {};
   try {
     const client = createDevice();
-    const devices = await client.devices.list({ platform: PLATFORM });
+    const devices = await client.devices.list(platform ? { platform } : undefined);
     const match = devices.find((d) => {
-      const s = d.android?.serial ?? d.identifiers?.serial ?? d.id;
+      const s =
+        d.android?.serial ?? d.ios?.udid ?? d.identifiers?.serial ?? d.identifiers?.udid ?? d.id;
       return s === serial || d.id === serial;
     });
-    return { deviceName: match?.name };
+    return { deviceName: match?.name, deviceAvailable: Boolean(match) };
   } catch {
     return {};
   }
@@ -78,7 +93,11 @@ export type TestJob = {
   serial?: string;
   /** Human device name from agent-device list */
   deviceName?: string;
-  platform: "android";
+  platform: DevicePlatform;
+  targetKind?: "device" | "browser";
+  browserTargetId?: string;
+  /** Frozen facts used to select this run from a compatibility matrix. */
+  targetProfile?: TargetProfile;
   status: JobStatus;
   queuedAt: number;
   startedAt?: number;
@@ -87,8 +106,13 @@ export type TestJob = {
   result?: unknown;
   error?: string;
   errorCode?: JobErrorCode;
+  outcome?: RunOutcome;
+  failureCategory?: FailureCategory;
   /** Optional app-under-test version if known from the action result. */
   appVersion?: string;
+  batchId?: string;
+  caseIndex?: number;
+  caseCount?: number;
   /** prior failure message if this run self-healed via retry */
   previousError?: string;
   healed?: boolean;
@@ -107,6 +131,20 @@ export type TestJob = {
   persisted?: boolean;
   /** Frozen authoring input and evidence payloads written once with the run. */
   recipeSnapshot?: Recipe;
+  /** Present while a recipe is deliberately waiting for a person to act. */
+  waitingFor?: {
+    kind: "human";
+    message: string;
+    reason: HumanCheckpointReason;
+    resumeLabel: string;
+    since: number;
+    timeoutMs?: number;
+    verifyAfter?: {
+      target: StepTarget;
+      condition: "visible" | "gone";
+      timeoutMs?: number;
+    };
+  };
   artifacts: { kind: string; capturedAt: number; data: unknown }[];
   resolvedInputs: Record<string, string>;
   options?: {
@@ -147,18 +185,32 @@ function remember(job: TestJob): void {
   }
 }
 
+function setOutcome(job: TestJob): void {
+  const classified = classifyRunOutcome(job);
+  job.outcome = classified.outcome;
+  job.failureCategory = classified.failureCategory;
+}
+
 export type EnqueueJobInput = {
   /** legacy coded action id (mutually exclusive with `recipe`) */
   action?: string;
   /** recipe id — runs a JSON recipe instead of a coded action */
   recipe?: string;
   serial?: string;
+  platform?: DevicePlatform;
+  targetKind?: "device" | "browser";
+  browserTargetId?: string;
+  targetProfile?: TargetProfile;
   prodAccountMatch?: string;
   /** retry a failed job — enables heal if success */
   retryOf?: string;
   /** provisional title for recipe jobs (recipe id is used if absent) */
   title?: string;
   variables?: Record<string, string>;
+  batchId?: string;
+  caseIndex?: number;
+  caseCount?: number;
+  artifacts?: TestJob["artifacts"];
 };
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
@@ -168,7 +220,10 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     id,
     serial: input.serial?.trim() || parent?.serial || undefined,
     deviceName: parent?.deviceName,
-    platform: "android" as const,
+    platform: input.platform ?? parent?.platform ?? ("android" as const),
+    targetKind: input.targetKind ?? parent?.targetKind ?? "device",
+    browserTargetId: input.browserTargetId ?? parent?.browserTargetId,
+    targetProfile: input.targetProfile ?? parent?.targetProfile,
     status: "queued" as const,
     queuedAt: now(),
     logs: [] as string[],
@@ -177,7 +232,14 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     previousError: parent?.error ?? parent?.previousError,
     steps: [] as TraceStep[],
     frames: [] as TraceFrameRef[],
-    artifacts: [] as { kind: string; capturedAt: number; data: unknown }[],
+    artifacts: [...(input.artifacts ?? [])] as {
+      kind: string;
+      capturedAt: number;
+      data: unknown;
+    }[],
+    batchId: input.batchId ?? parent?.batchId,
+    caseIndex: input.caseIndex ?? parent?.caseIndex,
+    caseCount: input.caseCount ?? parent?.caseCount,
     resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
     options: {
       prodAccountMatch: input.prodAccountMatch ?? parent?.options?.prodAccountMatch,
@@ -243,10 +305,14 @@ export function retryJob(id: string): TestJob {
     action: parent.recipeId ? undefined : parent.action,
     recipe: parent.recipeId,
     serial: parent.serial,
+    platform: parent.platform,
     prodAccountMatch: parent.options?.prodAccountMatch,
     retryOf: parent.id,
     title: parent.title,
     variables: parent.resolvedInputs,
+    batchId: parent.batchId,
+    caseIndex: parent.caseIndex,
+    caseCount: parent.caseCount,
   });
 }
 
@@ -316,6 +382,7 @@ function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
   job.status = "cancelled";
   job.error = "Cancelled by user";
   job.errorCode = "CANCELLED";
+  setOutcome(job);
   if (primary) finishStep(primary, "error", "✗ cancelled");
   publish({
     type: "job.cancelled",
@@ -463,6 +530,7 @@ async function runRecipeSteps(
   const recipe = await readRecipe(recipeId);
   if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
   job.recipeSnapshot = structuredClone(recipe);
+  job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   for (const step of recipe.steps) {
     await cooperativeCheckpoint(job.id);
@@ -499,7 +567,11 @@ async function executeJob(id: string): Promise<void> {
   activeJobId = id;
   job.status = "running";
   job.startedAt = now();
-  const meta = await resolveDeviceMeta(job.serial);
+  const browserTarget = job.browserTargetId ? await readTarget(job.browserTargetId) : null;
+  const meta =
+    job.targetKind === "browser"
+      ? { deviceName: browserTarget?.name, deviceAvailable: Boolean(browserTarget) }
+      : await resolveDeviceMeta(job.serial, job.platform);
   if (meta.deviceName) job.deviceName = meta.deviceName;
   await ensureRunDir(job).catch(() => undefined);
 
@@ -517,10 +589,19 @@ async function executeJob(id: string): Promise<void> {
     serial: process.env.AGENT_DEVICE_SERIAL,
     androidSerial: process.env.ANDROID_SERIAL,
     prodMatch: process.env.PROD_ACCOUNT_MATCH,
+    platform: process.env.AGENT_DEVICE_PLATFORM,
+    browserTarget: process.env.RELAY_TARGET_ID,
   };
   if (job.serial) {
     process.env.AGENT_DEVICE_SERIAL = job.serial;
-    process.env.ANDROID_SERIAL = job.serial;
+    process.env.AGENT_DEVICE_PLATFORM = job.platform;
+    if (job.platform === "android") process.env.ANDROID_SERIAL = job.serial;
+    else delete process.env.ANDROID_SERIAL;
+  }
+  if (job.targetKind === "browser" && job.browserTargetId) {
+    process.env.RELAY_TARGET_ID = job.browserTargetId;
+  } else {
+    delete process.env.RELAY_TARGET_ID;
   }
   if (job.options?.prodAccountMatch?.trim()) {
     process.env.PROD_ACCOUNT_MATCH = job.options.prodAccountMatch.trim();
@@ -587,14 +668,40 @@ async function executeJob(id: string): Promise<void> {
   };
 
   const primary = () => currentPhase() ?? currentRecipeStep ?? job.steps[job.steps.length - 1];
+  let device: Device | undefined;
+  let evidence: RunEvidenceHandle | undefined;
+  const finishEvidence = async () => {
+    await stopRunEvidence(evidence, job, device, pushLog);
+  };
 
   try {
     await cooperativeCheckpoint(id);
 
-    // Release any stale session binding left by a prior run so this job can
-    // bind the selected device cleanly (avoids "session already bound").
-    await hardStopDeviceSession();
-    const device = createDevice();
+    if ((job.serial || job.browserTargetId) && meta.deviceAvailable === false) {
+      throw new Error(
+        job.targetKind === "browser"
+          ? `managed browser missing: ${job.browserTargetId}`
+          : `device missing: ${job.serial} is no longer connected`,
+      );
+    }
+
+    if (job.targetKind === "browser" && browserTarget) {
+      const preflight = await preflightTarget(browserTarget);
+      job.artifacts.push({ kind: "target-preflight", capturedAt: now(), data: preflight });
+      if (!preflight.ok) {
+        const failures = preflight.checks
+          .filter((check) => check.status === "fail")
+          .map((check) => check.message)
+          .join("; ");
+        throw new Error(`environment preflight failed: ${failures}`);
+      }
+      device = await getBrowserDevice(browserTarget.id);
+    } else {
+      // Release stale mobile bindings so this job can bind cleanly.
+      await hardStopDeviceSession();
+      device = createDevice();
+    }
+    evidence = await startRunEvidence(job, device, pushLog);
 
     // Heartbeat: surface cancel even during long SDK calls; hard-stop session
     let pendingCancel: Error | null = null;
@@ -622,6 +729,7 @@ async function executeJob(id: string): Promise<void> {
       clearInterval(heartbeat);
     }
     await cooperativeCheckpoint(id);
+    await finishEvidence();
 
     job.finishedAt = now();
 
@@ -659,10 +767,12 @@ async function executeJob(id: string): Promise<void> {
       job.result = result.result;
       job.error = undefined;
       job.errorCode = undefined;
+      setOutcome(job);
     } else {
       job.status = "error";
       job.error = result.error;
       job.errorCode = classifyError(result.error ?? "failed");
+      setOutcome(job);
       for (const s of job.steps) {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
       }
@@ -690,6 +800,7 @@ async function executeJob(id: string): Promise<void> {
       err instanceof JobCancelledError ||
       (err instanceof Error && err.name === "JobCancelledError")
     ) {
+      await finishEvidence();
       pushLog("==> CANCELLED");
       for (const s of job.steps) {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
@@ -697,11 +808,13 @@ async function executeJob(id: string): Promise<void> {
       finalizeCancelled(job, primary());
       return;
     }
+    await finishEvidence();
     const message = err instanceof Error ? err.message : String(err);
     job.finishedAt = now();
     job.status = "error";
     job.error = message;
     job.errorCode = classifyError(message);
+    setOutcome(job);
     for (const s of job.steps) {
       if (s.status === "running" || !s.finishedAt) finishStep(s, "error");
     }
@@ -719,6 +832,7 @@ async function executeJob(id: string): Promise<void> {
     });
     await persistRun(job).catch(() => undefined);
   } finally {
+    await finishEvidence();
     setExecutingJobId(null);
     activeJobId = null;
     clearControl(id);
@@ -728,6 +842,10 @@ async function executeJob(id: string): Promise<void> {
     else process.env.ANDROID_SERIAL = savedEnv.androidSerial;
     if (savedEnv.prodMatch === undefined) delete process.env.PROD_ACCOUNT_MATCH;
     else process.env.PROD_ACCOUNT_MATCH = savedEnv.prodMatch;
+    if (savedEnv.platform === undefined) delete process.env.AGENT_DEVICE_PLATFORM;
+    else process.env.AGENT_DEVICE_PLATFORM = savedEnv.platform;
+    if (savedEnv.browserTarget === undefined) delete process.env.RELAY_TARGET_ID;
+    else process.env.RELAY_TARGET_ID = savedEnv.browserTarget;
   }
 }
 

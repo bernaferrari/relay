@@ -1,8 +1,8 @@
-import { For, Show, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import type { RecipeInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo } from "../lib/job";
-import { Icon } from "./icon";
+import { Icon, type IconName } from "./icon";
 
 export function LibraryPanel(props: {
   open: boolean;
@@ -12,8 +12,17 @@ export function LibraryPanel(props: {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onImport: (yaml: string) => Promise<void>;
 }) {
   let searchInput: HTMLInputElement | undefined;
+  let importInput: HTMLInputElement | undefined;
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  const [draftsOpen, setDraftsOpen] = createSignal(false);
+  const tests = () => props.items.filter((recipe) => recipe.steps.length > 0);
+  const drafts = () => props.items.filter((recipe) => recipe.steps.length === 0);
+  createEffect(() => {
+    if (drafts().some((recipe) => recipe.id === props.selectedId)) setDraftsOpen(true);
+  });
   onMount(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!props.open) return;
@@ -39,14 +48,57 @@ export function LibraryPanel(props: {
           <span class="relay-eyebrow">Workspace</span>
           <h1>Mobile QA</h1>
         </div>
-        <button
-          type="button"
-          class="relay-icon-button relay-icon-button--solid"
-          aria-label="Create test"
-          onClick={props.onCreate}
-        >
-          <Icon name="plus" size={17} />
-        </button>
+        <div class="relay-library__head-actions">
+          <input
+            ref={(element) => (importInput = element)}
+            class="sr-only"
+            type="file"
+            accept=".yaml,.yml,text/yaml,application/yaml"
+            aria-label="Import Relay test file"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!file) return;
+              void file.text().then(props.onImport);
+            }}
+          />
+          <button
+            type="button"
+            class="relay-icon-button relay-icon-button--solid"
+            aria-label="Create test"
+            data-tip="Create test"
+            onClick={props.onCreate}
+          >
+            <Icon name="plus" size={17} />
+          </button>
+          <button
+            type="button"
+            class="relay-icon-button"
+            aria-label="More library actions"
+            aria-expanded={menuOpen()}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <Icon name="more" size={16} />
+          </button>
+          <Show when={menuOpen()}>
+            <div class="relay-library-actions-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  importInput?.click();
+                }}
+              >
+                <Icon name="upload" size={14} />
+                <span>
+                  <strong>Import test file</strong>
+                  <small>Open a Relay YAML file</small>
+                </span>
+              </button>
+            </div>
+          </Show>
+        </div>
       </div>
       <label class="relay-search">
         <Icon name="search" size={15} />
@@ -69,10 +121,37 @@ export function LibraryPanel(props: {
       <div class="relay-library__scroll">
         <RecipeGroup
           title="Tests"
-          items={props.items}
+          items={tests()}
           selectedId={props.selectedId}
           onSelect={props.onSelect}
         />
+        <Show when={drafts().length > 0}>
+          <section class="mt-2.5 border-t border-border-weak-base pt-1.5">
+            <button
+              type="button"
+              class="grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto_16px] items-center gap-2 rounded-lg px-2 text-left text-[11px]/[1.25] font-semibold tracking-[0.055em] text-text-weaker uppercase transition-colors hover:bg-surface-base-hover hover:text-text-weak focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
+              aria-expanded={draftsOpen()}
+              onClick={() => setDraftsOpen((open) => !open)}
+            >
+              <span>Drafts</span>
+              <span>{drafts().length}</span>
+              <Icon name={draftsOpen() ? "chevron-up" : "chevron-down"} size={13} />
+            </button>
+            <Show when={draftsOpen()}>
+              <div>
+                <For each={drafts()}>
+                  {(recipe) => (
+                    <RecipeRow
+                      recipe={recipe}
+                      selected={props.selectedId === recipe.id}
+                      onSelect={props.onSelect}
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
+          </section>
+        </Show>
         <Show when={props.query.trim().length > 0 && props.items.length === 0}>
           <div class="relay-library__empty">No tests match “{props.query}”.</div>
         </Show>
@@ -89,34 +168,87 @@ function RecipeGroup(props: {
 }) {
   return (
     <Show when={props.items.length > 0}>
-      <section class="relay-recipe-group">
-        <header>
+      <section class="mt-4 first:mt-0">
+        <header class="flex items-center justify-between px-2 pb-1 text-[11px]/[1.25] font-semibold tracking-[0.055em] text-text-weaker uppercase">
           <span>{props.title}</span>
           <span>{props.items.length}</span>
         </header>
         <div>
           <For each={props.items}>
             {(recipe) => (
-              <button
-                type="button"
-                class={cn("relay-recipe-row", props.selectedId === recipe.id && "is-active")}
-                onClick={() => props.onSelect(recipe.id)}
-              >
-                <span class="relay-recipe-row__copy">
-                  <strong>{displayTitle(recipe.title)}</strong>
-                  <small>
-                    <Show when={recipe.steps.length > 0}>
-                      {recipe.steps.length} step{recipe.steps.length === 1 ? "" : "s"} ·{" "}
-                    </Show>
-                    {fmtAgo(recipe.updatedAt, Date.now()) || "now"}
-                  </small>
-                </span>
-                <Icon name="chevron-right" size={14} class="relay-recipe-row__chevron" />
-              </button>
+              <RecipeRow
+                recipe={recipe}
+                selected={props.selectedId === recipe.id}
+                onSelect={props.onSelect}
+              />
             )}
           </For>
         </div>
       </section>
     </Show>
   );
+}
+
+function RecipeRow(props: {
+  recipe: RecipeInfo;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      class={cn(
+        "group grid min-h-[46px] w-full grid-cols-[26px_minmax(0,1fr)_14px] items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors duration-100 focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
+        props.selected ? "bg-surface-base-active" : "hover:bg-surface-base-hover",
+      )}
+      aria-current={props.selected ? "page" : undefined}
+      onClick={() => props.onSelect(props.recipe.id)}
+    >
+      <span
+        class={cn(
+          "grid size-[26px] place-items-center rounded-lg text-text-weaker",
+          props.selected && "bg-surface-interactive-weak text-text-interactive-base",
+        )}
+        aria-hidden="true"
+      >
+        <Icon name={recipeIcon(props.recipe)} size={14} />
+      </span>
+      <span class="min-w-0">
+        <strong
+          class={cn(
+            "block truncate text-[13px]/[1.25] font-[550] text-text-weak",
+            props.selected && "text-text-base",
+          )}
+        >
+          {displayTitle(props.recipe.title)}
+        </strong>
+        <small class="mt-0.5 flex items-center gap-1 text-[11px]/[1.25] text-text-weaker">
+          {props.recipe.steps.length > 0
+            ? `${props.recipe.steps.length} step${props.recipe.steps.length === 1 ? "" : "s"}`
+            : "Draft"}
+          <span class="opacity-50">·</span>
+          {fmtAgo(props.recipe.updatedAt, Date.now()) || "now"}
+        </small>
+      </span>
+      <Icon
+        name="chevron-right"
+        size={14}
+        class={cn(
+          "justify-self-end text-text-weaker opacity-0 transition-opacity duration-100",
+          props.selected && "opacity-100",
+        )}
+      />
+    </button>
+  );
+}
+
+function recipeIcon(recipe: RecipeInfo): IconName {
+  const kind = recipe.steps[0]?.kind;
+  if (kind === "module" || kind === "flow" || kind === "branch" || kind === "repeat") return "move";
+  if (kind === "expect" || kind === "assert-content" || kind === "evaluate-semantic")
+    return "check";
+  if (kind === "type" || kind === "clipboard") return "keyboard";
+  if (kind === "screenshot") return "camera";
+  if (kind === "tap" || kind === "long-press") return "pointer";
+  return recipe.steps.length === 0 ? "circle" : "bolt";
 }

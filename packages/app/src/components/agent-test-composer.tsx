@@ -1,9 +1,8 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { planTestPrompt } from "../lib/natural-language-plan";
-import { sentenceForStep } from "../lib/step-sentence";
 import { Icon } from "./icon";
 
 export function AgentTestComposer() {
@@ -11,22 +10,20 @@ export function AgentTestComposer() {
   const server = useServer();
   const [open, setOpen] = createSignal(false);
   const [prompt, setPrompt] = createSignal("");
-  const [generatedPrompt, setGeneratedPrompt] = createSignal("");
   const [generating, setGenerating] = createSignal(false);
-  const plan = createMemo(() => planTestPrompt(generatedPrompt() || prompt()));
 
-  async function generatePlan(): Promise<void> {
+  async function createSteps(): Promise<void> {
     if (!prompt().trim() || generating()) return;
     setGenerating(true);
+    let plannedPrompt = prompt();
     try {
       const result = await server.generate({
         purpose: "test-plan",
         prompt: prompt(),
         count: 1,
       });
-      setGeneratedPrompt(result.values[0] || prompt());
+      plannedPrompt = result.values[0] || prompt();
     } catch (error) {
-      setGeneratedPrompt(prompt());
       toast(
         `AI provider unavailable—using the local planner. ${error instanceof Error ? error.message : ""}`,
         "warning",
@@ -34,86 +31,69 @@ export function AgentTestComposer() {
     } finally {
       setGenerating(false);
     }
-  }
-
-  function addPlan(): void {
-    const steps = plan().map((item) => item.step);
+    const steps = planTestPrompt(plannedPrompt).map((item) => item.step);
     if (steps.length === 0) return;
     draft.appendSteps(steps);
     setPrompt("");
-    setGeneratedPrompt("");
     setOpen(false);
   }
 
   return (
-    <section class="agent-composer" classList={{ "is-open": open() }}>
+    <section
+      class="mx-2.5 mt-2.5 mb-0.5 shrink-0 overflow-hidden rounded-xl border bg-background-stronger transition-colors"
+      classList={{
+        "border-border-focus": open(),
+        "border-border-weak-base": !open(),
+      }}
+    >
       <button
         type="button"
-        class="agent-composer__trigger"
+        class="grid min-h-[50px] w-full grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-2 px-2.5 py-2 text-left text-text-base focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
         aria-expanded={open()}
         onClick={() => setOpen((value) => !value)}
       >
-        <span>
+        <span class="grid size-7 place-items-center rounded-lg bg-surface-info-weak text-text-info-base">
           <Icon name="sparkle" size={16} />
         </span>
-        <span>
-          <strong>Describe a test</strong>
-          <small>Turn plain language into editable steps</small>
+        <span class="grid min-w-0 gap-0.5">
+          <strong class="text-[13px]/[1.25] font-semibold">Build with AI</strong>
+          <small class="truncate text-[11px]/[1.35] text-text-weak">
+            Describe what you want to test
+          </small>
         </span>
         <Icon name={open() ? "chevron-up" : "chevron-down"} size={14} />
       </button>
       <Show when={open()}>
-        <div class="agent-composer__body">
-          <label for="agent-test-prompt">What should the test do?</label>
+        <div class="grid gap-2.5 border-t border-border-weak-base px-2.5 pb-2.5">
+          <label
+            for="agent-test-prompt"
+            class="pt-2.5 text-[11px]/[1.25] font-semibold tracking-[0.08em] text-text-weak uppercase"
+          >
+            What should happen?
+          </label>
           <textarea
             id="agent-test-prompt"
             value={prompt()}
             rows={3}
+            class="min-h-19 w-full resize-y rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 text-[13px]/[1.45] text-text-base outline-none focus:border-border-focus focus:ring-3 focus:ring-surface-info-weak"
             placeholder={"Tap “Sign in”, type {{email}}, then verify “Welcome” is visible"}
             onInput={(event) => {
               setPrompt(event.currentTarget.value);
-              setGeneratedPrompt("");
             }}
             onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") addPlan();
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") void createSteps();
             }}
           />
-          <Show when={plan().length > 0}>
-            <ol class="agent-composer__preview">
-              <For each={plan()}>
-                {(item, index) => (
-                  <li>
-                    <span>{index() + 1}</span>
-                    <div>
-                      <strong>{item.step.kind}</strong>
-                      <small>{sentenceForStep(item.step)}</small>
-                    </div>
-                  </li>
-                )}
-              </For>
-            </ol>
-          </Show>
-          <footer>
-            <small>Review first. Every generated step remains fully editable.</small>
-            <div>
-              <button
-                type="button"
-                aria-label="Generate plan"
-                disabled={!prompt().trim() || generating()}
-                onClick={() => void generatePlan()}
-              >
-                {generating() ? "Generating…" : "Generate"}
-              </button>
-              <button
-                type="button"
-                class="relay-primary"
-                disabled={plan().length === 0}
-                onClick={addPlan}
-              >
-                <Icon name="sparkle" size={14} /> Add {plan().length || ""} step
-                {plan().length === 1 ? "" : "s"}
-              </button>
-            </div>
+          <footer class="flex min-h-10 items-center justify-between gap-3">
+            <span />
+            <button
+              type="button"
+              class="relay-primary"
+              disabled={!prompt().trim() || generating()}
+              onClick={() => void createSteps()}
+            >
+              <Icon name="sparkle" size={14} /> {generating() ? "Creating…" : "Create steps"}
+            </button>
           </footer>
         </div>
       </Show>

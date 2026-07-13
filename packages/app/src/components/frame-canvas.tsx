@@ -1,10 +1,10 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type { JourneyMetadata, Revisioned } from "@relay/protocol";
-import { useServer, type Frame } from "../context/server";
+import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
-import { stepStatusFromRun } from "../lib/run-gates";
+import { frameCanvasItems } from "../lib/frame-canvas-presentation";
 import { btnGhost, dividerY, easeOut, mono, stepIndexOn, tColor } from "../lib/ui";
 import {
   buildEdges,
@@ -59,42 +59,14 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
       }
     | undefined;
 
-  const rawItems = createMemo(() => {
-    const reviewed = wb.reviewedRun();
-    if (reviewed?.kind === "disk" && reviewed.run.frames?.length) {
-      return reviewed.run.frames.map((f, i) => ({
-        id: `disk-${reviewed.run.id}-${i}`,
-        index: i,
-        caption: f.caption || `Step ${i + 1}`,
-        src: server.frameUrlForPersisted(reviewed.run, f),
-        status: stepStatusFromRun(reviewed.run.steps, i) as ScreenNode["status"],
-        edgeLabel: i === 0 ? undefined : shortLabel(f.caption || `Step ${i + 1}`),
-      }));
-    }
-    if (reviewed?.kind === "live") {
-      const live = server.frames();
-      if (live.length) {
-        return live.map((f, i) => ({
-          id: f.id,
-          index: i,
-          caption: f.caption || `Frame ${i + 1}`,
-          src: frameToSrc(f),
-          status: stepStatusFromRun(reviewed.job.steps, i) as ScreenNode["status"],
-          edgeLabel: i === 0 ? undefined : shortLabel(f.caption || `Frame ${i + 1}`),
-        }));
-      }
-    }
-    const live = server.frames();
-    const active = wb.activeLiveJob();
-    return live.map((f, i) => ({
-      id: f.id,
-      index: i,
-      caption: f.caption || `Frame ${i + 1}`,
-      src: frameToSrc(f),
-      status: (active ? stepStatusFromRun(active.steps, i) : "idle") as ScreenNode["status"],
-      edgeLabel: i === 0 ? undefined : shortLabel(f.caption || `Frame ${i + 1}`),
-    }));
-  });
+  const rawItems = createMemo(() =>
+    frameCanvasItems({
+      reviewed: wb.reviewedRun(),
+      liveFrames: server.frames(),
+      activeJob: wb.activeLiveJob(),
+      persistedFrameUrl: (run, frame) => server.frameUrlForPersisted(run, frame),
+    }),
+  );
 
   const nodes = createMemo(() => layoutScreenGraph(rawItems(), overrides(), undefined, aspects()));
   const journeyId = createMemo(() => server.selectedRecipeId() ?? rawItems()[0]?.id ?? "empty");
@@ -1089,17 +1061,4 @@ function shiftPath(d: string, dx: number, dy: number): string {
   if (!nums || nums.length < 8) return d;
   const [x1, y1, c1x, c1y, c2x, c2y, x2, y2] = nums;
   return `M ${x1! + dx} ${y1! + dy} C ${c1x! + dx} ${c1y! + dy}, ${c2x! + dx} ${c2y! + dy}, ${x2! + dx} ${y2! + dy}`;
-}
-
-function shortLabel(caption: string): string {
-  const c = caption.trim();
-  if (!c) return "next";
-  if (/^step\s*\d+/i.test(c)) return c;
-  if (c.length <= 18) return c;
-  return `${c.slice(0, 16)}…`;
-}
-
-function frameToSrc(f: Frame): string {
-  if (f.base64) return `data:${f.mime || "image/png"};base64,${f.base64}`;
-  return "";
 }

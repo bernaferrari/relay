@@ -1,5 +1,6 @@
 import { createSimpleContext } from "@relay/ui/context/helper";
 import type { ServerConnection } from "@relay/protocol";
+import { normalizeLocalBase } from "../lib/api";
 
 export type PlatformName = "web" | "desktop";
 
@@ -7,6 +8,27 @@ export type PlatformStorage = {
   get(key: string): string | null | Promise<string | null>;
   set(key: string, value: string): void | Promise<void>;
   remove?(key: string): void | Promise<void>;
+};
+
+/**
+ * Host-owned update state. The product UI only renders this data; checking,
+ * download, signature verification, and installation remain in the desktop
+ * main process.
+ */
+export type DesktopUpdateState = {
+  phase: "unsupported" | "disabled" | "idle" | "checking" | "available" | "downloaded" | "error";
+  version?: string;
+  releaseName?: string;
+  releaseNotes?: string;
+  releaseDate?: string;
+  error?: string;
+};
+
+export type PlatformUpdates = {
+  getState(): Promise<DesktopUpdateState>;
+  check(): Promise<void>;
+  install(): Promise<void>;
+  subscribe(listener: (state: DesktopUpdateState) => void): () => void;
 };
 
 export type Platform = {
@@ -29,6 +51,8 @@ export type Platform = {
   version?: string;
   /** Optional fetch override */
   fetch?: typeof fetch;
+  /** Present only in packaged desktop hosts that support signed self-updates. */
+  updates?: PlatformUpdates;
 };
 
 export const { use: usePlatform, provider: PlatformProvider } = createSimpleContext({
@@ -52,7 +76,9 @@ export function createWebPlatform(opts?: {
   storagePrefix?: string;
 }): Platform {
   const prefix = opts?.storagePrefix ?? "relay:";
-  const defaultUrl = opts?.defaultServerUrl ?? envServerUrl() ?? "http://localhost:8787";
+  const defaultUrl = normalizeLocalBase(
+    opts?.defaultServerUrl ?? envServerUrl() ?? "http://127.0.0.1:8787",
+  );
 
   const storage: PlatformStorage = {
     get(key) {
@@ -97,7 +123,7 @@ export function createWebPlatform(opts?: {
       if (stored instanceof Promise) {
         return stored.then((value) => value ?? defaultUrl);
       }
-      return stored ?? defaultUrl;
+      return normalizeLocalBase(stored ?? defaultUrl);
     },
     async getServerConnection() {
       const url = await Promise.resolve(this.getServerUrl());
@@ -113,7 +139,7 @@ export function createWebPlatform(opts?: {
     },
     async setServerConnection(connection) {
       await Promise.all([
-        Promise.resolve(storage.set("serverUrl", connection.url.replace(/\/+$/, ""))),
+        Promise.resolve(storage.set("serverUrl", normalizeLocalBase(connection.url))),
         Promise.resolve(storage.set("organizationId", connection.organizationId)),
         Promise.resolve(storage.set("projectId", connection.projectId)),
         connection.auth.type === "none"
@@ -122,7 +148,7 @@ export function createWebPlatform(opts?: {
       ]);
     },
     setServerUrl(url) {
-      storage.set("serverUrl", url.replace(/\/+$/, ""));
+      storage.set("serverUrl", normalizeLocalBase(url));
     },
     storage,
   };

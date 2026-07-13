@@ -10,6 +10,202 @@ export type ServerConnection = {
   projectId: string;
 };
 
+export type TargetKind = "android" | "ios" | "browser";
+
+export type TargetCapability =
+  | "snapshot"
+  | "screenshot"
+  | "stream"
+  | "recording"
+  | "tap"
+  | "type"
+  | "scroll"
+  | "clipboard"
+  | "network"
+  | "logs"
+  | "permissions"
+  | "location"
+  | "rotation"
+  | "lock-screen"
+  | "app-switcher";
+
+export type TargetDefinition = {
+  id: string;
+  name: string;
+  kind: TargetKind;
+  createdAt: number;
+  updatedAt: number;
+  browser?: {
+    startUrl: string;
+    executablePath?: string;
+    headless?: boolean;
+    viewport?: { width: number; height: number };
+  };
+};
+
+export type TargetPreflight = {
+  targetId: string;
+  ok: boolean;
+  checkedAt: number;
+  capabilities: TargetCapability[];
+  checks: Array<{
+    id: string;
+    label: string;
+    status: "pass" | "warning" | "fail";
+    message: string;
+  }>;
+};
+
+/** An immutable description of a real target observed at matrix expansion time. */
+export type TargetProfile = {
+  id: string;
+  targetId: string;
+  source: "device" | "browser";
+  platform: "android" | "ios" | "browser";
+  name: string;
+  model?: string;
+  osVersion?: string;
+  viewport?: { width: number; height: number };
+  capabilities: TargetCapability[];
+  observedAt: number;
+};
+
+/** A deliberate allow-list plus optional observed-fact constraints. */
+export type TargetSelector = {
+  targetIds?: string[];
+  platforms?: TargetProfile["platform"][];
+  osVersionPrefixes?: string[];
+  nameIncludes?: string[];
+  requiredCapabilities?: TargetCapability[];
+};
+
+export type CompatibilityMatrix = {
+  id: string;
+  projectId: string;
+  name: string;
+  selectors: TargetSelector[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type MatrixExclusion = {
+  profile: TargetProfile;
+  reason: string;
+};
+
+/** Frozen selection used for a run; later device changes cannot alter it. */
+export type MatrixExpansion = {
+  matrixId: string;
+  matrixName: string;
+  resolvedAt: number;
+  profiles: TargetProfile[];
+  excluded: MatrixExclusion[];
+};
+
+/** A frozen, evidence-backed projection of one compatibility matrix execution. */
+export type CompatibilityProfileReport = {
+  profile: TargetProfile;
+  runIds: string[];
+  total: number;
+  passed: number;
+  productFailures: number;
+  harnessFailures: number;
+  uncertain: number;
+  pending: number;
+  passRate: number | null;
+  medianDurationMs: number | null;
+  baseline?: {
+    total: number;
+    passRate: number | null;
+    medianDurationMs: number | null;
+    passRateDelta: number | null;
+    durationDeltaMs: number | null;
+  };
+};
+
+export type CompatibilityReport = {
+  batchId: string;
+  recipeId: string;
+  matrixId?: string;
+  matrixName?: string;
+  generatedAt: number;
+  total: number;
+  profiles: CompatibilityProfileReport[];
+};
+
+export type DiscoveryScope = {
+  maxScreens: number;
+  maxTransitions: number;
+  maxDurationMs: number;
+  allowedOrigins?: string[];
+  allowSensitiveControls?: boolean;
+};
+
+export type DiscoveryStatus = "draft" | "running" | "paused" | "complete" | "stopped";
+
+export type ObservedScreen = {
+  id: string;
+  fingerprint: string;
+  title?: string;
+  capturedAt: number;
+  screenshotPath?: string;
+  snapshotDigest?: string;
+  variantOf?: string;
+  controls?: DiscoveryControl[];
+};
+
+export type DiscoveryControl = {
+  id: string;
+  label: string;
+  role?: string;
+  target: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } };
+};
+
+/** Cross-profile coverage for an intentionally shared Discovery Map name. */
+export type DiscoveryCoverageItem = {
+  id: string;
+  label: string;
+  observedProfileIds: string[];
+  missingProfileIds: string[];
+  sessionIds: string[];
+};
+
+export type DiscoveryCoverageReport = {
+  mapName: string;
+  generatedAt: number;
+  sessionIds: string[];
+  profiles: TargetProfile[];
+  unprofiledSessionIds: string[];
+  screens: DiscoveryCoverageItem[];
+  transitions: DiscoveryCoverageItem[];
+};
+
+export type ObservedTransition = {
+  id: string;
+  fromScreenId: string;
+  toScreenId?: string;
+  kind: "tap" | "type" | "scroll" | "back" | "manual";
+  label?: string;
+  target?: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } };
+  text?: string;
+  direction?: "up" | "down";
+  capturedAt: number;
+  changedScreen: boolean;
+};
+
+export type DiscoverySession = {
+  id: string;
+  name: string;
+  targetId: string;
+  targetProfile?: TargetProfile;
+  scope: DiscoveryScope;
+  status: DiscoveryStatus;
+  createdAt: number;
+  updatedAt: number;
+  screens: ObservedScreen[];
+  transitions: ObservedTransition[];
+};
+
 export type Revisioned<T> = {
   revision: number;
   value: T;
@@ -97,11 +293,89 @@ export type GenerationResult = {
   generatedAt: number;
 };
 
+export type RunCaseProvenance = {
+  variableId: string;
+  variableName: string;
+  source: TestVariable["source"];
+  provider?: string;
+  model?: string;
+  generatedAt?: number;
+  seed?: number;
+};
+
+export type FrozenRunCase = {
+  index: number;
+  values: Record<string, string>;
+  provenance: RunCaseProvenance[];
+};
+
+export type RunOutcome =
+  | "passed"
+  | "product-failure"
+  | "harness-failure"
+  | "uncertain"
+  | "cancelled";
+
+export type FailureCategory =
+  | "environment"
+  | "target-state"
+  | "locator"
+  | "action"
+  | "completion"
+  | "extraction"
+  | "deterministic-assertion"
+  | "semantic-assertion"
+  | "visual-assertion"
+  | "judge-uncertainty"
+  | "harness-defect";
+
+export type ConversationContentBlock =
+  | { type: "text"; text: string }
+  | { type: "code"; code: string; language?: string }
+  | { type: "image"; artifactId: string }
+  | { type: "citation"; label: string; destination?: string }
+  | { type: "file"; name: string; artifactId?: string }
+  | { type: "status"; state: string };
+
+export type ExtractedConversationTurn = {
+  role: "user" | "assistant" | "system";
+  capturedAt: number;
+  blocks: ConversationContentBlock[];
+  source: "accessibility" | "clipboard" | "vision" | "ocr";
+};
+
+export type EvaluationCriterionResult = {
+  id: string;
+  description: string;
+  passed: boolean;
+  score: number;
+  evidence?: string;
+};
+
+export type SemanticEvaluationRequest = {
+  input: string;
+  criteria: string[];
+  threshold?: number;
+  provider?: string;
+  model?: string;
+};
+
+export type SemanticEvaluationResult = {
+  status: "pass" | "fail" | "uncertain";
+  confidence: number;
+  score: number;
+  summary: string;
+  criteria: EvaluationCriterionResult[];
+  provider: string;
+  model: string;
+  evaluatedAt: number;
+};
+
 export type ResourceEvent = {
   type: "resource.created" | "resource.updated" | "resource.deleted" | "lease.changed";
   at: number;
   projectId: string;
-  resource: "project" | "build" | "device-pool" | "lease" | "variables" | "journey";
+  resource: "project" | "build" | "device-pool" | "lease" | "variables" | "journey" | "matrix";
   resourceId: string;
   revision?: number;
 };

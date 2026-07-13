@@ -30,7 +30,16 @@ let known: Set<string> | undefined;
 
 function getFiles() {
   if (files) return files;
-  files = import.meta.glob<{ default: DesktopTheme }>("./themes/*.json");
+  const lazy = import.meta.glob<{ default: DesktopTheme }>([
+    "./themes/*.json",
+    "!./themes/oc-2.json",
+    "!./themes/relay.json",
+  ]);
+  files = {
+    "./themes/relay.json": async () => ({ default: relayTheme }),
+    "./themes/oc-2.json": async () => ({ default: oc2Theme }),
+    ...lazy,
+  };
   return files;
 }
 

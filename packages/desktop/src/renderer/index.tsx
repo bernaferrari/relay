@@ -61,6 +61,12 @@ function createDesktopPlatform(): Platform {
       return api.storeSet("desktop", "serverUrl", url.replace(/\/+$/, ""));
     },
     storage,
+    updates: {
+      getState: () => api.updates.getState(),
+      check: () => api.updates.check(),
+      install: () => api.updates.install(),
+      subscribe: (listener) => api.updates.onState(listener),
+    },
   };
 }
 

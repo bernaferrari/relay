@@ -4,27 +4,80 @@ import { ApiError, RelayClient } from "@relay/client";
 import type {
   GenerationRequest,
   GenerationResult,
+  DiscoverySession,
+  DiscoveryCoverageReport,
+  DiscoveryScope,
+  DiscoveryControl,
   JourneyMetadata,
+  CompatibilityMatrix,
+  MatrixExpansion,
   Revisioned,
   ServerConnection,
   TestVariable,
+  TargetProfile,
+  TargetDefinition,
+  TargetPreflight,
 } from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
-import { asArray, levelFromLine, normalizeBase, uid } from "../lib/api";
+import { asArray, levelFromLine, normalizeLocalBase, uid } from "../lib/api";
+import { createServerCapture } from "../lib/server-capture";
+import {
+  deleteMatrix,
+  importMatrixYaml,
+  loadMatrixYaml,
+  resolveMatrix,
+  saveMatrix,
+} from "../lib/server-matrix-remote";
+import {
+  approveDiscoverySuggestion as approveDiscoverySuggestionRemote,
+  captureDiscoveryScreen,
+  createDiscoverySession,
+  discoveryScreenUrl as buildDiscoveryScreenUrl,
+  getDiscoveryCoverage,
+  getDiscoverySuggestion,
+  listDiscoverySessions,
+  promoteDiscoveryPath,
+  setDiscoveryStatus,
+} from "../lib/server-discovery-remote";
+import {
+  deleteTarget,
+  listActions,
+  listDevices,
+  listTargetProfiles,
+  listTargets,
+  preflightTarget,
+  saveBrowserTarget as saveBrowserTargetRemote,
+  selectDevice as selectDeviceRequest,
+} from "../lib/server-target-remote";
+import {
+  deleteRecipe,
+  importRecipeYaml as importRecipeYamlRemote,
+  loadRecipeHistory as loadRecipeHistoryRemote,
+  loadRecipeStability as loadRecipeStabilityRemote,
+  loadRecipeYaml as loadRecipeYamlRemote,
+  previewRecipeYaml as previewRecipeYamlRemote,
+  restoreRecipeVersion as restoreRecipeVersionRemote,
+  saveRecipe as saveRecipeRemoteRequest,
+} from "../lib/server-recipe-remote";
+import { enqueueMatrix, enqueueRecipe, loadMatrixReport, retryJob } from "../lib/server-run-remote";
 import type {
   ActionInfo,
+  CompatibilityReport,
   DeviceInfo,
   Frame,
   HealthState,
   JobInfo,
   LogLine,
   PersistedRun,
+  RecipeParameter,
   RecipeInfo,
   RecipeStep,
-  SnapshotNode,
+  RecipeStability,
   SnapshotState,
   TraceFrameRef,
+  TestAtlas,
+  LocalSchedule,
 } from "../lib/api-types";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
@@ -39,13 +92,17 @@ export type {
   RecordedNodeEvidence,
   RecordedSelectorCandidate,
   RecordedStepEvidence,
+  RecipeParameter,
   RecipeInfo,
+  RecipeStability,
   RecipeStep,
   SnapshotNode,
   SnapshotState,
   StepTarget,
   TraceFrameRef,
   TraceStep,
+  TestAtlas,
+  LocalSchedule,
 } from "../lib/api-types";
 
 // Polling equality gates — skip setX when a poll returns an unchanged list,
@@ -64,6 +121,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [serverUrl, setServerUrlState] = createSignal("");
     const [health, setHealth] = createSignal<HealthState>("unknown");
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
+    const [targets, setTargets] = createSignal<TargetDefinition[]>([]);
+    const [targetProfiles, setTargetProfiles] = createSignal<TargetProfile[]>([]);
+    const [matrices, setMatrices] = createSignal<CompatibilityMatrix[]>([]);
+    const [discoverySessions, setDiscoverySessions] = createSignal<DiscoverySession[]>([]);
+    const [activeDiscoverySessionId, setActiveDiscoverySessionId] = createSignal<string | null>(
+      null,
+    );
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
     // Selection is persisted (platform.storage "selectedRecipeId") so returning
@@ -82,6 +146,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
+    const [schedules, setSchedules] = createSignal<LocalSchedule[]>([]);
     const [runsRoot, setRunsRoot] = createSignal("");
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
@@ -130,7 +195,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             organizationId: "local",
             projectId: "default",
           };
-      connection = { ...connection, url: normalizeBase(connection.url) };
+      connection = { ...connection, url: normalizeLocalBase(connection.url) };
       client = new RelayClient(connection, { fetch: fetcher() });
       setServerUrlState(connection.url);
       return connection;
@@ -141,7 +206,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     async function setServerUrl(url: string) {
-      const next = normalizeBase(url);
+      const next = normalizeLocalBase(url);
       setServerUrlState(next);
       if (!connection) await resolveConnection();
       connection = { ...(connection as ServerConnection), url: next };
@@ -244,8 +309,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function refreshDevices() {
       if (health() === "offline") return;
       try {
-        const data = await request<{ devices: DeviceInfo[] }>("/devices");
-        const list = asArray<DeviceInfo>(data, "devices").map((d) => ({
+        const list = (await listDevices(request)).map((d) => ({
           ...d,
           serial: String(d.serial ?? d.id ?? ""),
         }));
@@ -254,7 +318,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           prevDevicesKey = key;
           setDevices(list);
         }
-        if (!selectedDevice() && list[0]) setSelectedDevice(list[0].serial);
+        if (!selectedDevice() && list[0]) void selectDeviceRemote(list[0].serial);
         // clear only network-ish noise; keep explicit action errors
         if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
       } catch (err) {
@@ -267,13 +331,174 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function refreshActions() {
       if (health() === "offline") return;
       try {
-        const data = await request<{ actions: ActionInfo[] }>("/actions");
-        const list = asArray<ActionInfo>(data, "actions");
+        const list = await listActions(request);
         setActions(list);
       } catch (err) {
         if (health() === "offline") return;
         setError(err instanceof Error ? err.message : String(err));
       }
+    }
+
+    async function refreshTargets() {
+      if (health() === "offline") return;
+      setTargets(await listTargets(request));
+    }
+
+    async function refreshTargetProfiles() {
+      if (health() === "offline") return;
+      setTargetProfiles(await listTargetProfiles(request));
+    }
+
+    async function refreshMatrices() {
+      if (health() === "offline") return;
+      const data = await request<{ matrices: CompatibilityMatrix[] }>("/matrices");
+      setMatrices(data.matrices ?? []);
+    }
+
+    async function refreshDiscoverySessions() {
+      if (health() === "offline") return;
+      const data = await listDiscoverySessions(request);
+      setDiscoverySessions(data.sessions ?? []);
+      if (
+        activeDiscoverySessionId() &&
+        !data.sessions.some((session) => session.id === activeDiscoverySessionId())
+      ) {
+        setActiveDiscoverySessionId(null);
+      }
+    }
+
+    async function createDiscoverySessionRemote(input: {
+      name: string;
+      targetId: string;
+      scope?: Partial<DiscoveryScope>;
+    }): Promise<DiscoverySession> {
+      const session = await createDiscoverySession(request, input);
+      await refreshDiscoverySessions();
+      setActiveDiscoverySessionId(session.id);
+      return session;
+    }
+
+    async function setDiscoveryStatusRemote(
+      id: string,
+      status: DiscoverySession["status"],
+    ): Promise<DiscoverySession> {
+      const session = await setDiscoveryStatus(request, id, status);
+      await refreshDiscoverySessions();
+      if (status === "running") setActiveDiscoverySessionId(session.id);
+      else if (activeDiscoverySessionId() === session.id) setActiveDiscoverySessionId(null);
+      return session;
+    }
+
+    async function captureDiscoveryScreenRemote(id: string): Promise<DiscoverySession> {
+      const session = await captureDiscoveryScreen(request, id);
+      await refreshDiscoverySessions();
+      return session;
+    }
+
+    function discoveryScreenUrl(sessionId: string, screenId: string): string {
+      return buildDiscoveryScreenUrl(serverUrl(), sessionId, screenId);
+    }
+
+    async function promoteDiscoveryPathRemote(input: {
+      sessionId: string;
+      transitionIds: string[];
+      recipeId: string;
+      title: string;
+      transitionLabels?: Record<string, string>;
+    }): Promise<{ recipe: RecipeInfo; warnings: string[] }> {
+      const data = await promoteDiscoveryPath(request, input);
+      await refreshRecipes();
+      setSelectedRecipeId(data.recipe.id);
+      return data;
+    }
+
+    async function discoverySuggestion(id: string): Promise<{
+      screenId: string;
+      control: DiscoveryControl;
+    } | null> {
+      return getDiscoverySuggestion(request, id);
+    }
+
+    async function loadDiscoveryCoverage(id: string): Promise<DiscoveryCoverageReport> {
+      return getDiscoveryCoverage(request, id);
+    }
+
+    async function approveDiscoverySuggestion(input: {
+      sessionId: string;
+      control: DiscoveryControl;
+    }): Promise<void> {
+      await approveDiscoverySuggestionRemote(request, input);
+      await refreshDiscoverySessions();
+    }
+
+    async function saveCompatibilityMatrixRemote(input: {
+      id: string;
+      name: string;
+      selectors: CompatibilityMatrix["selectors"];
+    }): Promise<CompatibilityMatrix> {
+      const existing = matrices().some((matrix) => matrix.id === input.id);
+      const data = await saveMatrix(request, input, existing);
+      await refreshMatrices();
+      return data.matrix;
+    }
+
+    async function deleteCompatibilityMatrixRemote(id: string): Promise<void> {
+      await deleteMatrix(request, id);
+      await refreshMatrices();
+    }
+
+    async function resolveCompatibilityMatrixRemote(id: string): Promise<MatrixExpansion> {
+      return resolveMatrix(request, id);
+    }
+
+    async function loadCompatibilityMatrixYaml(id: string): Promise<string | null> {
+      try {
+        return await loadMatrixYaml(request, id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appendLog(message, "error");
+        toast(message, "error");
+        return null;
+      }
+    }
+
+    async function importCompatibilityMatrixYaml(
+      yaml: string,
+      conflict: "reject" | "replace" = "reject",
+    ): Promise<CompatibilityMatrix | null> {
+      try {
+        const matrix = await importMatrixYaml(request, yaml, conflict);
+        await refreshMatrices();
+        toast(`Imported “${matrix.name}”`, "success");
+        return matrix;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appendLog(message, "error");
+        toast(message, "error");
+        return null;
+      }
+    }
+
+    async function saveBrowserTarget(input: {
+      id?: string;
+      name: string;
+      startUrl: string;
+      executablePath?: string;
+      headless?: boolean;
+    }): Promise<TargetDefinition> {
+      const target = await saveBrowserTargetRemote(request, input);
+      await Promise.all([refreshTargets(), refreshTargetProfiles(), refreshDevices()]);
+      return target;
+    }
+
+    async function deleteTargetRemote(id: string): Promise<void> {
+      await deleteTarget(request, id);
+      if (selectedDevice() === id) await selectDeviceRemote(null);
+      await Promise.all([refreshTargets(), refreshTargetProfiles(), refreshDevices()]);
+    }
+
+    async function preflightTargetRemote(id: string): Promise<TargetPreflight> {
+      return preflightTarget(request, id);
     }
 
     async function refreshRecipes() {
@@ -416,6 +641,48 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return client!.generate(input);
     }
 
+    async function loadAtlas(): Promise<TestAtlas> {
+      const data = await request<{ atlas: TestAtlas }>("/atlas");
+      return data.atlas;
+    }
+
+    async function scheduleRecipe(input: {
+      recipeId: string;
+      intervalMinutes: number;
+      repetitions?: number;
+    }): Promise<LocalSchedule> {
+      const targetId = selectedDevice();
+      if (!targetId) throw new Error("Select a target before scheduling");
+      const targetPlatform =
+        devices().find((device) => device.serial === targetId)?.platform ?? "android";
+      const data = await request<{ schedule: LocalSchedule }>("/schedules", {
+        method: "POST",
+        body: JSON.stringify({
+          ...input,
+          targetKind: targetPlatform === "browser" ? "browser" : "device",
+          targetId,
+          platform: targetPlatform,
+          projectId: connection?.projectId ?? "default",
+        }),
+      });
+      setSchedules((items) => [
+        ...items.filter((item) => item.id !== data.schedule.id),
+        data.schedule,
+      ]);
+      return data.schedule;
+    }
+
+    async function refreshSchedules(): Promise<void> {
+      if (health() === "offline") return;
+      const data = await request<{ schedules: LocalSchedule[] }>("/schedules");
+      setSchedules(data.schedules ?? []);
+    }
+
+    async function deleteLocalSchedule(id: string): Promise<void> {
+      await request(`/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setSchedules((items) => items.filter((item) => item.id !== id));
+    }
+
     async function pollHealth() {
       try {
         const h = await request<{ runsDir?: string }>("/health", undefined, 8000);
@@ -440,6 +707,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshRecipes(),
         refreshJobs(),
         refreshRuns(),
+        refreshSchedules(),
         refreshProjectVariables(),
       ]);
       connectSse();
@@ -561,11 +829,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function selectDeviceRemote(serial: string | null) {
       setSelectedDevice(serial);
+      const targetPlatform =
+        devices().find((device) => device.serial === serial)?.platform ?? "android";
       try {
-        await request("/device/select", {
-          method: "POST",
-          body: JSON.stringify({ serial }),
-        });
+        await selectDeviceRequest(request, serial, targetPlatform);
       } catch {
         /* offline ok */
       }
@@ -575,22 +842,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       id?: string;
       title: string;
       description?: string;
+      variables?: Record<string, string>;
+      parameters?: RecipeParameter[];
       steps: RecipeStep[];
+      quarantined?: boolean;
+      quarantineReason?: string;
     }): Promise<RecipeInfo | null> {
-      const body = JSON.stringify({
-        title: input.title,
-        ...(input.description !== undefined ? { description: input.description } : {}),
-        steps: input.steps,
-      });
       try {
-        const data = input.id
-          ? await request<{ recipe: RecipeInfo }>(`/recipes/${encodeURIComponent(input.id)}`, {
-              method: "PUT",
-              body,
-            })
-          : await request<{ recipe: RecipeInfo }>("/recipes", { method: "POST", body });
+        const recipe = await saveRecipeRemoteRequest(request, input);
         await refreshRecipes();
-        return data.recipe;
+        return recipe;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         appendLog(msg, "error");
@@ -599,12 +860,63 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function loadRecipeYaml(id: string): Promise<string | null> {
+      try {
+        return await loadRecipeYamlRemote(request, id);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appendLog(message, "error");
+        toast(message, "error");
+        return null;
+      }
+    }
+
+    async function previewRecipeYaml(yaml: string): Promise<{
+      recipe: RecipeInfo;
+      exists: boolean;
+      canonicalYaml: string;
+    }> {
+      return previewRecipeYamlRemote(request, yaml);
+    }
+
+    async function importRecipeYaml(
+      yaml: string,
+      conflict: "reject" | "replace" | "copy" = "reject",
+    ): Promise<RecipeInfo | null> {
+      try {
+        const recipe = await importRecipeYamlRemote(request, yaml, conflict);
+        await refreshRecipes();
+        setSelectedRecipeId(recipe.id);
+        toast(`Imported “${recipe.title}”`, "success");
+        return recipe;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appendLog(message, "error");
+        toast(message, "error");
+        return null;
+      }
+    }
+
+    async function loadRecipeHistory(id: string): Promise<RecipeInfo[]> {
+      return loadRecipeHistoryRemote(request, id);
+    }
+
+    async function restoreRecipeVersion(id: string, updatedAt: number): Promise<RecipeInfo> {
+      const recipe = await restoreRecipeVersionRemote(request, id, updatedAt);
+      await refreshRecipes();
+      return recipe;
+    }
+
+    async function loadRecipeStability(id: string): Promise<RecipeStability> {
+      return loadRecipeStabilityRemote(request, id);
+    }
+
     async function deleteRecipeRemote(id: string): Promise<void> {
       try {
-        await request(`/recipes/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await deleteRecipe(request, id);
         if (selectedRecipeId() === id) setSelectedRecipeId(null);
         await refreshRecipes();
-        toast("Recipe deleted", "success");
+        toast("Test deleted", "success");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         appendLog(msg, "error");
@@ -612,12 +924,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function runRecipeRemote(id: string): Promise<void> {
+    async function runRecipeRemote(id: string, repetitions = 1): Promise<void> {
       if (health() !== "online") {
-        toast("Server offline — can't run", "warning");
+        toast("Relay isn’t connected — can’t run yet", "warning");
         return;
       }
       const serial = selectedDevice() ?? undefined;
+      const targetPlatform =
+        devices().find((device) => device.serial === serial)?.platform ?? "android";
       // Snapshot before enqueue so the toast reports the right queue position.
       // The new job lands behind the active job + any already-queued jobs.
       const queuedBefore = queuedJobs().length;
@@ -625,24 +939,24 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
 
       try {
-        const variables: Record<string, string> = {};
-        for (const definition of projectVariables().value) {
-          if (!definition.name.trim()) continue;
-          variables[definition.name.trim()] = definition.values?.[0] ?? definition.fallback ?? "";
-        }
         await captureUiScreenshot(`before · ${id}`, undefined, id).catch(() => undefined);
-        const data = await request<{ job: JobInfo }>("/jobs", {
-          method: "POST",
-          body: JSON.stringify({
-            recipe: id,
-            serial,
-            variables,
-            ...(prodAccountMatch() ? { prodAccountMatch: prodAccountMatch() } : {}),
-          }),
+        const data = await enqueueRecipe(request, {
+          recipe: id,
+          ...(serial ? { serial } : {}),
+          ...(targetPlatform === "browser"
+            ? { targetKind: "browser" as const, browserTargetId: serial }
+            : { targetKind: "device" as const, platform: targetPlatform }),
+          repetitions,
+          projectId: connection?.projectId ?? "default",
+          ...(prodAccountMatch() ? { prodAccountMatch: prodAccountMatch() } : {}),
         });
-        setSelectedJobId(data.job.id);
+        const first = data.jobs[0];
+        if (first) setSelectedJobId(first.id);
         const title = recipes().find((r) => r.id === id)?.title ?? id;
-        if (willQueue) {
+        if (repetitions > 1) {
+          toast(`Queued ${repetitions} frozen trials for ${title}`, "success");
+          void platform.notify?.("Stage", `Queued ${repetitions} trials for ${title}`);
+        } else if (willQueue) {
           toast(`Queued ${title} — position ${queuedBefore + 1}`, "info");
           void platform.notify?.("Stage", `Queued ${title} — position ${queuedBefore + 1}`);
         } else {
@@ -657,6 +971,48 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function runCompatibilityMatrixRemote(
+      recipeId: string,
+      matrixId: string,
+      repetitions = 1,
+    ): Promise<void> {
+      if (health() !== "online") {
+        toast("Relay isn’t connected — can’t run yet", "warning");
+        return;
+      }
+      const matrix = matrices().find((item) => item.id === matrixId);
+      try {
+        const data = await enqueueMatrix(request, {
+          recipe: recipeId,
+          matrixId,
+          repetitions,
+          ...(prodAccountMatch() ? { prodAccountMatch: prodAccountMatch() } : {}),
+        });
+        if (data.jobs[0]) setSelectedJobId(data.jobs[0].id);
+        toast(
+          `Queued ${data.jobs.length} ${data.jobs.length === 1 ? "run" : "runs"} across ${data.matrix.profiles.length} target${data.matrix.profiles.length === 1 ? "" : "s"}${matrix ? ` · ${matrix.name}` : ""}`,
+          "success",
+        );
+        await refreshJobs();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        appendLog(message, "error");
+        toast(message, "error");
+      }
+    }
+
+    async function loadCompatibilityReport(batchId: string): Promise<CompatibilityReport | null> {
+      try {
+        return await loadMatrixReport(request, batchId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // A batch can be visible while its first job is still being written. That
+        // is an expected empty state, not a user-facing error.
+        if (!/not found/i.test(message)) appendLog(message, "error");
+        return null;
+      }
+    }
+
     async function retrySelectedJob(jobId?: string) {
       const id = jobId ?? selectedJobId();
       if (!id) {
@@ -666,266 +1022,41 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       appendLog(`retry / heal ${id.slice(0, 8)}…`, "info");
 
       try {
-        const data = await request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}/retry`, {
-          method: "POST",
-          body: "{}",
-        });
-        setSelectedJobId(data.job.id);
-        setSelectedAction(data.job.action);
+        const job = await retryJob(request, id);
+        setSelectedJobId(job.id);
+        setSelectedAction(job.action);
         void refreshJobs();
       } catch (err) {
         appendLog(err instanceof Error ? err.message : String(err), "error");
       }
     }
 
-    async function captureUiSnapshot() {
-      setBusyCapture(true);
-      try {
-        const serial = selectedDevice() ?? undefined;
-        const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-        const data = await request<NonNullable<SnapshotState> & { tree?: string }>(`/snapshot${q}`);
-        setSnapshot(data);
-        setShowOverlays(true);
-        appendLog(
-          `snapshot ${data.nodes.length} nodes · bounds ${data.bounds?.width ?? "?"}×${data.bounds?.height ?? "?"}`,
-          "info",
-        );
-      } catch (err) {
-        appendLog(err instanceof Error ? err.message : String(err), "error");
-      } finally {
-        setBusyCapture(false);
-      }
-    }
-
-    async function captureUiScreenshot(
-      caption?: string,
-      jobId?: string,
-      actionId?: string,
-      quiet = false,
-    ) {
-      setBusyCapture(true);
-      try {
-        const serial = selectedDevice() ?? undefined;
-        const params = new URLSearchParams();
-        if (serial) params.set("serial", serial);
-        if (caption) params.set("caption", caption);
-        if (jobId) params.set("jobId", jobId);
-        const q = params.toString() ? `?${params}` : "";
-        const data = await request<{
-          serial?: string;
-          capturedAt: number;
-          mime: string;
-          base64: string;
-          bytes: number;
-          jobId?: string;
-          framePath?: string;
-        }>(`/screenshot${q}`);
-        pushFrame({
-          capturedAt: data.capturedAt,
-          mime: data.mime,
-          base64: data.base64,
-          bytes: data.bytes,
-          serial: data.serial ?? serial,
-          caption:
-            caption ??
-            `screenshot · ${new Date().toLocaleTimeString(undefined, { hour12: false })}`,
-          jobId: data.jobId ?? jobId,
-          actionId: actionId ?? selectedAction() ?? undefined,
-          path: data.framePath,
-        });
-        appendLog(`screenshot ${data.bytes} bytes`, "info", data.jobId ?? jobId);
-        if (!quiet) toast("Screenshot captured", "success");
-        return data;
-      } catch (err) {
-        appendLog(err instanceof Error ? err.message : String(err), "error");
-        throw err;
-      } finally {
-        setBusyCapture(false);
-      }
-    }
-
-    async function persistRecordingEvidence(
-      recipeId: string,
-      evidenceId: string,
-      frame: Frame,
-    ): Promise<boolean> {
-      try {
-        await request(`/recipes/${encodeURIComponent(recipeId)}/evidence`, {
-          method: "POST",
-          body: JSON.stringify({ evidenceId, mime: frame.mime, base64: frame.base64 }),
-        });
-        appendLog(`saved recording evidence ${evidenceId}`, "success");
-        return true;
-      } catch (err) {
-        appendLog(
-          `recording evidence not saved · ${err instanceof Error ? err.message : String(err)}`,
-          "error",
-        );
-        return false;
-      }
-    }
-
-    function recordingEvidenceUrl(recipeId: string, evidenceId: string): string {
-      return `${serverUrl()}/recipes/${encodeURIComponent(recipeId)}/evidence/${encodeURIComponent(evidenceId)}`;
-    }
-
-    /** Quiet live-capture: refreshes the stage image without touching the
-     *  scrubber, the job log, or toasts. `/screenshot?ephemeral=1` skips job
-     *  attachment server-side. A missed frame is fine — swallow errors. */
-    async function pollLiveFrame(): Promise<void> {
-      try {
-        const serial = selectedDevice() ?? undefined;
-        const params = new URLSearchParams({ ephemeral: "1" });
-        if (serial) params.set("serial", serial);
-        const data = await request<{
-          serial?: string;
-          capturedAt: number;
-          mime: string;
-          base64: string;
-          bytes: number;
-        }>(`/screenshot?${params}`, undefined, 5000);
-        setLiveFrame({
-          id: `live-${data.capturedAt}`,
-          capturedAt: data.capturedAt,
-          mime: data.mime,
-          base64: data.base64,
-          bytes: data.bytes,
-          serial: data.serial ?? serial,
-          caption: `live · ${new Date(data.capturedAt).toLocaleTimeString(undefined, { hour12: false })}`,
-        });
-      } catch {
-        /* live frame missed — leave the previous frame visible */
-      }
-    }
-
-    /** Quiet live-snapshot: refreshes `snapshot` for hover-inspect without
-     *  switching the panel tab or writing a log line. Errors are swallowed. */
-    async function pollLiveSnapshot(): Promise<void> {
-      try {
-        const serial = selectedDevice() ?? undefined;
-        const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-        const data = await request<NonNullable<SnapshotState> & { tree?: string }>(
-          `/snapshot${q}`,
-          undefined,
-          5000,
-        );
-        setSnapshot(data);
-      } catch {
-        /* live snapshot missed — keep the previous tree */
-      }
-    }
-
-    async function pressNode(node: SnapshotNode) {
-      try {
-        if (node.ref) {
-          await request("/interact", {
-            method: "POST",
-            body: JSON.stringify({ kind: "ref", ref: node.ref, serial: selectedDevice() }),
-          });
-          appendLog(`pressed ref ${node.ref}`, "success");
-        } else if (node.label) {
-          await request("/interact", {
-            method: "POST",
-            body: JSON.stringify({ kind: "label", label: node.label, serial: selectedDevice() }),
-          });
-          appendLog(`pressed label ${node.label}`, "success");
-        } else if (node.rect) {
-          const x = Math.round(node.rect.x + node.rect.width / 2);
-          const y = Math.round(node.rect.y + node.rect.height / 2);
-          await request("/interact", {
-            method: "POST",
-            body: JSON.stringify({ kind: "point", x, y, serial: selectedDevice() }),
-          });
-          appendLog(`pressed point ${x},${y}`, "success");
-        } else {
-          appendLog("node has no actionable target", "error");
-        }
-        await captureUiScreenshot(node.label ? `after tap · ${node.label}` : "after tap").catch(
-          () => undefined,
-        );
-        // refresh snapshot after tap for updated overlays
-        void captureUiSnapshot().catch(() => undefined);
-      } catch (err) {
-        appendLog(err instanceof Error ? err.message : String(err), "error");
-      }
-    }
-
-    /** Execute a recorded/interactive step on the device. Returns success. */
-    async function interactStep(
-      step:
-        | { kind: "ref"; ref: string }
-        | { kind: "label"; label: string }
-        | { kind: "text-match"; match: string }
-        | { kind: "point"; x: number; y: number }
-        | {
-            kind: "swipe";
-            from: { x: number; y: number };
-            to: { x: number; y: number };
-            durationMs?: number;
-          }
-        | { kind: "type"; text: string },
-      caption?: string,
-    ): Promise<boolean> {
-      try {
-        const body =
-          step.kind === "ref"
-            ? { kind: "ref", ref: step.ref }
-            : step.kind === "label"
-              ? { kind: "label", label: step.label }
-              : step.kind === "text-match"
-                ? { kind: "text-match", match: step.match }
-                : step.kind === "point"
-                  ? { kind: "point", x: step.x, y: step.y }
-                  : step.kind === "swipe"
-                    ? {
-                        kind: "swipe",
-                        from: step.from,
-                        to: step.to,
-                        ...(step.durationMs ? { durationMs: step.durationMs } : {}),
-                      }
-                    : { kind: "type", text: step.text };
-        await request("/interact", {
-          method: "POST",
-          body: JSON.stringify({ ...body, serial: selectedDevice() }),
-        });
-        appendLog(`interact ${step.kind}`, "success");
-        await captureUiScreenshot(caption ?? `interact · ${step.kind}`).catch(() => undefined);
-        return true;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        appendLog(msg, "error");
-        toast(msg, "error");
-        return false;
-      }
-    }
-
-    /**
-     * Run a single step in isolation (POST /step/run) — the run-pane's per-row
-     * ▶ button. The backend answers 200 with `{ ok, durationMs, logs }` either
-     * way for a step that executed (pass/fail), and 400/409 for a step that
-     * couldn't even be attempted (invalid shape, `pause`, or a job already
-     * running); both failure modes collapse to `{ ok: false, error }` here so
-     * the row only has one branch to render.
-     */
-    async function runStep(
-      step: RecipeStep,
-    ): Promise<{ ok: boolean; error?: string; durationMs?: number; logs?: string[] }> {
-      try {
-        const serial = selectedDevice() ?? undefined;
-        const data = await request<{
-          ok: boolean;
-          error?: string;
-          durationMs?: number;
-          logs?: string[];
-        }>("/step/run", {
-          method: "POST",
-          body: JSON.stringify({ step, ...(serial ? { serial } : {}) }),
-        });
-        return data;
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
-      }
-    }
+    const {
+      captureUiSnapshot,
+      captureUiScreenshot,
+      persistRecordingEvidence,
+      recordingEvidenceUrl,
+      pollLiveFrame,
+      pollLiveSnapshot,
+      pressNode,
+      interactStep,
+      runStep,
+      frameUrlForPersisted,
+      videoUrlForRun,
+    } = createServerCapture({
+      request,
+      serverUrl,
+      selectedDevice,
+      selectedAction,
+      activeDiscoverySessionId,
+      setBusyCapture,
+      setSnapshot,
+      setShowOverlays,
+      setLiveFrame,
+      pushFrame,
+      appendLog,
+      refreshDiscoverySessions,
+    });
 
     function jumpToJob(jobId: string) {
       setSelectedJobId(jobId);
@@ -938,12 +1069,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         .find((x) => x.f.jobId === jobId)?.i;
       if (idx !== undefined) setFrameIndex(idx);
       stopPlayback();
-    }
-
-    function frameUrlForPersisted(run: PersistedRun, frame: TraceFrameRef) {
-      const base = serverUrl();
-      const file = frame.path.split(/[\\/]/).pop() ?? frame.path;
-      return `${base}/runs/${encodeURIComponent(run.id)}/frames/${encodeURIComponent(file)}`;
     }
 
     void (async () => {
@@ -966,10 +1091,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (health() === "online") {
         await Promise.all([
           refreshDevices(),
+          refreshTargets(),
           refreshActions(),
           refreshRecipes(),
           refreshJobs(),
           refreshRuns(),
+          refreshSchedules(),
           refreshProjectVariables(),
         ]);
         connectSse();
@@ -986,6 +1113,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           // re-attach bus when we come back online
           if (prev !== "online") {
             void refreshActions();
+            void refreshTargets();
             void refreshRecipes();
             void refreshRuns();
             connectSse();
@@ -1078,11 +1206,21 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadJourney,
       saveJourney,
       generate,
+      loadAtlas,
+      scheduleRecipe,
+      refreshSchedules,
+      deleteLocalSchedule,
       health,
       isOffline,
       isEmptyDevices,
       sseConnected,
       devices,
+      targets,
+      targetProfiles,
+      matrices,
+      discoverySessions,
+      activeDiscoverySessionId,
+      setActiveDiscoverySessionId,
       actions,
       recipes,
       selectedRecipeId,
@@ -1090,6 +1228,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedRecipe,
       jobs,
       persistedRuns,
+      schedules,
       runsRoot,
       selectedDevice,
       setSelectedDevice: selectDeviceRemote,
@@ -1110,12 +1249,40 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshActions,
       refreshRecipes,
       refreshDevices,
+      refreshTargets,
+      refreshTargetProfiles,
+      refreshMatrices,
+      refreshDiscoverySessions,
+      createDiscoverySession: createDiscoverySessionRemote,
+      setDiscoveryStatus: setDiscoveryStatusRemote,
+      captureDiscoveryScreen: captureDiscoveryScreenRemote,
+      discoveryScreenUrl,
+      promoteDiscoveryPath: promoteDiscoveryPathRemote,
+      discoverySuggestion,
+      loadDiscoveryCoverage,
+      approveDiscoverySuggestion,
+      saveCompatibilityMatrix: saveCompatibilityMatrixRemote,
+      deleteCompatibilityMatrix: deleteCompatibilityMatrixRemote,
+      resolveCompatibilityMatrix: resolveCompatibilityMatrixRemote,
+      loadCompatibilityMatrixYaml,
+      importCompatibilityMatrixYaml,
+      saveBrowserTarget,
+      deleteTarget: deleteTargetRemote,
+      preflightTarget: preflightTargetRemote,
       refreshJobs,
       refreshRuns,
       pollHealth,
       retryConnection,
       runRecipeRemote,
+      runCompatibilityMatrixRemote,
+      loadCompatibilityReport,
       saveRecipeRemote,
+      loadRecipeYaml,
+      importRecipeYaml,
+      previewRecipeYaml,
+      loadRecipeHistory,
+      restoreRecipeVersion,
+      loadRecipeStability,
       deleteRecipeRemote,
       cancelJob: cancelJobRemote,
       pauseJob: pauseJobRemote,
@@ -1145,6 +1312,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       pollLiveFrame,
       pollLiveSnapshot,
       frameUrlForPersisted,
+      videoUrlForRun,
     };
   },
 });

@@ -7,6 +7,8 @@ out/
 .env.*
 !.env.example
 .vite/
+.pnpm-store/
+.relay/
 coverage/
 .turbo/
 .cache/
@@ -17,6 +19,7 @@ packages/*/out/
 packages/*/node_modules/
 *.tsbuildinfo
 runs/
+recipes/.history/
 vendor/
 
 *.legacy.css.bak

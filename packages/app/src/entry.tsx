@@ -9,7 +9,7 @@ if (!root) throw new Error("Root element #root not found");
 
 const platform = createWebPlatform({
   defaultServerUrl:
-    (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "http://localhost:8787",
+    (import.meta.env.VITE_SERVER_URL as string | undefined) ?? "http://127.0.0.1:8787",
 });
 
 render(

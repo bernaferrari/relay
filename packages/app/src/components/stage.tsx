@@ -14,11 +14,13 @@ import { useRecorder } from "../context/recorder";
 import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
+import { DeviceConnectState } from "./device-connect-state";
 import { IconButton } from "@relay/ui/icon-button";
 import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
+import { presentTarget } from "../lib/target-presentation";
 import {
   deviceBody,
   deviceIconWell,
@@ -380,10 +382,10 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
     server.devices().find((d) => d.serial === server.selectedDevice()) ??
     server.devices()[0] ??
     null;
-
-  function deviceChipText(d: { name?: string; serial: string; kind?: string | null }): string {
-    return [d.name?.trim() || "Device", d.serial, d.kind ?? ""].filter(Boolean).join(" · ");
-  }
+  const targetReady = () => {
+    const device = currentDevice();
+    return server.health() === "online" && Boolean(device) && device?.booted !== false;
+  };
 
   /**
    * Abstract device viewport — thin always-dark frame, no hardware gimmicks.
@@ -402,79 +404,19 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
       <Show
         when={!server.isEmptyDevices()}
         fallback={
-          <div class="device-connect-state" data-device-chrome>
-            <div class="device-connect-preview" aria-hidden="true">
-              <div class={cn(phoneShell, "device-connect-preview__phone")}>
-                <div class={cn(phoneScreen, "device-connect-preview__screen")}>
-                  <span class="device-connect-preview__speaker" />
-                  <span class="device-connect-preview__glow">
-                    <Icon name="smartphone" size={24} />
-                  </span>
-                  <div class="device-connect-preview__lines">
-                    <i />
-                    <i />
-                    <i />
-                  </div>
-                  <Show when={focusedStep()}>
-                    {(s) => (
-                      <div class="device-connect-preview__step">
-                        <span>{s().index + 1}</span>
-                        <strong>{s().title}</strong>
-                      </div>
-                    )}
-                  </Show>
-                </div>
-              </div>
-            </div>
-            <div class="device-connect-copy">
-              <div class="device-connect-copy__mark" aria-hidden="true">
-                <span>
-                  <Icon name="smartphone" size={24} />
-                </span>
-                <i />
-                <i />
-              </div>
-              <span class="relay-eyebrow">Live device</span>
-              <h3>Connect a device</h3>
-              <p>
-                Plug in over USB or join over Wi‑Fi to record, inspect, and replay on the real app.
-              </p>
-              <p
-                class="device-connect-status"
-                data-state={server.health() === "offline" ? "offline" : "waiting"}
-                role="status"
-              >
-                <span aria-hidden="true" />
-                {server.health() === "offline" ? "Server offline" : "Waiting for a device"}
-              </p>
-              <div class="device-connect-actions">
-                <button
-                  type="button"
-                  class="relay-primary"
-                  onClick={() =>
-                    void (async () => {
-                      await server.pollHealth();
-                      if (server.health() === "online") await server.refreshDevices();
-                    })()
-                  }
-                >
-                  <Icon name="refresh" size={14} />
-                  Refresh
-                </button>
-                <button
-                  type="button"
-                  class="relay-secondary"
-                  onClick={() => void cmd.run("nav.settings")}
-                >
-                  <Icon name="sliders" size={14} />
-                  Device setup
-                </button>
-              </div>
-              <p class="device-connect-hint">
-                Android: enable USB debugging · iOS: trust this computer
-              </p>
-            </div>
-          </div>
+          <DeviceConnectState
+            offline={server.health() === "offline"}
+            focusedStep={focusedStep}
+            phoneShell={phoneShell}
+            phoneScreen={phoneScreen}
+            onRefresh={() => {
+              void (async () => {
+                await server.pollHealth();
+                if (server.health() === "online") await server.refreshDevices();
+              })();
+            }}
+            onSetup={() => void cmd.run("nav.settings")}
+          />
         }
       >
         {/* device identity + live/rec affordances — floats above the bezel */}
@@ -482,21 +424,33 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           <Show when={currentDevice()}>
             {(d) => (
               <div
-                class="inline-flex h-6 items-center gap-1.5 rounded-full bg-surface-raised-stronger-non-alpha px-2.5 text-12-medium text-text-base ring-1 ring-inset ring-border-weak-base tabular-nums shadow-sm"
-                data-tip={d().serial}
+                class="inline-flex h-7 max-w-[min(100%,360px)] items-center gap-1.5 rounded-full bg-surface-raised-stronger-non-alpha px-2.5 text-12-medium text-text-base ring-1 ring-inset ring-border-weak-base tabular-nums shadow-sm"
+                data-tip={`${presentTarget(d()).platformLabel} target`}
               >
                 <span
                   class={cn(
                     "size-1.5 flex-none rounded-full",
                     rec.recording()
                       ? "animate-pulse bg-icon-critical-base"
-                      : rec.interacting()
-                        ? "bg-icon-success-base shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-success-base)_28%,transparent)]"
-                        : "bg-icon-success-base",
+                      : d().booted === false
+                        ? "bg-icon-warning-base"
+                        : rec.interacting()
+                          ? "bg-icon-success-base shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-success-base)_28%,transparent)]"
+                          : "bg-icon-success-base",
                   )}
                   aria-hidden="true"
                 />
-                {deviceChipText(d())}
+                <span class="min-w-0 truncate">{presentTarget(d()).displayName}</span>
+                <span
+                  class={cn(
+                    "shrink-0 rounded-full px-1.5 py-0.5 text-[10px]/[1.2] font-semibold",
+                    d().booted === false
+                      ? "bg-surface-warning-base text-text-on-warning-base"
+                      : "bg-surface-success-weak text-icon-success-base",
+                  )}
+                >
+                  {presentTarget(d()).statusLabel}
+                </span>
               </div>
             )}
           </Show>
@@ -676,16 +630,32 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               )}
             </Show>
             <Show when={!frame() && !focusedStep()}>
-              <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2.5 p-7 text-center">
-                <span class={cn(deviceIconWell, "size-10 rounded-xl")} aria-hidden="true">
-                  <Icon name="play" size={16} strokeWidth={1.5} />
-                </span>
-                <p class={cn("m-0 text-14-medium tracking-tight", deviceTitle)}>
-                  Select a step or Run
-                </p>
-                <p class={cn("m-0 max-w-[12em] text-12-regular leading-relaxed", deviceBody)}>
-                  Captures land here as you drive the journey
-                </p>
+              <div class="relay-stage-empty absolute inset-0 z-[1] flex flex-col items-center justify-center p-7 text-center">
+                <div class="relay-stage-empty__preview" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <Show
+                  when={targetReady()}
+                  fallback={
+                    <>
+                      <p class={cn("m-0 text-14-medium tracking-tight", deviceTitle)}>
+                        Connect this target
+                      </p>
+                      <p class={cn("m-0 max-w-[15em] text-12-regular leading-relaxed", deviceBody)}>
+                        Start the target before recording or running a step.
+                      </p>
+                    </>
+                  }
+                >
+                  <p class={cn("m-0 text-14-medium tracking-tight", deviceTitle)}>
+                    Ready to capture
+                  </p>
+                  <p class={cn("m-0 max-w-[13em] text-12-regular leading-relaxed", deviceBody)}>
+                    Select a step, then run it.
+                  </p>
+                </Show>
               </div>
             </Show>
             {/* Selected step chip over live frame */}
@@ -921,7 +891,13 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
       </Show>
 
       {/* Mode toolbar — only when a device can act; never greyed theatre */}
-      <Show when={server.health() === "online" && !server.isEmptyDevices()}>
+      <Show
+        when={
+          server.health() === "online" &&
+          !server.isEmptyDevices() &&
+          currentDevice()?.booted !== false
+        }
+      >
         <div class="z-[2] mt-3.5 flex items-center justify-center gap-1.5">
           <div class={seg} role="group" aria-label="Stage mode">
             <button

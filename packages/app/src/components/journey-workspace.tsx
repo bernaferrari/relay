@@ -52,6 +52,14 @@ function PlannedJourney() {
     })),
   );
   const width = () => Math.max(620, nodes().length * 292 + 180);
+  const defaultEdge = (index: number): EdgeConfig => {
+    const step = nodes()[index]?.step;
+    return step?.kind === "branch"
+      ? { label: `Matched → ${step.thenRecipeId}`, style: "branch" }
+      : step?.kind === "repeat"
+        ? { label: `Repeat ${step.count}×`, style: "branch" }
+        : { label: "Continue", style: "flow" };
+  };
 
   createEffect(() => {
     const id = server.selectedRecipeId();
@@ -81,8 +89,8 @@ function PlannedJourney() {
     const next = {
       ...edgeConfig(),
       [index]: {
-        label: edgeConfig()[index]?.label ?? "Continue",
-        style: edgeConfig()[index]?.style ?? "flow",
+        label: edgeConfig()[index]?.label ?? defaultEdge(index).label,
+        style: edgeConfig()[index]?.style ?? defaultEdge(index).style,
         ...patch,
       },
     };
@@ -165,14 +173,14 @@ function PlannedJourney() {
           <label>
             <span>Label</span>
             <input
-              value={edgeConfig()[selectedEdge()!]?.label ?? "Continue"}
+              value={edgeConfig()[selectedEdge()!]?.label ?? defaultEdge(selectedEdge()!).label}
               onInput={(event) => patchEdge(selectedEdge()!, { label: event.currentTarget.value })}
             />
           </label>
           <label>
             <span>Type</span>
             <select
-              value={edgeConfig()[selectedEdge()!]?.style ?? "flow"}
+              value={edgeConfig()[selectedEdge()!]?.style ?? defaultEdge(selectedEdge()!).style}
               onChange={(event) =>
                 patchEdge(selectedEdge()!, { style: event.currentTarget.value as EdgeStyle })
               }
@@ -238,7 +246,9 @@ function PlannedJourney() {
                 const x2 = () => next().x;
                 const y2 = () => next().y + JOURNEY_NODE_PORT_Y;
                 return (
-                  <g class={`journey-edge is-${edgeConfig()[node.index]?.style ?? "flow"}`}>
+                  <g
+                    class={`journey-edge is-${edgeConfig()[node.index]?.style ?? defaultEdge(node.index).style}`}
+                  >
                     <path
                       class="journey-edge__hit"
                       d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
@@ -251,7 +261,7 @@ function PlannedJourney() {
                       d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
                     />
                     <text x={(x1() + x2()) / 2} y={(y1() + y2()) / 2 - 10} text-anchor="middle">
-                      {edgeConfig()[node.index]?.label ?? "Continue"}
+                      {edgeConfig()[node.index]?.label ?? defaultEdge(node.index).label}
                     </text>
                   </g>
                 );
@@ -296,17 +306,23 @@ function PlannedJourney() {
 function iconForStep(step: RecipeStep): IconName {
   if (step.kind === "type") return "keyboard";
   if (step.kind === "screenshot") return "camera";
-  if (step.kind === "sleep" || step.kind === "wait-for") return "clock";
+  if (step.kind === "sleep" || step.kind === "wait-for" || step.kind === "wait-response")
+    return "clock";
   if (step.kind === "swipe" || step.kind === "scroll") return "move";
   if (step.kind === "expect") return "check";
+  if (step.kind === "extract") return "download";
+  if (step.kind === "assert-content" || step.kind === "evaluate-semantic") return "check";
   return "pointer";
 }
 
 function actionForStep(step: RecipeStep): string {
   if (step.kind === "expect") return "Validate";
+  if (step.kind === "extract") return "Extract";
+  if (step.kind === "assert-content" || step.kind === "evaluate-semantic") return "Evaluate";
   if (step.kind === "type") return "Type value";
   if (step.kind === "screenshot") return "Capture";
-  if (step.kind === "sleep" || step.kind === "wait-for") return "Wait";
+  if (step.kind === "sleep" || step.kind === "wait-for" || step.kind === "wait-response")
+    return "Wait";
   return "Continue";
 }
 

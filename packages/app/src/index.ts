@@ -6,6 +6,8 @@ export {
   type Platform,
   type PlatformStorage,
   type PlatformName,
+  type DesktopUpdateState,
+  type PlatformUpdates,
 } from "./context/platform";
 export { ServerProvider, useServer } from "./context/server";
 export type {

@@ -1,16 +1,24 @@
-import { For, Show, createMemo, createSignal, onMount, onCleanup } from "solid-js";
-import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
+import { For, Show, createEffect, createMemo, createSignal, onMount, onCleanup } from "solid-js";
+import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { useWorkbench, type RunChip } from "../context/workbench";
+import { useWorkbench } from "../context/workbench";
 import { useCommand } from "../context/command";
 import { Icon } from "./icon";
 import { EmptyState } from "./empty-state";
 import { IconButton } from "@relay/ui/icon-button";
 import { Button } from "@relay/ui/button";
 import { RecipeStepsEditor } from "./step-list";
-import { statusTone, fmtDur, fmtAgo, fmtMs, titleize, displayTitle } from "../lib/job";
+import { displayTitle } from "../lib/job";
 import { canRunRecipe, runBlocker as runBlockerOf } from "../lib/run-gates";
 import { cn } from "../lib/cn";
+import { nextRovingIndex } from "../lib/roving-focus";
+import {
+  checkpointReasonLabel,
+  chipFacts,
+  reviewedRunFacts,
+  toneDot,
+  toneText,
+} from "./run-panel-presentation";
 import {
   btnGhost,
   mono,
@@ -23,27 +31,15 @@ import {
   menuOptionOn,
 } from "../lib/ui";
 
-function toneText(tone: string): string {
-  if (tone === "pass") return "text-icon-success-base";
-  if (tone === "fail") return "text-icon-critical-base";
-  if (tone === "heal") return "text-icon-warning-base";
-  if (tone === "run") return "text-icon-info-base";
-  return "text-text-weak";
-}
-
-function toneDot(tone: string): string {
-  if (tone === "pass") return "bg-icon-success-base";
-  if (tone === "fail") return "bg-icon-critical-base";
-  if (tone === "heal") return "bg-icon-warning-base";
-  if (tone === "run") return "bg-icon-info-base";
-  return "bg-text-weaker";
-}
-
 /**
  * Steps pane — the selected test's living document.
  * Switch tests from the title chevron (no permanent library rail).
  */
 export function StepsPane() {
+  let switcherTrigger: HTMLButtonElement | undefined;
+  let switcherDialog: HTMLDivElement | undefined;
+  let historyTrigger: HTMLButtonElement | undefined;
+  let historyDialog: HTMLDivElement | undefined;
   const server = useServer();
   const cmd = useCommand();
   const draft = useRecipeDraft();
@@ -57,6 +53,28 @@ export function StepsPane() {
   // ── Test switcher (replaces the left rail) ───────────────────────────
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [historyOpen, setHistoryOpen] = createSignal(false);
+
+  const closeSwitcher = (restoreFocus = false) => {
+    setMenuOpen(false);
+    if (restoreFocus) queueMicrotask(() => switcherTrigger?.focus());
+  };
+  const closeHistory = (restoreFocus = false) => {
+    setHistoryOpen(false);
+    if (restoreFocus) queueMicrotask(() => historyTrigger?.focus());
+  };
+
+  createEffect(() => {
+    if (!menuOpen()) return;
+    queueMicrotask(() =>
+      switcherDialog?.querySelector<HTMLButtonElement>("[data-test-option]")?.focus(),
+    );
+  });
+  createEffect(() => {
+    if (!historyOpen()) return;
+    queueMicrotask(() =>
+      historyDialog?.querySelector<HTMLButtonElement>("[data-run-option]")?.focus(),
+    );
+  });
 
   type SwitcherGroup = { key: string; label: string; items: RecipeInfo[]; custom: boolean };
   const switcherGroups = createMemo<SwitcherGroup[]>(() => {
@@ -186,11 +204,11 @@ export function StepsPane() {
       if (e.key !== "Escape") return;
       if (menuOpen()) {
         e.stopPropagation();
-        setMenuOpen(false);
+        closeSwitcher(true);
       }
       if (historyOpen()) {
         e.stopPropagation();
-        setHistoryOpen(false);
+        closeHistory(true);
       }
     };
     document.addEventListener("mousedown", onDoc);
@@ -201,89 +219,9 @@ export function StepsPane() {
     });
   });
 
-  function chipFacts(c: RunChip): {
-    tone: string;
-    label: string;
-    detail: string;
-    live: boolean;
-    tip: string;
-    word: string;
-  } {
-    const status: JobInfo["status"] =
-      c.kind === "live" ? c.job.status : (c.run.status as JobInfo["status"]);
-    const tone = statusTone(status);
-    const live =
-      c.kind === "live" && (status === "running" || status === "paused" || status === "queued");
-    const word =
-      status === "ok"
-        ? "Passed"
-        : status === "error"
-          ? "Failed"
-          : status === "healed"
-            ? "Healed"
-            : status === "queued"
-              ? "Queued"
-              : status === "running"
-                ? "Running"
-                : status === "paused"
-                  ? "Paused"
-                  : titleize(status);
-    const when =
-      live && c.kind === "live"
-        ? fmtDur(c.job, server.clock())
-        : fmtAgo(c.ts, server.clock()) || "now";
-    const clock = new Date(c.ts);
-    const hm = clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const dur =
-      c.kind === "disk"
-        ? fmtMs(c.run.durationMs)
-        : c.kind === "live" && c.job.finishedAt
-          ? fmtDur(c.job, server.clock())
-          : "";
-    const errRaw = c.kind === "disk" ? c.run.error : c.kind === "live" ? c.job.error : undefined;
-    const err = errRaw ? errRaw.replace(/\s+/g, " ").slice(0, 48) : "";
-    const serial = c.kind === "disk" ? c.run.serial : c.job.serial;
-    const device = serial
-      ? (server.devices().find((d) => d.serial === serial)?.name ?? serial.slice(0, 8))
-      : "";
-    // List row: status · time · duration · error snippet (not five identical "Failed · 2d")
-    const bits = [word, when, hm];
-    if (dur) bits.push(dur);
-    const label = bits.join(" · ");
-    const detail = [err, device].filter(Boolean).join(" · ");
-    const tip = `${word} · ${clock.toLocaleString()}${errRaw ? ` — ${errRaw}` : ""}`;
-    return { tone, label, detail, live, tip, word };
-  }
-
-  const reviewedFacts = createMemo(() => {
-    const c = wb.reviewedRun();
-    if (!c) return null;
-    const status: JobInfo["status"] =
-      c.kind === "live" ? c.job.status : (c.run.status as JobInfo["status"]);
-    const tone = statusTone(status);
-    const live = c.kind === "live" && (status === "running" || status === "paused");
-    const word =
-      status === "ok"
-        ? "Passed"
-        : status === "error"
-          ? "Failed"
-          : status === "healed"
-            ? "Healed"
-            : titleize(status);
-    const serial = c.kind === "live" ? c.job.serial : c.run.serial;
-    const device = serial
-      ? (server.devices().find((d) => d.serial === serial)?.name ?? serial)
-      : "";
-    const when =
-      c.kind === "disk"
-        ? fmtAgo(c.run.writtenAt, server.clock())
-        : live
-          ? ""
-          : fmtAgo(c.job.finishedAt, server.clock());
-    const dur = c.kind === "disk" ? fmtMs(c.run.durationMs) : fmtDur(c.job, server.clock());
-    const error = c.kind === "live" ? c.job.error : c.kind === "disk" ? c.run.error : undefined;
-    return { tone, word, when, dur, device, live, error };
-  });
+  const reviewedFacts = createMemo(() =>
+    reviewedRunFacts(wb.reviewedRun(), server.clock(), server.devices()),
+  );
 
   const rawLog = () => {
     const c = wb.reviewedRun();
@@ -324,6 +262,7 @@ export function StepsPane() {
                 fallback={
                   <div class="group/title -ml-1.5 flex min-w-0 max-w-full items-center gap-0.5">
                     <button
+                      ref={(element) => (switcherTrigger = element)}
                       type="button"
                       class={cn(
                         "inline-flex min-w-0 max-w-full items-center gap-1 rounded-lg border-0 bg-transparent",
@@ -333,19 +272,10 @@ export function StepsPane() {
                         !selectedRecipe() && "text-text-base",
                         menuOpen() && "bg-surface-base-active",
                       )}
-                      aria-haspopup="listbox"
+                      aria-haspopup="dialog"
+                      aria-controls="test-switcher-dialog"
                       aria-expanded={menuOpen()}
-                      title={
-                        selectedRecipe() ? "Switch test · double-click to rename" : "Select test"
-                      }
-                      onClick={() => setMenuOpen((o) => !o)}
-                      onDblClick={(e) => {
-                        if (!selectedRecipe()) return;
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setMenuOpen(false);
-                        startTitleEdit();
-                      }}
+                      onClick={() => (menuOpen() ? closeSwitcher() : setMenuOpen(true))}
                     >
                       <span class="max-w-[min(320px,48vw)] min-w-0 truncate">
                         {switcherLabel()}
@@ -412,11 +342,26 @@ export function StepsPane() {
 
               <Show when={menuOpen()}>
                 <div
+                  ref={(element) => (switcherDialog = element)}
+                  id="test-switcher-dialog"
                   class={cn(
                     popover,
                     "absolute top-[calc(100%+6px)] left-0 z-50 max-h-[min(400px,70vh)] min-w-[min(300px,90vw)] origin-top-left overflow-y-auto",
                   )}
-                  role="listbox"
+                  role="dialog"
+                  aria-label="Choose a test"
+                  onKeyDown={(event) => {
+                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                    const options = [
+                      ...switcherDialog!.querySelectorAll<HTMLButtonElement>("[data-test-option]"),
+                    ];
+                    if (options.length === 0) return;
+                    event.preventDefault();
+                    const current = options.indexOf(document.activeElement as HTMLButtonElement);
+                    const next = nextRovingIndex(event.key, current, options.length, "vertical");
+                    if (next === null) return;
+                    options[next]?.focus();
+                  }}
                 >
                   <For each={switcherGroups()}>
                     {(g, gi) => (
@@ -436,11 +381,14 @@ export function StepsPane() {
                             >
                               <button
                                 type="button"
-                                role="option"
+                                data-test-option
+                                aria-current={
+                                  server.selectedRecipeId() === r.id ? "page" : undefined
+                                }
                                 class="flex min-w-0 flex-1 items-center justify-between gap-2 py-1 pl-2 pr-1 text-left text-14-regular text-text-strong"
                                 onClick={() => {
                                   server.setSelectedRecipeId(r.id);
-                                  setMenuOpen(false);
+                                  closeSwitcher(true);
                                 }}
                               >
                                 <span
@@ -599,7 +547,7 @@ export function StepsPane() {
                   {/* Dense recent chips — not a spam wall */}
                   <For each={recentChips()}>
                     {(c) => {
-                      const f = () => chipFacts(c);
+                      const f = () => chipFacts(c, server.clock(), server.devices());
                       const on = () => wb.reviewedRun()?.id === c.id;
                       return (
                         <button
@@ -631,6 +579,7 @@ export function StepsPane() {
                   </For>
                   <div class="relative">
                     <button
+                      ref={(element) => (historyTrigger = element)}
                       type="button"
                       class={cn(
                         btnGhost,
@@ -646,7 +595,9 @@ export function StepsPane() {
                       data-tip={
                         overflowChipCount() > 0 ? `+${overflowChipCount()} more` : "All runs"
                       }
-                      onClick={() => setHistoryOpen((o) => !o)}
+                      aria-haspopup="dialog"
+                      aria-controls="past-runs-dialog"
+                      onClick={() => (historyOpen() ? closeHistory() : setHistoryOpen(true))}
                     >
                       <Show
                         when={overflowChipCount() > 0}
@@ -657,29 +608,52 @@ export function StepsPane() {
                     </button>
                     <Show when={historyOpen()}>
                       <div
+                        ref={(element) => (historyDialog = element)}
+                        id="past-runs-dialog"
                         class={cn(
                           popover,
                           "absolute top-[calc(100%+6px)] right-0 left-auto max-h-[300px] min-w-[min(360px,92vw)] origin-top-right overflow-y-auto p-1",
                         )}
-                        role="listbox"
+                        role="dialog"
                         aria-label="Past runs"
+                        onKeyDown={(event) => {
+                          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                          const options = [
+                            ...historyDialog!.querySelectorAll<HTMLButtonElement>(
+                              "[data-run-option]",
+                            ),
+                          ];
+                          if (options.length === 0) return;
+                          const current = options.indexOf(
+                            document.activeElement as HTMLButtonElement,
+                          );
+                          const next = nextRovingIndex(
+                            event.key,
+                            current,
+                            options.length,
+                            "vertical",
+                          );
+                          if (next === null) return;
+                          event.preventDefault();
+                          options[next]?.focus();
+                        }}
                       >
                         <For each={wb.chips()}>
                           {(c) => {
-                            const f = () => chipFacts(c);
+                            const f = () => chipFacts(c, server.clock(), server.devices());
                             return (
                               <button
                                 type="button"
+                                data-run-option
                                 class={cn(
                                   menuOption,
                                   "flex w-full items-start gap-2 px-2 py-1 text-left text-14-regular text-text-strong",
                                   wb.reviewedRun()?.id === c.id && menuOptionOn,
                                 )}
-                                role="option"
-                                aria-selected={wb.reviewedRun()?.id === c.id}
+                                aria-current={wb.reviewedRun()?.id === c.id ? "true" : undefined}
                                 onClick={() => {
                                   wb.toggleChip(c.id);
-                                  setHistoryOpen(false);
+                                  closeHistory(true);
                                 }}
                               >
                                 <span
@@ -706,7 +680,7 @@ export function StepsPane() {
                             type="button"
                             class="mt-0.5 block w-full border-t border-border-weak-base px-2 py-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
                             onClick={() => {
-                              setHistoryOpen(false);
+                              closeHistory(true);
                               setLogOpen(true);
                             }}
                           >
@@ -876,6 +850,57 @@ export function StepsPane() {
                   Configure
                 </button>
               </div>
+            </Show>
+
+            <Show when={server.activeJob()?.waitingFor}>
+              {(checkpoint) => (
+                <div
+                  class="mx-3.5 my-2 flex shrink-0 items-start gap-3 rounded-lg border border-border-interactive-base/45 bg-surface-base-active px-3 py-3 shadow-xs-border-base"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-surface-raised-base text-icon-info-base">
+                    <Icon name="pause" size={14} />
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-12-medium tracking-wide text-icon-info-base uppercase">
+                      {checkpointReasonLabel(checkpoint().reason)} · your turn
+                    </span>
+                    <span class="mt-0.5 block text-14-medium leading-snug text-text-strong">
+                      {checkpoint().message}
+                    </span>
+                    <span class="mt-1 block text-12-regular leading-snug text-text-weak">
+                      Complete it on the live device, then continue the run.
+                    </span>
+                    <Show when={checkpoint().verifyAfter}>
+                      {(verification) => {
+                        const target = verification().target;
+                        const targetLabel =
+                          target.label ?? target.text ?? target.ref ?? "the expected state";
+                        return (
+                          <span class="mt-1 block text-12-regular leading-snug text-text-base">
+                            Relay will confirm “{targetLabel}” is {verification().condition} before
+                            it advances.
+                          </span>
+                        );
+                      }}
+                    </Show>
+                  </span>
+                  <button
+                    type="button"
+                    class={cn(
+                      btnGhost,
+                      "shrink-0 self-center bg-surface-raised-base px-2.5 text-text-strong",
+                    )}
+                    onClick={() => {
+                      const job = server.activeJob();
+                      if (job) void server.resumeJob(job.id);
+                    }}
+                  >
+                    {checkpoint().resumeLabel}
+                  </button>
+                </div>
+              )}
             </Show>
 
             <RecipeStepsEditor />

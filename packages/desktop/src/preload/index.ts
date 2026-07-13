@@ -19,6 +19,18 @@ const api: ElectronAPI = {
   getWindowFocused: () => ipcRenderer.invoke("get-window-focused"),
 
   setBackgroundColor: (color) => ipcRenderer.invoke("set-background-color", color),
+
+  updates: {
+    getState: () => ipcRenderer.invoke("updates:get-state"),
+    check: () => ipcRenderer.invoke("updates:check"),
+    install: () => ipcRenderer.invoke("updates:install"),
+    onState: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]) =>
+        listener(state);
+      ipcRenderer.on("updates:state", handler);
+      return () => ipcRenderer.removeListener("updates:state", handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

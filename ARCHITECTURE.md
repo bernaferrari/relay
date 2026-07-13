@@ -1,6 +1,10 @@
 # Architecture — app testing shell
 
-Inspired by OpenCode v2, adapted for **Android app testing** (not a coding agent).
+Product UI work also follows [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md). `@relay/ui` owns semantic
+tokens and shared primitives; product components use Tailwind utilities for ordinary styling.
+
+Inspired by OpenCode v2, adapted for **local-first app testing** across managed browsers and
+connected mobile devices (not a coding agent).
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -14,7 +18,11 @@ Inspired by OpenCode v2, adapted for **Android app testing** (not a coding agent
 └─────────────────────────────┬────────────────────────────────┘
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ protocol → core — recipes, collaboration state, generation     │
+│ protocol → core — target-neutral IR, execution, evaluation      │
+└─────────────────────────────┬────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────┐
+│ target adapters — managed browser │ Android/iOS agent-device  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -33,24 +41,26 @@ Inspired by OpenCode v2, adapted for **Android app testing** (not a coding agent
 
 ## Packages
 
-| Package           | Role                                                                           |
-| ----------------- | ------------------------------------------------------------------------------ |
-| `@relay/core`     | Recipes, action catalog, event bus, job sessions, snapshot/screenshot/interact |
-| `@relay/protocol` | Canonical connections, revisions, resources, generation, and event schemas     |
-| `@relay/client`   | Authenticated project-scoped HTTP and fetch-streamed SSE client                |
-| `@relay/server`   | HTTP + SSE over core                                                           |
-| `@relay/cli`      | Host: TUI default, interactive, serve, direct actions                          |
-| `@relay/tui`      | Terminal testing workspace                                                     |
-| `@relay/ui`       | Solid design system + themes                                                   |
-| `@relay/app`      | Solid product UI (workspace / inspector / screen / activity)                   |
-| `@relay/desktop`  | Electron shell                                                                 |
+| Package           | Role                                                                                                 |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| `@relay/core`     | Recipes/YAML, matrix resolver, action catalog, event bus, job sessions, snapshot/screenshot/interact |
+| `@relay/protocol` | Canonical connections, revisions, resources, generation, and event schemas                           |
+| `@relay/client`   | Authenticated project-scoped HTTP and fetch-streamed SSE client                                      |
+| `@relay/server`   | HTTP + SSE over core                                                                                 |
+| `@relay/cli`      | Host: TUI default, interactive, serve, direct actions                                                |
+| `@relay/tui`      | Terminal testing workspace                                                                           |
+| `@relay/ui`       | Solid design system + themes                                                                         |
+| `@relay/app`      | Solid product UI (workspace / inspector / screen / activity)                                         |
+| `@relay/desktop`  | Electron shell                                                                                       |
 
 ## API surface
 
 - `GET /health` `/meta` `/events` (SSE)
 - `GET /devices` `/actions` `/jobs` `/jobs/:id`
-- `GET /recipes` `/recipes/:id`
-- `GET/POST /projects` `/builds` `/device-pools` `/device-leases`
+- `GET/POST /targets`, `DELETE /targets/:id`, and `POST /targets/:id/preflight`
+- `GET /recipes` `/recipes/:id`, `GET /recipes/:id/yaml`, and `POST /recipes/import`
+- `GET/POST /projects` `/builds` `/device-pools` `/device-leases` `/matrices`
+- `GET /target-profiles` and `POST /matrices/:id/resolve` for frozen compatibility previews
 - `GET/PUT /project/variables` and `/recipes/:id/journey` with revision conflicts
 - `POST /generate` through provider-neutral adapters
 - `POST /recipes/:id/evidence` + `GET /recipes/:id/evidence/:evidenceId` persist recorder
@@ -70,6 +80,21 @@ Inspired by OpenCode v2, adapted for **Android app testing** (not a coding agent
 5. `vendor/opencode` is reference-only.
 6. Hosts use `@relay/client`; transport shapes live in `@relay/protocol`.
 7. Shared product state is server-owned and revisioned; browser storage is for preferences only.
+8. Recipes remain target-neutral. Browser and mobile adapters implement the same control and
+   observation contract; unsupported capabilities fail explicitly.
+9. Git-tracked `tests/*.relay.yaml` is the canonical editable source. Legacy local JSON remains
+   readable only for migration; a matching YAML definition always wins.
+10. Compatibility matrices select only observed target profiles and preserve every exclusion reason.
+11. Desktop update feeds, signatures, and installation stay in Electron's main process. The shared UI
+    receives only a typed update state and can request a check or restart after download.
+
+## Target boundary
+
+`core/targets.ts` owns target definitions, isolated browser profiles, and preflight checks.
+`core/browser-target.ts` adapts Playwright to the existing device contract while the canonical
+recipe IR stays independent of Playwright and agent-device. A run freezes target preflight,
+performance, screenshots, logs, network activity, and video into immutable evidence. Managed
+browser profiles live under `.relay/browser-profiles/` and never reuse personal browser data.
 
 ## Traces, heal, runs/, overlays
 

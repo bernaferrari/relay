@@ -20,7 +20,7 @@ packages/
   desktop/   Electron shell
 ```
 
-## 10-minute onboarding
+## First useful test in five minutes
 
 ```bash
 vp install                 # or pnpm install
@@ -29,7 +29,84 @@ pnpm dev:serve             # terminal 1 — API on :8787
 pnpm dev:app               # terminal 2 — Stage UI
 ```
 
-In the UI: pick a device → pick a recipe → **Run**.  
+In the UI: choose a target → use **Check** to verify readiness → choose **Record**, **Build**, or
+**Import YAML** → run once. The in-product checklist only marks each item complete after Relay has
+observed the target or preflight result; it can be resumed safely after closing the app.
+
+### Reusable recorded setups and app builds
+
+Any recorded test can be attached to another test as an editable reusable flow. This is the
+intended pattern for sign-in, account recovery, permissions, onboarding, deep links, or any other
+repeatable setup—not a login-only feature. Parent runs pass their frozen variables into the attached
+flow, so an approved `login_email` list can rotate test accounts without duplicating the recording.
+
+To make an attachment explicit, open a recorded flow’s **Inputs** tab and declare the names it
+accepts. At the attachment step, bind those names to a literal or a project/test value. Both the
+declaration and the binding live in tracked YAML; every run captures the resolved binding as
+`reusable-flow-inputs` evidence. For example:
+
+```yaml
+parameters:
+  - name: login_email
+    label: Test account
+    required: true
+steps:
+  - kind: type
+    text: "{{login_email}}"
+```
+
+```yaml
+steps:
+  - kind: module
+    recipeId: recorded-email-sign-in
+    bindings:
+      login_email: "{{account_email}}"
+```
+
+Human-gated moments are first-class too. Add a `pause` after the automated login when Okta,
+MFA, CAPTCHA, a permission prompt, or a consent screen needs a real person. Relay pauses the
+live device, shows the reason and action in the run surface, and resumes only when the operator
+confirms. The optional timeout turns an abandoned handoff into a visible failure instead of an
+infinite run:
+
+```yaml
+steps:
+  - kind: module
+    recipeId: recorded-okta-login
+    bindings:
+      login_email: "{{account_email}}"
+  - kind: pause
+    message: Approve the Okta sign-in on the device
+    reason: consent
+    resumeLabel: Continue after approval
+    timeoutMs: 900000
+    verifyAfter:
+      target:
+        label: Welcome
+      timeoutMs: 15000
+```
+
+The checkpoint is generic and reusable: it can represent any user action that cannot be safely
+automated. Each request and completion is preserved in the run evidence as
+`human-intervention-requested` and `human-intervention-completed`. When `verifyAfter` is present,
+Relay waits for the expected target after the operator continues and stores a
+`human-intervention-verified` result instead of blindly moving to the next action.
+
+For Android, the **App** step can inspect and optionally assert the installed package version,
+install/update a selected local APK, or uninstall a package. The observed build is stored in the
+immutable run report (`appVersion` and an `app-build` evidence artifact); Relay never uploads an APK
+or account credentials to a model provider. Lifecycle operations explicitly reject unsupported
+targets rather than pretending they work on iOS or browsers.
+
+For a Git-first path:
+
+```bash
+pnpm --filter @relay/cli exec tsx src/index.ts init
+# edit tests/<id>.relay.yaml
+pnpm --filter @relay/cli exec tsx src/index.ts test validate
+pnpm --filter @relay/cli exec tsx src/index.ts test run <id> --target <target-id>
+```
+
 Evidence lands in `runs/<timestamp>_<action>_<device>_<id>/`.
 
 ## CLI (CI-friendly)
@@ -44,6 +121,17 @@ pnpm --filter @relay/cli exec tsx src/index.ts run update-last-alpha \
 
 # Matrix: every connected device
 pnpm --filter @relay/cli exec tsx src/index.ts run logout --all-devices --json --junit ./matrix.xml
+
+# Git-friendly test definitions
+pnpm --filter @relay/cli exec tsx src/index.ts init
+pnpm --filter @relay/cli exec tsx src/index.ts test list --json
+pnpm --filter @relay/cli exec tsx src/index.ts test validate
+pnpm --filter @relay/cli exec tsx src/index.ts test export login-x > tests/login-x.relay.yaml
+
+# Named compatibility matrices freeze the observed targets before execution
+pnpm --filter @relay/cli exec tsx src/index.ts matrix list
+pnpm --filter @relay/cli exec tsx src/index.ts matrix validate release-smoke
+pnpm --filter @relay/cli exec tsx src/index.ts test run login-x --matrix release-smoke --junit ./matrix.xml
 
 # Flake retries (default 3)
 RELAY_RETRY_ATTEMPTS=5 pnpm --filter @relay/cli exec tsx src/index.ts run login-google
@@ -72,6 +160,11 @@ curl -s localhost:8787/report/junit
 - **Job fail** — heal callout + Retry / heal
 - **Frames** — scrubber only when captures exist
 - **Themes** — OpenCode resolve + v2 (Settings / top bar Theme)
+- **Desktop updates** — packaged macOS/Windows builds check at launch and every four hours; a
+  downloaded signed release shows its changelog with **Restart & update** or **Skip this version**
+- **Scheduled runs** — the selected physical device or managed browser target is frozen into the
+  local schedule; scheduled trials preserve the same generated data provenance and evidence as a
+  manually started run
 
 ### Evidence layout
 
@@ -89,6 +182,8 @@ GET  /health /doctor /meta /events
 GET  /devices /actions /jobs /jobs/:id
 POST /jobs  POST /jobs/:id/retry
 GET/POST /projects /builds /device-pools /device-leases
+GET/POST /matrices  POST /matrices/:id/resolve  GET /target-profiles
+GET /recipes/:id/yaml  POST /recipes/import
 GET/PUT  /project/variables /recipes/:id/journey
 POST /generate
 GET  /report  GET /report/:id  GET /report/junit
@@ -99,15 +194,18 @@ GET  /runs /runs/:id /runs/:id/frames/:file
 
 ## Env
 
-| Variable              | Default                 | Meaning                                             |
-| --------------------- | ----------------------- | --------------------------------------------------- |
-| `WORK_ACCOUNT_MATCH`  | `teachx.ai`             | Alpha Play account                                  |
-| `HOME_ACCOUNT_MATCH`  | `gmail.com`             | Restore after alpha                                 |
-| `PROD_ACCOUNT_MATCH`  | —                       | Required for `*-prod`                               |
-| `AGENT_DEVICE_SERIAL` | —                       | Default device                                      |
-| `RELAY_URL`           | `http://127.0.0.1:8787` | App/TUI server                                      |
-| `RELAY_RUNS_DIR`      | `<repo>/runs`           | Evidence root                                       |
-| `RELAY_AUTH_TOKEN`    | —                       | Bearer token required for non-loopback HTTP serving |
+| Variable                  | Default                 | Meaning                                                                                  |
+| ------------------------- | ----------------------- | ---------------------------------------------------------------------------------------- |
+| `WORK_ACCOUNT_MATCH`      | `teachx.ai`             | Alpha Play account                                                                       |
+| `HOME_ACCOUNT_MATCH`      | `gmail.com`             | Restore after alpha                                                                      |
+| `PROD_ACCOUNT_MATCH`      | —                       | Required for `*-prod`                                                                    |
+| `AGENT_DEVICE_SERIAL`     | —                       | Default device                                                                           |
+| `RELAY_URL`               | `http://127.0.0.1:8787` | App/TUI server                                                                           |
+| `RELAY_RUNS_DIR`          | `<repo>/runs`           | Evidence root                                                                            |
+| `RELAY_TESTS_DIR`         | `<repo>/tests`          | Git-tracked YAML test definition root                                                    |
+| `RELAY_AUTH_TOKEN`        | —                       | Bearer token required for non-loopback HTTP serving                                      |
+| `RELAY_GITHUB_REPOSITORY` | —                       | `owner/repo` for public GitHub Releases through Electron's update service                |
+| `RELAY_UPDATE_FEED_URL`   | —                       | Custom signed update feed; supports `{platform}`, `{arch}`, and `{version}` placeholders |
 
 The former `GROK_DEVICE_*` environment variables remain accepted as compatibility aliases.
 | `INSTALL_TIMEOUT_MS` | `300000` | Install/update wait |
@@ -115,6 +213,23 @@ The former `GROK_DEVICE_*` environment variables remain accepted as compatibilit
 The HTTP server refuses non-loopback bindings without a bearer token. For LAN or remote access,
 set a long random `RELAY_AUTH_TOKEN` (24+ characters) or pass `--token`. Keep the default
 loopback binding for local desktop development.
+
+### Desktop update delivery
+
+Updates are deliberately disabled in development and on Linux (where users should use their package
+manager). For packaged macOS and Windows builds, set **one** update source at release time:
+
+```bash
+# Public repository: GitHub Releases through Electron's hosted update bridge.
+RELAY_GITHUB_REPOSITORY=your-org/relay
+
+# Or an enterprise/static Squirrel-compatible feed.
+RELAY_UPDATE_FEED_URL='https://updates.example.com/relay/{platform}/{arch}/{version}'
+```
+
+The app never downloads or installs an update until Electron has accepted the signed release from the
+configured feed. The **About** settings section has a manual “Check now” control; automatic checks run
+at startup and then every four hours. macOS artifacts must be code-signed before auto-update can work.
 
 ## Develop
 

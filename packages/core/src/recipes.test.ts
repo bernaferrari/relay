@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,22 +8,27 @@ import {
   listRecipes,
   readRecipe,
   saveRecipe,
+  listRecipeHistory,
   deleteRecipe,
   builtinRecipes,
   describeRecipeStep,
   glyphsForStep,
   readRecipeEvidenceImage,
   saveRecipeEvidenceImage,
+  testsRoot,
 } from "./recipes.js";
+import { formatRecipeYaml, parseRecipeYaml, recipeYamlPath } from "./recipe-yaml.js";
 
 // Isolate the on-disk store in a temp dir for the whole suite.
 let tmp = "";
 before(async () => {
   tmp = await mkdtemp(join(tmpdir(), "recipes-test-"));
   process.env.GROK_DEVICE_RECIPES_DIR = tmp;
+  process.env.RELAY_TESTS_DIR = join(tmp, "tests");
 });
 after(async () => {
   delete process.env.GROK_DEVICE_RECIPES_DIR;
+  delete process.env.RELAY_TESTS_DIR;
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -79,6 +84,114 @@ describe("recipe store roundtrip", () => {
     await deleteRecipe(saved.id);
     assert.equal(await readRecipeEvidenceImage(saved.id, "ev-test"), null);
   });
+
+  it("writes new custom recipes as deterministic, editable YAML", async () => {
+    const saved = await saveRecipe({
+      title: "YAML smoke",
+      variables: { account_tier: "Pro" },
+      steps: [{ kind: "type", text: "{{account_tier}}" }],
+    });
+    const source = await readFile(recipeYamlPath(testsRoot(), saved.id), "utf8");
+    assert.match(source, /^schemaVersion: 1/m);
+    assert.match(source, /^name: YAML smoke/m);
+    assert.match(source, /account_tier: Pro/);
+    const read = await readRecipe(saved.id);
+    assert.deepEqual(read?.variables, { account_tier: "Pro" });
+    assert.equal(read?.steps[0]?.kind, "type");
+  });
+
+  it("keeps legacy JSON readable but lets YAML with the same id win", async () => {
+    const saved = await saveRecipe({ id: "custom-precedence", title: "YAML version", steps: [] });
+    await writeFile(
+      join(tmp, "custom-precedence.json"),
+      JSON.stringify({ ...saved, title: "Legacy JSON version" }),
+      "utf8",
+    );
+    assert.equal((await readRecipe(saved.id))?.title, "YAML version");
+  });
+
+  it("lists YAML history when a git-native test is edited", async () => {
+    const first = await saveRecipe({
+      id: "history-yaml",
+      title: "First draft",
+      steps: [{ kind: "sleep", ms: 10 }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await saveRecipe({
+      id: first.id,
+      title: "Second draft",
+      steps: [{ kind: "sleep", ms: 20 }],
+    });
+
+    const history = await listRecipeHistory(first.id);
+    assert.equal(history.length, 1);
+    assert.equal(history[0]?.title, "First draft");
+    assert.equal(history[0]?.steps[0]?.kind, "sleep");
+    await deleteRecipe(first.id);
+  });
+});
+
+describe("recipe YAML", () => {
+  it("round-trips through a stable, schema-versioned source format", () => {
+    const recipe = parseRecipeYaml(
+      `schemaVersion: 1\nid: yaml-roundtrip\nname: YAML roundtrip\nsteps:\n  - kind: sleep\n    ms: 10\n`,
+    );
+    const output = formatRecipeYaml(recipe);
+    assert.equal(output, formatRecipeYaml(parseRecipeYaml(output)));
+    assert.equal(recipe.title, "YAML roundtrip");
+  });
+
+  it("keeps reusable-flow parameters and module bindings reviewable in YAML", () => {
+    const recipe = parseRecipeYaml(
+      [
+        "schemaVersion: 1",
+        "id: sign-in-suite",
+        "name: Sign-in suite",
+        "parameters:",
+        "  - name: login_email",
+        "    label: Test account",
+        "    required: true",
+        "steps:",
+        "  - kind: module",
+        "    recipeId: recorded-email-sign-in",
+        "    bindings:",
+        "      login_email: '{{account_email}}'",
+      ].join("\n"),
+    );
+    assert.deepEqual(recipe.parameters, [
+      { name: "login_email", label: "Test account", required: true },
+    ]);
+    assert.deepEqual(recipe.steps, [
+      {
+        kind: "module",
+        recipeId: "recorded-email-sign-in",
+        bindings: { login_email: "{{account_email}}" },
+      },
+    ]);
+    assert.match(formatRecipeYaml(recipe), /parameters:\n  - name: login_email/);
+  });
+
+  it("rejects aliases, duplicate fields, unknown schemas, and unknown fields", () => {
+    assert.throws(
+      () => parseRecipeYaml(`schemaVersion: 1\nid: alias\nname: &name Alias\nsteps: []\n`),
+      /anchors and aliases/i,
+    );
+    assert.throws(
+      () =>
+        parseRecipeYaml(
+          `schemaVersion: 1\nschemaVersion: 1\nid: duplicate\nname: Duplicate\nsteps: []\n`,
+        ),
+      /map keys must be unique/i,
+    );
+    assert.throws(
+      () => parseRecipeYaml(`schemaVersion: 2\nid: future\nname: Future\nsteps: []\n`),
+      /unsupported Relay test schemaVersion/i,
+    );
+    assert.throws(
+      () => parseRecipeYaml(`schemaVersion: 1\nid: extra\nname: Extra\nsteps: []\nunknown: true\n`),
+      /unknown Relay test field/i,
+    );
+  });
 });
 
 describe("packaged recipe CRUD", () => {
@@ -100,6 +213,47 @@ describe("packaged recipe CRUD", () => {
 });
 
 describe("validateRecipeSteps", () => {
+  it("supports explicit Android build evidence and lifecycle steps", () => {
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "app",
+          action: "inspect",
+          app: "com.example.chat",
+          version: "2.4.",
+          versionMatch: "contains",
+          as: "chat_version",
+        },
+        {
+          kind: "app",
+          action: "update",
+          app: "com.example.chat",
+          artifact: "/builds/chat.apk",
+        },
+      ]),
+      [
+        {
+          kind: "app",
+          action: "inspect",
+          app: "com.example.chat",
+          version: "2.4.",
+          versionMatch: "contains",
+          as: "chat_version",
+        },
+        {
+          kind: "app",
+          action: "update",
+          app: "com.example.chat",
+          artifact: "/builds/chat.apk",
+        },
+      ],
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "app", action: "update", app: "com.example.chat" }]),
+      /requires a local APK/i,
+    );
+  });
+
   it("preserves validated recording evidence and selector candidates", () => {
     const [step] = validateRecipeSteps([
       {
@@ -147,9 +301,32 @@ describe("validateRecipeSteps", () => {
       { kind: "key", key: "back" },
       { kind: "sleep", ms: 100 },
       { kind: "wait-for", target: { text: "Welcome" }, timeoutMs: 5000 },
+      {
+        kind: "wait-response",
+        target: { text: "Assistant response" },
+        busyTarget: { text: "Stop generating" },
+        idleTarget: { label: "Send" },
+        timeoutMs: 90_000,
+        stableForMs: 2_000,
+      },
       { kind: "expect", target: { label: "Sign in" }, condition: "visible" },
       { kind: "expect", target: { text: "Welcome" }, condition: "gone", timeoutMs: 3000 },
-      { kind: "pause", message: "enter 2FA code" },
+      { kind: "extract", as: "response", target: { ref: "@answer" }, role: "assistant" },
+      { kind: "assert-content", input: "response", expected: "France", match: "contains" },
+      {
+        kind: "evaluate-semantic",
+        input: "response",
+        criteria: ["Identifies the correct country"],
+        threshold: 0.9,
+      },
+      {
+        kind: "pause",
+        message: "approve the Okta sign-in",
+        reason: "consent",
+        resumeLabel: "Continue test",
+        timeoutMs: 600_000,
+        verifyAfter: { target: { label: "Welcome" }, timeoutMs: 15_000 },
+      },
       { kind: "screenshot", caption: "after login" },
       { kind: "flow", flow: "logout" },
     ];
@@ -157,13 +334,32 @@ describe("validateRecipeSteps", () => {
     assert.equal(out.length, steps.length);
     assert.equal(out[0]!.kind, "tap");
     assert.equal(out[3]!.kind, "swipe");
-    assert.equal(out[11]!.kind, "flow");
+    assert.equal(out[15]!.kind, "flow");
+    assert.equal((out[13] as { reason?: string }).reason, "consent");
+    assert.deepEqual((out[13] as { verifyAfter?: unknown }).verifyAfter, {
+      target: { label: "Welcome" },
+      timeoutMs: 15_000,
+    });
   });
 
   it("rejects tap with empty target, naming the step index", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "tap", target: {} }]),
       /step 1: tap requires target/,
+    );
+  });
+
+  it("rejects a point-only post-handoff verification target", () => {
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "pause",
+            message: "approve sign-in",
+            verifyAfter: { target: { point: { x: 1, y: 2 } } },
+          },
+        ]),
+      /pause\.verifyAfter\.target must have ref, label, or text/,
     );
   });
 
@@ -334,6 +530,10 @@ describe("describeRecipeStep", () => {
       'Wait for text "Done"',
     );
     assert.equal(
+      describeRecipeStep({ kind: "wait-response", target: { text: "Assistant response" } }),
+      'Wait for text "Assistant response" to finish responding',
+    );
+    assert.equal(
       describeRecipeStep({ kind: "expect", target: { label: "Sign in" }, condition: "visible" }),
       'check "Sign in" visible',
     );
@@ -353,6 +553,10 @@ describe("describeRecipeStep", () => {
     assert.deepEqual(glyphsForStep({ kind: "key", key: "back" }), ["tap"]);
     assert.deepEqual(glyphsForStep({ kind: "sleep", ms: 1 }), ["wait"]);
     assert.deepEqual(glyphsForStep({ kind: "wait-for", target: { text: "x" } }), ["wait"]);
+    assert.deepEqual(glyphsForStep({ kind: "wait-response", target: { text: "x" } }), [
+      "ai",
+      "wait",
+    ]);
     assert.deepEqual(
       glyphsForStep({ kind: "expect", target: { text: "x" }, condition: "visible" }),
       ["ok"],

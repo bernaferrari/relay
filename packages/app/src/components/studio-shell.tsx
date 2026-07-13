@@ -1,6 +1,12 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import type { TestVariable } from "@relay/protocol";
-import { useServer, type JobInfo, type RecipeInfo, type RecipeStep } from "../context/server";
+import { For, Index, Show, createEffect, createMemo, createSignal } from "solid-js";
+import type { MatrixExpansion } from "@relay/protocol";
+import {
+  useServer,
+  type JobInfo,
+  type PersistedRun,
+  type RecipeParameter,
+  type RecipeInfo,
+} from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { DeviceStage } from "./stage";
@@ -9,22 +15,33 @@ import { JourneyWorkspace } from "./journey-workspace";
 import { DevicePicker } from "./device-picker";
 import { LibraryPanel } from "./studio-library";
 import { AgentTestComposer } from "./agent-test-composer";
+import { DataWorkspace } from "./workspaces/data-workspace";
+import { MapsWorkspace } from "./workspaces/maps-workspace";
+import { RunSummary } from "./run-summary";
+import { FirstTestProgress } from "./first-test-progress";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, displayTitle, titleize } from "../lib/job";
 import { toast } from "../context/toast";
+import { presentTarget } from "../lib/target-presentation";
+import { matrixRunPreview } from "../lib/matrix-presentation";
+import { nextRovingIndex } from "../lib/roving-focus";
+import { deriveFirstTestState } from "../lib/onboarding";
+import { modalPanel, modalScrim } from "../lib/ui";
+import { withRefreshFeedback } from "../lib/refresh-feedback";
+import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "workflows" | "runs" | "data";
 type StudioView = "live" | "journey";
 
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
-  { id: "workflows", label: "Flows", icon: "move" },
+  { id: "workflows", label: "Maps", icon: "move" },
   { id: "runs", label: "Runs", icon: "wave" },
   { id: "data", label: "Data", icon: "sparkle" },
 ];
 
-export function StudioShell(props: { onOpenSettings: () => void }) {
+export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const recorder = useRecorder();
@@ -34,6 +51,13 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
   const [studioView, setStudioView] = createSignal<StudioView>("live");
   const [query, setQuery] = createSignal("");
   const [libraryOpen, setLibraryOpen] = createSignal(true);
+  const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
+  const [importReview, setImportReview] = createSignal<{
+    yaml: string;
+    recipe: RecipeInfo;
+    exists: boolean;
+    canonicalYaml: string;
+  } | null>(null);
 
   const selected = () => server.selectedRecipe();
   const recordBlockedReason = () => {
@@ -41,6 +65,8 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
     if (server.isEmptyDevices() || !server.selectedDevice()) {
       return "Connect or select a device before recording";
     }
+    const target = server.devices().find((device) => device.serial === server.selectedDevice());
+    if (!target || target.booted === false) return "Start or connect this target before recording";
     return "";
   };
   const filteredRecipes = createMemo(() => {
@@ -64,6 +90,25 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
     setArea("tests");
     setStudioView("live");
     if (record) recorder.enterRecordMode();
+  }
+
+  async function importTestYaml(yaml: string): Promise<void> {
+    try {
+      const preview = await server.previewRecipeYaml(yaml);
+      setImportReview({ yaml, ...preview });
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
+  }
+
+  async function confirmImport(conflict: "replace" | "copy"): Promise<void> {
+    const review = importReview();
+    if (!review) return;
+    const saved = await server.importRecipeYaml(review.yaml, review.exists ? conflict : "reject");
+    if (!saved) return;
+    setImportReview(null);
+    setArea("tests");
+    setStudioView("live");
   }
 
   async function duplicateSelected(): Promise<void> {
@@ -122,7 +167,7 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
             type="button"
             class="relay-rail__item relay-rail__settings"
             aria-label="Open settings"
-            onClick={props.onOpenSettings}
+            onClick={() => props.onOpenSettings()}
           >
             <Icon name="sliders" size={19} />
             <span>Settings</span>
@@ -139,6 +184,7 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
           selectedId={server.selectedRecipeId()}
           onSelect={openRecipe}
           onCreate={() => void createTest(false)}
+          onImport={importTestYaml}
         />
       </Show>
 
@@ -166,7 +212,7 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
                   : area() === "runs"
                     ? "Run history"
                     : area() === "workflows"
-                      ? "Reusable flows"
+                      ? "Maps"
                       : "Test data"}
               </strong>
             </div>
@@ -220,6 +266,8 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
               <TestWelcome
                 onCreate={() => void createTest(false)}
                 onRecord={() => void createTest(true)}
+                onOpenSettings={props.onOpenSettings}
+                recordBlockedReason={recordBlockedReason()}
               />
             }
           >
@@ -260,21 +308,37 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
                   <button
                     class="relay-icon-button"
                     type="button"
-                    aria-label="Duplicate test"
-                    data-tip="Duplicate test"
-                    onClick={() => void duplicateSelected()}
+                    aria-label="More test options"
+                    aria-expanded={studioActionsOpen()}
+                    onClick={() => setStudioActionsOpen((open) => !open)}
                   >
-                    <Icon name="copy" size={16} />
+                    <Icon name="more" size={16} />
                   </button>
-                  <button
-                    class="relay-icon-button relay-icon-button--danger"
-                    type="button"
-                    aria-label="Delete test"
-                    data-tip="Delete test"
-                    onClick={() => void deleteSelected()}
-                  >
-                    <Icon name="trash" size={16} />
-                  </button>
+                  <Show when={studioActionsOpen()}>
+                    <div class="relay-studio-actions-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setStudioActionsOpen(false);
+                          void duplicateSelected();
+                        }}
+                      >
+                        <Icon name="copy" size={14} /> Duplicate test
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="is-danger"
+                        onClick={() => {
+                          setStudioActionsOpen(false);
+                          void deleteSelected();
+                        }}
+                      >
+                        <Icon name="trash" size={14} /> Delete test
+                      </button>
+                    </div>
+                  </Show>
                 </div>
               </div>
               <div class="relay-studio__body">
@@ -286,7 +350,14 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
                     <DeviceStage onExpandBoard={() => setStudioView("journey")} />
                   </Show>
                 </div>
-                <StepDocument onOpenData={() => setArea("data")} />
+                <StepDocument
+                  onOpenData={() => setArea("data")}
+                  onOpenTargets={() => props.onOpenSettings("matrices")}
+                  onOpenRun={(id) => {
+                    server.setSelectedJobId(id);
+                    setArea("runs");
+                  }}
+                />
               </div>
             </section>
           </Show>
@@ -296,26 +367,268 @@ export function StudioShell(props: { onOpenSettings: () => void }) {
           <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
         </Show>
         <Show when={area() === "workflows"}>
-          <WorkflowsWorkspace onOpenRecipe={openRecipe} />
+          <MapsWorkspace onOpenRecipe={openRecipe} />
         </Show>
         <Show when={area() === "data"}>
           <DataWorkspace onConfigureProvider={props.onOpenSettings} />
         </Show>
       </main>
+      <Show when={importReview()}>
+        {(review) => (
+          <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>
+            <section
+              class={cn(modalPanel, "relay-import-review")}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="import-review-title"
+            >
+              <header>
+                <div>
+                  <span class="relay-eyebrow">Relay YAML</span>
+                  <h3 id="import-review-title">
+                    {review().exists ? "This test already exists" : "Import this test?"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  class="relay-icon-button"
+                  aria-label="Close import review"
+                  onClick={() => setImportReview(null)}
+                >
+                  <Icon name="x" size={14} />
+                </button>
+              </header>
+              <div class="relay-import-review__summary">
+                <span class="relay-import-review__icon">
+                  <Icon name="check" size={16} />
+                </span>
+                <div>
+                  <strong>{review().recipe.title}</strong>
+                  <small>
+                    {review().recipe.id} · {review().recipe.steps.length} step
+                    {review().recipe.steps.length === 1 ? "" : "s"} · schema valid
+                  </small>
+                </div>
+              </div>
+              <details>
+                <summary>Preview canonical YAML</summary>
+                <pre>{review().canonicalYaml}</pre>
+              </details>
+              <footer>
+                <p>
+                  {review().exists
+                    ? "Replacing preserves the current definition in version history. Importing a copy creates a new test ID."
+                    : "Relay will store the canonical definition in the tracked tests directory."}
+                </p>
+                <div>
+                  <button
+                    type="button"
+                    class="relay-secondary"
+                    onClick={() => setImportReview(null)}
+                  >
+                    Cancel
+                  </button>
+                  <Show when={review().exists}>
+                    <button
+                      type="button"
+                      class="relay-secondary"
+                      onClick={() => void confirmImport("copy")}
+                    >
+                      Import copy
+                    </button>
+                  </Show>
+                  <button
+                    type="button"
+                    class="relay-primary"
+                    onClick={() => void confirmImport("replace")}
+                  >
+                    {review().exists ? "Replace test" : "Import test"}
+                  </button>
+                </div>
+              </footer>
+            </section>
+          </div>
+        )}
+      </Show>
     </div>
   );
 }
 
-function StepDocument(props: { onOpenData: () => void }) {
+function StepDocument(props: {
+  onOpenData: () => void;
+  onOpenTargets: () => void;
+  onOpenRun: (id: string) => void;
+}) {
   const server = useServer();
   const draft = useRecipeDraft();
-  const [tab, setTab] = createSignal<"steps" | "variables" | "yaml" | "logs">("steps");
+  const [tab, setTab] = createSignal<"steps" | "inputs" | "yaml">("steps");
+  const [runMenuOpen, setRunMenuOpen] = createSignal(false);
+  const [matrixRepetitions, setMatrixRepetitions] = createSignal<1 | 3>(1);
+  const [matrixExpansions, setMatrixExpansions] = createSignal<Record<string, MatrixExpansion>>({});
+  const [matrixPreviewBusy, setMatrixPreviewBusy] = createSignal(false);
+  const [maintenanceOpen, setMaintenanceOpen] = createSignal(false);
+  const [historyOpen, setHistoryOpen] = createSignal(false);
+  const [history, setHistory] = createSignal<RecipeInfo[]>([]);
+  const [yamlSource, setYamlSource] = createSignal<string | null>(null);
+  const [yamlDraft, setYamlDraft] = createSignal("");
+  const [yamlEditing, setYamlEditing] = createSignal(false);
+  const [yamlSaving, setYamlSaving] = createSignal(false);
+  const [yamlMessage, setYamlMessage] = createSignal<{
+    tone: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [stability, setStability] = createSignal<
+    import("../context/server").RecipeStability | null
+  >(null);
   const selected = () => server.selectedRecipe();
+  const selectedTarget = () =>
+    server.devices().find((device) => device.serial === server.selectedDevice()) ?? null;
+  const completedRuns = () => [...server.jobs(), ...server.persistedRuns()];
+  const firstTestState = () =>
+    deriveFirstTestState({
+      serverOnline: server.health() === "online",
+      targetSelected: Boolean(selectedTarget()),
+      targetAvailable: selectedTarget()?.booted !== false,
+      recipeSource: selected()?.source,
+      recipeId: selected()?.id,
+      stepCount: draft.steps().length,
+      runs: completedRuns(),
+    });
+  const completedRun = () =>
+    completedRuns().find(
+      (run) => run.action === selected()?.id && (run.status === "ok" || run.status === "healed"),
+    ) ?? null;
   const canRun = () =>
     server.health() === "online" &&
     !server.isEmptyDevices() &&
+    server.devices().find((device) => device.serial === server.selectedDevice())?.booted !==
+      false &&
     draft.invalidCount() === 0 &&
     draft.steps().length > 0;
+  const matrixSize = () =>
+    Math.max(5, ...server.projectVariables().value.map((variable) => variable.values?.length ?? 1));
+  const activeSchedule = () =>
+    server
+      .schedules()
+      .find(
+        (schedule) =>
+          schedule.recipeId === selected()?.id &&
+          schedule.targetId === server.selectedDevice() &&
+          schedule.enabled,
+      );
+  let yamlRequest = 0;
+  createEffect(() => {
+    const recipe = selected();
+    const updatedAt = recipe?.updatedAt;
+    if (tab() !== "yaml" || !recipe) return;
+    const request = ++yamlRequest;
+    setYamlSource(null);
+    setYamlDraft("");
+    setYamlEditing(false);
+    setYamlMessage(null);
+    void server.loadRecipeYaml(recipe.id).then((yaml) => {
+      if (request === yamlRequest) {
+        setYamlSource(yaml);
+        setYamlDraft(yaml ?? "");
+      }
+    });
+    void updatedAt;
+  });
+  const startYamlEdit = () => {
+    setYamlDraft(yamlSource() ?? "");
+    setYamlMessage(null);
+    setYamlEditing(true);
+  };
+  const cancelYamlEdit = () => {
+    setYamlDraft(yamlSource() ?? "");
+    setYamlMessage(null);
+    setYamlEditing(false);
+  };
+  const saveYaml = async () => {
+    const recipe = selected();
+    const source = yamlDraft().trim();
+    if (!recipe || !source || yamlSaving()) return;
+    setYamlSaving(true);
+    setYamlMessage(null);
+    try {
+      const preview = await server.previewRecipeYaml(source);
+      if (preview.recipe.id !== recipe.id) {
+        throw new Error("The test id cannot change here. Duplicate the test to create a new id.");
+      }
+      const saved = await server.importRecipeYaml(source, "replace");
+      if (!saved) throw new Error("Relay could not save this YAML.");
+      setYamlSource(preview.canonicalYaml);
+      setYamlDraft(preview.canonicalYaml);
+      setYamlEditing(false);
+      setYamlMessage({ tone: "success", text: "Saved and normalized." });
+    } catch (error) {
+      setYamlMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setYamlSaving(false);
+    }
+  };
+  const runTrials = (count: number) => {
+    const recipe = selected();
+    if (!recipe) return;
+    setRunMenuOpen(false);
+    void server.runRecipeRemote(recipe.id, count);
+  };
+  const runOnMatrix = (matrixId: string) => {
+    const recipe = selected();
+    if (!recipe) return;
+    setRunMenuOpen(false);
+    void server.runCompatibilityMatrixRemote(recipe.id, matrixId, matrixRepetitions());
+  };
+  createEffect(() => {
+    if (!runMenuOpen() || server.matrices().length === 0) return;
+    setMatrixPreviewBusy(true);
+    void Promise.all(
+      server.matrices().map(async (matrix) => {
+        const expansion = await server.resolveCompatibilityMatrix(matrix.id);
+        return [matrix.id, expansion] as const;
+      }),
+    )
+      .then((entries) => setMatrixExpansions(Object.fromEntries(entries)))
+      .catch((error: unknown) =>
+        toast(error instanceof Error ? error.message : String(error), "error"),
+      )
+      .finally(() => setMatrixPreviewBusy(false));
+  });
+  createEffect(() => {
+    const id = selected()?.id;
+    if (!id) return;
+    void server
+      .loadRecipeStability(id)
+      .then(setStability)
+      .catch(() => setStability(null));
+  });
+  const toggleHistory = async () => {
+    const recipe = selected();
+    if (!recipe) return;
+    const open = !historyOpen();
+    setHistoryOpen(open);
+    if (open) setHistory(await server.loadRecipeHistory(recipe.id).catch(() => []));
+  };
+  const toggleQuarantine = async () => {
+    const recipe = selected();
+    if (!recipe) return;
+    const quarantined = !recipe.quarantined;
+    const reason = quarantined
+      ? window.prompt("Why should scheduled runs skip this test?", "Investigating flakiness")
+      : "";
+    if (quarantined && reason === null) return;
+    await server.saveRecipeRemote({
+      id: recipe.id,
+      title: draft.title(),
+      description: draft.description(),
+      steps: draft.steps(),
+      quarantined,
+      quarantineReason: reason ?? "",
+    });
+  };
   return (
     <aside class="relay-steps" aria-label="Test steps">
       <div class="relay-steps__head">
@@ -329,14 +642,191 @@ function StepDocument(props: { onOpenData: () => void }) {
               onInput={(event) => draft.setTitle(event.currentTarget.value)}
             />
           </div>
-          <button
-            type="button"
-            class="relay-run"
-            disabled={!canRun()}
-            onClick={() => selected() && void server.runRecipeRemote(selected()!.id)}
-          >
-            <Icon name="play" size={13} /> Run
-          </button>
+          <div class="relay-run-control">
+            <button
+              type="button"
+              class="relay-run"
+              disabled={!canRun()}
+              onClick={() => runTrials(1)}
+            >
+              <Icon name="play" size={13} /> Run
+            </button>
+            <button
+              type="button"
+              class="relay-run relay-run--menu"
+              disabled={!canRun()}
+              aria-label="Run options"
+              aria-expanded={runMenuOpen()}
+              onClick={() => setRunMenuOpen((open) => !open)}
+            >
+              <Icon name="chevron-down" size={12} />
+            </button>
+            <Show when={runMenuOpen()}>
+              <div class="relay-run-menu" role="menu">
+                <button type="button" role="menuitem" onClick={() => runTrials(1)}>
+                  <Icon name="play" size={14} />
+                  <span>
+                    <strong>Smoke run</strong>
+                    <small>One fast execution</small>
+                  </span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => runTrials(3)}>
+                  <Icon name="refresh" size={14} />
+                  <span>
+                    <strong>Reliability check</strong>
+                    <small>3 repeat runs</small>
+                  </span>
+                </button>
+                <button type="button" role="menuitem" onClick={() => runTrials(matrixSize())}>
+                  <Icon name="grid" size={14} />
+                  <span>
+                    <strong>Full data matrix</strong>
+                    <small>{matrixSize()} approved or generated cases</small>
+                  </span>
+                </button>
+                <Show when={server.matrices().length > 0}>
+                  <section class="relay-run-menu__matrices" aria-label="Device and OS matrices">
+                    <header>
+                      <span>Device matrices</span>
+                      <div role="group" aria-label="Trials per environment">
+                        <button
+                          type="button"
+                          aria-pressed={matrixRepetitions() === 1}
+                          onClick={() => setMatrixRepetitions(1)}
+                        >
+                          1×
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={matrixRepetitions() === 3}
+                          onClick={() => setMatrixRepetitions(3)}
+                        >
+                          3×
+                        </button>
+                      </div>
+                    </header>
+                    <For each={server.matrices()}>
+                      {(matrix) => {
+                        const expansion = () => matrixExpansions()[matrix.id];
+                        const preview = () => {
+                          const value = expansion();
+                          return value ? matrixRunPreview(value, matrixRepetitions()) : null;
+                        };
+                        return (
+                          <div class="relay-run-matrix">
+                            <button
+                              type="button"
+                              role="menuitem"
+                              disabled={!expansion() || expansion()!.profiles.length === 0}
+                              onClick={() => runOnMatrix(matrix.id)}
+                            >
+                              <Icon name="grid" size={14} />
+                              <span>
+                                <strong>{matrix.name}</strong>
+                                <small>
+                                  <Show
+                                    when={expansion()}
+                                    fallback={
+                                      matrixPreviewBusy() ? "Checking targets…" : "Unavailable"
+                                    }
+                                  >
+                                    {preview()!.summary}
+                                  </Show>
+                                </small>
+                              </span>
+                              <Icon name="chevron-right" size={12} />
+                            </button>
+                            <Show when={preview()?.exclusions.length}>
+                              <details>
+                                <summary>
+                                  {preview()!.exclusions.length} environment
+                                  {preview()!.exclusions.length === 1 ? "" : "s"} excluded
+                                </summary>
+                                <ul>
+                                  <For each={preview()!.exclusions}>
+                                    {(item) => (
+                                      <li>
+                                        <strong>{item.name}</strong>
+                                        <span>{item.reason}</span>
+                                      </li>
+                                    )}
+                                  </For>
+                                </ul>
+                              </details>
+                            </Show>
+                            <Show when={preview()?.profiles.length}>
+                              <details>
+                                <summary>
+                                  {preview()!.profiles.length} environment
+                                  {preview()!.profiles.length === 1 ? "" : "s"} included
+                                </summary>
+                                <ul>
+                                  <For each={preview()!.profiles}>
+                                    {(profile) => (
+                                      <li>
+                                        <strong>{profile.name}</strong>
+                                        <span>
+                                          {profile.platform}
+                                          {profile.osVersion ? ` · ${profile.osVersion}` : ""}
+                                        </span>
+                                      </li>
+                                    )}
+                                  </For>
+                                </ul>
+                              </details>
+                            </Show>
+                          </div>
+                        );
+                      }}
+                    </For>
+                  </section>
+                </Show>
+                <Show when={server.matrices().length === 0}>
+                  <div class="relay-run-menu__empty">
+                    <strong>No device matrix yet</strong>
+                    <small>
+                      Save a set of devices and OS versions to run this test across them.
+                    </small>
+                  </div>
+                </Show>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setRunMenuOpen(false);
+                    props.onOpenTargets();
+                  }}
+                >
+                  <Icon name="sliders" size={14} />
+                  <span>
+                    <strong>Manage device matrices</strong>
+                    <small>Choose devices, OS versions, and capabilities</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    const recipe = selected();
+                    if (!recipe) return;
+                    setRunMenuOpen(false);
+                    void server
+                      .scheduleRecipe({ recipeId: recipe.id, intervalMinutes: 1_440 })
+                      .then(() => toast("Daily local run scheduled", "success"))
+                      .catch((error: unknown) =>
+                        toast(error instanceof Error ? error.message : String(error), "error"),
+                      );
+                  }}
+                >
+                  <Icon name="clock" size={14} />
+                  <span>
+                    <strong>Schedule daily</strong>
+                    <small>Runs on this target</small>
+                  </span>
+                </button>
+              </div>
+            </Show>
+          </div>
         </div>
         <textarea
           aria-label="Test description"
@@ -346,22 +836,137 @@ function StepDocument(props: { onOpenData: () => void }) {
           spellcheck={false}
           onInput={(event) => draft.setDescription(event.currentTarget.value)}
         />
-        <div class="relay-editor-tabs" role="tablist" aria-label="Test editor panels">
-          <For each={["steps", "variables", "yaml", "logs"] as const}>
+        <div class="relay-test-health">
+          <Show
+            when={stability()?.passRate !== null && stability()?.passRate !== undefined}
+            fallback={<span>No run baseline yet</span>}
+          >
+            <span>
+              {Math.round((stability()!.passRate ?? 0) * 100)}% stable · {stability()!.total} recent
+              runs
+            </span>
+          </Show>
+          <Show when={selected()?.quarantined}>
+            <b title={selected()?.quarantineReason}>Quarantined</b>
+          </Show>
+          <Show when={activeSchedule()}>
+            <span>Scheduled daily</span>
+          </Show>
+          <button
+            type="button"
+            class="relay-test-health__more"
+            aria-label="More test actions"
+            aria-expanded={maintenanceOpen()}
+            onClick={() => setMaintenanceOpen((open) => !open)}
+          >
+            <Icon name="more" size={14} />
+          </button>
+          <Show when={maintenanceOpen()}>
+            <div class="relay-test-maintenance-menu" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMaintenanceOpen(false);
+                  void toggleHistory();
+                }}
+              >
+                <Icon name="clock" size={14} /> Version history
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMaintenanceOpen(false);
+                  void toggleQuarantine();
+                }}
+              >
+                <Icon name={selected()?.quarantined ? "refresh" : "pause"} size={14} />
+                {selected()?.quarantined ? "Restore to suite" : "Quarantine test"}
+              </button>
+              <Show when={activeSchedule()}>
+                {(schedule) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMaintenanceOpen(false);
+                      if (!window.confirm("Remove this local schedule?")) return;
+                      void server.deleteLocalSchedule(schedule().id);
+                    }}
+                  >
+                    <Icon name="x" size={14} /> Remove daily schedule
+                  </button>
+                )}
+              </Show>
+            </div>
+          </Show>
+        </div>
+        <Show when={selected()?.source === "custom"}>
+          <FirstTestProgress
+            state={firstTestState()}
+            runId={completedRun()?.id}
+            onOpenRun={props.onOpenRun}
+            onOpenYaml={() => setTab("yaml")}
+          />
+        </Show>
+        <Show when={historyOpen()}>
+          <div class="relay-history-popover">
+            <header>
+              <div>
+                <strong>Version history</strong>
+                <small>Every saved edit remains recoverable.</small>
+              </div>
+              <button
+                type="button"
+                aria-label="Close history"
+                onClick={() => setHistoryOpen(false)}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            </header>
+            <For each={history()} fallback={<p>No earlier versions yet.</p>}>
+              {(version) => (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selected()) return;
+                    void server.restoreRecipeVersion(selected()!.id, version.updatedAt).then(() => {
+                      setHistoryOpen(false);
+                      toast("Version restored", "success");
+                    });
+                  }}
+                >
+                  <span>
+                    <strong>{new Date(version.updatedAt).toLocaleString()}</strong>
+                    <small>
+                      {version.steps.length} steps · {version.title}
+                    </small>
+                  </span>
+                  <Icon name="refresh" size={13} />
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+        <div class="mt-1.5 flex items-center gap-4" role="tablist" aria-label="Test editor panels">
+          <For each={["steps", "inputs", "yaml"] as const}>
             {(item) => (
               <button
                 type="button"
                 role="tab"
                 aria-selected={tab() === item}
-                class={cn(tab() === item && "is-active")}
+                class={cn(
+                  "relative inline-flex min-h-8 items-center gap-1.5 px-0.5 text-[11px]/[1.25] font-semibold text-text-weaker transition-colors after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:scale-x-0 after:rounded-full after:bg-surface-brand-base after:transition-transform hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+                  tab() === item && "text-text-base after:scale-x-100",
+                )}
                 onClick={() => setTab(item)}
               >
-                {item === "steps" ? "Steps" : item === "yaml" ? "YAML" : titleize(item)}
+                {item === "steps" ? "Steps" : item === "inputs" ? "Inputs" : "YAML"}
                 <Show when={item === "steps"}>
-                  <span>{draft.steps().length}</span>
-                </Show>
-                <Show when={item === "logs" && server.logs().length > 0}>
-                  <span>{Math.min(server.logs().length, 99)}</span>
+                  <span class="min-w-4 rounded-full bg-surface-weak px-1 text-center text-[9px]/4 text-text-weak">
+                    {draft.steps().length}
+                  </span>
                 </Show>
               </button>
             )}
@@ -370,68 +975,80 @@ function StepDocument(props: { onOpenData: () => void }) {
       </div>
       <div class="relay-steps__body" data-editor-tab={tab()}>
         <Show when={tab() === "steps"}>
-          <div class="relay-steps-editor-stack">
+          <div class="flex h-full min-h-0 flex-col">
             <AgentTestComposer />
             <RecipeStepsEditor />
           </div>
         </Show>
-        <Show when={tab() === "variables"}>
-          <div class="relay-editor-empty">
-            <span>
-              <Icon name="sparkle" size={20} />
-            </span>
-            <strong>Use test data in any step</strong>
-            <p>
-              Reference resolved values with <code>{"{{variable_name}}"}</code>. Every run stores
-              the exact value it used.
-            </p>
-            <button type="button" class="relay-secondary" onClick={props.onOpenData}>
-              Manage variables
-            </button>
+        <Show when={tab() === "inputs"}>
+          <div class="relay-inputs-panel">
+            <FlowParametersEditor />
+            <div class="relay-inputs-panel__variables">
+              <div>
+                <Icon name="sparkle" size={17} />
+                <span>
+                  <strong>Workspace variables</strong>
+                  <small>
+                    Use {"{{variable_name}}"} in any step. Every run preserves its value.
+                  </small>
+                </span>
+              </div>
+              <button type="button" class="relay-secondary" onClick={props.onOpenData}>
+                Manage variables
+              </button>
+            </div>
           </div>
         </Show>
         <Show when={tab() === "yaml"}>
           <div class="relay-code-panel">
             <header>
-              <span>Exportable test definition</span>
-              <button
-                type="button"
-                onClick={() =>
-                  void navigator.clipboard?.writeText(recipeToYaml(draft.title(), draft.steps()))
-                }
-              >
-                <Icon name="copy" size={13} /> Copy
-              </button>
-            </header>
-            <pre>{recipeToYaml(draft.title(), draft.steps())}</pre>
-          </div>
-        </Show>
-        <Show when={tab() === "logs"}>
-          <div class="relay-code-panel relay-code-panel--logs">
-            <header>
-              <span>Device and execution log</span>
-              <button type="button" onClick={() => server.clearLogs()}>
-                Clear
-              </button>
+              <span>Source file</span>
+              <div class="relay-code-panel__actions">
+                <Show when={!yamlEditing()}>
+                  <button
+                    type="button"
+                    disabled={!yamlSource()}
+                    onClick={() => void navigator.clipboard?.writeText(yamlSource() ?? "")}
+                  >
+                    <Icon name="copy" size={13} /> Copy
+                  </button>
+                  <button type="button" disabled={!yamlSource()} onClick={startYamlEdit}>
+                    <Icon name="edit" size={13} /> Edit
+                  </button>
+                </Show>
+                <Show when={yamlEditing()}>
+                  <button type="button" onClick={cancelYamlEdit} disabled={yamlSaving()}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={() => void saveYaml()} disabled={yamlSaving()}>
+                    {yamlSaving() ? "Saving…" : "Save YAML"}
+                  </button>
+                </Show>
+              </div>
             </header>
             <Show
-              when={server.logs().length > 0}
-              fallback={
-                <div class="relay-log-empty">
-                  Logs will stream here while you drive or run the device.
-                </div>
-              }
+              when={yamlSource()}
+              fallback={<div class="relay-code-panel__loading">Loading canonical YAML…</div>}
             >
-              <pre>
-                <For each={server.logs()}>
-                  {(line) => (
-                    <span data-level={line.level}>
-                      {new Date(line.at).toLocaleTimeString()} {line.text}
-                      {"\n"}
-                    </span>
-                  )}
-                </For>
-              </pre>
+              <Show when={yamlEditing()} fallback={<pre>{yamlSource()}</pre>}>
+                <textarea
+                  class="relay-code-panel__editor"
+                  aria-label="Test YAML"
+                  spellcheck={false}
+                  value={yamlDraft()}
+                  onInput={(event) => {
+                    setYamlDraft(event.currentTarget.value);
+                    setYamlMessage(null);
+                  }}
+                />
+              </Show>
+              <Show when={yamlMessage()}>
+                {(message) => (
+                  <p class={cn("relay-code-panel__message", `is-${message().tone}`)} role="status">
+                    {message().text}
+                  </p>
+                )}
+              </Show>
             </Show>
           </div>
         </Show>
@@ -440,334 +1057,109 @@ function StepDocument(props: { onOpenData: () => void }) {
   );
 }
 
-function TestWelcome(props: { onCreate: () => void; onRecord: () => void }) {
+function TestWelcome(props: {
+  onCreate: () => void;
+  onRecord: () => void;
+  onOpenSettings: (section?: SettingsSection) => void;
+  recordBlockedReason: string;
+}) {
+  const server = useServer();
+  const selectedDevice = () =>
+    server.devices().find((device) => device.serial === server.selectedDevice()) ?? null;
+  const target = selectedDevice;
+  const targetCopy = () => (target() ? presentTarget(target()!) : null);
+  const targetReady = () =>
+    Boolean(target()) && server.health() === "online" && target()!.booted !== false;
+  const firstTestState = () =>
+    deriveFirstTestState({
+      serverOnline: server.health() === "online",
+      targetSelected: Boolean(target()),
+      targetAvailable: target()?.booted !== false,
+    });
+
   return (
-    <section class="relay-welcome">
-      <div class="relay-welcome__visual" aria-hidden="true">
+    <section class="relay-welcome relay-first-test" aria-labelledby="test-welcome-title">
+      <div class="relay-first-test__content">
+        <span class="relay-eyebrow">Test studio</span>
+        <h2 id="test-welcome-title">Create your first test.</h2>
+        <p>
+          {target()
+            ? "Record a real interaction or describe the flow. Every step stays editable."
+            : "Connect a device or browser, then record the flow exactly as a customer would."}
+        </p>
+        <Show when={target()}>
+          <div class="relay-first-test__target" aria-live="polite">
+            <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={17} />
+            <div>
+              <strong>{targetCopy()!.displayName}</strong>
+              <span>{targetReady() ? targetCopy()!.statusLabel : "Unavailable"}</span>
+            </div>
+            <button
+              type="button"
+              class="relay-first-test__change"
+              onClick={() => props.onOpenSettings("targets")}
+            >
+              Change
+            </button>
+          </div>
+        </Show>
+        <div class="relay-first-test__actions">
+          <Show
+            when={target()}
+            fallback={
+              <button
+                type="button"
+                class="relay-primary"
+                onClick={() => props.onOpenSettings("targets")}
+              >
+                Connect a target <Icon name="arrow-right" size={14} />
+              </button>
+            }
+          >
+            <Show
+              when={targetReady()}
+              fallback={
+                <button
+                  type="button"
+                  class="relay-primary"
+                  onClick={() => props.onOpenSettings("targets")}
+                >
+                  Set up this target <Icon name="arrow-right" size={14} />
+                </button>
+              }
+            >
+              <button
+                class="relay-primary"
+                type="button"
+                disabled={Boolean(props.recordBlockedReason)}
+                data-tip={props.recordBlockedReason || "Record device interactions"}
+                onClick={props.onRecord}
+              >
+                <span class="relay-record__dot" /> Record a test
+              </button>
+            </Show>
+          </Show>
+          <button class="relay-first-test__manual" type="button" onClick={props.onCreate}>
+            {target() ? "Describe the flow instead" : "Build without a target"}
+          </button>
+        </div>
+        <FirstTestProgress state={firstTestState()} />
+      </div>
+      <div class="relay-welcome__visual relay-first-test__visual" aria-hidden="true">
         <div class="relay-welcome__phone">
+          <span />
           <span />
           <span />
           <span />
         </div>
         <div class="relay-pointer-demo">
-          <svg width="24" height="28" viewBox="0 0 24 28" aria-hidden="true">
-            <path
-              d="M2 2.2v20.5l5.3-5.1 3.5 8.1 4.2-1.9-3.5-7.8h7.2L2 2.2Z"
-              fill="#111318"
-              stroke="#fff"
-              stroke-width="1.6"
-              stroke-linejoin="round"
-            />
-          </svg>
+          <Icon name="pointer" size={30} strokeWidth={1.8} />
           <i />
         </div>
         <div class="relay-welcome__step">
-          01 <strong>Tap “Continue”</strong>
+          <span>01</span>
+          <strong>Tap “Continue”</strong>
         </div>
-      </div>
-      <div class="relay-welcome__copy">
-        <span class="relay-eyebrow">Test studio</span>
-        <h2>Turn a manual flow into a repeatable test.</h2>
-        <p>
-          Connect a device, press record, and use the app normally. Every tap, swipe, and typed
-          value becomes an editable step with evidence.
-        </p>
-        <div>
-          <button class="relay-primary" type="button" onClick={props.onRecord}>
-            <span class="relay-record__dot" /> Record your first test
-          </button>
-          <button class="relay-secondary" type="button" onClick={props.onCreate}>
-            Build manually
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function WorkflowsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
-  const server = useServer();
-  const [selectedId, setSelectedId] = createSignal<string | null>(null);
-  const [adding, setAdding] = createSignal("");
-  const workflows = createMemo(() =>
-    server
-      .recipes()
-      .filter(
-        (recipe) =>
-          recipe.description?.startsWith("Workflow ·") ||
-          (recipe.steps.length > 0 && recipe.steps.every((step) => step.kind === "module")),
-      ),
-  );
-  const selected = () =>
-    workflows().find((item) => item.id === selectedId()) ?? workflows()[0] ?? null;
-
-  createEffect(() => {
-    if (!selectedId() && workflows()[0]) setSelectedId(workflows()[0]!.id);
-  });
-
-  async function createWorkflow(): Promise<void> {
-    const saved = await server.saveRecipeRemote({
-      title: `Workflow ${workflows().length + 1}`,
-      description: "Workflow · Run reusable tests in order",
-      steps: [],
-    });
-    if (saved) setSelectedId(saved.id);
-  }
-
-  async function replaceSteps(recipe: RecipeInfo, steps: RecipeStep[]): Promise<void> {
-    await server.saveRecipeRemote({
-      id: recipe.id,
-      title: recipe.title,
-      description: recipe.description,
-      steps,
-    });
-  }
-
-  async function duplicateWorkflow(recipe: RecipeInfo): Promise<void> {
-    const saved = await server.saveRecipeRemote({
-      title: `${recipe.title} copy`,
-      description: recipe.description,
-      steps: recipe.steps,
-    });
-    if (saved) setSelectedId(saved.id);
-  }
-
-  async function deleteWorkflow(recipe: RecipeInfo): Promise<void> {
-    if (!window.confirm(`Delete “${recipe.title}”? This cannot be undone.`)) return;
-    await server.deleteRecipeRemote(recipe.id);
-    setSelectedId(null);
-  }
-
-  return (
-    <section class="relay-page relay-workflows">
-      <div class="relay-page__hero relay-workflow-hero">
-        <div>
-          <h2>Reusable flows</h2>
-          <p>Chain tests into reliable journeys without duplicating a single step.</p>
-        </div>
-        <Show when={workflows().length > 0}>
-          <button type="button" class="relay-primary" onClick={() => void createWorkflow()}>
-            <Icon name="plus" size={15} /> New workflow
-          </button>
-        </Show>
-      </div>
-      <div class={cn("relay-workflow-layout", workflows().length === 0 && "is-empty")}>
-        <aside class="relay-workflow-list">
-          <For each={workflows()} fallback={<div class="relay-table-empty">No workflows yet.</div>}>
-            {(workflow) => (
-              <button
-                type="button"
-                class={cn(selected()?.id === workflow.id && "is-active")}
-                onClick={() => setSelectedId(workflow.id)}
-              >
-                <span>
-                  <strong>{workflow.title}</strong>
-                  <small>
-                    {workflow.steps.length} test{workflow.steps.length === 1 ? "" : "s"}
-                  </small>
-                </span>
-                <Icon name="chevron-right" size={14} />
-              </button>
-            )}
-          </For>
-        </aside>
-        <Show
-          when={selected()}
-          fallback={
-            <div class="relay-workflow-empty relay-workflow-onboarding">
-              <div class="relay-workflow-onboarding__visual" aria-hidden="true">
-                <span>
-                  <Icon name="login" size={17} />
-                  <b>Sign in</b>
-                </span>
-                <Icon name="arrow-right" size={15} />
-                <span>
-                  <Icon name="bag" size={17} />
-                  <b>Checkout</b>
-                </span>
-                <Icon name="arrow-right" size={15} />
-                <span>
-                  <Icon name="check" size={17} />
-                  <b>Verify</b>
-                </span>
-              </div>
-              <span class="relay-eyebrow">Reusable building blocks</span>
-              <h3>Turn trusted tests into complete journeys</h3>
-              <p>
-                Add existing tests, arrange their order, and run the whole sequence. Edit a test
-                once and every flow automatically stays current.
-              </p>
-              <button type="button" class="relay-primary" onClick={() => void createWorkflow()}>
-                <Icon name="plus" size={15} /> Create your first flow
-              </button>
-            </div>
-          }
-        >
-          {(workflow) => (
-            <div class="relay-workflow-builder">
-              <header>
-                <div>
-                  <span class="relay-eyebrow">Workflow</span>
-                  <input
-                    aria-label="Workflow title"
-                    value={workflow().title}
-                    onChange={(e) =>
-                      void server.saveRecipeRemote({
-                        id: workflow().id,
-                        title: e.currentTarget.value,
-                        description: workflow().description,
-                        steps: workflow().steps,
-                      })
-                    }
-                  />
-                </div>
-                <div>
-                  <button
-                    type="button"
-                    class="relay-icon-button"
-                    aria-label="Duplicate workflow"
-                    data-tip="Duplicate workflow"
-                    onClick={() => void duplicateWorkflow(workflow())}
-                  >
-                    <Icon name="copy" size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    class="relay-icon-button relay-icon-button--danger"
-                    aria-label="Delete workflow"
-                    data-tip="Delete workflow"
-                    onClick={() => void deleteWorkflow(workflow())}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    class="relay-secondary"
-                    onClick={() => props.onOpenRecipe(workflow().id)}
-                  >
-                    Open as test
-                  </button>
-                  <button
-                    type="button"
-                    class="relay-primary"
-                    onClick={() => void server.runRecipeRemote(workflow().id)}
-                  >
-                    <Icon name="play" size={13} /> Run sequence
-                  </button>
-                </div>
-              </header>
-              <div class="relay-workflow-steps">
-                <For
-                  each={workflow().steps}
-                  fallback={
-                    <div class="relay-workflow-empty">
-                      <strong>No tests in this workflow</strong>
-                      <p>Add tests below; they run top to bottom.</p>
-                    </div>
-                  }
-                >
-                  {(step, index) => (
-                    <Show when={step.kind === "module" ? step : null}>
-                      {(module) => {
-                        const child = () =>
-                          server.recipes().find((r) => r.id === module().recipeId);
-                        return (
-                          <div class="relay-workflow-step">
-                            <span>{index() + 1}</span>
-                            <Icon name="bolt" size={15} />
-                            <div>
-                              <strong>{child()?.title ?? module().recipeId}</strong>
-                              <small>{child()?.steps.length ?? 0} steps</small>
-                            </div>
-                            <div class="relay-workflow-step__actions">
-                              <button
-                                type="button"
-                                aria-label="Move up"
-                                disabled={index() === 0}
-                                onClick={() => {
-                                  const next = [...workflow().steps];
-                                  [next[index() - 1], next[index()]] = [
-                                    next[index()]!,
-                                    next[index() - 1]!,
-                                  ];
-                                  void replaceSteps(workflow(), next);
-                                }}
-                              >
-                                <Icon name="chevron-up" size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Move down"
-                                disabled={index() === workflow().steps.length - 1}
-                                onClick={() => {
-                                  const next = [...workflow().steps];
-                                  [next[index()], next[index() + 1]] = [
-                                    next[index() + 1]!,
-                                    next[index()]!,
-                                  ];
-                                  void replaceSteps(workflow(), next);
-                                }}
-                              >
-                                <Icon name="chevron-down" size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Remove from workflow"
-                                onClick={() =>
-                                  void replaceSteps(
-                                    workflow(),
-                                    workflow().steps.filter((_, i) => i !== index()),
-                                  )
-                                }
-                              >
-                                <Icon name="trash" size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      }}
-                    </Show>
-                  )}
-                </For>
-              </div>
-              <footer>
-                <select
-                  aria-label="Test to add"
-                  value={adding()}
-                  onChange={(e) => setAdding(e.currentTarget.value)}
-                >
-                  <option value="">Choose a test…</option>
-                  <For
-                    each={server
-                      .recipes()
-                      .filter(
-                        (recipe) =>
-                          recipe.id !== workflow().id &&
-                          !workflows().some((flow) => flow.id === recipe.id),
-                      )}
-                  >
-                    {(recipe) => <option value={recipe.id}>{recipe.title}</option>}
-                  </For>
-                </select>
-                <button
-                  type="button"
-                  class="relay-secondary"
-                  disabled={!adding()}
-                  onClick={() => {
-                    if (!adding()) return;
-                    void replaceSteps(workflow(), [
-                      ...workflow().steps,
-                      { kind: "module", recipeId: adding() },
-                    ]);
-                    setAdding("");
-                  }}
-                >
-                  <Icon name="plus" size={14} /> Add test
-                </button>
-              </footer>
-            </div>
-          )}
-        </Show>
       </div>
     </section>
   );
@@ -777,49 +1169,142 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
   const server = useServer();
   const linkedRun = new URLSearchParams(window.location.search).get("run");
   const [selectedId, setSelectedId] = createSignal<string | null>(linkedRun);
-  const [tab, setTab] = createSignal<"summary" | "replay" | "network" | "logs">("summary");
-  const rows = createMemo(() =>
-    [...server.jobs()].sort((a, b) => (b.startedAt ?? b.queuedAt) - (a.startedAt ?? a.queuedAt)),
-  );
+  const [tab, setTab] = createSignal<
+    "summary" | "replay" | "evaluation" | "network" | "logs" | "compatibility"
+  >("summary");
+  const [matrixReport, setMatrixReport] = createSignal<
+    import("@relay/protocol").CompatibilityReport | null
+  >(null);
+  const [refreshing, setRefreshing] = createSignal(false);
+  async function refreshRuns(): Promise<void> {
+    if (refreshing()) return;
+    setRefreshing(true);
+    try {
+      await withRefreshFeedback(async () => {
+        await server.refreshJobs();
+        await server.refreshRuns();
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+  const rows = createMemo(() => {
+    const live = server.jobs();
+    const liveIds = new Set(live.map((run) => run.id));
+    const disk = server
+      .persistedRuns()
+      .filter((run) => !liveIds.has(run.id))
+      .map(persistedAsJob);
+    return [...live, ...disk].sort(
+      (a, b) => (b.startedAt ?? b.queuedAt) - (a.startedAt ?? a.queuedAt),
+    );
+  });
   const selected = () => rows().find((row) => row.id === selectedId()) ?? null;
+  createEffect(() => {
+    const requested = server.selectedJobId();
+    if (!requested || !rows().some((row) => row.id === requested)) return;
+    setSelectedId(requested);
+    setTab("summary");
+  });
+  createEffect(() => {
+    const job = selected();
+    if (tab() !== "compatibility" || !job?.batchId || !job.targetProfile) {
+      setMatrixReport(null);
+      return;
+    }
+    void server.loadCompatibilityReport(job.batchId).then(setMatrixReport);
+  });
+  const baseline = () => {
+    const current = selected();
+    if (!current) return null;
+    return (
+      rows().find(
+        (row) =>
+          row.id !== current.id &&
+          row.action === current.action &&
+          (row.finishedAt ?? row.startedAt ?? row.queuedAt) <
+            (current.finishedAt ?? current.startedAt ?? current.queuedAt),
+      ) ?? null
+    );
+  };
+  const onReportTabKeyDown = (event: KeyboardEvent) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const currentTarget = event.currentTarget as HTMLButtonElement;
+    const tablist = currentTarget.closest<HTMLElement>("[role='tablist']");
+    const tabs = [...(tablist?.querySelectorAll<HTMLButtonElement>("[role='tab']") ?? [])];
+    if (tabs.length === 0) return;
+    event.preventDefault();
+    const current = tabs.indexOf(currentTarget);
+    const next = nextRovingIndex(event.key, current, tabs.length, "horizontal");
+    if (next === null) return;
+    tabs[next]?.focus();
+    tabs[next]?.click();
+  };
   return (
     <section class={cn("relay-page", rows().length === 0 && "relay-runs-empty")}>
       <div class="relay-page__hero">
         <div>
           <span class="relay-eyebrow">Execution</span>
           <h2>Run history</h2>
-          <p>Every result, device, duration, and recovery attempt in one place.</p>
+          <p>See what passed, what needs attention, and why.</p>
         </div>
         <Show when={rows().length > 0}>
-          <button type="button" class="relay-secondary" onClick={() => void server.refreshJobs()}>
-            <Icon name="refresh" size={15} /> Refresh
+          <button
+            type="button"
+            class="relay-secondary"
+            disabled={refreshing()}
+            aria-busy={refreshing()}
+            onClick={() => void refreshRuns()}
+          >
+            <Icon
+              name="refresh"
+              size={15}
+              class={refreshing() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"}
+            />{" "}
+            Refresh
           </button>
         </Show>
       </div>
-      <div class="relay-metrics">
-        <Metric label="Total runs" value={rows().length} detail="all time" />
-        <Metric
-          label="Passed"
-          value={rows().filter((row) => row.status === "ok" || row.status === "healed").length}
-          detail="including healed"
-          tone="success"
-        />
-        <Metric
-          label="Needs attention"
-          value={rows().filter((row) => row.status === "error").length}
-          detail="failed runs"
-          tone="danger"
-        />
-      </div>
-      <div class={cn("relay-run-layout", selected() && "has-detail")}>
-        <div class="relay-run-table">
-          <div class="relay-run-table__head">
-            <span>Test</span>
-            <span>Status</span>
-            <span>Device</span>
-            <span>Started</span>
-            <span>Duration</span>
-          </div>
+      <Show when={rows().length > 0}>
+        <div class="mx-auto mb-4 grid w-full max-w-[1180px] grid-cols-3 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger [&>*+*]:border-l [&>*+*]:border-border-weak-base">
+          <Metric label="Total runs" value={rows().length} detail="all time" />
+          <Metric
+            label="Passed"
+            value={rows().filter((row) => row.status === "ok" || row.status === "healed").length}
+            detail="including healed"
+            tone="success"
+          />
+          <Metric
+            label="Needs attention"
+            value={rows().filter((row) => row.status === "error").length}
+            detail="failed runs"
+            tone="danger"
+          />
+        </div>
+      </Show>
+      <div
+        class={cn(
+          "mx-auto grid w-full max-w-[1180px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
+          selected() &&
+            "grid-cols-[minmax(520px,1.25fr)_minmax(360px,0.75fr)] max-[1050px]:grid-cols-1",
+          rows().length === 0 && "place-items-center px-6 py-16",
+        )}
+      >
+        <div
+          class={cn(
+            "w-full max-w-none overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger",
+            rows().length === 0 && "max-w-[680px] rounded-[20px]",
+          )}
+        >
+          <Show when={rows().length > 0}>
+            <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase [&>span]:min-w-0 [&>span]:truncate">
+              <span>Test</span>
+              <span>Status</span>
+              <span>Device</span>
+              <span>Started</span>
+              <span>Duration</span>
+            </div>
+          </Show>
           <For
             each={rows()}
             fallback={
@@ -859,16 +1344,13 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     </span>
                     <span>
                       <Icon name="check" size={13} />
-                      <b>Immutable</b>
+                      <b>Saved</b>
                     </span>
                   </div>
                 </div>
-                <span class="relay-eyebrow">Replayable evidence</span>
-                <h3>Every run becomes proof</h3>
-                <p>
-                  Execute a test to preserve its steps, screenshots, logs, network activity, and
-                  resolved data in one immutable report.
-                </p>
+                <span class="relay-eyebrow">Run history</span>
+                <h3>Every run keeps the evidence</h3>
+                <p>Run a test to keep its result, replay, diagnostics, and test data together.</p>
                 <button type="button" class="relay-primary" onClick={props.onOpenTests}>
                   Run your first test <Icon name="arrow-right" size={14} />
                 </button>
@@ -889,22 +1371,25 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
         </div>
         <Show when={selected()}>
           {(job) => (
-            <aside class="relay-run-detail">
-              <header>
-                <div>
-                  <span class="relay-eyebrow">Immutable report</span>
-                  <strong>
+            <aside class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger">
+              <header class="flex min-h-18 items-center justify-between gap-3 px-4 py-3">
+                <div class="grid min-w-0 gap-1">
+                  <span class="relay-eyebrow">Result</span>
+                  <strong class="truncate text-[16px]/[1.25] font-semibold text-text-base">
                     {server.recipes().find((r) => r.id === job().action)?.title ??
                       job().title ??
                       job().action}
                   </strong>
-                  <small>{job().id}</small>
+                  <small class="truncate text-[10px]/[1.25] text-text-weaker">
+                    {job().targetProfile?.name ?? job().serial ?? "Target not recorded"} ·{" "}
+                    {fmtAgo(job().finishedAt ?? job().startedAt ?? job().queuedAt, server.clock())}
+                  </small>
                 </div>
-                <div class="relay-run-detail__actions">
+                <div class="flex items-center gap-1">
                   <button
                     type="button"
+                    class="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-[11px]/[1.25] font-semibold text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
                     aria-label="Copy report link"
-                    data-tip="Copy report link"
                     onClick={() => {
                       const url = new URL(window.location.href);
                       url.searchParams.set("run", job().id);
@@ -913,11 +1398,13 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                       toast("Report link copied", "success");
                     }}
                   >
-                    <Icon name="copy" size={15} />
+                    <Icon name="copy" size={13} /> Copy link
                   </button>
                   <button
                     type="button"
+                    class="grid size-10 place-items-center rounded-lg text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
                     aria-label="Close report"
+                    data-tip="Close report"
                     onClick={() => {
                       setSelectedId(null);
                       const url = new URL(window.location.href);
@@ -929,11 +1416,16 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                   </button>
                 </div>
               </header>
-              <nav role="tablist" aria-label="Run evidence">
+              <nav
+                class="flex overflow-x-auto border-b border-border-weak-base px-2.5"
+                role="tablist"
+                aria-label="Run evidence"
+              >
                 {(
                   [
                     ["summary", "Summary"],
                     ["replay", "Replay"],
+                    ["evaluation", "Evaluation"],
                     ["network", "Network"],
                     ["logs", "Logs"],
                   ] as const
@@ -941,88 +1433,118 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                   <button
                     type="button"
                     role="tab"
+                    id={`run-report-tab-${id}`}
+                    aria-controls="run-report-panel"
                     aria-selected={tab() === id}
-                    class={cn(tab() === id && "is-active")}
+                    tabindex={tab() === id ? 0 : -1}
+                    class={cn(
+                      "inline-flex h-9.5 shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2 text-[10px]/[1.25] text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+                      tab() === id && "border-surface-brand-base text-text-base",
+                    )}
                     onClick={() => setTab(id)}
+                    onKeyDown={onReportTabKeyDown}
                   >
                     {label}
                     {id === "network" &&
                     (job().artifacts?.filter((a) => a.kind === "network").length ?? 0) > 0 ? (
-                      <span>{job().artifacts!.filter((a) => a.kind === "network").length}</span>
+                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[8px]/4 text-text-interactive-base">
+                        {job().artifacts!.filter((a) => a.kind === "network").length}
+                      </span>
                     ) : null}
                   </button>
                 ))}
+                <Show when={job().batchId && job().targetProfile}>
+                  <button
+                    type="button"
+                    role="tab"
+                    id="run-report-tab-compatibility"
+                    aria-controls="run-report-panel"
+                    aria-selected={tab() === "compatibility"}
+                    tabindex={tab() === "compatibility" ? 0 : -1}
+                    class={cn(
+                      "inline-flex h-9.5 shrink-0 items-center border-b-2 border-transparent px-2 text-[10px]/[1.25] text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+                      tab() === "compatibility" && "border-surface-brand-base text-text-base",
+                    )}
+                    onClick={() => setTab("compatibility")}
+                    onKeyDown={onReportTabKeyDown}
+                  >
+                    Matrix
+                  </button>
+                </Show>
               </nav>
-              <div class="relay-run-detail__body">
+              <div
+                id="run-report-panel"
+                class="max-h-[570px] overflow-auto p-3.5"
+                role="tabpanel"
+                aria-labelledby={`run-report-tab-${tab()}`}
+                tabindex={0}
+              >
                 <Show when={tab() === "summary"}>
-                  <div class="relay-report-summary">
-                    <div>
-                      <span>Status</span>
-                      <strong class={cn("relay-status", `is-${job().status}`)}>
-                        {titleize(job().status)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Duration</span>
-                      <strong>{fmtDur(job(), server.clock()) || "—"}</strong>
-                    </div>
-                    <div>
-                      <span>Device</span>
-                      <strong>{job().serial ?? "—"}</strong>
-                    </div>
-                    <div>
-                      <span>Attempts</span>
-                      <strong>{job().attempts ?? 1}</strong>
-                    </div>
-                    <p>
-                      Recipe, selected device, steps, logs, screenshots, and observability payloads
-                      are frozen with this run.
-                    </p>
-                    <Show when={Object.keys(job().resolvedInputs ?? {}).length > 0}>
-                      <div class="relay-report-inputs">
-                        <span>Resolved inputs</span>
-                        <For each={Object.entries(job().resolvedInputs ?? {})}>
-                          {([name, value]) => (
-                            <code>
-                              <b>{name}</b>
-                              {value}
-                            </code>
-                          )}
-                        </For>
+                  <RunSummary
+                    job={job()}
+                    clock={server.clock()}
+                    previous={baseline()}
+                    onOpenRecipe={props.onOpenRecipe}
+                  />
+                  <details class="group col-span-2 mt-2 border-t border-border-weak-base">
+                    <summary class="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-[11px]/[1.25] text-text-weaker focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
+                      <span>More details</span>
+                      <Icon
+                        name="chevron-down"
+                        size={13}
+                        class="transition-transform group-open:rotate-180"
+                      />
+                    </summary>
+                    <dl class="m-0 grid gap-2 pb-3">
+                      <div class="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2.5">
+                        <dt class="min-w-0 text-[10px]/[1.25] text-text-weaker">Run ID</dt>
+                        <dd class="m-0 flex min-w-0 items-center gap-1.5">
+                          <code class="truncate text-[10px]/[1.25] text-text-weak">{job().id}</code>
+                          <button
+                            type="button"
+                            class="grid size-10 shrink-0 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
+                            aria-label="Copy run ID"
+                            onClick={() => void navigator.clipboard?.writeText(job().id)}
+                          >
+                            <Icon name="copy" size={12} />
+                          </button>
+                        </dd>
                       </div>
-                    </Show>
-                    <button
-                      type="button"
-                      class="relay-secondary"
-                      onClick={() => props.onOpenRecipe(job().action)}
-                    >
-                      Open editable test
-                    </button>
-                  </div>
+                      <Show when={job().serial}>
+                        <div class="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2.5">
+                          <dt class="min-w-0 text-[10px]/[1.25] text-text-weaker">
+                            Target identifier
+                          </dt>
+                          <dd class="m-0 flex min-w-0 items-center gap-1.5">
+                            <code class="truncate text-[10px]/[1.25] text-text-weak">
+                              {job().serial}
+                            </code>
+                            <button
+                              type="button"
+                              class="grid size-10 shrink-0 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
+                              aria-label="Copy target identifier"
+                              onClick={() => void navigator.clipboard?.writeText(job().serial!)}
+                            >
+                              <Icon name="copy" size={12} />
+                            </button>
+                          </dd>
+                        </div>
+                      </Show>
+                      <Show when={job().error}>
+                        <div class="grid gap-1 border-t border-border-weak-base pt-2.5">
+                          <dt class="min-w-0 text-[10px]/[1.25] text-text-weaker">
+                            Technical message
+                          </dt>
+                          <dd class="m-0 min-w-0 whitespace-pre-wrap break-words font-mono text-[10px]/[1.45] text-text-weak">
+                            {job().error}
+                          </dd>
+                        </div>
+                      </Show>
+                    </dl>
+                  </details>
                 </Show>
                 <Show when={tab() === "replay"}>
-                  <div class="relay-replay-list">
-                    <For
-                      each={job().steps ?? []}
-                      fallback={<div class="relay-table-empty">No replay steps captured.</div>}
-                    >
-                      {(step, i) => (
-                        <div>
-                          <span>{i() + 1}</span>
-                          <div>
-                            <strong>{step.title}</strong>
-                            <small>
-                              {step.status ?? "recorded"} ·{" "}
-                              {step.durationMs ? `${step.durationMs}ms` : "—"}
-                            </small>
-                          </div>
-                          <Show when={step.frames?.[0]}>
-                            <Icon name="camera" size={14} />
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </div>
+                  <RunReplay job={job()} />
                 </Show>
                 <Show when={tab() === "network"}>
                   <EvidenceList
@@ -1030,10 +1552,34 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     empty="No network evidence in this run. Add a Capture network step where the traffic matters."
                   />
                 </Show>
+                <Show when={tab() === "evaluation"}>
+                  <EvidenceList
+                    items={
+                      job().artifacts?.filter((item) =>
+                        [
+                          "response-completion",
+                          "conversation-turn",
+                          "content-assertion",
+                          "semantic-evaluation",
+                          "judge-consensus",
+                          "frozen-inputs",
+                          "app-build",
+                        ].includes(item.kind),
+                      ) ?? []
+                    }
+                    empty="No conversational evidence yet. Add Extract, Check content, or Evaluate response steps."
+                  />
+                </Show>
                 <Show when={tab() === "logs"}>
                   <pre class="relay-report-log">
-                    {job().logs?.join("\n") || "No device logs captured."}
+                    {job().logs?.join("\n") || "No logs were captured for this run."}
                   </pre>
+                </Show>
+                <Show when={tab() === "compatibility"}>
+                  <CompatibilityReportPanel
+                    report={matrixReport()}
+                    selectedProfileId={job().targetProfile?.id ?? ""}
+                  />
                 </Show>
               </div>
             </aside>
@@ -1041,6 +1587,194 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
         </Show>
       </div>
     </section>
+  );
+}
+
+function persistedAsJob(run: PersistedRun): JobInfo {
+  const status = ["queued", "running", "paused", "ok", "error", "healed", "cancelled"].includes(
+    run.status,
+  )
+    ? (run.status as JobInfo["status"])
+    : "error";
+  return {
+    ...run,
+    status,
+    queuedAt: run.queuedAt ?? run.startedAt ?? run.writtenAt,
+    logs: run.logs ?? [],
+    attempts: run.attempts ?? 1,
+  };
+}
+
+function CompatibilityReportPanel(props: {
+  report: import("@relay/protocol").CompatibilityReport | null;
+  selectedProfileId: string;
+}) {
+  return (
+    <Show
+      when={props.report}
+      fallback={<div class="relay-table-empty">Preparing the comparison…</div>}
+    >
+      {(report) => (
+        <div class="relay-compatibility-report">
+          <header>
+            <div>
+              <span class="relay-eyebrow">Compatibility matrix</span>
+              <strong>{report().matrixName ?? "Target comparison"}</strong>
+              <small>
+                {report().profiles.length} target{report().profiles.length === 1 ? "" : "s"} ·{" "}
+                {report().total} evidence run{report().total === 1 ? "" : "s"}
+              </small>
+            </div>
+            <span class="relay-compatibility-report__proof">Same test setup</span>
+          </header>
+          <div class="relay-compatibility-report__grid">
+            <For each={report().profiles}>
+              {(profile) => (
+                <article class={cn(profile.profile.id === props.selectedProfileId && "is-current")}>
+                  <header>
+                    <div>
+                      <strong>{profile.profile.name}</strong>
+                      <small>
+                        {profile.profile.platform}
+                        {profile.profile.osVersion ? ` · ${profile.profile.osVersion}` : ""}
+                      </small>
+                    </div>
+                    <span class={cn("relay-status", profile.passRate === 1 ? "is-ok" : "is-error")}>
+                      {profile.passRate == null
+                        ? "Pending"
+                        : `${Math.round(profile.passRate * 100)}%`}
+                    </span>
+                  </header>
+                  <div class="relay-compatibility-report__metrics">
+                    <span>
+                      <b>Pass rate</b>
+                      <strong>
+                        {profile.passRate == null
+                          ? "No product verdict yet"
+                          : `${Math.round(profile.passRate * 100)}%`}
+                      </strong>
+                    </span>
+                    <span>
+                      <b>Median duration</b>
+                      <strong>
+                        {profile.medianDurationMs == null
+                          ? "—"
+                          : `${(profile.medianDurationMs / 1000).toFixed(1)}s`}
+                      </strong>
+                    </span>
+                  </div>
+                  <p>
+                    {profile.passed} passed · {profile.productFailures} product ·{" "}
+                    {profile.harnessFailures} harness
+                    {profile.uncertain ? ` · ${profile.uncertain} uncertain` : ""}
+                    {profile.pending ? ` · ${profile.pending} pending` : ""}
+                  </p>
+                  <Show when={profile.baseline}>
+                    {(baseline) => (
+                      <footer>
+                        Versus {baseline().total} earlier run{baseline().total === 1 ? "" : "s"}:{" "}
+                        {formatPassDelta(baseline().passRateDelta)} ·{" "}
+                        {formatDurationDelta(baseline().durationDeltaMs)}
+                      </footer>
+                    )}
+                  </Show>
+                </article>
+              )}
+            </For>
+          </div>
+        </div>
+      )}
+    </Show>
+  );
+}
+
+function formatPassDelta(value: number | null): string {
+  if (value == null) return "no pass-rate baseline";
+  const points = Math.round(value * 100);
+  return `${points > 0 ? "+" : ""}${points} pts`;
+}
+
+function formatDurationDelta(value: number | null): string {
+  if (value == null) return "no duration baseline";
+  const seconds = value / 1000;
+  return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
+}
+
+function RunReplay(props: { job: JobInfo }) {
+  const server = useServer();
+  let video: HTMLVideoElement | undefined;
+  const files = createMemo(() => {
+    const artifact = props.job.artifacts?.find((item) => item.kind === "video");
+    if (!artifact || typeof artifact.data !== "object" || artifact.data === null) return [];
+    const raw = Reflect.get(artifact.data, "files");
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((entry) => {
+      if (typeof entry !== "object" || entry === null) return [];
+      const path = Reflect.get(entry, "path");
+      return typeof path === "string" ? [path] : [];
+    });
+  });
+  const firstVideo = () => files()[0];
+  const seekToStep = (startedAt: number) => {
+    if (!video || !props.job.startedAt) return;
+    video.currentTime = Math.max(0, (startedAt - props.job.startedAt) / 1000);
+    void video.play();
+  };
+
+  return (
+    <div class="relay-replay">
+      <Show
+        when={firstVideo()}
+        fallback={
+          <div class="relay-replay__empty">
+            <Icon name="camera" size={18} />
+            <div>
+              <strong>No video for this run</strong>
+              <span>Step timing and screenshots are still available below.</span>
+            </div>
+          </div>
+        }
+      >
+        {(path) => (
+          <div class="relay-replay__player">
+            <video
+              ref={(element) => {
+                video = element;
+              }}
+              controls
+              playsinline
+              preload="metadata"
+              src={server.videoUrlForRun(props.job.id, path())}
+            >
+              Video replay is not supported by this browser.
+            </video>
+            <div>
+              <span class="relay-eyebrow">Device replay</span>
+              <strong>Actions and evidence, on one clock</strong>
+            </div>
+          </div>
+        )}
+      </Show>
+      <div class="relay-replay-list" aria-label="Run steps">
+        <For
+          each={props.job.steps ?? []}
+          fallback={<div class="relay-table-empty">No replay steps captured.</div>}
+        >
+          {(step, i) => (
+            <button type="button" onClick={() => seekToStep(step.startedAt)}>
+              <span>{i() + 1}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <small>
+                  {step.status ?? "recorded"} · {step.durationMs ? `${step.durationMs}ms` : "—"}
+                </small>
+              </div>
+              <Icon name={step.frames?.[0] ? "camera" : "play"} size={14} />
+            </button>
+          )}
+        </For>
+      </div>
+    </div>
   );
 }
 
@@ -1069,28 +1803,45 @@ function EvidenceList(props: {
 function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) {
   const server = useServer();
   const recipe = () => server.recipes().find((item) => item.id === props.job.action);
+  const targetName = () => {
+    if (props.job.targetProfile?.name) return props.job.targetProfile.name;
+    const target = server.devices().find((device) => device.serial === props.job.serial);
+    return target
+      ? presentTarget(target).displayName
+      : props.job.serial
+        ? "Unavailable target"
+        : "—";
+  };
   const status = () =>
-    props.job.status === "ok"
-      ? "Passed"
-      : props.job.status === "error"
-        ? "Failed"
-        : titleize(props.job.status);
+    props.job.outcome
+      ? titleize(props.job.outcome)
+      : props.job.status === "ok"
+        ? "Passed"
+        : props.job.status === "error"
+          ? "Failed"
+          : titleize(props.job.status);
   return (
     <button
       type="button"
-      class={cn("relay-run-row", props.selected && "is-selected")}
+      class={cn(
+        "grid min-h-14.5 w-full grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base px-4 text-left text-[11px]/[1.35] text-text-weak transition-colors last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus [&>span]:min-w-0 [&>span]:truncate",
+        props.selected && "bg-surface-base-active",
+      )}
+      aria-current={props.selected ? "true" : undefined}
       onClick={props.onOpen}
     >
-      <span>
-        <strong>{recipe()?.title ?? props.job.action}</strong>
-        <small>{props.job.id.slice(0, 8)}</small>
+      <span class="min-w-0">
+        <strong class="block truncate text-[12px]/[1.25] font-[550] text-text-base">
+          {recipe()?.title ?? props.job.action}
+        </strong>
+        <Show when={props.job.appVersion}>
+          <small class="mt-1 block truncate font-mono text-[9px]/[1.25] text-text-weaker">
+            Build {props.job.appVersion}
+          </small>
+        </Show>
       </span>
       <span class={cn("relay-status", `is-${props.job.status}`)}>{status()}</span>
-      <span>
-        {server.devices().find((d) => d.serial === props.job.serial)?.name ??
-          props.job.serial ??
-          "—"}
-      </span>
+      <span>{targetName()}</span>
       <span>{fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}</span>
       <span>{fmtDur(props.job, server.clock()) || "—"}</span>
     </button>
@@ -1104,184 +1855,158 @@ function Metric(props: {
   tone?: "success" | "danger";
 }) {
   return (
-    <div class={cn("relay-metric", props.tone && `is-${props.tone}`)}>
-      <span>{props.label}</span>
-      <strong>{props.value}</strong>
-      <small>{props.detail}</small>
+    <div class="grid min-w-0 grid-cols-[auto_1fr] items-baseline gap-x-2 gap-y-0.5 px-3.5 py-2.5">
+      <span class="col-start-2 row-start-1 text-[11px]/[1.25] text-text-weak">{props.label}</span>
+      <strong
+        class={cn(
+          "col-start-1 row-span-2 row-start-1 self-center text-[20px]/none font-semibold tracking-[-0.04em] text-text-base",
+          props.tone === "success" && "text-text-success-base",
+          props.tone === "danger" && "text-text-critical-base",
+        )}
+      >
+        {props.value}
+      </strong>
+      <small class="col-start-2 row-start-2 text-[10px]/[1.25] text-text-weaker">
+        {props.detail}
+      </small>
     </div>
   );
 }
 
-type DataRow = {
-  id: string;
-  name: string;
-  mode: "AI" | "List" | "Default";
-  preview: string;
-  fallback: string;
-};
-const INITIAL_DATA: DataRow[] = [
-  {
-    id: "daily-question",
-    name: "daily_question",
-    mode: "AI",
-    preview: "Where is Paris located?",
-    fallback: "What is the capital of France?",
-  },
-  {
-    id: "image-prompt",
-    name: "image_prompt",
-    mode: "AI",
-    preview: "A tram crossing Lisbon at dusk",
-    fallback: "A red bicycle beside a lake",
-  },
-  { id: "account-tier", name: "account_tier", mode: "List", preview: "Pro", fallback: "Free" },
-];
-
-function DataWorkspace(props: { onConfigureProvider: () => void }) {
-  const server = useServer();
-  const [rows, setRows] = createSignal<DataRow[]>(INITIAL_DATA);
-  const [hydrated, setHydrated] = createSignal(false);
-  let saveTimer: ReturnType<typeof setTimeout> | undefined;
-
-  createEffect(() => {
-    const remote = server.projectVariables();
-    if (remote.updatedAt <= 0 || hydrated()) return;
-    setRows(remote.value.length ? remote.value.map(variableToDataRow) : INITIAL_DATA);
-    setHydrated(true);
-  });
-
-  createEffect(() => {
-    const value = rows();
-    if (!hydrated()) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      void server
-        .saveProjectVariables(value.map(dataRowToVariable))
-        .catch((error: unknown) =>
-          toast(error instanceof Error ? error.message : String(error), "error"),
-        );
-    }, 450);
-  });
-  onCleanup(() => clearTimeout(saveTimer));
-
-  function addRow(): void {
-    const index = rows().length + 1;
-    setRows((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        name: `variable_${index}`,
-        mode: "Default",
-        preview: "Sample value",
-        fallback: "Fallback value",
-      },
+/** Inputs make a recorded recipe an attachable reusable flow. The UI keeps the
+ * declaration deliberately small: names are Git-visible, defaults are safe
+ * data, and callers bind actual frozen values at the attachment point. */
+function FlowParametersEditor() {
+  const draft = useRecipeDraft();
+  const add = () => {
+    const used = new Set(draft.parameters().map((parameter) => parameter.name));
+    let index = draft.parameters().length + 1;
+    while (used.has(`input_${index}`)) index += 1;
+    draft.setParameters([
+      ...draft.parameters(),
+      { name: `input_${index}`, label: `Input ${index}`, required: true },
     ]);
-  }
+  };
+  const patch = (index: number, changes: Partial<RecipeParameter>) =>
+    draft.setParameters(
+      draft
+        .parameters()
+        .map((parameter, current) =>
+          current === index ? { ...parameter, ...changes } : parameter,
+        ),
+    );
+  const remove = (index: number) =>
+    draft.setParameters(draft.parameters().filter((_, current) => current !== index));
+
   return (
-    <section class="relay-page">
-      <div class="relay-page__hero">
+    <div class="relay-flow-inputs">
+      <header>
         <div>
-          <span class="relay-eyebrow">Variables</span>
-          <h2>Test data</h2>
+          <span class="relay-eyebrow">Reusable flow</span>
+          <h3>Inputs</h3>
           <p>
-            Prepare fresh inputs before a run while keeping every test deterministic and debuggable.
+            Optional values callers can provide when they use this flow, such as{" "}
+            <code>{"{{login_email}}"}</code>.
           </p>
         </div>
-        <button type="button" class="relay-primary" onClick={addRow}>
-          <Icon name="plus" size={15} /> New variable
+        <button type="button" class="relay-secondary relay-flow-inputs__add" onClick={add}>
+          <Icon name="plus" size={14} /> Add input
         </button>
-      </div>
-      <div class="relay-data-banner">
-        <span class="relay-data-banner__icon">
-          <Icon name="sparkle" size={26} />
-        </span>
-        <div>
-          <strong>Generate once, replay exactly.</strong>
-          <p>
-            AI values are resolved before execution, stored with the run, and replaced by the
-            fallback when generation is unavailable.
-          </p>
-        </div>
-        <div class="relay-data-banner__actions">
-          <button type="button" onClick={props.onConfigureProvider}>
-            Configure provider
-          </button>
-        </div>
-      </div>
-      <div class="relay-data-table">
-        <div class="relay-data-table__head">
-          <span>Variable</span>
-          <span>Source</span>
-          <span>Today’s preview</span>
-          <span>Fallback</span>
-          <span />
-        </div>
-        <For each={rows()}>
-          {(row) => (
-            <div class="relay-data-row">
-              <input
-                value={row.name}
-                aria-label="Variable name"
-                onInput={(e) =>
-                  setRows((items) =>
-                    items.map((item) =>
-                      item.id === row.id ? { ...item, name: e.currentTarget.value } : item,
-                    ),
-                  )
-                }
-              />
-              <select
-                value={row.mode}
-                aria-label="Variable source"
-                onChange={(e) =>
-                  setRows((items) =>
-                    items.map((item) =>
-                      item.id === row.id
-                        ? { ...item, mode: e.currentTarget.value as DataRow["mode"] }
-                        : item,
-                    ),
-                  )
-                }
-              >
-                <option>AI</option>
-                <option>List</option>
-                <option>Default</option>
-              </select>
-              <input
-                value={row.preview}
-                aria-label="Preview value"
-                onInput={(e) =>
-                  setRows((items) =>
-                    items.map((item) =>
-                      item.id === row.id ? { ...item, preview: e.currentTarget.value } : item,
-                    ),
-                  )
-                }
-              />
-              <input
-                value={row.fallback}
-                aria-label="Fallback value"
-                onInput={(e) =>
-                  setRows((items) =>
-                    items.map((item) =>
-                      item.id === row.id ? { ...item, fallback: e.currentTarget.value } : item,
-                    ),
-                  )
-                }
-              />
-              <button
-                type="button"
-                class="relay-icon-button relay-icon-button--danger"
-                aria-label={`Delete ${row.name}`}
-                onClick={() => setRows((items) => items.filter((item) => item.id !== row.id))}
-              >
-                <Icon name="trash" size={15} />
-              </button>
+      </header>
+      <Show
+        when={draft.parameters().length > 0}
+        fallback={
+          <div class="relay-flow-inputs__empty">
+            <span class="relay-flow-inputs__empty-mark" aria-hidden="true">
+              <Icon name="check" size={16} />
+            </span>
+            <div>
+              <strong>No inputs yet</strong>
+              <span>
+                This flow is ready to attach. Add an input only when a caller needs to provide a
+                value.
+              </span>
             </div>
-          )}
-        </For>
-      </div>
-    </section>
+          </div>
+        }
+      >
+        <div class="relay-flow-inputs__list">
+          <Index each={draft.parameters()}>
+            {(parameter, index) => (
+              <article>
+                <div class="relay-flow-inputs__row">
+                  <label>
+                    <span>Variable name</span>
+                    <input
+                      class="font-mono"
+                      value={parameter().name}
+                      placeholder="login_email"
+                      onInput={(event) => patch(index, { name: event.currentTarget.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>Label</span>
+                    <input
+                      value={parameter().label ?? ""}
+                      placeholder="Login email"
+                      onInput={(event) =>
+                        patch(index, { label: event.currentTarget.value || undefined })
+                      }
+                    />
+                  </label>
+                  <label class="relay-flow-inputs__required">
+                    <input
+                      type="checkbox"
+                      checked={parameter().required === true}
+                      onChange={(event) => patch(index, { required: event.currentTarget.checked })}
+                    />
+                    <span>Required</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="relay-icon-button relay-icon-button--danger"
+                    aria-label={`Remove ${parameter().label || parameter().name}`}
+                    onClick={() => remove(index)}
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
+                <div class="relay-flow-inputs__row relay-flow-inputs__row--detail">
+                  <label>
+                    <span>Default</span>
+                    <input
+                      class="font-mono"
+                      value={parameter().default ?? ""}
+                      placeholder="Optional safe default"
+                      onInput={(event) =>
+                        patch(index, { default: event.currentTarget.value || undefined })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Guidance</span>
+                    <input
+                      value={parameter().description ?? ""}
+                      placeholder="What the flow expects"
+                      onInput={(event) =>
+                        patch(index, { description: event.currentTarget.value || undefined })
+                      }
+                    />
+                  </label>
+                </div>
+              </article>
+            )}
+          </Index>
+        </div>
+      </Show>
+      <Show when={draft.parameterIssue()}>
+        {(message) => (
+          <p class="relay-flow-inputs__error" role="alert">
+            {message()}
+          </p>
+        )}
+      </Show>
+    </div>
   );
 }
 
@@ -1291,54 +2016,4 @@ function nextUntitledTitle(recipes: RecipeInfo[]): string {
   let index = 2;
   while (used.has(`Untitled test ${index}`)) index++;
   return `Untitled test ${index}`;
-}
-
-function variableToDataRow(variable: TestVariable): DataRow {
-  return {
-    id: variable.id,
-    name: variable.name,
-    mode: variable.source === "generated" ? "AI" : variable.source === "list" ? "List" : "Default",
-    preview: variable.values?.[0] ?? variable.prompt ?? variable.fallback,
-    fallback: variable.fallback,
-  };
-}
-
-function dataRowToVariable(row: DataRow): TestVariable {
-  return {
-    id: row.id,
-    name: row.name,
-    source: row.mode === "AI" ? "generated" : row.mode === "List" ? "list" : "static",
-    prompt: row.mode === "AI" ? row.preview : undefined,
-    values: row.mode === "AI" ? undefined : [row.preview],
-    fallback: row.fallback,
-  };
-}
-
-function recipeToYaml(title: string, steps: RecipeStep[]): string {
-  const quote = (value: unknown) => JSON.stringify(value ?? "");
-  const lines = [`name: ${quote(title)}`, "steps:"];
-  for (const step of steps) {
-    lines.push(`  - type: ${step.kind}`);
-    if (step.kind === "tap") lines.push(`    target: ${quote(step.target)}`);
-    if (step.kind === "type") lines.push(`    text: ${quote(step.text)}`);
-    if (step.kind === "expect") {
-      lines.push(`    condition: ${step.condition}`);
-      lines.push(`    target: ${quote(step.target)}`);
-    }
-    if (step.kind === "wait-for") lines.push(`    target: ${quote(step.target)}`);
-    if (step.kind === "sleep") lines.push(`    milliseconds: ${step.ms}`);
-    if (step.kind === "swipe") {
-      lines.push(`    from: ${quote(step.from)}`);
-      lines.push(`    to: ${quote(step.to)}`);
-    }
-    if (step.kind === "scroll") lines.push(`    direction: ${step.direction}`);
-    if (step.kind === "key") lines.push(`    key: ${step.key}`);
-    if (step.kind === "pause") lines.push(`    message: ${quote(step.message)}`);
-    if (step.kind === "screenshot" && step.caption)
-      lines.push(`    caption: ${quote(step.caption)}`);
-    if (step.kind === "flow") lines.push(`    flow: ${quote(step.flow)}`);
-    if (step.note) lines.push(`    note: ${quote(step.note)}`);
-  }
-  if (steps.length === 0) lines.push("  []");
-  return lines.join("\n");
 }

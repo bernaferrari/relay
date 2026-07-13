@@ -8,6 +8,7 @@ import {
 } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { DesktopUpdater } from "./updates.js";
 
 const storeCache = new Map<string, Record<string, string>>();
 
@@ -51,6 +52,7 @@ function persistStore(name: string): void {
 
 export type IpcDeps = {
   getServerUrl: () => Promise<string> | string;
+  updates: DesktopUpdater;
 };
 
 /** Only allow http(s) navigation — blocks file:, javascript:, data:, etc. */
@@ -121,5 +123,14 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   ipcMain.handle("set-background-color", (event: IpcMainInvokeEvent, color: string) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     win?.setBackgroundColor(color);
+  });
+
+  ipcMain.handle("updates:get-state", () => deps.updates.getState());
+  ipcMain.handle("updates:check", () => deps.updates.check());
+  ipcMain.handle("updates:install", () => deps.updates.install());
+  deps.updates.subscribe((state) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send("updates:state", state);
+    }
   });
 }

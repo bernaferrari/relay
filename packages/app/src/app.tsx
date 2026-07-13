@@ -9,7 +9,8 @@ import { WorkbenchProvider } from "./context/workbench";
 import { RecorderProvider } from "./context/recorder";
 import { Layout } from "./components/layout";
 import { HomePage } from "./pages/home";
-import { SettingsPage } from "./pages/settings";
+import { SettingsPage, type SettingsSection } from "./pages/settings";
+import { DesktopUpdateDialog } from "./components/desktop-update";
 /* Product chrome — must load for every host (web + desktop Electron). */
 import "./styles/app.css";
 
@@ -48,13 +49,19 @@ export function AppBaseProviders(
 /** Main product UI — Stage testing workspace. */
 export function AppInterface() {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [settingsSection, setSettingsSection] = createSignal<SettingsSection>("appearance");
+  const openSettings = (section: SettingsSection = "appearance") => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  };
 
   return (
-    <Layout onOpenSettings={() => setSettingsOpen(true)}>
-      <HomePage onOpenSettings={() => setSettingsOpen(true)} />
+    <Layout onOpenSettings={() => openSettings()}>
+      <HomePage onOpenSettings={openSettings} />
       <Show when={settingsOpen()}>
-        <SettingsPage onClose={() => setSettingsOpen(false)} />
+        <SettingsPage initialSection={settingsSection()} onClose={() => setSettingsOpen(false)} />
       </Show>
+      <DesktopUpdateDialog />
     </Layout>
   );
 }

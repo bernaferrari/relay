@@ -3,6 +3,8 @@
  * Jobs, traces, heal retries, persisted runs/, live capture.
  */
 import http from "node:http";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { URL } from "node:url";
 import { assertSafeBinding, authorizationMatches } from "./security.js";
 import {
@@ -11,6 +13,9 @@ import {
   createDevice,
   enqueueJob,
   formatSnapshotTree,
+  formatRecipeYaml,
+  formatMatrixYaml,
+  parseMatrixYaml,
   getActiveJob,
   getJob,
   interact,
@@ -29,11 +34,13 @@ import {
   now,
   publish,
   readFrameFile,
+  runArtifactFile,
   readPersistedRun,
   recentEvents,
   retryJob,
   cancelJob,
   pauseJob,
+  parseRecipeYaml,
   resumeJob,
   cancelActiveJob,
   runsRoot,
@@ -50,15 +57,51 @@ import {
   listBuilds,
   listDeviceLeases,
   listDevicePools,
+  listCompatibilityMatrices,
+  readCompatibilityMatrix,
   listProjects,
   readJourney,
   readProjectVariables,
   releaseDeviceLease,
   saveBuild,
   saveDevicePool,
+  saveCompatibilityMatrix,
   saveProject,
   writeJourney,
   writeProjectVariables,
+  prepareRunMatrix,
+  buildTestAtlas,
+  listRecipeHistory,
+  restoreRecipeHistory,
+  recipeStability,
+  listSchedules,
+  saveSchedule,
+  deleteSchedule,
+  markScheduleRun,
+  resolveScheduledTargetProfile,
+  listTargets,
+  readTarget,
+  saveBrowserTarget,
+  deleteTarget,
+  deleteCompatibilityMatrix,
+  preflightTarget,
+  buildTargetProfiles,
+  createDiscoverySession,
+  listDiscoverySessions,
+  readDiscoverySession,
+  readDiscoveryScreenAsset,
+  recordObservedScreen,
+  recordObservedTransition,
+  setDiscoveryStatus,
+  formatDiscoveryExport,
+  isSensitiveDiscoveryAction,
+  promoteDiscoveryPath,
+  suggestDiscoveryControl,
+  resolveCompatibilityMatrix,
+  selectBrowserTarget,
+  buildCompatibilityReport,
+  buildDiscoveryCoverage,
+  type RecipeParameter,
 } from "@relay/core";
 import { RevisionConflict } from "@relay/protocol";
 import type {
@@ -121,6 +164,39 @@ function text(res: http.ServerResponse, status: number, body: string, contentTyp
     ...CORS_HEADERS,
   });
   res.end(body);
+}
+
+function discoveryInteraction(input: InteractInput): {
+  kind: "tap" | "type" | "scroll" | "back" | "manual";
+  label?: string;
+  target?: { ref?: string; label?: string; text?: string; point?: { x: number; y: number } };
+  text?: string;
+  direction?: "up" | "down";
+} {
+  switch (input.kind) {
+    case "label":
+      return { kind: "tap", label: input.label, target: { label: input.label } };
+    case "ref":
+      return { kind: "tap", label: input.ref, target: { ref: input.ref } };
+    case "text-match":
+      return { kind: "tap", label: input.match, target: { text: input.match } };
+    case "find":
+      return { kind: "tap", label: input.query, target: { text: input.query } };
+    case "point":
+      return {
+        kind: "tap",
+        label: "Coordinate tap",
+        target: { point: { x: input.x, y: input.y } },
+      };
+    case "swipe":
+      return {
+        kind: "scroll",
+        label: "Swipe",
+        direction: input.to.y < input.from.y ? "down" : "up",
+      };
+    case "type":
+      return { kind: "type", label: "Type text", text: input.text };
+  }
 }
 
 function parseLimit(raw: string | null, fallback: number, max = 200): number {
@@ -323,8 +399,58 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/devices") {
-      const devices = await listDevices();
-      json(res, 200, { devices });
+      const mobile = await listDevices().catch(() => []);
+      const browsers = (await listTargets()).map((target) => ({
+        id: target.id,
+        serial: target.id,
+        name: target.name,
+        kind: "Managed browser",
+        booted: true,
+        platform: "browser",
+        targetKind: "browser",
+      }));
+      json(res, 200, { devices: [...mobile, ...browsers] });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/targets") {
+      json(res, 200, { targets: await listTargets() });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/targets") {
+      const body = (await parseJsonBody(req)) as {
+        id?: string;
+        name?: string;
+        startUrl?: string;
+        executablePath?: string;
+        headless?: boolean;
+      };
+      if (!body.name || !body.startUrl) throw new HttpError(400, "name and startUrl are required");
+      json(res, 201, {
+        target: await saveBrowserTarget({
+          id: body.id,
+          name: body.name,
+          startUrl: body.startUrl,
+          executablePath: body.executablePath,
+          headless: body.headless,
+        }),
+      });
+      return;
+    }
+
+    const targetMatch = matchPath(pathname, "/targets/:id");
+    if (method === "DELETE" && targetMatch) {
+      await deleteTarget(targetMatch.id!);
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    const targetPreflightMatch = matchPath(pathname, "/targets/:id/preflight");
+    if (method === "POST" && targetPreflightMatch) {
+      const target = await readTarget(targetPreflightMatch.id!);
+      if (!target) throw new HttpError(404, "Target not found");
+      json(res, 200, { preflight: await preflightTarget(target) });
       return;
     }
 
@@ -387,6 +513,297 @@ async function handleRequest(
         deviceSerials: body.deviceSerials.map(String),
       });
       json(res, 201, { pool });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/target-profiles") {
+      const devices = await listDevices().catch(() => []);
+      json(res, 200, { profiles: buildTargetProfiles({ devices, targets: await listTargets() }) });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/discovery") {
+      json(res, 200, { sessions: await listDiscoverySessions() });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/discovery") {
+      const body = (await parseJsonBody(req)) as {
+        name?: string;
+        targetId?: string;
+        scope?: import("@relay/protocol").DiscoveryScope;
+      };
+      if (!body.name || !body.targetId) throw new HttpError(400, "name and targetId are required");
+      const profiles = buildTargetProfiles({
+        devices: await listDevices().catch(() => []),
+        targets: await listTargets(),
+      });
+      const session = await createDiscoverySession({
+        name: body.name,
+        targetId: body.targetId,
+        targetProfile: profiles.find((profile) => profile.targetId === body.targetId),
+        scope: body.scope,
+      });
+      json(res, 201, { session });
+      return;
+    }
+
+    const discoveryMatch = matchPath(pathname, "/discovery/:id");
+    if (method === "GET" && discoveryMatch) {
+      const session = await readDiscoverySession(discoveryMatch.id!);
+      if (!session) throw new HttpError(404, "Discovery session not found");
+      json(res, 200, { session });
+      return;
+    }
+
+    const discoveryStatusMatch = matchPath(pathname, "/discovery/:id/status");
+    if (method === "POST" && discoveryStatusMatch) {
+      const body = (await parseJsonBody(req)) as {
+        status?: import("@relay/protocol").DiscoveryStatus;
+      };
+      if (!body.status) throw new HttpError(400, "status is required");
+      json(res, 200, { session: await setDiscoveryStatus(discoveryStatusMatch.id!, body.status) });
+      return;
+    }
+
+    const discoverySuggestionMatch = matchPath(pathname, "/discovery/:id/suggestion");
+    if (method === "GET" && discoverySuggestionMatch) {
+      const session = await readDiscoverySession(discoverySuggestionMatch.id!);
+      if (!session) throw new HttpError(404, "Discovery session not found");
+      json(res, 200, { suggestion: suggestDiscoveryControl(session) });
+      return;
+    }
+
+    const discoveryCoverageMatch = matchPath(pathname, "/discovery/:id/coverage");
+    if (method === "GET" && discoveryCoverageMatch) {
+      const session = await readDiscoverySession(discoveryCoverageMatch.id!);
+      if (!session) throw new HttpError(404, "Discovery session not found");
+      json(res, 200, { coverage: buildDiscoveryCoverage(session, await listDiscoverySessions()) });
+      return;
+    }
+
+    const discoveryCaptureMatch = matchPath(pathname, "/discovery/:id/capture");
+    if (method === "POST" && discoveryCaptureMatch) {
+      const session = await readDiscoverySession(discoveryCaptureMatch.id!);
+      if (!session) throw new HttpError(404, "Discovery session not found");
+      const snap = await captureSnapshot({ serial: session.targetId });
+      const shot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
+      const captured = await recordObservedScreen({
+        sessionId: session.id,
+        nodes: snap.nodes,
+        screenshotPath: shot.path,
+      });
+      json(res, 201, { screen: captured.screen, isNew: captured.isNew, session: captured.session });
+      return;
+    }
+
+    const discoveryInteractMatch = matchPath(pathname, "/discovery/:id/interact");
+    if (method === "POST" && discoveryInteractMatch) {
+      const session = await readDiscoverySession(discoveryInteractMatch.id!);
+      if (!session) throw new HttpError(404, "Discovery session not found");
+      if (session.status !== "running") {
+        throw new HttpError(409, "Start or resume this Discovery Map before interacting");
+      }
+      const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
+      if (!body || typeof body !== "object" || !("kind" in body)) {
+        throw new HttpError(400, "body.kind required for Discovery Map interaction");
+      }
+      const { serial: _serial, ...raw } = body;
+      const input = raw as InteractInput;
+      const observed = discoveryInteraction(input);
+      if (!session.scope.allowSensitiveControls && isSensitiveDiscoveryAction(observed)) {
+        throw new HttpError(403, "Discovery policy blocks this sensitive interaction");
+      }
+      const beforeSnapshot = await captureSnapshot({ serial: session.targetId });
+      const beforeShot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
+      const before = await recordObservedScreen({
+        sessionId: session.id,
+        nodes: beforeSnapshot.nodes,
+        screenshotPath: beforeShot.path,
+      });
+      await interact(input, { serial: session.targetId });
+      const afterSnapshot = await captureSnapshot({ serial: session.targetId });
+      const afterShot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
+      const after = await recordObservedScreen({
+        sessionId: session.id,
+        nodes: afterSnapshot.nodes,
+        screenshotPath: afterShot.path,
+      });
+      const transition = await recordObservedTransition({
+        sessionId: session.id,
+        fromScreenId: before.screen.id,
+        ...(before.screen.id !== after.screen.id ? { toScreenId: after.screen.id } : {}),
+        ...observed,
+        changedScreen: before.screen.id !== after.screen.id,
+      });
+      json(res, 201, { transition, before: before.screen, after: after.screen });
+      return;
+    }
+
+    const discoveryScreenMatch = matchPath(pathname, "/discovery/:id/screens/:screenId");
+    if (method === "GET" && discoveryScreenMatch) {
+      const asset = await readDiscoveryScreenAsset(
+        discoveryScreenMatch.id!,
+        discoveryScreenMatch.screenId!,
+      );
+      if (!asset) throw new HttpError(404, "Discovery screenshot not found");
+      res.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": asset.byteLength,
+        "Cache-Control": "private, max-age=31536000, immutable",
+        ...CORS_HEADERS,
+      });
+      res.end(asset);
+      return;
+    }
+
+    const discoveryPromoteMatch = matchPath(pathname, "/discovery/:id/promote");
+    if (method === "POST" && discoveryPromoteMatch) {
+      const body = (await parseJsonBody(req)) as {
+        transitionIds?: string[];
+        recipeId?: string;
+        title?: string;
+        description?: string;
+        transitionLabels?: Record<string, string>;
+      };
+      if (!Array.isArray(body.transitionIds) || !body.recipeId || !body.title) {
+        throw new HttpError(400, "transitionIds, recipeId, and title are required");
+      }
+      try {
+        const promoted = await promoteDiscoveryPath({
+          sessionId: discoveryPromoteMatch.id!,
+          transitionIds: body.transitionIds,
+          recipeId: body.recipeId,
+          title: body.title,
+          description: body.description,
+          transitionLabels: body.transitionLabels,
+        });
+        json(res, 201, promoted);
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
+    const discoveryExportMatch = matchPath(pathname, "/discovery/:id/export");
+    if (method === "GET" && discoveryExportMatch) {
+      const session = await readDiscoverySession(discoveryExportMatch.id!);
+      if (!session) throw new HttpError(404, "Discovery session not found");
+      const format = url.searchParams.get("format") === "markdown" ? "markdown" : "json";
+      text(
+        res,
+        200,
+        formatDiscoveryExport(session, format),
+        format === "markdown" ? "text/markdown; charset=utf-8" : "application/json; charset=utf-8",
+      );
+      return;
+    }
+
+    if (method === "GET" && pathname === "/matrices") {
+      json(res, 200, { matrices: await listCompatibilityMatrices(scope.projectId) });
+      return;
+    }
+
+    const matrixYamlMatch = matchPath(pathname, "/matrices/:id/yaml");
+    if (method === "GET" && matrixYamlMatch) {
+      const matrix = await readCompatibilityMatrix(scope.projectId, matrixYamlMatch.id!);
+      if (!matrix) throw new HttpError(404, "Compatibility matrix not found");
+      json(res, 200, { yaml: formatMatrixYaml(matrix) });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/matrices/import") {
+      const body = (await parseJsonBody(req)) as {
+        yaml?: string;
+        conflict?: "reject" | "replace";
+      };
+      if (!body.yaml?.trim()) throw new HttpError(400, "yaml is required");
+      let parsed;
+      try {
+        parsed = parseMatrixYaml(body.yaml, {
+          projectId: scope.projectId,
+          createdAt: 0,
+          updatedAt: 0,
+        });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      const existing = await readCompatibilityMatrix(scope.projectId, parsed.id);
+      if (existing && body.conflict !== "replace") {
+        throw new HttpError(409, `Compatibility matrix “${parsed.id}” already exists`);
+      }
+      const matrix = await saveCompatibilityMatrix({
+        id: parsed.id,
+        projectId: scope.projectId,
+        name: parsed.name,
+        selectors: parsed.selectors,
+      });
+      json(res, existing ? 200 : 201, { matrix });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/matrices") {
+      const body = (await parseJsonBody(req)) as {
+        id?: string;
+        name?: string;
+        selectors?: import("@relay/protocol").TargetSelector[];
+      };
+      if (!body.id || !body.name || !Array.isArray(body.selectors)) {
+        throw new HttpError(400, "id, name, and selectors are required");
+      }
+      try {
+        const matrix = await saveCompatibilityMatrix({
+          id: body.id,
+          projectId: scope.projectId,
+          name: body.name,
+          selectors: body.selectors,
+        });
+        json(res, 201, { matrix });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
+    const matrixMatch = matchPath(pathname, "/matrices/:id");
+    if (method === "PUT" && matrixMatch) {
+      const existing = await readCompatibilityMatrix(scope.projectId, matrixMatch.id!);
+      if (!existing) throw new HttpError(404, "Compatibility matrix not found");
+      const body = (await parseJsonBody(req)) as {
+        name?: string;
+        selectors?: import("@relay/protocol").TargetSelector[];
+      };
+      try {
+        const matrix = await saveCompatibilityMatrix({
+          id: existing.id,
+          projectId: scope.projectId,
+          name: body.name ?? existing.name,
+          selectors: body.selectors ?? existing.selectors,
+        });
+        json(res, 200, { matrix });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    if (method === "DELETE" && matrixMatch) {
+      await deleteCompatibilityMatrix(scope.projectId, matrixMatch.id!);
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    const matrixResolveMatch = matchPath(pathname, "/matrices/:id/resolve");
+    if (method === "POST" && matrixResolveMatch) {
+      const matrix = await readCompatibilityMatrix(scope.projectId, matrixResolveMatch.id!);
+      if (!matrix) throw new HttpError(404, "Compatibility matrix not found");
+      const devices = await listDevices().catch(() => []);
+      json(res, 200, {
+        expansion: resolveCompatibilityMatrix(
+          matrix,
+          buildTargetProfiles({ devices, targets: await listTargets() }),
+        ),
+      });
       return;
     }
 
@@ -466,9 +883,17 @@ async function handleRequest(
     }
 
     if (method === "POST" && pathname === "/device/select") {
-      const body = (await parseJsonBody(req)) as { serial?: string | null };
-      selectDevice(body.serial ?? null);
-      json(res, 200, { ok: true, serial: body.serial ?? null });
+      const body = (await parseJsonBody(req)) as {
+        serial?: string | null;
+        platform?: "android" | "ios" | "browser";
+      };
+      if (body.platform === "browser") selectBrowserTarget(body.serial ?? null);
+      else selectDevice(body.serial ?? null, body.platform ?? "android");
+      json(res, 200, {
+        ok: true,
+        serial: body.serial ?? null,
+        platform: body.platform ?? "android",
+      });
       return;
     }
 
@@ -524,11 +949,118 @@ async function handleRequest(
       return;
     }
 
+    if (method === "POST" && pathname === "/jobs/matrix") {
+      const body = (await parseJsonBody(req)) as {
+        recipe?: string;
+        serial?: string;
+        platform?: "android" | "ios";
+        targetKind?: "device" | "browser";
+        browserTargetId?: string;
+        prodAccountMatch?: string;
+        repetitions?: number;
+        seed?: number;
+        projectId?: string;
+      };
+      if (!body.recipe) throw new HttpError(400, "recipe is required");
+      const definitions = await readProjectVariables(body.projectId?.trim() || "default");
+      const matrix = await prepareRunMatrix({
+        variables: definitions.value,
+        repetitions: body.repetitions,
+        seed: body.seed,
+      });
+      const jobs = matrix.cases.map((item) =>
+        enqueueJob({
+          recipe: body.recipe,
+          serial: body.serial,
+          platform: body.platform,
+          targetKind: body.targetKind,
+          browserTargetId: body.browserTargetId,
+          prodAccountMatch: body.prodAccountMatch,
+          variables: item.values,
+          batchId: matrix.id,
+          caseIndex: item.index,
+          caseCount: matrix.cases.length,
+          artifacts: [
+            {
+              kind: "frozen-inputs",
+              capturedAt: matrix.createdAt,
+              data: {
+                matrixId: matrix.id,
+                seed: matrix.seed,
+                caseIndex: item.index,
+                caseCount: matrix.cases.length,
+                values: item.values,
+                provenance: item.provenance,
+              },
+            },
+          ],
+        }),
+      );
+      json(res, 202, { matrix, jobs });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/jobs/compatibility-matrix") {
+      const body = (await parseJsonBody(req)) as {
+        recipe?: string;
+        matrixId?: string;
+        repetitions?: number;
+        prodAccountMatch?: string;
+      };
+      if (!body.recipe || !body.matrixId) {
+        throw new HttpError(400, "recipe and matrixId are required");
+      }
+      const matrix = await readCompatibilityMatrix(scope.projectId, body.matrixId);
+      if (!matrix) throw new HttpError(404, "Compatibility matrix not found");
+      const profiles = buildTargetProfiles({
+        devices: await listDevices().catch(() => []),
+        targets: await listTargets(),
+      });
+      const expansion = resolveCompatibilityMatrix(matrix, profiles);
+      if (expansion.profiles.length === 0) {
+        const details = expansion.excluded.map((item) => item.reason).join("; ");
+        throw new HttpError(
+          400,
+          `Compatibility matrix “${matrix.name}” matched no targets${details ? ` (${details})` : ""}`,
+        );
+      }
+      const repetitions = Math.min(Math.max(Math.floor(body.repetitions ?? 1), 1), 20);
+      const batchId = `compatibility-${matrix.id}-${now()}`;
+      const jobs = expansion.profiles.flatMap((profile) =>
+        Array.from({ length: repetitions }, (_, repetition) =>
+          enqueueJob({
+            recipe: body.recipe,
+            serial: profile.targetId,
+            platform: profile.platform === "ios" ? "ios" : "android",
+            targetKind: profile.source === "browser" ? "browser" : "device",
+            ...(profile.source === "browser" ? { browserTargetId: profile.targetId } : {}),
+            targetProfile: profile,
+            prodAccountMatch: body.prodAccountMatch,
+            batchId,
+            caseIndex: repetition,
+            caseCount: repetitions,
+            artifacts: [
+              {
+                kind: "compatibility-profile",
+                capturedAt: expansion.resolvedAt,
+                data: { matrixId: matrix.id, matrixName: matrix.name, profile },
+              },
+            ],
+          }),
+        ),
+      );
+      json(res, 202, { matrix: expansion, jobs });
+      return;
+    }
+
     if (method === "POST" && pathname === "/jobs") {
       const body = (await parseJsonBody(req)) as {
         action?: string;
         recipe?: string;
         serial?: string;
+        platform?: "android" | "ios";
+        targetKind?: "device" | "browser";
+        browserTargetId?: string;
         prodAccountMatch?: string;
         retryOf?: string;
         variables?: Record<string, string>;
@@ -544,6 +1076,9 @@ async function handleRequest(
               action: body.action,
               recipe: body.recipe,
               serial: body.serial,
+              platform: body.platform,
+              targetKind: body.targetKind,
+              browserTargetId: body.browserTargetId,
               prodAccountMatch: body.prodAccountMatch,
               variables: body.variables,
             });
@@ -562,6 +1097,31 @@ async function handleRequest(
       return;
     }
 
+    if (method === "GET" && pathname === "/atlas") {
+      json(res, 200, { atlas: buildTestAtlas(await listRecipes()) });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/schedules") {
+      json(res, 200, { schedules: await listSchedules() });
+      return;
+    }
+    if (method === "POST" && pathname === "/schedules") {
+      try {
+        const body = (await parseJsonBody(req)) as Parameters<typeof saveSchedule>[0];
+        json(res, 201, { schedule: await saveSchedule(body) });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    const scheduleMatch = matchPath(pathname, "/schedules/:id");
+    if (method === "DELETE" && scheduleMatch) {
+      await deleteSchedule(scheduleMatch.id!);
+      json(res, 200, { ok: true });
+      return;
+    }
+
     const recipeEvidenceImageMatch = matchPath(pathname, "/recipes/:id/evidence/:evidenceId");
     if (method === "GET" && recipeEvidenceImageMatch) {
       const image = await readRecipeEvidenceImage(
@@ -576,6 +1136,93 @@ async function handleRequest(
         ...CORS_HEADERS,
       });
       res.end(image);
+      return;
+    }
+
+    const recipeHistoryMatch = matchPath(pathname, "/recipes/:id/history");
+    if (method === "GET" && recipeHistoryMatch) {
+      json(res, 200, { versions: await listRecipeHistory(recipeHistoryMatch.id!) });
+      return;
+    }
+    if (method === "POST" && recipeHistoryMatch) {
+      const body = (await parseJsonBody(req)) as { updatedAt?: number };
+      if (!Number.isFinite(body.updatedAt)) throw new HttpError(400, "updatedAt is required");
+      try {
+        json(res, 200, {
+          recipe: await restoreRecipeHistory(recipeHistoryMatch.id!, body.updatedAt!),
+        });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
+    const recipeStabilityMatch = matchPath(pathname, "/recipes/:id/stability");
+    if (method === "GET" && recipeStabilityMatch) {
+      json(res, 200, { stability: await recipeStability(recipeStabilityMatch.id!) });
+      return;
+    }
+
+    const recipeYamlMatch = matchPath(pathname, "/recipes/:id/yaml");
+    if (method === "GET" && recipeYamlMatch) {
+      const recipe = await readRecipe(recipeYamlMatch.id!);
+      if (!recipe) throw new HttpError(404, "Recipe not found");
+      const yaml = formatRecipeYaml(recipe);
+      // The HTTP API defaults to JSON while direct links, curl, and Git tooling
+      // receive the portable source file. Keeping both forms at one address
+      // avoids an app-only serialization format.
+      if (req.headers.accept?.includes("application/json")) json(res, 200, { yaml });
+      else text(res, 200, yaml, "application/yaml; charset=utf-8");
+      return;
+    }
+
+    if (method === "POST" && pathname === "/recipes/import") {
+      const body = (await parseJsonBody(req)) as {
+        yaml?: string;
+        dryRun?: boolean;
+        conflict?: "reject" | "replace" | "copy";
+      };
+      if (!body.yaml?.trim()) throw new HttpError(400, "yaml is required");
+      try {
+        const parsed = parseRecipeYaml(body.yaml);
+        const existing = await readRecipe(parsed.id);
+        if (body.dryRun) {
+          json(res, 200, {
+            preview: {
+              recipe: parsed,
+              exists: Boolean(existing),
+              canonicalYaml: formatRecipeYaml(parsed),
+            },
+          });
+          return;
+        }
+        const conflict = body.conflict ?? "reject";
+        if (existing && conflict === "reject") {
+          throw new HttpError(409, `Test “${parsed.id}” already exists`);
+        }
+        let id = parsed.id;
+        let title = parsed.title;
+        if (existing && conflict === "copy") {
+          let suffix = 2;
+          while (await readRecipe(`${parsed.id}-copy-${suffix}`)) suffix += 1;
+          id = `${parsed.id}-copy-${suffix}`;
+          title = `${parsed.title} copy`;
+        }
+        const recipe = await saveRecipe({
+          id,
+          title,
+          description: parsed.description,
+          variables: parsed.variables,
+          parameters: parsed.parameters,
+          steps: parsed.steps,
+          quarantined: parsed.quarantined,
+          quarantineReason: parsed.quarantineReason,
+        });
+        json(res, 201, { recipe });
+      } catch (error) {
+        if (error instanceof HttpError) throw error;
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
       return;
     }
 
@@ -616,7 +1263,11 @@ async function handleRequest(
       const body = (await parseJsonBody(req)) as {
         title?: string;
         description?: string;
+        variables?: Record<string, string>;
+        parameters?: RecipeParameter[];
         steps?: unknown;
+        quarantined?: boolean;
+        quarantineReason?: string;
       };
       if (!body.title || !body.title.trim()) throw new HttpError(400, "title is required");
       let steps;
@@ -628,7 +1279,11 @@ async function handleRequest(
       const recipe = await saveRecipe({
         title: body.title,
         description: body.description,
+        variables: body.variables,
+        parameters: body.parameters,
         steps,
+        quarantined: body.quarantined,
+        quarantineReason: body.quarantineReason,
       });
       json(res, 201, { recipe });
       return;
@@ -640,7 +1295,11 @@ async function handleRequest(
       const body = (await parseJsonBody(req)) as {
         title?: string;
         description?: string;
+        variables?: Record<string, string>;
+        parameters?: RecipeParameter[];
         steps?: unknown;
+        quarantined?: boolean;
+        quarantineReason?: string;
       };
       let steps;
       try {
@@ -654,7 +1313,11 @@ async function handleRequest(
           id,
           title: body.title ?? id,
           description: body.description,
+          variables: body.variables,
+          parameters: body.parameters,
           steps,
+          quarantined: body.quarantined,
+          quarantineReason: body.quarantineReason,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -679,12 +1342,14 @@ async function handleRequest(
     if (method === "POST" && runMatch) {
       const body = (await parseJsonBody(req)) as {
         serial?: string;
+        platform?: "android" | "ios";
         prodAccountMatch?: string;
         wait?: boolean;
       };
       const job = enqueueJob({
         action: runMatch.id!,
         serial: body.serial,
+        platform: body.platform,
         prodAccountMatch: body.prodAccountMatch,
       });
       if (body.wait === false) {
@@ -808,6 +1473,16 @@ async function handleRequest(
     }
 
     // persisted runs
+    const matrixReportMatch = matchPath(pathname, "/reports/matrix/:batchId");
+    if (method === "GET" && matrixReportMatch) {
+      const persisted = await listPersistedRuns(500);
+      const live = listJobs(500);
+      const byId = new Map([...persisted, ...live].map((run) => [run.id, run]));
+      const report = buildCompatibilityReport([...byId.values()], matrixReportMatch.batchId!);
+      if (!report) throw new HttpError(404, "Compatibility matrix report not found");
+      json(res, 200, { report });
+      return;
+    }
     if (method === "GET" && pathname === "/runs") {
       const limit = parseLimit(url.searchParams.get("limit"), 40);
       const runs = await listPersistedRuns(limit);
@@ -837,6 +1512,17 @@ async function handleRequest(
         ...CORS_HEADERS,
       });
       res.end(buf);
+      return;
+    }
+
+    // GET /runs/:id/video/:file — byte ranges keep replay seeking instant.
+    const videoMatch = matchPath(pathname, "/runs/:id/video/:file");
+    if (method === "GET" && videoMatch) {
+      const run = await readPersistedRun(videoMatch.id!);
+      if (!run) throw new HttpError(404, "Run not found");
+      const file = runArtifactFile(run.dir, "video", videoMatch.file!);
+      if (!file) throw new HttpError(404, "Video not found");
+      await streamVideo(req, res, file);
       return;
     }
 
@@ -879,12 +1565,16 @@ async function handleRequest(
           "GET /report",
           "GET /report/:jobId",
           "GET /report/junit",
+          "GET /reports/matrix/:batchId",
           "GET /events (SSE)",
           "GET /actions",
           "GET /devices",
           "GET/POST /projects",
           "GET/POST /builds",
           "GET/POST /device-pools",
+          "GET /matrices",
+          "GET /matrices/:id/yaml",
+          "POST /matrices/import",
           "GET/POST /device-leases",
           "POST /device-leases/:id/release",
           "GET/PUT /project/variables",
@@ -894,12 +1584,20 @@ async function handleRequest(
           "GET /jobs",
           "GET /jobs/:id",
           "POST /jobs",
+          "POST /jobs/matrix",
+          "POST /jobs/compatibility-matrix",
           "POST /jobs/:id/retry",
           "POST /jobs/:id/cancel",
           "POST /jobs/:id/pause",
           "POST /jobs/:id/resume",
           "GET /recipes",
+          "GET /atlas",
+          "GET/POST /schedules",
+          "DELETE /schedules/:id",
           "GET /recipes/:id",
+          "GET/POST /recipes/:id/history",
+          "GET /recipes/:id/stability",
+          "GET /discovery/:id/coverage",
           "POST /recipes",
           "PUT /recipes/:id",
           "DELETE /recipes/:id",
@@ -911,6 +1609,7 @@ async function handleRequest(
           "GET /runs",
           "GET /runs/:id",
           "GET /runs/:id/frames/:file",
+          "GET /runs/:id/video/:file",
         ],
       });
       return;
@@ -932,6 +1631,41 @@ async function handleRequest(
   }
 }
 
+async function streamVideo(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  file: string,
+): Promise<void> {
+  let info;
+  try {
+    info = await stat(file);
+  } catch {
+    throw new HttpError(404, "Video not found");
+  }
+  const total = info.size;
+  const range = req.headers.range?.match(/^bytes=(\d*)-(\d*)$/);
+  const requestedStart = range?.[1] ? Number(range[1]) : 0;
+  const requestedEnd = range?.[2] ? Number(range[2]) : total - 1;
+  const start = Math.max(0, Math.min(requestedStart, total - 1));
+  const end = Math.max(start, Math.min(requestedEnd, total - 1));
+  const partial = Boolean(range);
+
+  res.writeHead(partial ? 206 : 200, {
+    "Content-Type": file.toLowerCase().endsWith(".webm") ? "video/webm" : "video/mp4",
+    "Content-Length": end - start + 1,
+    "Accept-Ranges": "bytes",
+    ...(partial ? { "Content-Range": `bytes ${start}-${end}/${total}` } : {}),
+    "Cache-Control": "private, max-age=3600",
+    ...CORS_HEADERS,
+  });
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream(file, { start, end });
+    stream.on("error", reject);
+    stream.on("end", resolve);
+    stream.pipe(res);
+  });
+}
+
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
@@ -941,6 +1675,15 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   const server = http.createServer((req, res) => {
     void handleRequest(req, res, token);
   });
+  let checkingSchedules = false;
+  const scheduleTimer = setInterval(() => {
+    if (checkingSchedules) return;
+    checkingSchedules = true;
+    void runDueSchedules().finally(() => {
+      checkingSchedules = false;
+    });
+  }, 30_000);
+  scheduleTimer.unref?.();
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -959,6 +1702,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
     host,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        clearInterval(scheduleTimer);
         for (const c of sseClients) {
           try {
             c.res.end();
@@ -970,6 +1714,61 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };
+}
+
+async function runDueSchedules(at = Date.now()): Promise<void> {
+  const schedules = await listSchedules();
+  // Capture target facts once per tick. Each job/report keeps this immutable
+  // observation instead of resolving a potentially different target later.
+  const targetProfiles = buildTargetProfiles({
+    devices: await listDevices().catch(() => []),
+    targets: await listTargets(),
+    observedAt: at,
+  });
+  for (const schedule of schedules) {
+    if (!schedule.enabled || schedule.nextRunAt > at) continue;
+    const recipe = await readRecipe(schedule.recipeId);
+    // Mark first so a broken definition cannot hot-loop every scheduler tick.
+    await markScheduleRun(schedule.id, at);
+    if (!recipe || recipe.quarantined) continue;
+    const variables = await readProjectVariables(schedule.projectId);
+    const matrix = await prepareRunMatrix({
+      variables: variables.value,
+      repetitions: schedule.repetitions,
+      seed: at,
+    });
+    const targetProfile = resolveScheduledTargetProfile(schedule, targetProfiles);
+    for (const item of matrix.cases) {
+      enqueueJob({
+        recipe: schedule.recipeId,
+        ...(schedule.targetKind === "browser"
+          ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
+          : {
+              targetKind: "device" as const,
+              serial: schedule.targetId,
+              platform: schedule.platform === "ios" ? "ios" : "android",
+            }),
+        variables: item.values,
+        ...(targetProfile ? { targetProfile } : {}),
+        batchId: matrix.id,
+        caseIndex: item.index,
+        caseCount: matrix.cases.length,
+        artifacts: [
+          {
+            kind: "schedule",
+            capturedAt: at,
+            data: {
+              scheduleId: schedule.id,
+              matrixId: matrix.id,
+              provenance: item.provenance,
+              targetProfile: targetProfile ?? null,
+              targetProfileStatus: targetProfile ? "observed" : "unavailable",
+            },
+          },
+        ],
+      });
+    }
+  }
 }
 
 async function main(): Promise<void> {

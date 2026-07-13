@@ -27,15 +27,7 @@ export function Logo(props: LogoProps) {
     >
       <span data-slot="logo-mark" aria-hidden="true" />
       {!split.markOnly && (
-        <span data-slot="logo-wordmark">
-          {split.compact ? (
-            "Grok"
-          ) : (
-            <>
-              Grok <em>Device</em>
-            </>
-          )}
-        </span>
+        <span data-slot="logo-wordmark">{split.compact ? "Relay" : <>Relay</>}</span>
       )}
       {split.children}
     </div>

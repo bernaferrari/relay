@@ -3,6 +3,8 @@
  */
 import type { JobStatus, TestJob } from "./session.js";
 import type { Glyph, StepKind } from "./trace.js";
+import type { FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
+import { classifyRunOutcome } from "./outcomes.js";
 
 const LOG_TAIL_CHARS = 2_000;
 
@@ -24,11 +26,14 @@ export type JobReport = {
   serial?: string;
   deviceName?: string;
   platform: string;
+  targetProfile?: TargetProfile;
   attempts: number;
   healed: boolean;
   healMessage?: string;
   error?: string;
   errorCode?: string;
+  outcome: RunOutcome;
+  failureCategory?: FailureCategory;
   startedAt: number;
   finishedAt?: number;
   durationMs?: number;
@@ -58,6 +63,9 @@ export function toJobReport(job: TestJob): JobReport {
   const durationMs = job.finishedAt != null ? job.finishedAt - startedAt : undefined;
   const healed = Boolean(job.healed || job.status === "healed");
   const ok = (job.status === "ok" || healed) && job.status !== "cancelled";
+  const classification = job.outcome
+    ? { outcome: job.outcome, failureCategory: job.failureCategory }
+    : classifyRunOutcome(job);
 
   return {
     id: job.id,
@@ -67,11 +75,14 @@ export function toJobReport(job: TestJob): JobReport {
     serial: job.serial,
     deviceName: job.deviceName,
     platform: job.platform ?? "android",
+    targetProfile: job.targetProfile,
     attempts: job.attempts,
     healed,
     healMessage: job.healMessage,
     error: job.error,
     errorCode: job.errorCode,
+    outcome: classification.outcome,
+    failureCategory: classification.failureCategory,
     startedAt,
     finishedAt: job.finishedAt,
     durationMs,
@@ -103,7 +114,9 @@ export function toJunitXml(reports: JobReport[]): string {
     const timeSec = (r.durationMs ?? 0) / 1000;
     totalTimeSec += timeSec;
     const classname = escapeXml(`relay.${r.platform}`);
-    const name = escapeXml(`${r.action}${r.serial ? ` @ ${r.serial}` : ""}`);
+    const name = escapeXml(
+      `${r.action}${r.targetProfile ? ` @ ${r.targetProfile.name}` : r.serial ? ` @ ${r.serial}` : ""}`,
+    );
     const attrs = `classname="${classname}" name="${name}" time="${timeSec.toFixed(3)}"`;
 
     if (reportPassed(r)) {
@@ -119,9 +132,12 @@ export function toJunitXml(reports: JobReport[]): string {
     const detail = escapeXml(
       [
         r.errorCode ? `code=${r.errorCode}` : null,
+        `outcome=${r.outcome}`,
+        r.failureCategory ? `category=${r.failureCategory}` : null,
         r.error,
         r.deviceName ? `device=${r.deviceName}` : null,
         r.serial ? `serial=${r.serial}` : null,
+        r.targetProfile ? `profile=${r.targetProfile.name}` : null,
       ]
         .filter(Boolean)
         .join("\n"),

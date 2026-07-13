@@ -5,6 +5,8 @@ import { IconButton } from "@relay/ui/icon-button";
 import { fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { mono, popover } from "../lib/ui";
+import { presentTarget } from "../lib/target-presentation";
+import { withRefreshFeedback } from "../lib/refresh-feedback";
 
 /**
  * Topbar — brand · device picker · [spacer] · runbar pill · Settings.
@@ -13,6 +15,7 @@ import { mono, popover } from "../lib/ui";
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();
   const [deviceOpen, setDeviceOpen] = createSignal(false);
+  const [refreshingDevices, setRefreshingDevices] = createSignal(false);
 
   onMount(() => {
     const onDoc = (e: MouseEvent) => {
@@ -24,17 +27,29 @@ export function Topbar(props: { onSettings: () => void }) {
   });
 
   const deviceLabel = () => {
-    if (server.health() === "offline") return "Offline";
+    if (server.health() === "offline") return "Connection unavailable";
     const s = server.selectedDevice();
-    if (!s) return server.isEmptyDevices() ? "No device" : "Select device";
+    if (!s) return server.isEmptyDevices() ? "No target" : "Select target";
     const d = server.devices().find((x) => x.serial === s);
-    return d?.name ?? s;
+    return d ? presentTarget(d).displayName : "Select target";
   };
 
   const statusOn = () =>
     server.health() === "online" && Boolean(server.selectedDevice()) && !server.isEmptyDevices();
   const statusOff = () => server.health() === "offline";
   const pickEmpty = () => server.isEmptyDevices() || !server.selectedDevice();
+  async function refreshDevices(): Promise<void> {
+    if (refreshingDevices()) return;
+    setRefreshingDevices(true);
+    try {
+      await withRefreshFeedback(async () => {
+        await server.pollHealth();
+        if (server.health() === "online") await server.refreshDevices();
+      });
+    } finally {
+      setRefreshingDevices(false);
+    }
+  }
 
   return (
     <header
@@ -108,24 +123,17 @@ export function Topbar(props: { onSettings: () => void }) {
               when={server.devices().length > 0}
               fallback={
                 <div class="px-3 py-3.5 text-center">
-                  <p class="m-0 text-12-medium text-text-strong">No devices</p>
+                  <p class="m-0 text-12-medium text-text-strong">No target connected</p>
                   <p class="mt-1 mb-2 text-12-regular text-text-weak">
-                    Connect a phone, then refresh.
+                    Connect a phone or add a browser target in Settings.
                   </p>
-                  <code
-                    class={cn(
-                      mono,
-                      "inline-block rounded-md bg-surface-base px-2 py-0.5 text-12-regular text-text-strong ring-1 ring-inset ring-border-weak-base",
-                    )}
-                  >
-                    adb devices
-                  </code>
                 </div>
               }
             >
               <For each={server.devices()}>
                 {(d) => {
                   const selected = () => server.selectedDevice() === d.serial;
+                  const target = () => presentTarget(d);
                   return (
                     <button
                       type="button"
@@ -150,10 +158,10 @@ export function Topbar(props: { onSettings: () => void }) {
                       />
                       <span class="min-w-0 flex-1 text-left">
                         <span class="block text-12-medium text-text-strong">
-                          {d.name ?? d.serial}
+                          {target().displayName}
                         </span>
-                        <span class={cn(mono, "mt-px block text-12-regular text-text-weak")}>
-                          {d.serial}
+                        <span class="mt-px block text-12-regular text-text-weak">
+                          {target().kindLabel} · {target().statusLabel}
                         </span>
                       </span>
                       <Show when={selected()}>
@@ -172,15 +180,19 @@ export function Topbar(props: { onSettings: () => void }) {
                 "mt-0.5 flex w-full items-center justify-center gap-1.5 rounded-b-[10px] border-t border-border-weak-base",
                 "px-2.5 pt-2.5 pb-2 font-medium text-text-strong transition-colors hover:bg-surface-raised-base-hover",
               )}
+              disabled={refreshingDevices()}
+              aria-busy={refreshingDevices()}
               onClick={() => {
-                void (async () => {
-                  await server.pollHealth();
-                  if (server.health() === "online") await server.refreshDevices();
-                })();
-                setDeviceOpen(false);
+                void refreshDevices();
               }}
             >
-              <Icon name="refresh" size={12} />
+              <Icon
+                name="refresh"
+                size={12}
+                class={
+                  refreshingDevices() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"
+                }
+              />
               Refresh devices
             </button>
           </div>
@@ -227,7 +239,9 @@ export function Topbar(props: { onSettings: () => void }) {
               {job().title ?? titleize(job().action, server.recipes())}
             </button>
             <span class={cn(mono, "shrink-0 text-12-regular text-text-weak")}>
-              {fmtDur(job(), server.clock())}
+              <Show when={job().waitingFor} fallback={fmtDur(job(), server.clock())}>
+                Your turn
+              </Show>
             </span>
             {/* Pause/cancel: reveal on hover — quiet chrome at rest */}
             <span class="flex w-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity] group-hover/job:w-12 group-hover/job:opacity-100 group-focus-within/job:w-12 group-focus-within/job:opacity-100">

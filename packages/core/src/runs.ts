@@ -7,16 +7,18 @@ import { join, basename, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
+import type { FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
 import { now } from "./events.js";
 
 export type PersistedRun = {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3 | 4;
   id: string;
   action: string;
   title?: string;
   serial?: string;
   deviceName?: string;
   platform?: string;
+  targetProfile?: TargetProfile;
   status: string;
   healed?: boolean;
   healMessage?: string;
@@ -28,7 +30,12 @@ export type PersistedRun = {
   result?: unknown;
   error?: string;
   errorCode?: string;
+  outcome?: RunOutcome;
+  failureCategory?: FailureCategory;
   appVersion?: string;
+  batchId?: string;
+  caseIndex?: number;
+  caseCount?: number;
   logs: string[];
   steps: TraceStep[];
   frames: TraceFrameRef[];
@@ -40,6 +47,8 @@ export type PersistedRun = {
   inputDigest: string;
   resolvedInputs: Record<string, string>;
 };
+
+export type RunArtifact = TestJob["artifacts"][number];
 
 function slug(s: string): string {
   return s
@@ -81,11 +90,17 @@ export function formatRunFolder(
 
 export async function ensureRunDir(job: TestJob): Promise<string> {
   if (job.runDir) {
-    await mkdir(join(job.runDir, "frames"), { recursive: true });
+    await Promise.all([
+      mkdir(join(job.runDir, "frames"), { recursive: true }),
+      mkdir(join(job.runDir, "video"), { recursive: true }),
+    ]);
     return job.runDir;
   }
   const dir = join(runsRoot(), formatRunFolder(job));
-  await mkdir(join(dir, "frames"), { recursive: true });
+  await Promise.all([
+    mkdir(join(dir, "frames"), { recursive: true }),
+    mkdir(join(dir, "video"), { recursive: true }),
+  ]);
   job.runDir = dir;
   return dir;
 }
@@ -134,13 +149,14 @@ export async function persistRun(job: TestJob): Promise<PersistedRun> {
     variables: job.resolvedInputs,
   });
   const payload: PersistedRun = {
-    schemaVersion: 2,
+    schemaVersion: 4,
     id: job.id,
     action: job.action,
     title: job.title,
     serial: job.serial,
     deviceName: job.deviceName,
     platform: job.platform ?? "android",
+    targetProfile: job.targetProfile,
     status: job.status,
     healed: job.healed,
     healMessage: job.healMessage,
@@ -152,7 +168,12 @@ export async function persistRun(job: TestJob): Promise<PersistedRun> {
     result: job.result,
     error: job.error,
     errorCode: job.errorCode,
+    outcome: job.outcome,
+    failureCategory: job.failureCategory,
     appVersion: job.appVersion,
+    batchId: job.batchId,
+    caseIndex: job.caseIndex,
+    caseCount: job.caseCount,
     logs: job.logs,
     steps,
     frames,
@@ -228,6 +249,37 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
   }
 }
 
+export async function recipeStability(
+  recipeId: string,
+  limit = 20,
+): Promise<{
+  total: number;
+  passed: number;
+  productFailures: number;
+  harnessFailures: number;
+  uncertain: number;
+  passRate: number | null;
+}> {
+  const runs = (await listPersistedRuns(200))
+    .filter((run) => run.action === recipeId)
+    .slice(0, Math.max(1, Math.min(limit, 100)));
+  const passed = runs.filter(
+    (run) => run.outcome === "passed" || run.status === "ok" || run.status === "healed",
+  ).length;
+  const productFailures = runs.filter((run) => run.outcome === "product-failure").length;
+  const harnessFailures = runs.filter((run) => run.outcome === "harness-failure").length;
+  const uncertain = runs.filter((run) => run.outcome === "uncertain").length;
+  const judged = passed + productFailures;
+  return {
+    total: runs.length,
+    passed,
+    productFailures,
+    harnessFailures,
+    uncertain,
+    passRate: judged > 0 ? passed / judged : null,
+  };
+}
+
 export async function readFrameFile(runDir: string, relPath: string): Promise<Buffer | null> {
   // prevent path escape
   const safe = basename(relPath.includes("/") ? relPath.split("/").pop()! : relPath);
@@ -237,4 +289,10 @@ export async function readFrameFile(runDir: string, relPath: string): Promise<Bu
   } catch {
     return null;
   }
+}
+
+export function runArtifactFile(runDir: string, area: "video", file: string): string | null {
+  const safe = basename(file);
+  if (!safe || safe !== file || !safe.toLowerCase().endsWith(".mp4")) return null;
+  return join(runDir, area, safe);
 }

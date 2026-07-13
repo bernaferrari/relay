@@ -45,16 +45,26 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       const to = step.timeoutMs ? ` (${fmtSeconds(step.timeoutMs)})` : "";
       return `Wait until ${targetPhrase(step.target)} appears${to}`;
     }
+    case "wait-response": {
+      const stable = step.stableForMs ? `, stable for ${fmtSeconds(step.stableForMs)}` : "";
+      return `Wait for ${targetPhrase(step.target)} to finish${stable}`;
+    }
     case "expect": {
       const to = step.timeoutMs ? ` (${fmtSeconds(step.timeoutMs)})` : "";
       const verb = step.condition === "gone" ? "is gone" : "is visible";
       return `Check ${targetPhrase(step.target)} ${verb}${to}`;
     }
+    case "extract":
+      return `Extract ${targetPhrase(step.target)} as ${step.as}`;
+    case "assert-content":
+      return `Check ${step.input} ${step.match.replace("-", " ")} "${step.expected}"`;
+    case "evaluate-semantic":
+      return `Evaluate ${step.input} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "sleep":
       return `Wait ${fmtDuration(step.ms)}`;
     case "pause":
-      // Message is the whole line — kind chip already says Pause.
-      return step.message.trim() || "Pause for human";
+      // Keep the action explicit: this is a deliberate handoff, not a sleep.
+      return step.message.trim() ? `Wait for you: ${step.message}` : "Wait for your input";
     case "key":
       return `Press ${step.key === "back" ? "Back" : "Home"}`;
     case "scroll":
@@ -70,6 +80,12 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       return titleize(step.flow, recipes);
     case "module":
       return `Run ${titleize(step.recipeId, recipes)}`;
+    case "branch":
+      return `When ${step.input} ${step.operator.replace("-", " ")}${step.expected ? ` "${step.expected}"` : ""}, run ${titleize(step.thenRecipeId, recipes)}`;
+    case "repeat":
+      return `Repeat ${titleize(step.recipeId, recipes)} ${step.count} times`;
+    case "script":
+      return "Transform variables with safe script";
     case "clipboard":
       return step.action === "write"
         ? `Set clipboard to "${step.text ?? ""}"`
@@ -77,9 +93,15 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
           ? `Check clipboard ${step.match === "contains" ? "contains" : "equals"} "${step.expect}"`
           : "Read clipboard";
     case "app":
-      return step.action === "switcher"
-        ? "Open app switcher"
-        : `${cap(step.action)} ${step.app ?? step.url ?? "app"}`;
+      if (step.action === "switcher") return "Open app switcher";
+      if (step.action === "inspect") return `Record ${step.app} version`;
+      if (step.action === "assert-installed")
+        return `Check ${step.app} is installed${step.version ? ` (${step.version})` : ""}`;
+      if (step.action === "assert-not-installed") return `Check ${step.app} is not installed`;
+      if (step.action === "install" || step.action === "update")
+        return `${cap(step.action)} ${step.app} from APK`;
+      if (step.action === "uninstall") return `Uninstall ${step.app}`;
+      return `${cap(step.action)} ${step.app ?? step.url ?? "app"}`;
     case "device":
       return step.action === "keyboard-dismiss"
         ? "Dismiss keyboard"
@@ -111,8 +133,15 @@ export function stepValid(step: RecipeStep): boolean {
     case "tap":
     case "long-press":
     case "wait-for":
+    case "wait-response":
     case "expect":
       return targetValid(step.target);
+    case "extract":
+      return targetValid(step.target) && step.as.trim().length > 0;
+    case "assert-content":
+      return step.input.trim().length > 0;
+    case "evaluate-semantic":
+      return step.input.trim().length > 0 && step.criteria.some((criterion) => criterion.trim());
     case "type":
       return step.text.trim().length > 0;
     case "sleep":
@@ -123,10 +152,26 @@ export function stepValid(step: RecipeStep): boolean {
       return step.flow.trim().length > 0;
     case "module":
       return step.recipeId.trim().length > 0;
+    case "branch":
+      return (
+        step.input.trim().length > 0 &&
+        step.thenRecipeId.trim().length > 0 &&
+        (step.operator === "exists" || step.expected !== undefined)
+      );
+    case "repeat":
+      return step.recipeId.trim().length > 0 && Number.isInteger(step.count) && step.count > 0;
+    case "script":
+      return step.source.trim().length > 0;
     case "clipboard":
       return step.action === "read" || step.text !== undefined;
-    case "app":
-      return step.action !== "open" || Boolean(step.app?.trim() || step.url?.trim());
+    case "app": {
+      if (step.action === "switcher") return true;
+      if (step.action === "open") return Boolean(step.app?.trim() || step.url?.trim());
+      if (!step.app?.trim()) return false;
+      if (step.action === "install" || step.action === "update")
+        return Boolean(step.artifact?.trim());
+      return true;
+    }
     case "location":
       return Number.isFinite(step.latitude) && Number.isFinite(step.longitude);
     case "scroll":
@@ -151,8 +196,15 @@ export function stepIssue(step: RecipeStep): string | null {
     case "tap":
     case "long-press":
     case "wait-for":
+    case "wait-response":
     case "expect":
       return "Needs a target — a label, ref, text, or point.";
+    case "extract":
+      return "Needs a target and output variable name.";
+    case "assert-content":
+      return "Needs an extracted input variable.";
+    case "evaluate-semantic":
+      return "Needs an extracted input and at least one criterion.";
     case "type":
       return "Needs text to type.";
     case "sleep":
@@ -163,10 +215,18 @@ export function stepIssue(step: RecipeStep): string | null {
       return "Needs a flow — pick one from the list.";
     case "module":
       return "Needs a reusable test.";
+    case "branch":
+      return "Needs an input, condition, and matching test.";
+    case "repeat":
+      return "Needs a reusable test and repeat count.";
+    case "script":
+      return "Needs at least one safe variable command.";
     case "clipboard":
       return "Needs clipboard text.";
     case "app":
-      return "Needs an app id or deep link.";
+      return step.action === "install" || step.action === "update"
+        ? "Needs a package id and a local APK path."
+        : "Needs an app id or deep link.";
     case "location":
       return "Needs valid latitude and longitude.";
     default:

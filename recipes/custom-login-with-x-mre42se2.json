@@ -1,0 +1,14 @@
+{
+  "id": "custom-login-with-x-mre42se2",
+  "title": "Login with X",
+  "description": "Opens Grok and signs in with X.",
+  "source": "custom",
+  "steps": [
+    {
+      "kind": "flow",
+      "flow": "login-x"
+    }
+  ],
+  "createdAt": 1783638108218,
+  "updatedAt": 1783638108218
+}

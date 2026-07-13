@@ -1,6 +1,6 @@
 import { createSignal, createEffect, on, onCleanup } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
-import { useServer, type RecipeInfo, type RecipeStep } from "./server";
+import { useServer, type RecipeInfo, type RecipeParameter, type RecipeStep } from "./server";
 import { stepValid } from "../lib/step-sentence";
 import { collapseUnchangedFlow, expandFlowToEditableSteps } from "../lib/run-gates";
 import { toast } from "./toast";
@@ -26,6 +26,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
 
     const [title, setTitleState] = createSignal("");
     const [description, setDescriptionState] = createSignal("");
+    const [parameters, setParametersState] = createSignal<RecipeParameter[]>([]);
     const [steps, setStepsState] = createSignal<RecipeStep[]>([]);
     const [saveState, setSaveState] = createSignal<SaveState>("saved");
     const [source, setSource] = createSignal<"custom" | "builtin" | null>(null);
@@ -54,6 +55,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       setSource(r?.source ?? null);
       setTitleState(r?.title ?? "");
       setDescriptionState(r?.description ?? "");
+      setParametersState(r?.parameters?.map((parameter) => ({ ...parameter })) ?? []);
       setExpandedStep(null);
       // Clear back-link unless this seed is the fork we just created.
       if (!r || skipReseedFor !== r.id) setForkedFrom(null);
@@ -106,7 +108,19 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       ),
     );
 
-    const invalidCount = () => steps().filter((s) => !stepValid(s)).length;
+    const parameterIssue = () => {
+      const names = new Set<string>();
+      for (const parameter of parameters()) {
+        if (!/^[A-Za-z_][A-Za-z0-9_.-]*$/.test(parameter.name)) {
+          return "Each flow input needs a variable-style name.";
+        }
+        if (names.has(parameter.name)) return `Duplicate flow input: ${parameter.name}`;
+        names.add(parameter.name);
+      }
+      return null;
+    };
+    const invalidCount = () =>
+      steps().filter((s) => !stepValid(s)).length + (parameterIssue() ? 1 : 0);
 
     function scheduleSave(): void {
       if (!currentId) return;
@@ -145,6 +159,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       const body = {
         title: title().trim() || "Untitled test",
         description: description().trim() || undefined,
+        parameters: parameters(),
         steps: persistSteps,
       };
 
@@ -178,6 +193,10 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     }
     function setDescription(v: string): void {
       setDescriptionState(v);
+      scheduleSave();
+    }
+    function setParameters(next: RecipeParameter[]): void {
+      setParametersState(next);
       scheduleSave();
     }
     function insertStep(index: number, step: RecipeStep): void {
@@ -267,10 +286,12 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     return {
       title,
       description,
+      parameters,
       steps,
       saveState,
       source,
       invalidCount,
+      parameterIssue,
       flashSteps,
       expandedStep,
       setExpandedStep,
@@ -278,6 +299,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       openOriginal,
       setTitle,
       setDescription,
+      setParameters,
       insertStep,
       updateStep,
       removeStep,

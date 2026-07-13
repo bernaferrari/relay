@@ -18,6 +18,44 @@ export type ElectronAPI = {
 
   /** Update native window background (theme sync). */
   setBackgroundColor: (color: string) => Promise<void>;
+
+  /** Signed desktop update lifecycle, emitted by the main process only. */
+  updates: {
+    getState: () => Promise<{
+      phase:
+        | "unsupported"
+        | "disabled"
+        | "idle"
+        | "checking"
+        | "available"
+        | "downloaded"
+        | "error";
+      version?: string;
+      releaseName?: string;
+      releaseNotes?: string;
+      releaseDate?: string;
+      error?: string;
+    }>;
+    check: () => Promise<void>;
+    install: () => Promise<void>;
+    onState: (
+      listener: (state: {
+        phase:
+          | "unsupported"
+          | "disabled"
+          | "idle"
+          | "checking"
+          | "available"
+          | "downloaded"
+          | "error";
+        version?: string;
+        releaseName?: string;
+        releaseNotes?: string;
+        releaseDate?: string;
+        error?: string;
+      }) => void,
+    ) => () => void;
+  };
 };
 
 declare global {

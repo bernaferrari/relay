@@ -4,6 +4,29 @@ export function normalizeBase(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+/**
+ * Keep the local web client on the same loopback address as Relay's service.
+ *
+ * Some macOS/Linux setups resolve `localhost` to ::1 before 127.0.0.1. Relay's
+ * development service intentionally binds to IPv4, so an old stored
+ * `http://localhost:8787` preference can look offline even while the service
+ * is healthy. Only rewrite plain HTTP localhost URLs; remote and HTTPS URLs
+ * must remain exactly as configured.
+ */
+export function normalizeLocalBase(url: string): string {
+  const base = normalizeBase(url.trim());
+  try {
+    const parsed = new URL(base);
+    if (parsed.protocol === "http:" && parsed.hostname === "localhost") {
+      parsed.hostname = "127.0.0.1";
+      return normalizeBase(parsed.toString());
+    }
+  } catch {
+    // Preserve a user-entered value so the settings screen can report it.
+  }
+  return base;
+}
+
 export function asArray<T>(value: unknown, key?: string): T[] {
   if (Array.isArray(value)) return value as T[];
   if (

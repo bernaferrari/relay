@@ -5,10 +5,12 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { promisify } from "node:util";
 import {
-  PLATFORM,
+  selectedPlatform,
+  type DevicePlatform,
   base,
   center,
   createDevice,
@@ -26,6 +28,8 @@ import {
 import { getExecutingJobId, hardStopDeviceSession } from "./control.js";
 import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
+import { getBrowserDevice } from "./browser-target.js";
+import { readTarget } from "./targets.js";
 
 /**
  * Recover from session binding conflicts by releasing the stale binding
@@ -105,36 +109,111 @@ export type ListedDevice = {
   serial: string;
   kind: string | null;
   booted: boolean | null;
-  platform: typeof PLATFORM;
+  platform: DevicePlatform;
+  /** Observed by the adapter or the platform tool; omitted when unavailable. */
+  osVersion?: string;
 };
+
+const execFileAsync = promisify(execFile);
+
+function explicitOsVersion(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const candidates = [
+    record.osVersion,
+    record.runtimeVersion,
+    record.platformVersion,
+    record.os && typeof record.os === "object"
+      ? (record.os as Record<string, unknown>).version
+      : undefined,
+  ];
+  return candidates
+    .find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && candidate.trim().length > 0,
+    )
+    ?.trim();
+}
+
+async function observedAndroidVersion(serial: string): Promise<string | undefined> {
+  try {
+    const result = await execFileAsync(
+      "adb",
+      ["-s", serial, "shell", "getprop", "ro.build.version.release"],
+      {
+        timeout: 1500,
+        maxBuffer: 4096,
+      },
+    );
+    const version = result.stdout.trim();
+    return version || undefined;
+  } catch {
+    // ADB may not be installed or the target may be remote. Unknown is more
+    // truthful than a guessed version, and the matrix UI explains the gap.
+    return undefined;
+  }
+}
 
 export async function listDevices(): Promise<ListedDevice[]> {
   const client = createDevice();
-  const devices = await client.devices.list({ platform: PLATFORM });
-  const listed = devices.map((d) => {
-    const serial = d.android?.serial ?? d.identifiers?.serial ?? d.id;
-    return {
-      id: d.id,
-      name: d.name,
-      serial,
-      kind: d.kind ?? null,
-      booted: d.booted ?? null,
-      platform: PLATFORM,
-    };
-  });
+  const devices = await client.devices.list();
+  const listed = await Promise.all(
+    devices
+      .filter((device) => device.platform === "android" || device.platform === "ios")
+      .map(async (d) => {
+        const platform = d.platform as DevicePlatform;
+        const serial =
+          d.android?.serial ?? d.ios?.udid ?? d.identifiers?.serial ?? d.identifiers?.udid ?? d.id;
+        const osVersion =
+          explicitOsVersion(d) ??
+          (platform === "android" ? await observedAndroidVersion(serial) : undefined);
+        return {
+          id: d.id,
+          name: d.name,
+          serial,
+          kind: d.kind ?? null,
+          booted: d.booted ?? null,
+          platform,
+          ...(osVersion ? { osVersion } : {}),
+        };
+      }),
+  );
   publish({ type: "device.list", at: now(), count: listed.length });
   return listed;
 }
 
-export function selectDevice(serial: string | null): void {
+export function selectDevice(serial: string | null, platform: DevicePlatform = "android"): void {
+  delete process.env.RELAY_TARGET_ID;
   if (serial?.trim()) {
     process.env.AGENT_DEVICE_SERIAL = serial.trim();
-    process.env.ANDROID_SERIAL = serial.trim();
+    process.env.AGENT_DEVICE_PLATFORM = platform;
+    if (platform === "android") process.env.ANDROID_SERIAL = serial.trim();
+    else delete process.env.ANDROID_SERIAL;
   } else {
     delete process.env.AGENT_DEVICE_SERIAL;
     delete process.env.ANDROID_SERIAL;
+    delete process.env.AGENT_DEVICE_PLATFORM;
   }
   publish({ type: "device.selected", at: now(), serial: serial?.trim() || null });
+}
+
+export function selectBrowserTarget(targetId: string | null): void {
+  delete process.env.AGENT_DEVICE_SERIAL;
+  delete process.env.ANDROID_SERIAL;
+  delete process.env.AGENT_DEVICE_PLATFORM;
+  if (targetId?.trim()) process.env.RELAY_TARGET_ID = targetId.trim();
+  else delete process.env.RELAY_TARGET_ID;
+  publish({ type: "device.selected", at: now(), serial: targetId?.trim() || null });
+}
+
+async function selectedClient(): Promise<Device> {
+  const targetId = process.env.RELAY_TARGET_ID?.trim();
+  return targetId ? await getBrowserDevice(targetId) : createDevice();
+}
+
+async function selectRuntimeTarget(serial: string): Promise<void> {
+  if (await readTarget(serial)) selectBrowserTarget(serial);
+  else selectDevice(serial, selectedPlatform());
 }
 
 export type SnapshotPayload = {
@@ -163,8 +242,8 @@ export async function captureSnapshot(opts?: {
   interactiveOnly?: boolean;
   device?: Device;
 }): Promise<SnapshotPayload> {
-  if (opts?.serial) selectDevice(opts.serial);
-  const device = opts?.device ?? createDevice();
+  if (opts?.serial) await selectRuntimeTarget(opts.serial);
+  const device = opts?.device ?? (await selectedClient());
   const nodes = await withSession(device, () =>
     snapshot(device, { interactiveOnly: opts?.interactiveOnly ?? false }),
   );
@@ -177,7 +256,7 @@ export async function captureSnapshot(opts?: {
     nodeCount: nodes.length,
   });
   return {
-    serial: process.env.AGENT_DEVICE_SERIAL,
+    serial: process.env.RELAY_TARGET_ID ?? process.env.AGENT_DEVICE_SERIAL,
     capturedAt: now(),
     nodes,
     interactive,
@@ -204,8 +283,8 @@ export async function captureScreenshot(opts?: {
   /** skip attaching to job */
   ephemeral?: boolean;
 }): Promise<ScreenshotPayload> {
-  if (opts?.serial) selectDevice(opts.serial);
-  const device = opts?.device ?? createDevice();
+  if (opts?.serial) await selectRuntimeTarget(opts.serial);
+  const device = opts?.device ?? (await selectedClient());
   const dir = join(tmpdir(), "relay");
   await mkdir(dir, { recursive: true });
   const path = join(dir, `shot-${now()}.png`);
@@ -215,6 +294,7 @@ export async function captureScreenshot(opts?: {
     const msg = err instanceof Error ? err.message : String(err);
     if (/no active session/i.test(msg)) {
       // No SDK session — fall back to raw adb screencap (works on any app)
+      if (process.env.RELAY_TARGET_ID || selectedPlatform() !== "android") throw err;
       rawScreenshot(path);
     } else {
       throw err;
@@ -225,7 +305,7 @@ export async function captureScreenshot(opts?: {
   publish({
     type: "screenshot.captured",
     at: now(),
-    serial: process.env.AGENT_DEVICE_SERIAL,
+    serial: process.env.RELAY_TARGET_ID ?? process.env.AGENT_DEVICE_SERIAL,
     bytes: buf.byteLength,
   });
 
@@ -245,7 +325,7 @@ export async function captureScreenshot(opts?: {
   }
 
   return {
-    serial: process.env.AGENT_DEVICE_SERIAL,
+    serial: process.env.RELAY_TARGET_ID ?? process.env.AGENT_DEVICE_SERIAL,
     capturedAt: now(),
     mime: "image/png",
     base64,
@@ -271,8 +351,8 @@ export type InteractInput =
   | { kind: "type"; text: string };
 
 export async function interact(input: InteractInput, opts?: { serial?: string }): Promise<void> {
-  if (opts?.serial) selectDevice(opts.serial);
-  const device = createDevice();
+  if (opts?.serial) await selectRuntimeTarget(opts.serial);
+  const device = await selectedClient();
   try {
     await withSession(device, async () => {
       switch (input.kind) {
@@ -302,11 +382,19 @@ export async function interact(input: InteractInput, opts?: { serial?: string })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // No SDK session — raw adb works for coordinate interactions on any app.
-    if (/no active session/i.test(msg) && input.kind === "point") {
+    if (
+      /no active session/i.test(msg) &&
+      selectedPlatform() === "android" &&
+      input.kind === "point"
+    ) {
       rawTap(input.x, input.y);
       return;
     }
-    if (/no active session/i.test(msg) && input.kind === "swipe") {
+    if (
+      /no active session/i.test(msg) &&
+      selectedPlatform() === "android" &&
+      input.kind === "swipe"
+    ) {
       rawSwipe(input.from, input.to, input.durationMs ?? 250);
       return;
     }

@@ -1,0 +1,199 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import {
+  createDiscoverySession,
+  discoveryControls,
+  formatDiscoveryExport,
+  promoteDiscoveryPath,
+  readDiscoverySession,
+  readDiscoveryScreenAsset,
+  recordObservedScreen,
+  recordObservedTransition,
+  setDiscoveryStatus,
+  suggestDiscoveryControl,
+} from "./discovery.js";
+
+test("discovery keeps a bounded, evidence-backed screen graph", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  const previousTests = process.env.RELAY_TESTS_DIR;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_TESTS_DIR = join(root, "tests");
+  try {
+    const screenshot = join(root, "welcome.png");
+    await writeFile(screenshot, "image evidence");
+    const session = await createDiscoverySession({
+      id: "map",
+      name: "Sign-in map",
+      targetId: "browser-chat",
+      scope: { maxScreens: 2, maxTransitions: 2, maxDurationMs: 60_000 },
+    });
+    await setDiscoveryStatus(session.id, "running");
+    const first = await recordObservedScreen({
+      sessionId: session.id,
+      title: "Welcome",
+      nodes: [{ role: "button", label: "Continue", visibleToUser: true }],
+      screenshotPath: screenshot,
+    });
+    const duplicate = await recordObservedScreen({
+      sessionId: session.id,
+      title: "Welcome again",
+      nodes: [{ role: "button", label: "Continue", visibleToUser: true }],
+    });
+    assert.equal(duplicate.isNew, false);
+    assert.equal(
+      (await readDiscoveryScreenAsset(session.id, first.screen.id))?.toString(),
+      "image evidence",
+    );
+    const second = await recordObservedScreen({
+      sessionId: session.id,
+      title: "Sign in",
+      nodes: [{ role: "textbox", label: "Email", visibleToUser: true }],
+    });
+    const transition = await recordObservedTransition({
+      sessionId: session.id,
+      fromScreenId: first.screen.id,
+      toScreenId: second.screen.id,
+      kind: "tap",
+      label: "Continue",
+      target: { label: "Continue" },
+      changedScreen: true,
+    });
+    const promoted = await promoteDiscoveryPath({
+      sessionId: session.id,
+      transitionIds: [transition.id],
+      recipeId: "discovered-sign-in",
+      title: "Discovered sign in",
+      transitionLabels: { [transition.id]: "Open sign in" },
+    });
+    assert.equal(promoted.recipe.steps[0]?.kind, "tap");
+    assert.equal(promoted.recipe.steps[0]?.note, "Open sign in");
+    assert.equal(
+      (await readDiscoverySession(session.id))?.transitions[0]?.label,
+      "Continue",
+      "review labels must not mutate raw discovery evidence",
+    );
+    await assert.rejects(
+      promoteDiscoveryPath({
+        sessionId: session.id,
+        transitionIds: [transition.id],
+        recipeId: "discovered-sign-in",
+        title: "Duplicate",
+      }),
+      /already exists/,
+    );
+    const finished = await setDiscoveryStatus(session.id, "complete");
+    assert.match(formatDiscoveryExport(finished, "markdown"), /Welcome → Sign in: tap “Continue”/);
+    await assert.rejects(
+      setDiscoveryStatus(session.id, "running"),
+      /cannot move from complete to running/,
+    );
+    await assert.rejects(
+      recordObservedTransition({
+        sessionId: session.id,
+        fromScreenId: first.screen.id,
+        kind: "tap",
+        label: "Delete account",
+        changedScreen: false,
+      }),
+      /complete/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    if (previousTests === undefined) delete process.env.RELAY_TESTS_DIR;
+    else process.env.RELAY_TESTS_DIR = previousTests;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("discovery blocks sensitive actions before an interaction is recorded", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-policy-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const session = await createDiscoverySession({
+      id: "policy",
+      name: "Policy",
+      targetId: "phone",
+    });
+    const screen = await recordObservedScreen({ sessionId: session.id, nodes: [] });
+    await assert.rejects(
+      recordObservedTransition({
+        sessionId: session.id,
+        fromScreenId: screen.screen.id,
+        kind: "tap",
+        label: "Purchase now",
+        changedScreen: false,
+      }),
+      /blocks sensitive controls/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("discovery suggests only safe unexplored semantic controls", async () => {
+  const controls = discoveryControls([
+    { role: "button", label: "Continue", ref: "@continue", visibleToUser: true, hittable: true },
+    {
+      role: "button",
+      label: "Delete account",
+      ref: "@delete",
+      visibleToUser: true,
+      hittable: true,
+    },
+  ]);
+  assert.deepEqual(
+    controls.map((control) => control.label),
+    ["Continue"],
+  );
+  const session = {
+    id: "map",
+    name: "Map",
+    targetId: "phone",
+    scope: {
+      maxScreens: 5,
+      maxTransitions: 5,
+      maxDurationMs: 60_000,
+      allowSensitiveControls: false,
+    },
+    status: "running" as const,
+    createdAt: 1,
+    updatedAt: 1,
+    screens: [{ id: "screen-a", fingerprint: "a", capturedAt: 1, controls }],
+    transitions: [],
+  };
+  assert.equal(suggestDiscoveryControl(session)?.control.label, "Continue");
+
+  const secondScreen = {
+    id: "screen-b",
+    fingerprint: "b",
+    capturedAt: 2,
+    controls,
+  };
+  const branched = {
+    ...session,
+    screens: [...session.screens, secondScreen],
+    transitions: [
+      {
+        id: "transition-a",
+        fromScreenId: "screen-a",
+        toScreenId: "screen-b",
+        kind: "tap" as const,
+        label: "Continue",
+        target: { ref: "@continue" },
+        changedScreen: true,
+        capturedAt: 2,
+      },
+    ],
+  };
+  // A semantic locator is consumed within its source screen, not globally: a
+  // different screen may legitimately expose its own “Continue” control.
+  assert.equal(suggestDiscoveryControl(branched)?.screenId, "screen-b");
+});

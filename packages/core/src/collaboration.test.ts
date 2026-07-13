@@ -6,10 +6,13 @@ import test from "node:test";
 import { RevisionConflict } from "@relay/protocol";
 import {
   leaseDevice,
+  deleteCompatibilityMatrix,
+  listCompatibilityMatrices,
   listDeviceLeases,
   readJourney,
   readProjectVariables,
   releaseDeviceLease,
+  saveCompatibilityMatrix,
   writeJourney,
   writeProjectVariables,
 } from "./collaboration.js";
@@ -91,6 +94,34 @@ test("device leases enforce exclusive ownership and release lifecycle", async ()
     );
     assert.equal((await releaseDeviceLease(lease.id)).status, "released");
     assert.equal((await listDeviceLeases("p"))[0]?.status, "released");
+  } finally {
+    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
+    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("compatibility matrices have project-scoped CRUD", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-matrices-"));
+  const previous = process.env.GROK_DEVICE_STATE_DIR;
+  process.env.GROK_DEVICE_STATE_DIR = root;
+  try {
+    const created = await saveCompatibilityMatrix({
+      id: "release",
+      projectId: "p",
+      name: "Release",
+      selectors: [{ platforms: ["browser"] }],
+    });
+    assert.equal(created.name, "Release");
+    const updated = await saveCompatibilityMatrix({
+      ...created,
+      name: "Release smoke",
+      selectors: [{ platforms: ["android"], requiredCapabilities: ["lock-screen"] }],
+    });
+    assert.equal(updated.createdAt, created.createdAt);
+    assert.equal((await listCompatibilityMatrices("p"))[0]?.name, "Release smoke");
+    await deleteCompatibilityMatrix("p", "release");
+    assert.deepEqual(await listCompatibilityMatrices("p"), []);
   } finally {
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
     else process.env.GROK_DEVICE_STATE_DIR = previous;

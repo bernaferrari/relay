@@ -1,0 +1,106 @@
+# Relay product design system
+
+Relay is a professional testing tool. It should feel calm, direct, and dependable: powerful
+underneath, simple on the surface. This document is the product UI contract, not a mood board.
+
+## 1. One vocabulary
+
+Use semantic tokens from `@relay/ui` directly:
+
+- Surfaces: `background-*`, `surface-*`
+- Text: `text-base`, `text-weak`, `text-weaker`, `text-strong`
+- Borders: `border-*`
+- Interaction: `surface-interactive-*`, `text-interactive-*`
+- Status: `success`, `warning`, `critical`, `info`
+
+Do not introduce numbered product aliases such as `relay-text-2`, `relay-text-3`,
+`relay-panel-2`, or `relay-panel-3`. A component must describe the purpose of a value, not its
+position in an undocumented scale.
+
+## 2. Tailwind owns ordinary component styling
+
+Use Tailwind utilities in TSX for normal layout, spacing, typography, borders, colors, hover,
+focus, selected, disabled, and responsive states. Prefer readable semantic utilities over new CSS
+selectors.
+
+Keep authored CSS only for:
+
+- global reset, fonts, and theme wiring;
+- Electron drag and no-drag regions;
+- canvas/node/edge geometry and transforms;
+- device viewport and media rendering;
+- animation keyframes shared by more than one component;
+- a reusable primitive whose states cannot be expressed clearly at the call site.
+
+Do not add a late override block to repair an earlier rule. Change or remove the owning rule.
+
+## 3. Compact, consistent rhythm
+
+Use a four-point spacing grid with 2px allowed only for optical alignment.
+
+- Related text: 2–4px
+- Label to control: 6–8px
+- Items in a list: 4–6px
+- Sections inside a panel: 16–20px
+- Page hero to primary content: 24px
+
+Default product type:
+
+- Caption/metadata: 11px, muted, 1.25 line-height
+- Body/control: 13px, 1.4–1.45 line-height
+- Panel title: 16–18px
+- Page title: 28–32px
+
+Do not repeat the same fact at adjacent hierarchy levels. Metadata is shown only when it helps the
+next decision.
+
+## 4. Selection is quiet
+
+Selection uses a filled surface and, when necessary, a subtle border. Do not use decorative left
+rails, bright outlines, or multiple simultaneous selection cues. Hover is weaker than selection;
+focus is visible only for keyboard navigation.
+
+Rows should be full width, truncate long primary text, and keep actions aligned at the trailing
+edge. A row click selects or opens. Explicit buttons run, edit, expand, or show a menu. Never assign
+different meanings to single-click and double-click.
+
+## 5. Progressive disclosure
+
+Show one primary action per context. Put imports, duplication, destructive actions, technical
+details, and advanced configuration in a clearly labelled overflow menu or disclosure.
+
+Prefer user language:
+
+- Test, not recipe
+- Run report, not immutable report
+- Target or device, not adapter instance
+- Saved with this run, not frozen observability payload
+
+IDs, serials, provider internals, and raw configuration belong in details, not list rows.
+
+## 6. State and status
+
+Status is communicated by a short label plus restrained color. Color is never the only signal.
+Unavailable is a compact filled badge. A status label must not look like a button unless it is
+interactive.
+
+Disabled controls remain legible and explain the prerequisite through a tooltip or toast when the
+user attempts the related action. Recording and running are unavailable without a ready target.
+
+## 7. Motion
+
+Motion explains continuity: opening menus, collapsing sidebars, moving a planned pointer, and
+updating canvas paths. Use transform and opacity, short ease-out transitions, and honor
+`prefers-reduced-motion`. Do not animate decoration for its own sake.
+
+## 8. Accessibility and quality gates
+
+- Keyboard access and visible focus for every interactive control
+- Minimum 4.5:1 contrast for body text
+- Minimum 40px touch target where touch use is plausible
+- No layout shift when status or metadata changes
+- No horizontal scrolling in list rows or the step inspector
+- Empty, loading, offline, error, and populated states reviewed at common window sizes
+
+Before merging a UI change, run `vp check`, relevant tests, and a browser visual pass. New component
+CSS requires a brief justification in the review description.

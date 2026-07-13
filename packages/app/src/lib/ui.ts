@@ -200,10 +200,16 @@ const stepIndexShell = cn(
   "text-12-medium leading-none tabular-nums",
 );
 
-export const stepIndex = cn(stepIndexShell, "bg-surface-base text-text-base");
+export const stepIndex = cn(
+  stepIndexShell,
+  "bg-surface-raised-base text-text-strong ring-1 ring-inset ring-border-weak-base",
+);
 
 /** Selected index — button-primary + icon-invert (AB primary) */
-export const stepIndexOn = cn(stepIndexShell, "bg-button-primary-base text-icon-invert-base");
+export const stepIndexOn = cn(
+  stepIndexShell,
+  "bg-surface-brand-base text-text-on-brand-base ring-1 ring-inset ring-border-interactive-base",
+);
 
 export const kindPill = cn(
   "inline-flex shrink-0 items-center rounded-full px-1.5 py-px",

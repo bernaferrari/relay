@@ -275,7 +275,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
      */
     async function driveTap(fx: number, fy: number): Promise<boolean> {
       if (server.health() !== "online") {
-        toast("Server offline — can't interact", "warning");
+        toast("Relay isn’t connected — can’t interact yet", "warning");
         return false;
       }
       // Flush any buffered typing first so order stays tap → type, not interleaved.
@@ -309,7 +309,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       durationMs: number,
     ): Promise<boolean> {
       if (server.health() !== "online") {
-        toast("Server offline — can't interact", "warning");
+        toast("Relay isn’t connected — can’t interact yet", "warning");
         return false;
       }
       await flushType();
@@ -450,7 +450,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       });
       if (saved) {
         server.setSelectedRecipeId(saved.id);
-        toast(`Forked "${recipe.title}"`, "success");
+        toast(`Created a copy of “${recipe.title}”`, "success");
       }
     }
 
@@ -499,7 +499,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         for (const r of legacy) {
           const steps = (r.steps ?? []).map(migrateLegacyStep);
           const saved = await server.saveRecipeRemote({
-            title: (r.title ?? "Recipe").trim() || "Recipe",
+            title: (r.title ?? "Untitled test").trim() || "Untitled test",
             steps,
           });
           if (!saved) allOk = false;

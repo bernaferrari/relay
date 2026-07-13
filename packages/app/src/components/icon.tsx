@@ -40,6 +40,7 @@ export type IconName =
   | "clock"
   | "move"
   | "download"
+  | "upload"
   | "bag"
   | "login"
   | "sparkle"
@@ -48,6 +49,7 @@ export type IconName =
   | "wave"
   | "plus"
   | "copy"
+  | "edit"
   | "more";
 
 type Path = { d: string; fill?: boolean };
@@ -113,6 +115,7 @@ const STROKE: Record<string, Path[]> = {
   clock: [{ d: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" }, { d: "M12 7.5V12l3 2" }],
   move: [{ d: "M3 12h18M8 7l-4 5 4 5M16 7l4 5-4 5" }],
   download: [{ d: "M12 3v12M7 10l5 5 5-5M5 21h14" }],
+  upload: [{ d: "M12 21V9M7 14l5-5 5 5M5 3h14" }],
   bag: [{ d: "M5 7h14l-1 13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 7z" }, { d: "M9 7a3 3 0 0 1 6 0" }],
   login: [{ d: "M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l4 4-4 4M14 12H3" }],
   wave: [{ d: "M3 12c2 0 2-5 4-5s2 10 4 10 2-10 4-10 2 5 4 5" }],
@@ -121,6 +124,7 @@ const STROKE: Record<string, Path[]> = {
     { d: "M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1z" },
     { d: "M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" },
   ],
+  edit: [{ d: "M4 20h4L19 9l-4-4L4 16z" }, { d: "m13.5 6.5 4 4" }],
 };
 
 const FILL: Record<string, Path[]> = {
