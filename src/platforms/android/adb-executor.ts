@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Readable, Writable } from 'node:stream';
 import type { DeviceInfo } from '../../kernel/device.ts';
 import type { Rect } from '../../kernel/snapshot.ts';
-import type { GesturePlan } from '../../contracts/gesture-plan.ts';
+import type { AndroidProviderTouchPlan } from './touch-plan.ts';
 import {
   coerceExecResult,
   execFailureDetails,
@@ -126,12 +126,12 @@ export type AndroidTextInjectionRequest = {
 export type AndroidTextInjector = (request: AndroidTextInjectionRequest) => Promise<void>;
 
 export type AndroidTouchInjector = (
-  request: GesturePlan,
+  request: AndroidProviderTouchPlan,
 ) => Promise<Record<string, unknown> | void>;
 
 export type AndroidGestureViewportProvider = () => Promise<Rect>;
 
-export type AndroidAdbProvider = {
+type AndroidAdbProviderBase = {
   /**
    * Fallback executor for device-scoped adb arguments. Providers may omit explicit
    * methods to keep the legacy exec-shaped pull/install fallback.
@@ -143,9 +143,23 @@ export type AndroidAdbProvider = {
   install?: AndroidAdbInstaller;
   installBundle?: AndroidBundleInstaller;
   text?: AndroidTextInjector;
-  touch?: AndroidTouchInjector;
-  gestureViewport?: AndroidGestureViewportProvider;
 };
+
+type AndroidTouchCapabilities =
+  | {
+      touch?: never;
+      gestureViewport?: never;
+    }
+  | {
+      touch: AndroidTouchInjector;
+      gestureViewport: AndroidGestureViewportProvider;
+    };
+
+export type AndroidTouchProvider = Required<
+  Pick<AndroidTouchCapabilities, 'touch' | 'gestureViewport'>
+>;
+
+export type AndroidAdbProvider = AndroidAdbProviderBase & AndroidTouchCapabilities;
 
 export type AndroidAdbProviderScopeOptions = {
   serial: string;
@@ -473,16 +487,9 @@ export function resolveAndroidTextInjector(device: DeviceInfo): AndroidTextInjec
   return scoped?.serial === device.id ? scoped.provider.text : undefined;
 }
 
-export function resolveAndroidTouchInjector(device: DeviceInfo): AndroidTouchInjector | undefined {
+export function resolveAndroidTouchProvider(device: DeviceInfo): AndroidTouchProvider | undefined {
   const scoped = androidAdbProviderScope.getStore();
-  return scoped?.serial === device.id ? scoped.provider.touch : undefined;
-}
-
-export function resolveAndroidGestureViewportProvider(
-  device: DeviceInfo,
-): AndroidGestureViewportProvider | undefined {
-  const scoped = androidAdbProviderScope.getStore();
-  return scoped?.serial === device.id ? scoped.provider.gestureViewport : undefined;
+  return scoped?.serial === device.id && scoped.provider.touch ? scoped.provider : undefined;
 }
 
 export function createAndroidPortReverseManager(

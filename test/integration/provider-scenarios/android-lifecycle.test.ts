@@ -80,10 +80,24 @@ test('Provider-backed integration Android text provider handles Unicode without 
 
 test('Provider-backed integration Android touch provider handles multi-touch gestures', async () => {
   await withProviderScenarioResource(
-    async () => await createAndroidSettingsWorld({ nativeTouchInjection: true }),
+    async () => await createAndroidSettingsWorld(),
     async (world) => {
       const client = world.daemon.client();
       await client.apps.open({ app: 'settings', ...world.selection });
+
+      await client.interactions.longPress({
+        x: 195,
+        y: 320,
+        durationMs: 750,
+        ...world.selection,
+      });
+
+      await client.interactions.scroll({
+        direction: 'down',
+        pixels: 120,
+        durationMs: 350,
+        ...world.selection,
+      });
 
       await client.interactions.swipe({
         from: { x: 340, y: 400 },
@@ -157,6 +171,8 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         durationMs: plan.durationMs,
       }));
       assert.deepEqual(touchCalls, [
+        { topology: 'single', intent: 'longPress', pointerCount: 1, durationMs: 750 },
+        { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 350 },
         { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 300 },
         { topology: 'single', intent: 'pan', pointerCount: 1, durationMs: 500 },
         { topology: 'two', intent: 'pan', pointerCount: 2, durationMs: 500 },
@@ -164,18 +180,7 @@ test('Provider-backed integration Android touch provider handles multi-touch ges
         { topology: 'two', intent: 'rotate', pointerCount: 2, durationMs: 784 },
         { topology: 'two', intent: 'transform', pointerCount: 2, durationMs: 700 },
       ]);
-      assert.equal(world.gestureViewportCalls, 6);
-      assert.equal(
-        world.adbCalls.some(
-          (call) =>
-            call[0] === 'shell' &&
-            call[1] === 'am' &&
-            call[2] === 'instrument' &&
-            call.includes('com.callstack.agentdevice.multitouchhelper/.MultiTouchInstrumentation'),
-        ),
-        false,
-        JSON.stringify(world.adbCalls),
-      );
+      assert.equal(world.gestureViewportCalls, 8);
     },
   );
 });
@@ -1460,6 +1465,20 @@ function assertAndroidInteractionContract(world: AndroidSettingsWorld): void {
     ),
     JSON.stringify(adbCalls),
   );
+  assert.deepEqual(
+    world.touchInjectionCalls.map((plan) => ({
+      intent: plan.intent,
+      durationMs: plan.durationMs,
+    })),
+    [
+      { intent: 'longPress', durationMs: 5 },
+      { intent: 'longPress', durationMs: 5 },
+      { intent: 'fling', durationMs: 100 },
+      { intent: 'fling', durationMs: 100 },
+      { intent: 'pan', durationMs: 400 },
+      { intent: 'fling', durationMs: 100 },
+    ],
+  );
   assertCommandCall(adbCalls, ['shell', 'input', 'tap', '88', '151']);
   assertCommandCall(adbCalls, [
     'shell',
@@ -1476,12 +1495,6 @@ function assertAndroidInteractionContract(world: AndroidSettingsWorld): void {
     2,
   );
   assertCommandCall(adbCalls, ['shell', 'input', 'tap', '50', '60']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '30', '40', '30', '40', '5']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '31', '40', '31', '40', '5']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '200', '20', '100', '100']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '20', '100', '20', '200', '100']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '100', '200', '150', '180', '400']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'swipe', '100', '200', '280', '200', '100']);
   assert.equal(
     adbCalls.filter((call) => arrayEqual(call, ['shell', 'input', 'tap', '88', '151'])).length,
     5,

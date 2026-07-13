@@ -1,48 +1,118 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import {
   fillAndroid,
+  longPressAndroid,
   rotateAndroid,
   scrollAndroid,
-  swipeAndroid,
   typeAndroid,
 } from '../input-actions.ts';
-import type { DeviceInfo } from '../../../kernel/device.ts';
 import { AppError } from '../../../kernel/errors.ts';
 import { withScriptedAdb } from '../../../__tests__/test-utils/mocked-binaries.ts';
+import { ANDROID_EMULATOR } from '../../../__tests__/test-utils/index.ts';
+import { withAndroidAdbProvider, type AndroidTouchInjector } from '../adb-executor.ts';
 
-test('scrollAndroid supports explicit pixel travel distance', async () => {
-  await withScriptedAdb(
-    'agent-device-android-scroll-pixels-',
-    [
-      '#!/bin/sh',
-      'printf "%s\\n" "$@" >> "$AGENT_DEVICE_TEST_ARGS_FILE"',
-      'if [ "$1" = "-s" ]; then',
-      '  shift',
-      '  shift',
-      'fi',
-      'if [ "$1" = "shell" ] && [ "$2" = "wm" ] && [ "$3" = "size" ]; then',
-      '  echo "Physical size: 1080x1920"',
-      '  exit 0',
-      'fi',
-      'exit 0',
-      '',
-    ].join('\n'),
-    async ({ argsLogPath, device }) => {
-      const result = await scrollAndroid(device, 'down', { pixels: 240, durationMs: 120 });
-      const args = await fs.readFile(argsLogPath, 'utf8');
+test('scrollAndroid plans explicit pixel travel through semantic touch injection', async () => {
+  const touchCalls: Parameters<AndroidTouchInjector>[0][] = [];
+  const result = await withAndroidAdbProvider(
+    {
+      exec: async () => {
+        throw new Error('adb must not run');
+      },
+      gestureViewport: async () => ({ x: 10, y: 20, width: 1080, height: 1920 }),
+      touch: async (request) => {
+        touchCalls.push(request);
+        return { injected: true };
+      },
+    },
+    { serial: ANDROID_EMULATOR.id },
+    async () => await scrollAndroid(ANDROID_EMULATOR, 'down', { pixels: 240, durationMs: 120 }),
+  );
 
-      assert.match(args, /shell\ninput\nswipe\n540\n1080\n540\n840\n120\n/);
-      assert.doesNotMatch(args, /uiautomator|dump/);
-      assert.equal(result.pixels, 240);
-      assert.equal(result.durationMs, 120);
-      assert.equal(result.referenceWidth, 1080);
-      assert.equal(result.referenceHeight, 1920);
+  assert.equal(touchCalls.length, 1);
+  const touch = touchCalls[0]!;
+  assert.equal(touch.intent, 'pan');
+  assert.deepEqual(touch.pointers[0]?.samples[0]?.point, { x: 550, y: 1100 });
+  assert.deepEqual(touch.pointers[0]?.samples.at(-1)?.point, { x: 550, y: 860 });
+  assert.equal(result.pixels, 240);
+  assert.equal(result.durationMs, 120);
+  assert.equal(result.referenceWidth, 1090);
+  assert.equal(result.referenceHeight, 1940);
+  assert.equal(result.x1, 550);
+  assert.equal(result.y1, 1100);
+  assert.equal(result.x2, 550);
+  assert.equal(result.y2, 860);
+  assert.equal(result.backend, 'provider-native-touch');
+  assert.equal(result.injected, true);
+});
+
+test('scrollAndroid accepts sub-frame public durations at the Android planner minimum', async () => {
+  const touchCalls: Parameters<AndroidTouchInjector>[0][] = [];
+  const results = await withAndroidAdbProvider(
+    {
+      exec: async () => {
+        throw new Error('adb must not run');
+      },
+      gestureViewport: async () => ({ x: 0, y: 0, width: 1080, height: 1920 }),
+      touch: async (request) => {
+        touchCalls.push(request);
+      },
+    },
+    { serial: ANDROID_EMULATOR.id },
+    async () => {
+      const outputs: Record<string, unknown>[] = [];
+      for (const durationMs of [0, 15]) {
+        outputs.push(await scrollAndroid(ANDROID_EMULATOR, 'down', { durationMs }));
+      }
+      return outputs;
     },
   );
+
+  assert.deepEqual(
+    touchCalls.map((call) => call.durationMs),
+    [16, 16],
+  );
+  assert.deepEqual(
+    results.map((result) => result.durationMs),
+    [16, 16],
+  );
+});
+
+test('longPressAndroid sends a stationary semantic touch plan', async () => {
+  const touchCalls: Parameters<AndroidTouchInjector>[0][] = [];
+  const result = await withAndroidAdbProvider(
+    {
+      exec: async () => {
+        throw new Error('adb must not run');
+      },
+      gestureViewport: async () => ({ x: 10, y: 20, width: 300, height: 500 }),
+      touch: async (request) => {
+        touchCalls.push(request);
+      },
+    },
+    { serial: ANDROID_EMULATOR.id },
+    async () => await longPressAndroid(ANDROID_EMULATOR, 30, 40, 750),
+  );
+
+  assert.deepEqual(touchCalls, [
+    {
+      topology: 'single',
+      intent: 'longPress',
+      durationMs: 750,
+      viewport: { x: 10, y: 20, width: 300, height: 500 },
+      pointers: [
+        {
+          pointerId: 0,
+          samples: [
+            { offsetMs: 0, point: { x: 30, y: 40 } },
+            { offsetMs: 750, point: { x: 30, y: 40 } },
+          ],
+        },
+      ],
+    },
+  ]);
+  assert.equal(result.backend, 'provider-native-touch');
 });
 
 test('rotateAndroid locks auto-rotate and sets user rotation', async () => {
@@ -57,56 +127,6 @@ test('rotateAndroid locks auto-rotate and sets user rotation', async () => {
       assert.match(logged, /shell settings put system user_rotation 1/);
     },
   );
-});
-
-test('swipeAndroid invokes adb input swipe with duration', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-swipe-test-'));
-  const adbPath = path.join(tmpDir, 'adb');
-  const argsLogPath = path.join(tmpDir, 'args.log');
-  await fs.writeFile(
-    adbPath,
-    '#!/bin/sh\nprintf "%s\\n" "$@" > "$AGENT_DEVICE_TEST_ARGS_FILE"\nexit 0\n',
-    'utf8',
-  );
-  await fs.chmod(adbPath, 0o755);
-
-  const previousPath = process.env.PATH;
-  const previousArgsFile = process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-  process.env.PATH = `${tmpDir}${path.delimiter}${previousPath ?? ''}`;
-  process.env.AGENT_DEVICE_TEST_ARGS_FILE = argsLogPath;
-
-  const device: DeviceInfo = {
-    platform: 'android',
-    id: 'emulator-5554',
-    name: 'Pixel',
-    kind: 'emulator',
-    booted: true,
-  };
-
-  try {
-    await swipeAndroid(device, 10, 20, 30, 40, 250);
-    const args = (await fs.readFile(argsLogPath, 'utf8')).trim().split('\n').filter(Boolean);
-    assert.deepEqual(args, [
-      '-s',
-      'emulator-5554',
-      'shell',
-      'input',
-      'swipe',
-      '10',
-      '20',
-      '30',
-      '40',
-      '250',
-    ]);
-  } finally {
-    process.env.PATH = previousPath;
-    if (previousArgsFile === undefined) {
-      delete process.env.AGENT_DEVICE_TEST_ARGS_FILE;
-    } else {
-      process.env.AGENT_DEVICE_TEST_ARGS_FILE = previousArgsFile;
-    }
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
 });
 
 test('typeAndroid chunks ASCII input text for shell fallback', async () => {

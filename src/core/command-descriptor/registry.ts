@@ -703,7 +703,13 @@ export const RAW_COMMAND_DESCRIPTORS = [
     daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
-    timeoutPolicy: interactionTimeoutPolicy('longpress'),
+    timeoutPolicy: {
+      ...SETTLE_FLAG_PRESERVE_DAEMON_TIMEOUT_POLICY,
+      // Android's cold path may inspect/install the helper, hand off a running
+      // snapshot helper, hold for 120 seconds, then use 15 seconds of helper
+      // completion overhead. Keep that complete route inside the envelope.
+      envelopeMs: 210_000,
+    },
     postActionObservation: postActionObservation('longpress'),
     batchable: true,
   },

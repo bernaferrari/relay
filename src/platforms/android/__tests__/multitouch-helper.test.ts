@@ -1,18 +1,12 @@
 import assert from 'node:assert/strict';
-import { beforeEach, test } from 'vitest';
-import { ANDROID_EMULATOR } from '../../../__tests__/test-utils/index.ts';
+import { test } from 'vitest';
 import { buildGesturePlan } from '../../../contracts/gesture-plan.ts';
 import {
   normalizeAndroidMultiTouchHelperGestureRequest,
   parseAndroidMultiTouchHelperOutput,
-  performGestureAndroid,
-  readAndroidGestureViewport,
-  resetAndroidMultiTouchHelperInstallCache,
   runAndroidMultiTouchHelperGesture,
   parseAndroidGestureViewportResult,
 } from '../multitouch-helper.ts';
-import { createAndroidInteractor } from '../../../core/interactors/android.ts';
-import { withAndroidAdbProvider } from '../adb-executor.ts';
 import {
   ANDROID_MULTITOUCH_HELPER_MANIFEST as manifest,
   androidMultiTouchResultRecord as resultRecord,
@@ -20,7 +14,23 @@ import {
 
 const viewport = { x: 0, y: 0, width: 400, height: 800 };
 
-beforeEach(resetAndroidMultiTouchHelperInstallCache);
+function longPressRequest(durationMs = 120_000) {
+  const point = { x: 20, y: 30 };
+  return normalizeAndroidMultiTouchHelperGestureRequest({
+    topology: 'single',
+    intent: 'longPress',
+    durationMs,
+    pointers: [
+      {
+        pointerId: 0,
+        samples: [
+          { offsetMs: 0, point },
+          { offsetMs: durationMs, point },
+        ],
+      },
+    ],
+  });
+}
 
 test('helper response parsing returns instrumentation evidence', () => {
   assert.deepEqual(
@@ -88,6 +98,32 @@ test('single-pointer plans use the same exact helper protocol', () => {
   assert.equal(request.durationMs, 100);
 });
 
+test('Android long press lowers to a stationary single-pointer helper request', () => {
+  const request = longPressRequest();
+  assert.equal(request.kind, 'swipe');
+  assert.equal(request.durationMs, 120_000);
+  assert.deepEqual(request.pointers[0]?.samples, [
+    { offsetMs: 0, x: 20, y: 30 },
+    { offsetMs: 120_000, x: 20, y: 30 },
+  ]);
+});
+
+test('max-duration long press extends the helper process timeout', async () => {
+  await runAndroidMultiTouchHelperGesture({
+    adb: async (_args, options) => {
+      assert.equal(options?.timeoutMs, 135_000);
+      return {
+        exitCode: 0,
+        stdout: [resultRecord({ ok: 'true', kind: 'swipe' }), 'INSTRUMENTATION_CODE: 0'].join('\n'),
+        stderr: '',
+      };
+    },
+    request: longPressRequest(),
+    packageName: manifest.packageName,
+    instrumentationRunner: manifest.instrumentationRunner,
+  });
+});
+
 test('transform sends the planner-owned choreography without regenerating geometry', async () => {
   const plan = buildGesturePlan(
     {
@@ -131,56 +167,6 @@ test('transform sends the planner-owned choreography without regenerating geomet
     instrumentationRunner: manifest.instrumentationRunner,
   });
   assert.deepEqual(payload, { protocol: 'android-multitouch-helper-v1', ...request });
-});
-
-test('provider-native touch receives the plan as its only source of truth', async () => {
-  const plan = buildGesturePlan(
-    { intent: 'pinch', origin: { x: 200, y: 300 }, scale: 1.5 },
-    viewport,
-  );
-  const calls: unknown[] = [];
-  const result = await withAndroidAdbProvider(
-    {
-      exec: async () => {
-        throw new Error('adb must not run');
-      },
-      touch: async (request) => {
-        calls.push(request);
-        return { injected: true };
-      },
-    },
-    { serial: ANDROID_EMULATOR.id },
-    async () => await performGestureAndroid(ANDROID_EMULATOR, plan),
-  );
-  assert.deepEqual(calls, [plan]);
-  assert.deepEqual(result, { backend: 'provider-native-touch', injected: true });
-});
-
-test('provider-native failures propagate without adb single-pointer fallback', async () => {
-  const plan = buildGesturePlan(
-    { intent: 'fling', from: { x: 300, y: 400 }, to: { x: 100, y: 400 } },
-    viewport,
-  );
-  const adbCalls: string[][] = [];
-  await withAndroidAdbProvider(
-    {
-      exec: async (args) => {
-        adbCalls.push(args);
-        return { exitCode: 0, stdout: '', stderr: '' };
-      },
-      touch: async () => {
-        throw new Error('native touch failed');
-      },
-    },
-    { serial: ANDROID_EMULATOR.id },
-    async () => {
-      await assert.rejects(
-        () => performGestureAndroid(ANDROID_EMULATOR, plan),
-        /native touch failed/,
-      );
-    },
-  );
-  assert.deepEqual(adbCalls, []);
 });
 
 test('helper failures remain structured and actionable', async () => {
@@ -239,32 +225,4 @@ test('gesture viewport result is typed and rejects invalid bounds', () => {
     { code: 'COMMAND_FAILED' },
   );
   assert.throws(() => parseAndroidGestureViewportResult([]), { code: 'COMMAND_FAILED' });
-});
-
-test('provider gesture viewport bypasses local helper transport and is validated', async () => {
-  let calls = 0;
-  await withAndroidAdbProvider(
-    {
-      exec: async () => {
-        throw new Error('adb must not run');
-      },
-      gestureViewport: async () => {
-        calls += 1;
-        return calls === 1 ? viewport : { ...viewport, width: 0 };
-      },
-    },
-    { serial: ANDROID_EMULATOR.id },
-    async () => {
-      assert.deepEqual(await readAndroidGestureViewport(ANDROID_EMULATOR), viewport);
-      await assert.rejects(readAndroidGestureViewport(ANDROID_EMULATOR), {
-        code: 'COMMAND_FAILED',
-      });
-    },
-  );
-  assert.equal(calls, 2);
-});
-
-test('production Android interactor exposes the native gesture viewport seam', () => {
-  const interactor = createAndroidInteractor(ANDROID_EMULATOR);
-  assert.equal(typeof interactor.gestureViewport, 'function');
 });
