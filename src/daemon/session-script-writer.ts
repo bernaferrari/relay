@@ -3,6 +3,7 @@ import path from 'node:path';
 import { publicPlatformString } from '../kernel/device.ts';
 import { inferFillText } from './action-utils.ts';
 import { emitDiagnostic } from '../utils/diagnostics.ts';
+import { AppError } from '../kernel/errors.ts';
 import {
   formatPortableActionLine,
   formatTargetAnnotationLines,
@@ -32,12 +33,18 @@ export class SessionScriptWriter {
     try {
       if (!session.recordSession) return { written: false };
       scriptPath = this.resolveScriptPath(session);
+      assertNoDefaultedHealedClobber(session, scriptPath);
       const scriptDir = path.dirname(scriptPath);
       if (!fs.existsSync(scriptDir)) fs.mkdirSync(scriptDir, { recursive: true });
       const script = formatSessionScript(session);
       fs.writeFileSync(scriptPath, script);
       return { written: true, path: scriptPath };
     } catch (error) {
+      // ADR 0012 decision 6, R4: an AppError here means the script would be
+      // unreplayable (a bare `@ref` that never resolved to a selector) —
+      // that must fail loud, not be swallowed into a quiet `{written:
+      // false}` like an ordinary fs write failure below.
+      if (error instanceof AppError) throw error;
       emitDiagnostic({
         level: 'warn',
         phase: 'session_script_write_failed',
@@ -67,19 +74,67 @@ function formatSessionScript(session: SessionState): string {
 }
 
 function buildOptimizedActions(session: SessionState): SessionAction[] {
+  // ADR 0012 decision 6, R6: a repair-armed session (`saveScriptBoundary` set
+  // by `replay --save-script`) serializes only the actions from that
+  // watermark onward — the repair run's own execution path — never the
+  // whole session history. Absent a boundary (ordinary `open`/`close
+  // --save-script`), this slices from 0: unchanged, full-history behavior.
+  const repairArmed = session.saveScriptBoundary !== undefined;
+  const relevantActions = session.actions.slice(session.saveScriptBoundary ?? 0);
   const optimized: SessionAction[] = [];
-  for (const action of session.actions) {
+  for (const action of relevantActions) {
     if (action.command === 'snapshot') continue;
     const optimizedAction = optimizeSelectorChainAction(action);
     if (optimizedAction) {
       optimized.push(optimizedAction);
       continue;
     }
+    // R4 is scoped to a repair-armed session, not the existing refLabel/
+    // scoped-snapshot fallback ordinary `open`/`close --save-script` keeps.
+    if (repairArmed) assertNoUnresolvedRefFallback(action);
     const scopedSnapshot = buildScopedSnapshotAction(session, action);
     if (scopedSnapshot) optimized.push(scopedSnapshot);
     optimized.push(action);
   }
   return optimized;
+}
+
+/**
+ * ADR 0012 decision 6, R4: a selector-targeting action whose ref never
+ * resolved to a `selectorChain` would otherwise fall through to a bare
+ * `@ref` line here — meaningless outside the session that minted it, since a
+ * fresh replay session mints its own refs. Refuse loudly instead of writing
+ * an unreplayable script (see `write()`'s catch, which rethrows this rather
+ * than swallowing it like an ordinary fs failure).
+ */
+function assertNoUnresolvedRefFallback(action: SessionAction): void {
+  if (!isSelectorTargetingCommand(action.command)) return;
+  const refPositional =
+    action.command === 'get' ? action.positionals?.[1] : action.positionals?.[0];
+  if (!refPositional?.startsWith('@')) return;
+  throw new AppError(
+    'COMMAND_FAILED',
+    `Cannot write recorded step "${action.command} ${refPositional}" to a script: it never resolved to a selector, so the ref would not resolve in a fresh replay session.`,
+  );
+}
+
+/**
+ * ADR 0012 decision 6 (P2): the default `<original-stem>.healed.ad` sibling
+ * path is deterministic, so a second repair against the same original would
+ * silently clobber an unreviewed prior healed script — undercutting the
+ * ADR's "a human reviews the diff and promotes it." Refuse loudly (fail-loud
+ * per R4's philosophy) unless the caller passes an explicit
+ * `--save-script=<path>` (which clears the defaulted flag). Only guards the
+ * DEFAULT healed path; an explicit `<out>` may overwrite as the caller
+ * directed.
+ */
+function assertNoDefaultedHealedClobber(session: SessionState, scriptPath: string): void {
+  if (!session.saveScriptDefaultedHealedPath) return;
+  if (!fs.existsSync(scriptPath)) return;
+  throw new AppError(
+    'COMMAND_FAILED',
+    `A prior healed script already exists at ${scriptPath}; pass replay --save-script=<path> to write elsewhere, or remove/rename it first, so an unreviewed healed script is never clobbered.`,
+  );
 }
 
 function optimizeSelectorChainAction(action: SessionAction): SessionAction | undefined {
