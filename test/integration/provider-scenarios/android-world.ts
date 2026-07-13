@@ -48,7 +48,6 @@ type AndroidSettingsWorld = {
 
 export async function createAndroidSettingsWorld(options?: {
   nativeTextInjection?: boolean;
-  nativeTouchInjection?: boolean;
   snapshotXml?: () => string;
   dumpsysWindow?: () => string;
   onAdbExec?: (args: string[]) => void;
@@ -98,6 +97,10 @@ export async function createAndroidSettingsWorld(options?: {
         pidof: (packageName) => androidPidofResult(appState, packageName),
       });
     },
+    touch: async (request) => {
+      touchInjectionCalls.push({ ...request });
+      return { backend: 'provider-native-touch' };
+    },
     install: async (apk, options) => {
       apkInstallCalls.push({ apkPath: apk, replace: options?.replace });
       return { stdout: '', stderr: '', exitCode: 0 };
@@ -140,12 +143,6 @@ export async function createAndroidSettingsWorld(options?: {
     adbProvider.text = async (request) => {
       textInjectionCalls.push({ ...request });
       shellState.searchText = request.text;
-    };
-  }
-  if (options?.nativeTouchInjection) {
-    adbProvider.touch = async (request) => {
-      touchInjectionCalls.push({ ...request });
-      return { backend: 'provider-native-touch' };
     };
   }
   const daemon = await createProviderScenarioHarness({

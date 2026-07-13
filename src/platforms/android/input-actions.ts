@@ -2,6 +2,7 @@ import { AppError } from '../../kernel/errors.ts';
 import type { DeviceInfo } from '../../kernel/device.ts';
 import { emitDiagnostic } from '../../utils/diagnostics.ts';
 import type { DeviceRotation } from '../../contracts/device-rotation.ts';
+import { buildGesturePlan, GESTURE_DURATION_MIN_MS } from '../../contracts/gesture-plan.ts';
 import { buildScrollGesturePlan, type ScrollDirection } from '../../contracts/scroll-gesture.ts';
 import { toAndroidTvRemoteKeyevent, type TvRemoteButton } from '../../contracts/tv-remote.ts';
 import { runAndroidAdb, sleep } from './adb.ts';
@@ -18,6 +19,7 @@ import {
   type AndroidFillVerification,
 } from './fill-verification.ts';
 import { isAndroidTestImeActive } from './ime-lifecycle.ts';
+import { executeAndroidTouchPlan, readAndroidGestureViewport } from './touch-executor.ts';
 import {
   clearAndroidImeHelperText,
   resolveAndroidImeHelperArtifact,
@@ -38,26 +40,6 @@ export async function pressAndroidTvRemote(
   const keyevent = toAndroidTvRemoteKeyevent(button);
   const keyeventArgs = durationMs && durationMs > 0 ? ['keyevent', '--longpress'] : ['keyevent'];
   await runAndroidAdb(device, ['shell', 'input', ...keyeventArgs, keyevent]);
-}
-
-export async function swipeAndroid(
-  device: DeviceInfo,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  durationMs = 250,
-): Promise<void> {
-  await runAndroidAdb(device, [
-    'shell',
-    'input',
-    'swipe',
-    String(x1),
-    String(y1),
-    String(x2),
-    String(y2),
-    String(durationMs),
-  ]);
 }
 
 export async function backAndroid(device: DeviceInfo): Promise<void> {
@@ -104,17 +86,22 @@ export async function longPressAndroid(
   x: number,
   y: number,
   durationMs = 800,
-): Promise<void> {
-  await runAndroidAdb(device, [
-    'shell',
-    'input',
-    'swipe',
-    String(x),
-    String(y),
-    String(x),
-    String(y),
-    String(durationMs),
-  ]);
+): Promise<Record<string, unknown>> {
+  const point = { x, y };
+  return await executeAndroidTouchPlan(device, {
+    topology: 'single',
+    intent: 'longPress',
+    durationMs,
+    pointers: [
+      {
+        pointerId: 0,
+        samples: [
+          { offsetMs: 0, point },
+          { offsetMs: durationMs, point },
+        ],
+      },
+    ],
+  });
 }
 
 export async function typeAndroid(device: DeviceInfo, text: string, delayMs = 0): Promise<void> {
@@ -283,30 +270,47 @@ export async function scrollAndroid(
   direction: ScrollDirection,
   options?: { amount?: number; pixels?: number; durationMs?: number },
 ): Promise<Record<string, unknown>> {
-  const size = await getAndroidScreenSize(device);
-  const plan = buildScrollGesturePlan({
+  const viewport = await readAndroidGestureViewport(device);
+  const relativePlan = buildScrollGesturePlan({
     direction,
     amount: options?.amount,
     pixels: options?.pixels,
-    referenceWidth: size.width,
-    referenceHeight: size.height,
+    referenceWidth: viewport.width,
+    referenceHeight: viewport.height,
   });
-  const durationMs = options?.durationMs ?? 300;
-
-  await runAndroidAdb(device, [
-    'shell',
-    'input',
-    'swipe',
-    String(plan.x1),
-    String(plan.y1),
-    String(plan.x2),
-    String(plan.y2),
-    String(durationMs),
-  ]);
+  const scrollPlan = {
+    ...relativePlan,
+    // Injected coordinates are absolute, so their zero-origin reference frame
+    // must include the viewport offset as well as its dimensions.
+    referenceWidth: viewport.x + viewport.width,
+    referenceHeight: viewport.y + viewport.height,
+    x1: viewport.x + relativePlan.x1,
+    y1: viewport.y + relativePlan.y1,
+    x2: viewport.x + relativePlan.x2,
+    y2: viewport.y + relativePlan.y2,
+  };
+  const durationMs = Math.max(options?.durationMs ?? 300, GESTURE_DURATION_MIN_MS);
+  const backend = await executeAndroidTouchPlan(
+    device,
+    buildGesturePlan(
+      {
+        intent: 'pan',
+        origin: { x: scrollPlan.x1, y: scrollPlan.y1 },
+        delta: {
+          x: scrollPlan.x2 - scrollPlan.x1,
+          y: scrollPlan.y2 - scrollPlan.y1,
+        },
+        durationMs,
+      },
+      viewport,
+      'android',
+    ),
+  );
 
   return {
-    ...plan,
-    ...(options?.durationMs !== undefined ? { durationMs: options.durationMs } : {}),
+    ...scrollPlan,
+    ...(options?.durationMs !== undefined ? { durationMs } : {}),
+    ...backend,
   };
 }
 
