@@ -108,23 +108,31 @@ export type ReplayDivergenceSuggestion = {
 };
 
 /**
- * ADR 0012 decision 4 / migration step 5, refined by decision 6, R2. `from`
- * is the 1-based plan ordinal the caller should actually pass to `--from` —
- * NOT always the failed step's own index. It depends on the divergence's
- * `repairHint` (`ReplayRepairHint`, below): for `record-and-heal`, the agent
- * performs the diverged step manually before this report is acted on, so
- * `from` is the failed step's index **+ 1** (resuming AT the failed step
- * would re-diverge on the exact step just repaired); for every other hint
- * (`state-repair`, `caution`, `manual`, and a plain `action-failure`), `from`
- * equals the failed step's index unchanged. When the diverged step was the
+ * ADR 0012 decision 4 / migration step 5, refined by decision 6, R2, and
+ * #1262. `from` is the 1-based plan ordinal the caller should actually pass
+ * to `--from` — NOT always the failed step's own index. It depends on the
+ * divergence's `repairHint` (`ReplayRepairHint`, below): for
+ * `record-and-heal`, the agent performs the diverged step manually before
+ * this report is acted on, so `from` is the failed step's index **+ 1**
+ * (resuming AT the failed step would re-diverge on the exact step just
+ * repaired); for every other hint (`state-repair`, `caution`, `manual`, and a
+ * plain `action-failure`), `from` equals the failed step's index unchanged —
+ * and, per #1262, this is UNCONDITIONAL for `caution`/`manual`: `from`
+ * (`N`) is never made illegal for these hints, since a `--no-record`
+ * app-state fix re-runs the unchanged step. When the diverged step was the
  * plan's LAST step, a `record-and-heal` `from` can equal `actions.length + 1`
  * — a legal EMPTY-TAIL resume (there is nothing left to replay; the runtime
  * executes zero steps and reaches the normal end-of-plan completion path),
- * not an out-of-range error. That one-past-the-end ordinal is authorized
- * ONLY for the exact session + target that produced it (the daemon tracks a
- * per-session watermark, `session.pendingRecordAndHeal`) and only once a new
- * action proves the corrective press actually happened — never a general
- * "one past the end is fine" for any session.
+ * not an out-of-range error. `caution`/`manual` are genuinely dual-path: they
+ * ALSO have a record-and-heal-shaped alternate repair (the agent performs the
+ * diverged step's intent as a recorded action instead), resumed at a DIFFERENT
+ * ordinal than their own reported `from` — carried as `alternateFrom` (below),
+ * never as `resume.from` itself. At the last step that alternate rides the
+ * SAME empty-tail authorization `record-and-heal` uses. Every one-past-the-end
+ * ordinal is authorized ONLY for the exact session + target that produced it
+ * (the daemon tracks a per-session watermark, `session.pendingRecordAndHeal`)
+ * and only once a new action proves the corrective press actually happened —
+ * never a general "one past the end is fine" for any session.
  *
  * `planDigest` is the SHA-256 digest of the canonical fully expanded plan
  * (`computeReplayPlanDigest`) that produced this report — always present.
@@ -137,6 +145,23 @@ export type ReplayDivergenceSuggestion = {
  * `allowed` is `false` the text guidance never renders a `--from` command,
  * surfacing `reason` instead.
  *
+ * `alternateFrom` (#1262) is the `caution`/`manual` dual-path's SECOND
+ * ordinal: their `from` (`N`) is the app-state-fix continuation, and
+ * `alternateFrom` (`N + 1`) is the record-and-heal-shaped alternate — the
+ * agent performs the diverged step's intent as a recorded action, then
+ * resumes PAST it. It is present ONLY when a `--from N + 1` request for THIS
+ * divergence would actually be accepted by the daemon: the daemon computes it
+ * as `evaluateReplayResumePreflight({ from: N + 1, actions }).allowed` (which
+ * additionally requires the DIVERGED step `N` itself to be skip-safe — a
+ * strict superset of `from`'s own preflight, so its presence never
+ * contradicts `allowed`). Absent for every other hint (`record-and-heal`'s
+ * `from` already IS the `N + 1` continuation; `state-repair` has no
+ * recorded-action alternate), and absent whenever the alternate is not
+ * resumable (step `N` is a `runScript`/control-flow action). The text
+ * guidance (`buildRepairHintGuidance`, below) renders the `N + 1` command iff
+ * this field is present — it never re-derives resumability, so text and the
+ * structured wire never disagree on the advertised next command.
+ *
  * `repairSessionHeld` is decision 6, R7's repair-transaction liveness signal
  * (C1): set `true` by the daemon on ANY divergence from a repair-armed
  * (`--save-script`) replay — independent of `allowed`, which only reports
@@ -146,7 +171,13 @@ export type ReplayDivergenceSuggestion = {
  * plain, non-repair divergence, which gets no keep-alive.
  */
 export type ReplayDivergenceResume =
-  | { allowed: true; from: number; planDigest: string; repairSessionHeld?: true }
+  | {
+      allowed: true;
+      from: number;
+      planDigest: string;
+      alternateFrom?: number;
+      repairSessionHeld?: true;
+    }
   | { allowed: false; from: number; planDigest: string; reason: string; repairSessionHeld?: true };
 
 export type ReplayDivergenceOverflow = {
@@ -370,18 +401,27 @@ export function formatReplayDivergenceReport(
 }
 
 /**
- * ADR 0012 decision 6: the repair-routing hint rendered on every text
- * surface (CLI, MCP text, `test` failures) — the same field that rides
- * `structuredContent`/JSON, so a text-only caller still learns which repair
- * sub-flow applies. `record-and-heal`/`state-repair` guidance embeds the
- * CONCRETE `resume.from`/`planDigest` values (computed by
+ * ADR 0012 decision 6, extended per #1262: the repair-routing hint rendered
+ * on every text surface (CLI, MCP text, `test` failures) — the same field
+ * that rides `structuredContent`/JSON, so a text-only caller still learns
+ * which repair sub-flow applies. `record-and-heal`/`state-repair` guidance
+ * embeds the CONCRETE `resume.from`/`planDigest` values (computed by
  * `buildReplayDivergenceResume`, decision 6 R2) when `resume.allowed` is
  * true, so a text-only or JSON/MCP-first caller reads the identical next
- * command instead of deriving it. When `resume.allowed` is false (a skipped
- * step crosses runtime control flow or would produce unavailable
- * `outputEnv`), a resume command is never rendered — a text caller must not
- * be told to run a `--from` a structured caller would be refused — and the
- * reported `reason` is surfaced instead.
+ * command instead of deriving it. `caution`/`manual` are genuinely dual-path
+ * (the daemon cannot know at divergence time which repair applies), so their
+ * guidance embeds `--from resume.from` (`N`, unshifted — a `--no-record`
+ * app-state fix) whenever `resume.allowed` is true, AND `--from
+ * resume.alternateFrom` (`N + 1`, a record-and-heal-shaped recorded corrective
+ * action) IFF the wire carries `alternateFrom` — the daemon's own verdict that
+ * a `--from N + 1` request would be accepted (`computeReplayResumeAlternateFrom`,
+ * `session-replay-resume.ts`). The renderer gates the second command on that
+ * field's PRESENCE and never re-derives resumability, so text and the
+ * structured wire never disagree on the advertised next command. When
+ * `resume.allowed` is false (a skipped step crosses runtime control flow or
+ * would produce unavailable `outputEnv`), a resume command is never rendered
+ * for ANY hint — a text caller must not be told to run a `--from` a structured
+ * caller would be refused — and the reported `reason` is surfaced instead.
  */
 function divergenceRepairHintLine(repairHint: unknown, resume: unknown): string[] {
   if (typeof repairHint !== 'string') return [];
@@ -390,7 +430,7 @@ function divergenceRepairHintLine(repairHint: unknown, resume: unknown): string[
 }
 
 type ResumeGuidance =
-  | { allowed: true; command: string }
+  | { allowed: true; from: number; planDigest: string; alternateFrom: number | undefined }
   | { allowed: false; reason: string | undefined };
 
 /** Reads the parts of `resume` the repair-hint guidance needs; `undefined` when the shape is unreadable. */
@@ -403,11 +443,23 @@ function readResumeGuidance(resume: unknown): ResumeGuidance | undefined {
       reason: typeof record.reason === 'string' ? record.reason : undefined,
     };
   }
-  const { from, planDigest } = record;
+  const { from, planDigest, alternateFrom } = record;
   if (typeof from !== 'number' || typeof planDigest !== 'string' || planDigest.length === 0) {
     return undefined;
   }
-  return { allowed: true, command: `replay --from ${from} --plan-digest ${planDigest}` };
+  return {
+    allowed: true,
+    from,
+    planDigest,
+    // Rendered VERBATIM from the wire; the daemon already proved a `--from
+    // alternateFrom` request would be accepted (#1262). The renderer must NOT
+    // re-derive it — that is precisely the bug the wire field fixed.
+    alternateFrom: typeof alternateFrom === 'number' ? alternateFrom : undefined,
+  };
+}
+
+function formatResumeCommand(from: number, planDigest: string): string {
+  return `replay --from ${from} --plan-digest ${planDigest}`;
 }
 
 function buildRepairHintGuidance(repairHint: string, resume: unknown): string | undefined {
@@ -415,19 +467,55 @@ function buildRepairHintGuidance(repairHint: string, resume: unknown): string | 
   switch (repairHint) {
     case 'record-and-heal':
       return guidance?.allowed
-        ? `press the correct control via a blessed @ref from screen.refs (recorded), then ${guidance.command}.`
+        ? `press the correct control via a blessed @ref from screen.refs (recorded), then ${formatResumeCommand(guidance.from, guidance.planDigest)}.`
         : `press the correct control via a blessed @ref from screen.refs (recorded). ${resumeUnavailableSentence(guidance)}`;
     case 'state-repair':
       return guidance?.allowed
-        ? `fix app state with --no-record actions, then ${guidance.command} to re-run it.`
+        ? `fix app state with --no-record actions, then ${formatResumeCommand(guidance.from, guidance.planDigest)} to re-run it.`
         : `fix app state with --no-record actions. ${resumeUnavailableSentence(guidance)}`;
     case 'caution':
-      return 'something already matches the recorded selector; a blind re-press may repeat the mistake.';
+      return buildDualPathRepairHintGuidance({
+        lead: 'something already matches the recorded selector; a blind re-press may repeat the mistake.',
+        guidance,
+      });
     case 'manual':
-      return 'no safe automated repair could be proven; inspect the screen and repair by hand.';
+      return buildDualPathRepairHintGuidance({
+        lead: 'no safe automated repair could be proven; inspect the screen and repair by hand.',
+        guidance,
+      });
     default:
       return undefined;
   }
+}
+
+/**
+ * `caution`/`manual` guidance (#1262): the daemon cannot know at divergence
+ * time which of two repairs applies. Always offers `--from N` (an app-state
+ * fix via `--no-record` actions, then re-run the unchanged step; `resume.from`
+ * itself, never shifted for these hints — authorized by `resume.allowed`).
+ * ADDITIONALLY offers `--from alternateFrom` (a record-and-heal-shaped
+ * recorded corrective action, resuming PAST the diverged step) IFF the wire
+ * carries `resume.alternateFrom` — the daemon has already proven such a
+ * request would be accepted (`computeReplayResumeAlternateFrom`,
+ * `session-replay-resume.ts`). The renderer gates on the field's PRESENCE and
+ * never re-derives resumability, so it can never advertise a `--from` the
+ * daemon would then refuse (the parity bug #1262's review flagged: `N + 1` is
+ * unsafe exactly when the diverged step is a `runScript`/control-flow action,
+ * which `resume.allowed` for `N` does not detect). When the alternate is
+ * absent, only the state-fix command is shown. Neither command is rendered
+ * when `resume.allowed` is false — `N` itself is not resumable, so its
+ * alternate is moot.
+ */
+function buildDualPathRepairHintGuidance(params: {
+  lead: string;
+  guidance: ResumeGuidance | undefined;
+}): string {
+  const { lead, guidance } = params;
+  if (!guidance?.allowed) return `${lead} ${resumeUnavailableSentence(guidance)}`;
+  const stateFixClause = `if you fixed app state with --no-record actions: ${formatResumeCommand(guidance.from, guidance.planDigest)}`;
+  if (guidance.alternateFrom === undefined) return `${lead} ${stateFixClause}.`;
+  const recordedActionClause = `if you performed the step's intent as a recorded action: ${formatResumeCommand(guidance.alternateFrom, guidance.planDigest)}`;
+  return `${lead} ${stateFixClause}; ${recordedActionClause}.`;
 }
 
 /** Never renders a `--from` command — only reached when `resume.allowed` is false (or unreadable). */

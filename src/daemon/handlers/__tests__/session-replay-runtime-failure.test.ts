@@ -12,6 +12,7 @@ import { SessionStore } from '../../session-store.ts';
 import type { DaemonResponse } from '../../types.ts';
 import { dispatchCommand } from '../../../core/dispatch.ts';
 import { makeIosSession } from '../../../__tests__/test-utils/session-factories.ts';
+import { formatReplayDivergenceReport } from '../../../replay/divergence.ts';
 import {
   baseReplayRequest as baseReq,
   writeReplayFile,
@@ -82,11 +83,70 @@ test('a failing replay step returns REPLAY_DIVERGENCE with cause preserved and c
 
   expect(divergence.suggestions).toEqual([]);
   expect(divergence.suggestionCount).toBe(0);
-  const resume = divergence.resume as { allowed: boolean; from: number; planDigest: string };
+  const resume = divergence.resume as {
+    allowed: boolean;
+    from: number;
+    planDigest: string;
+    alternateFrom?: number;
+  };
   // Step 1 ("open") is a plain action with no control flow and no outputEnv
-  // production, so resuming at the failed step (2) is safe.
-  expect(resume).toEqual({ allowed: true, from: 2, planDigest: expect.any(String) });
+  // production, so resuming at the failed step (2) is safe. This unannotated
+  // action-failure routes to `manual`, and the diverged step (2) is the plan's
+  // LAST and is itself skip-safe, so the #1262 record-and-heal-shaped alternate
+  // ordinal (`alternateFrom = 3`) rides the wire alongside the unshifted `from`.
+  expect(resume).toEqual({
+    allowed: true,
+    from: 2,
+    planDigest: expect.any(String),
+    alternateFrom: 3,
+  });
   expect(resume.planDigest).toMatch(/^[0-9a-f]{64}$/);
+});
+
+test('#1262: a LAST-step failure with NO active session carries NO empty-tail alternateFrom and never advertises --from length+1 in text', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-no-session-tail-'));
+  const sessionStore = new SessionStore(path.join(root, 'sessions'));
+  const sessionName = 'default';
+  // NO session is pre-seeded — a single-step plan whose only (LAST) step fails
+  // before any session exists (mirrors a one-step `open` failure, or a session
+  // closed mid-replay). The empty-tail alternate `--from 2` would need a
+  // `pendingRecordAndHeal` watermark, which can only be stamped on a live
+  // session — with none, the daemon would reject `--from 2` as out of range,
+  // so it must not be advertised.
+  const filePath = writeReplayFile(root, ['click "Save"']);
+  mockDispatchCommand.mockRejectedValue(new Error('no device runner available'));
+
+  const response = await runReplayScriptFile({
+    req: baseReq({ positionals: [filePath] }),
+    sessionName,
+    logPath: path.join(root, 'daemon.log'),
+    sessionStore,
+    invoke: async () => ({
+      ok: false,
+      error: { code: 'COMMAND_FAILED', message: 'not hittable' },
+    }),
+  });
+
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  expect(response.error.code).toBe('REPLAY_DIVERGENCE');
+  const divergence = response.error.details?.divergence as {
+    repairHint: string;
+    resume: { allowed: boolean; from: number; alternateFrom?: number };
+  };
+  // No session → capture unavailable → `manual`; resuming AT the failed step
+  // (1) is still fine, but the one-past-end alternate is withheld.
+  expect(divergence.repairHint).toBe('manual');
+  expect(divergence.resume.allowed).toBe(true);
+  expect(divergence.resume.from).toBe(1);
+  expect(divergence.resume.alternateFrom).toBeUndefined();
+
+  // Text side: the state-fix `--from 1` may appear, but the empty-tail
+  // `--from 2` (which the daemon would reject) must NOT.
+  const report = formatReplayDivergenceReport(response.error.details);
+  expect(report).not.toBeNull();
+  expect(report!).toMatch(/Repair hint: manual/);
+  expect(report!).not.toMatch(/--from 2\b/);
 });
 
 test('a normalized nested failure preserves typed recovery signals on REPLAY_DIVERGENCE', async () => {

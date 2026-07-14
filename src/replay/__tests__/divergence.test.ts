@@ -551,3 +551,131 @@ test('formatReplayDivergenceReport falls back to a generic non-resumable sentenc
   assert.doesNotMatch(report!, /replay --from/);
   assert.match(report!, /cannot currently be resumed automatically \(resume not yet supported\)/);
 });
+
+// --- #1262: `caution`/`manual` are genuinely dual-path — the daemon cannot
+// know at divergence time whether the agent will fix app state (--no-record,
+// resuming at the unshifted `resume.from`, N) or perform the step's intent as
+// a recorded action (record-and-heal-shaped, resuming at N + 1). The `N + 1`
+// command is rendered IFF the wire carries `resume.alternateFrom` (the
+// daemon's own verdict that `--from N + 1` would be accepted) — the renderer
+// NEVER re-derives resumability, so text and structured wire never disagree. ---
+
+test('formatReplayDivergenceReport embeds BOTH concrete resume commands for a caution divergence whose wire carries alternateFrom', async () => {
+  const { formatReplayDivergenceReport } = await import('../divergence.ts');
+  const report = formatReplayDivergenceReport({
+    divergence: {
+      version: 1,
+      kind: 'identity-mismatch',
+      step: { index: 2, source: { path: '/tmp/flow.ad', line: 3 } },
+      action: 'click label="Save"',
+      cause: { code: 'IDENTITY_MISMATCH', message: 'resolved a different element' },
+      screen: { state: 'available', refsGeneration: 1, refs: [{ ref: 'e1', role: 'button' }] },
+      suggestions: [],
+      suggestionCount: 0,
+      // caution's resume.from is UNSHIFTED (N); alternateFrom carries N + 1,
+      // present only because the daemon proved `--from 3` would be accepted.
+      resume: { allowed: true, from: 2, planDigest: 'deadbeef', alternateFrom: 3 },
+      repairHint: 'caution',
+    },
+  });
+  assert.ok(report);
+  assert.match(report!, /Repair hint: caution — something already matches the recorded selector/);
+  // The state-fix command uses N (resume.from itself, unshifted)...
+  assert.match(
+    report!,
+    /if you fixed app state with --no-record actions: replay --from 2 --plan-digest deadbeef/,
+  );
+  // ...and the recorded-action command uses alternateFrom (N + 1) verbatim —
+  // never re-derived from `from` on the client side.
+  assert.match(
+    report!,
+    /if you performed the step's intent as a recorded action: replay --from 3 --plan-digest deadbeef\./,
+  );
+});
+
+test('formatReplayDivergenceReport embeds BOTH concrete resume commands for a manual divergence whose wire carries alternateFrom', async () => {
+  const { formatReplayDivergenceReport } = await import('../divergence.ts');
+  const report = formatReplayDivergenceReport({
+    divergence: {
+      version: 1,
+      kind: 'action-failure',
+      step: { index: 5, source: { path: '/tmp/flow.ad', line: 9 } },
+      action: 'click label="Confirm"',
+      cause: { code: 'COMMAND_FAILED', message: 'not hittable' },
+      screen: { state: 'available', refsGeneration: 1, refs: [{ ref: 'e1', role: 'button' }] },
+      suggestions: [],
+      suggestionCount: 0,
+      resume: { allowed: true, from: 5, planDigest: 'cafef00d', alternateFrom: 6 },
+      repairHint: 'manual',
+    },
+  });
+  assert.ok(report);
+  assert.match(report!, /Repair hint: manual — no safe automated repair could be proven/);
+  assert.match(
+    report!,
+    /if you fixed app state with --no-record actions: replay --from 5 --plan-digest cafef00d/,
+  );
+  assert.match(
+    report!,
+    /if you performed the step's intent as a recorded action: replay --from 6 --plan-digest cafef00d\./,
+  );
+});
+
+test('formatReplayDivergenceReport renders ONLY the state-fix command for a caution divergence WITHOUT alternateFrom (the diverged step is not skip-safe)', async () => {
+  const { formatReplayDivergenceReport } = await import('../divergence.ts');
+  // resume.allowed is true (resuming AT N is fine), but the diverged step N
+  // is a runScript/control-flow action, so `--from N + 1` would be refused —
+  // the daemon omits alternateFrom, and the text must NOT offer `--from N + 1`.
+  const report = formatReplayDivergenceReport({
+    divergence: {
+      version: 1,
+      kind: 'identity-mismatch',
+      step: { index: 2, source: { path: '/tmp/flow.ad', line: 3 } },
+      action: 'click label="Save"',
+      cause: { code: 'IDENTITY_MISMATCH', message: 'resolved a different element' },
+      screen: { state: 'available', refsGeneration: 1, refs: [{ ref: 'e1', role: 'button' }] },
+      suggestions: [],
+      suggestionCount: 0,
+      resume: { allowed: true, from: 2, planDigest: 'deadbeef' },
+      repairHint: 'caution',
+    },
+  });
+  assert.ok(report);
+  assert.match(report!, /Repair hint: caution — something already matches the recorded selector/);
+  // The state-fix command IS rendered (resuming AT N stays allowed)...
+  assert.match(
+    report!,
+    /if you fixed app state with --no-record actions: replay --from 2 --plan-digest deadbeef\./,
+  );
+  // ...but the recorded-action alternate is NOT offered — no alternateFrom on
+  // the wire means the renderer must never advertise `--from 3`.
+  assert.doesNotMatch(report!, /if you performed the step's intent as a recorded action/);
+  assert.doesNotMatch(report!, /--from 3/);
+});
+
+test('formatReplayDivergenceReport renders neither caution command when resume is NOT allowed', async () => {
+  const { formatReplayDivergenceReport } = await import('../divergence.ts');
+  const report = formatReplayDivergenceReport({
+    divergence: {
+      version: 1,
+      kind: 'identity-mismatch',
+      step: { index: 2, source: { path: '/tmp/flow.ad', line: 3 } },
+      action: 'click label="Save"',
+      cause: { code: 'IDENTITY_MISMATCH', message: 'resolved a different element' },
+      screen: { state: 'available', refsGeneration: 1, refs: [{ ref: 'e1', role: 'button' }] },
+      suggestions: [],
+      suggestionCount: 0,
+      resume: {
+        allowed: false,
+        from: 2,
+        planDigest: 'deadbeef',
+        reason: 'step 1 is inside runtime control flow (retry); skipping it cannot be proven safe.',
+      },
+      repairHint: 'caution',
+    },
+  });
+  assert.ok(report);
+  assert.match(report!, /Repair hint: caution — something already matches the recorded selector/);
+  assert.doesNotMatch(report!, /replay --from/);
+  assert.match(report!, /cannot currently be resumed automatically/);
+});
