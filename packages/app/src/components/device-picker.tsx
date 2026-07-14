@@ -191,7 +191,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
             </button>
           </header>
           <Show when={server.devices().length > 0}>
-            <label class="mx-3 mb-2 flex h-9 shrink-0 items-center gap-2 rounded-[10px] bg-[var(--relay-bg)] px-2.5 text-[var(--relay-text-tertiary)] shadow-[inset_0_0_0_1px_var(--relay-line)] focus-within:shadow-[inset_0_0_0_1px_var(--relay-accent-2)]">
+            <label class="mx-3 mb-2 flex h-9 shrink-0 items-center gap-2 rounded-[10px] bg-[var(--relay-bg)] px-2.5 text-[var(--relay-text-tertiary)] shadow-[inset_0_0_0_1px_var(--relay-line)] focus-within:shadow-[inset_0_0_0_1px_var(--text-interactive-base)]">
               <Icon name="search" size={14} />
               <span class="sr-only">Filter targets</span>
               <input
@@ -209,7 +209,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
               when={server.devices().length > 0}
               fallback={
                 <div class="flex flex-col items-center px-4 pt-7 pb-6 text-center">
-                  <span class="grid size-11 place-items-center rounded-[12px] bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]">
+                  <span class="grid size-11 place-items-center rounded-[12px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
                     <Icon name="smartphone" size={20} />
                   </span>
                   <strong class="mt-3 text-[13px] font-semibold text-[var(--relay-text)]">
@@ -318,7 +318,7 @@ function TargetRow(props: { group: TargetGroup; selected: boolean; onPick: () =>
       <span
         class={cn(
           "grid size-9 place-items-center rounded-[10px] bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)]",
-          props.selected && "bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]",
+          props.selected && "bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]",
         )}
         aria-hidden="true"
       >

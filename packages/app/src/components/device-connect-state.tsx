@@ -72,7 +72,7 @@ export function DeviceConnectState(props: {
           class="relative mx-auto mb-[18px] hidden size-[72px] place-items-center @max-[470px]:grid"
           aria-hidden="true"
         >
-          <span class="relative z-[2] grid size-[54px] place-items-center rounded-[17px] border border-[color-mix(in_srgb,var(--relay-accent)_30%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-accent)_10%,var(--relay-surface-raised))] text-[var(--relay-accent-2)] shadow-[0_12px_34px_color-mix(in_srgb,var(--relay-accent)_14%,transparent)]">
+          <span class="relative z-[2] grid size-[54px] place-items-center rounded-[17px] border border-[color-mix(in_srgb,var(--relay-accent)_30%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-accent)_10%,var(--relay-surface-raised))] text-[var(--text-interactive-base)] shadow-[0_12px_34px_color-mix(in_srgb,var(--relay-accent)_14%,transparent)]">
             <Icon name="smartphone" size={24} />
           </span>
           <i class="absolute inset-1 rounded-[22px] border border-[color-mix(in_srgb,var(--relay-accent)_18%,transparent)]" />

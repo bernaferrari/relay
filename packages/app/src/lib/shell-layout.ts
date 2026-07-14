@@ -14,6 +14,7 @@ import { cn } from "./cn";
 export const shellRoot = cn(
   "grid h-full w-full min-h-0 overflow-hidden text-[var(--relay-text)] bg-[var(--relay-bg)] isolation-isolate",
   "grid-cols-[58px_var(--shell-lib,var(--relay-library-width))_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
+  "max-[900px]:grid-cols-[58px_0_minmax(0,1fr)]",
   "transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
 );
 
@@ -45,7 +46,7 @@ export const shellRailItem = cn(
 
 export const shellRailItemActive = cn(
   "bg-[var(--relay-surface-strong)] text-[var(--relay-text)]",
-  "[&_svg]:text-[var(--relay-accent-2)]",
+  "[&_svg]:text-[var(--text-interactive-base)]",
 );
 
 export const shellLibrary = cn(
@@ -53,11 +54,13 @@ export const shellLibrary = cn(
   "border-r border-[var(--relay-line)] bg-[var(--relay-panel)]",
   "transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
   "will-change-transform",
+  "max-[900px]:fixed max-[900px]:top-0 max-[900px]:bottom-0 max-[900px]:left-[58px] max-[900px]:z-[60] max-[900px]:w-[var(--relay-library-width)] max-[900px]:shadow-[24px_0_60px_rgb(0_0_0/42%)]",
   // Inner content keeps its width during the collapse so text does not reflow.
   "[&>*]:w-[var(--relay-library-width)]",
 );
 
-export const shellLibraryClosed = "pointer-events-none -translate-x-3.5 opacity-0 border-r-0";
+export const shellLibraryClosed =
+  "pointer-events-none -translate-x-3.5 opacity-0 border-r-0 max-[900px]:-translate-x-full";
 
 export const shellMain =
   "col-start-3 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--relay-bg)]";
@@ -139,7 +142,7 @@ export const shellStudioBody = cn(
   "grid min-h-0 min-w-0 flex-1",
   "grid-cols-[minmax(360px,1fr)_clamp(350px,34vw,480px)]",
   "max-[1120px]:min-[901px]:grid-cols-[minmax(320px,1fr)_clamp(320px,38vw,410px)]",
-  "max-[900px]:grid-cols-1",
+  "max-[900px]:grid-cols-[minmax(280px,1fr)_minmax(320px,42vw)]",
 );
 
 /**

@@ -41,10 +41,10 @@ export function JourneyOutline(props: { onBack: () => void }) {
         <button
           type="button"
           class="-mx-1.5 -mt-1.5 mb-[15px] inline-flex min-h-[26px] items-center gap-1 rounded-md px-1.5 text-[10px] text-[var(--relay-text-tertiary)] hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text-secondary)]"
-          aria-label="Back to tests"
+          aria-label="Back to device"
           onClick={props.onBack}
         >
-          <Icon name="chevron-left" size={13} /> All tests
+          <Icon name="chevron-left" size={13} /> Device
         </button>
         <span class={eyebrow}>Test flow</span>
         <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
@@ -257,7 +257,7 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
         </Show>
         <Show when={capturedFrame()}>
           <section class="shrink-0 border-t border-[var(--relay-line)] p-[15px]">
-            <span class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--relay-accent-2)] uppercase">
+            <span class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-interactive-base)] uppercase">
               <Show when={step()}>
                 {(current) => <Icon name={iconForStep(current())} size={14} />}
               </Show>
@@ -280,7 +280,7 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
                     "mt-1 text-[11px] font-semibold capitalize",
                     annotation().status === "pass" && "text-[var(--relay-green)]",
                     annotation().status === "fail" && "text-[var(--relay-red)]",
-                    annotation().status === "running" && "text-[var(--relay-accent-2)]",
+                    annotation().status === "running" && "text-[var(--text-interactive-base)]",
                     annotation().status === "idle" && "text-[var(--relay-text-secondary)]",
                   )}
                 >

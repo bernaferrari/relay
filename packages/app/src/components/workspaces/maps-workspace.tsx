@@ -94,7 +94,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
               aria-selected={mode() === id}
               class={cn(
                 "min-h-8 rounded-[7px] px-3.5 text-[12px] font-medium text-[var(--relay-text-tertiary)] transition-colors",
-                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color-mix(in_srgb,var(--relay-accent-2)_66%,transparent)]",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color-mix(in_srgb,var(--text-interactive-base)_66%,transparent)]",
                 mode() === id &&
                   "bg-[var(--relay-surface-strong)] text-[var(--relay-text)] shadow-[inset_0_0_0_1px_var(--relay-line-strong)]",
               )}

@@ -210,7 +210,7 @@ function PlannedJourney() {
           <label class="grid gap-1">
             <span class="text-[10px] text-[var(--relay-text-tertiary)]">Label</span>
             <input
-              class="h-8 w-full rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[var(--relay-text)] outline-none focus:border-[var(--relay-accent-2)]"
+              class="h-8 w-full rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)]"
               value={edgeConfig()[selectedEdge()!]?.label ?? defaultEdge(selectedEdge()!).label}
               onInput={(event) => patchEdge(selectedEdge()!, { label: event.currentTarget.value })}
             />
@@ -244,7 +244,7 @@ function PlannedJourney() {
         when={nodes().length > 0}
         fallback={
           <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <div class="grid size-11 place-items-center rounded-xl bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]">
+            <div class="grid size-11 place-items-center rounded-xl bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
               <Icon name="move" size={22} />
             </div>
             <strong class="mt-3 text-[13px] text-[var(--relay-text)]">No journey yet</strong>

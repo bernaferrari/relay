@@ -43,7 +43,7 @@ export function AgentTestComposer() {
   return (
     <section
       class={cn(
-        "mx-3 mt-3 mb-0.5 shrink-0 overflow-hidden rounded-xl transition-colors",
+        "mx-3 mt-2 mb-0.5 shrink-0 overflow-hidden rounded-[10px] transition-colors",
         open()
           ? "bg-[var(--relay-panel)] ring-1 ring-[var(--relay-line-strong)]"
           : "hover:bg-white/[0.03]",
@@ -51,21 +51,16 @@ export function AgentTestComposer() {
     >
       <button
         type="button"
-        class="grid min-h-[44px] w-full grid-cols-[34px_minmax(0,1fr)_18px] items-center gap-3.5 px-3.5 py-2 text-left text-text-base focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
+        class="grid min-h-[38px] w-full grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-2.5 px-2.5 py-1.5 text-left text-text-base focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
         aria-expanded={open()}
         onClick={() => setOpen((value) => !value)}
       >
-        <span class="grid size-[34px] place-items-center rounded-[10px] text-[var(--relay-accent-2)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--relay-accent)_35%,transparent)]">
-          <Icon name="sparkle" size={16} />
+        <span class="grid size-7 place-items-center rounded-lg text-[var(--text-interactive-base)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--relay-accent)_35%,transparent)]">
+          <Icon name="sparkle" size={14} />
         </span>
-        <span class="flex min-w-0 items-baseline gap-2">
-          <strong class="text-[13.5px]/[1.25] font-medium text-[var(--relay-text-secondary)]">
-            Build with AI
-          </strong>
-          <small class="truncate text-[12px]/[1.35] text-[var(--relay-text-tertiary)]">
-            describe what you want to test
-          </small>
-        </span>
+        <strong class="truncate text-[13px]/[1.25] font-medium text-[var(--relay-text-secondary)]">
+          Generate steps
+        </strong>
         <Icon
           name="chevron-down"
           size={14}

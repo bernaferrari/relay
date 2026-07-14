@@ -349,7 +349,7 @@ export function StepRow(props: {
                 name={kindIcon(kind())}
                 size={13}
                 strokeWidth={1.9}
-                class={cn("shrink-0", selected() && "text-[var(--relay-accent-2)]")}
+                class={cn("shrink-0", selected() && "text-[var(--text-interactive-base)]")}
                 aria-hidden={true}
               />
               <span class={cn(selected() && "text-[var(--relay-text-secondary)]")}>
@@ -891,7 +891,7 @@ export function StepRow(props: {
                   </div>
                   <label class={propRow}>
                     <span class={fieldLabel}>Confidence</span>
-                    <span class="grid size-[18px] place-items-center rounded text-[var(--relay-accent-2)]">
+                    <span class="grid size-[18px] place-items-center rounded text-[var(--text-interactive-base)]">
                       <input
                         type="checkbox"
                         checked={s.requireAgreement ?? false}

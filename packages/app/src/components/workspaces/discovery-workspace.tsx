@@ -433,7 +433,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
           fallback={
             <div class="absolute inset-0 grid place-items-center bg-[radial-gradient(circle,color-mix(in_srgb,var(--relay-line-strong)_42%,transparent)_1px,transparent_1px)] [background-size:22px_22px] p-8">
               <div class="grid max-w-[400px] justify-items-center gap-3 text-center">
-                <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]">
+                <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
                   <Icon name="move" size={22} />
                 </span>
                 <span class={eyebrow}>Product map</span>
@@ -471,7 +471,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   </span>
                   <input
                     aria-label="Map name"
-                    class="mt-0.5 w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[16px] font-semibold text-[var(--relay-text)] outline-none hover:border-[var(--relay-line)] focus:border-[var(--relay-accent-2)]"
+                    class="mt-0.5 w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[16px] font-semibold text-[var(--relay-text)] outline-none hover:border-[var(--relay-line)] focus:border-[var(--text-interactive-base)]"
                     value={mapNameDraft()}
                     onInput={(event) => setMapNameDraft(event.currentTarget.value)}
                     onChange={() => void rename(session(), mapNameDraft())}
@@ -670,11 +670,11 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     <strong class="block truncate text-[12.5px] font-semibold text-[var(--relay-text)]">
                       {next().control.label}
                     </strong>
-                    <small class="text-[10.5px] text-[var(--relay-accent-2)]">
+                    <small class="text-[10.5px] text-[var(--text-interactive-base)]">
                       Suggested next action
                     </small>
                   </span>
-                  <Icon name="arrow-right" size={14} class="text-[var(--relay-accent-2)]" />
+                  <Icon name="arrow-right" size={14} class="text-[var(--text-interactive-base)]" />
                 </button>
               )}
             </Show>
@@ -745,7 +745,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                 <label class="grid gap-1.5 px-4 pt-3.5 text-[11px] text-[var(--relay-text-tertiary)]">
                   <span>Test name</span>
                   <input
-                    class="h-9 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[13px] text-[var(--relay-text)] outline-none focus:border-[var(--relay-accent-2)]"
+                    class="h-9 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[13px] text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)]"
                     value={promotionTitle()}
                     autofocus
                     onInput={(event) => setPromotionTitle(event.currentTarget.value)}
@@ -871,7 +871,7 @@ function DiscoveryPathList(props: {
                   </Show>
                 </span>
                 <span class="grid min-w-0 gap-0.5">
-                  <small class="text-[10px] tracking-[0.04em] text-[var(--relay-accent-2)] uppercase">
+                  <small class="text-[10px] tracking-[0.04em] text-[var(--text-interactive-base)] uppercase">
                     {row.incoming
                       ? `Via ${row.incoming.label ?? row.incoming.kind}`
                       : row.reachable

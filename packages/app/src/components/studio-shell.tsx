@@ -222,8 +222,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   class={cn(shellRailItem, active() && shellRailItemActive)}
                   aria-current={active() ? "page" : undefined}
                   onClick={() => {
+                    const wasActive = active();
                     setArea(item.id);
-                    setLibraryOpen(item.id === "tests");
+                    if (item.id === "tests") {
+                      if (wasActive) setLibraryOpen((open) => !open);
+                      else setLibraryOpen(!selected());
+                    } else setLibraryOpen(false);
                   }}
                 >
                   <Icon name={item.icon} size={18} />
@@ -291,7 +295,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             </div>
           </div>
           <div class={shellTopbarActions}>
-            <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
+            <Show when={area() === "tests"}>
+              <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
+            </Show>
             <Show when={area() === "tests" && selected() && studioView() === "live"}>
               <button
                 type="button"
@@ -339,7 +345,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   )}
                   aria-hidden="true"
                 />
-                {recorder.recording() ? "Stop recording" : "Record test"}
+                {recorder.recording() ? "Stop" : "Record"}
               </button>
             </Show>
           </div>
@@ -360,7 +366,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       setLibraryOpen(false);
                     }}
                   >
-                    <Icon name="smartphone" size={15} /> Build
+                    <Icon name="smartphone" size={15} /> Device
                   </button>
                   <button
                     type="button"
@@ -378,14 +384,19 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </button>
                 </div>
                 <div class="relative flex items-center gap-2">
-                  <Show when={selected()}>
+                  <Show
+                    when={
+                      selected() &&
+                      (draft.saveState() === "saving" || draft.saveState() === "invalid")
+                    }
+                  >
                     <span class={shellSaveState}>
                       {draft.saveState() === "saving"
                         ? "Saving…"
-                        : draft.saveState() === "invalid"
-                          ? `${draft.invalidCount()} incomplete`
-                          : "All changes saved"}
+                        : `${draft.invalidCount()} incomplete`}
                     </span>
+                  </Show>
+                  <Show when={selected()}>
                     <button
                       class={productIconButton}
                       type="button"
@@ -978,6 +989,58 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
                 </button>
               </div>
             </Show>
+            <button
+              type="button"
+              class={cn(productIconButton, "ml-1")}
+              aria-label="More test actions"
+              aria-expanded={maintenanceOpen()}
+              onClick={() => setMaintenanceOpen((open) => !open)}
+            >
+              <Icon name="more" size={14} />
+            </button>
+            <Show when={maintenanceOpen()}>
+              <div
+                class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[220px] gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-9 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-md [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--relay-text-secondary)] hover:[&_button]:bg-[var(--relay-surface-strong)]"
+                role="menu"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMaintenanceOpen(false);
+                    void toggleHistory();
+                  }}
+                >
+                  <Icon name="clock" size={14} /> Version history
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMaintenanceOpen(false);
+                    void toggleQuarantine();
+                  }}
+                >
+                  <Icon name={selected()?.quarantined ? "refresh" : "pause"} size={14} />
+                  {selected()?.quarantined ? "Restore to suite" : "Quarantine test"}
+                </button>
+                <Show when={activeSchedule()}>
+                  {(schedule) => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMaintenanceOpen(false);
+                        if (!window.confirm("Remove this local schedule?")) return;
+                        void server.deleteLocalSchedule(schedule().id);
+                      }}
+                    >
+                      <Icon name="x" size={14} /> Remove daily schedule
+                    </button>
+                  )}
+                </Show>
+              </div>
+            </Show>
           </div>
         </div>
         <textarea
@@ -989,75 +1052,26 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           spellcheck={false}
           onInput={(event) => draft.setDescription(event.currentTarget.value)}
         />
-        <div class="relative mt-2 flex items-center gap-2 rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2 text-[11px] text-[var(--relay-text-tertiary)] [&>b]:rounded [&>b]:bg-[color-mix(in_srgb,var(--relay-amber)_16%,transparent)] [&>b]:px-1.5 [&>b]:py-0.5 [&>b]:font-medium [&>b]:text-[var(--relay-amber)]">
-          <Show
-            when={stability()?.passRate !== null && stability()?.passRate !== undefined}
-            fallback={<span>No run baseline yet</span>}
-          >
-            <span>
-              {Math.round((stability()!.passRate ?? 0) * 100)}% stable · {stability()!.total} recent
-              runs
-            </span>
-          </Show>
-          <Show when={selected()?.quarantined}>
-            <b title={selected()?.quarantineReason}>Quarantined</b>
-          </Show>
-          <Show when={activeSchedule()}>
-            <span>Scheduled daily</span>
-          </Show>
-          <button
-            type="button"
-            class="ml-auto grid size-7 place-items-center rounded-md text-[var(--relay-text-tertiary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
-            aria-label="More test actions"
-            aria-expanded={maintenanceOpen()}
-            onClick={() => setMaintenanceOpen((open) => !open)}
-          >
-            <Icon name="more" size={14} />
-          </button>
-          <Show when={maintenanceOpen()}>
-            <div
-              class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[220px] gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-9 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-md [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--relay-text-secondary)] hover:[&_button]:bg-[var(--relay-surface-strong)]"
-              role="menu"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMaintenanceOpen(false);
-                  void toggleHistory();
-                }}
-              >
-                <Icon name="clock" size={14} /> Version history
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMaintenanceOpen(false);
-                  void toggleQuarantine();
-                }}
-              >
-                <Icon name={selected()?.quarantined ? "refresh" : "pause"} size={14} />
-                {selected()?.quarantined ? "Restore to suite" : "Quarantine test"}
-              </button>
-              <Show when={activeSchedule()}>
-                {(schedule) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMaintenanceOpen(false);
-                      if (!window.confirm("Remove this local schedule?")) return;
-                      void server.deleteLocalSchedule(schedule().id);
-                    }}
-                  >
-                    <Icon name="x" size={14} /> Remove daily schedule
-                  </button>
-                )}
-              </Show>
-            </div>
-          </Show>
-        </div>
+        <Show
+          when={
+            stability()?.passRate != null || selected()?.quarantined || Boolean(activeSchedule())
+          }
+        >
+          <div class="mt-1 flex min-h-6 items-center gap-2 text-[10.5px] text-[var(--relay-text-tertiary)] [&>b]:rounded [&>b]:bg-[color-mix(in_srgb,var(--relay-amber)_16%,transparent)] [&>b]:px-1.5 [&>b]:py-0.5 [&>b]:font-medium [&>b]:text-[var(--relay-amber)]">
+            <Show when={stability()?.passRate !== null && stability()?.passRate !== undefined}>
+              <span>
+                {Math.round((stability()!.passRate ?? 0) * 100)}% stable · {stability()!.total}{" "}
+                recent runs
+              </span>
+            </Show>
+            <Show when={selected()?.quarantined}>
+              <b title={selected()?.quarantineReason}>Quarantined</b>
+            </Show>
+            <Show when={activeSchedule()}>
+              <span>Scheduled daily</span>
+            </Show>
+          </div>
+        </Show>
         <Show when={historyOpen()}>
           <div class="absolute top-[calc(100%+6px)] right-0 z-40 grid w-[280px] gap-0 overflow-hidden rounded-[12px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha shadow-[var(--v2-elevation-overlay)] [&_header]:flex [&_header]:items-center [&_header]:justify-between [&_header]:border-b [&_header]:border-[var(--relay-line)] [&_header]:px-3 [&_header]:py-2.5 [&_button]:flex [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:px-3 [&_button]:py-2 [&_button]:text-left hover:[&_button]:bg-[var(--relay-surface-strong)] [&_strong]:text-[12px] [&_strong]:text-[var(--relay-text)] [&_small]:text-[10px] [&_small]:text-[var(--relay-text-tertiary)]">
             <header>
@@ -1136,7 +1150,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
                 <Icon
                   name="sparkle"
                   size={17}
-                  class="mt-0.5 shrink-0 text-[var(--relay-accent-2)]"
+                  class="mt-0.5 shrink-0 text-[var(--text-interactive-base)]"
                 />
                 <span class="min-w-0">
                   <strong class="block text-[12px] text-[var(--relay-text)]">
@@ -1287,7 +1301,7 @@ function NewTestDialog(props: {
         <label>
           <span class="sr-only">Describe the test</span>
           <textarea
-            class="min-h-[96px] w-full resize-y rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 py-2.5 text-[13px] leading-[1.45] text-[var(--relay-text)] outline-none placeholder:text-[var(--relay-text-tertiary)] focus:border-[var(--relay-accent-2)]"
+            class="min-h-[96px] w-full resize-y rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 py-2.5 text-[13px] leading-[1.45] text-[var(--relay-text)] outline-none placeholder:text-[var(--relay-text-tertiary)] focus:border-[var(--text-interactive-base)]"
             autofocus
             rows={4}
             value={description()}
@@ -1377,7 +1391,7 @@ function TestWelcome(props: {
               class="mt-6 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_72%,transparent)] px-3.5 py-3 text-left backdrop-blur-sm max-[1100px]:w-full max-[1100px]:max-w-[380px]"
               aria-live="polite"
             >
-              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]">
+              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
                 <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={17} />
               </span>
               <div class="min-w-0">
@@ -1464,12 +1478,12 @@ function TestWelcome(props: {
             <span class="mt-2.5 block h-10 rounded-[11px] bg-[color-mix(in_srgb,var(--relay-text)_6%,transparent)]" />
           </div>
           <div class="absolute top-14 -left-2 flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] px-3 py-2 shadow-[var(--v2-elevation-floating)] backdrop-blur-md">
-            <span class="font-mono text-[10px] text-[var(--relay-accent-2)]">01</span>
+            <span class="font-mono text-[10px] text-[var(--text-interactive-base)]">01</span>
             <strong class="text-[11px] font-medium text-[var(--relay-text)]">Tap “Continue”</strong>
             <span class="font-mono text-[9px] text-[var(--relay-text-tertiary)]">248ms</span>
           </div>
           <div class="absolute right-0 bottom-24 flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] px-3 py-2 shadow-[var(--v2-elevation-floating)] backdrop-blur-md">
-            <span class="font-mono text-[10px] text-[var(--relay-accent-2)]">02</span>
+            <span class="font-mono text-[10px] text-[var(--text-interactive-base)]">02</span>
             <strong class="text-[11px] font-medium text-[var(--relay-text)]">Check welcome</strong>
             <span class="grid size-3.5 place-items-center rounded-full bg-[color-mix(in_srgb,var(--relay-green)_18%,transparent)] text-[var(--relay-green)]">
               <Icon name="check" size={9} strokeWidth={3} />
@@ -1649,7 +1663,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                       <i class="mx-auto mb-3 block h-0.5 w-6 rounded-full bg-[var(--relay-line-strong)]" />
                       <span class="mb-1.5 block h-1.5 w-[70%] rounded bg-[color-mix(in_srgb,var(--relay-text)_12%,transparent)]" />
                       <span class="mb-1.5 block h-1.5 w-[88%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
-                      <b class="mt-auto block rounded-md bg-[var(--relay-accent-soft)] py-1 text-center text-[8px] text-[var(--relay-accent-2)]">
+                      <b class="mt-auto block rounded-md bg-[var(--relay-accent-soft)] py-1 text-center text-[8px] text-[var(--text-interactive-base)]">
                         Continue
                       </b>
                     </div>
@@ -2020,7 +2034,7 @@ function CompatibilityReportPanel(props: {
                   class={cn(
                     "grid gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_55%,transparent)] p-3",
                     profile.profile.id === props.selectedProfileId &&
-                      "border-[color-mix(in_srgb,var(--relay-accent-2)_58%,var(--relay-line))] shadow-[inset_2px_0_var(--relay-accent-2)]",
+                      "border-[color-mix(in_srgb,var(--text-interactive-base)_58%,var(--relay-line))] shadow-[inset_2px_0_var(--text-interactive-base)]",
                   )}
                 >
                   <header class="flex items-start justify-between gap-3">
@@ -2301,7 +2315,7 @@ function RunReplayStage(props: {
                     size={12}
                     class={cn(
                       item.index === index()
-                        ? "text-[var(--relay-accent-2)]"
+                        ? "text-[var(--text-interactive-base)]"
                         : "text-[var(--relay-text-tertiary)] group-hover:text-[var(--relay-text-secondary)]",
                     )}
                   />
@@ -2380,7 +2394,7 @@ function RunStepList(props: {
                   <Icon
                     name={kind() ? kindIcon(kind()!) : "bolt"}
                     size={12}
-                    class={active() ? "text-[var(--relay-accent-2)]" : undefined}
+                    class={active() ? "text-[var(--text-interactive-base)]" : undefined}
                   />
                   {kind() ? kindLabel(kind()!) : "Step"}
                   <Show when={node.durationMs}>
@@ -2435,7 +2449,7 @@ function RunReplay(props: { job: JobInfo; workspace?: boolean }) {
         fallback={
           <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[12px] border border-dashed border-[var(--relay-line-strong)] p-4">
             <div
-              class="grid size-12 place-items-center rounded-[12px] bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]"
+              class="grid size-12 place-items-center rounded-[12px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]"
               aria-hidden="true"
             >
               <span />
@@ -2584,11 +2598,17 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
           {recipe()?.title ?? props.job.action}
         </strong>
         <span class="mt-1.5 flex items-center gap-1.5 text-text-weaker" aria-hidden="true">
-          <For each={glyphSteps().slice(0, 9)}>
-            {(step) => <Icon name={kindIcon(step.kind)} size={11} strokeWidth={1.75} />}
-          </For>
-          <Show when={glyphSteps().length > 9}>
-            <i class="font-mono text-[9px] not-italic">+{glyphSteps().length - 9}</i>
+          <span class="text-[10px]">
+            {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
+          </span>
+          <Show when={glyphSteps().length > 1}>
+            <span class="opacity-50">·</span>
+            <For each={glyphSteps().slice(0, 6)}>
+              {(step) => <Icon name={kindIcon(step.kind)} size={10} strokeWidth={1.75} />}
+            </For>
+            <Show when={glyphSteps().length > 6}>
+              <i class="font-mono text-[9px] not-italic">+{glyphSteps().length - 6}</i>
+            </Show>
           </Show>
           <Show when={props.job.appVersion}>
             <i class="font-mono text-[9px] not-italic">· build {props.job.appVersion}</i>
@@ -2660,7 +2680,7 @@ function FlowParametersEditor() {
     draft.setParameters(draft.parameters().filter((_, current) => current !== index));
 
   const field =
-    "h-[30px] w-full min-w-0 rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-panel)] px-2 text-[11px] text-[var(--relay-text)] outline-none focus:border-[var(--relay-accent-2)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_14%,transparent)]";
+    "h-[30px] w-full min-w-0 rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-panel)] px-2 text-[11px] text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_14%,transparent)]";
   const label = "grid min-w-0 gap-1 text-[10px] text-[var(--relay-text-tertiary)]";
 
   return (
@@ -2673,7 +2693,7 @@ function FlowParametersEditor() {
           </h3>
           <p class="m-0 max-w-[34rem] text-[11px]/[1.5] text-[var(--relay-text-secondary)]">
             Optional values callers can provide when they use this flow, such as{" "}
-            <code class="font-mono text-[var(--relay-accent-2)]">{"{{login_email}}"}</code>.
+            <code class="font-mono text-[var(--text-interactive-base)]">{"{{login_email}}"}</code>.
           </p>
         </div>
         <button
