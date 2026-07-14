@@ -447,6 +447,57 @@ extension RunnerTests {
     XCTAssertTrue(response.error?.hint?.contains("runner session will be restarted") == true)
   }
 
+  func testAlertResolutionCannotBypassRequestedDeadline() throws {
+    final class ResultBox {
+      var error: Error?
+      var observedDeadline: Date?
+    }
+    let box = ResultBox()
+    let releaseResolution = DispatchSemaphore(value: 0)
+    let resolutionExited = expectation(description: "bounded alert resolution exited")
+    let commandFinished = expectation(description: "alert command respected its deadline")
+    let startedAt = Date()
+    let command = try runnerCommandFixture(
+      #"{"command":"alert","commandId":"alert-deadline","appBundleId":"com.apple.springboard","action":"get","timeoutMs":50}"#
+    )
+    currentApp = springboard
+    currentBundleId = Self.springboardBundleId
+    alertResolutionOverrideForTesting = { deadline in
+      box.observedDeadline = deadline
+      _ = releaseResolution.wait(timeout: .now() + 1)
+      resolutionExited.fulfill()
+      return nil
+    }
+    defer {
+      releaseResolution.signal()
+      alertResolutionOverrideForTesting = nil
+      currentApp = nil
+      currentBundleId = nil
+    }
+
+    DispatchQueue(label: "agent-device.runner.tests.alert-deadline").async {
+      do {
+        _ = try self.executeDispatched(command: command)
+      } catch {
+        box.error = error
+      }
+      commandFinished.fulfill()
+    }
+
+    wait(for: [commandFinished], timeout: 1)
+    let error = box.error as NSError?
+    XCTAssertEqual(error?.domain, RunnerErrorDomain.general)
+    XCTAssertEqual(error?.code, RunnerErrorCode.mainThreadExecutionTimedOut)
+    XCTAssertNotNil(box.observedDeadline)
+    if let observedDeadline = box.observedDeadline {
+      XCTAssertGreaterThan(observedDeadline.timeIntervalSince(startedAt), 0)
+      XCTAssertLessThan(observedDeadline.timeIntervalSince(startedAt), 0.2)
+    }
+
+    releaseResolution.signal()
+    wait(for: [resolutionExited], timeout: 1)
+  }
+
   func testRunMainThreadWorkExecutesOffMainCallerOnMainThread() {
     final class ResultBox {
       var observedMainThread: Bool?
@@ -686,10 +737,25 @@ extension RunnerTests {
       return runnerWedgedResponse(command: command, abandonedForSeconds: abandonedForSeconds)
     }
     if Thread.isMainThread {
-      return try executeOnMainSafely(command: command)
+      let alertDeadline = command.command == .alert
+        ? Date().addingTimeInterval(Self.alertCommandTimeout(timeoutMs: command.timeoutMs))
+        : nil
+      return try executeOnMainSafely(command: command, alertDeadline: alertDeadline)
     }
     if command.command == .snapshot {
       return try executeSnapshotDispatched(command: command)
+    }
+    if command.command == .alert {
+      let deadline = Date().addingTimeInterval(
+        Self.alertCommandTimeout(timeoutMs: command.timeoutMs)
+      )
+      return try runMainThreadWork(
+        command: command,
+        timeout: max(0.001, deadline.timeIntervalSinceNow),
+        timeoutError: mainThreadExecutionTimeoutError
+      ) {
+        try self.executeOnMainSafely(command: command, alertDeadline: deadline)
+      }
     }
     return try runMainThreadWork(
       command: command,
@@ -774,7 +840,10 @@ extension RunnerTests {
 
   // MARK: - Command Handling
 
-  private func executeOnMainSafely(command: Command) throws -> Response {
+  private func executeOnMainSafely(
+    command: Command,
+    alertDeadline: Date? = nil
+  ) throws -> Response {
     var hasRetried = false
     while true {
       var response: Response?
@@ -782,7 +851,7 @@ extension RunnerTests {
       let failureCountBefore = currentXCTestFailureCount()
       let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
         do {
-          response = try self.executeOnMain(command: command)
+          response = try self.executeOnMain(command: command, alertDeadline: alertDeadline)
         } catch {
           swiftError = error
         }
@@ -1013,7 +1082,7 @@ extension RunnerTests {
     return preparation
   }
 
-  private func executeOnMain(command: Command) throws -> Response {
+  private func executeOnMain(command: Command, alertDeadline: Date?) throws -> Response {
     let preparation = prepareActiveCommandContext(command: command)
     let activeApp: XCUIApplication
     switch preparation {
@@ -1093,7 +1162,11 @@ extension RunnerTests {
     default:
       break
     }
-    return try executeOnMainPrepared(command: command, activeApp: activeApp)
+    return try executeOnMainPrepared(
+      command: command,
+      activeApp: activeApp,
+      alertDeadline: alertDeadline
+    )
   }
 
   private func prepareActiveCommandContext(command: Command) -> ActiveCommandPreparation {
@@ -1163,7 +1236,11 @@ extension RunnerTests {
     return .context(ActiveCommandContext(app: activeApp))
   }
 
-  private func executeOnMainPrepared(command: Command, activeApp: XCUIApplication) throws -> Response {
+  private func executeOnMainPrepared(
+    command: Command,
+    activeApp: XCUIApplication,
+    alertDeadline: Date? = nil
+  ) throws -> Response {
     var activeApp = activeApp
     switch command.command {
     case .status, .shutdown, .recordStart, .recordStop, .uptime:
@@ -1628,10 +1705,13 @@ extension RunnerTests {
       )
     case .alert:
       let action = (command.action ?? "get").lowercased()
-      guard let alert = resolveAlert(app: activeApp) else {
+      let deadline = alertDeadline ?? Date().addingTimeInterval(
+        Self.alertCommandTimeout(timeoutMs: command.timeoutMs)
+      )
+      guard let alert = resolveAlert(app: activeApp, deadline: deadline) else {
         return Response(ok: false, error: ErrorPayload(message: "alert not found"))
       }
-      return handleAlert(alert, action: action)
+      return handleAlert(alert, action: action, deadline: deadline)
     case .gesture:
       guard let plan = command.gesturePlan else {
         return Response(

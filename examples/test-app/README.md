@@ -96,6 +96,20 @@ the same session when verification is complete:
 agent-device close --platform ios --udid "<physical udid>" --session test-app-physical
 ```
 
+#### AccessorySetupKit picker fixture
+
+The Settings tab links to a dedicated **Accessory setup lab** backed by a local Expo module. The
+development client uses this fixed test service UUID, so no build-time environment variables are
+required:
+
+```text
+FFF0
+```
+
+Advertise that service from the test accessory, build with the normal physical-device command above,
+then open **Settings → Open accessory setup lab**. The picker requires physical iOS 18+ hardware; use
+the normal session hygiene above when validating its snapshot, wait, and selector paths.
+
 ### Android emulator or device
 
 Install dependencies and run the development build on the target Android
