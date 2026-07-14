@@ -52,9 +52,9 @@ export function RecipeStepsEditor(): JSX.Element {
   }
 
   function onRowActivate(i: number): void {
-    // One click has one meaning: select this step and open its editor.
-    // Running is always explicit through the play action.
-    toggleEditor(i);
+    // Browsing and editing are separate actions. A row click only changes the
+    // device/evidence focus; the trailing disclosure opens the editor.
+    wb.focusStep(i);
   }
 
   function onEditToggle(i: number): void {
@@ -199,8 +199,7 @@ export function RecipeStepsEditor(): JSX.Element {
         </Show>
 
         <Show when={!isEmpty()}>
-          {/* Inset list — AgentBoard chip rows + gap-1 air */}
-          <div class="test-step-list flex flex-col gap-2 px-3 py-4">
+          <div class="test-step-list flex flex-col gap-1.5 px-3 py-3">
             <InsertGap
               at={0}
               open={addAt() === 0}

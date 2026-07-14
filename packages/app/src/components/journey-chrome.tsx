@@ -8,7 +8,7 @@ import { sentenceForStep } from "../lib/step-sentence";
 import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { fmtAgo, fmtDur } from "../lib/job";
 import { Icon } from "./icon";
-import { accentForStep, actionForStep, iconForStep } from "./journey-workspace";
+import { accentForStep, actionForStep, evidenceForStep, iconForStep } from "./journey-workspace";
 import { eyebrow, productPrimary, productSecondary } from "../lib/ui";
 
 const chromePanel =
@@ -129,7 +129,9 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
   });
   const capturedFrame = createMemo(() => {
     const frame = server.frames()[index()];
-    return frame ? frameToSrc(frame) : "";
+    if (frame) return frameToSrc(frame);
+    const shot = evidenceForStep(draft.steps()[index()]!)?.screenshot;
+    return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
   });
   const annotation = createMemo(() => workbench.rowAnno(index()));
   const recentRuns = createMemo(() => {

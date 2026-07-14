@@ -66,7 +66,7 @@ export const shellMain =
   "col-start-3 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--relay-bg)]";
 
 export const shellTopbar = cn(
-  "shell-drag flex min-h-[54px] shrink-0 items-center justify-between gap-4 border-b border-[var(--relay-line)]",
+  "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--relay-line)]",
   "bg-[rgb(9_11_16/94%)] px-4 backdrop-blur-xl",
 );
 
@@ -82,12 +82,13 @@ export const shellBreadcrumb = cn(
 export const shellRecord = cn(
   "inline-flex min-h-[38px] items-center justify-center gap-[7px] rounded-[10px] px-3.5",
   "text-[13px] font-semibold text-white select-none",
-  "bg-[#705ff0] shadow-[inset_0_1px_rgb(255_255_255/18%),0_7px_22px_rgb(89_69_214/18%)]",
+  "border border-[#7e70ed] bg-[#705ff0] shadow-none",
   "transition-[color,background-color,box-shadow,transform] duration-150",
   "hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.97]",
   "disabled:cursor-not-allowed disabled:bg-[var(--relay-surface-raised)] disabled:text-[var(--relay-text-tertiary)]",
-  "disabled:shadow-[inset_0_0_0_1px_var(--relay-line)]",
+  "disabled:border-[var(--relay-line)] disabled:shadow-none",
   "data-[blocked]:cursor-not-allowed data-[blocked]:bg-[var(--relay-surface-raised)] data-[blocked]:text-[var(--relay-text-tertiary)]",
+  "data-[blocked]:border-[var(--relay-line-strong)] data-[blocked]:shadow-none",
 );
 
 export const shellRecordActive = "bg-[#d94c5c] hover:enabled:bg-[#d94c5c]";
@@ -110,7 +111,7 @@ export const shellCaptureActive = cn(
   "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-red)_38%,transparent)]",
 );
 
-export const shellStudio = "flex min-h-0 min-w-0 flex-1 flex-col";
+export const shellStudio = "relative z-0 flex min-h-0 min-w-0 flex-1 flex-col";
 
 export const shellStudioBar = cn(
   "shell-drag flex min-h-11 shrink-0 items-center justify-between border-b border-[var(--relay-line)] px-3.5",

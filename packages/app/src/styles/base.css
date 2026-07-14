@@ -107,9 +107,8 @@
   --rail-top-pad: 16px;
 }
 .qa--desktop {
-  --traffic-pad: 84px;
-  /* Native macOS controls own the top of the 64px rail. */
-  --rail-top-pad: 52px;
+  --traffic-pad: 12px;
+  --rail-top-pad: 16px;
 }
 
 .btn-primary-ink {

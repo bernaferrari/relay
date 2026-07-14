@@ -72,7 +72,7 @@ function createDesktopPlatform(): Platform {
 
 function onThemeApplied(detail: ThemeAppliedDetail) {
   void window.api.setBackgroundColor(detail.background);
-  // macOS titlebar / traffic lights read a bit better with matching base
+  // Keep the hidden native titlebar surface in sync with the product canvas.
   document.documentElement.style.setProperty("--desktop-bg", detail.background);
 }
 

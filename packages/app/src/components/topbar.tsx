@@ -10,7 +10,7 @@ import { withRefreshFeedback } from "../lib/refresh-feedback";
 
 /**
  * Topbar — brand · device picker · [spacer] · runbar pill · Settings.
- * Height 36px (AB titlebar); traffic-light pad for desktop; high-contrast status dots.
+ * Height 36px; app-owned drag region; high-contrast status dots.
  */
 export function Topbar(props: { onSettings: () => void }) {
   const server = useServer();

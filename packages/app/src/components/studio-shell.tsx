@@ -1165,26 +1165,30 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           </div>
         </Show>
         <Show when={tab() === "inputs"}>
-          <div class="grid content-start gap-3.5 p-3">
+          <div class="grid content-start gap-4 p-4">
             <FlowParametersEditor />
-            <div class="flex items-center justify-between gap-3 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_55%,transparent)] p-3">
-              <div class="flex min-w-0 items-start gap-2.5">
+            <div class="flex items-center justify-between gap-3 border-t border-[var(--relay-line)] pt-3.5">
+              <div class="flex min-w-0 items-center gap-2.5">
                 <Icon
                   name="sparkle"
-                  size={17}
-                  class="mt-0.5 shrink-0 text-[var(--text-interactive-base)]"
+                  size={15}
+                  class="shrink-0 text-[var(--text-interactive-base)]"
                 />
                 <span class="min-w-0">
-                  <strong class="block text-[12px] text-[var(--relay-text)]">
-                    Workspace variables
+                  <strong class="block text-[11.5px] font-medium text-[var(--relay-text-secondary)]">
+                    Need values shared across tests?
                   </strong>
-                  <small class="mt-0.5 block text-[11px]/[1.45] text-[var(--relay-text-tertiary)]">
-                    Use {"{{variable_name}}"} in any step. Every run preserves its value.
+                  <small class="mt-0.5 block text-[10px] text-[var(--relay-text-tertiary)]">
+                    Workspace variables use {"{{variable_name}}"}.
                   </small>
                 </span>
               </div>
-              <button type="button" class={productSecondary} onClick={props.onOpenData}>
-                Manage variables
+              <button
+                type="button"
+                class="shrink-0 text-[11px] font-semibold text-[var(--text-interactive-base)] hover:underline"
+                onClick={props.onOpenData}
+              >
+                Open variables
               </button>
             </div>
           </div>
@@ -1669,12 +1673,12 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
         </div>
       </Show>
       <Show when={rows().length > 0 && !selected()}>
-        <div class="mx-auto mb-4 grid w-full max-w-[1180px] grid-cols-4 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger max-[760px]:grid-cols-2 [&>*+*]:border-l [&>*+*]:border-border-weak-base max-[760px]:[&>*:nth-child(3)]:border-l-0 max-[760px]:[&>*:nth-child(n+3)]:border-t">
+        <div class="mx-auto mb-5 grid w-full max-w-[1080px] grid-cols-4 gap-2 max-[760px]:grid-cols-2">
           <Metric
             label="Pass rate"
             value={`${passRate()}%`}
             detail="across saved runs"
-            tone="success"
+            tone={passRate() > 0 ? "success" : "danger"}
           />
           <Metric label="Passed" value={passedCount()} detail="including healed" tone="success" />
           <Metric
@@ -1690,20 +1694,21 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
         class={cn(
           selected()
             ? "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(300px,1.08fr)_minmax(390px,0.92fr)] overflow-hidden max-[960px]:grid-cols-[minmax(280px,0.9fr)_minmax(360px,1.1fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
-            : "mx-auto grid w-full max-w-[1180px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
+            : "mx-auto grid w-full max-w-[1080px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
           !selected() && rows().length === 0 && "place-items-center px-6 py-16",
         )}
       >
         <Show when={!selected()}>
           <div
-            class={cn(
-              "w-full max-w-none overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger",
-              rows().length === 0 && "max-w-[680px] rounded-[20px]",
-            )}
+            class={cn("w-full max-w-none", rows().length === 0 && "max-w-[680px] rounded-[20px]")}
           >
             <Show when={rows().length > 0}>
-              <div class="flex min-h-11 items-center justify-between gap-3 border-b border-border-weak-base px-3.5">
-                <div class="flex items-center gap-1" role="tablist" aria-label="Filter runs">
+              <div class="mb-2.5 flex min-h-10 items-center justify-between gap-3">
+                <div
+                  class="flex items-center gap-1 rounded-[10px] border border-border-weak-base bg-background-stronger p-1"
+                  role="tablist"
+                  aria-label="Filter runs"
+                >
                   {(
                     [
                       ["all", "All"],
@@ -1717,7 +1722,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                       role="tab"
                       aria-selected={runFilter() === id}
                       class={cn(
-                        "min-h-7 rounded-md px-2.5 text-[11.5px] font-medium text-text-weaker transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
+                        "min-h-7 rounded-md px-3 text-[11.5px] font-medium text-text-weaker transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
                         runFilter() === id
                           ? "bg-surface-base-active text-text-strong"
                           : "hover:bg-surface-base-hover hover:text-text-base",
@@ -1731,13 +1736,6 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                 <span class="font-mono text-[10.5px] text-text-weaker">
                   {visibleRows().length} run{visibleRows().length === 1 ? "" : "s"}
                 </span>
-              </div>
-              <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase max-[900px]:grid-cols-[minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] [&>span]:min-w-0 [&>span]:truncate">
-                <span>Test</span>
-                <span>Outcome</span>
-                <span class="max-[900px]:hidden">Target</span>
-                <span>When</span>
-                <span>Time</span>
               </div>
             </Show>
             <For
@@ -2572,48 +2570,9 @@ function RunStepList(props: {
   const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
-  const selectedNode = () =>
-    nodes()[Math.max(0, Math.min(props.selectedIndex, nodes().length - 1))];
-  const selectedKind = () => snapshot()?.steps[selectedNode()?.index ?? 0]?.kind;
   return (
-    <div class="grid content-start gap-3">
-      <Show when={selectedNode()}>
-        {(node) => (
-          <section
-            class={cn(
-              "grid gap-2 rounded-xl border px-3.5 py-3",
-              node().state === "failed"
-                ? "border-[color-mix(in_srgb,var(--relay-red)_30%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-red)_6%,transparent)]"
-                : "border-[var(--relay-line)] bg-[var(--relay-surface-raised)]",
-            )}
-            aria-label="Selected moment"
-          >
-            <div class="flex items-center gap-2 text-[10px] font-semibold tracking-[0.07em] text-text-weaker uppercase">
-              <Icon
-                name={selectedKind() ? kindIcon(selectedKind()!) : "bolt"}
-                size={12}
-                class={node().state === "failed" ? "text-[var(--relay-red)]" : undefined}
-              />
-              <span>Selected moment</span>
-              <span class="ml-auto inline-flex items-center gap-1.5 font-medium tracking-normal normal-case">
-                <i class={cn("size-1.5 rounded-full", runStateDot(node().state))} />
-                {runStateLabel(node().state)}
-              </span>
-            </div>
-            <strong class="text-[14px]/[1.4] font-medium tracking-[-0.005em] text-text-strong">
-              {node().title}
-            </strong>
-            <div class="flex items-center gap-2 font-mono text-[10px] tabular-nums text-text-weaker">
-              <span>Step {node().index + 1}</span>
-              <Show when={node().durationMs}>
-                <span>·</span>
-                <span>{formatStepDuration(node().durationMs!)}</span>
-              </Show>
-            </div>
-          </section>
-        )}
-      </Show>
-      <div class="relative grid content-start before:absolute before:top-5 before:bottom-5 before:left-[15px] before:w-px before:bg-[var(--relay-line)]">
+    <div class="grid content-start">
+      <div class="relative grid content-start before:absolute before:top-8 before:bottom-8 before:left-6 before:w-px before:bg-[var(--relay-line-strong)]">
         <For
           each={nodes()}
           fallback={
@@ -2629,9 +2588,9 @@ function RunStepList(props: {
               <button
                 type="button"
                 class={cn(
-                  "relative grid w-full grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] px-1 py-2.5 text-left transition-[background-color,transform] duration-150 active:scale-[0.99]",
+                  "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,box-shadow,transform] duration-150 active:scale-[0.99]",
                   active()
-                    ? "bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]"
+                    ? "bg-[color-mix(in_srgb,var(--relay-accent)_11%,var(--relay-panel))] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_12%,transparent)]"
                     : "hover:bg-[var(--relay-surface-raised)]",
                   node.state === "planned" && !active() && "opacity-55",
                 )}
@@ -2640,7 +2599,7 @@ function RunStepList(props: {
               >
                 <span
                   class={cn(
-                    "relative z-[1] grid size-[30px] place-items-center rounded-full border bg-[var(--relay-panel)] font-mono text-[10.5px] font-semibold tabular-nums",
+                    "relative z-[1] grid size-8 place-items-center rounded-full border bg-[var(--relay-panel)] font-mono text-[11px] font-semibold tabular-nums",
                     active()
                       ? "border-[var(--relay-accent)] text-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_12%,transparent)]"
                       : node.state === "failed"
@@ -2650,16 +2609,16 @@ function RunStepList(props: {
                 >
                   {node.index + 1}
                 </span>
-                <span class="min-w-0">
-                  <span class="flex items-center gap-1.5 text-[9.5px] font-semibold tracking-[0.06em] text-text-weaker uppercase">
+                <span class="min-w-0 pr-2">
+                  <span class="flex items-center gap-1.5 text-[9.5px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
                     <Icon name={kind() ? kindIcon(kind()!) : "bolt"} size={10} />
                     {kind() ? kindLabel(kind()!) : "Step"}
                   </span>
-                  <strong class="mt-0.5 block truncate text-[12.5px]/[1.35] font-medium text-text-base">
+                  <strong class="mt-1 block truncate text-[13px]/[1.35] font-medium tracking-[-0.005em] text-text-base">
                     {node.title}
                   </strong>
                 </span>
-                <span class="grid shrink-0 justify-items-end gap-0.5 font-mono text-[9.5px] tabular-nums text-text-weaker">
+                <span class="grid shrink-0 justify-items-end gap-1 font-mono text-[10px] tabular-nums text-text-weaker">
                   <Show when={node.durationMs}>{formatStepDuration(node.durationMs!)}</Show>
                   <i class={cn("size-1.5 rounded-full", runStateDot(node.state))} />
                 </span>
@@ -2801,33 +2760,49 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
                 ? "Needs attention"
                 : titleize(props.job.status);
   const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
+  const passed = () => props.job.status === "ok" || props.job.status === "healed";
+  const active = () => ["queued", "running", "paused"].includes(props.job.status);
   return (
     <button
       type="button"
       class={cn(
-        "grid min-h-[64px] w-full grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base px-4 text-left text-[12px]/[1.35] text-text-weak transition-[background-color,transform] duration-150 last:border-b-0 hover:bg-surface-base-hover active:scale-[0.997] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus max-[900px]:grid-cols-[minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] [&>span]:min-w-0 [&>span]:truncate",
-        props.selected && "bg-surface-base-active",
+        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_7px_20px_rgb(0_0_0/7%)] transition-[background-color,border-color,transform,box-shadow] duration-150 last:mb-0 hover:-translate-y-px hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)] hover:shadow-[0_11px_28px_rgb(0_0_0/13%)] active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+        props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}
       onClick={props.onOpen}
     >
+      <span
+        class={cn(
+          "grid size-9 place-items-center rounded-[10px]",
+          passed() && "bg-surface-success-weak text-icon-success-base",
+          active() && "bg-surface-info-weak text-icon-info-base",
+          !passed() && !active() && "bg-surface-critical-weak text-icon-critical-base",
+        )}
+        aria-hidden="true"
+      >
+        <Icon name={passed() ? "check" : active() ? "play" : "alert"} size={16} />
+      </span>
       <span class="min-w-0">
         <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
           {recipe()?.title ?? props.job.action}
         </strong>
-        <span class="mt-1.5 flex items-center gap-1.5 text-text-weaker" aria-hidden="true">
+        <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-weaker">
+          <span
+            class={cn(
+              "font-medium",
+              passed() && "text-text-success-base",
+              !passed() && !active() && "text-text-critical-base",
+            )}
+          >
+            {status()}
+          </span>
+          <span class="opacity-50">·</span>
           <span class="text-[10px]">
             {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
           </span>
-          <Show when={glyphSteps().length > 1}>
-            <span class="opacity-50">·</span>
-            <For each={glyphSteps().slice(0, 6)}>
-              {(step) => <Icon name={kindIcon(step.kind)} size={10} strokeWidth={1.75} />}
-            </For>
-            <Show when={glyphSteps().length > 6}>
-              <i class="font-mono text-[9px] not-italic">+{glyphSteps().length - 6}</i>
-            </Show>
-          </Show>
+          <span class="opacity-50">·</span>
+          <span class="max-w-[220px] truncate">{targetName()}</span>
           <Show when={props.job.appVersion}>
             <i class="font-mono text-[9px] not-italic">· build {props.job.appVersion}</i>
           </Show>
@@ -2838,13 +2813,18 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
           </Show>
         </span>
       </span>
-      <span class={productStatus(String(props.job.status))}>{status()}</span>
-      <span class="max-[900px]:hidden">{targetName()}</span>
-      <span class="font-mono text-[11px] tabular-nums">
-        {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
-      </span>
-      <span class="font-mono text-[11px] tabular-nums">
-        {fmtDur(props.job, server.clock()) || "—"}
+      <span class="grid justify-items-end gap-1.5">
+        <span class="font-mono text-[11px] tabular-nums text-text-base">
+          {fmtDur(props.job, server.clock()) || "—"}
+        </span>
+        <span class="inline-flex items-center gap-1.5 text-[10.5px] text-text-weaker">
+          {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
+          <Icon
+            name="chevron-right"
+            size={13}
+            class="transition-transform group-hover:translate-x-0.5"
+          />
+        </span>
       </span>
     </button>
   );
@@ -2857,22 +2837,18 @@ function Metric(props: {
   tone?: "success" | "danger";
 }) {
   return (
-    <div class="grid min-w-0 grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-0.5 px-4 py-3.5">
-      <span class="col-start-2 row-start-1 text-[12px]/[1.25] font-medium text-text-weak">
-        {props.label}
-      </span>
+    <div class="grid min-w-0 gap-1 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 py-3 shadow-[0_6px_18px_rgb(0_0_0/6%)]">
       <strong
         class={cn(
-          "col-start-1 row-span-2 row-start-1 self-center font-mono text-[26px]/none font-semibold tracking-[-0.04em] tabular-nums text-text-strong",
+          "font-mono text-[22px]/none font-semibold tracking-[-0.04em] tabular-nums text-text-strong",
           props.tone === "success" && "text-text-success-base",
           props.tone === "danger" && "text-text-critical-base",
         )}
       >
         {props.value}
       </strong>
-      <small class="col-start-2 row-start-2 text-[11px]/[1.25] text-text-weaker">
-        {props.detail}
-      </small>
+      <span class="text-[11.5px]/[1.25] font-medium text-text-base">{props.label}</span>
+      <small class="text-[10px]/[1.25] text-text-weaker">{props.detail}</small>
     </div>
   );
 }
@@ -2907,41 +2883,34 @@ function FlowParametersEditor() {
   const label = "grid min-w-0 gap-1 text-[10px] text-[var(--relay-text-tertiary)]";
 
   return (
-    <div class="grid gap-3.5 p-4">
+    <div class="grid gap-3.5">
       <header class="flex items-center justify-between gap-4 max-sm:grid max-sm:grid-cols-1">
-        <div class="grid min-w-0 gap-0.5">
-          <span class={eyebrow}>Reusable flow</span>
-          <h3 class="m-0 text-[16px] leading-[1.2] tracking-[-0.01em] text-[var(--relay-text)]">
+        <div class="grid min-w-0 gap-1">
+          <h3 class="m-0 text-[15px] font-semibold leading-[1.2] tracking-[-0.01em] text-[var(--relay-text)]">
             Inputs
           </h3>
-          <p class="m-0 max-w-[34rem] text-[11px]/[1.5] text-[var(--relay-text-secondary)]">
-            Optional values callers can provide when they use this flow, such as{" "}
-            <code class="font-mono text-[var(--text-interactive-base)]">{"{{login_email}}"}</code>.
+          <p class="m-0 max-w-[34rem] text-[10.5px]/[1.45] text-[var(--relay-text-tertiary)]">
+            Values a caller supplies when reusing this flow.
           </p>
         </div>
         <button
           type="button"
-          class={cn(productSecondary, "shrink-0 whitespace-nowrap")}
+          class={cn(productSecondary, "min-h-8 shrink-0 whitespace-nowrap px-2.5 text-[11px]")}
           onClick={add}
         >
-          <Icon name="plus" size={14} /> Add input
+          <Icon name="plus" size={13} /> Add input
         </button>
       </header>
       <Show
         when={draft.parameters().length > 0}
         fallback={
-          <div class="flex items-center gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_48%,transparent)] px-3.5 py-3 text-[var(--relay-text-tertiary)]">
-            <span
-              class="grid size-7 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-green)_12%,transparent)] text-[var(--relay-green)]"
-              aria-hidden="true"
-            >
-              <Icon name="check" size={16} />
-            </span>
-            <div class="grid min-w-0 gap-0.5">
-              <strong class="text-[12px] text-[var(--relay-text-secondary)]">No inputs yet</strong>
-              <span class="text-[11px]/[1.45]">
-                This flow is ready to attach. Add an input only when a caller needs to provide a
-                value.
+          <div class="grid min-h-24 place-items-center border-y border-dashed border-[var(--relay-line)] px-4 py-5 text-center">
+            <div>
+              <strong class="block text-[11.5px] font-medium text-[var(--relay-text-secondary)]">
+                No caller inputs
+              </strong>
+              <span class="mt-1 block text-[10px] text-[var(--relay-text-tertiary)]">
+                This flow runs with its recorded values.
               </span>
             </div>
           </div>
@@ -2950,7 +2919,7 @@ function FlowParametersEditor() {
         <div class="grid gap-2">
           <Index each={draft.parameters()}>
             {(parameter, index) => (
-              <article class="grid gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_55%,transparent)] p-[11px]">
+              <article class="grid gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-surface-raised-stronger-non-alpha p-[11px]">
                 <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_28px] items-end gap-2 max-sm:grid-cols-1">
                   <label class={label}>
                     <span>Variable name</span>

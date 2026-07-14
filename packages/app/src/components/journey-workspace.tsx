@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { JourneyMetadata, Revisioned } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { useServer, type RecipeStep } from "../context/server";
+import { useServer, type RecipeStep, type RecordedStepEvidence } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
@@ -16,7 +16,7 @@ type EdgeStyle = "flow" | "branch" | "failure";
 type EdgeConfig = { label: string; style: EdgeStyle };
 
 const JOURNEY_NODE_WIDTH = 252;
-const JOURNEY_NODE_PORT_Y = 92;
+const JOURNEY_NODE_PORT_Y = 121;
 
 const boardChrome =
   "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
@@ -68,6 +68,9 @@ function PlannedJourney() {
       x: index * 342,
       y: index % 2 === 0 ? 0 : 58,
     })),
+  );
+  const evidenceCount = createMemo(
+    () => nodes().filter((node) => evidenceForStep(node.step)?.screenshot).length,
   );
   const width = () => Math.max(620, nodes().length * 342 + 252);
   const defaultEdge = (index: number): EdgeConfig => {
@@ -144,7 +147,7 @@ function PlannedJourney() {
 
   return (
     <section
-      class="!absolute inset-0 cursor-grab touch-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--relay-text)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
+      class="!absolute inset-0 cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--relay-text)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
       aria-label="Planned test journey"
       onWheel={(event) => {
         if (!event.ctrlKey && !event.metaKey) return;
@@ -152,7 +155,9 @@ function PlannedJourney() {
         zoom(event.deltaY > 0 ? -0.08 : 0.08);
       }}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest("button")) return;
+        if (event.button !== 0 || (event.target as HTMLElement).closest("button, input, select"))
+          return;
+        event.preventDefault();
         const current = view();
         drag = { x: event.clientX, y: event.clientY, vx: current.x, vy: current.y };
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -168,6 +173,12 @@ function PlannedJourney() {
       onPointerUp={() => {
         drag = null;
       }}
+      onPointerCancel={() => {
+        drag = null;
+      }}
+      onLostPointerCapture={() => {
+        drag = null;
+      }}
     >
       <div
         class={cn(
@@ -177,10 +188,10 @@ function PlannedJourney() {
       >
         <span class="inline-flex items-center gap-1.5 font-semibold">
           <i class="size-1.5 rounded-full bg-[var(--relay-accent)] shadow-[0_0_9px_color-mix(in_srgb,var(--relay-accent)_65%,transparent)]" />
-          Planned flow
+          {evidenceCount() > 0 ? "Recorded flow" : "Draft flow"}
         </span>
         <b class="border-l border-[var(--relay-line)] pl-2.5 font-mono text-[9px] font-normal text-[var(--relay-text-tertiary)]">
-          {nodes().length} action{nodes().length === 1 ? "" : "s"}
+          {evidenceCount()}/{nodes().length} captured
         </b>
       </div>
       <div class={cn(boardChrome, "right-3.5 gap-0.5 border-0 p-1")}>
@@ -332,7 +343,7 @@ function PlannedJourney() {
                 <div
                   role="button"
                   tabIndex={0}
-                  class="group absolute top-0 left-0 w-[252px] origin-top-left cursor-pointer rounded-[20px] p-0 text-left outline-none"
+                  class="group absolute top-0 left-0 w-[252px] origin-top-left cursor-pointer select-none rounded-[20px] p-0 text-left outline-none"
                   style={{
                     transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
                     "--journey-node-accent": accentForStep(node.step),
@@ -347,36 +358,42 @@ function PlannedJourney() {
                   <JourneyPlanCard step={node.step} index={node.index} active={active()} />
                   <Show when={node.index > 0}>
                     <div
-                      class="absolute top-[87px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      class="absolute top-[116px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
                       aria-hidden="true"
                     />
                   </Show>
                   <Show when={node.index < nodes().length - 1}>
                     <div
-                      class="absolute top-[87px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      class="absolute top-[116px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
                       aria-hidden="true"
                     />
                   </Show>
-                  <button
-                    type="button"
-                    class="absolute top-[77px] right-[-59px] z-[4] grid size-[30px] scale-95 place-items-center rounded-full border border-[color-mix(in_srgb,var(--relay-accent)_52%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-accent)_88%,#171a22)] text-white opacity-0 shadow-[0_8px_24px_rgb(0_0_0/35%),0_0_0_4px_rgb(11_13_18/88%)] transition-[opacity,transform,background-color] duration-150 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 hover:bg-[var(--surface-brand-base-hover)] active:scale-90"
-                    aria-label={`Add step after ${node.index + 1}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      setAddMenu({
-                        at: node.index + 1,
-                        anchor: {
-                          left: rect.left,
-                          top: rect.top,
-                          bottom: rect.bottom,
-                          width: rect.width,
-                        },
-                      });
-                    }}
-                  >
-                    <Icon name="plus" size={15} />
-                  </button>
+                  <div class="pointer-events-none absolute top-[88px] right-[-76px] z-[4] flex h-[66px] w-[86px] items-center justify-end opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                    <span
+                      class="absolute inset-0 [clip-path:polygon(0_28%,100%_0,100%_100%,0_72%)]"
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      class="relative mr-1.5 grid size-9 place-items-center rounded-full border border-white/15 bg-[#6f5bf3] text-white shadow-[0_10px_28px_rgb(0_0_0/45%),0_0_0_5px_#10131a] transition-[transform,background-color] duration-150 hover:scale-105 hover:bg-[#806df8] active:scale-90"
+                      aria-label={`Add step after ${node.index + 1}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setAddMenu({
+                          at: node.index + 1,
+                          anchor: {
+                            left: rect.left,
+                            top: rect.top,
+                            bottom: rect.bottom,
+                            width: rect.width,
+                          },
+                        });
+                      }}
+                    >
+                      <Icon name="plus" size={16} />
+                    </button>
+                  </div>
                 </div>
               );
             }}
@@ -403,11 +420,16 @@ function PlannedJourney() {
 
 export function JourneyPlanCard(props: { step: RecipeStep; index: number; active?: boolean }) {
   const server = useServer();
+  const evidence = createMemo(() => evidenceForStep(props.step));
+  const screenshot = createMemo(() => {
+    const shot = evidence()?.screenshot;
+    return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
+  });
   return (
     <div
       class={cn(
-        "relative grid h-[184px] grid-rows-[38px_minmax(0,1fr)_38px] overflow-hidden rounded-[15px] border border-[var(--relay-line-strong)] shadow-[0_12px_32px_rgb(0_0_0/20%)] transition-[border-color,box-shadow,transform] duration-150",
-        "bg-[radial-gradient(circle_at_14%_0%,color-mix(in_srgb,var(--journey-node-accent)_12%,transparent),transparent_42%),color-mix(in_srgb,var(--relay-panel)_92%,var(--relay-surface-raised))]",
+        "relative grid h-[242px] grid-rows-[38px_minmax(0,1fr)_38px] overflow-hidden rounded-[15px] border border-[var(--relay-line-strong)] shadow-[0_12px_32px_rgb(0_0_0/20%)] transition-[border-color,box-shadow,transform] duration-150",
+        "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
           "-translate-y-0.5 border-[color-mix(in_srgb,var(--journey-node-accent)_62%,white_8%)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--journey-node-accent)_12%,transparent),0_18px_48px_rgb(0_0_0/30%)]",
@@ -423,28 +445,61 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
         </span>
         <Icon name="more" size={14} />
       </header>
-      <div class="grid min-w-0 grid-cols-[42px_minmax(0,1fr)] items-center gap-3 p-3.5">
-        <span class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
-          <Icon name={iconForStep(props.step)} size={20} />
-        </span>
-        <div class="min-w-0">
-          <small class="mb-1 block text-[10px] font-semibold tracking-[0.07em] text-[var(--relay-text-tertiary)] uppercase">
-            {actionForStep(props.step)}
-          </small>
-          <strong class="line-clamp-2 block text-[14px]/[1.35] font-semibold tracking-[-0.012em] text-[var(--relay-text)]">
-            {sentenceForStep(props.step, server.recipes())}
-          </strong>
-        </div>
-      </div>
+      <Show
+        when={screenshot()}
+        fallback={
+          <div class="grid min-w-0 place-items-center p-4 text-center">
+            <span class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
+              <Icon name={iconForStep(props.step)} size={20} />
+            </span>
+            <div class="mt-2.5 min-w-0">
+              <small class="mb-1 block text-[9px] font-semibold tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                Capture required
+              </small>
+              <strong class="line-clamp-2 block text-[14px]/[1.35] font-semibold tracking-[-0.012em] text-[var(--relay-text)]">
+                {sentenceForStep(props.step, server.recipes())}
+              </strong>
+            </div>
+          </div>
+        }
+      >
+        {(src) => (
+          <div class="relative min-h-0 overflow-hidden bg-[#080a0f]">
+            <img
+              src={src()}
+              alt={`Device evidence for step ${props.index + 1}`}
+              draggable={false}
+              class="size-full select-none object-cover object-top"
+            />
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pt-8 pb-2.5">
+              <small class="mb-0.5 block text-[9px] font-semibold tracking-[0.08em] text-white/65 uppercase">
+                {actionForStep(props.step)}
+              </small>
+              <strong class="line-clamp-1 block text-[13px] font-semibold text-white">
+                {sentenceForStep(props.step, server.recipes())}
+              </strong>
+            </div>
+          </div>
+        )}
+      </Show>
       <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--relay-line)_72%,transparent)] px-3 text-[var(--relay-text-tertiary)]">
         <span class="inline-flex items-center gap-1.5 text-[10px]">
-          <i class="size-1.5 rounded-full bg-[var(--relay-line-strong)]" />
-          Evidence after run
+          <i
+            class={cn(
+              "size-1.5 rounded-full",
+              screenshot() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
+            )}
+          />
+          {screenshot() ? "Captured on device" : "Capture before editing"}
         </span>
         <Icon name="chevron-right" size={13} />
       </footer>
     </div>
   );
+}
+
+export function evidenceForStep(step: RecipeStep): RecordedStepEvidence | undefined {
+  return "evidence" in step ? step.evidence : undefined;
 }
 
 export function accentForStep(step: RecipeStep): string {

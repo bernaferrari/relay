@@ -35,7 +35,7 @@ const moreItemCls = cn(
 );
 const editorPanel = cn(
   "flex w-full min-w-0 flex-col gap-2.5 overflow-hidden border-t border-border-weak-base",
-  "bg-background-base px-3.5 py-3 pl-3.5",
+  "bg-[color-mix(in_srgb,var(--relay-bg)_64%,var(--relay-panel))] px-3.5 py-3 pl-3.5",
 );
 
 function isTargetKind(
@@ -200,7 +200,7 @@ export function StepRow(props: {
   flash: Accessor<boolean>;
   autofocus: Accessor<boolean>;
   onAutofocused: () => void;
-  /** Row body: select / second-click toggles editor. */
+  /** Row body: focus this step without opening its editor. */
   onRowActivate: () => void;
   /** Chevron: always open/close editor for this step. */
   onEditToggle: () => void;
@@ -309,16 +309,16 @@ export function StepRow(props: {
     <div
       class={cn(
         // Flat, spacious rows — hierarchy from type and tint, not card borders.
-        "group/session relative w-full min-w-0 rounded-xl transition-colors duration-100",
+        "group/session relative w-full min-w-0 overflow-hidden rounded-[11px] transition-[background-color,box-shadow] duration-150",
         "hover:bg-white/[0.03] [&:has(:focus-visible)]:bg-white/[0.03]",
         selected() &&
-          "bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)] hover:bg-[color-mix(in_srgb,var(--relay-accent)_11%,transparent)]",
+          "bg-[color-mix(in_srgb,var(--relay-accent)_8%,var(--relay-panel))] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_14%,var(--relay-line))] hover:bg-[color-mix(in_srgb,var(--relay-accent)_10%,var(--relay-panel))]",
         !selected() &&
           props.expanded() &&
-          "bg-[var(--relay-panel)] ring-1 ring-[var(--relay-line)]",
+          "bg-[var(--relay-panel)] shadow-[inset_0_0_0_1px_var(--relay-line)]",
         selected() &&
           props.expanded() &&
-          "ring-1 ring-[color-mix(in_srgb,var(--relay-accent)_35%,transparent)]",
+          "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_22%,var(--relay-line))]",
         props.flash() && "bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]",
       )}
       data-selected={selected() ? "true" : undefined}
@@ -327,16 +327,16 @@ export function StepRow(props: {
       <div class="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-1 pr-2">
         <button
           type="button"
-          class="grid min-w-0 cursor-pointer grid-cols-[34px_minmax(0,1fr)] items-start gap-3.5 rounded-xl px-3.5 py-3.5 text-left outline-none focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
+          class="grid min-w-0 cursor-pointer grid-cols-[30px_minmax(0,1fr)] items-start gap-3 rounded-[11px] px-3 py-3 text-left outline-none focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
           aria-current={selected() ? "step" : undefined}
           aria-expanded={props.expanded()}
           onClick={props.onRowActivate}
         >
           <span
             class={cn(
-              "grid size-[34px] place-items-center rounded-[10px] font-mono text-[14px] font-medium tabular-nums transition-colors",
+              "grid size-[30px] place-items-center rounded-[9px] font-mono text-[12px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-150",
               selected()
-                ? "bg-[var(--relay-accent)] text-white shadow-[0_5px_16px_color-mix(in_srgb,var(--relay-accent)_40%,transparent)]"
+                ? "bg-[color-mix(in_srgb,var(--relay-accent)_16%,transparent)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_30%,transparent)]"
                 : "text-[var(--relay-text-secondary)] ring-1 ring-inset ring-[var(--relay-line-strong)]",
             )}
           >
@@ -359,7 +359,7 @@ export function StepRow(props: {
                 <StepAnno anno={anno} />
               </span>
             </div>
-            <span class="mt-2 block w-full min-w-0 truncate text-[15px]/[1.4] font-medium tracking-[-0.005em] text-[var(--relay-text)]">
+            <span class="mt-1.5 block w-full min-w-0 truncate text-[14px]/[1.4] font-medium tracking-[-0.005em] text-[var(--relay-text)]">
               {stepDetail(props.step(), server.recipes())}
             </span>
             <Show when={issue() && !props.expanded()}>

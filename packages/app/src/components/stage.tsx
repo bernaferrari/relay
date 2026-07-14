@@ -20,7 +20,7 @@ import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
-import { presentTarget } from "../lib/target-presentation";
+import { evidenceForStep } from "./journey-workspace";
 import {
   deviceBody,
   deviceIconWell,
@@ -54,6 +54,16 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
   });
   const frame = () =>
     rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
+  const recordedEvidenceSrc = createMemo(() => {
+    const index = wb.focusedIndex();
+    const step = index == null ? undefined : draft.steps()[index];
+    const shot = step ? evidenceForStep(step)?.screenshot : undefined;
+    return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
+  });
+  const displayImageSrc = createMemo(() => {
+    const current = frame();
+    return current ? `data:${current.mime};base64,${current.base64}` : recordedEvidenceSrc();
+  });
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   // transient tap feedback (positioned in % of the glass)
   const [tapFeedback, setTapFeedback] = createSignal<{ x: number; y: number } | null>(null);
@@ -419,58 +429,26 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           />
         }
       >
-        {/* device identity + live/rec affordances — floats above the bezel */}
-        <div class="z-[2] mb-3 flex flex-none items-center gap-2">
-          <Show when={currentDevice()}>
-            {(d) => (
-              <div
-                class="inline-flex h-7 max-w-[min(100%,360px)] items-center gap-1.5 rounded-full bg-surface-raised-stronger-non-alpha px-2.5 text-12-medium text-text-base ring-1 ring-inset ring-border-weak-base tabular-nums shadow-sm"
-                data-tip={`${presentTarget(d()).platformLabel} target`}
-              >
+        {/* Transient mode only; target identity already lives in the app toolbar. */}
+        <Show when={rec.interacting()}>
+          <div class="z-[2] mb-3 flex flex-none items-center gap-2">
+            <Show when={rec.recording()}>
+              <span class="inline-flex h-5 items-center gap-1 rounded-md bg-surface-critical-weak px-1.5 text-12-medium text-icon-critical-base ring-1 ring-inset ring-border-critical-base/30">
                 <span
-                  class={cn(
-                    "size-1.5 flex-none rounded-full",
-                    rec.recording()
-                      ? "animate-pulse bg-icon-critical-base"
-                      : d().booted === false
-                        ? "bg-icon-warning-base"
-                        : rec.interacting()
-                          ? "bg-icon-success-base shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-success-base)_28%,transparent)]"
-                          : "bg-icon-success-base",
-                  )}
+                  class="size-1 animate-pulse rounded-full bg-icon-critical-base"
                   aria-hidden="true"
                 />
-                <span class="min-w-0 truncate">{presentTarget(d()).displayName}</span>
-                <span
-                  class={cn(
-                    "shrink-0 rounded-full px-1.5 py-0.5 text-[10px]/[1.2] font-semibold",
-                    d().booted === false
-                      ? "bg-surface-warning-base text-text-on-warning-base"
-                      : "bg-surface-success-weak text-icon-success-base",
-                  )}
-                >
-                  {presentTarget(d()).statusLabel}
-                </span>
-              </div>
-            )}
-          </Show>
-          {/* Quiet status tags — soft tint, no uppercase shout */}
-          <Show when={rec.recording()}>
-            <span class="inline-flex h-5 items-center gap-1 rounded-md bg-surface-critical-weak px-1.5 text-12-medium text-icon-critical-base ring-1 ring-inset ring-border-critical-base/30">
-              <span
-                class="size-1 animate-pulse rounded-full bg-icon-critical-base"
-                aria-hidden="true"
-              />
-              Recording
-            </span>
-          </Show>
-          <Show when={rec.interacting() && !rec.recording()}>
-            <span class="inline-flex h-5 items-center gap-1 rounded-md bg-surface-success-weak px-1.5 text-12-medium text-icon-success-base ring-1 ring-inset ring-border-success-base/30">
-              <span class="size-1 rounded-full bg-icon-success-base" aria-hidden="true" />
-              Live
-            </span>
-          </Show>
-        </div>
+                Recording
+              </span>
+            </Show>
+            <Show when={rec.interacting() && !rec.recording()}>
+              <span class="inline-flex h-5 items-center gap-1 rounded-md bg-surface-success-weak px-1.5 text-12-medium text-icon-success-base ring-1 ring-inset ring-border-success-base/30">
+                <span class="size-1 rounded-full bg-icon-success-base" aria-hidden="true" />
+                Live
+              </span>
+            </Show>
+          </div>
+        </Show>
 
         <div
           data-device-chrome
@@ -478,18 +456,19 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
             phoneShell,
             "relative z-[2] h-[min(720px,calc(100%-64px))] w-auto max-w-[min(420px,calc(100%-56px))] shrink-0",
           )}
-          data-empty={!frame() ? "1" : "0"}
+          data-empty={!displayImageSrc() ? "1" : "0"}
           style={{ "aspect-ratio": frameAspect() }}
         >
           <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[18px]")}>
-            <Show when={frame()}>
+            <Show when={displayImageSrc()}>
               <img
                 class={cn(
                   "block h-full w-full select-none object-contain",
                   rec.interacting() && "cursor-crosshair",
                 )}
-                alt={frame()!.caption ?? "device frame"}
-                src={`data:${frame()!.mime};base64,${frame()!.base64}`}
+                alt={frame()?.caption ?? "recorded device evidence"}
+                src={displayImageSrc()}
+                draggable={false}
                 onLoad={(e) => {
                   const img = e.currentTarget;
                   if (img.naturalWidth && img.naturalHeight) {
@@ -498,7 +477,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 }}
                 onPointerDown={(e) => {
                   // View mode is inert; only the primary button starts a gesture.
-                  if (!rec.interacting() || e.button !== 0) return;
+                  if (!frame() || !rec.interacting() || e.button !== 0) return;
                   const r = e.currentTarget.getBoundingClientRect();
                   down = {
                     fx: (e.clientX - r.left) / r.width,
@@ -508,7 +487,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                   e.currentTarget.setPointerCapture(e.pointerId);
                 }}
                 onPointerUp={(e) => {
-                  if (!rec.interacting()) return;
+                  if (!frame() || !rec.interacting()) return;
                   const start = down;
                   down = null;
                   if (!start || e.button !== 0) return;
@@ -545,11 +524,13 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 }}
                 onContextMenu={(e) => {
                   // Right-click = deliberate inspection / strategy selection.
-                  if (!rec.interacting()) return;
+                  if (!frame() || !rec.interacting()) return;
                   e.preventDefault();
                   openPickerAt(e.currentTarget, e.clientX, e.clientY);
                 }}
-                onMouseMove={(e) => scheduleHover(e.currentTarget, e.clientX, e.clientY)}
+                onMouseMove={(e) => {
+                  if (frame()) scheduleHover(e.currentTarget, e.clientX, e.clientY);
+                }}
                 onMouseLeave={() => clearHover()}
               />
               <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
@@ -601,35 +582,33 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               </Show>
             </Show>
             {/* No frame yet: step-focused glass (Uber energy) */}
-            <Show when={!frame() && focusedStep()}>
+            <Show when={!displayImageSrc() && focusedStep()}>
               {(s) => (
-                <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center gap-2.5 p-7 text-center">
-                  <span
-                    class={cn(
-                      mono,
-                      "text-12-regular font-bold tracking-[0.1em] uppercase",
-                      deviceBody,
-                    )}
-                  >
-                    Step {s().index + 1}
-                  </span>
-                  <p
-                    class={cn(
-                      "m-0 max-w-[13em] text-14-medium leading-snug tracking-tight",
-                      deviceTitle,
-                    )}
-                  >
-                    {s().title}
-                  </p>
-                  <p class={cn("m-0 text-12-regular leading-relaxed", deviceBody)}>
-                    {rec.interacting()
-                      ? "Drive the phone or Run the test"
-                      : "Run the test to capture this screen"}
-                  </p>
+                <div class="absolute inset-0 z-[1] overflow-hidden [background:linear-gradient(160deg,#111520,#090b10_72%)]">
+                  <div class="absolute inset-x-5 top-7 grid gap-3 opacity-70" aria-hidden="true">
+                    <span class="h-2 w-[38%] rounded-full bg-white/10" />
+                    <span class="h-2 w-[70%] rounded-full bg-white/[0.06]" />
+                    <span class="h-20 rounded-[14px] border border-white/[0.06] bg-white/[0.035]" />
+                    <span class="h-10 rounded-[11px] bg-[linear-gradient(135deg,rgb(126_101_255/24%),rgb(100_84_233/14%))]" />
+                    <span class="h-10 rounded-[11px] bg-white/[0.035]" />
+                  </div>
+                  <div class="absolute right-3 bottom-3 left-3 flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-[#121620] px-3 py-2.5 text-left shadow-[0_10px_30px_rgb(0_0_0/30%)]">
+                    <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/65">
+                      <Icon name="camera" size={14} />
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <strong class="block text-[10.5px] font-medium text-white/80">
+                        Waiting for device capture
+                      </strong>
+                      <small class="mt-0.5 block truncate text-[9px] text-white/40">
+                        Step {s().index + 1} · {s().title}
+                      </small>
+                    </span>
+                  </div>
                 </div>
               )}
             </Show>
-            <Show when={!frame() && !focusedStep()}>
+            <Show when={!displayImageSrc() && !focusedStep()}>
               <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center p-7 text-center">
                 <div
                   class="relative mb-4 grid h-24 w-16 place-items-center overflow-hidden rounded-[14px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-line)_50%,transparent)]"
@@ -662,7 +641,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               </div>
             </Show>
             {/* Selected step chip over live frame */}
-            <Show when={frame() && focusedStep()}>
+            <Show when={displayImageSrc() ? focusedStep() : null}>
               {(s) => (
                 <div
                   class={cn(

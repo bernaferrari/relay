@@ -101,7 +101,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
   });
 
   return (
-    <div class="relative z-30" data-device-picker>
+    <div class="relative z-[80]" data-device-picker>
       <button
         ref={(element) => (trigger = element)}
         type="button"
@@ -141,7 +141,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
         <div
           ref={(element) => (dialog = element)}
           id="target-picker-dialog"
-          class="ui-pop absolute top-[calc(100%+8px)] right-0 z-40 flex max-h-[min(600px,calc(100vh-82px))] w-[340px] origin-top-right flex-col overflow-hidden rounded-[14px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha text-[var(--relay-text)] shadow-[var(--v2-elevation-overlay)]"
+          class="ui-pop absolute top-[calc(100%+8px)] right-0 z-[90] flex max-h-[min(600px,calc(100vh-82px))] w-[340px] origin-top-right flex-col overflow-hidden rounded-[14px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha text-[var(--relay-text)] shadow-[var(--v2-elevation-overlay)]"
           role="dialog"
           aria-labelledby="target-picker-title"
           onKeyDown={(event) => {
