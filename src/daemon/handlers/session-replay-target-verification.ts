@@ -135,15 +135,24 @@ function buildTargetBindingDivergenceResponse(
     targetEvidence: recorded,
     capture: built.repairCapture,
   });
+  // Fetched before the resume so its existence can gate the empty-tail
+  // `alternateFrom` (the watermark stamped below needs a live session).
+  const session = sessionStore.get(sessionName);
   const resume = buildReplayDivergenceResume({
     failedIndex: step,
     actions: planActions,
     planDigest,
     repairHint,
+    sessionExists: session !== undefined,
   });
-  const session = sessionStore.get(sessionName);
   if (session) {
-    stampPendingRecordAndHealWatermark({ session, resume, repairHint });
+    stampPendingRecordAndHealWatermark({
+      session,
+      resume,
+      repairHint,
+      failedIndex: step,
+      actions: planActions,
+    });
     sessionStore.set(sessionName, session);
   }
 

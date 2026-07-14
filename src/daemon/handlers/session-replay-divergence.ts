@@ -124,9 +124,18 @@ export async function buildReplayFailureDivergence(params: {
     actions: planActions,
     planDigest,
     repairHint,
+    // A live session is required to stamp the empty-tail watermark below, so it
+    // gates whether the one-past-the-end `alternateFrom` may be advertised.
+    sessionExists: session !== undefined,
   });
   if (session) {
-    stampPendingRecordAndHealWatermark({ session, resume, repairHint });
+    stampPendingRecordAndHealWatermark({
+      session,
+      resume,
+      repairHint,
+      failedIndex: index + 1,
+      actions: planActions,
+    });
     sessionStore.set(sessionName, session);
   }
 
