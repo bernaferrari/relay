@@ -17,7 +17,10 @@ import {
 } from '../../selectors/index.ts';
 import { collectReplaySelectorCandidates } from './session-replay-heal.ts';
 import { collectSettleChromeRefs } from '../../core/snapshot-chrome.ts';
-import { buildReplayDivergenceResume } from './session-replay-resume.ts';
+import {
+  buildReplayDivergenceResume,
+  stampPendingRecordAndHealWatermark,
+} from './session-replay-resume.ts';
 import { formatDivergenceActionLabel, isTouchTargetCommand } from '../../replay/script-utils.ts';
 import {
   computeReplayRepairHint,
@@ -106,6 +109,27 @@ export async function buildReplayFailureDivergence(params: {
         })
       : [];
 
+  // ADR 0012 decision 6, R3: `action-failure`'s capture is the POST-response
+  // tree (this is the dispatch-thrown path) — the same one the container
+  // test needs. Computed before `resume` so its `from` ordinal (decision 6,
+  // R2: `record-and-heal` resumes at failedIndex + 1) agrees with the hint.
+  const repairHint = computeReplayRepairHint({
+    kind: 'action-failure',
+    targetEvidence: action.targetEvidence,
+    capture: toReplayRepairHintCapture(observation),
+  });
+
+  const resume = buildReplayDivergenceResume({
+    failedIndex: index + 1,
+    actions: planActions,
+    planDigest,
+    repairHint,
+  });
+  if (session) {
+    stampPendingRecordAndHealWatermark({ session, resume, repairHint });
+    sessionStore.set(sessionName, session);
+  }
+
   const divergence: ReplayDivergence = {
     version: 1,
     kind: 'action-failure',
@@ -118,19 +142,8 @@ export async function buildReplayFailureDivergence(params: {
     screen,
     suggestions: suggestions.slice(0, REPLAY_DIVERGENCE_SUGGESTION_LIMIT),
     suggestionCount: suggestions.length,
-    resume: buildReplayDivergenceResume({
-      failedIndex: index + 1,
-      actions: planActions,
-      planDigest,
-    }),
-    // ADR 0012 decision 6, R3: `action-failure`'s capture is the POST-response
-    // tree (this is the dispatch-thrown path) — the same one the container
-    // test needs.
-    repairHint: computeReplayRepairHint({
-      kind: 'action-failure',
-      targetEvidence: action.targetEvidence,
-      capture: toReplayRepairHintCapture(observation),
-    }),
+    resume,
+    repairHint,
   };
 
   return boundReplayDivergenceForSession({ sessionStore, sessionName, divergence, responseLevel });
