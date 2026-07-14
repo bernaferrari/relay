@@ -1,4 +1,13 @@
-import { For, Index, Show, createEffect, createMemo, createSignal } from "solid-js";
+import {
+  For,
+  Index,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  lazy,
+  onCleanup,
+} from "solid-js";
 import type { MatrixExpansion } from "@relay/protocol";
 import {
   useServer,
@@ -16,9 +25,7 @@ import { JourneyInspector, JourneyOutline } from "./journey-chrome";
 import { DevicePicker } from "./device-picker";
 import { LibraryPanel } from "./studio-library";
 import { AgentTestComposer } from "./agent-test-composer";
-import { DataWorkspace } from "./workspaces/data-workspace";
-import { MapsWorkspace } from "./workspaces/maps-workspace";
-import { RunSummary } from "./run-summary";
+import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, displayTitle, titleize } from "../lib/job";
@@ -76,10 +83,25 @@ import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { kindIcon, kindLabel } from "./step-list-metadata";
 import { sentenceForStep } from "../lib/step-sentence";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
+import {
+  formatReviewTime,
+  initialRunReviewStep,
+  runCompletion,
+  runElapsedAtStep,
+  runReviewCounts,
+  runTimelineWeights,
+} from "../lib/run-review-model";
 import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "runs" | "map" | "data";
 type StudioView = "live" | "journey";
+
+const DataWorkspace = lazy(() =>
+  import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
+);
+const MapsWorkspace = lazy(() =>
+  import("./workspaces/maps-workspace").then((module) => ({ default: module.MapsWorkspace })),
+);
 
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
@@ -1501,12 +1523,13 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
   const [selectedId, setSelectedId] = createSignal<string | null>(linkedRun);
   const [selectedRunStep, setSelectedRunStep] = createSignal(0);
   const [tab, setTab] = createSignal<
-    "steps" | "summary" | "replay" | "evaluation" | "network" | "logs" | "compatibility"
-  >("steps");
+    "timeline" | "summary" | "evaluation" | "network" | "logs" | "compatibility"
+  >("timeline");
   const [matrixReport, setMatrixReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
   const [refreshing, setRefreshing] = createSignal(false);
+  const [runFilter, setRunFilter] = createSignal<"all" | "passed" | "attention" | "active">("all");
   async function refreshRuns(): Promise<void> {
     if (refreshing()) return;
     setRefreshing(true);
@@ -1530,7 +1553,41 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
       (a, b) => (b.startedAt ?? b.queuedAt) - (a.startedAt ?? a.queuedAt),
     );
   });
+  const visibleRows = createMemo(() => {
+    const filter = runFilter();
+    if (filter === "passed")
+      return rows().filter((row) => row.status === "ok" || row.status === "healed");
+    if (filter === "attention")
+      return rows().filter((row) => row.status === "error" || row.status === "cancelled");
+    if (filter === "active")
+      return rows().filter((row) => ["queued", "running", "paused"].includes(row.status));
+    return rows();
+  });
+  const passedCount = createMemo(
+    () => rows().filter((row) => row.status === "ok" || row.status === "healed").length,
+  );
+  const passRate = createMemo(() =>
+    rows().length > 0 ? Math.round((passedCount() / rows().length) * 100) : 0,
+  );
+  const typicalDuration = createMemo(() => {
+    const durations = rows()
+      .map((row) =>
+        row.startedAt && row.finishedAt ? Math.max(0, row.finishedAt - row.startedAt) : null,
+      )
+      .filter((value): value is number => value !== null)
+      .sort((a, b) => a - b);
+    if (durations.length === 0) return "—";
+    return formatReviewTime(durations[Math.floor(durations.length / 2)]!);
+  });
   const selected = () => rows().find((row) => row.id === selectedId()) ?? null;
+  const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
+  const selectedRecipe = createMemo(() => {
+    const job = selected();
+    return job?.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === job?.action);
+  });
+  const reviewCompletion = createMemo(() =>
+    selected() ? runCompletion(selected()!, selectedRecipe()?.steps.length ?? 0) : null,
+  );
   const selectedCanvasItems = createMemo(() => {
     const job = selected();
     if (!job) return [];
@@ -1542,9 +1599,10 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
   createEffect(() => {
     const requested = server.selectedJobId();
     if (!requested || !rows().some((row) => row.id === requested)) return;
+    const requestedRun = rows().find((row) => row.id === requested)!;
     setSelectedId(requested);
-    setSelectedRunStep(0);
-    setTab("steps");
+    setSelectedRunStep(initialRunReviewStep(requestedRun));
+    setTab("timeline");
   });
   createEffect(() => {
     const job = selected();
@@ -1611,26 +1669,27 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
         </div>
       </Show>
       <Show when={rows().length > 0 && !selected()}>
-        <div class="mx-auto mb-4 grid w-full max-w-[1180px] grid-cols-3 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger [&>*+*]:border-l [&>*+*]:border-border-weak-base">
-          <Metric label="Total runs" value={rows().length} detail="all time" />
+        <div class="mx-auto mb-4 grid w-full max-w-[1180px] grid-cols-4 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger max-[760px]:grid-cols-2 [&>*+*]:border-l [&>*+*]:border-border-weak-base max-[760px]:[&>*:nth-child(3)]:border-l-0 max-[760px]:[&>*:nth-child(n+3)]:border-t">
           <Metric
-            label="Passed"
-            value={rows().filter((row) => row.status === "ok" || row.status === "healed").length}
-            detail="including healed"
+            label="Pass rate"
+            value={`${passRate()}%`}
+            detail="across saved runs"
             tone="success"
           />
+          <Metric label="Passed" value={passedCount()} detail="including healed" tone="success" />
           <Metric
             label="Needs attention"
             value={rows().filter((row) => row.status === "error").length}
             detail="failed runs"
             tone="danger"
           />
+          <Metric label="Typical time" value={typicalDuration()} detail="median duration" />
         </div>
       </Show>
       <div
         class={cn(
           selected()
-            ? "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1.02fr)_minmax(400px,0.98fr)] overflow-hidden max-[960px]:grid-cols-1 max-[960px]:overflow-y-auto"
+            ? "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(300px,1.08fr)_minmax(390px,0.92fr)] overflow-hidden max-[960px]:grid-cols-[minmax(280px,0.9fr)_minmax(360px,1.1fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
             : "mx-auto grid w-full max-w-[1180px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
           !selected() && rows().length === 0 && "place-items-center px-6 py-16",
         )}
@@ -1643,72 +1702,123 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
             )}
           >
             <Show when={rows().length > 0}>
-              <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase [&>span]:min-w-0 [&>span]:truncate">
+              <div class="flex min-h-11 items-center justify-between gap-3 border-b border-border-weak-base px-3.5">
+                <div class="flex items-center gap-1" role="tablist" aria-label="Filter runs">
+                  {(
+                    [
+                      ["all", "All"],
+                      ["passed", "Passed"],
+                      ["attention", "Attention"],
+                      ["active", "Active"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={runFilter() === id}
+                      class={cn(
+                        "min-h-7 rounded-md px-2.5 text-[11.5px] font-medium text-text-weaker transition-[background-color,color,transform] duration-150 active:scale-[0.97]",
+                        runFilter() === id
+                          ? "bg-surface-base-active text-text-strong"
+                          : "hover:bg-surface-base-hover hover:text-text-base",
+                      )}
+                      onClick={() => setRunFilter(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span class="font-mono text-[10.5px] text-text-weaker">
+                  {visibleRows().length} run{visibleRows().length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase max-[900px]:grid-cols-[minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] [&>span]:min-w-0 [&>span]:truncate">
                 <span>Test</span>
-                <span>Status</span>
-                <span>Device</span>
-                <span>Started</span>
-                <span>Duration</span>
+                <span>Outcome</span>
+                <span class="max-[900px]:hidden">Target</span>
+                <span>When</span>
+                <span>Time</span>
               </div>
             </Show>
             <For
-              each={rows()}
+              each={visibleRows()}
               fallback={
-                <div class="grid place-items-center gap-3 px-8 py-12 text-center">
-                  <div
-                    class="mb-2 grid w-full max-w-[360px] grid-cols-[100px_minmax(0,1fr)] items-center gap-4"
-                    aria-hidden="true"
-                  >
-                    <div class="relative mx-auto aspect-[9/16] w-[88px] rounded-[18px] border-[5px] border-[var(--relay-surface-strong)] bg-[var(--relay-surface-raised)] p-2 shadow-[0_16px_40px_rgb(0_0_0/25%)]">
-                      <i class="mx-auto mb-3 block h-0.5 w-6 rounded-full bg-[var(--relay-line-strong)]" />
-                      <span class="mb-1.5 block h-1.5 w-[70%] rounded bg-[color-mix(in_srgb,var(--relay-text)_12%,transparent)]" />
-                      <span class="mb-1.5 block h-1.5 w-[88%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
-                      <b class="mt-auto block rounded-md bg-[var(--relay-accent-soft)] py-1 text-center text-[8px] text-[var(--text-interactive-base)]">
-                        Continue
-                      </b>
+                <Show
+                  when={rows().length === 0}
+                  fallback={
+                    <div class="grid place-items-center gap-2 px-8 py-14 text-center">
+                      <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
+                        <Icon name="search" size={17} />
+                      </span>
+                      <strong class="text-[13px] font-medium text-text-base">
+                        No {runFilter()} runs
+                      </strong>
+                      <button
+                        type="button"
+                        class="text-[11.5px] font-medium text-text-interactive-base hover:underline"
+                        onClick={() => setRunFilter("all")}
+                      >
+                        Show all runs
+                      </button>
                     </div>
-                    <div class="grid gap-1.5 text-left">
-                      <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
-                        <i class="font-mono text-[var(--relay-text-tertiary)]">01</i>
-                        <b class="truncate font-medium">Tap “Continue”</b>
-                        <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
-                          248ms
-                        </em>
-                      </span>
-                      <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
-                        <i class="font-mono text-[var(--relay-text-tertiary)]">02</i>
-                        <b class="truncate font-medium">Enter account</b>
-                        <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
-                          612ms
-                        </em>
-                      </span>
-                      <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
-                        <i class="font-mono text-[var(--relay-text-tertiary)]">03</i>
-                        <b class="truncate font-medium">Check welcome</b>
-                        <em class="font-mono text-[9px] not-italic text-[var(--relay-green)]">
-                          Passed
-                        </em>
-                      </span>
+                  }
+                >
+                  <div class="grid place-items-center gap-3 px-8 py-12 text-center">
+                    <div
+                      class="mb-2 grid w-full max-w-[360px] grid-cols-[100px_minmax(0,1fr)] items-center gap-4"
+                      aria-hidden="true"
+                    >
+                      <div class="relative mx-auto aspect-[9/16] w-[88px] rounded-[18px] border-[5px] border-[var(--relay-surface-strong)] bg-[var(--relay-surface-raised)] p-2 shadow-[0_16px_40px_rgb(0_0_0/25%)]">
+                        <i class="mx-auto mb-3 block h-0.5 w-6 rounded-full bg-[var(--relay-line-strong)]" />
+                        <span class="mb-1.5 block h-1.5 w-[70%] rounded bg-[color-mix(in_srgb,var(--relay-text)_12%,transparent)]" />
+                        <span class="mb-1.5 block h-1.5 w-[88%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
+                        <b class="mt-auto block rounded-md bg-[var(--relay-accent-soft)] py-1 text-center text-[8px] text-[var(--text-interactive-base)]">
+                          Continue
+                        </b>
+                      </div>
+                      <div class="grid gap-1.5 text-left">
+                        <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
+                          <i class="font-mono text-[var(--relay-text-tertiary)]">01</i>
+                          <b class="truncate font-medium">Tap “Continue”</b>
+                          <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
+                            248ms
+                          </em>
+                        </span>
+                        <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
+                          <i class="font-mono text-[var(--relay-text-tertiary)]">02</i>
+                          <b class="truncate font-medium">Enter account</b>
+                          <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
+                            612ms
+                          </em>
+                        </span>
+                        <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
+                          <i class="font-mono text-[var(--relay-text-tertiary)]">03</i>
+                          <b class="truncate font-medium">Check welcome</b>
+                          <em class="font-mono text-[9px] not-italic text-[var(--relay-green)]">
+                            Passed
+                          </em>
+                        </span>
+                      </div>
                     </div>
+                    <span class={eyebrow}>Run history</span>
+                    <h3 class="m-0 text-[18px] font-semibold text-[var(--relay-text)]">
+                      Every run keeps the evidence
+                    </h3>
+                    <p class="m-0 max-w-[36ch] text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
+                      Run a test to keep its result, replay, diagnostics, and test data together.
+                    </p>
+                    <button type="button" class={productPrimary} onClick={props.onOpenTests}>
+                      Run your first test <Icon name="arrow-right" size={14} />
+                    </button>
                   </div>
-                  <span class={eyebrow}>Run history</span>
-                  <h3 class="m-0 text-[18px] font-semibold text-[var(--relay-text)]">
-                    Every run keeps the evidence
-                  </h3>
-                  <p class="m-0 max-w-[36ch] text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
-                    Run a test to keep its result, replay, diagnostics, and test data together.
-                  </p>
-                  <button type="button" class={productPrimary} onClick={props.onOpenTests}>
-                    Run your first test <Icon name="arrow-right" size={14} />
-                  </button>
-                </div>
+                </Show>
               }
             >
               {(job) => {
                 const open = () => {
                   setSelectedId(job.id);
-                  setSelectedRunStep(0);
-                  setTab("steps");
+                  setSelectedRunStep(initialRunReviewStep(job));
+                  setTab("timeline");
                 };
                 return <RunRow job={job} selected={selectedId() === job.id} onOpen={open} />;
               }}
@@ -1734,21 +1844,31 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
         <Show when={selected()}>
           {(job) => (
             <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--relay-line)] bg-[var(--relay-panel)]">
-              <header class="grid shrink-0 gap-2.5 px-5 pt-5 pb-4">
+              <header class="grid shrink-0 gap-2.5 px-5 pt-4 pb-3.5">
                 <div class="flex items-start justify-between gap-2">
                   <div class="grid min-w-0 gap-1">
-                    <span class={eyebrow}>Run report</span>
-                    <strong class="truncate text-[21px]/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
+                    <span class={eyebrow}>Execution review</span>
+                    <strong class="truncate text-[20px]/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
                       {server.recipes().find((r) => r.id === job().action)?.title ??
                         job().title ??
                         job().action}
                     </strong>
                   </div>
                   <div class="flex shrink-0 items-center gap-0.5">
+                    <Show when={job().status === "error" || job().status === "cancelled"}>
+                      <button
+                        type="button"
+                        class="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg bg-text-strong px-2.5 text-[11px] font-semibold text-background-stronger transition-transform duration-150 active:scale-[0.97]"
+                        onClick={() => void server.retrySelectedJob(job().id)}
+                      >
+                        <Icon name="refresh" size={12} /> Retry
+                      </button>
+                    </Show>
                     <button
                       type="button"
-                      class="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-[11px]/[1.25] font-semibold text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
+                      class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
                       aria-label="Copy report link"
+                      data-tip="Copy report link"
                       onClick={() => {
                         const url = new URL(window.location.href);
                         url.searchParams.set("run", job().id);
@@ -1757,11 +1877,11 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                         toast("Report link copied", "success");
                       }}
                     >
-                      <Icon name="copy" size={13} /> Copy link
+                      <Icon name="copy" size={13} />
                     </button>
                     <button
                       type="button"
-                      class="grid size-9 place-items-center rounded-lg text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
+                      class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
                       aria-label="Close report"
                       data-tip="Close report"
                       onClick={() => {
@@ -1800,6 +1920,24 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                   </span>
                 </div>
               </header>
+              <Show when={job().status === "error" || job().status === "cancelled"}>
+                <div class="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--relay-red)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-red)_7%,transparent)] px-3 py-2.5">
+                  <span class="mt-0.5 grid size-6 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-red)_14%,transparent)] text-[var(--relay-red)]">
+                    <Icon name="alert" size={13} />
+                  </span>
+                  <div class="min-w-0">
+                    <strong class="block text-[12.5px] font-semibold text-text-strong">
+                      {job().failureCategory ? readableFailure(job().failureCategory!) : "Stopped"}{" "}
+                      at step {initialRunReviewStep(job()) + 1} of {reviewCompletion()?.total ?? 1}
+                    </strong>
+                    <span class="mt-0.5 block text-[11px]/[1.4] text-text-weak">
+                      {job().error
+                        ? friendlyError(job().error!)
+                        : "The relevant evidence is selected. Review the state, then retry or fix the test."}
+                    </span>
+                  </div>
+                </div>
+              </Show>
               <nav
                 class="flex shrink-0 overflow-x-auto border-b border-border-weak-base px-3.5"
                 role="tablist"
@@ -1807,8 +1945,8 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
               >
                 {(
                   [
-                    ["steps", "Steps"],
-                    ["summary", "Summary"],
+                    ["timeline", "Timeline"],
+                    ["summary", "Overview"],
                     ["evaluation", "Checks"],
                     ["network", "Network"],
                     ["logs", "Logs"],
@@ -1829,10 +1967,14 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     onKeyDown={onReportTabKeyDown}
                   >
                     {label}
-                    {id === "network" &&
-                    (job().artifacts?.filter((a) => a.kind === "network").length ?? 0) > 0 ? (
+                    {id === "evaluation" && (reviewCounts()?.checks ?? 0) > 0 ? (
                       <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[8px]/4 text-text-interactive-base">
-                        {job().artifacts!.filter((a) => a.kind === "network").length}
+                        {reviewCounts()!.checks}
+                      </span>
+                    ) : null}
+                    {id === "network" && (reviewCounts()?.network ?? 0) > 0 ? (
+                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[8px]/4 text-text-interactive-base">
+                        {reviewCounts()!.network}
                       </span>
                     ) : null}
                   </button>
@@ -1863,7 +2005,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                 aria-labelledby={`run-report-tab-${tab()}`}
                 tabindex={0}
               >
-                <Show when={tab() === "steps"}>
+                <Show when={tab() === "timeline"}>
                   <RunStepList
                     job={job()}
                     selectedIndex={selectedRunStep()}
@@ -1876,7 +2018,6 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     clock={server.clock()}
                     previous={baseline()}
                     onOpenRecipe={props.onOpenRecipe}
-                    onRetry={(id) => void server.retrySelectedJob(id)}
                   />
                   <details class="group col-span-2 mt-2 border-t border-border-weak-base">
                     <summary class="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-[11px]/[1.25] text-text-weaker focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
@@ -1934,9 +2075,6 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                       </Show>
                     </dl>
                   </details>
-                </Show>
-                <Show when={tab() === "replay"}>
-                  <RunReplay job={job()} />
                 </Show>
                 <Show when={tab() === "network"}>
                   <EvidenceList
@@ -2185,10 +2323,18 @@ function RunReplayStage(props: {
   onBack: () => void;
 }) {
   const server = useServer();
+  const [playing, setPlaying] = createSignal(false);
   const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
   const count = () => Math.max(nodes().length, 1);
   const index = () => Math.max(0, Math.min(props.selectedIndex, count() - 1));
   const node = () => nodes()[index()];
+  const timelineWeights = createMemo(() => runTimelineWeights(props.job.steps ?? [], count()));
+  const elapsed = () => runElapsedAtStep(props.job.steps ?? [], index());
+  const totalDuration = () =>
+    (props.job.steps ?? []).reduce(
+      (duration, step) => duration + Math.max(0, step.durationMs ?? 0),
+      0,
+    );
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
   const frameSrc = () => {
@@ -2208,14 +2354,46 @@ function RunReplayStage(props: {
   };
   const move = (delta: number) =>
     props.onSelect(Math.max(0, Math.min(index() + delta, count() - 1)));
+  const togglePlayback = () => {
+    if (playing()) {
+      setPlaying(false);
+      return;
+    }
+    if (index() === count() - 1) props.onSelect(0);
+    setPlaying(true);
+  };
+  createEffect(() => {
+    if (!playing()) return;
+    const current = index();
+    if (current >= count() - 1) {
+      setPlaying(false);
+      return;
+    }
+    const rawDuration = props.job.steps?.[current]?.durationMs ?? 700;
+    const timer = window.setTimeout(
+      () => props.onSelect(Math.min(current + 1, count() - 1)),
+      Math.max(650, Math.min(rawDuration, 2_200)),
+    );
+    onCleanup(() => window.clearTimeout(timer));
+  });
   return (
     <section
       class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[color-mix(in_srgb,var(--relay-bg)_94%,black)]"
       aria-label="Run replay"
       tabindex={-1}
       onKeyDown={(event) => {
-        if (event.key === "ArrowLeft") move(-1);
-        if (event.key === "ArrowRight") move(1);
+        if (event.key === "ArrowLeft") {
+          setPlaying(false);
+          move(-1);
+        }
+        if (event.key === "ArrowRight") {
+          setPlaying(false);
+          move(1);
+        }
+        if (event.key === " ") {
+          event.preventDefault();
+          togglePlayback();
+        }
       }}
     >
       <div
@@ -2262,23 +2440,53 @@ function RunReplayStage(props: {
             <img
               src={src()}
               alt={`Step ${index() + 1} evidence`}
-              class="max-h-full w-auto max-w-full rounded-[26px] border-[6px] border-[var(--relay-surface-strong)] object-contain shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]"
+              class={cn(
+                "max-h-full w-auto max-w-full rounded-[26px] border-[6px] object-contain shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]",
+                node()?.state === "failed"
+                  ? "border-[color-mix(in_srgb,var(--relay-red)_55%,var(--relay-surface-strong))]"
+                  : "border-[var(--relay-surface-strong)]",
+              )}
             />
           )}
         </Show>
       </div>
-      <p class="relative z-[1] mx-auto mb-2 max-w-[70%] truncate px-4 text-center text-[12.5px] font-medium text-[var(--relay-text-secondary)]">
-        {node()?.title}
-      </p>
+      <div class="relative z-[1] mx-auto mb-2 flex max-w-[78%] items-center justify-center gap-2.5 px-4 text-center">
+        <Icon
+          name={glyphFor(index())}
+          size={13}
+          class={node()?.state === "failed" ? "text-[var(--relay-red)]" : "text-text-weaker"}
+        />
+        <div class="min-w-0">
+          <p class="m-0 truncate text-[12.5px] font-medium text-[var(--relay-text-secondary)]">
+            {node()?.title}
+          </p>
+          <span class="font-mono text-[9.5px] tabular-nums text-text-weaker">
+            {formatReviewTime(elapsed())}
+            <Show when={node()?.durationMs}> · {formatReviewTime(node()!.durationMs!)}</Show>
+          </span>
+        </div>
+      </div>
       <footer class="relative z-[1] shrink-0 border-t border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_86%,transparent)] px-4 py-2.5 backdrop-blur">
         <div class="flex items-center gap-3">
           <div class="flex shrink-0 items-center gap-0.5">
             <button
               type="button"
+              class="grid size-8 place-items-center rounded-lg bg-[var(--relay-surface-strong)] text-[var(--relay-text)] transition-[background-color,transform] duration-150 hover:bg-white/[0.1] active:scale-[0.96]"
+              aria-label={playing() ? "Pause run playback" : "Play run playback"}
+              aria-pressed={playing()}
+              onClick={togglePlayback}
+            >
+              <Icon name={playing() ? "pause" : "play"} size={12} />
+            </button>
+            <button
+              type="button"
               class="grid size-8 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-30"
               aria-label="Previous step"
               disabled={index() === 0}
-              onClick={() => move(-1)}
+              onClick={() => {
+                setPlaying(false);
+                move(-1);
+              }}
             >
               <Icon name="chevron-left" size={15} />
             </button>
@@ -2287,7 +2495,10 @@ function RunReplayStage(props: {
               class="grid size-8 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-30"
               aria-label="Next step"
               disabled={index() === count() - 1}
-              onClick={() => move(1)}
+              onClick={() => {
+                setPlaying(false);
+                move(1);
+              }}
             >
               <Icon name="chevron-right" size={15} />
             </button>
@@ -2308,7 +2519,14 @@ function RunReplayStage(props: {
                   class={cn(
                     "group flex min-w-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-md px-0.5 py-1 transition-colors hover:bg-white/[0.05]",
                   )}
-                  onClick={() => props.onSelect(item.index)}
+                  style={{
+                    "flex-grow": String(timelineWeights()[item.index] ?? 1),
+                    "flex-basis": "0",
+                  }}
+                  onClick={() => {
+                    setPlaying(false);
+                    props.onSelect(item.index);
+                  }}
                 >
                   <Icon
                     name={glyphFor(item.index)}
@@ -2336,7 +2554,7 @@ function RunReplayStage(props: {
             </For>
           </div>
           <span class="shrink-0 font-mono text-[11px] tabular-nums text-[var(--relay-text-tertiary)]">
-            {String(index() + 1).padStart(2, "0")} / {String(count()).padStart(2, "0")}
+            {formatReviewTime(elapsed())} / {formatReviewTime(totalDuration())}
           </span>
         </div>
       </footer>
@@ -2354,175 +2572,100 @@ function RunStepList(props: {
   const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
+  const selectedNode = () =>
+    nodes()[Math.max(0, Math.min(props.selectedIndex, nodes().length - 1))];
+  const selectedKind = () => snapshot()?.steps[selectedNode()?.index ?? 0]?.kind;
   return (
-    <div class="grid content-start gap-2">
-      <For
-        each={nodes()}
-        fallback={
-          <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-5 text-center text-[12px] text-[var(--relay-text-tertiary)]">
-            No steps were recorded for this run.
-          </div>
-        }
-      >
-        {(node) => {
-          const active = () => props.selectedIndex === node.index;
-          const kind = () => snapshot()?.steps[node.index]?.kind;
-          return (
-            <button
-              type="button"
-              class={cn(
-                "grid w-full grid-cols-[32px_minmax(0,1fr)] items-start gap-3 rounded-[12px] border p-3 text-left transition-colors",
-                active()
-                  ? "border-[color-mix(in_srgb,var(--relay-accent)_50%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]"
-                  : "border-[var(--relay-line)] hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)]",
-                node.state === "planned" && !active() && "opacity-65",
-              )}
-              onClick={() => props.onSelect(node.index)}
-            >
-              <span
-                class={cn(
-                  "grid size-8 place-items-center rounded-[9px] font-mono text-[12.5px] font-semibold tabular-nums",
-                  active()
-                    ? "bg-[var(--relay-accent)] text-white"
-                    : "bg-[var(--relay-surface-strong)] text-[var(--relay-text-secondary)]",
-                )}
-              >
-                {node.index + 1}
-              </span>
-              <span class="min-w-0">
-                <span class="flex min-w-0 items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.07em] text-[var(--relay-text-tertiary)] uppercase">
-                  <Icon
-                    name={kind() ? kindIcon(kind()!) : "bolt"}
-                    size={12}
-                    class={active() ? "text-[var(--text-interactive-base)]" : undefined}
-                  />
-                  {kind() ? kindLabel(kind()!) : "Step"}
-                  <Show when={node.durationMs}>
-                    <em class="font-mono text-[10.5px] font-normal tracking-normal normal-case not-italic">
-                      {formatStepDuration(node.durationMs!)}
-                    </em>
-                  </Show>
-                  <span class="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium tracking-normal normal-case">
-                    <i class={cn("size-1.5 rounded-full", runStateDot(node.state))} />
-                    {runStateLabel(node.state)}
-                  </span>
-                </span>
-                <strong class="mt-1.5 block text-[14px]/[1.45] font-medium tracking-[-0.005em] text-[var(--relay-text)]">
-                  {node.title}
-                </strong>
-              </span>
-            </button>
-          );
-        }}
-      </For>
-    </div>
-  );
-}
-
-function RunReplay(props: { job: JobInfo; workspace?: boolean }) {
-  const server = useServer();
-  let video: HTMLVideoElement | undefined;
-  const files = createMemo(() => {
-    const artifact = props.job.artifacts?.find((item) => item.kind === "video");
-    if (!artifact || typeof artifact.data !== "object" || artifact.data === null) return [];
-    const raw = Reflect.get(artifact.data, "files");
-    if (!Array.isArray(raw)) return [];
-    return raw.flatMap((entry) => {
-      if (typeof entry !== "object" || entry === null) return [];
-      const path = Reflect.get(entry, "path");
-      return typeof path === "string" ? [path] : [];
-    });
-  });
-  const firstVideo = () => files()[0];
-  const seekToStep = (startedAt: number) => {
-    if (!video || !props.job.startedAt) return;
-    video.currentTime = Math.max(0, (startedAt - props.job.startedAt) / 1000);
-    void video.play();
-  };
-
-  return (
-    <div
-      class={cn("grid gap-3", props.workspace && "min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]")}
-    >
-      <Show
-        when={firstVideo()}
-        fallback={
-          <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[12px] border border-dashed border-[var(--relay-line-strong)] p-4">
-            <div
-              class="grid size-12 place-items-center rounded-[12px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]"
-              aria-hidden="true"
-            >
-              <span />
-              <Icon name={props.job.status === "error" ? "alert" : "camera"} size={22} />
-            </div>
-            <div>
-              <strong>
-                {props.job.status === "error" ? "This run stopped before replay" : "No replay yet"}
-              </strong>
-              <span>
-                {props.job.status === "error"
-                  ? "Review the diagnosis to fix the setup, then run the test again."
-                  : "Run this test again with recording enabled to keep the complete interaction."}
+    <div class="grid content-start gap-3">
+      <Show when={selectedNode()}>
+        {(node) => (
+          <section
+            class={cn(
+              "grid gap-2 rounded-xl border px-3.5 py-3",
+              node().state === "failed"
+                ? "border-[color-mix(in_srgb,var(--relay-red)_30%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-red)_6%,transparent)]"
+                : "border-[var(--relay-line)] bg-[var(--relay-surface-raised)]",
+            )}
+            aria-label="Selected moment"
+          >
+            <div class="flex items-center gap-2 text-[10px] font-semibold tracking-[0.07em] text-text-weaker uppercase">
+              <Icon
+                name={selectedKind() ? kindIcon(selectedKind()!) : "bolt"}
+                size={12}
+                class={node().state === "failed" ? "text-[var(--relay-red)]" : undefined}
+              />
+              <span>Selected moment</span>
+              <span class="ml-auto inline-flex items-center gap-1.5 font-medium tracking-normal normal-case">
+                <i class={cn("size-1.5 rounded-full", runStateDot(node().state))} />
+                {runStateLabel(node().state)}
               </span>
             </div>
-          </div>
-        }
-      >
-        {(path) => (
-          <div class="grid gap-2 [&_video]:w-full [&_video]:rounded-[12px] [&_video]:border [&_video]:border-[var(--relay-line)]">
-            <video
-              ref={(element) => {
-                video = element;
-              }}
-              controls
-              playsinline
-              preload="metadata"
-              src={server.videoUrlForRun(props.job.id, path())}
-            >
-              Video replay is not supported by this browser.
-            </video>
-            <div>
-              <span class={eyebrow}>Device replay</span>
-              <strong>Every action stays aligned with its evidence</strong>
+            <strong class="text-[14px]/[1.4] font-medium tracking-[-0.005em] text-text-strong">
+              {node().title}
+            </strong>
+            <div class="flex items-center gap-2 font-mono text-[10px] tabular-nums text-text-weaker">
+              <span>Step {node().index + 1}</span>
+              <Show when={node().durationMs}>
+                <span>·</span>
+                <span>{formatStepDuration(node().durationMs!)}</span>
+              </Show>
             </div>
-          </div>
+          </section>
         )}
       </Show>
-      <div class="grid gap-1" aria-label="Run steps">
-        <Show when={(props.job.steps?.length ?? 0) > 0}>
-          <div class="mb-1 flex items-center justify-between text-[10px] font-semibold tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase [&_small]:font-mono [&_small]:normal-case [&_small]:tracking-normal">
-            <span>Timeline</span>
-            <small>{props.job.steps!.length} steps</small>
-          </div>
-        </Show>
+      <div class="relative grid content-start before:absolute before:top-5 before:bottom-5 before:left-[15px] before:w-px before:bg-[var(--relay-line)]">
         <For
-          each={props.job.steps ?? []}
+          each={nodes()}
           fallback={
-            <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-4 text-center text-[11px] text-[var(--relay-text-tertiary)]">
-              No replay steps captured.
+            <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-5 text-center text-[12px] text-[var(--relay-text-tertiary)]">
+              No steps were recorded for this run.
             </div>
           }
         >
-          {(step, i) => (
-            <button
-              type="button"
-              class="grid min-h-11 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left hover:bg-[var(--relay-surface-strong)]"
-              onClick={() => seekToStep(step.startedAt)}
-            >
-              <span class="grid size-7 place-items-center rounded-md bg-[var(--relay-surface-strong)] font-mono text-[10px] text-[var(--relay-text-tertiary)]">
-                {i() + 1}
-              </span>
-              <div class="min-w-0">
-                <strong class="block truncate text-[12px] text-[var(--relay-text)]">
-                  {step.title}
-                </strong>
-                <small class="text-[10px] text-[var(--relay-text-tertiary)]">
-                  {step.status ?? "recorded"} · {step.durationMs ? `${step.durationMs}ms` : "—"}
-                </small>
-              </div>
-              <Icon name={step.frames?.[0] ? "camera" : "play"} size={14} />
-            </button>
-          )}
+          {(node) => {
+            const active = () => props.selectedIndex === node.index;
+            const kind = () => snapshot()?.steps[node.index]?.kind;
+            return (
+              <button
+                type="button"
+                class={cn(
+                  "relative grid w-full grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] px-1 py-2.5 text-left transition-[background-color,transform] duration-150 active:scale-[0.99]",
+                  active()
+                    ? "bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]"
+                    : "hover:bg-[var(--relay-surface-raised)]",
+                  node.state === "planned" && !active() && "opacity-55",
+                )}
+                aria-current={active() ? "step" : undefined}
+                onClick={() => props.onSelect(node.index)}
+              >
+                <span
+                  class={cn(
+                    "relative z-[1] grid size-[30px] place-items-center rounded-full border bg-[var(--relay-panel)] font-mono text-[10.5px] font-semibold tabular-nums",
+                    active()
+                      ? "border-[var(--relay-accent)] text-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_12%,transparent)]"
+                      : node.state === "failed"
+                        ? "border-[var(--relay-red)] text-[var(--relay-red)]"
+                        : "border-[var(--relay-line-strong)] text-[var(--relay-text-tertiary)]",
+                  )}
+                >
+                  {node.index + 1}
+                </span>
+                <span class="min-w-0">
+                  <span class="flex items-center gap-1.5 text-[9.5px] font-semibold tracking-[0.06em] text-text-weaker uppercase">
+                    <Icon name={kind() ? kindIcon(kind()!) : "bolt"} size={10} />
+                    {kind() ? kindLabel(kind()!) : "Step"}
+                  </span>
+                  <strong class="mt-0.5 block truncate text-[12.5px]/[1.35] font-medium text-text-base">
+                    {node.title}
+                  </strong>
+                </span>
+                <span class="grid shrink-0 justify-items-end gap-0.5 font-mono text-[9.5px] tabular-nums text-text-weaker">
+                  <Show when={node.durationMs}>{formatStepDuration(node.durationMs!)}</Show>
+                  <i class={cn("size-1.5 rounded-full", runStateDot(node.state))} />
+                </span>
+              </button>
+            );
+          }}
         </For>
       </div>
     </div>
@@ -2534,7 +2677,7 @@ function EvidenceList(props: {
   empty: string;
 }) {
   return (
-    <div class="grid gap-2">
+    <div class="grid gap-2.5">
       <For
         each={props.items}
         fallback={
@@ -2543,23 +2686,92 @@ function EvidenceList(props: {
           </div>
         }
       >
-        {(item) => (
-          <details class="overflow-hidden rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)]">
-            <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-[11px] text-[var(--relay-text-secondary)]">
-              <span class="font-mono text-[10px] text-[var(--relay-text-tertiary)]">
-                {new Date(item.capturedAt).toLocaleTimeString()}
-              </span>
-              <strong class="text-[var(--relay-text)]">{item.kind}</strong>
-              <Icon name="chevron-down" size={13} class="ml-auto" />
-            </summary>
-            <pre class="m-0 overflow-auto border-t border-[var(--relay-line)] bg-[var(--relay-bg)] p-3 font-mono text-[10px] text-[var(--relay-text-secondary)]">
-              {JSON.stringify(item.data, null, 2)}
-            </pre>
-          </details>
-        )}
+        {(item) => {
+          const summary = () => evidenceSummary(item.data);
+          return (
+            <article class="overflow-hidden rounded-xl border border-[var(--relay-line)] bg-[var(--relay-surface-raised)]">
+              <header class="grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2.5 px-3 py-2.5">
+                <span class="grid size-[30px] place-items-center rounded-lg bg-surface-base-active text-text-weak">
+                  <Icon name={evidenceIcon(item.kind)} size={14} />
+                </span>
+                <div class="min-w-0">
+                  <strong class="block truncate text-[12.5px] font-medium text-text-strong">
+                    {evidenceTitle(item.kind)}
+                  </strong>
+                  <Show when={summary()}>
+                    <span class="mt-0.5 block truncate text-[10.5px] text-text-weaker">
+                      {summary()}
+                    </span>
+                  </Show>
+                </div>
+                <time class="font-mono text-[9.5px] tabular-nums text-text-weaker">
+                  {new Date(item.capturedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </time>
+              </header>
+              <details class="group border-t border-[var(--relay-line)]">
+                <summary class="flex min-h-8 cursor-pointer list-none items-center gap-1.5 px-3 text-[10px] font-medium text-text-weaker hover:text-text-base [&::-webkit-details-marker]:hidden">
+                  View payload
+                  <Icon
+                    name="chevron-down"
+                    size={11}
+                    class="transition-transform duration-150 group-open:rotate-180"
+                  />
+                </summary>
+                <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--relay-line)] bg-[var(--relay-bg)] p-3 font-mono text-[10px]/[1.5] text-[var(--relay-text-secondary)]">
+                  {JSON.stringify(item.data, null, 2)}
+                </pre>
+              </details>
+            </article>
+          );
+        }}
       </For>
     </div>
   );
+}
+
+function evidenceTitle(kind: string): string {
+  const labels: Record<string, string> = {
+    network: "Network exchange",
+    "response-completion": "Response completed",
+    "conversation-turn": "Conversation turn",
+    "content-assertion": "Content check",
+    "semantic-evaluation": "Quality evaluation",
+    "judge-consensus": "Evaluation consensus",
+    "frozen-inputs": "Run inputs",
+    "app-build": "App build",
+  };
+  return labels[kind] ?? titleize(kind);
+}
+
+function evidenceIcon(kind: string): IconName {
+  if (kind === "network") return "wave";
+  if (["content-assertion", "semantic-evaluation", "judge-consensus"].includes(kind)) {
+    return "check";
+  }
+  if (kind === "app-build") return "bag";
+  return "info";
+}
+
+function evidenceSummary(data: unknown): string | null {
+  if (typeof data !== "object" || data === null) return typeof data === "string" ? data : null;
+  const value = data as Record<string, unknown>;
+  const method = typeof value.method === "string" ? value.method.toUpperCase() : null;
+  const url = typeof value.url === "string" ? value.url : null;
+  const status = typeof value.status === "number" ? String(value.status) : null;
+  if (method || url || status) return [method, status, url].filter(Boolean).join(" · ");
+  const verdict = [value.verdict, value.result, value.outcome].find(
+    (candidate) => typeof candidate === "string",
+  );
+  const score = typeof value.score === "number" ? `${Math.round(value.score * 100)}%` : null;
+  if (verdict || score) return [verdict, score].filter(Boolean).join(" · ");
+  const message = [value.message, value.summary, value.text, value.label].find(
+    (candidate) => typeof candidate === "string",
+  );
+  return typeof message === "string" ? message : null;
 }
 
 function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) {
@@ -2575,19 +2787,25 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
         : "—";
   };
   const status = () =>
-    props.job.outcome
-      ? titleize(props.job.outcome)
-      : props.job.status === "ok"
-        ? "Passed"
-        : props.job.status === "error"
-          ? "Failed"
-          : titleize(props.job.status);
+    props.job.outcome === "passed"
+      ? "Passed"
+      : props.job.outcome === "product-failure"
+        ? "App issue"
+        : props.job.outcome === "harness-failure"
+          ? "Could not run"
+          : props.job.outcome === "uncertain"
+            ? "Needs review"
+            : props.job.status === "ok"
+              ? "Passed"
+              : props.job.status === "error"
+                ? "Needs attention"
+                : titleize(props.job.status);
   const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
   return (
     <button
       type="button"
       class={cn(
-        "grid min-h-[60px] w-full grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base px-4 text-left text-[12px]/[1.35] text-text-weak transition-colors last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus [&>span]:min-w-0 [&>span]:truncate",
+        "grid min-h-[64px] w-full grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base px-4 text-left text-[12px]/[1.35] text-text-weak transition-[background-color,transform] duration-150 last:border-b-0 hover:bg-surface-base-hover active:scale-[0.997] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus max-[900px]:grid-cols-[minmax(0,1.6fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] [&>span]:min-w-0 [&>span]:truncate",
         props.selected && "bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}
@@ -2613,10 +2831,15 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
           <Show when={props.job.appVersion}>
             <i class="font-mono text-[9px] not-italic">· build {props.job.appVersion}</i>
           </Show>
+          <Show when={props.job.failureCategory}>
+            <i class="truncate text-[9.5px] not-italic text-[var(--relay-red)]">
+              · {titleize(props.job.failureCategory!)}
+            </i>
+          </Show>
         </span>
       </span>
       <span class={productStatus(String(props.job.status))}>{status()}</span>
-      <span>{targetName()}</span>
+      <span class="max-[900px]:hidden">{targetName()}</span>
       <span class="font-mono text-[11px] tabular-nums">
         {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
       </span>
@@ -2629,7 +2852,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
 
 function Metric(props: {
   label: string;
-  value: number;
+  value: number | string;
   detail: string;
   tone?: "success" | "danger";
 }) {

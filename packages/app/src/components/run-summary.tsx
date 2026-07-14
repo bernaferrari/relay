@@ -4,14 +4,13 @@ import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { platformLabel } from "../lib/target-presentation";
-import { productPrimary, productSecondary, productStatus } from "../lib/ui";
+import { productSecondary, productStatus } from "../lib/ui";
 
 type RunSummaryProps = {
   job: JobInfo;
   clock: number;
   previous: JobInfo | null;
   onOpenRecipe: (id: string) => void;
-  onRetry: (id: string) => void;
 };
 
 /**
@@ -110,11 +109,6 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
         </div>
       </Show>
       <div class="mt-3.5 mb-px flex items-center justify-end gap-2">
-        <Show when={job().status === "error" || job().status === "cancelled"}>
-          <button type="button" class={productPrimary} onClick={() => props.onRetry(job().id)}>
-            <Icon name="refresh" size={13} /> Retry run
-          </button>
-        </Show>
         <button
           type="button"
           class={productSecondary}
@@ -173,7 +167,7 @@ function readableOutcome(value: string): string {
   }
 }
 
-function readableFailure(value: string): string {
+export function readableFailure(value: string): string {
   const labels: Record<string, string> = {
     environment: "Setup",
     "target-state": "App state",
@@ -190,7 +184,7 @@ function readableFailure(value: string): string {
   return labels[value] ?? titleize(value);
 }
 
-function friendlyError(value: string): string {
+export function friendlyError(value: string): string {
   const message = value.trim();
   if (/already bound|already in use|session .* bound/i.test(message)) {
     return "This target is already in use by another session. Stop that session or choose a different target.";
