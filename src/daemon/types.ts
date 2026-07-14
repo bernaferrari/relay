@@ -282,11 +282,70 @@ export type SessionState = {
   /**
    * ADR 0012 decision 6: set when `saveScriptPath` was DEFAULTED to the
    * `<original-stem>.healed.ad` sibling (no explicit `--save-script=<out>`).
-   * The writer refuses to clobber an existing default healed script, so a
-   * second repair against the same original never destroys an unreviewed
-   * prior `.healed.ad` diff.
+   * Bookkeeping only — it does not gate the writer's refuse-on-exist
+   * decision, which is uniform regardless of this flag (see
+   * `publishHealedScriptAtomically`): a second repair against the same
+   * original is refused at the default healed sibling exactly like an
+   * explicit `--save-script=<path>` or an ordinary recording's target would
+   * be, never destroying an unreviewed prior `.healed.ad` diff.
    */
   saveScriptDefaultedHealedPath?: boolean;
+  /**
+   * ADR 0012 decision 6, R7 + commit semantics (C2): the repair TRANSACTION
+   * completion flag. `true` iff the last repair-armed replay run reached its
+   * final EXECUTABLE step with no outstanding divergence (the terminal source
+   * `close` is excluded — C4). Commit is gated on this, NOT merely on a
+   * `close`: `SessionScriptWriter.write` publishes a repair-armed session's
+   * healed `.ad` only when complete, so a `close`/`close --save-script`
+   * issued after a divergence but before the plan finishes discards a prefix
+   * instead of committing it. States: ARMED (`saveScriptBoundary` set,
+   * complete unset) -> COMPLETE (this true) -> COMMITTED (`saveScriptCommitted`).
+   */
+  saveScriptComplete?: boolean;
+  /**
+   * ADR 0012 decision 6 (C2): set by the writer after a repair-armed session's
+   * healed `.ad` is atomically published. Makes re-publish idempotent (a second
+   * `writeSessionLog` no-ops) and lets teardown distinguish a COMMITTED session
+   * (nothing to tombstone) from an aborted/reaped one.
+   */
+  saveScriptCommitted?: boolean;
+  /**
+   * ADR 0012 decision 6 (BLOCKER 3, second follow-up): set the moment a
+   * repair-armed `close`'s targeted platform close returns SUCCESS, cleared
+   * once the transaction commits/tears down (never lingers past a single
+   * close attempt's outcome). If the subsequent commit then FAILS (no-clobber
+   * refusal, a bare-`@ref` failure, or an fs error) the session is retained
+   * for retry — a later `close`/`close --save-script=<other>` on the SAME
+   * session must consume this flag and skip re-dispatching the platform
+   * close rather than invoking a (possibly non-idempotent) backend a second
+   * time against an already-closed target.
+   *
+   * BLOCKER 3 (third follow-up): this flag alone is session-wide, not bound
+   * to WHICH close request succeeded — see `repairPlatformCloseIdentity`,
+   * which must ALSO match the retry's own request identity before a retry is
+   * allowed to skip the platform close.
+   */
+  repairPlatformCloseSucceeded?: boolean;
+  /**
+   * ADR 0012 decision 6 (BLOCKER 3, third follow-up): the identity
+   * (`repairPlatformCloseIdentity` in session-close.ts — currently just the
+   * request's target/positionals, the only thing that changes what the
+   * platform close actually dispatches) of the close request whose platform
+   * close last succeeded. A retry only gets to skip re-dispatching the
+   * platform close when BOTH `repairPlatformCloseSucceeded` is true AND this
+   * matches the retry's own identity — an untargeted close that performed NO
+   * platform operation (so `repairPlatformCloseSucceeded` is trivially true)
+   * must never let a later targeted (or differently-targeted) retry skip the
+   * platform close it never actually ran.
+   */
+  repairPlatformCloseIdentity?: string;
+  /**
+   * ADR 0012 decision 6, R7 (C5a): the original replay input path of an armed
+   * repair, stashed so an idle-reap tombstone can hand the agent an actionable
+   * `replay <path> --save-script` re-run command instead of a bare
+   * SESSION_NOT_FOUND.
+   */
+  repairSourcePath?: string;
   actions: SessionAction[];
   recording?:
     | (SessionRecordingBase & {
