@@ -36,7 +36,10 @@ import {
   type ReplayRepairHintCapture,
 } from './session-replay-repair-hint.ts';
 import { buildReplayDivergenceFailureResponse } from './session-replay-runtime-failure-response.ts';
-import { buildReplayDivergenceResume } from './session-replay-resume.ts';
+import {
+  buildReplayDivergenceResume,
+  stampPendingRecordAndHealWatermark,
+} from './session-replay-resume.ts';
 import {
   classifyReplayTarget,
   identityFieldMismatches,
@@ -125,6 +128,25 @@ function buildTargetBindingDivergenceResponse(
     mismatches: built.mismatches.slice(0, 5).map((entry) => sanitize(entry)),
     candidates: built.candidateNodes.slice(0, 5).map((node) => describeCandidate(node, sanitize)),
   };
+  // Computed before `resume` so its `from` ordinal (decision 6, R2:
+  // `record-and-heal` resumes at `step + 1`) agrees with the hint.
+  const repairHint = computeReplayRepairHint({
+    kind: built.kind,
+    targetEvidence: recorded,
+    capture: built.repairCapture,
+  });
+  const resume = buildReplayDivergenceResume({
+    failedIndex: step,
+    actions: planActions,
+    planDigest,
+    repairHint,
+  });
+  const session = sessionStore.get(sessionName);
+  if (session) {
+    stampPendingRecordAndHealWatermark({ session, resume, repairHint });
+    sessionStore.set(sessionName, session);
+  }
+
   const divergence: ReplayDivergence = {
     version: 1,
     kind: built.kind,
@@ -141,20 +163,14 @@ function buildTargetBindingDivergenceResponse(
     // ADR 0012 migration step 5 (PR #1211 machinery): a target-binding
     // divergence fires PRE-ACTION, so the failed step itself was never
     // executed — resuming AT `step` re-runs exactly the action that did not
-    // send. `buildReplayDivergenceResume` runs the same skip-safety preflight
-    // as an action-failure divergence (allowed unless a skipped step produces
-    // outputEnv or the range crosses runtime control flow). This is the only
-    // resume site for target-binding divergences.
-    resume: buildReplayDivergenceResume({
-      failedIndex: step,
-      actions: planActions,
-      planDigest,
-    }),
-    repairHint: computeReplayRepairHint({
-      kind: built.kind,
-      targetEvidence: recorded,
-      capture: built.repairCapture,
-    }),
+    // send (unless `repairHint` is `record-and-heal`, in which case the agent
+    // performs it manually and `buildReplayDivergenceResume` targets `step +
+    // 1` instead). `buildReplayDivergenceResume` runs the same skip-safety
+    // preflight as an action-failure divergence (allowed unless a skipped
+    // step produces outputEnv or the range crosses runtime control flow).
+    // This is the only resume site for target-binding divergences.
+    resume,
+    repairHint,
     targetBinding,
   };
   const bounded = boundReplayDivergenceForSession({

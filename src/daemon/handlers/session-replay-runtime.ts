@@ -177,8 +177,19 @@ export async function runReplayScriptFile(params: {
     });
     // ADR 0012 decision 4 / migration step 5: resume preflight, entirely
     // before any device action. `test` never reaches here with either flag
-    // set (rejected earlier, in handleSessionReplayCommands).
-    const entryIndex = resolveReplayEntryIndex(req.flags, actions.length, planDigest, actions);
+    // set (rejected earlier, in handleSessionReplayCommands). Fetched before
+    // any mutation below so the pending record-and-heal watermark (decision
+    // 6, R2/R3) reflects this session's state AT REQUEST START, scoping the
+    // one-past-the-plan `--from` ordinal to the exact session that produced it.
+    const preEntrySession = sessionStore.get(sessionName);
+    const entryIndex = resolveReplayEntryIndex(
+      req.flags,
+      actions.length,
+      planDigest,
+      actions,
+      preEntrySession?.pendingRecordAndHeal,
+      preEntrySession?.actions.length ?? 0,
+    );
     if (!entryIndex.ok) return entryIndex.response;
     const scope = buildReplayVarScope({
       builtins: buildReplayBuiltinVars({
@@ -215,6 +226,19 @@ export async function runReplayScriptFile(params: {
     // and slips past the tombstone translation.
     if (entryIndex.value > 0 && !sessionStore.get(sessionName)) {
       return noActiveSessionError();
+    }
+    // ADR 0012 decision 6, R2/R3: `resolveReplayEntryIndex` already proved (or
+    // this `from` never matched the watermark at all) that a `record-and-heal`
+    // continuation is either not this session's pending target, or that a new
+    // action was recorded since the divergence — the corrective press
+    // happened. Consume the watermark on the latter so it can never be
+    // re-checked against a later, unrelated request.
+    if (
+      preEntrySession &&
+      preEntrySession.pendingRecordAndHeal?.expectedFrom === req.flags?.replayFrom
+    ) {
+      preEntrySession.pendingRecordAndHeal = undefined;
+      sessionStore.set(sessionName, preEntrySession);
     }
     if (req.flags?.saveScript) {
       // ADR 0012 decision 6, R7 (C5a): a fresh `replay --save-script` on this
