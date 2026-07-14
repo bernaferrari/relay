@@ -43,6 +43,7 @@ import {
   validateResolvedOpenRequest,
 } from './session-open-prepare.ts';
 import { errorResponse } from './response.ts';
+import { expireRefFrame } from '../ref-frame.ts';
 import { buildSessionRecoveryHint } from '../session-recovery-hints.ts';
 import {
   isImplicitSessionScopeConflict,
@@ -254,6 +255,11 @@ async function completeOpenCommand(params: {
     isIosSimulator(device) &&
     req.flags?.clearAppState !== true;
   if (shouldRelaunch && openTarget && !collapseSimulatorRelaunch) {
+    // ADR 0014 side-effect seam: the relaunch close is the FIRST device dispatch
+    // against the existing session. Expire its frame before awaiting the close,
+    // so a close timeout/failure that may already have torn the app down still
+    // leaves the old frame expired rather than active.
+    if (existingSession) expireRefFrame(existingSession);
     const closeTarget = sessionAppBundleId ?? openTarget;
     const closeStartedAtMs = Date.now();
     await relaunchCloseApp({
@@ -298,6 +304,10 @@ async function completeOpenCommand(params: {
     return provisionalSession.response;
   }
   const openDispatchSession = provisionalSession.session ?? existingSession;
+  // ADR 0014 side-effect seam: open/relaunch against an existing session replaces
+  // its visible surface. Expire that session's frame before the first
+  // close/launch dispatch; a fresh first open has no prior frame to expire.
+  if (openDispatchSession) expireRefFrame(openDispatchSession);
   await dispatchCommand(device, 'open', openPositionals, req.flags?.out, {
     ...contextFromFlags(logPath, req.flags, sessionAppBundleId),
     ...(collapseSimulatorRelaunch ? { terminateRunningApp: true } : {}),

@@ -1,5 +1,8 @@
 import type { CommandCapability } from '../capabilities.ts';
 import type { DaemonRequest } from '../../daemon/types.ts';
+// Type-only back-edge, erased at runtime (same pattern as derive.ts importing
+// DaemonCommandDescriptor); no runtime import cycle.
+import type { RefFrameEffect } from '../../daemon/daemon-command-registry.ts';
 import { resolveWaitBudgetMs } from '../wait-positionals.ts';
 import {
   DEFAULT_TIMEOUT_POLICY,
@@ -81,6 +84,28 @@ const isRecordingStartRequest = (req: DaemonRequest): boolean =>
 const isShardedTestRequest = (req: DaemonRequest): boolean =>
   req.command === 'test' &&
   (typeof req.flags?.shardAll === 'number' || typeof req.flags?.shardSplit === 'number');
+
+// ADR 0014 request-sensitive ref-frame resolvers. The action is the leading
+// positional (see keyboard/alert daemon writers in src/commands/system/index.ts
+// and src/commands/capture/alert.ts). Only the read-only status probes preserve
+// the frame; every mutating subaction crosses a device side effect.
+//
+// keyboard actions are status/get/dismiss/enter/return (src/commands/system/
+// runtime/system.ts): status/get inspect, while dismiss hides the keyboard and
+// enter/return dispatch a real return key. Anything other than a read is
+// classified may-invalidate (the honest superset for unknown subactions).
+const KEYBOARD_READ_ONLY_ACTIONS = new Set(['status', 'get']);
+const keyboardRefFrameEffect = (req: DaemonRequest): RefFrameEffect =>
+  KEYBOARD_READ_ONLY_ACTIONS.has((req.positionals?.[0] ?? 'status').toLowerCase())
+    ? 'preserve'
+    : 'may-invalidate';
+
+// alert actions are get/wait/accept/dismiss: get/wait read, accept/dismiss act.
+const ALERT_READ_ONLY_ACTIONS = new Set(['get', 'wait']);
+const alertRefFrameEffect = (req: DaemonRequest): RefFrameEffect =>
+  ALERT_READ_ONLY_ACTIONS.has((req.positionals?.[0] ?? 'get').toLowerCase())
+    ? 'preserve'
+    : 'may-invalidate';
 
 // ---------------------------------------------------------------------------
 // Capability matrices — platform/kind buckets, copied VERBATIM from
@@ -208,7 +233,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'lease_allocate',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseAllocate' },
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -216,7 +241,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'lease_heartbeat',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseHeartbeat' },
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -224,7 +249,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'lease_release',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/handlers/lease.ts'] as const } : {}),
     catalog: { group: 'internal', key: 'leaseRelease' },
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -232,7 +257,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'artifacts',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/artifacts.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'lease', ...ADMISSION_AND_LOCK_EXEMPT },
+    daemon: { route: 'lease', refFrameEffect: 'preserve', ...ADMISSION_AND_LOCK_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -244,7 +269,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
       ? { ownerFiles: ['src/daemon/handlers/session-inventory.ts'] as const }
       : {}),
     catalog: { group: 'internal', key: 'sessionList' },
-    daemon: { route: 'session', sessionKind: 'inventory', ...REQUEST_EXECUTION_EXEMPT },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'preserve',
+      sessionKind: 'inventory',
+      ...REQUEST_EXECUTION_EXEMPT,
+    },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -254,6 +284,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       ...REQUEST_EXECUTION_EXEMPT,
@@ -267,6 +298,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       preferExplicitDeviceOverExistingSession: true,
@@ -281,6 +313,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       allowSessionlessDefaultDevice: allowAnyDeviceSessionless,
@@ -295,6 +328,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       preferExplicitDeviceOverExistingSession: true,
@@ -307,7 +341,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'boot',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', sessionKind: 'state' },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate', sessionKind: 'state' },
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
@@ -320,7 +354,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'shutdown',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/device.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', sessionKind: 'state' },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate', sessionKind: 'state' },
     capability: {
       apple: { simulator: true },
       android: { emulator: true },
@@ -333,7 +367,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'appstate',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'appState' },
-    daemon: { route: 'session', sessionKind: 'state' },
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'state' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
@@ -341,7 +375,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'perf',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/perf/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', sessionKind: 'observability' },
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -350,7 +384,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'logs',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', sessionKind: 'observability' },
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -361,6 +395,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
+      refFrameEffect: 'preserve',
       sessionKind: 'observability',
       allowInvalidRecording: true,
       ...REQUEST_EXECUTION_EXEMPT,
@@ -372,7 +407,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'network',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', sessionKind: 'observability' },
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -381,7 +416,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'audio',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/observability/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', sessionKind: 'observability' },
+    daemon: { route: 'session', refFrameEffect: 'preserve', sessionKind: 'observability' },
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: { emulator: true },
@@ -396,6 +431,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
+      refFrameEffect: 'delegated',
       sessionKind: 'replay',
       skipSessionlessProviderDevice: isShardedTestRequest,
     },
@@ -409,6 +445,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'session',
+      refFrameEffect: 'delegated',
       sessionKind: 'replay',
       skipSessionlessProviderDevice: isShardedTestRequest,
     },
@@ -423,7 +460,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
       ? { ownerFiles: ['src/daemon/handlers/session-runtime-command.ts'] as const }
       : {}),
     catalog: { group: 'internal' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'preserve' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -431,7 +468,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'clipboard',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', replayScopedAction: true },
+    daemon: { route: 'session', refFrameEffect: 'preserve', replayScopedAction: true },
     dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
@@ -445,7 +482,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'keyboard',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'session',
+      refFrameEffect: keyboardRefFrameEffect,
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
@@ -459,7 +501,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'install',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
     capability: APP_INSTALL_CAPABILITY,
     timeoutPolicy: INSTALL_TIMEOUT_POLICY,
     batchable: true,
@@ -468,7 +510,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'reinstall',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/install.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
     capability: APP_INSTALL_CAPABILITY,
     timeoutPolicy: INSTALL_TIMEOUT_POLICY,
     batchable: true,
@@ -479,7 +521,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
       ? { ownerFiles: ['src/daemon/handlers/install-source.ts'] as const }
       : {}),
     catalog: { group: 'internal', key: 'installSource' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
     timeoutPolicy: INSTALL_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -489,7 +531,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
       ? { ownerFiles: ['src/daemon/handlers/install-source.ts'] as const }
       : {}),
     catalog: { group: 'internal', key: 'releaseMaterializedPaths' },
-    daemon: { route: 'session', ...REQUEST_EXECUTION_EXEMPT },
+    daemon: { route: 'session', refFrameEffect: 'preserve', ...REQUEST_EXECUTION_EXEMPT },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -497,7 +539,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'push',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/push.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
     dispatch: {},
     capability: {
       apple: { simulator: true },
@@ -511,7 +553,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'trigger-app-event',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/push.ts'] as const } : {}),
     catalog: { group: 'public', key: 'triggerAppEvent' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate' },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -521,7 +563,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'open',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', allowSessionlessDefaultDevice: allowAnyDeviceSessionless },
+    daemon: {
+      route: 'session',
+      refFrameEffect: 'may-invalidate',
+      allowSessionlessDefaultDevice: allowAnyDeviceSessionless,
+    },
     dispatch: {},
     capability: APP_RUNTIME_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -531,7 +577,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'prepare',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/prepare.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'preserve' },
     // Runner warm-up builds are the longest fixed envelope; --timeout overrides.
     timeoutPolicy: {
       budget: { source: 'flag' },
@@ -545,7 +591,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'batch',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/batch/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session' },
+    daemon: { route: 'session', refFrameEffect: 'delegated' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: false,
   },
@@ -553,7 +599,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'close',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/app.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'session', allowInvalidRecording: true },
+    daemon: { route: 'session', refFrameEffect: 'may-invalidate', allowInvalidRecording: true },
     dispatch: {},
     capability: APP_RUNTIME_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -565,7 +611,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'snapshot',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/snapshot.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    daemon: { route: 'snapshot', refFrameEffect: 'preserve', replayScopedAction: true },
     dispatch: {},
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     // First Apple snapshot on a device can sit behind runner startup; --timeout
@@ -577,7 +623,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'diff',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/diff.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    daemon: { route: 'snapshot', refFrameEffect: 'preserve', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -586,7 +632,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'wait',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/wait.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    daemon: { route: 'snapshot', refFrameEffect: 'preserve', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     // The wait budget travels as a positional, not a flag; parse it the same
     // way the daemon will so the request envelope extends past it (#1075).
@@ -600,7 +646,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'alert',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/alert.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    daemon: { route: 'snapshot', refFrameEffect: alertRefFrameEffect, replayScopedAction: true },
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
       android: ANDROID_ALL,
@@ -613,7 +659,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'settings',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/settings.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'snapshot', replayScopedAction: true },
+    daemon: { route: 'snapshot', refFrameEffect: 'may-invalidate', replayScopedAction: true },
     dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
@@ -629,7 +675,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'react-native',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/react-native/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'reactNative' },
-    daemon: { route: 'reactNative', replayScopedAction: true },
+    daemon: { route: 'reactNative', refFrameEffect: 'may-invalidate', replayScopedAction: true },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -640,6 +686,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     daemon: {
       route: 'recordTrace',
+      refFrameEffect: 'preserve',
       replayScopedAction: true,
       allowInvalidRecording: true,
       allowSessionlessDefaultDevice: isRecordingStartRequest,
@@ -652,7 +699,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'trace',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/recording/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'recordTrace' },
+    daemon: { route: 'recordTrace', refFrameEffect: 'preserve' },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
   },
@@ -660,7 +707,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'find',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'find', replayScopedAction: true },
+    daemon: { route: 'find', refFrameEffect: 'may-invalidate', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     timeoutPolicy: PRESERVE_DAEMON_TIMEOUT_POLICY,
     batchable: true,
@@ -677,7 +724,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'click',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: interactionTimeoutPolicy('click'),
     postActionObservation: postActionObservation('click'),
@@ -688,7 +740,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'fill',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: interactionTimeoutPolicy('fill'),
@@ -700,7 +757,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'longpress',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'longPress' },
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: {
@@ -717,7 +779,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'press',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: interactionTimeoutPolicy('press'),
@@ -729,7 +796,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'type',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     timeoutPolicy: interactionTimeoutPolicy('type'),
@@ -739,7 +811,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'get',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true },
+    daemon: { route: 'interaction', refFrameEffect: 'preserve', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     timeoutPolicy: interactionTimeoutPolicy('get'),
     batchable: true,
@@ -756,7 +828,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'is',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true },
+    daemon: { route: 'interaction', refFrameEffect: 'preserve', replayScopedAction: true },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     timeoutPolicy: interactionTimeoutPolicy('is'),
     batchable: true,
@@ -767,7 +839,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'back',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -777,7 +854,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'gesture',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -786,7 +868,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'home',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
@@ -800,7 +887,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'tv-remote',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'tvRemote' },
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
@@ -814,7 +906,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'orientation',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,
@@ -828,7 +925,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'scroll',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'generic', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -838,7 +940,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'swipe',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'interaction', replayScopedAction: true, androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'interaction',
+      refFrameEffect: 'may-invalidate',
+      replayScopedAction: true,
+      androidBlockingDialogGuard: true,
+    },
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
@@ -847,7 +954,11 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'focus',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/interaction/index.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'generic', androidBlockingDialogGuard: true },
+    daemon: {
+      route: 'generic',
+      refFrameEffect: 'may-invalidate',
+      androidBlockingDialogGuard: true,
+    },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_DEVICE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -857,7 +968,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'screenshot',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/capture/screenshot.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'generic', replayScopedAction: true },
+    daemon: { route: 'generic', refFrameEffect: 'preserve', replayScopedAction: true },
     dispatch: {},
     capability: ALL_DEVICE_COMMAND_CAPABILITY,
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -867,7 +978,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'viewport',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/management/viewport.ts'] as const } : {}),
     catalog: { group: 'public' },
-    daemon: { route: 'generic', replayScopedAction: true },
+    daemon: { route: 'generic', refFrameEffect: 'may-invalidate', replayScopedAction: true },
     dispatch: {},
     capability: { apple: APPLE_SIM_AND_DEVICE, android: ANDROID_ALL, linux: LINUX_NONE },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -878,6 +989,12 @@ export const RAW_COMMAND_DESCRIPTORS = [
     name: 'app-switcher',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
     catalog: { group: 'public', key: 'appSwitcher' },
+    // ADR 0014: app-switcher previously reached the generic daemon leaf via the
+    // registry's generic fallback with no daemon facet, so it could not be
+    // classified. Add the facet (route unchanged) so its device mutation is
+    // covered by the completeness gate; this is the escape hatch the ADR calls
+    // out, not a new specialized route.
+    daemon: { route: 'generic', refFrameEffect: 'may-invalidate' },
     dispatch: {},
     capability: {
       apple: APPLE_SIM_AND_DEVICE,

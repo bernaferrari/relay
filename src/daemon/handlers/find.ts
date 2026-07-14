@@ -7,6 +7,7 @@ import {
   type FindLocator,
 } from '../../selectors/find.ts';
 import { centerOfRect, type SnapshotState } from '../../kernel/snapshot.ts';
+import { expireRefFrame } from '../ref-frame.ts';
 import type { DaemonInvokeFn, DaemonRequest, DaemonResponse, SessionState } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { contextFromFlags } from '../context.ts';
@@ -165,6 +166,21 @@ export async function handleFindCommands(params: {
     sessionStore.set(sessionName, session);
   }
 
+  return dispatchFindAction(ctx, match, action, value);
+}
+
+/**
+ * Run the selected find action and, for a READ-ONLY action only, attach the
+ * issued `refsGeneration`. A mutating find (click/fill/focus/type) returns
+ * `data.ref` solely as diagnostic pre-action identity (ADR 0014) — it must omit
+ * `refsGeneration` so MCP cannot pin and reuse it after the action.
+ */
+async function dispatchFindAction(
+  ctx: FindContext,
+  match: ResolvedMatch,
+  action: string,
+  value: string | undefined,
+): Promise<DaemonResponse | null> {
   const actionHandlers: Record<string, () => Promise<DaemonResponse | null>> = {
     exists: () => handleFindExists(ctx),
     get_text: () => handleFindGetText(ctx, match),
@@ -177,11 +193,12 @@ export async function handleFindCommands(params: {
 
   const handler = actionHandlers[action];
   if (!handler) return null;
-  // Re-read the session AFTER the handler: internal click/fill sub-invocations
-  // may have replaced the stored tree again (Android freshness refresh), and
-  // the reported generation must describe the tree the response's ref resolves
-  // against at response time.
-  return attachIssuedRefsGeneration(await handler(), () => sessionStore.get(sessionName));
+  const result = await handler();
+  if (!isReadOnlyFindAction(action)) return result;
+  // Re-read the session AFTER the handler: the read capture may have replaced the
+  // stored tree, and the reported generation must describe the tree the
+  // response's ref resolves against at response time.
+  return attachIssuedRefsGeneration(result, () => ctx.sessionStore.get(ctx.sessionName));
 }
 
 /**
@@ -526,6 +543,7 @@ async function handleFindClick(ctx: FindContext, match: ResolvedMatch): Promise<
     command: 'click',
     positionals: [match.ref],
     flags: match.actionFlags,
+    internal: { findResolvedTarget: true },
   });
   if (!response.ok) return response;
   const matchCoords = match.resolvedNode.rect
@@ -568,6 +586,7 @@ async function handleFindFill(
     command: 'fill',
     positionals: [match.ref, value],
     flags: match.actionFlags,
+    internal: { findResolvedTarget: true },
   });
   if (!response.ok) return response;
   recordSessionAction(
@@ -599,6 +618,9 @@ async function handleFindType(
   }
   const focusResponse = await dispatchFocusForFindMatch(ctx, match);
   if (!focusResponse.ok) return focusResponse;
+  // The focus above already crossed the seam; expiry is idempotent, but keep it
+  // explicit at the type dispatch so it does not rely on the focus-first order.
+  if (session) expireRefFrame(session);
   const response = await dispatchCommand(device, 'type', [value], req.flags?.out, {
     ...contextFromFlags(logPath, req.flags, session?.appBundleId, session?.trace?.outPath),
   });
@@ -617,6 +639,10 @@ async function dispatchFocusForFindMatch(
   if (!coords) {
     return errorResponse('COMMAND_FAILED', 'matched element has no bounds');
   }
+  // ADR 0014 side-effect seam: mutating find focus/type dispatch the device
+  // command directly (they do not re-enter the interaction leaf), so expire the
+  // frame here before the device op. Pre-seam guards above preserve the frame.
+  if (session) expireRefFrame(session);
   const response = await dispatchCommand(
     device,
     'focus',

@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { SnapshotState } from '../kernel/snapshot.ts';
+import { refFrameEpoch } from './ref-frame.ts';
 import type { SessionState } from './types.ts';
 
 /**
@@ -70,9 +71,58 @@ export function nextSnapshotGeneration(current: number | undefined): number {
   return current === undefined ? randomInt(100_000, 1_000_000) : current + 1;
 }
 
-/** The response being returned hands the stored snapshot's refs to the client. */
+/**
+ * The response being returned hands the stored snapshot's refs to the client.
+ *
+ * ADR 0014: this clears the coarse client marker but must NOT re-authorize a
+ * complete frame — restoring broad `all`-scope mutation authority from a partial
+ * result is the ADR hole. Only a complete namespace (the snapshot command, via
+ * `buildNextSnapshotSession`) re-activates a complete frame. A partial
+ * publication that wants to authorize its bounded ref set calls
+ * {@link markSessionPartialRefsIssued} instead.
+ */
 export function markSessionSnapshotRefsIssued(session: SessionState): void {
   session.snapshotRefsStale = false;
+}
+
+/** Plain ref body: strip a leading `@` and any `~s<n>` generation suffix. */
+function normalizeRefBody(ref: string): string {
+  const withoutAt = ref.startsWith('@') ? ref.slice(1) : ref;
+  const suffix = withoutAt.indexOf('~');
+  return suffix === -1 ? withoutAt : withoutAt.slice(0, suffix);
+}
+
+/**
+ * ADR 0014 partial issuance: a `find`, settled diff, or replay divergence screen
+ * publishes only the refs it actually returned. It activates a PARTIAL frame that
+ * authorizes ONLY those ref bodies (scope = the emitted set) at the current
+ * epoch — a plain ref then requires a complete frame, and a pinned ref outside
+ * the set is rejected. An empty partial result does not supersede existing
+ * authority (it leaves the frame untouched), so a useful prior frame survives.
+ */
+export function markSessionPartialRefsIssued(session: SessionState, refs: Iterable<string>): void {
+  const scope = new Set<string>();
+  for (const ref of refs) {
+    const body = normalizeRefBody(ref);
+    if (body.length > 0) scope.add(body);
+  }
+  // ADR 0014: an empty partial result does not supersede existing authority — it
+  // leaves ALL session state untouched, including the coarse marker. Build the
+  // scope before touching anything so a no-ref result is a true no-op.
+  if (scope.size === 0) return;
+  session.snapshotRefsStale = false;
+  session.refFrameState = 'active';
+  session.refFrameScope = scope;
+  // ADR 0014: retain the tree this partial result published from as the frame's
+  // immutable source (shared reference — the caller already stored it via
+  // setSessionSnapshot). Interaction guards and replay identity can depend on
+  // ancestors, siblings, and viewport outside the emitted subset, so the whole
+  // tree is kept while the issuance set bounds authority.
+  session.refFrameTree = session.snapshot;
+  // Freeze the epoch the client is handed (the response-level refsGeneration),
+  // so a later read-only capture that bumps the observation counter cannot
+  // invalidate a correct pin from this frame.
+  session.refFrameGeneration = session.snapshotGeneration;
 }
 
 /**
@@ -109,7 +159,10 @@ export function resolveRefStalenessWarning(params: {
 }): string | undefined {
   const { session, ref, mintedGeneration } = params;
   if (mintedGeneration !== undefined) {
-    const currentGeneration = session?.snapshotGeneration ?? 0;
+    // ADR 0014: compare against the FRAME epoch (frozen at issuance), not the
+    // observation counter — a read-only capture that bumped `snapshotGeneration`
+    // must not make a valid pin from the issuing frame look stale.
+    const currentGeneration = session ? (refFrameEpoch(session) ?? 0) : 0;
     if (mintedGeneration === currentGeneration) return undefined;
     return buildPinnedStaleRefWarning({ ref, mintedGeneration, currentGeneration });
   }
