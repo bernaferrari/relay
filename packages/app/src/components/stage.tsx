@@ -21,6 +21,7 @@ import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
 import { evidenceForStep } from "./journey-workspace";
+import { withRefreshFeedback } from "../lib/refresh-feedback";
 import {
   deviceBody,
   deviceIconWell,
@@ -30,6 +31,8 @@ import {
   phoneBezel,
   phoneScreen,
   popover,
+  productPrimary,
+  productSecondary,
   seg,
   segBtn,
   segBtnOn,
@@ -37,12 +40,25 @@ import {
 } from "../lib/ui";
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
-export function DeviceStage(props: { onExpandBoard?: () => void }) {
+export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?: () => void }) {
   const server = useServer();
   const rec = useRecorder();
   const cmd = useCommand();
   const wb = useWorkbench();
   const draft = useRecipeDraft();
+  const [refreshingTarget, setRefreshingTarget] = createSignal(false);
+  async function refreshTarget(): Promise<void> {
+    if (refreshingTarget()) return;
+    setRefreshingTarget(true);
+    try {
+      await withRefreshFeedback(async () => {
+        await server.pollHealth();
+        if (server.health() === "online") await server.refreshDevices();
+      });
+    } finally {
+      setRefreshingTarget(false);
+    }
+  }
 
   /** What the artboard is “about” when a step is selected (Uber-style selection). */
   const focusedStep = createMemo(() => {
@@ -416,9 +432,6 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         fallback={
           <DeviceConnectState
             offline={server.health() === "offline"}
-            focusedStep={focusedStep}
-            phoneShell={phoneShell}
-            phoneScreen={phoneScreen}
             onRefresh={() => {
               void (async () => {
                 await server.pollHealth();
@@ -537,7 +550,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                 {(h) => (
                   <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
                     <div
-                      class="absolute rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12] shadow-[0_0_0_1px_color-mix(in_srgb,var(--surface-brand-base)_35%,transparent)]"
+                      class="absolute rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12]"
                       style={h().rect}
                     />
                     <div
@@ -558,7 +571,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               <Show when={pickedHighlight()}>
                 {(h) => (
                   <div
-                    class="pointer-events-none absolute z-[5] rounded-[3px] border-[1.6px] border-border-interactive-base bg-surface-brand-base/[0.18] shadow-[0_0_0_1px_color-mix(in_srgb,var(--surface-brand-base)_45%,transparent)]"
+                    class="pointer-events-none absolute z-[5] rounded-[3px] border-[1.6px] border-border-interactive-base bg-surface-brand-base/[0.18]"
                     aria-hidden="true"
                     style={h()}
                   />
@@ -623,11 +636,38 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                   fallback={
                     <>
                       <p class={cn("m-0 text-14-medium tracking-tight", deviceTitle)}>
-                        Connect this target
+                        Device not running
                       </p>
                       <p class={cn("m-0 max-w-[15em] text-12-regular leading-relaxed", deviceBody)}>
-                        Start the target before recording or running a step.
+                        Start it, or choose another device.
                       </p>
+                      <div class="mt-3.5 flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          class={cn(productPrimary, "min-h-[34px] px-[11px]")}
+                          onClick={() => props.onOpenTargets?.()}
+                        >
+                          <Icon name="smartphone" size={14} />
+                          Choose device
+                        </button>
+                        <button
+                          type="button"
+                          class={cn(productSecondary, "min-h-[34px] px-[11px]")}
+                          disabled={refreshingTarget()}
+                          aria-busy={refreshingTarget()}
+                          onClick={() => void refreshTarget()}
+                        >
+                          <Icon
+                            name="refresh"
+                            size={14}
+                            class={cn(
+                              refreshingTarget() &&
+                                "animate-spin origin-center motion-reduce:animate-none motion-reduce:opacity-70",
+                            )}
+                          />
+                          Refresh
+                        </button>
+                      </div>
                     </>
                   }
                 >
@@ -650,7 +690,6 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                     "bg-[color-mix(in_srgb,var(--phone-bezel)_88%,transparent)]",
                     "text-12-medium leading-snug",
                     deviceTitle,
-                    "shadow-[0_10px_28px_color-mix(in_srgb,var(--phone-screen)_70%,transparent)]",
                     "ring-1 ring-[color-mix(in_srgb,var(--phone-fg)_14%,transparent)]",
                   )}
                 >
@@ -793,7 +832,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
                       "bg-surface-weak ring-1 ring-border-weak-base transition-[box-shadow,ring-color,transform] duration-150",
                       "hover:ring-border-strong-base",
                       i() === server.frameIndex()
-                        ? "scale-[1.04] ring-2 ring-border-interactive-base shadow-[0_0_0_1px_color-mix(in_srgb,var(--surface-brand-base)_40%,transparent)]"
+                        ? "scale-[1.04] ring-2 ring-border-interactive-base"
                         : "opacity-80 hover:opacity-100",
                     )}
                     onClick={() => wb.focusFrame(i())}
@@ -986,9 +1025,7 @@ function RecorderBar() {
           <span
             class={cn(
               "size-1.5 flex-none rounded-full",
-              rec.recording()
-                ? "animate-pulse bg-icon-critical-base shadow-[0_0_0_3px_color-mix(in_srgb,var(--icon-critical-base)_22%,transparent)]"
-                : "bg-icon-success-base",
+              rec.recording() ? "animate-pulse bg-icon-critical-base" : "bg-icon-success-base",
             )}
             aria-hidden="true"
           />

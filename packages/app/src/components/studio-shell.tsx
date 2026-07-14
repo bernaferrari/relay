@@ -27,6 +27,8 @@ import { LibraryPanel } from "./studio-library";
 import { AgentTestComposer } from "./agent-test-composer";
 import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon, type IconName } from "./icon";
+import { StatusChip, jobStatusChip } from "./status-chip";
+import { ActionIconTrail } from "./action-icon-trail";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, displayTitle, titleize } from "../lib/job";
 import { toast } from "../context/toast";
@@ -37,15 +39,19 @@ import {
   modalPanel,
   modalScrim,
   eyebrow,
+  mono,
   productPrimary,
   productSecondary,
   productIconButton,
   productIconButtonDanger,
   productPage,
-  productPageHero,
-  productPageTitle,
-  productPageLead,
   productStatus,
+  tabUnderline,
+  tabUnderlineActive,
+  seg,
+  segBtn,
+  segBtnOn,
+  dividerY,
 } from "../lib/ui";
 import {
   shellRoot,
@@ -66,9 +72,6 @@ import {
   shellCaptureActive,
   shellStudio,
   shellStudioBar,
-  shellViewTabs,
-  shellViewTab,
-  shellViewTabActive,
   shellCount,
   shellSaveState,
   shellStudioBody,
@@ -116,7 +119,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [area, setArea] = createSignal<ProductArea>(
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
   );
-  const [studioView, setStudioView] = createSignal<StudioView>("live");
+  // Flow (the step graph / journey canvas) is the default "home" surface for
+  // any test that already has something to show there; Device is auxiliary,
+  // reserved for a brand-new test (nothing recorded yet) or for deliberately
+  // recording/watching a live run. See docs/PRODUCT_FLOWS.md "Journey".
+  const [studioView, setStudioView] = createSignal<StudioView>("journey");
   const [query, setQuery] = createSignal("");
   const [libraryOpen, setLibraryOpen] = createSignal(true);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
@@ -128,13 +135,33 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     canonicalYaml: string;
   } | null>(null);
 
-  const selected = () => server.selectedRecipe();
-  let previousSelectedId: string | null = null;
+  const selected = createMemo(() => server.selectedRecipe());
+  let previousReadyRecipeId: string | null = null;
+  createEffect(() => {
+    const readyId = selected()?.id ?? null;
+    if (readyId && readyId !== previousReadyRecipeId) setLibraryOpen(false);
+    if (!server.selectedRecipeId()) setLibraryOpen(true);
+    previousReadyRecipeId = readyId;
+  });
+  // Per-test default view: a fresh/empty test (no steps, no captured frames)
+  // still opens on Device since there's nothing to show on the canvas yet;
+  // anything with content lands on Flow. Mirrors the Flow-tab disabled check
+  // below. Re-checks while `recipes()` is still loading so a session restored
+  // from a persisted selectedRecipeId (set before recipes() arrives) resolves
+  // once the list lands, without re-forcing the view on later background
+  // refreshes.
+  let defaultedViewForId: string | null = null;
   createEffect(() => {
     const id = server.selectedRecipeId();
-    if (id && id !== previousSelectedId) setLibraryOpen(false);
-    else if (!id) setLibraryOpen(true);
-    previousSelectedId = id;
+    if (!id) {
+      defaultedViewForId = null;
+      return;
+    }
+    if (defaultedViewForId === id) return;
+    const recipe = server.recipes().find((item) => item.id === id);
+    if (!recipe) return;
+    setStudioView(recipe.steps.length > 0 || server.frames().length > 0 ? "journey" : "live");
+    defaultedViewForId = id;
   });
   const recordBlockedReason = () => {
     if (server.health() !== "online") return "Start the device server before recording";
@@ -187,7 +214,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (!saved) return;
     setImportReview(null);
     setArea("tests");
-    setStudioView("live");
+    // Default view is decided per-test by the effect above (content vs. empty).
   }
 
   async function duplicateSelected(): Promise<void> {
@@ -211,12 +238,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function openRecipe(id: string): void {
     server.setSelectedRecipeId(id);
     setArea("tests");
-    setStudioView("live");
+    // Default view is decided per-test by the effect above (content vs. empty).
+    // Opening a test transitions from the file browser to the canvas, like
+    // Figma. The library stays one click away in the top-left toolbar.
     setLibraryOpen(false);
   }
 
   return (
-    <div class={shellRoot} style={shellRootLibraryVar(area() === "tests" && libraryOpen())}>
+    <div
+      class={shellRoot}
+      style={shellRootLibraryVar(area() === "tests" && libraryOpen())}
+      data-selected-recipe-id={server.selectedRecipeId() ?? ""}
+    >
       <div class={shellDragStrip} aria-hidden="true" />
       <aside class={shellRail} aria-label="Product navigation">
         <button
@@ -229,10 +262,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             class="absolute inset-[10px_8px] -rotate-[32deg] rounded-full border-[1.5px] border-white/80"
             aria-hidden="true"
           />
-          <span
-            class="absolute top-2 right-2 size-1.5 rounded-full bg-white shadow-[0_0_0_3px_rgb(255_255_255/16%)]"
-            aria-hidden="true"
-          />
+          <span class="absolute top-2 right-2 size-1.5 rounded-full bg-white" aria-hidden="true" />
         </button>
         <nav class={shellRailNav}>
           <For each={AREA_ITEMS}>
@@ -266,7 +296,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             aria-label="Open settings"
             onClick={() => props.onOpenSettings()}
           >
-            <Icon name="sliders" size={19} />
+            <Icon name="sliders" size={18} />
             <span>Settings</span>
           </button>
         </div>
@@ -288,7 +318,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       <main class={shellMain}>
         <header class={shellTopbar}>
           <div class={shellTopbarContext}>
-            <Show when={area() === "tests" && studioView() === "live"}>
+            <Show when={area() === "tests"}>
               <button
                 type="button"
                 class={productIconButton}
@@ -377,32 +407,39 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           <section class={shellStudio}>
             <Show when={selected()}>
               <div class={shellStudioBar}>
-                <div class={shellViewTabs} role="tablist" aria-label="Test view">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={studioView() === "live"}
-                    class={cn(shellViewTab, studioView() === "live" && shellViewTabActive)}
-                    onClick={() => {
-                      setStudioView("live");
-                      setLibraryOpen(false);
-                    }}
-                  >
-                    <Icon name="smartphone" size={15} /> Device
-                  </button>
+                <div class={seg} role="tablist" aria-label="Canvas mode">
+                  {/* Flow is the default working surface; Device is the
+                      secondary/auxiliary tab for recording or watching a live
+                      run — order reflects that. */}
                   <button
                     type="button"
                     role="tab"
                     aria-selected={studioView() === "journey"}
-                    class={cn(shellViewTab, studioView() === "journey" && shellViewTabActive)}
+                    class={cn(
+                      segBtn,
+                      studioView() === "journey" && segBtnOn,
+                      "disabled:cursor-not-allowed disabled:opacity-40",
+                    )}
                     disabled={draft.steps().length === 0 && server.frames().length === 0}
                     onClick={() => {
                       setStudioView("journey");
                       setLibraryOpen(false);
                     }}
                   >
-                    <Icon name="move" size={15} /> Flow
+                    <Icon name="move" size={13} /> Flow
                     <span class={shellCount}>{server.frames().length || draft.steps().length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={studioView() === "live"}
+                    class={cn(segBtn, studioView() === "live" && segBtnOn)}
+                    onClick={() => {
+                      setStudioView("live");
+                      setLibraryOpen(false);
+                    }}
+                  >
+                    <Icon name="smartphone" size={13} /> Device
                   </button>
                 </div>
                 <div class="relative flex items-center gap-2">
@@ -474,12 +511,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 }
               >
                 <Show when={studioView() === "journey"}>
-                  <JourneyOutline
-                    onBack={() => {
-                      setStudioView("live");
-                      setLibraryOpen(false);
-                    }}
-                  />
+                  <JourneyOutline />
                 </Show>
                 <div class={shellStageWrap}>
                   <Show
@@ -493,7 +525,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       />
                     }
                   >
-                    <DeviceStage onExpandBoard={() => setStudioView("journey")} />
+                    <DeviceStage
+                      onExpandBoard={() => setStudioView("journey")}
+                      onOpenTargets={() => props.onOpenSettings("targets")}
+                    />
                   </Show>
                 </div>
                 <Show
@@ -804,9 +839,8 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
       <div class={shellStepsHead}>
         <div class="flex items-start gap-3">
           <div class="min-w-0 flex-1">
-            <span class={eyebrow}>Test</span>
             <input
-              class="mt-0.5 w-full min-w-0 rounded-md border-0 bg-transparent px-0 text-[17px] font-semibold tracking-[-0.02em] text-[var(--relay-text)] outline-none placeholder:text-[var(--relay-text-tertiary)] focus:bg-[var(--relay-surface-raised)] focus:px-2 focus:-mx-2 transition-[background-color,padding,margin] duration-100"
+              class="w-full min-w-0 rounded-md border-0 bg-transparent px-0 text-[17px] font-semibold tracking-[-0.02em] text-[var(--relay-text)] outline-none placeholder:text-[var(--relay-text-tertiary)] focus:bg-[var(--relay-surface-raised)] focus:px-2 focus:-mx-2 transition-[background-color,padding,margin] duration-100"
               aria-label="Test name"
               value={draft.title()}
               spellcheck={false}
@@ -814,206 +848,209 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
               onInput={(event) => draft.setTitle(event.currentTarget.value)}
             />
           </div>
-          <div class="relative flex shrink-0 items-center gap-px">
-            <button
-              type="button"
-              class={cn(shellRecord, "rounded-r-none")}
-              data-blocked={!canRun() ? "" : undefined}
-              data-tip={runBlockedReason() || "Run this test"}
-              onClick={() => attemptRun(1)}
-            >
-              <Icon name="play" size={13} /> Run
-            </button>
-            <button
-              type="button"
-              class={cn(shellRecord, "rounded-l-none px-2")}
-              data-blocked={!canRun() ? "" : undefined}
-              aria-label="Run options"
-              aria-haspopup="dialog"
-              aria-expanded={runMenuOpen()}
-              onClick={() => {
-                const blocker = runBlockedReason();
-                if (blocker) {
-                  toast(blocker, "warning");
-                  return;
-                }
-                setRunMenuOpen((open) => !open);
-              }}
-            >
-              <Icon name="chevron-down" size={12} />
-            </button>
-            <Show when={runMenuOpen()}>
-              <div
-                class="absolute top-[calc(100%+6px)] right-0 z-40 grid w-[260px] gap-0.5 rounded-[12px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1.5 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-10 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-lg [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--relay-text-secondary)] hover:[&_button]:bg-[var(--relay-surface-strong)] hover:[&_button]:text-[var(--relay-text)] [&_strong]:block [&_strong]:text-[var(--relay-text)] [&_small]:block [&_small]:text-[10px] [&_small]:text-[var(--relay-text-tertiary)]"
-                role="dialog"
-                aria-label="Run options"
+          <div class="relative flex shrink-0 items-center gap-2">
+            <div class="flex items-center gap-px">
+              <button
+                type="button"
+                class={cn(shellRecord, "rounded-r-none")}
+                data-blocked={!canRun() ? "" : undefined}
+                data-tip={runBlockedReason() || "Run this test"}
+                onClick={() => attemptRun(1)}
               >
-                <button type="button" onClick={() => runTrials(1)}>
-                  <Icon name="play" size={14} />
-                  <span>
-                    <strong>Smoke run</strong>
-                    <small>One fast execution</small>
-                  </span>
-                </button>
-                <button type="button" onClick={() => runTrials(3)}>
-                  <Icon name="refresh" size={14} />
-                  <span>
-                    <strong>Reliability check</strong>
-                    <small>Repeat 3 times</small>
-                  </span>
-                </button>
-                <button type="button" onClick={() => runTrials(matrixSize())}>
-                  <Icon name="grid" size={14} />
-                  <span>
-                    <strong>All test data</strong>
-                    <small>{matrixSize()} approved or generated cases</small>
-                  </span>
-                </button>
-                <Show when={server.matrices().length > 0}>
-                  <section
-                    class="grid gap-1 border-t border-[var(--relay-line)] pt-1.5"
-                    aria-label="Test environments"
+                <Icon name="play" size={13} /> Run
+              </button>
+              <button
+                type="button"
+                class={cn(shellRecord, "rounded-l-none px-2")}
+                data-blocked={!canRun() ? "" : undefined}
+                aria-label="Run options"
+                aria-haspopup="dialog"
+                aria-expanded={runMenuOpen()}
+                onClick={() => {
+                  const blocker = runBlockedReason();
+                  if (blocker) {
+                    toast(blocker, "warning");
+                    return;
+                  }
+                  setRunMenuOpen((open) => !open);
+                }}
+              >
+                <Icon name="chevron-down" size={12} />
+              </button>
+              <Show when={runMenuOpen()}>
+                <div
+                  class="absolute top-[calc(100%+6px)] right-0 z-40 grid w-[260px] gap-0.5 rounded-[12px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1.5 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-10 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-lg [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--relay-text-secondary)] hover:[&_button]:bg-[var(--relay-surface-strong)] hover:[&_button]:text-[var(--relay-text)] [&_strong]:block [&_strong]:text-[var(--relay-text)] [&_small]:block [&_small]:text-[10px] [&_small]:text-[var(--relay-text-tertiary)]"
+                  role="dialog"
+                  aria-label="Run options"
+                >
+                  <button type="button" onClick={() => runTrials(1)}>
+                    <Icon name="play" size={14} />
+                    <span>
+                      <strong>Smoke run</strong>
+                      <small>One fast execution</small>
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => runTrials(3)}>
+                    <Icon name="refresh" size={14} />
+                    <span>
+                      <strong>Reliability check</strong>
+                      <small>Repeat 3 times</small>
+                    </span>
+                  </button>
+                  <button type="button" onClick={() => runTrials(matrixSize())}>
+                    <Icon name="grid" size={14} />
+                    <span>
+                      <strong>All test data</strong>
+                      <small>{matrixSize()} approved or generated cases</small>
+                    </span>
+                  </button>
+                  <Show when={server.matrices().length > 0}>
+                    <section
+                      class="grid gap-1 border-t border-[var(--relay-line)] pt-1.5"
+                      aria-label="Test environments"
+                    >
+                      <header>
+                        <span>Test environments</span>
+                        <div role="group" aria-label="Trials per environment">
+                          <button
+                            type="button"
+                            aria-pressed={matrixRepetitions() === 1}
+                            onClick={() => setMatrixRepetitions(1)}
+                          >
+                            1×
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={matrixRepetitions() === 3}
+                            onClick={() => setMatrixRepetitions(3)}
+                          >
+                            3×
+                          </button>
+                        </div>
+                      </header>
+                      <For each={server.matrices()}>
+                        {(matrix) => {
+                          const expansion = () => matrixExpansions()[matrix.id];
+                          const preview = () => {
+                            const value = expansion();
+                            return value ? matrixRunPreview(value, matrixRepetitions()) : null;
+                          };
+                          return (
+                            <div class="grid gap-1 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] p-2">
+                              <button
+                                type="button"
+                                disabled={!expansion() || expansion()!.profiles.length === 0}
+                                onClick={() => runOnMatrix(matrix.id)}
+                              >
+                                <Icon name="grid" size={14} />
+                                <span>
+                                  <strong>{matrix.name}</strong>
+                                  <small>
+                                    <Show
+                                      when={expansion()}
+                                      fallback={
+                                        matrixPreviewBusy() ? "Checking targets…" : "Unavailable"
+                                      }
+                                    >
+                                      {preview()!.summary}
+                                    </Show>
+                                  </small>
+                                </span>
+                                <Icon name="chevron-right" size={12} />
+                              </button>
+                              <Show when={preview()?.exclusions.length}>
+                                <details>
+                                  <summary>
+                                    {preview()!.exclusions.length} target
+                                    {preview()!.exclusions.length === 1 ? "" : "s"} excluded
+                                  </summary>
+                                  <ul>
+                                    <For each={preview()!.exclusions}>
+                                      {(item) => (
+                                        <li>
+                                          <strong>{item.name}</strong>
+                                          <span>{item.reason}</span>
+                                        </li>
+                                      )}
+                                    </For>
+                                  </ul>
+                                </details>
+                              </Show>
+                              <Show when={preview()?.profiles.length}>
+                                <details>
+                                  <summary>
+                                    {preview()!.profiles.length} target
+                                    {preview()!.profiles.length === 1 ? "" : "s"} included
+                                  </summary>
+                                  <ul>
+                                    <For each={preview()!.profiles}>
+                                      {(profile) => (
+                                        <li>
+                                          <strong>{profile.name}</strong>
+                                          <span>
+                                            {profile.platform}
+                                            {profile.osVersion ? ` · ${profile.osVersion}` : ""}
+                                          </span>
+                                        </li>
+                                      )}
+                                    </For>
+                                  </ul>
+                                </details>
+                              </Show>
+                            </div>
+                          );
+                        }}
+                      </For>
+                    </section>
+                  </Show>
+                  <Show when={server.matrices().length === 0}>
+                    <div class="px-2 py-3 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+                      <strong>No test environment yet</strong>
+                      <small>
+                        Save a set of devices and OS versions to run this test across them.
+                      </small>
+                    </div>
+                  </Show>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRunMenuOpen(false);
+                      props.onOpenTargets();
+                    }}
                   >
-                    <header>
-                      <span>Test environments</span>
-                      <div role="group" aria-label="Trials per environment">
-                        <button
-                          type="button"
-                          aria-pressed={matrixRepetitions() === 1}
-                          onClick={() => setMatrixRepetitions(1)}
-                        >
-                          1×
-                        </button>
-                        <button
-                          type="button"
-                          aria-pressed={matrixRepetitions() === 3}
-                          onClick={() => setMatrixRepetitions(3)}
-                        >
-                          3×
-                        </button>
-                      </div>
-                    </header>
-                    <For each={server.matrices()}>
-                      {(matrix) => {
-                        const expansion = () => matrixExpansions()[matrix.id];
-                        const preview = () => {
-                          const value = expansion();
-                          return value ? matrixRunPreview(value, matrixRepetitions()) : null;
-                        };
-                        return (
-                          <div class="grid gap-1 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] p-2">
-                            <button
-                              type="button"
-                              disabled={!expansion() || expansion()!.profiles.length === 0}
-                              onClick={() => runOnMatrix(matrix.id)}
-                            >
-                              <Icon name="grid" size={14} />
-                              <span>
-                                <strong>{matrix.name}</strong>
-                                <small>
-                                  <Show
-                                    when={expansion()}
-                                    fallback={
-                                      matrixPreviewBusy() ? "Checking targets…" : "Unavailable"
-                                    }
-                                  >
-                                    {preview()!.summary}
-                                  </Show>
-                                </small>
-                              </span>
-                              <Icon name="chevron-right" size={12} />
-                            </button>
-                            <Show when={preview()?.exclusions.length}>
-                              <details>
-                                <summary>
-                                  {preview()!.exclusions.length} target
-                                  {preview()!.exclusions.length === 1 ? "" : "s"} excluded
-                                </summary>
-                                <ul>
-                                  <For each={preview()!.exclusions}>
-                                    {(item) => (
-                                      <li>
-                                        <strong>{item.name}</strong>
-                                        <span>{item.reason}</span>
-                                      </li>
-                                    )}
-                                  </For>
-                                </ul>
-                              </details>
-                            </Show>
-                            <Show when={preview()?.profiles.length}>
-                              <details>
-                                <summary>
-                                  {preview()!.profiles.length} target
-                                  {preview()!.profiles.length === 1 ? "" : "s"} included
-                                </summary>
-                                <ul>
-                                  <For each={preview()!.profiles}>
-                                    {(profile) => (
-                                      <li>
-                                        <strong>{profile.name}</strong>
-                                        <span>
-                                          {profile.platform}
-                                          {profile.osVersion ? ` · ${profile.osVersion}` : ""}
-                                        </span>
-                                      </li>
-                                    )}
-                                  </For>
-                                </ul>
-                              </details>
-                            </Show>
-                          </div>
+                    <Icon name="sliders" size={14} />
+                    <span>
+                      <strong>Manage test environments</strong>
+                      <small>Choose devices, OS versions, and capabilities</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const recipe = selected();
+                      if (!recipe) return;
+                      setRunMenuOpen(false);
+                      void server
+                        .scheduleRecipe({ recipeId: recipe.id, intervalMinutes: 1_440 })
+                        .then(() => toast("Daily local run scheduled", "success"))
+                        .catch((error: unknown) =>
+                          toast(error instanceof Error ? error.message : String(error), "error"),
                         );
-                      }}
-                    </For>
-                  </section>
-                </Show>
-                <Show when={server.matrices().length === 0}>
-                  <div class="px-2 py-3 text-center text-[11px] text-[var(--relay-text-tertiary)]">
-                    <strong>No test environment yet</strong>
-                    <small>
-                      Save a set of devices and OS versions to run this test across them.
-                    </small>
-                  </div>
-                </Show>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRunMenuOpen(false);
-                    props.onOpenTargets();
-                  }}
-                >
-                  <Icon name="sliders" size={14} />
-                  <span>
-                    <strong>Manage test environments</strong>
-                    <small>Choose devices, OS versions, and capabilities</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const recipe = selected();
-                    if (!recipe) return;
-                    setRunMenuOpen(false);
-                    void server
-                      .scheduleRecipe({ recipeId: recipe.id, intervalMinutes: 1_440 })
-                      .then(() => toast("Daily local run scheduled", "success"))
-                      .catch((error: unknown) =>
-                        toast(error instanceof Error ? error.message : String(error), "error"),
-                      );
-                  }}
-                >
-                  <Icon name="clock" size={14} />
-                  <span>
-                    <strong>Schedule daily</strong>
-                    <small>Runs on this target</small>
-                  </span>
-                </button>
-              </div>
-            </Show>
+                    }}
+                  >
+                    <Icon name="clock" size={14} />
+                    <span>
+                      <strong>Schedule daily</strong>
+                      <small>Runs on this target</small>
+                    </span>
+                  </button>
+                </div>
+              </Show>
+            </div>
+            <span class={dividerY} aria-hidden="true" />
             <button
               type="button"
-              class={cn(productIconButton, "ml-1")}
+              class={productIconButton}
               aria-label="More test actions"
               aria-expanded={maintenanceOpen()}
               onClick={() => setMaintenanceOpen((open) => !open)}
@@ -1133,22 +1170,19 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
             </For>
           </div>
         </Show>
-        <div class="mt-1.5 flex items-center gap-4" role="tablist" aria-label="Test editor panels">
+        <div class="mt-1.5 flex items-center" role="tablist" aria-label="Test editor panels">
           <For each={["steps", "inputs", "yaml"] as const}>
             {(item) => (
               <button
                 type="button"
                 role="tab"
                 aria-selected={tab() === item}
-                class={cn(
-                  "relative inline-flex min-h-9 items-center gap-1.5 px-0.5 text-[12.5px]/[1.25] font-semibold text-text-weaker transition-colors after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:scale-x-0 after:rounded-full after:bg-surface-brand-base after:transition-transform hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
-                  tab() === item && "text-text-strong after:scale-x-100",
-                )}
+                class={cn(tabUnderline, tab() === item && tabUnderlineActive)}
                 onClick={() => setTab(item)}
               >
                 {item === "steps" ? "Steps" : item === "inputs" ? "Inputs" : "YAML"}
                 <Show when={item === "steps"}>
-                  <span class="min-w-4 rounded-full bg-surface-weak px-1 text-center text-[9px]/4 text-text-weak">
+                  <span class="min-w-4 rounded-full bg-surface-weak px-1 text-center text-[11px]/4 text-text-weak">
                     {draft.steps().length}
                   </span>
                 </Show>
@@ -1389,133 +1423,102 @@ function TestWelcome(props: {
     Boolean(target()) && server.health() === "online" && target()!.booted !== false;
   return (
     <section
-      class="col-span-full relative grid min-h-0 flex-1 place-items-center overflow-hidden px-10 py-8"
+      class="col-span-full grid min-h-0 flex-1 place-items-center px-6 py-8"
       aria-labelledby="test-welcome-title"
     >
-      <div
-        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_68%_38%,color-mix(in_srgb,var(--relay-accent)_7%,transparent),transparent_46%),radial-gradient(circle,color-mix(in_srgb,var(--relay-line-strong)_42%,transparent)_1px,transparent_1px)] [background-size:auto,22px_22px]"
-        aria-hidden="true"
-      />
-      <div class="relative grid w-full max-w-[980px] grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)] items-center gap-16 max-[1100px]:grid-cols-1 max-[1100px]:justify-items-center max-[1100px]:gap-8 max-[1100px]:text-center">
-        <div class="max-w-[500px]">
-          <span class={eyebrow}>Test studio</span>
+      <div class="grid max-w-[380px] justify-items-center gap-4 text-center">
+        <span class="grid size-11 place-items-center rounded-[12px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
+          <Icon name="bolt" size={20} />
+        </span>
+        <div>
           <h2
             id="test-welcome-title"
-            class="mt-3 text-[clamp(28px,3.2vw,38px)] font-semibold leading-[1.08] tracking-[-0.035em] text-balance text-[var(--relay-text)]"
+            class="m-0 text-[15px] font-semibold text-[var(--relay-text)]"
           >
-            Turn a manual flow into a repeatable test.
+            No test selected
           </h2>
-          <p class="mt-4 max-w-[46ch] text-[14px]/[1.6] text-[var(--relay-text-secondary)]">
+          <p class="mt-1.5 text-[12.5px]/[1.5] text-[var(--relay-text-secondary)]">
             {targetReady()
-              ? "Press record and use the app normally. Relay captures editable steps as you go."
+              ? "Press record and use the app normally, or build one manually."
               : target()
                 ? "Start this device, then record the flow exactly as a customer would."
-                : "Connect a device or browser. Every tap, swipe, and typed value becomes an editable step."}
+                : "Connect a device or browser, or build a test manually."}
           </p>
-          <Show when={target()}>
-            <div
-              class="mt-6 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_72%,transparent)] px-3.5 py-3 text-left backdrop-blur-sm max-[1100px]:w-full max-[1100px]:max-w-[380px]"
-              aria-live="polite"
-            >
-              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
-                <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={17} />
+        </div>
+        <Show when={target()}>
+          <div
+            class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[12px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 py-2.5 text-left"
+            aria-live="polite"
+          >
+            <span class="grid size-8 place-items-center rounded-[9px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
+              <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={15} />
+            </span>
+            <div class="min-w-0">
+              <strong class="block overflow-hidden text-[12.5px] font-semibold text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
+                {targetCopy()!.displayName}
+              </strong>
+              <span class="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-[var(--relay-text-tertiary)]">
+                <i
+                  class={cn(
+                    "size-1.5 rounded-full",
+                    targetReady() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
+                  )}
+                />
+                {targetReady() ? "Ready to record" : "Needs setup"}
               </span>
-              <div class="min-w-0">
-                <strong class="block overflow-hidden text-[13px] font-semibold text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
-                  {targetCopy()!.displayName}
-                </strong>
-                <span class="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-[var(--relay-text-tertiary)]">
-                  <i
-                    class={cn(
-                      "size-1.5 rounded-full",
-                      targetReady() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
-                    )}
-                  />
-                  {targetReady() ? "Ready to record" : "Needs setup"}
-                </span>
-              </div>
+            </div>
+            <button
+              type="button"
+              class="rounded-lg px-2 py-1.5 text-[12px] font-medium text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
+              onClick={() => props.onOpenSettings("targets")}
+            >
+              Change
+            </button>
+          </div>
+        </Show>
+        <div class="flex flex-wrap items-center justify-center gap-2">
+          <Show
+            when={target()}
+            fallback={
               <button
                 type="button"
-                class="rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
+                class={productPrimary}
                 onClick={() => props.onOpenSettings("targets")}
               >
-                Change
+                Connect device or browser
               </button>
-            </div>
-          </Show>
-          <div class="mt-7 flex flex-wrap items-center gap-3 max-[1100px]:justify-center">
+            }
+          >
             <Show
-              when={target()}
+              when={targetReady()}
               fallback={
                 <button
                   type="button"
                   class={productPrimary}
                   onClick={() => props.onOpenSettings("targets")}
                 >
-                  Connect device or browser <Icon name="arrow-right" size={14} />
+                  Set up this target
                 </button>
               }
             >
-              <Show
-                when={targetReady()}
-                fallback={
-                  <button
-                    type="button"
-                    class={productPrimary}
-                    onClick={() => props.onOpenSettings("targets")}
-                  >
-                    Set up this target <Icon name="arrow-right" size={14} />
-                  </button>
-                }
+              <button
+                class={productPrimary}
+                type="button"
+                disabled={Boolean(props.recordBlockedReason)}
+                data-tip={props.recordBlockedReason || "Record device interactions"}
+                onClick={props.onRecord}
               >
-                <button
-                  class={productPrimary}
-                  type="button"
-                  disabled={Boolean(props.recordBlockedReason)}
-                  data-tip={props.recordBlockedReason || "Record device interactions"}
-                  onClick={props.onRecord}
-                >
-                  <span class={shellRecordDot} /> Start recording
-                </button>
-              </Show>
+                <span class={shellRecordDot} /> Start recording
+              </button>
             </Show>
-            <button
-              class="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] px-3.5 text-[13px] font-semibold text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)] transition-colors hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text)]"
-              type="button"
-              onClick={props.onCreate}
-            >
-              Build without recording
-            </button>
-          </div>
-          <p class="mt-5 text-[11px] text-[var(--relay-text-tertiary)]">
-            Or drop a Relay YAML file into the library to import a test.
-          </p>
+          </Show>
+          <button type="button" class={productSecondary} onClick={props.onCreate}>
+            Build without recording
+          </button>
         </div>
-        <div
-          class="relative mx-auto grid h-[420px] w-[min(100%,340px)] place-items-center max-[1100px]:hidden"
-          aria-hidden="true"
-        >
-          <div class="relative aspect-[9/19] w-[196px] rotate-[-5deg] rounded-[30px] border-[6px] border-[var(--relay-surface-strong)] bg-[linear-gradient(160deg,var(--relay-surface-raised),var(--relay-panel))] p-3.5 shadow-[0_40px_90px_rgb(0_0_0/45%),0_0_0_1px_rgb(255_255_255/4%)]">
-            <span class="mx-auto mb-5 block h-1 w-10 rounded-full bg-[var(--relay-line-strong)]" />
-            <span class="mb-2.5 block h-2.5 w-[72%] rounded bg-[color-mix(in_srgb,var(--relay-text)_16%,transparent)]" />
-            <span class="mb-2.5 block h-2.5 w-[88%] rounded bg-[color-mix(in_srgb,var(--relay-text)_10%,transparent)]" />
-            <span class="mb-6 block h-2.5 w-[54%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
-            <span class="block h-10 rounded-[11px] bg-[linear-gradient(135deg,#8b7cff,#6454e9)] shadow-[0_6px_18px_rgb(100_84_233/35%)]" />
-            <span class="mt-2.5 block h-10 rounded-[11px] bg-[color-mix(in_srgb,var(--relay-text)_6%,transparent)]" />
-          </div>
-          <div class="absolute top-14 -left-2 flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] px-3 py-2 shadow-[var(--v2-elevation-floating)] backdrop-blur-md">
-            <span class="font-mono text-[10px] text-[var(--text-interactive-base)]">01</span>
-            <strong class="text-[11px] font-medium text-[var(--relay-text)]">Tap “Continue”</strong>
-            <span class="font-mono text-[9px] text-[var(--relay-text-tertiary)]">248ms</span>
-          </div>
-          <div class="absolute right-0 bottom-24 flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] px-3 py-2 shadow-[var(--v2-elevation-floating)] backdrop-blur-md">
-            <span class="font-mono text-[10px] text-[var(--text-interactive-base)]">02</span>
-            <strong class="text-[11px] font-medium text-[var(--relay-text)]">Check welcome</strong>
-            <span class="grid size-3.5 place-items-center rounded-full bg-[color-mix(in_srgb,var(--relay-green)_18%,transparent)] text-[var(--relay-green)]">
-              <Icon name="check" size={9} strokeWidth={3} />
-            </span>
-          </div>
-        </div>
+        <p class="m-0 text-[11px] text-[var(--relay-text-tertiary)]">
+          Or drop a Relay YAML file into the library to import a test.
+        </p>
       </div>
     </section>
   );
@@ -1645,12 +1648,10 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
   return (
     <section class={cn(selected() ? "flex min-h-0 flex-1 flex-col overflow-hidden" : productPage)}>
       <Show when={!selected()}>
-        <div class={productPageHero}>
-          <div>
-            <span class={eyebrow}>Execution</span>
-            <h2 class={productPageTitle}>Run history</h2>
-            <p class={productPageLead}>See what passed, what needs attention, and why.</p>
-          </div>
+        <div class="mx-auto mb-5 flex max-w-[1080px] items-center justify-between gap-4">
+          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.02em] text-text-strong">
+            Run history
+          </h2>
           <Show when={rows().length > 0}>
             <button
               type="button"
@@ -1678,7 +1679,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
             label="Pass rate"
             value={`${passRate()}%`}
             detail="across saved runs"
-            tone={passRate() > 0 ? "success" : "danger"}
+            tone={passRate() > 0 ? "success" : undefined}
           />
           <Metric label="Passed" value={passedCount()} detail="including healed" tone="success" />
           <Metric
@@ -1761,52 +1762,15 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     </div>
                   }
                 >
-                  <div class="grid place-items-center gap-3 px-8 py-12 text-center">
-                    <div
-                      class="mb-2 grid w-full max-w-[360px] grid-cols-[100px_minmax(0,1fr)] items-center gap-4"
-                      aria-hidden="true"
-                    >
-                      <div class="relative mx-auto aspect-[9/16] w-[88px] rounded-[18px] border-[5px] border-[var(--relay-surface-strong)] bg-[var(--relay-surface-raised)] p-2 shadow-[0_16px_40px_rgb(0_0_0/25%)]">
-                        <i class="mx-auto mb-3 block h-0.5 w-6 rounded-full bg-[var(--relay-line-strong)]" />
-                        <span class="mb-1.5 block h-1.5 w-[70%] rounded bg-[color-mix(in_srgb,var(--relay-text)_12%,transparent)]" />
-                        <span class="mb-1.5 block h-1.5 w-[88%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
-                        <b class="mt-auto block rounded-md bg-[var(--relay-accent-soft)] py-1 text-center text-[8px] text-[var(--text-interactive-base)]">
-                          Continue
-                        </b>
-                      </div>
-                      <div class="grid gap-1.5 text-left">
-                        <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
-                          <i class="font-mono text-[var(--relay-text-tertiary)]">01</i>
-                          <b class="truncate font-medium">Tap “Continue”</b>
-                          <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
-                            248ms
-                          </em>
-                        </span>
-                        <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
-                          <i class="font-mono text-[var(--relay-text-tertiary)]">02</i>
-                          <b class="truncate font-medium">Enter account</b>
-                          <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
-                            612ms
-                          </em>
-                        </span>
-                        <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
-                          <i class="font-mono text-[var(--relay-text-tertiary)]">03</i>
-                          <b class="truncate font-medium">Check welcome</b>
-                          <em class="font-mono text-[9px] not-italic text-[var(--relay-green)]">
-                            Passed
-                          </em>
-                        </span>
-                      </div>
-                    </div>
-                    <span class={eyebrow}>Run history</span>
-                    <h3 class="m-0 text-[18px] font-semibold text-[var(--relay-text)]">
-                      Every run keeps the evidence
-                    </h3>
-                    <p class="m-0 max-w-[36ch] text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
-                      Run a test to keep its result, replay, diagnostics, and test data together.
+                  <div class="grid place-items-center gap-3 px-8 py-14 text-center">
+                    <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
+                      <Icon name="wave" size={17} />
+                    </span>
+                    <p class="m-0 max-w-[32ch] text-[12.5px]/[1.5] text-text-weak">
+                      Run a test to keep its result, replay, and diagnostics together.
                     </p>
                     <button type="button" class={productPrimary} onClick={props.onOpenTests}>
-                      Run your first test <Icon name="arrow-right" size={14} />
+                      Run your first test
                     </button>
                   </div>
                 </Show>
@@ -1856,7 +1820,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     <Show when={job().status === "error" || job().status === "cancelled"}>
                       <button
                         type="button"
-                        class="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg bg-text-strong px-2.5 text-[11px] font-semibold text-background-stronger transition-transform duration-150 active:scale-[0.97]"
+                        class={cn(productPrimary, "min-h-8 px-2.5 text-[11px]")}
                         onClick={() => void server.retrySelectedJob(job().id)}
                       >
                         <Icon name="refresh" size={12} /> Retry
@@ -1893,28 +1857,33 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     </button>
                   </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11px] text-text-weak">
-                  <span class={productStatus(String(job().status))}>
-                    {job().status === "ok" || job().status === "healed"
-                      ? "Passed"
-                      : job().status === "error"
-                        ? "Needs attention"
-                        : titleize(job().status)}
-                  </span>
-                  <span class="inline-flex items-center gap-1.5">
-                    <Icon name="clock" size={11} />
-                    <span class="font-mono tabular-nums">
+                <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-text-weak">
+                  <StatusChip
+                    tone={jobStatusChip(job().status).tone}
+                    label={jobStatusChip(job().status).label}
+                  />
+                  <span class="inline-flex items-baseline gap-2">
+                    <span class="text-text-weaker">Ran</span>
+                    <span class={cn(mono, "text-text-base")}>
                       {fmtAgo(
                         job().finishedAt ?? job().startedAt ?? job().queuedAt,
                         server.clock(),
-                      ) || "now"}
+                      ) || "just now"}
                     </span>
                   </span>
                   <Show when={fmtDur(job(), server.clock())}>
-                    <span class="font-mono tabular-nums">{fmtDur(job(), server.clock())}</span>
+                    <span class="inline-flex items-baseline gap-2">
+                      <span class="text-text-weaker">Duration</span>
+                      <span class={cn(mono, "text-text-base")}>
+                        {fmtDur(job(), server.clock())}
+                      </span>
+                    </span>
                   </Show>
-                  <span class="truncate">
-                    {job().targetProfile?.name ?? job().serial ?? "Target not recorded"}
+                  <span class="inline-flex min-w-0 items-baseline gap-2">
+                    <span class="shrink-0 text-text-weaker">Target</span>
+                    <span class="truncate text-text-base">
+                      {job().targetProfile?.name ?? job().serial ?? "Not recorded"}
+                    </span>
                   </span>
                 </div>
               </header>
@@ -1957,21 +1926,18 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     aria-controls="run-report-panel"
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
-                    class={cn(
-                      "inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2.5 text-[12px]/[1.25] font-medium text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
-                      tab() === id && "border-surface-brand-base text-text-strong",
-                    )}
+                    class={cn(tabUnderline, tab() === id && tabUnderlineActive)}
                     onClick={() => setTab(id)}
                     onKeyDown={onReportTabKeyDown}
                   >
                     {label}
                     {id === "evaluation" && (reviewCounts()?.checks ?? 0) > 0 ? (
-                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[8px]/4 text-text-interactive-base">
+                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[11px]/4 text-text-interactive-base">
                         {reviewCounts()!.checks}
                       </span>
                     ) : null}
                     {id === "network" && (reviewCounts()?.network ?? 0) > 0 ? (
-                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[8px]/4 text-text-interactive-base">
+                      <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-[11px]/4 text-text-interactive-base">
                         {reviewCounts()!.network}
                       </span>
                     ) : null}
@@ -1985,10 +1951,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     aria-controls="run-report-panel"
                     aria-selected={tab() === "compatibility"}
                     tabindex={tab() === "compatibility" ? 0 : -1}
-                    class={cn(
-                      "inline-flex h-10 shrink-0 items-center border-b-2 border-transparent px-2.5 text-[12px]/[1.25] font-medium text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
-                      tab() === "compatibility" && "border-surface-brand-base text-text-strong",
-                    )}
+                    class={cn(tabUnderline, tab() === "compatibility" && tabUnderlineActive)}
                     onClick={() => setTab("compatibility")}
                     onKeyDown={onReportTabKeyDown}
                   >
@@ -2257,6 +2220,8 @@ type RunCanvasNode = {
   durationMs?: number;
   frame?: NonNullable<JobInfo["steps"]>[number]["frames"][number];
   observed: boolean;
+  /** Low-level actions the step performed (tap, wait, type, ...), when traced. */
+  glyphs?: string[];
 };
 
 function runCanvasNodes(job: JobInfo, recipes: RecipeInfo[]): RunCanvasNode[] {
@@ -2281,6 +2246,7 @@ function runCanvasNodes(job: JobInfo, recipes: RecipeInfo[]): RunCanvasNode[] {
       durationMs: trace?.durationMs,
       frame: trace?.frames?.at(-1),
       observed: Boolean(trace),
+      glyphs: trace?.glyphs && trace.glyphs.length > 0 ? trace.glyphs : undefined,
     };
   });
 }
@@ -2309,6 +2275,19 @@ function runStateDot(state: RunCanvasState): string {
   if (state === "planned") return "bg-[var(--relay-line-strong)]";
   if (state === "running") return "bg-[var(--relay-accent)] shadow-[0_0_8px_var(--relay-accent)]";
   return "bg-[var(--relay-green)]";
+}
+
+/** Timeline scrubber segment fill — deliberately calmer than `runStateDot`'s
+ * small status dots. Passed steps stay a neutral surface tone rather than a
+ * saturated green field; color is reserved as a muted tint for the segment
+ * that is currently failed or in progress, never an opaque alarm fill. */
+function runTimelineSegmentFill(state: RunCanvasState): string {
+  if (state === "failed" || state === "cancelled")
+    return "bg-[color-mix(in_srgb,var(--relay-red)_20%,var(--relay-surface-raised))]";
+  if (state === "running")
+    return "bg-[color-mix(in_srgb,var(--relay-accent)_20%,var(--relay-surface-raised))]";
+  if (state === "planned") return "bg-[var(--relay-line-strong)]";
+  return "bg-[var(--relay-surface-raised)]";
 }
 
 /** Left half of a run report: the captured evidence, framed like a device,
@@ -2350,6 +2329,14 @@ function RunReplayStage(props: {
     const kind = snapshot()?.steps[stepIndex]?.kind;
     return kind ? kindIcon(kind) : "bolt";
   };
+  /** Marker position for the scrubber handle — center of the active segment. */
+  const progressPct = createMemo(() => {
+    const weights = timelineWeights();
+    const i = index();
+    let before = 0;
+    for (let k = 0; k < i; k++) before += weights[k] ?? 0;
+    return Math.min(100, Math.max(0, (before + (weights[i] ?? 0) * 0.5) * 100));
+  });
   const move = (delta: number) =>
     props.onSelect(Math.max(0, Math.min(index() + delta, count() - 1)));
   const togglePlayback = () => {
@@ -2406,65 +2393,59 @@ function RunReplayStage(props: {
         >
           <Icon name="chevron-left" size={14} /> All runs
         </button>
-        <span class="inline-flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_88%,transparent)] px-3 py-1.5 font-mono text-[10.5px] tracking-[0.05em] text-[var(--relay-text-tertiary)] uppercase backdrop-blur">
-          <i class={cn("size-1.5 rounded-full", runStateDot(node()?.state ?? "planned"))} />
-          Step {String(index() + 1).padStart(2, "0")} · {runStateLabel(node()?.state ?? "planned")}
-        </span>
       </header>
       <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
-        <Show
-          when={frameSrc()}
-          fallback={
-            <div class="grid aspect-[9/18] h-[min(100%,540px)] place-items-center rounded-[30px] border border-dashed border-[var(--relay-line-strong)] bg-[color-mix(in_srgb,var(--relay-panel)_65%,transparent)]">
-              <div class="grid justify-items-center gap-2.5 px-6 text-center">
-                <Icon
-                  name={node()?.state === "failed" ? "alert" : "camera"}
-                  size={24}
-                  class="text-[var(--relay-text-tertiary)]"
-                />
-                <strong class="text-[13px] font-medium text-[var(--relay-text-secondary)]">
-                  {node()?.observed ? "No screenshot for this step" : "Step not reached"}
-                </strong>
-                <small class="text-[11px]/[1.5] text-[var(--relay-text-tertiary)]">
-                  {node()?.observed
-                    ? "This step ran without capturing evidence."
-                    : "The run stopped before reaching this step."}
-                </small>
-              </div>
-            </div>
-          }
-        >
-          {(src) => (
-            <img
-              src={src()}
-              alt={`Step ${index() + 1} evidence`}
-              class={cn(
-                "max-h-full w-auto max-w-full rounded-[26px] border-[6px] object-contain shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]",
-                node()?.state === "failed"
-                  ? "border-[color-mix(in_srgb,var(--relay-red)_55%,var(--relay-surface-strong))]"
-                  : "border-[var(--relay-surface-strong)]",
-              )}
-            />
-          )}
-        </Show>
-      </div>
-      <div class="relative z-[1] mx-auto mb-2 flex max-w-[78%] items-center justify-center gap-2.5 px-4 text-center">
-        <Icon
-          name={glyphFor(index())}
-          size={13}
-          class={node()?.state === "failed" ? "text-[var(--relay-red)]" : "text-text-weaker"}
-        />
-        <div class="min-w-0">
-          <p class="m-0 truncate text-[12.5px] font-medium text-[var(--relay-text-secondary)]">
-            {node()?.title}
-          </p>
-          <span class="font-mono text-[9.5px] tabular-nums text-text-weaker">
-            {formatReviewTime(elapsed())}
-            <Show when={node()?.durationMs}> · {formatReviewTime(node()!.durationMs!)}</Show>
+        {/* Phone bezel — always renders; only the interior swaps between the
+            captured frame and a calm inline note when evidence is missing. */}
+        <div class="relative flex h-full max-h-[560px] w-full max-w-[300px] items-center justify-center">
+          <span class="absolute top-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_90%,transparent)] px-2.5 py-1 font-mono text-[9.5px] tracking-[0.05em] text-[var(--relay-text-tertiary)] uppercase shadow-[0_6px_16px_rgb(0_0_0/30%)] backdrop-blur">
+            <i class={cn("size-1.5 rounded-full", runStateDot(node()?.state ?? "planned"))} />
+            Step {String(index() + 1).padStart(2, "0")} ·{" "}
+            {runStateLabel(node()?.state ?? "planned")}
           </span>
+          {/* Bezel border stays neutral regardless of run state — the floating
+              step badge's dot is the accent that carries pass/fail, per the
+              rule that alarm colors never tint a large chrome surface. */}
+          <div class="relative flex aspect-[9/19] h-full max-h-full w-full items-center justify-center overflow-hidden rounded-[32px] border-[6px] border-[var(--relay-surface-strong)] bg-[var(--relay-panel)] shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]">
+            <span
+              class="absolute top-0 left-1/2 z-[1] h-4 w-24 -translate-x-1/2 rounded-b-xl bg-[var(--relay-surface-strong)]"
+              aria-hidden="true"
+            />
+            <Show
+              when={frameSrc()}
+              fallback={
+                <div class="grid justify-items-center gap-1.5 px-6 text-center">
+                  <Icon
+                    name={node()?.state === "failed" ? "alert" : "camera"}
+                    size={16}
+                    class="text-text-weaker"
+                  />
+                  <span class="text-[11px]/[1.4] text-text-weaker">
+                    {node()?.observed ? "No screenshot captured here" : "Step not reached"}
+                  </span>
+                </div>
+              }
+            >
+              {(src) => (
+                <img
+                  src={src()}
+                  alt={`Step ${index() + 1} evidence`}
+                  class="h-full w-full object-contain"
+                />
+              )}
+            </Show>
+          </div>
         </div>
       </div>
-      <footer class="relative z-[1] shrink-0 border-t border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_86%,transparent)] px-4 py-2.5 backdrop-blur">
+      <div class="relative z-[1] mx-auto mb-2 flex max-w-[78%] items-center justify-center gap-2 px-4 text-center">
+        <Icon
+          name={glyphFor(index())}
+          size={12}
+          class={node()?.state === "failed" ? "text-icon-critical-base" : "text-text-weaker"}
+        />
+        <p class="m-0 truncate text-[12.5px] font-medium text-text-base">{node()?.title}</p>
+      </div>
+      <footer class="relative z-[1] shrink-0 border-t border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_86%,transparent)] px-4 py-3 backdrop-blur">
         <div class="flex items-center gap-3">
           <div class="flex shrink-0 items-center gap-0.5">
             <button
@@ -2501,59 +2482,65 @@ function RunReplayStage(props: {
               <Icon name="chevron-right" size={15} />
             </button>
           </div>
-          <div
-            class="flex min-w-0 flex-1 items-stretch gap-1"
-            role="tablist"
-            aria-label="Run timeline"
-          >
-            <For each={nodes()}>
-              {(item) => (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={item.index === index()}
-                  aria-label={`Step ${item.index + 1}: ${item.title}`}
-                  data-tip={item.title}
-                  class={cn(
-                    "group flex min-w-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-md px-0.5 py-1 transition-colors hover:bg-white/[0.05]",
-                  )}
-                  style={{
-                    "flex-grow": String(timelineWeights()[item.index] ?? 1),
-                    "flex-basis": "0",
-                  }}
-                  onClick={() => {
-                    setPlaying(false);
-                    props.onSelect(item.index);
-                  }}
-                >
-                  <Icon
-                    name={glyphFor(item.index)}
-                    size={12}
-                    class={cn(
-                      item.index === index()
-                        ? "text-[var(--text-interactive-base)]"
-                        : "text-[var(--relay-text-tertiary)] group-hover:text-[var(--relay-text-secondary)]",
-                    )}
-                  />
-                  <i
-                    class={cn(
-                      "h-1 w-full rounded-full transition-[background-color,box-shadow]",
-                      item.state === "failed" || item.state === "cancelled"
-                        ? "bg-[var(--relay-red)]"
-                        : item.state === "planned"
-                          ? "bg-[var(--relay-line-strong)]"
-                          : "bg-[var(--relay-accent)]",
-                      item.index === index() &&
-                        "shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_35%,transparent)]",
-                    )}
-                  />
-                </button>
-              )}
-            </For>
-          </div>
-          <span class="shrink-0 font-mono text-[11px] tabular-nums text-[var(--relay-text-tertiary)]">
-            {formatReviewTime(elapsed())} / {formatReviewTime(totalDuration())}
+          <span class={cn(mono, "shrink-0 text-[11px] text-text-weaker")}>
+            {formatReviewTime(elapsed())} <span class="text-text-weaker">/</span>{" "}
+            {formatReviewTime(totalDuration())}
           </span>
+          {/* Segmented scrubber: one bar per step, width proportional to its
+              duration (clamped so short steps stay targetable), step number
+              underneath. Passed steps stay a neutral surface tone; only the
+              failed or in-progress segment gets a muted color tint. No
+              per-action ticks — the trace only records one timestamp per
+              step, not per glyph. */}
+          <div class="relative min-w-0 flex-1 py-1">
+            <div class="flex items-end gap-[3px]" role="tablist" aria-label="Run timeline">
+              <For each={nodes()}>
+                {(item) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={item.index === index()}
+                    aria-label={`Step ${item.index + 1}: ${item.title} — ${runStateLabel(item.state)}`}
+                    data-tip={item.title}
+                    class="group flex min-w-[14px] flex-1 flex-col items-center gap-1"
+                    style={{
+                      "flex-grow": String(timelineWeights()[item.index] ?? 1),
+                      "flex-basis": "0",
+                    }}
+                    onClick={() => {
+                      setPlaying(false);
+                      props.onSelect(item.index);
+                    }}
+                  >
+                    <span
+                      class={cn(
+                        "h-6 w-full rounded-[3px] transition-[background-color,box-shadow]",
+                        runTimelineSegmentFill(item.state),
+                        "group-hover:opacity-90",
+                        item.index === index() &&
+                          "shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_40%,transparent)]",
+                      )}
+                    />
+                    <i
+                      class={cn(
+                        "font-mono text-[11px] tabular-nums not-italic",
+                        item.index === index()
+                          ? "font-semibold text-text-interactive-base"
+                          : "text-text-weaker",
+                      )}
+                    >
+                      {item.index + 1}
+                    </i>
+                  </button>
+                )}
+              </For>
+            </div>
+            <span
+              class="pointer-events-none absolute -top-1 h-6 w-0.5 -translate-x-1/2 rounded-full bg-[var(--relay-accent)] shadow-[0_0_6px_var(--relay-accent)]"
+              style={{ left: `${progressPct()}%` }}
+              aria-hidden="true"
+            />
+          </div>
         </div>
       </footer>
     </section>
@@ -2588,20 +2575,23 @@ function RunStepList(props: {
               <button
                 type="button"
                 class={cn(
-                  "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,box-shadow,transform] duration-150 active:scale-[0.99]",
+                  "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-150 active:scale-[0.99]",
                   active()
-                    ? "bg-[color-mix(in_srgb,var(--relay-accent)_11%,var(--relay-panel))] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_12%,transparent)]"
+                    ? "bg-[color-mix(in_srgb,var(--relay-accent)_11%,var(--relay-panel))]"
                     : "hover:bg-[var(--relay-surface-raised)]",
                   node.state === "planned" && !active() && "opacity-55",
                 )}
                 aria-current={active() ? "step" : undefined}
                 onClick={() => props.onSelect(node.index)}
               >
+                {/* Square number badge — outlined in accent when this is the
+                    selected step, matching the "raised row + outlined badge"
+                    selection language used across the run report. */}
                 <span
                   class={cn(
-                    "relative z-[1] grid size-8 place-items-center rounded-full border bg-[var(--relay-panel)] font-mono text-[11px] font-semibold tabular-nums",
+                    "relative z-[1] grid size-8 place-items-center rounded-[9px] border bg-[var(--relay-panel)] font-mono text-[11px] font-semibold tabular-nums",
                     active()
-                      ? "border-[var(--relay-accent)] text-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_12%,transparent)]"
+                      ? "border-[var(--relay-accent)] text-[var(--text-interactive-base)]"
                       : node.state === "failed"
                         ? "border-[var(--relay-red)] text-[var(--relay-red)]"
                         : "border-[var(--relay-line-strong)] text-[var(--relay-text-tertiary)]",
@@ -2610,16 +2600,31 @@ function RunStepList(props: {
                   {node.index + 1}
                 </span>
                 <span class="min-w-0 pr-2">
-                  <span class="flex items-center gap-1.5 text-[9.5px] font-semibold tracking-[0.08em] text-text-weaker uppercase">
-                    <Icon name={kind() ? kindIcon(kind()!) : "bolt"} size={10} />
-                    {kind() ? kindLabel(kind()!) : "Step"}
+                  <span class="flex min-w-0 items-center gap-1.5 text-[10px] font-medium text-text-weaker">
+                    <Icon name={kind() ? kindIcon(kind()!) : "bolt"} size={11} class="shrink-0" />
+                    <span class="shrink-0 tracking-[0.02em]">
+                      {kind() ? kindLabel(kind()!) : "Step"}
+                    </span>
+                    <Show when={node.durationMs}>
+                      <span class="shrink-0 text-text-weaker/70">·</span>
+                      <span class={cn(mono, "shrink-0 text-[10px]")}>
+                        {formatStepDuration(node.durationMs!)}
+                      </span>
+                    </Show>
+                    <Show when={node.glyphs}>
+                      {(glyphs) => (
+                        <>
+                          <span class="shrink-0 text-text-weaker/70">·</span>
+                          <ActionIconTrail glyphs={glyphs()} max={6} />
+                        </>
+                      )}
+                    </Show>
                   </span>
-                  <strong class="mt-1 block truncate text-[13px]/[1.35] font-medium tracking-[-0.005em] text-text-base">
+                  <strong class="mt-1 block truncate text-[13.5px]/[1.35] font-medium tracking-[-0.005em] text-text-strong">
                     {node.title}
                   </strong>
                 </span>
-                <span class="grid shrink-0 justify-items-end gap-1 font-mono text-[10px] tabular-nums text-text-weaker">
-                  <Show when={node.durationMs}>{formatStepDuration(node.durationMs!)}</Show>
+                <span class="grid shrink-0 justify-items-end gap-1 text-text-weaker">
                   <i class={cn("size-1.5 rounded-full", runStateDot(node.state))} />
                 </span>
               </button>
@@ -2762,6 +2767,39 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
   const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
   const passed = () => props.job.status === "ok" || props.job.status === "healed";
   const active = () => ["queued", "running", "paused"].includes(props.job.status);
+  /** Cheap frame-thumbnail strip: reuses whatever frame refs the row already
+   * carries (persisted runs resolve to static file URLs, live jobs may embed
+   * base64 directly) — no extra request per row. */
+  const frameThumbs = createMemo(() => {
+    const job = props.job;
+    const raw = [...(job.frames ?? []), ...(job.steps?.flatMap((step) => step.frames ?? []) ?? [])];
+    if (raw.length === 0) return [];
+    const seen = new Set<string>();
+    const persisted = Boolean(job.persisted || job.runDir);
+    const urls: string[] = [];
+    for (const frame of raw) {
+      const key = `${frame.path}|${frame.capturedAt}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const src = frame.base64
+        ? `data:${frame.mime || "image/png"};base64,${frame.base64}`
+        : persisted
+          ? server.frameUrlForPersisted(job as unknown as PersistedRun, frame)
+          : null;
+      if (src) urls.push(src);
+      if (urls.length >= 3) break;
+    }
+    return urls;
+  });
+  const rowLabel = () =>
+    [
+      recipe()?.title ?? props.job.action,
+      status(),
+      fmtDur(props.job, server.clock()),
+      fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "just now",
+    ]
+      .filter(Boolean)
+      .join(", ");
   return (
     <button
       type="button"
@@ -2770,6 +2808,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
         props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}
+      aria-label={rowLabel()}
       onClick={props.onOpen}
     >
       <span
@@ -2798,27 +2837,42 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
             {status()}
           </span>
           <span class="opacity-50">·</span>
-          <span class="text-[10px]">
+          <span class="text-[11px]">
             {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
           </span>
           <span class="opacity-50">·</span>
           <span class="max-w-[220px] truncate">{targetName()}</span>
           <Show when={props.job.appVersion}>
-            <i class="font-mono text-[9px] not-italic">· build {props.job.appVersion}</i>
+            <i class="font-mono text-[11px] not-italic">· build {props.job.appVersion}</i>
           </Show>
           <Show when={props.job.failureCategory}>
-            <i class="truncate text-[9.5px] not-italic text-[var(--relay-red)]">
+            <i class="truncate text-[11px] not-italic text-icon-critical-base">
               · {titleize(props.job.failureCategory!)}
             </i>
           </Show>
         </span>
+        <Show when={frameThumbs().length > 0}>
+          <span class="mt-1.5 flex items-center gap-1" aria-hidden="true">
+            <For each={frameThumbs()}>
+              {(src) => (
+                <img
+                  src={src}
+                  alt=""
+                  class="h-8 w-[18px] shrink-0 rounded-[3px] border border-border-weak-base object-cover opacity-90"
+                />
+              )}
+            </For>
+          </span>
+        </Show>
       </span>
       <span class="grid justify-items-end gap-1.5">
         <span class="font-mono text-[11px] tabular-nums text-text-base">
           {fmtDur(props.job, server.clock()) || "—"}
         </span>
         <span class="inline-flex items-center gap-1.5 text-[10.5px] text-text-weaker">
-          {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
+          <span class={cn(mono, "text-[10.5px]")}>
+            {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
+          </span>
           <Icon
             name="chevron-right"
             size={13}
@@ -2879,7 +2933,7 @@ function FlowParametersEditor() {
     draft.setParameters(draft.parameters().filter((_, current) => current !== index));
 
   const field =
-    "h-[30px] w-full min-w-0 rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-panel)] px-2 text-[11px] text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_14%,transparent)]";
+    "h-[30px] w-full min-w-0 rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-panel)] px-2 text-[11px] text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)]";
   const label = "grid min-w-0 gap-1 text-[10px] text-[var(--relay-text-tertiary)]";
 
   return (

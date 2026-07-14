@@ -15,8 +15,9 @@ type Viewport = { x: number; y: number; scale: number };
 type EdgeStyle = "flow" | "branch" | "failure";
 type EdgeConfig = { label: string; style: EdgeStyle };
 
-const JOURNEY_NODE_WIDTH = 252;
-const JOURNEY_NODE_PORT_Y = 121;
+const JOURNEY_NODE_WIDTH = 220;
+const JOURNEY_NODE_PORT_Y = 200;
+const JOURNEY_NODE_GAP = 96;
 
 const boardChrome =
   "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
@@ -65,14 +66,15 @@ function PlannedJourney() {
     draft.steps().map((step, index) => ({
       step,
       index,
-      x: index * 342,
-      y: index % 2 === 0 ? 0 : 58,
+      x: index * (JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP),
+      y: 0,
     })),
   );
   const evidenceCount = createMemo(
     () => nodes().filter((node) => evidenceForStep(node.step)?.screenshot).length,
   );
-  const width = () => Math.max(620, nodes().length * 342 + 252);
+  const width = () =>
+    Math.max(620, nodes().length * (JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP) + JOURNEY_NODE_WIDTH);
   const defaultEdge = (index: number): EdgeConfig => {
     const step = nodes()[index]?.step;
     return step?.kind === "branch"
@@ -188,10 +190,10 @@ function PlannedJourney() {
       >
         <span class="inline-flex items-center gap-1.5 font-semibold">
           <i class="size-1.5 rounded-full bg-[var(--relay-accent)] shadow-[0_0_9px_color-mix(in_srgb,var(--relay-accent)_65%,transparent)]" />
-          {evidenceCount() > 0 ? "Recorded flow" : "Draft flow"}
+          {nodes().length} {nodes().length === 1 ? "step" : "steps"}
         </span>
         <b class="border-l border-[var(--relay-line)] pl-2.5 font-mono text-[9px] font-normal text-[var(--relay-text-tertiary)]">
-          {evidenceCount()}/{nodes().length} captured
+          {evidenceCount() > 0 ? `${evidenceCount()} captured` : "Not run yet"}
         </b>
       </div>
       <div class={cn(boardChrome, "right-3.5 gap-0.5 border-0 p-1")}>
@@ -343,7 +345,7 @@ function PlannedJourney() {
                 <div
                   role="button"
                   tabIndex={0}
-                  class="group absolute top-0 left-0 w-[252px] origin-top-left cursor-pointer select-none rounded-[20px] p-0 text-left outline-none"
+                  class="group absolute top-0 left-0 w-[220px] origin-top-left cursor-pointer select-none rounded-[18px] p-0 text-left outline-none"
                   style={{
                     transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
                     "--journey-node-accent": accentForStep(node.step),
@@ -358,17 +360,17 @@ function PlannedJourney() {
                   <JourneyPlanCard step={node.step} index={node.index} active={active()} />
                   <Show when={node.index > 0}>
                     <div
-                      class="absolute top-[116px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      class="absolute top-[195px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
                       aria-hidden="true"
                     />
                   </Show>
                   <Show when={node.index < nodes().length - 1}>
                     <div
-                      class="absolute top-[116px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      class="absolute top-[195px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
                       aria-hidden="true"
                     />
                   </Show>
-                  <div class="pointer-events-none absolute top-[88px] right-[-76px] z-[4] flex h-[66px] w-[86px] items-center justify-end opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                  <div class="pointer-events-none absolute top-[167px] right-[-76px] z-[4] flex h-[66px] w-[86px] items-center justify-end opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                     <span
                       class="absolute inset-0 [clip-path:polygon(0_28%,100%_0,100%_100%,0_72%)]"
                       aria-hidden="true"
@@ -428,37 +430,36 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
   return (
     <div
       class={cn(
-        "relative grid h-[242px] grid-rows-[38px_minmax(0,1fr)_38px] overflow-hidden rounded-[15px] border border-[var(--relay-line-strong)] shadow-[0_12px_32px_rgb(0_0_0/20%)] transition-[border-color,box-shadow,transform] duration-150",
+        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-[18px] border border-[var(--relay-line-strong)] shadow-[0_8px_24px_rgb(0_0_0/16%)] transition-[border-color,box-shadow] duration-150",
         "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
-          "-translate-y-0.5 border-[color-mix(in_srgb,var(--journey-node-accent)_62%,white_8%)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--journey-node-accent)_12%,transparent),0_18px_48px_rgb(0_0_0/30%)]",
+          "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_26%,transparent),0_12px_32px_rgb(0_0_0/24%)]",
       )}
       style={{ "--journey-node-accent": accentForStep(props.step) }}
     >
-      <header class="grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-[color-mix(in_srgb,var(--relay-line)_72%,transparent)] px-3 text-[var(--relay-text-tertiary)]">
+      <header class="grid grid-cols-[auto_1fr] items-center gap-2 border-b border-[color-mix(in_srgb,var(--relay-line)_72%,transparent)] px-3 text-[var(--relay-text-tertiary)]">
         <span class="font-mono text-[11px] leading-none text-[var(--relay-text-secondary)]">
           {String(props.index + 1).padStart(2, "0")}
         </span>
         <span class="text-[10px] font-semibold tracking-[0.09em] uppercase">
           {kindLabel(props.step.kind)}
         </span>
-        <Icon name="more" size={14} />
       </header>
       <Show
         when={screenshot()}
         fallback={
-          <div class="grid min-w-0 place-items-center p-4 text-center">
-            <span class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
-              <Icon name={iconForStep(props.step)} size={20} />
+          <div class="grid min-w-0 place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--journey-node-accent)_13%,transparent),transparent_42%),var(--relay-bg)] p-5 text-center">
+            <span class="grid size-[46px] place-items-center rounded-[14px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
+              <Icon name={iconForStep(props.step)} size={22} />
             </span>
-            <div class="mt-2.5 min-w-0">
-              <small class="mb-1 block text-[9px] font-semibold tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
-                Capture required
-              </small>
-              <strong class="line-clamp-2 block text-[14px]/[1.35] font-semibold tracking-[-0.012em] text-[var(--relay-text)]">
+            <div class="mt-4 min-w-0">
+              <strong class="line-clamp-3 block text-[14px]/[1.4] font-semibold tracking-[-0.012em] text-[var(--relay-text)]">
                 {sentenceForStep(props.step, server.recipes())}
               </strong>
+              <small class="mt-2 block text-[10.5px]/[1.45] text-[var(--relay-text-tertiary)]">
+                Run to capture this screen.
+              </small>
             </div>
           </div>
         }
@@ -469,7 +470,7 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
               src={src()}
               alt={`Device evidence for step ${props.index + 1}`}
               draggable={false}
-              class="size-full select-none object-cover object-top"
+              class="size-full select-none object-contain object-top"
             />
             <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pt-8 pb-2.5">
               <small class="mb-0.5 block text-[9px] font-semibold tracking-[0.08em] text-white/65 uppercase">
@@ -490,7 +491,7 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
               screenshot() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
             )}
           />
-          {screenshot() ? "Captured on device" : "Capture before editing"}
+          {screenshot() ? "Captured on device" : "Not captured"}
         </span>
         <Icon name="chevron-right" size={13} />
       </footer>
@@ -498,8 +499,8 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
   );
 }
 
-export function evidenceForStep(step: RecipeStep): RecordedStepEvidence | undefined {
-  return "evidence" in step ? step.evidence : undefined;
+export function evidenceForStep(step?: RecipeStep): RecordedStepEvidence | undefined {
+  return step && "evidence" in step ? step.evidence : undefined;
 }
 
 export function accentForStep(step: RecipeStep): string {

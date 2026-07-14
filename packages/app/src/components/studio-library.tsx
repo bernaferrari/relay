@@ -3,7 +3,7 @@ import type { RecipeInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo } from "../lib/job";
 import { Icon, type IconName } from "./icon";
-import { eyebrow, popover, productIconButton, productIconButtonSolid } from "../lib/ui";
+import { mono, popover, productIconButton, productIconButtonSolid } from "../lib/ui";
 import { shellLibrary, shellLibraryClosed } from "../lib/shell-layout";
 
 export function LibraryPanel(props: {
@@ -44,14 +44,12 @@ export function LibraryPanel(props: {
       aria-label="Test library"
       aria-hidden={!props.open}
       inert={!props.open}
+      data-recipe-count={props.items.length}
     >
-      <div class="flex min-h-[74px] items-center justify-between px-3.5 pt-3.5 pb-2.5">
-        <div>
-          <span class={eyebrow}>Workspace</span>
-          <h1 class="mt-0.5 text-[17px] font-semibold leading-[1.2] tracking-[-0.035em] text-balance text-text-strong">
-            Tests
-          </h1>
-        </div>
+      <div class="flex min-h-[56px] items-center justify-between px-3.5 py-2.5">
+        <h1 class="text-[15px] font-semibold leading-[1.2] tracking-[-0.025em] text-text-strong">
+          Tests
+        </h1>
         <div class="relative flex items-center gap-0.5">
           <input
             ref={(element) => (importInput = element)}
@@ -220,6 +218,7 @@ function RecipeRow(props: {
         props.selected ? "bg-surface-base-active" : "hover:bg-surface-base-hover",
       )}
       aria-current={props.selected ? "page" : undefined}
+      title={displayTitle(props.recipe.title)}
       onClick={() => props.onSelect(props.recipe.id)}
     >
       <span
@@ -245,7 +244,7 @@ function RecipeRow(props: {
             ? `${props.recipe.steps.length} step${props.recipe.steps.length === 1 ? "" : "s"}`
             : "Draft"}
           <span class="opacity-50">·</span>
-          {fmtAgo(props.recipe.updatedAt, Date.now()) || "now"}
+          <span class={mono}>{fmtAgo(props.recipe.updatedAt, Date.now()) || "now"}</span>
         </small>
       </span>
       <Icon

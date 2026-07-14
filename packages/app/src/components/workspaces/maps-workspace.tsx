@@ -10,6 +10,7 @@ import {
   productIconButton,
   productIconButtonDanger,
 } from "../../lib/ui";
+import { shellViewTabs, shellViewTab, shellViewTabActive } from "../../lib/shell-layout";
 
 export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   const server = useServer();
@@ -75,11 +76,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   return (
     <section class="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0">
       <header class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_82%,var(--relay-bg))] px-4">
-        <div
-          class="inline-flex items-center gap-1 rounded-[10px] bg-black/[0.12] p-1 ring-1 ring-inset ring-white/[0.05]"
-          role="tablist"
-          aria-label="Product map view"
-        >
+        <div class={shellViewTabs} role="tablist" aria-label="Product map view">
           {(
             [
               ["discovery", "Product"],
@@ -91,12 +88,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
               type="button"
               role="tab"
               aria-selected={mode() === id}
-              class={cn(
-                "min-h-8 rounded-[7px] px-3.5 text-[12px] font-medium text-[var(--relay-text-tertiary)] transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.97]",
-                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color-mix(in_srgb,var(--text-interactive-base)_66%,transparent)]",
-                mode() === id &&
-                  "bg-white/[0.075] text-[var(--relay-text)] shadow-[inset_0_0_0_1px_rgb(255_255_255/7%),0_3px_10px_rgb(0_0_0/14%)]",
-              )}
+              class={cn(shellViewTab, mode() === id && shellViewTabActive)}
               onClick={() => setMode(id)}
             >
               {label}
@@ -158,53 +150,21 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
               <Show
                 when={selected()}
                 fallback={
-                  <div class="relative grid place-items-center overflow-hidden px-8 py-12 text-center">
-                    <div
-                      class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgb(126_101_255/10%),transparent_34%),radial-gradient(circle_at_1px_1px,rgb(255_255_255/3%)_1px,transparent_0)] bg-size-[auto,20px_20px]"
-                      aria-hidden="true"
-                    />
-                    <div class="relative w-full max-w-[720px]">
-                      <span class="mx-auto grid size-11 place-items-center rounded-[14px] bg-[color-mix(in_srgb,var(--relay-accent)_14%,transparent)] text-[var(--text-interactive-base)] ring-1 ring-[color-mix(in_srgb,var(--relay-accent)_24%,transparent)] shadow-[0_12px_34px_rgb(67_52_180/18%)]">
-                        <Icon name="move" size={19} />
+                  <div class="grid place-items-center px-8 py-12 text-center">
+                    <div class="grid max-w-[320px] justify-items-center gap-3">
+                      <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
+                        <Icon name="move" size={17} />
                       </span>
-                      <span class="mt-4 block text-[10px] font-semibold tracking-[0.12em] text-[var(--text-interactive-base)] uppercase">
-                        Reusable journeys
-                      </span>
-                      <h3 class="mx-auto mt-2 max-w-[580px] text-[27px]/[1.12] font-semibold tracking-[-0.035em] text-text-strong">
-                        Compose trusted tests into one complete customer journey.
-                      </h3>
-                      <p class="mx-auto mt-2 max-w-[540px] text-[12.5px]/[1.55] text-text-weak">
-                        Arrange existing tests, pass shared inputs between them, and run the entire
-                        sequence with one result.
+                      <p class="m-0 text-[12.5px]/[1.5] text-text-weak">
+                        No workflows yet. Arrange existing tests to run in one sequence.
                       </p>
-
-                      <div
-                        class="relative mx-auto mt-8 grid max-w-[620px] grid-cols-3 items-center gap-12 max-[680px]:gap-4"
-                        aria-hidden="true"
-                      >
-                        <span class="absolute top-1/2 right-[16%] left-[16%] h-px -translate-y-1/2 bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--relay-accent)_45%,transparent)_12%,color-mix(in_srgb,var(--relay-accent)_45%,transparent)_88%,transparent)]" />
-                        {["Sign in", "Choose plan", "Confirm"].map((label, index) => (
-                          <span class="relative z-[1] grid min-h-[78px] place-items-center rounded-[15px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_94%,transparent)] px-3 shadow-[0_14px_34px_rgb(0_0_0/18%)] backdrop-blur-sm">
-                            <i class="grid size-7 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-accent)_12%,transparent)] font-mono text-[10px] not-italic text-[var(--text-interactive-base)]">
-                              {String(index + 1).padStart(2, "0")}
-                            </i>
-                            <strong class="text-[11.5px] font-medium text-text-base">
-                              {label}
-                            </strong>
-                          </span>
-                        ))}
-                      </div>
-
                       <button
                         type="button"
-                        class={cn(productPrimary, "mt-8 min-h-10 px-4 text-[12.5px]")}
+                        class={productPrimary}
                         onClick={() => void createWorkflow()}
                       >
-                        <Icon name="plus" size={15} /> Create first journey
+                        <Icon name="plus" size={15} /> Create first workflow
                       </button>
-                      <small class="mt-3 block text-[10.5px] text-text-weaker">
-                        Start empty, then add tests from your library.
-                      </small>
                     </div>
                   </div>
                 }

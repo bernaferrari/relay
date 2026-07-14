@@ -26,7 +26,7 @@ const statusDot = (status: string) =>
           : "bg-[var(--relay-text-tertiary)]",
   );
 
-export function JourneyOutline(props: { onBack: () => void }) {
+export function JourneyOutline() {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
@@ -38,23 +38,20 @@ export function JourneyOutline(props: { onBack: () => void }) {
       aria-label="Journey steps"
     >
       <header class="border-b border-[var(--relay-line)] px-[15px] pt-[17px] pb-[15px]">
-        <button
-          type="button"
-          class="-mx-1.5 -mt-1.5 mb-[15px] inline-flex min-h-[26px] items-center gap-1 rounded-md px-1.5 text-[10px] text-[var(--relay-text-tertiary)] hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text-secondary)]"
-          aria-label="Back to device"
-          onClick={props.onBack}
-        >
-          <Icon name="chevron-left" size={13} /> Device
-        </button>
-        <span class={eyebrow}>Test flow</span>
+        <span class={eyebrow}>Steps</span>
         <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
           {draft.title()}
         </h2>
-        <p class="mt-1.5 mb-[15px] line-clamp-2 min-h-[34px] text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
-          {draft.description() || "Every action Relay will perform in this test."}
-        </p>
+        <Show when={draft.description()}>
+          <p class="mt-1.5 mb-[15px] line-clamp-2 text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
+            {draft.description()}
+          </p>
+        </Show>
         <div
-          class="grid grid-cols-[repeat(auto-fit,minmax(8px,1fr))] gap-1"
+          class={cn(
+            "grid grid-cols-[repeat(auto-fit,minmax(8px,1fr))] gap-1",
+            !draft.description() && "mt-[15px]",
+          )}
           aria-label={`Step ${active() + 1} of ${draft.steps().length}`}
         >
           <For each={draft.steps()}>
@@ -82,7 +79,7 @@ export function JourneyOutline(props: { onBack: () => void }) {
               <button
                 type="button"
                 class={cn(
-                  "relative grid min-h-[64px] w-full grid-cols-[36px_minmax(0,1fr)_7px] items-center gap-2.5 rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[var(--relay-text-tertiary)] transition-colors duration-150",
+                  "relative grid min-h-[56px] w-full grid-cols-[32px_minmax(0,1fr)_7px] items-center gap-2.5 rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[var(--relay-text-tertiary)] transition-colors duration-150",
                   "hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text-secondary)]",
                   isActive() &&
                     "border-[rgb(139_114_255/30%)] bg-[rgb(116_92_242/13%)] text-[var(--relay-text)] hover:bg-[rgb(116_92_242/13%)] hover:text-[var(--relay-text)]",
@@ -90,7 +87,7 @@ export function JourneyOutline(props: { onBack: () => void }) {
                 onClick={() => workbench.focusStep(index())}
               >
                 <span
-                  class="grid size-9 place-items-center rounded-[10px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_75%,white)]"
+                  class="grid size-8 place-items-center rounded-[9px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_75%,white)]"
                   style={{ "--journey-node-accent": accentForStep(step) }}
                 >
                   <Icon name={iconForStep(step)} size={15} />
@@ -130,7 +127,7 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
   const capturedFrame = createMemo(() => {
     const frame = server.frames()[index()];
     if (frame) return frameToSrc(frame);
-    const shot = evidenceForStep(draft.steps()[index()]!)?.screenshot;
+    const shot = evidenceForStep(draft.steps()[index()])?.screenshot;
     return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
   });
   const annotation = createMemo(() => workbench.rowAnno(index()));
@@ -197,9 +194,9 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
     >
       <header class="flex min-h-[67px] shrink-0 items-center justify-between gap-3 border-b border-[var(--relay-line)] px-[15px]">
         <div>
-          <span class={eyebrow}>Selected step</span>
-          <strong class="mt-1 block font-mono text-[13px] leading-none text-[var(--relay-text)]">
-            {String(index() + 1).padStart(2, "0")} / {String(draft.steps().length).padStart(2, "0")}
+          <span class={eyebrow}>Step</span>
+          <strong class="mt-1 block text-[13px] leading-none font-semibold text-[var(--relay-text)]">
+            {index() + 1} of {draft.steps().length}
           </strong>
         </div>
         <button
@@ -234,15 +231,8 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
                   {sentence()}
                 </strong>
                 <p class="mt-1.5 text-[12px]/[1.55] text-[var(--relay-text-tertiary)]">
-                  Run the test to replace this plan with a real screenshot and execution data.
+                  Run once to add the device screenshot and result.
                 </p>
-                <button
-                  type="button"
-                  class="mt-3.5 inline-flex min-h-9 w-max items-center justify-center gap-1.5 rounded-lg border border-[var(--relay-line-strong)] bg-[var(--relay-surface-raised)] px-3 text-[12px] font-semibold text-[var(--relay-text-secondary)] transition-colors hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)] active:scale-[0.97]"
-                  onClick={run}
-                >
-                  <Icon name="play" size={12} /> Capture evidence
-                </button>
               </div>
             </section>
           }
@@ -292,56 +282,49 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
             </dl>
           </section>
         </Show>
-        <section class="border-t border-[var(--relay-line)] px-[15px] pt-3.5 pb-[18px]">
-          <header class="mb-2 flex items-center justify-between">
-            <span class="text-[11px] font-semibold tracking-[0.08em] text-[var(--relay-text-secondary)] uppercase">
-              Activity
-            </span>
-            <small class="text-[10.5px] text-[var(--relay-text-tertiary)]">
-              {recentRuns().length ? "Latest runs" : "No runs yet"}
-            </small>
-          </header>
-          <Show when={annotation().error || annotation().log}>
-            <div class="mb-2 grid gap-1 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] px-2.5 py-2">
-              <span class="text-[9.5px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
-                {annotation().error ? "Error" : "Step log"}
+        <Show when={annotation().error || annotation().log || recentRuns().length > 0}>
+          <section class="border-t border-[var(--relay-line)] px-[15px] pt-3.5 pb-[18px]">
+            <header class="mb-2 flex items-center justify-between">
+              <span class="text-[11px] font-semibold tracking-[0.08em] text-[var(--relay-text-secondary)] uppercase">
+                Activity
               </span>
-              <code
-                class={cn(
-                  "line-clamp-3 font-mono text-[10.5px]/[1.5] text-[var(--relay-text-secondary)]",
-                  annotation().error && "text-[var(--relay-red)]",
-                )}
-              >
-                {annotation().error ?? annotation().log}
-              </code>
-            </div>
-          </Show>
-          <For
-            each={recentRuns()}
-            fallback={
-              <div class="rounded-[9px] border border-dashed border-[var(--relay-line-strong)] p-3.5 text-[11.5px]/[1.55] text-[var(--relay-text-tertiary)]">
-                Run this test to collect timing, logs, and screenshots for every step.
-              </div>
-            }
-          >
-            {(job) => (
-              <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--relay-line)_75%,transparent)]">
-                <i class={statusDot(job.status)} />
-                <span class="min-w-0">
-                  <strong class="block text-[12px] font-medium text-[var(--relay-text-secondary)] capitalize">
-                    {job.status === "ok" ? "Passed" : job.status}
-                  </strong>
-                  <small class="block font-mono text-[10px]/[1.4] text-[var(--relay-text-tertiary)]">
-                    {fmtAgo(job.at)}
-                  </small>
+              <small class="text-[10.5px] text-[var(--relay-text-tertiary)]">Latest runs</small>
+            </header>
+            <Show when={annotation().error || annotation().log}>
+              <div class="mb-2 grid gap-1 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] px-2.5 py-2">
+                <span class="text-[9.5px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                  {annotation().error ? "Error" : "Step log"}
                 </span>
-                <b class="font-mono text-[10.5px]/[1.4] font-medium tabular-nums text-[var(--relay-text-tertiary)]">
-                  {job.duration}
-                </b>
+                <code
+                  class={cn(
+                    "line-clamp-3 font-mono text-[10.5px]/[1.5] text-[var(--relay-text-secondary)]",
+                    annotation().error && "text-[var(--relay-red)]",
+                  )}
+                >
+                  {annotation().error ?? annotation().log}
+                </code>
               </div>
-            )}
-          </For>
-        </section>
+            </Show>
+            <For each={recentRuns()}>
+              {(job) => (
+                <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--relay-line)_75%,transparent)]">
+                  <i class={statusDot(job.status)} />
+                  <span class="min-w-0">
+                    <strong class="block text-[12px] font-medium text-[var(--relay-text-secondary)] capitalize">
+                      {job.status === "ok" ? "Passed" : job.status}
+                    </strong>
+                    <small class="block font-mono text-[10px]/[1.4] text-[var(--relay-text-tertiary)]">
+                      {fmtAgo(job.at)}
+                    </small>
+                  </span>
+                  <b class="font-mono text-[10.5px]/[1.4] font-medium tabular-nums text-[var(--relay-text-tertiary)]">
+                    {job.duration}
+                  </b>
+                </div>
+              )}
+            </For>
+          </section>
+        </Show>
       </div>
       <footer class="flex min-h-14 shrink-0 items-center justify-between border-t border-[var(--relay-line)] px-[15px]">
         <div class="flex gap-1">

@@ -28,10 +28,10 @@ export const shellRail = cn(
   "bg-[color-mix(in_srgb,var(--relay-bg)_97%,black)] px-1.5 pt-[var(--rail-top-pad,14px)] pb-2.5",
 );
 
+/** Brand mark — the one place a flat brand color is allowed to stand alone
+ *  without matching app chrome tones (product logo, not a UI surface). */
 export const shellMark = cn(
-  "relative size-8 shrink-0 rounded-[10px] text-white",
-  "bg-[linear-gradient(145deg,#a497ff,#6454e9)]",
-  "shadow-[0_8px_24px_rgb(96_78_226/28%),inset_0_1px_rgb(255_255_255/25%)]",
+  "relative size-8 shrink-0 rounded-[10px] bg-[#6454e9] text-white",
   "active:scale-[0.97]",
 );
 
@@ -67,7 +67,7 @@ export const shellMain =
 
 export const shellTopbar = cn(
   "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--relay-line)]",
-  "bg-[rgb(9_11_16/94%)] px-4 backdrop-blur-xl",
+  "bg-[rgb(9_11_16/94%)] px-4",
 );
 
 export const shellTopbarContext = "flex min-w-0 items-center gap-2";
@@ -90,8 +90,6 @@ export const shellRecord = cn(
   "data-[blocked]:cursor-not-allowed data-[blocked]:bg-[var(--relay-surface-raised)] data-[blocked]:text-[var(--relay-text-tertiary)]",
   "data-[blocked]:border-[var(--relay-line-strong)] data-[blocked]:shadow-none",
 );
-
-export const shellRecordActive = "bg-[#d94c5c] hover:enabled:bg-[#d94c5c]";
 
 export const shellRecordDot = "size-[7px] shrink-0 rounded-full bg-current";
 

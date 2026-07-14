@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup } from "solid-js";
+import { createSignal, createEffect, createMemo, onCleanup } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { ApiError, RelayClient } from "@relay/client";
 import type {
@@ -107,12 +107,6 @@ export type {
   LocalSchedule,
 } from "../lib/api-types";
 
-// Polling equality gates — skip setX when a poll returns an unchanged list,
-// so unchanged polls don't re-create arrays and thrash dependents every cycle.
-let prevDevicesKey = "";
-let prevRecipesKey = "";
-let prevJobsKey = "";
-let prevRunsKey = "";
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
   name: "Server",
   gate: false,
@@ -315,11 +309,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           ...d,
           serial: String(d.serial ?? d.id ?? ""),
         }));
-        const key = list.map((d) => `${d.serial}|${d.name ?? ""}`).join("~");
-        if (key !== prevDevicesKey) {
-          prevDevicesKey = key;
-          setDevices(list);
-        }
+        setDevices(list);
         if (!selectedDevice() && list[0]) void selectDeviceRemote(list[0].serial);
         // clear only network-ish noise; keep explicit action errors
         if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
@@ -523,11 +513,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const data = await request<{ recipes: RecipeInfo[] }>("/recipes");
         const list = asArray<RecipeInfo>(data, "recipes");
-        const key = list.map((r) => `${r.id}|${r.source}|${r.updatedAt ?? 0}`).join("~");
-        if (key !== prevRecipesKey) {
-          prevRecipesKey = key;
-          setRecipes(list);
-        }
+        setRecipes(list);
         // A restored selection may point at a deleted recipe — fall back to
         // the first-run empty state, never silently to the first builtin.
         const sel = selectedRecipeId();
@@ -542,11 +528,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs?full=0");
         const list = asArray<JobInfo>(data, "jobs");
-        const key = list.map((j) => `${j.id}|${j.status}|${j.finishedAt ?? 0}`).join("~");
-        if (key !== prevJobsKey) {
-          prevJobsKey = key;
-          setJobs(list);
-        }
+        setJobs(list);
         const active = data.active;
         setRunning(Boolean(active && (active.status === "running" || active.status === "paused")));
       } catch {
@@ -559,11 +541,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const data = await request<{ runs: PersistedRun[]; root: string }>("/runs");
         const list = asArray<PersistedRun>(data, "runs");
-        const key = list.map((r) => `${r.id}|${r.status}`).join("~");
-        if (key !== prevRunsKey) {
-          prevRunsKey = key;
-          setPersistedRuns(list);
-        }
+        setPersistedRuns(list);
         setRunsRoot(data.root ?? "");
       } catch {
         /* ignore */
@@ -1210,7 +1188,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       jobs()
         .filter((j) => j.status === "queued")
         .reverse();
-    const selectedRecipe = () => recipes().find((r) => r.id === selectedRecipeId()) ?? null;
+    const selectedRecipe = createMemo(
+      () => recipes().find((recipe) => recipe.id === selectedRecipeId()) ?? null,
+    );
 
     return {
       serverUrl,

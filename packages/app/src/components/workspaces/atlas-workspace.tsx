@@ -17,45 +17,19 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
   return (
     <div class="h-full overflow-y-auto">
       <div class="mx-auto grid w-full max-w-[1180px] content-start gap-5 px-5 py-5 max-[760px]:px-3">
-        <header class="relative overflow-hidden rounded-[20px] border border-[var(--relay-line)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--relay-accent)_13%,var(--relay-panel)),var(--relay-panel)_58%)] px-6 py-6 shadow-[0_24px_80px_rgb(0_0_0/18%)]">
-          <div
-            class="pointer-events-none absolute -top-24 -right-20 size-72 rounded-full bg-[color-mix(in_srgb,var(--relay-accent)_18%,transparent)] blur-[80px]"
-            aria-hidden="true"
-          />
-          <div class="relative grid grid-cols-[minmax(0,1fr)_auto] items-end gap-8 max-[720px]:grid-cols-1">
-            <div class="max-w-[620px]">
-              <span class="text-[10px] font-semibold tracking-[0.12em] text-[var(--text-interactive-base)] uppercase">
-                Suite intelligence
-              </span>
-              <h2 class="mt-2 text-[27px]/[1.08] font-semibold tracking-[-0.035em] text-text-strong">
-                See what your tests cover—and what to simplify next.
-              </h2>
-              <p class="mt-2 max-w-[58ch] text-[12.5px]/[1.55] text-text-weak">
-                Atlas turns the suite into a map of exercised capabilities, repeated paths, and the
-                highest-leverage cleanup opportunities.
-              </p>
-            </div>
-            <div class="flex items-end gap-6 rounded-2xl border border-white/[0.06] bg-black/[0.12] px-5 py-4 backdrop-blur-sm">
-              <AtlasStat value={tests()} label="tests" />
-              <span class="h-9 w-px bg-white/[0.08]" />
-              <AtlasStat value={props.atlas?.coverage.length ?? 0} label="capabilities" />
-              <span class="h-9 w-px bg-white/[0.08]" />
-              <AtlasStat value={savings()} label="steps to save" tone="brand" />
-            </div>
+        <header class="flex items-center justify-between gap-4">
+          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.02em] text-text-strong">Atlas</h2>
+          <div class="flex items-center gap-2">
+            <AtlasStat value={tests()} label="tests" />
+            <AtlasStat value={props.atlas?.coverage.length ?? 0} label="capabilities" />
+            <AtlasStat value={savings()} label="steps to save" tone="brand" />
           </div>
         </header>
 
         <div class="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-[900px]:grid-cols-1">
           <section class="overflow-hidden rounded-[18px] border border-[var(--relay-line)] bg-[var(--relay-panel)]">
-            <header class="flex items-start justify-between gap-4 border-b border-[var(--relay-line)] px-5 py-4">
-              <div>
-                <span class="text-[10px] font-semibold tracking-[0.1em] text-text-weaker uppercase">
-                  Coverage map
-                </span>
-                <h3 class="mt-1 text-[17px] font-semibold tracking-[-0.02em] text-text-strong">
-                  What the suite actually exercises
-                </h3>
-              </div>
+            <header class="flex items-center justify-between gap-4 border-b border-[var(--relay-line)] px-5 py-3.5">
+              <h3 class="m-0 text-[13px] font-semibold text-text-strong">Coverage</h3>
               <span class="rounded-full bg-surface-base-active px-2.5 py-1 font-mono text-[10px] text-text-weak">
                 {props.atlas?.coverage.length ?? 0} tracked
               </span>
@@ -89,7 +63,7 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
                         </div>
                         <div class="h-1.5 overflow-hidden rounded-full bg-white/[0.055]">
                           <span
-                            class="block h-full rounded-full bg-[linear-gradient(90deg,#6f5ce7,#9a8cff)] shadow-[0_0_14px_rgb(126_101_255/25%)]"
+                            class="block h-full rounded-full bg-[var(--relay-accent)]"
                             style={{ width: `${width()}%` }}
                           />
                         </div>
@@ -107,20 +81,13 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
           </section>
 
           <section class="overflow-hidden rounded-[18px] border border-[var(--relay-line)] bg-[var(--relay-panel)]">
-            <header class="border-b border-[var(--relay-line)] px-5 py-4">
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-[10px] font-semibold tracking-[0.1em] text-text-weaker uppercase">
-                  Reuse opportunities
+            <header class="flex items-center justify-between gap-3 border-b border-[var(--relay-line)] px-5 py-3.5">
+              <h3 class="m-0 text-[13px] font-semibold text-text-strong">Reuse opportunities</h3>
+              <Show when={duplicates() > 0}>
+                <span class="rounded-full bg-[color-mix(in_srgb,var(--relay-amber)_13%,transparent)] px-2.5 py-1 text-[10px] font-medium text-[var(--relay-amber)]">
+                  {duplicates()} found
                 </span>
-                <Show when={duplicates() > 0}>
-                  <span class="rounded-full bg-[color-mix(in_srgb,var(--relay-amber)_13%,transparent)] px-2.5 py-1 text-[10px] font-medium text-[var(--relay-amber)]">
-                    {duplicates()} found
-                  </span>
-                </Show>
-              </div>
-              <h3 class="mt-1 text-[17px] font-semibold tracking-[-0.02em] text-text-strong">
-                Repeated journeys worth consolidating
-              </h3>
+              </Show>
             </header>
             <div class="grid gap-2 p-3">
               <For
@@ -167,22 +134,13 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
         </div>
 
         <Show when={duplicates() > 0}>
-          <aside class="flex items-center justify-between gap-5 rounded-[16px] border border-[color-mix(in_srgb,var(--relay-accent)_22%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-accent)_6%,transparent)] px-5 py-4 max-[700px]:items-start">
-            <div class="flex min-w-0 items-center gap-3">
-              <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-[color-mix(in_srgb,var(--relay-accent)_13%,transparent)] text-[var(--text-interactive-base)]">
-                <Icon name="sparkle" size={17} />
-              </span>
-              <div class="min-w-0">
-                <strong class="block text-[13px] font-semibold text-text-strong">
-                  Highest-leverage cleanup: consolidate {duplicates()} repeated journey
-                  {duplicates() === 1 ? "" : "s"}
-                </strong>
-                <span class="mt-0.5 block text-[11px]/[1.45] text-text-weak">
-                  You can remove roughly {savings()} repeated step{savings() === 1 ? "" : "s"} while
-                  keeping the same product coverage.
-                </span>
-              </div>
-            </div>
+          <aside class="flex items-center gap-3 rounded-[14px] border border-border-weak-base bg-background-stronger px-5 py-3.5">
+            <Icon name="sparkle" size={15} class="shrink-0 text-text-weaker" />
+            <span class="min-w-0 text-[12px]/[1.45] text-text-weak">
+              Consolidate {duplicates()} repeated journey{duplicates() === 1 ? "" : "s"} to remove
+              roughly {savings()} repeated step{savings() === 1 ? "" : "s"} while keeping the same
+              coverage.
+            </span>
           </aside>
         </Show>
       </div>
@@ -192,19 +150,17 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
 
 function AtlasStat(props: { value: number; label: string; tone?: "brand" }) {
   return (
-    <span class="grid gap-1">
+    <div class="grid min-w-[72px] gap-0.5 rounded-lg border border-border-weak-base bg-background-stronger px-2.5 py-1.5 text-center">
       <strong
         class={cn(
-          "font-mono text-[23px]/none font-semibold tracking-[-0.05em] tabular-nums text-text-strong",
-          props.tone === "brand" && "text-[var(--text-interactive-base)]",
+          "font-mono text-[15px]/none font-semibold tracking-[-0.02em] tabular-nums text-text-strong",
+          props.tone === "brand" && "text-text-interactive-base",
         )}
       >
         {props.value}
       </strong>
-      <small class="whitespace-nowrap text-[9.5px] tracking-[0.04em] text-text-weaker uppercase">
-        {props.label}
-      </small>
-    </span>
+      <small class="whitespace-nowrap text-[9.5px] text-text-weaker">{props.label}</small>
+    </div>
   );
 }
 

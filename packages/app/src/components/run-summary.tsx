@@ -4,7 +4,7 @@ import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { platformLabel } from "../lib/target-presentation";
-import { productSecondary, productStatus } from "../lib/ui";
+import { mono, productSecondary, productStatus } from "../lib/ui";
 
 type RunSummaryProps = {
   job: JobInfo;
@@ -29,7 +29,7 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
       ? "bg-icon-success-base"
       : job().status === "error" || job().status === "cancelled"
         ? "bg-icon-critical-base"
-        : "bg-surface-brand-base shadow-[0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_14%,transparent)]";
+        : "bg-surface-brand-base";
 
   return (
     <div class="grid min-w-0 overflow-hidden">
@@ -80,7 +80,7 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
           <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border-weak-base py-2.5">
             <div class="grid gap-0.5">
               <span class="text-[11px]/[1.25] text-text-weaker">Since the last run</span>
-              <small class="text-[10px]/[1.25] text-text-weaker">
+              <small class={cn(mono, "text-[10px]/[1.25] text-text-weaker")}>
                 {fmtAgo(prior().startedAt ?? prior().queuedAt, props.clock)}
               </small>
             </div>

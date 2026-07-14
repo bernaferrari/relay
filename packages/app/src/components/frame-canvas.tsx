@@ -812,14 +812,17 @@ function ScreenCard(props: {
         "transition-[box-shadow,border-color,opacity] duration-150",
         easeOut,
         "active:cursor-grabbing",
-        on()
-          ? "z-[3] border-border-interactive-base shadow-[0_0_0_2px_color-mix(in_srgb,var(--surface-brand-base)_45%,transparent),0_22px_48px_-14px_color-mix(in_srgb,var(--text-strong)_35%,transparent)]"
-          : "border-border-weak-base shadow-[0_14px_36px_-16px_color-mix(in_srgb,var(--text-strong)_22%,transparent)] hover:border-border-strong-base",
-        drag() &&
-          "z-[4] opacity-95 shadow-[0_28px_56px_-12px_color-mix(in_srgb,var(--text-strong)_40%,transparent)]",
-        !on() && n().status === "pass" && "ring-1 ring-icon-success-base/30",
-        !on() && n().status === "fail" && "ring-1 ring-icon-critical-base/35",
-        !on() && n().status === "heal" && "ring-1 ring-icon-warning-base/40",
+        // Priority chain (not a stack): dragging beats selected beats default —
+        // cn() doesn't merge classes, so overlapping shadow utilities here would
+        // silently fight over stylesheet order instead of expressing intent.
+        drag()
+          ? "z-[4] opacity-95 border-border-interactive-base shadow-[0_28px_56px_-12px_color-mix(in_srgb,var(--text-strong)_40%,transparent)]"
+          : on()
+            ? "z-[3] border-border-interactive-base shadow-[0_22px_48px_-14px_color-mix(in_srgb,var(--text-strong)_35%,transparent)]"
+            : "border-border-weak-base shadow-[0_14px_36px_-16px_color-mix(in_srgb,var(--text-strong)_22%,transparent)] hover:border-border-strong-base",
+        !on() && !drag() && n().status === "pass" && "ring-1 ring-icon-success-base/30",
+        !on() && !drag() && n().status === "fail" && "ring-1 ring-icon-critical-base/35",
+        !on() && !drag() && n().status === "heal" && "ring-1 ring-icon-warning-base/40",
       )}
       style={{
         left: `${n().x - props.ox}px`,

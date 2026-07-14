@@ -431,18 +431,13 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
         <Show
           when={active()}
           fallback={
-            <div class="absolute inset-0 grid place-items-center bg-[radial-gradient(circle,color-mix(in_srgb,var(--relay-line-strong)_42%,transparent)_1px,transparent_1px)] [background-size:22px_22px] p-8">
-              <div class="grid max-w-[400px] justify-items-center gap-3 text-center">
-                <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
-                  <Icon name="move" size={22} />
+            <div class="absolute inset-0 grid place-items-center p-8">
+              <div class="grid max-w-[320px] justify-items-center gap-2 text-center">
+                <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
+                  <Icon name="move" size={17} />
                 </span>
-                <span class={eyebrow}>Product map</span>
-                <strong class="text-[20px]/[1.2] font-semibold tracking-[-0.02em] text-[var(--relay-text)]">
-                  See the path as you record it
-                </strong>
-                <p class="m-0 text-[13px]/[1.55] text-[var(--relay-text-tertiary)]">
-                  Start a guided map or let Relay explore safe paths. Every observed screen becomes
-                  evidence, even when the app takes a different path next time.
+                <p class="m-0 text-[12.5px]/[1.5] text-[var(--relay-text-tertiary)]">
+                  No map selected. Start mapping from the sidebar to see observed screens here.
                 </p>
               </div>
             </div>
@@ -457,7 +452,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                       class={cn(
                         "size-1.5 rounded-full",
                         session().status === "running"
-                          ? "bg-[var(--relay-green)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-green)_18%,transparent)]"
+                          ? "bg-[var(--relay-green)]"
                           : "bg-[var(--relay-line-strong)]",
                       )}
                     />
@@ -849,7 +844,7 @@ function DiscoveryPathList(props: {
                 class={cn(
                   "grid w-full grid-cols-[28px_auto_minmax(0,1fr)_16px] items-center gap-3 rounded-[12px] border bg-[var(--relay-panel)] p-2.5 text-left transition-colors",
                   row.screen.id === props.selectedScreenId
-                    ? "border-[var(--relay-accent)] shadow-[0_0_0_3px_var(--relay-accent-soft)]"
+                    ? "border-[var(--relay-accent)] bg-[var(--relay-accent-soft)]"
                     : "border-[var(--relay-line)] hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)]",
                   !row.reachable && "opacity-70",
                 )}
@@ -1194,7 +1189,7 @@ function DiscoveryCanvas(props: {
                   class={cn(
                     "absolute grid w-[var(--relay-discovery-node-width)] grid-rows-[minmax(0,1fr)_auto_auto] gap-1.5 rounded-[16px] border bg-[var(--relay-panel)] p-2 text-left transition-[border-color,box-shadow] duration-150",
                     props.selectedScreenId === screen.id
-                      ? "border-[var(--relay-accent)] shadow-[0_0_0_3px_var(--relay-accent-soft),0_18px_44px_rgb(0_0_0/30%)]"
+                      ? "border-[var(--relay-accent)] shadow-[0_18px_44px_rgb(0_0_0/30%)]"
                       : "border-[var(--relay-line-strong)] shadow-[0_12px_32px_rgb(0_0_0/22%)] hover:border-[color-mix(in_srgb,var(--relay-accent)_45%,var(--relay-line-strong))]",
                     !position().reachable && "opacity-70 [&_img]:grayscale",
                   )}

@@ -43,10 +43,13 @@ export function AgentTestComposer() {
   return (
     <section
       class={cn(
-        "mx-3 mt-2 mb-0.5 shrink-0 overflow-hidden rounded-[10px] transition-colors",
+        // Dashed, accent-tinted chrome — deliberately distinct from a step
+        // row's solid rounded card, so this reads as "add via AI" rather
+        // than a collapsed step.
+        "mx-3 mt-2 mb-0.5 shrink-0 overflow-hidden rounded-[10px] border border-dashed transition-colors",
         open()
-          ? "bg-[var(--relay-panel)] ring-1 ring-[var(--relay-line-strong)]"
-          : "hover:bg-white/[0.03]",
+          ? "border-[color-mix(in_srgb,var(--relay-accent)_45%,transparent)] bg-[var(--relay-accent-soft)]"
+          : "border-[color-mix(in_srgb,var(--relay-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--relay-accent)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]",
       )}
     >
       <button
@@ -58,7 +61,7 @@ export function AgentTestComposer() {
         <span class="grid size-7 place-items-center rounded-lg text-[var(--text-interactive-base)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--relay-accent)_35%,transparent)]">
           <Icon name="sparkle" size={14} />
         </span>
-        <strong class="truncate text-[13px]/[1.25] font-medium text-[var(--relay-text-secondary)]">
+        <strong class="truncate text-[13px]/[1.25] font-medium text-[var(--text-interactive-base)]">
           Generate steps
         </strong>
         <Icon

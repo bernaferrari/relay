@@ -224,6 +224,21 @@ export const eyebrow = cn(
   "block text-[11px]/[1.2] font-semibold tracking-[0.09em] text-text-weak uppercase",
 );
 
+/**
+ * One underline-tab grammar for every secondary tab strip in the product
+ * (Steps/Inputs/YAML, the run report's Timeline/Overview/Checks/...). Pair
+ * with `tabUnderlineActive` on the selected tab.
+ */
+export const tabUnderline = cn(
+  "relative inline-flex min-h-9 shrink-0 items-center gap-1.5 px-2.5",
+  "text-[12.5px]/[1.25] font-semibold text-text-weaker transition-colors",
+  "after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:scale-x-0",
+  "after:rounded-full after:bg-surface-brand-base after:transition-transform",
+  "hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+);
+
+export const tabUnderlineActive = "text-text-strong after:scale-x-100";
+
 const productControl = cn(
   "inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-[10px] px-3.5",
   "text-[13px] font-semibold select-none",
