@@ -4,9 +4,10 @@ import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer, type RecipeStep, type RecordedStepEvidence } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { sentenceForStep } from "../lib/step-sentence";
+import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { cn } from "../lib/cn";
 import { Icon, type IconName } from "./icon";
-import { FrameCanvas } from "./frame-canvas";
+import { AgentTestComposer } from "./agent-test-composer";
 import { AddMenu } from "./step-list-controls";
 import { kindLabel } from "./step-list-metadata";
 import { eyebrow } from "../lib/ui";
@@ -26,27 +27,22 @@ const controlBtn =
   "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-[7px] text-[10px] text-[var(--relay-text-secondary)] hover:bg-surface-raised-base-hover hover:text-[var(--relay-text)]";
 
 /**
- * Journey is always available. Captured frames use the full freeform graph;
- * before evidence exists we render an editable planned graph from recipe steps
- * instead of disabling the feature and hiding the product model.
+ * Journey is always available. Planned steps, captured device frames, and run
+ * results stay on one graph so execution adds evidence without replacing the
+ * surface the user was editing.
  */
 export function JourneyWorkspace(props: { onLive: () => void }) {
-  const server = useServer();
-  return (
-    <Show when={server.frames().length > 0} fallback={<PlannedJourney />}>
-      <FrameCanvas onCollapse={props.onLive} />
-    </Show>
-  );
+  return <PlannedJourney onLive={props.onLive} />;
 }
 
-function PlannedJourney() {
+function PlannedJourney(props: { onLive: () => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
   const fittedView = (): Viewport => ({
     x: window.innerWidth < 1500 ? 48 : 64,
-    y: 72,
-    scale: window.innerWidth < 1500 ? 0.78 : 0.9,
+    y: 64,
+    scale: window.innerWidth < 1500 ? 0.86 : 0.94,
   });
   const [view, setView] = createSignal<Viewport>(fittedView());
   const [selectedEdge, setSelectedEdge] = createSignal<number | null>(null);
@@ -61,6 +57,8 @@ function PlannedJourney() {
     updatedAt: 0,
   });
   let drag: { x: number; y: number; vx: number; vy: number } | null = null;
+  let board: HTMLElement | undefined;
+  let lastCenteredIndex: number | null = null;
 
   const nodes = createMemo(() =>
     draft.steps().map((step, index) => ({
@@ -71,8 +69,19 @@ function PlannedJourney() {
     })),
   );
   const evidenceCount = createMemo(
-    () => nodes().filter((node) => evidenceForStep(node.step)?.screenshot).length,
+    () =>
+      nodes().filter(
+        (node) => server.frames()[node.index] || evidenceForStep(node.step)?.screenshot,
+      ).length,
   );
+  const resultCounts = createMemo(() => {
+    const annotations = nodes().map((node) => workbench.rowAnno(node.index));
+    return {
+      passed: annotations.filter((item) => item.status === "pass").length,
+      failed: annotations.filter((item) => item.status === "fail").length,
+      running: annotations.filter((item) => item.status === "running").length,
+    };
+  });
   const width = () =>
     Math.max(620, nodes().length * (JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP) + JOURNEY_NODE_WIDTH);
   const defaultEdge = (index: number): EdgeConfig => {
@@ -147,8 +156,27 @@ function PlannedJourney() {
     setView((current) => ({ ...current, scale: clamp(current.scale + delta, 0.48, 1.18) }));
   }
 
+  // Layers, canvas, and inspector share one selection. If a step is chosen in
+  // the outline, reveal its device frame instead of leaving the user hunting
+  // for the selected object off-canvas.
+  createEffect(() => {
+    const selected = workbench.focusedIndex();
+    if (selected == null || selected === lastCenteredIndex || !board) return;
+    const node = nodes()[selected];
+    if (!node) return;
+    lastCenteredIndex = selected;
+    setView((current) => ({
+      ...current,
+      x: board!.clientWidth / 2 - (node.x + JOURNEY_NODE_WIDTH / 2) * current.scale,
+      y: Math.max(60, Math.min(current.y, 92)),
+    }));
+  });
+
   return (
     <section
+      ref={(element) => {
+        board = element;
+      }}
       class="!absolute inset-0 cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--relay-text)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
       aria-label="Planned test journey"
       onWheel={(event) => {
@@ -193,7 +221,18 @@ function PlannedJourney() {
           {nodes().length} {nodes().length === 1 ? "step" : "steps"}
         </span>
         <b class="border-l border-[var(--relay-line)] pl-2.5 font-mono text-[9px] font-normal text-[var(--relay-text-tertiary)]">
-          {evidenceCount() > 0 ? `${evidenceCount()} captured` : "Not run yet"}
+          <Show
+            when={
+              resultCounts().running > 0 || resultCounts().passed > 0 || resultCounts().failed > 0
+            }
+            fallback={evidenceCount() > 0 ? `${evidenceCount()} captured` : "Not run yet"}
+          >
+            {resultCounts().running > 0
+              ? `Running step ${resultCounts().passed + resultCounts().failed + 1}`
+              : resultCounts().failed > 0
+                ? `${resultCounts().failed} failed · ${resultCounts().passed} passed`
+                : `${resultCounts().passed} passed`}
+          </Show>
         </b>
       </div>
       <div class={cn(boardChrome, "right-3.5 gap-0.5 border-0 p-1")}>
@@ -256,14 +295,29 @@ function PlannedJourney() {
       <Show
         when={nodes().length > 0}
         fallback={
-          <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <div class="grid size-11 place-items-center rounded-xl bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
-              <Icon name="move" size={22} />
-            </div>
-            <strong class="mt-3 text-[13px] text-[var(--relay-text)]">No journey yet</strong>
-            <p class="mt-1.5 max-w-[330px] text-[11px]/[1.5] text-[var(--relay-text-tertiary)]">
-              Add a step or record the device. Screens will appear here as a navigable flow.
+          <div class="absolute inset-0 flex flex-col items-center justify-center px-5 text-center">
+            <span class="mb-2 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--relay-text-tertiary)] uppercase">
+              New test
+            </span>
+            <h2 class="m-0 text-[24px] font-semibold tracking-[-0.035em] text-[var(--relay-text)]">
+              What should happen?
+            </h2>
+            <p class="mt-2 mb-5 max-w-[430px] text-[12.5px]/[1.55] text-[var(--relay-text-secondary)]">
+              Describe the journey in plain language. Relay will turn it into editable device states
+              you can run and inspect.
             </p>
+            <AgentTestComposer variant="canvas" defaultOpen />
+            <div class="mt-4 flex items-center gap-3 text-[11px] text-[var(--relay-text-tertiary)]">
+              <span class="h-px w-12 bg-[var(--relay-line)]" /> or
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-medium text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text)]"
+                onClick={props.onLive}
+              >
+                <Icon name="circle" size={13} /> Record on a device
+              </button>
+              <span class="h-px w-12 bg-[var(--relay-line)]" />
+            </div>
           </div>
         }
       >
@@ -422,10 +476,20 @@ function PlannedJourney() {
 
 export function JourneyPlanCard(props: { step: RecipeStep; index: number; active?: boolean }) {
   const server = useServer();
+  const workbench = useWorkbench();
   const evidence = createMemo(() => evidenceForStep(props.step));
   const screenshot = createMemo(() => {
+    const frame = server.frames()[props.index];
+    if (frame) return frameToSrc(frame);
     const shot = evidence()?.screenshot;
     return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
+  });
+  const annotation = createMemo(() => workbench.rowAnno(props.index));
+  const statusLabel = createMemo(() => {
+    if (annotation().status === "pass") return "Passed";
+    if (annotation().status === "fail") return "Failed";
+    if (annotation().status === "running") return "Running";
+    return screenshot() ? "Captured on device" : "Run to capture";
   });
   return (
     <div
@@ -435,6 +499,8 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
           "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_26%,transparent),0_12px_32px_rgb(0_0_0/24%)]",
+        annotation().status === "fail" &&
+          "border-[color-mix(in_srgb,var(--relay-red)_65%,var(--relay-line))]",
       )}
       style={{ "--journey-node-accent": accentForStep(props.step) }}
     >
@@ -488,10 +554,18 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
           <i
             class={cn(
               "size-1.5 rounded-full",
-              screenshot() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
+              annotation().status === "pass" && "bg-[var(--relay-green)]",
+              annotation().status === "fail" && "bg-[var(--relay-red)]",
+              annotation().status === "running" &&
+                "bg-[var(--relay-accent)] shadow-[0_0_8px_var(--relay-accent)]",
+              annotation().status === "idle" &&
+                (screenshot() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]"),
             )}
           />
-          {screenshot() ? "Captured on device" : "Not captured"}
+          {statusLabel()}
+          <Show when={annotation().durationMs}>
+            {(duration) => <b class="font-mono font-normal">· {Math.round(duration())}ms</b>}
+          </Show>
         </span>
         <Icon name="chevron-right" size={13} />
       </footer>

@@ -30,6 +30,18 @@ describe("planTestPrompt", () => {
     );
   });
 
+  it("accepts ordinary comma-separated language", () => {
+    const result = planTestPrompt("Open settings, tap Profile, then check Account is visible");
+    assert.deepEqual(
+      result.map((item) => item.step),
+      [
+        { kind: "tap", target: { label: "settings" } },
+        { kind: "tap", target: { label: "Profile" } },
+        { kind: "expect", target: { label: "Account" }, condition: "visible" },
+      ],
+    );
+  });
+
   it("keeps ambiguous instructions as explicit manual checkpoints", () => {
     assert.deepEqual(planTestPrompt("Confirm the animation feels smooth")[0]?.step, {
       kind: "pause",

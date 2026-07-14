@@ -7,10 +7,16 @@ import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { productPrimary } from "../lib/ui";
 
-export function AgentTestComposer() {
+export function AgentTestComposer(
+  props: {
+    variant?: "compact" | "canvas";
+    defaultOpen?: boolean;
+    onCreated?: () => void;
+  } = {},
+) {
   const draft = useRecipeDraft();
   const server = useServer();
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpen] = createSignal(Boolean(props.defaultOpen));
   const [prompt, setPrompt] = createSignal("");
   const [generating, setGenerating] = createSignal(false);
 
@@ -38,6 +44,7 @@ export function AgentTestComposer() {
     draft.appendSteps(steps);
     setPrompt("");
     setOpen(false);
+    props.onCreated?.();
   }
 
   return (
@@ -46,15 +53,22 @@ export function AgentTestComposer() {
         // Dashed, accent-tinted chrome — deliberately distinct from a step
         // row's solid rounded card, so this reads as "add via AI" rather
         // than a collapsed step.
-        "mx-3 mt-2 mb-0.5 shrink-0 overflow-hidden rounded-[10px] border border-dashed transition-colors",
+        props.variant === "canvas"
+          ? "w-[min(520px,calc(100%-40px))] shrink-0 overflow-hidden rounded-[16px] border transition-colors shadow-[0_18px_60px_rgb(0_0_0/24%)]"
+          : "mx-3 mt-2 mb-0.5 shrink-0 overflow-hidden rounded-[10px] border border-dashed transition-colors",
         open()
-          ? "border-[color-mix(in_srgb,var(--relay-accent)_45%,transparent)] bg-[var(--relay-accent-soft)]"
+          ? props.variant === "canvas"
+            ? "border-[color-mix(in_srgb,var(--relay-accent)_38%,var(--relay-line))] bg-surface-raised-stronger-non-alpha"
+            : "border-[color-mix(in_srgb,var(--relay-accent)_45%,transparent)] bg-[var(--relay-accent-soft)]"
           : "border-[color-mix(in_srgb,var(--relay-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--relay-accent)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]",
       )}
     >
       <button
         type="button"
-        class="grid min-h-[38px] w-full grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-2.5 px-2.5 py-1.5 text-left text-text-base focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
+        class={cn(
+          "grid w-full grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-2.5 text-left text-text-base focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
+          props.variant === "canvas" ? "min-h-[58px] px-4 py-2.5" : "min-h-[38px] px-2.5 py-1.5",
+        )}
         aria-expanded={open()}
         onClick={() => setOpen((value) => !value)}
       >
@@ -62,7 +76,7 @@ export function AgentTestComposer() {
           <Icon name="sparkle" size={14} />
         </span>
         <strong class="truncate text-[13px]/[1.25] font-medium text-[var(--text-interactive-base)]">
-          Generate steps
+          {props.variant === "canvas" ? "Describe your test" : "Generate steps"}
         </strong>
         <Icon
           name="chevron-down"
@@ -74,19 +88,29 @@ export function AgentTestComposer() {
         />
       </button>
       <Show when={open()}>
-        <div class="grid gap-2.5 border-t border-[var(--relay-line)] px-3.5 pb-3">
+        <div
+          class={cn(
+            "grid gap-2.5 border-t border-[var(--relay-line)] pb-3",
+            props.variant === "canvas" ? "px-4" : "px-3.5",
+          )}
+        >
           <label
             for="agent-test-prompt"
             class="pt-3 text-[11px]/[1.25] font-semibold tracking-[0.08em] text-text-weak uppercase"
           >
-            What should happen?
+            Tell Relay what a person should do
           </label>
           <textarea
             id="agent-test-prompt"
             value={prompt()}
-            rows={3}
-            class="min-h-19 w-full resize-y rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 text-[13px]/[1.45] text-text-base outline-none focus:border-border-focus focus:ring-3 focus:ring-surface-info-weak"
-            placeholder={"Tap “Sign in”, type {{email}}, then verify “Welcome” is visible"}
+            rows={props.variant === "canvas" ? 4 : 3}
+            class={cn(
+              "w-full resize-y rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 text-[13px]/[1.45] text-text-base outline-none focus:border-border-focus focus:ring-3 focus:ring-surface-info-weak",
+              props.variant === "canvas" ? "min-h-24" : "min-h-19",
+            )}
+            placeholder={
+              "Sign in with {{email}}, open the profile, and check that the name is correct"
+            }
             onInput={(event) => {
               setPrompt(event.currentTarget.value);
             }}
@@ -95,7 +119,7 @@ export function AgentTestComposer() {
             }}
           />
           <footer class="flex min-h-10 items-center justify-between gap-3">
-            <span />
+            <span class="text-[10.5px] text-[var(--relay-text-tertiary)]">⌘ Enter</span>
             <button
               type="button"
               class={productPrimary}

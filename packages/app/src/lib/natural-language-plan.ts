@@ -12,7 +12,7 @@ function targetFrom(text: string): { label: string } {
       "",
     )
     .replace(/\s+(is|to be)\s+(visible|shown|gone|hidden).*$/i, "")
-    .replace(/[.!]$/, "")
+    .replace(/[,.!]$/, "")
     .trim();
   return { label: match || fallback || "Element" };
 }
@@ -23,7 +23,9 @@ function textValue(text: string): string {
 
 function instructionToStep(instruction: string): RecipeStep {
   const text = instruction.trim();
-  if (/^(tap|click|press|select|choose)\b/i.test(text))
+  // “Open Settings” is how people speak; only “open app …” is a distinct
+  // device command. Everything else is a visible target interaction.
+  if (/^(tap|click|press|select|choose|open(?!\s+app\b))\b/i.test(text))
     return { kind: "tap", target: targetFrom(text) };
   if (/^(type|enter|input)\b/i.test(text)) return { kind: "type", text: textValue(text) };
   if (/^(verify|check|assert|see|expect)\b/i.test(text)) {
@@ -59,7 +61,9 @@ function instructionToStep(instruction: string): RecipeStep {
 
 export function planTestPrompt(prompt: string): PlannedInstruction[] {
   return prompt
-    .split(/\s*(?:\n+|\bthen\b|;|→)\s*/i)
+    .split(
+      /\s*(?:\n+|\bthen\b|;|→|,(?=\s*(?:tap|click|press|select|choose|open|type|enter|input|verify|check|assert|see|expect|wait|scroll|copy|paste)\b))\s*/i,
+    )
     .map((part) => part.trim())
     .filter(Boolean)
     .map((source) => ({ source, step: instructionToStep(source) }));

@@ -85,6 +85,7 @@ import {
 import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { kindIcon, kindLabel } from "./step-list-metadata";
 import { sentenceForStep } from "../lib/step-sentence";
+import { planTestPrompt } from "../lib/natural-language-plan";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
 import {
   formatReviewTime,
@@ -143,13 +144,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (!server.selectedRecipeId()) setLibraryOpen(true);
     previousReadyRecipeId = readyId;
   });
-  // Per-test default view: a fresh/empty test (no steps, no captured frames)
-  // still opens on Device since there's nothing to show on the canvas yet;
-  // anything with content lands on Flow. Mirrors the Flow-tab disabled check
-  // below. Re-checks while `recipes()` is still loading so a session restored
-  // from a persisted selectedRecipeId (set before recipes() arrives) resolves
-  // once the list lands, without re-forcing the view on later background
-  // refreshes.
+  // Every test opens on its visual flow, including an empty one. The empty
+  // canvas is the creation surface (plain-language plan or record), so users
+  // never have to infer that Device is where a test begins.
   let defaultedViewForId: string | null = null;
   createEffect(() => {
     const id = server.selectedRecipeId();
@@ -160,7 +157,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (defaultedViewForId === id) return;
     const recipe = server.recipes().find((item) => item.id === id);
     if (!recipe) return;
-    setStudioView(recipe.steps.length > 0 || server.frames().length > 0 ? "journey" : "live");
+    setStudioView("journey");
     defaultedViewForId = id;
   });
   const recordBlockedReason = () => {
@@ -183,18 +180,21 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       : rows;
   });
   async function createTest(record = false, description = ""): Promise<void> {
+    const plannedSteps = description.trim()
+      ? planTestPrompt(description).map((instruction) => instruction.step)
+      : [];
     const saved = await server.saveRecipeRemote({
       title: description
         ? titleFromPrompt(description, server.recipes())
         : nextUntitledTitle(server.recipes()),
       description,
-      steps: [],
+      steps: plannedSteps,
     });
     if (!saved) return;
     server.setSelectedRecipeId(saved.id);
     setNewTestOpen(false);
     setArea("tests");
-    setStudioView("live");
+    setStudioView(record ? "live" : "journey");
     if (record) recorder.enterRecordMode();
   }
 
@@ -415,12 +415,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     type="button"
                     role="tab"
                     aria-selected={studioView() === "journey"}
-                    class={cn(
-                      segBtn,
-                      studioView() === "journey" && segBtnOn,
-                      "disabled:cursor-not-allowed disabled:opacity-40",
-                    )}
-                    disabled={draft.steps().length === 0 && server.frames().length === 0}
+                    class={cn(segBtn, studioView() === "journey" && segBtnOn)}
                     onClick={() => {
                       setStudioView("journey");
                       setLibraryOpen(false);
@@ -498,7 +493,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </div>
               </div>
             </Show>
-            <div class={studioView() === "journey" ? shellStudioBodyJourney : shellStudioBody}>
+            <div
+              class={
+                studioView() === "journey"
+                  ? draft.steps().length > 0
+                    ? shellStudioBodyJourney
+                    : "relative flex min-h-0 min-w-0 flex-1"
+                  : shellStudioBody
+              }
+            >
               <Show
                 when={selected()}
                 fallback={
@@ -510,10 +513,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   />
                 }
               >
-                <Show when={studioView() === "journey"}>
+                <Show when={studioView() === "journey" && draft.steps().length > 0}>
                   <JourneyOutline />
                 </Show>
-                <div class={shellStageWrap}>
+                <div class={cn(shellStageWrap, "flex-1")}>
                   <Show
                     when={studioView() === "live"}
                     fallback={
@@ -540,13 +543,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     />
                   }
                 >
-                  <JourneyInspector
-                    onEdit={() => {
-                      setStudioView("live");
-                      setLibraryOpen(false);
-                    }}
-                    onOpenTargets={() => props.onOpenSettings("matrices")}
-                  />
+                  <Show when={draft.steps().length > 0}>
+                    <JourneyInspector
+                      onEdit={() => {
+                        setStudioView("live");
+                        setLibraryOpen(false);
+                      }}
+                      onOpenTargets={() => props.onOpenSettings("matrices")}
+                    />
+                  </Show>
                 </Show>
               </Show>
             </div>

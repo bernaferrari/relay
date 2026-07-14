@@ -1,6 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { useServer } from "../context/server";
+import { useServer, type RecipeStep, type StepTarget } from "../context/server";
 import { toast } from "../context/toast";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
@@ -9,6 +9,7 @@ import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { fmtAgo, fmtDur } from "../lib/job";
 import { Icon } from "./icon";
 import { accentForStep, actionForStep, evidenceForStep, iconForStep } from "./journey-workspace";
+import { kindLabel } from "./step-list-metadata";
 import { eyebrow, productPrimary, productSecondary } from "../lib/ui";
 
 const chromePanel =
@@ -25,6 +26,54 @@ const statusDot = (status: string) =>
           ? "bg-[var(--relay-accent)] shadow-[0_0_10px_var(--relay-accent)]"
           : "bg-[var(--relay-text-tertiary)]",
   );
+
+type TargetStep = Extract<
+  RecipeStep,
+  { kind: "tap" | "long-press" | "wait-for" | "wait-response" | "expect" | "extract" }
+>;
+
+function hasEditableTarget(step: RecipeStep): step is TargetStep {
+  return (
+    step.kind === "tap" ||
+    step.kind === "long-press" ||
+    step.kind === "wait-for" ||
+    step.kind === "wait-response" ||
+    step.kind === "expect" ||
+    step.kind === "extract"
+  );
+}
+
+function targetText(target: StepTarget): string {
+  return target.label ?? target.text ?? target.ref ?? "";
+}
+
+function patchReadableTarget(target: StepTarget, value: string): StepTarget {
+  const key: "label" | "text" | "ref" = target.label
+    ? "label"
+    : target.text
+      ? "text"
+      : target.ref
+        ? "ref"
+        : "label";
+  return { ...target, [key]: value };
+}
+
+function editableTarget(step: RecipeStep): StepTarget | undefined {
+  return hasEditableTarget(step) ? step.target : undefined;
+}
+
+function simpleField(step: RecipeStep): {
+  label: string;
+  value: string | number;
+  number?: boolean;
+} {
+  if (step.kind === "type") return { label: "Text", value: step.text };
+  if (step.kind === "sleep") return { label: "Seconds", value: step.ms / 1_000, number: true };
+  if (step.kind === "screenshot") return { label: "Caption", value: step.caption ?? "" };
+  if (step.kind === "pause") return { label: "Message", value: step.message };
+  if (step.kind === "assert-content") return { label: "Expected", value: step.expected };
+  return { label: "Note", value: step.note ?? "" };
+}
 
 export function JourneyOutline() {
   const server = useServer();
@@ -181,6 +230,29 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
   const move = (delta: number) =>
     workbench.focusStep(Math.max(0, Math.min(index() + delta, draft.steps().length - 1)));
 
+  function updateTarget(value: string): void {
+    const current = step();
+    if (!current || !hasEditableTarget(current)) return;
+    draft.updateStep(index(), {
+      ...current,
+      target: patchReadableTarget(current.target, value),
+    } as RecipeStep);
+  }
+
+  function updateSimpleValue(value: string): void {
+    const current = step();
+    if (!current) return;
+    if (current.kind === "type") draft.updateStep(index(), { ...current, text: value });
+    else if (current.kind === "screenshot")
+      draft.updateStep(index(), { ...current, caption: value || undefined });
+    else if (current.kind === "sleep")
+      draft.updateStep(index(), { ...current, ms: Math.max(0, Number(value) * 1_000) });
+    else if (current.kind === "pause") draft.updateStep(index(), { ...current, message: value });
+    else if (current.kind === "assert-content")
+      draft.updateStep(index(), { ...current, expected: value });
+    else draft.updateStep(index(), { ...current, note: value || undefined } as RecipeStep);
+  }
+
   const navBtn =
     "grid size-8 place-items-center rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] hover:enabled:bg-[var(--relay-surface-strong)] hover:enabled:text-[var(--relay-text)] disabled:opacity-35";
 
@@ -282,6 +354,54 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
             </dl>
           </section>
         </Show>
+        <Show when={step()}>
+          {(current) => (
+            <section class="border-t border-[var(--relay-line)] px-[15px] py-[16px]">
+              <header class="mb-3 flex items-center justify-between">
+                <span class="text-[10.5px] font-semibold tracking-[0.08em] text-[var(--relay-text-secondary)] uppercase">
+                  Properties
+                </span>
+                <span class="rounded-md bg-[var(--relay-surface-raised)] px-2 py-1 text-[9.5px] font-medium text-[var(--relay-text-tertiary)] capitalize">
+                  {kindLabel(current().kind)}
+                </span>
+              </header>
+              <Show
+                when={editableTarget(current())}
+                fallback={
+                  <label class="grid gap-1.5">
+                    <span class="text-[10.5px] text-[var(--relay-text-tertiary)]">
+                      {simpleField(current()).label}
+                    </span>
+                    <input
+                      class="h-9 w-full rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 text-[12px] text-[var(--relay-text)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                      type={simpleField(current()).number ? "number" : "text"}
+                      min={simpleField(current()).number ? 0 : undefined}
+                      step={simpleField(current()).number ? 0.5 : undefined}
+                      value={simpleField(current()).value}
+                      placeholder="Optional"
+                      onInput={(event) => updateSimpleValue(event.currentTarget.value)}
+                    />
+                  </label>
+                }
+              >
+                {(target) => (
+                  <label class="grid gap-1.5">
+                    <span class="text-[10.5px] text-[var(--relay-text-tertiary)]">Target</span>
+                    <input
+                      class="h-9 w-full rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 text-[12px] text-[var(--relay-text)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                      value={targetText(target())}
+                      placeholder="What should Relay find?"
+                      onInput={(event) => updateTarget(event.currentTarget.value)}
+                    />
+                    <small class="text-[10px]/[1.45] text-[var(--relay-text-tertiary)]">
+                      Use the words someone can see on the screen.
+                    </small>
+                  </label>
+                )}
+              </Show>
+            </section>
+          )}
+        </Show>
         <Show when={annotation().error || annotation().log || recentRuns().length > 0}>
           <section class="border-t border-[var(--relay-line)] px-[15px] pt-3.5 pb-[18px]">
             <header class="mb-2 flex items-center justify-between">
@@ -356,7 +476,7 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
             queueMicrotask(() => draft.setExpandedStep(selected));
           }}
         >
-          <Icon name="edit" size={13} /> Edit step
+          <Icon name="sliders" size={13} /> Advanced
         </button>
       </footer>
     </aside>
