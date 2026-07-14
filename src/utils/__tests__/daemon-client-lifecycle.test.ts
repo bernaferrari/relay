@@ -156,6 +156,70 @@ async function startHttpDaemonFixture(
   return { server, port, seenPaths, rpcRequests };
 }
 
+/** Like `startHttpDaemonFixture`, but every RPC call returns `errorResult` as an `{ok:false}` result. */
+async function startHttpDaemonErrorFixture(
+  errorResult: Record<string, unknown>,
+): Promise<HttpDaemonFixture> {
+  const seenPaths: string[] = [];
+  const rpcRequests: Record<string, any>[] = [];
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url || '/', 'http://127.0.0.1');
+    seenPaths.push(`${req.method ?? 'GET'} ${url.pathname}`);
+
+    if (req.method === 'GET' && url.pathname === '/health') {
+      res.writeHead(200);
+      res.end('ok');
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/rpc') {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      req.on('end', () => {
+        const rpcRequest = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<
+          string,
+          any
+        >;
+        rpcRequests.push(rpcRequest);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: rpcRequest.id,
+            result: { ok: false, error: errorResult },
+          }),
+        );
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end('not found');
+  });
+  const port = await listenOnLoopback(server);
+  return { server, port, seenPaths, rpcRequests };
+}
+
+/** Spawns a fake daemon whose owned (mkdtemp'd) state dir is only known at spawn time. */
+function installSpawnedHttpDaemonAtOwnedStateDir(
+  httpPort: number,
+  onStateDir: (stateDir: string) => void,
+): void {
+  mockRunCmdDetached.mockImplementation((_command, _args, options) => {
+    const ownedStateDir = String(options?.env?.AGENT_DEVICE_STATE_DIR);
+    onStateDir(ownedStateDir);
+    const ownedPaths = resolveDaemonPaths(ownedStateDir);
+    writeDaemonInfo(ownedPaths, { httpPort, transport: 'http' });
+    writeDaemonLock(ownedPaths, {
+      pid: process.pid,
+      processStartTime: readProcessStartTime(process.pid) ?? undefined,
+    });
+    return { pid: process.pid, exited: new Promise(() => {}) };
+  });
+}
+
 async function startHangingHttpDaemonFixture(): Promise<HttpDaemonFixture> {
   const seenPaths: string[] = [];
   const rpcRequests: Record<string, any>[] = [];
@@ -746,5 +810,274 @@ test('sendToDaemon does not replay over HTTP after the socket request is written
     socket.restore();
     await closeLoopbackServer(daemon.server);
     fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+// --- ADR 0012 decision 6, R7 (Fix 1, C1): a repair-armed `replay --save-script`
+// that comes back as a HELD divergence (the daemon's `resume.repairSessionHeld`
+// signal) must keep its owning (owned/ephemeral) daemon alive and addressable.
+// The keep-alive keys on that signal — the REPAIR-ARMED condition — NOT on
+// `resume.allowed`, which reports only plan-resumability. ---
+
+function heldDivergenceError(
+  resume: Record<string, unknown> = { allowed: true, from: 3, planDigest: 'digest-abc' },
+): Record<string, unknown> {
+  return {
+    code: 'REPLAY_DIVERGENCE',
+    message: 'Replay failed at step 3 (click id="save"): selector-miss',
+    details: {
+      divergence: {
+        version: 1,
+        kind: 'selector-miss',
+        resume: { ...resume, repairSessionHeld: true },
+        repairHint: 'record-and-heal',
+      },
+    },
+  };
+}
+
+/** A divergence WITHOUT the daemon's held signal — the plain, non-repair case. */
+function unheldDivergenceError(): Record<string, unknown> {
+  return {
+    code: 'REPLAY_DIVERGENCE',
+    message: 'Replay failed at step 2 (click id="save"): selector-miss',
+    details: {
+      divergence: {
+        version: 1,
+        kind: 'selector-miss',
+        resume: { allowed: true, from: 2, planDigest: 'digest-def' },
+        repairHint: 'manual',
+      },
+    },
+  };
+}
+
+test('sendToDaemon keeps an owned ephemeral daemon alive and hints its --state-dir on a resumable repair divergence', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const daemon = await startHttpDaemonErrorFixture(heldDivergenceError());
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['drifted.ad'],
+      flags: { saveScript: true, daemonTransport: 'http' },
+      meta: { requestId: 'req-repair-keep-alive' },
+    });
+
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'REPLAY_DIVERGENCE');
+    assert.ok(ownedStateDir.length > 0);
+    assert.match(String(response.error.hint), /--state-dir/);
+    assert.ok(String(response.error.hint).includes(ownedStateDir));
+
+    // The daemon was NOT torn down: metadata and the owned state dir itself
+    // are still on disk, addressable by a follow-up command's --state-dir.
+    const ownedPaths = resolveDaemonPaths(ownedStateDir);
+    assert.equal(fs.existsSync(ownedPaths.infoPath), true);
+    assert.equal(fs.existsSync(ownedPaths.lockPath), true);
+    assert.equal(fs.existsSync(ownedStateDir), true);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+test('C1: keep-alive keys on repairSessionHeld, NOT resume.allowed — a HELD divergence with allowed:false still keeps the daemon alive', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  // resume.allowed:false (plan not resumable), but the daemon still HELD the
+  // repair session — the agent must be able to reach it to close/inspect.
+  const daemon = await startHttpDaemonErrorFixture(
+    heldDivergenceError({
+      allowed: false,
+      from: 2,
+      planDigest: 'digest-x',
+      reason: 'output-env-skip',
+    }),
+  );
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['drifted.ad'],
+      flags: { saveScript: true, daemonTransport: 'http' },
+      meta: { requestId: 'req-held-not-resumable' },
+    });
+
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.match(String(response.error.hint), /--state-dir/);
+    assert.ok(ownedStateDir.length > 0);
+    assert.equal(fs.existsSync(ownedStateDir), true);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+test('sendToDaemon tears down an owned ephemeral daemon on an UNHELD divergence (no repairSessionHeld signal)', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const daemon = await startHttpDaemonErrorFixture(unheldDivergenceError());
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['drifted.ad'],
+      flags: { saveScript: true, daemonTransport: 'http' },
+      meta: { requestId: 'req-repair-no-keep-alive' },
+    });
+
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.equal(response.error.hint, undefined);
+    assert.ok(ownedStateDir.length > 0);
+    // No held signal (`resume.allowed:true` alone is not the keep-alive key) —
+    // ordinary one-shot teardown still applies.
+    assert.equal(fs.existsSync(ownedStateDir), false);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+// --- ADR 0012 decision 6 (BLOCKER 2, third follow-up): a one-shot
+// `replay --save-script` that completes with no divergence returns SUCCESS
+// immediately — the actual healed-script commit is deferred to daemon
+// teardown. If that deferred commit then fails, the daemon leaves a
+// REPAIR_COMMIT_FAILED tombstone in the owned state dir before exiting. The
+// client cleanup must discover it (after waiting for the daemon to actually
+// exit) BEFORE deleting the owned state dir, and must surface it in the
+// response the caller receives — never silently delete the only evidence of
+// the failure while reporting the success already computed for the replay
+// itself. ---
+
+test('BLOCKER 2 (third follow-up): a shutdown-time repair commit failure is surfaced and the owned state dir survives', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  // The daemon's RPC response for the replay itself is a plain SUCCESS (the
+  // plan completed with no divergence) — exactly what a real daemon would
+  // return before its deferred, teardown-time commit has even attempted.
+  const daemon = await startHttpDaemonFixture({ session: 'default' });
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+    // Simulate the daemon's OWN shutdown handler (`finalizeRepairTeardown`)
+    // having already run and left a commit-failure tombstone before this
+    // fake process "exits" — the real ordering `stopDaemonProcessForTakeover`
+    // depends on (it waits for the process to exit, and the real daemon only
+    // exits after teardown finishes writing this file).
+    const ownedPaths = resolveDaemonPaths(dir);
+    const sessionDir = path.join(ownedPaths.sessionsDir, 'default');
+    fs.mkdirSync(sessionDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionDir, 'repair-tombstone.json'),
+      `${JSON.stringify({
+        owner: 'default',
+        reapedAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        sourcePath: '/tmp/flow.ad',
+        commitFailure: {
+          code: 'COMMAND_FAILED',
+          message: 'a prior healed script already exists at /tmp/flow.healed.ad',
+        },
+      })}\n`,
+    );
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['flow.ad'],
+      flags: { saveScript: true, daemonTransport: 'http' },
+      meta: { requestId: 'req-repair-commit-fail-teardown' },
+    });
+
+    // The client-visible response must surface the deferred commit failure —
+    // never the raw success the daemon returned for the replay itself, and
+    // never silently swallowed by cleanup.
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.equal(response.error.code, 'REPAIR_COMMIT_FAILED');
+    assert.match(response.error.message, /a prior healed script already exists/);
+    assert.ok(response.error.message.includes('replay /tmp/flow.ad --save-script'));
+
+    // The owned state dir — and the tombstone evidence inside it — must
+    // survive: never rmSync'd while an unrecovered commit failure is on record.
+    assert.ok(ownedStateDir.length > 0);
+    assert.equal(fs.existsSync(ownedStateDir), true);
+    const ownedPaths = resolveDaemonPaths(ownedStateDir);
+    assert.equal(
+      fs.existsSync(path.join(ownedPaths.sessionsDir, 'default', 'repair-tombstone.json')),
+      true,
+    );
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+test('continuation: sendToDaemon keeps the daemon alive on a held divergence even WITHOUT --save-script on the request', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  // The `replay --from` continuation of a repair does NOT repeat --save-script
+  // (R2); the daemon still sets `repairSessionHeld` from the PERSISTED armed
+  // state, so the client — keying purely off that signal — must keep the daemon
+  // alive if the continuation itself diverges, keeping the transaction going.
+  const daemon = await startHttpDaemonErrorFixture(heldDivergenceError());
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['drifted.ad'],
+      flags: { replayFrom: 3, replayPlanDigest: 'digest-abc', daemonTransport: 'http' },
+      meta: { requestId: 'req-continuation-no-save-script' },
+    });
+
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.ok(ownedStateDir.length > 0);
+    assert.equal(fs.existsSync(ownedStateDir), true);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
   }
 });
