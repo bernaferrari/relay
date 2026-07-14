@@ -28,7 +28,9 @@ export function createMainWindow(): BrowserWindow {
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,
-          trafficLightPosition: { x: 13, y: 14 },
+          // Center the native 12px controls in Relay's 36px titlebar and keep
+          // the green control inside the 64px navigation rail.
+          trafficLightPosition: { x: 12, y: 12 },
         }
       : {}),
     webPreferences: {

@@ -4,6 +4,7 @@ import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { platformLabel } from "../lib/target-presentation";
+import { productPrimary, productSecondary, productStatus } from "../lib/ui";
 
 type RunSummaryProps = {
   job: JobInfo;
@@ -24,121 +25,116 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
   const outcome = () =>
     readableOutcome(job().outcome ?? (job().status === "error" ? "harness-failure" : "passed"));
 
+  const resultTone = () =>
+    job().status === "ok" || job().status === "healed"
+      ? "bg-icon-success-base"
+      : job().status === "error" || job().status === "cancelled"
+        ? "bg-icon-critical-base"
+        : "bg-surface-brand-base shadow-[0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_14%,transparent)]";
+
   return (
-    <div class="relay-report-summary">
-      <div class="relay-report-summary__overview">
-        <div class="relay-report-summary__overview-copy">
-          <span class="relay-report-summary__eyebrow">Run result</span>
-          <div class="relay-report-summary__result-line">
-            <span
-              class={cn(
-                "relay-report-summary__result-dot",
-                job().status === "ok" || job().status === "healed"
-                  ? "is-success"
-                  : job().status === "error" || job().status === "cancelled"
-                    ? "is-failure"
-                    : "is-progress",
-              )}
-              aria-hidden="true"
-            />
-            <strong>{outcome()}</strong>
+    <div class="grid min-w-0 overflow-hidden">
+      <div class="flex min-w-0 items-center justify-between gap-3 border-b border-border-weak-base py-px pb-3.5">
+        <div class="grid min-w-0 gap-1">
+          <span class="text-[11px]/[1.25] text-text-weaker">Run result</span>
+          <div class="flex min-w-0 items-center gap-1.5 text-[15px]/[1.25] font-semibold text-text-strong">
+            <span class={cn("size-[7px] shrink-0 rounded-full", resultTone())} aria-hidden="true" />
+            <strong class="font-semibold">{outcome()}</strong>
           </div>
         </div>
-        <span class={cn("relay-status", `is-${job().status}`)}>{readableStatus(job().status)}</span>
+        <span class={productStatus(String(job().status))}>{readableStatus(job().status)}</span>
       </div>
       <Show when={job().error && job().status === "error"}>
-        <p class="relay-report-summary__message">{friendlyError(job().error!)}</p>
+        <p class="m-0 overflow-wrap-anywhere px-0.5 py-2.5 text-[12.5px]/[1.5] text-text-weak">
+          {friendlyError(job().error!)}
+        </p>
       </Show>
-      <div class="relay-report-summary__section-label">What happened</div>
-      <dl class="relay-report-summary__facts">
+      <div class="pt-4 pb-1 text-[11px]/[1.25] font-semibold tracking-[0.06em] uppercase text-text-weaker">
+        What happened
+      </div>
+      <dl class="m-0 grid grid-cols-1">
         <Show when={job().failureCategory}>
-          <div>
-            <dt>Why it stopped</dt>
-            <dd>{readableFailure(job().failureCategory!)}</dd>
-          </div>
+          <Fact label="Why it stopped" value={readableFailure(job().failureCategory!)} />
         </Show>
-        <div>
-          <dt>Duration</dt>
-          <dd>{fmtDur(job(), props.clock) || "—"}</dd>
-        </div>
-        <div>
-          <dt>Target</dt>
-          <dd>{job().targetProfile?.name ?? job().serial ?? "—"}</dd>
-        </div>
+        <Fact label="Duration" value={fmtDur(job(), props.clock) || "—"} />
+        <Fact label="Target" value={job().targetProfile?.name ?? job().serial ?? "—"} />
         <Show when={job().appVersion}>
-          <div>
-            <dt>App version</dt>
-            <dd>v{job().appVersion}</dd>
-          </div>
+          <Fact label="App version" value={`v${job().appVersion}`} />
         </Show>
         <Show when={job().targetProfile}>
           {(profile) => (
-            <div>
-              <dt>Platform</dt>
-              <dd>
-                {platformLabel(profile().platform)}
-                {profile().osVersion ? ` · ${profile().osVersion}` : ""}
-              </dd>
-            </div>
+            <Fact
+              label="Platform"
+              value={`${platformLabel(profile().platform)}${profile().osVersion ? ` · ${profile().osVersion}` : ""}`}
+            />
           )}
         </Show>
         <Show when={(job().attempts ?? 1) > 1}>
-          <div>
-            <dt>Attempts</dt>
-            <dd>{job().attempts}</dd>
-          </div>
+          <Fact label="Attempts" value={String(job().attempts)} />
         </Show>
         <Show when={job().caseCount && job().caseCount! > 1}>
-          <div>
-            <dt>Data case</dt>
-            <dd>
-              {(job().caseIndex ?? 0) + 1} of {job().caseCount}
-            </dd>
-          </div>
+          <Fact label="Data case" value={`${(job().caseIndex ?? 0) + 1} of ${job().caseCount}`} />
         </Show>
       </dl>
       <Show when={previous()}>
         {(prior) => (
-          <div class="relay-report-summary__comparison">
-            <div>
-              <span>Since the last run</span>
-              <small>{fmtAgo(prior().startedAt ?? prior().queuedAt, props.clock)}</small>
+          <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-border-weak-base py-2.5">
+            <div class="grid gap-0.5">
+              <span class="text-[11px]/[1.25] text-text-weaker">Since the last run</span>
+              <small class="text-[10px]/[1.25] text-text-weaker">
+                {fmtAgo(prior().startedAt ?? prior().queuedAt, props.clock)}
+              </small>
             </div>
-            <div>
-              <strong>{durationDelta(job(), prior())}</strong>
-              <Show when={scoreDelta(job(), prior())}>{(delta) => <small>{delta()}</small>}</Show>
+            <div class="grid justify-items-end gap-0.5 text-right">
+              <strong class="text-[12.5px]/[1.25] font-semibold text-text-strong">
+                {durationDelta(job(), prior())}
+              </strong>
+              <Show when={scoreDelta(job(), prior())}>
+                {(delta) => <small class="text-[10px] text-text-weaker">{delta()}</small>}
+              </Show>
             </div>
           </div>
         )}
       </Show>
       <Show when={Object.keys(job().resolvedInputs ?? {}).length > 0}>
-        <div class="relay-report-summary__inputs">
-          <span>Inputs used for this run</span>
+        <div class="grid min-w-0 gap-2 border-b border-border-weak-base py-2.5">
+          <span class="text-[11px]/[1.25] text-text-weaker">Inputs used for this run</span>
           <For each={Object.entries(job().resolvedInputs ?? {})}>
             {([name, value]) => (
-              <code>
-                <b>{name}</b>
-                <span>{value}</span>
+              <code class="grid min-w-0 grid-cols-[minmax(0,0.4fr)_minmax(0,1fr)] gap-2 font-mono text-[10.5px]/[1.5] text-text-weak">
+                <b class="min-w-0 overflow-hidden text-ellipsis text-text-strong">{name}</b>
+                <span class="min-w-0 overflow-hidden overflow-wrap-anywhere">{value}</span>
               </code>
             )}
           </For>
         </div>
       </Show>
-      <div class="relay-report-summary__actions">
+      <div class="mt-3.5 mb-px flex items-center justify-end gap-2">
         <Show when={job().status === "error" || job().status === "cancelled"}>
-          <button type="button" class="relay-primary" onClick={() => props.onRetry(job().id)}>
+          <button type="button" class={productPrimary} onClick={() => props.onRetry(job().id)}>
             <Icon name="refresh" size={13} /> Retry run
           </button>
         </Show>
         <button
           type="button"
-          class="relay-secondary relay-report-summary__open"
+          class={productSecondary}
           onClick={() => props.onOpenRecipe(job().action)}
         >
           <span>Fix in test</span>
           <Icon name="arrow-right" size={13} />
         </button>
       </div>
+    </div>
+  );
+}
+
+function Fact(props: { label: string; value: string }): JSX.Element {
+  return (
+    <div class="flex min-h-[38px] min-w-0 items-baseline justify-between gap-4 border-b border-border-weak-base py-2">
+      <dt class="min-w-0 text-[11.5px]/[1.3] text-text-weaker">{props.label}</dt>
+      <dd class="m-0 max-w-[68%] min-w-0 overflow-hidden text-right text-[13px]/[1.3] font-medium text-ellipsis whitespace-nowrap text-text-strong">
+        {props.value}
+      </dd>
     </div>
   );
 }

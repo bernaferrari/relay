@@ -1,0 +1,12 @@
+/* Elevation shadow tokens registered as Tailwind utilities. */
+
+/* AB elevation tokens as utilities (border-in-shadow) */
+@utility shadow-lg-border-base {
+  box-shadow: var(--shadow-lg-border-base);
+}
+@utility shadow-xs-border-base {
+  box-shadow: var(--shadow-xs-border-base);
+}
+@utility shadow-md {
+  box-shadow: var(--shadow-md);
+}

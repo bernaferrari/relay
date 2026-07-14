@@ -24,21 +24,7 @@ import { RecordingEvidencePanel } from "./recording-evidence-panel";
 import { IconButton } from "@relay/ui/icon-button";
 import { kindIcon, kindLabel, stepDetail } from "./step-list-metadata";
 import { AddMenu, ManualTarget } from "./step-list-controls";
-import {
-  fieldInput,
-  fieldLabel,
-  listRow,
-  listRowActive,
-  listRowExpanded,
-  mono,
-  popover,
-  propRow,
-  seg,
-  segBtn,
-  segBtnOn,
-  stepIndex,
-  stepIndexOn,
-} from "../lib/ui";
+import { fieldInput, fieldLabel, mono, popover, propRow, seg, segBtn, segBtnOn } from "../lib/ui";
 
 const valueCls = cn(fieldInput, "min-w-0 flex-1");
 const valueTimeoutCls = cn(fieldInput, "w-[52px] min-w-0 flex-none text-center tabular-nums");
@@ -322,50 +308,63 @@ export function StepRow(props: {
   return (
     <div
       class={cn(
-        // AgentBoard: inset rounded chip, quiet hover/active only — status via StepAnno
-        listRow,
-        // Keep the row on a solid paper surface. The alpha raised token lets
-        // the page behind it bleed through (especially in light themes), which
-        // makes the row look washed out and weakens the selected state.
-        "test-step-card border border-border-weak-base bg-surface-raised-stronger-non-alpha",
-        selected() && listRowActive,
-        !selected() && props.expanded() && listRowExpanded,
-        props.flash() && listRowActive,
+        // Flat, spacious rows — hierarchy from type and tint, not card borders.
+        "group/session relative w-full min-w-0 rounded-xl transition-colors duration-100",
+        "hover:bg-white/[0.03] [&:has(:focus-visible)]:bg-white/[0.03]",
+        selected() &&
+          "bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)] hover:bg-[color-mix(in_srgb,var(--relay-accent)_11%,transparent)]",
+        !selected() &&
+          props.expanded() &&
+          "bg-[var(--relay-panel)] ring-1 ring-[var(--relay-line)]",
+        selected() &&
+          props.expanded() &&
+          "ring-1 ring-[color-mix(in_srgb,var(--relay-accent)_35%,transparent)]",
+        props.flash() && "bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]",
       )}
       data-selected={selected() ? "true" : undefined}
       data-expanded={props.expanded() ? "true" : undefined}
     >
-      <div class="grid min-h-[52px] w-full min-w-0 grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-1 pr-2">
+      <div class="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-1 pr-2">
         <button
           type="button"
-          class="grid min-h-[52px] min-w-0 cursor-pointer grid-cols-[20px_30px_minmax(0,1fr)] items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
+          class="grid min-w-0 cursor-pointer grid-cols-[34px_minmax(0,1fr)] items-start gap-3.5 rounded-xl px-3.5 py-3.5 text-left outline-none focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
           aria-current={selected() ? "step" : undefined}
           aria-expanded={props.expanded()}
           onClick={props.onRowActivate}
         >
-          {/* Exclusive recipes — never stack stepIndex + stepIndexOn (cn has no merge) */}
-          <span class={cn(selected() ? stepIndexOn : stepIndex, "mt-0.5")}>{props.index + 1}</span>
-
           <span
-            class="grid size-[30px] place-items-center rounded-lg bg-surface-raised-stronger-non-alpha text-text-base ring-1 ring-inset ring-border-weak-base"
-            aria-hidden="true"
+            class={cn(
+              "grid size-[34px] place-items-center rounded-[10px] font-mono text-[14px] font-medium tabular-nums transition-colors",
+              selected()
+                ? "bg-[var(--relay-accent)] text-white shadow-[0_5px_16px_color-mix(in_srgb,var(--relay-accent)_40%,transparent)]"
+                : "text-[var(--relay-text-secondary)] ring-1 ring-inset ring-[var(--relay-line-strong)]",
+            )}
           >
-            <Icon name={kindIcon(kind())} size={14} />
+            {props.index + 1}
           </span>
 
           <div class="min-w-0 overflow-hidden">
-            <div class="flex w-full min-w-0 flex-col items-start gap-1 overflow-hidden">
-              <span class="text-[9px]/none font-semibold tracking-[0.055em] text-text-base uppercase">
+            <div class="flex w-full min-w-0 items-center gap-2 overflow-hidden text-[12.5px]/none font-medium text-[var(--relay-text-tertiary)]">
+              <Icon
+                name={kindIcon(kind())}
+                size={13}
+                strokeWidth={1.9}
+                class={cn("shrink-0", selected() && "text-[var(--relay-accent-2)]")}
+                aria-hidden={true}
+              />
+              <span class={cn(selected() && "text-[var(--relay-text-secondary)]")}>
                 {kindLabel(kind())}
               </span>
-              <span class="min-w-0 w-full flex-1 truncate text-[11px]/[1.25] font-[550] text-text-base">
-                {stepDetail(props.step(), server.recipes())}
+              <span class="ml-auto shrink-0 pl-2">
+                <StepAnno anno={anno} />
               </span>
-              <StepAnno anno={anno} />
             </div>
+            <span class="mt-2 block w-full min-w-0 truncate text-[15px]/[1.4] font-medium tracking-[-0.005em] text-[var(--relay-text)]">
+              {stepDetail(props.step(), server.recipes())}
+            </span>
             <Show when={issue() && !props.expanded()}>
-              <span class="mt-1 block truncate text-[9px]/[1.3] text-text-critical-base">
-                Incomplete · {issue()}
+              <span class="mt-1.5 flex items-center gap-1.5 truncate text-[11px]/[1.3] text-text-critical-base">
+                <Icon name="alert" size={11} /> Incomplete · {issue()}
               </span>
             </Show>
           </div>
@@ -892,7 +891,7 @@ export function StepRow(props: {
                   </div>
                   <label class={propRow}>
                     <span class={fieldLabel}>Confidence</span>
-                    <span class="test-step-check">
+                    <span class="grid size-[18px] place-items-center rounded text-[var(--relay-accent-2)]">
                       <input
                         type="checkbox"
                         checked={s.requireAgreement ?? false}
@@ -1322,18 +1321,25 @@ export function StepRow(props: {
                     </select>
                   </div>
                   <Show when={parameters().length > 0}>
-                    <div class="test-step-parameters">
-                      <div class="test-step-parameters__head">
+                    <div class="my-0.5 mb-1 grid gap-2 rounded-[9px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_60%,transparent)] p-2.5">
+                      <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-[var(--relay-text-secondary)]">
                         <span>Flow inputs</span>
-                        <small>Used in this run</small>
+                        <small class="text-[10px] font-normal text-[var(--relay-text-tertiary)]">
+                          Used in this run
+                        </small>
                       </div>
                       <For each={parameters()}>
                         {(parameter) => (
-                          <label class="test-step-parameters__field">
-                            <span>
+                          <label class="grid gap-1 text-[10px] text-[var(--relay-text-secondary)]">
+                            <span class="flex items-center justify-between gap-2">
                               {parameter.label || parameter.name}
                               <Show when={parameter.required}>
-                                <b aria-label="Required">Required</b>
+                                <b
+                                  class="text-[9px] font-semibold tracking-[0.03em] text-[var(--relay-amber)] uppercase"
+                                  aria-label="Required"
+                                >
+                                  Required
+                                </b>
                               </Show>
                             </span>
                             <input
@@ -1345,14 +1351,16 @@ export function StepRow(props: {
                               }
                             />
                             <Show when={parameter.description}>
-                              <small>{parameter.description}</small>
+                              <small class="text-[10px] font-normal leading-[1.35] text-[var(--relay-text-tertiary)]">
+                                {parameter.description}
+                              </small>
                             </Show>
                           </label>
                         )}
                       </For>
                     </div>
                   </Show>
-                  <p class="test-step-help">
+                  <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
                     Record any repeatable routine once—sign-in, onboarding, permissions, or a
                     recovery path—then attach it here. It stays editable and receives this run’s
                     frozen variables, such as {"{{login_email}}"}.
@@ -1491,7 +1499,7 @@ export function StepRow(props: {
                       onInput={(event) => onEdit({ ...s, source: event.currentTarget.value })}
                     />
                   </div>
-                  <p class="test-step-help">
+                  <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
                     Safe commands: set name = value, copy new = existing, delete name, assert name
                     contains value.
                   </p>
@@ -1644,7 +1652,7 @@ export function StepRow(props: {
                         onInput={(e) => onEdit({ ...s, artifact: e.currentTarget.value })}
                       />
                     </div>
-                    <p class="test-step-help">
+                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
                       Android only. Relay runs the selected local APK directly and freezes the
                       observed installed version into the report.
                     </p>
@@ -1698,7 +1706,7 @@ export function StepRow(props: {
                         </select>
                       </div>
                     </Show>
-                    <p class="test-step-help">
+                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
                       Relay records the installed version with the result. Credentials and app files
                       stay on your machine.
                     </p>
@@ -1737,7 +1745,7 @@ export function StepRow(props: {
                       targetPlatform === "ios" && (s.action === "lock" || s.action === "unlock")
                     }
                   >
-                    <p class="test-step-help">
+                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
                       Lock-screen control is unavailable on this iOS runner. Relay will report a
                       capability failure instead of guessing.
                     </p>

@@ -1,0 +1,225 @@
+/* Base layer: root layout, device chrome vars, tips, modal primitives. */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    /* AB type grid: 12 / 14 / 16 — root 14 keeps unscoped chrome on-grid */
+    font-size: 14px;
+    line-height: var(--line-height-large, 1.428);
+    letter-spacing: var(--letter-spacing-normal, 0);
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button:focus:not(:focus-visible),
+  [role="button"]:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /*
+   * Device frame — abstract viewport only (no speaker / island).
+   * High-contrast ink on always-dark chassis (fixed v2 greys).
+   */
+  [data-device-chrome] {
+    --phone-bezel: var(--v2-grey-1000, #242424);
+    --phone-screen: var(--v2-grey-1200, #080808);
+    --phone-fg: var(--v2-grey-50, #ffffff);
+    /* Stronger hierarchy than 42–68% — previous empty-state was unreadable */
+    --phone-fg-muted: color-mix(in srgb, var(--phone-fg) 78%, transparent);
+    --phone-fg-faint: color-mix(in srgb, var(--phone-fg) 56%, transparent);
+    --phone-rim: color-mix(in srgb, var(--phone-fg) 16%, transparent);
+    --phone-rim-soft: color-mix(in srgb, var(--phone-fg) 10%, transparent);
+    --phone-fill: color-mix(in srgb, var(--phone-fg) 12%, transparent);
+    --phone-fill-strong: color-mix(in srgb, var(--phone-fg) 18%, transparent);
+    color: var(--phone-fg);
+  }
+
+  [data-device-chrome] .device-title {
+    color: var(--phone-fg);
+  }
+  [data-device-chrome] .device-body {
+    color: var(--phone-fg-muted);
+  }
+  [data-device-chrome] .device-caption {
+    color: var(--phone-fg-faint);
+  }
+  [data-device-chrome] .device-icon-well {
+    display: grid;
+    place-items: center;
+    border-radius: 0.875rem;
+    color: var(--phone-fg);
+    background: var(--phone-fill);
+    box-shadow: inset 0 0 0 1px var(--phone-rim);
+  }
+  [data-device-chrome] button,
+  [data-device-chrome] [type="button"] {
+    color: var(--phone-fg);
+    background: var(--phone-fill-strong);
+    border: 1px solid var(--phone-rim);
+    border-radius: 0.5rem;
+    font-weight: 550;
+  }
+  [data-device-chrome] button:hover:enabled,
+  [data-device-chrome] [type="button"]:hover:enabled {
+    color: var(--phone-fg);
+    background: color-mix(in srgb, var(--phone-fg) 22%, transparent);
+    border-color: color-mix(in srgb, var(--phone-fg) 28%, transparent);
+  }
+  [data-device-chrome] button:disabled {
+    color: var(--phone-fg-faint);
+    background: var(--phone-fill);
+    opacity: 1;
+  }
+
+  /* Flat product frame — no faux hardware */
+  [data-device-chrome].phone-bezel {
+    background: var(--phone-bezel);
+    box-shadow:
+      0 0 0 1px var(--phone-rim-soft),
+      0 24px 48px -18px color-mix(in srgb, var(--phone-screen) 70%, transparent),
+      0 10px 24px -10px color-mix(in srgb, var(--text-strong) 16%, transparent);
+  }
+
+  [data-device-chrome] .phone-screen {
+    background: var(--phone-screen);
+  }
+}
+
+.qa {
+  --c-accent: var(--surface-brand-base);
+  --c-accent-fg: var(--text-on-brand-base);
+  --c-accent-soft: var(--text-interactive-base);
+  --c-pass: var(--icon-success-base);
+  --c-fail: var(--icon-critical-base);
+  --c-heal: var(--icon-warning-base);
+  --c-run: var(--icon-info-base);
+  --c-dim: var(--text-weaker);
+  --top-h: 36px;
+  --traffic-pad: 12px;
+  --rail-top-pad: 16px;
+}
+.qa--desktop {
+  --traffic-pad: 84px;
+  /* Native macOS controls own the top of the 64px rail. */
+  --rail-top-pad: 52px;
+}
+
+.btn-primary-ink {
+  background-color: var(--button-primary-base);
+  color: var(--icon-invert-base);
+  border: 1px solid transparent;
+}
+.btn-primary-ink:hover:enabled {
+  background-color: var(--icon-strong-hover, var(--button-primary-base));
+  color: var(--icon-invert-base);
+}
+.btn-primary-ink:disabled {
+  background-color: var(--surface-base);
+  color: var(--text-weaker);
+  box-shadow: inset 0 0 0 1px var(--border-weak-base);
+  cursor: not-allowed;
+}
+
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes ui-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes ui-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ui-check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.ui-pop {
+  animation: ui-pop-in 140ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  transform-origin: var(--ui-pop-origin, top center);
+}
+.ui-modal {
+  animation: ui-modal-in 180ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+}
+.ui-scrim {
+  animation: ui-scrim-in 160ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  /* AB dialog scrim — quiet, not ink blackout */
+  background: hsl(from var(--background-base) h s l / 0.2);
+}
+.ui-check {
+  animation: ui-check-in 160ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+}
+.tip-layer {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;
+  max-width: 240px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text-invert-strong) 14%, transparent);
+  background: var(--surface-float-base);
+  color: var(--text-invert-strong);
+  font-size: var(--font-size-small, 13px);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--text-invert-base) 6%, transparent) inset,
+    0 8px 28px color-mix(in srgb, var(--text-strong) 22%, transparent);
+  opacity: 0;
+  transform: scale(0.97) translateY(2px);
+  transition:
+    opacity 120ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)),
+    transform 120ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1));
+}
+.tip-layer[data-show="true"] {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+.tip-layer[data-instant="true"] {
+  transition-duration: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-pop,
+  .ui-modal,
+  .ui-scrim,
+  .ui-check,
+  .tip-layer {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}

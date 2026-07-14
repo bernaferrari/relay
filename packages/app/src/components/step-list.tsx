@@ -148,29 +148,48 @@ export function RecipeStepsEditor(): JSX.Element {
       {/* Full-height scroll — no floating card over a cream void */}
       <div class="test-step-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
         <Show when={isEmpty()}>
-          <div class="test-step-empty" role="group" aria-label="Add first step">
-            <div class="test-step-empty__content">
-              <span class="test-step-empty__eyebrow">Manual step</span>
-              <h3>Start with an action</h3>
-              <p>
+          <div
+            class="grid min-h-full w-full place-items-center px-4 py-7"
+            role="group"
+            aria-label="Add first step"
+          >
+            <div class="w-[min(100%,390px)]">
+              <span class="mb-1.5 block text-[10px] font-semibold tracking-[0.1em] text-[var(--relay-text-tertiary)] uppercase">
+                Manual step
+              </span>
+              <h3 class="m-0 text-[18px] font-semibold leading-[1.25] tracking-[-0.025em] text-balance text-[var(--relay-text)]">
+                Start with an action
+              </h3>
+              <p class="mt-[7px] max-w-[360px] text-[12px]/[1.55] text-[var(--relay-text-tertiary)]">
                 Choose one to configure it. Recording on the device adds steps here automatically.
               </p>
-              <div class="test-step-empty__grid">
+              <div class="mt-[18px] grid grid-cols-2 gap-2 max-[1040px]:grid-cols-1">
                 <For each={STARTERS}>
                   {(s) => (
                     <button
                       type="button"
-                      class="test-step-empty__action"
+                      class="grid min-h-[68px] min-w-0 cursor-pointer grid-cols-[30px_minmax(0,1fr)_14px] items-center gap-2 rounded-[10px] bg-[var(--relay-surface-raised)] p-2.5 text-left text-[var(--relay-text)] shadow-[inset_0_0_0_1px_var(--relay-line)] transition-[background-color,box-shadow,transform] duration-120 hover:bg-surface-raised-base-hover active:scale-[0.99]"
                       onClick={() => insertAt(0, s.make())}
                     >
-                      <span class="test-step-empty__icon" aria-hidden="true">
+                      <span
+                        class="grid size-[30px] place-items-center rounded-lg bg-[var(--relay-accent-soft)] text-[var(--relay-accent)]"
+                        aria-hidden="true"
+                      >
                         <Icon name={s.icon} size={16} strokeWidth={1.8} />
                       </span>
-                      <span class="test-step-empty__action-copy">
-                        <strong>{s.label}</strong>
-                        <small>{s.description}</small>
+                      <span class="flex min-w-0 flex-col gap-0.5">
+                        <strong class="overflow-hidden text-[12px] font-semibold leading-[1.3] text-ellipsis whitespace-nowrap">
+                          {s.label}
+                        </strong>
+                        <small class="text-[10px] text-[var(--relay-text-tertiary)]">
+                          {s.description}
+                        </small>
                       </span>
-                      <Icon name="chevron-right" size={14} class="test-step-empty__arrow" />
+                      <Icon
+                        name="chevron-right"
+                        size={14}
+                        class="text-[var(--relay-text-tertiary)]"
+                      />
                     </button>
                   )}
                 </For>
@@ -181,7 +200,7 @@ export function RecipeStepsEditor(): JSX.Element {
 
         <Show when={!isEmpty()}>
           {/* Inset list — AgentBoard chip rows + gap-1 air */}
-          <div class="test-step-list flex flex-col gap-2 py-4">
+          <div class="test-step-list flex flex-col gap-2 px-3 py-4">
             <InsertGap
               at={0}
               open={addAt() === 0}

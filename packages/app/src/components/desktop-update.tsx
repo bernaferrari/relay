@@ -87,7 +87,7 @@ export function DesktopUpdateDialog() {
           aria-describedby="desktop-update-notes"
         >
           <div class="flex items-start gap-3.5 border-b border-border-weak-base px-5 pt-5 pb-4">
-            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-brand-weak text-icon-interactive-base">
+            <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-surface-interactive-weak text-icon-interactive-base">
               <Icon name="download" size={18} />
             </span>
             <div class="min-w-0 flex-1">
@@ -126,7 +126,7 @@ export function DesktopUpdateDialog() {
             </button>
             <button
               type="button"
-              class="inline-flex h-8 items-center gap-2 rounded-md bg-button-primary-base px-3 text-12-medium text-button-primary-content shadow-sm transition-transform hover:brightness-110 active:translate-y-px"
+              class="inline-flex h-8 items-center gap-2 rounded-md bg-button-primary-base px-3 text-12-medium text-icon-invert-base shadow-sm transition-transform hover:brightness-110 active:translate-y-px"
               autofocus
               onClick={install}
             >

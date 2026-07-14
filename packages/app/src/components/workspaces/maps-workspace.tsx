@@ -4,6 +4,13 @@ import { cn } from "../../lib/cn";
 import { Icon } from "../icon";
 import { AtlasWorkspace } from "./atlas-workspace";
 import { DiscoveryWorkspace } from "./discovery-workspace";
+import {
+  eyebrow,
+  productPrimary,
+  productSecondary,
+  productIconButton,
+  productIconButtonDanger,
+} from "../../lib/ui";
 
 export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   const server = useServer();
@@ -67,9 +74,13 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   };
 
   return (
-    <section class="relay-page relay-explore-page">
-      <header class="relay-explore-toolbar">
-        <div class="relay-map-segments" role="tablist" aria-label="Product map view">
+    <section class="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden p-0">
+      <header class="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-[var(--relay-line)] bg-[var(--relay-panel)] px-3">
+        <div
+          class="inline-flex items-center gap-0.5 rounded-[9px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_86%,var(--relay-bg))] p-0.5"
+          role="tablist"
+          aria-label="Product map view"
+        >
           {(
             [
               ["discovery", "Product"],
@@ -81,7 +92,12 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
               type="button"
               role="tab"
               aria-selected={mode() === id}
-              class={cn(mode() === id && "is-active")}
+              class={cn(
+                "min-h-8 rounded-[7px] px-3.5 text-[12px] font-medium text-[var(--relay-text-tertiary)] transition-colors",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color-mix(in_srgb,var(--relay-accent-2)_66%,transparent)]",
+                mode() === id &&
+                  "bg-[var(--relay-surface-strong)] text-[var(--relay-text)] shadow-[inset_0_0_0_1px_var(--relay-line-strong)]",
+              )}
               onClick={() => setMode(id)}
             >
               {label}
@@ -89,7 +105,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
           ))}
         </div>
         <Show when={mode() === "workflows" && workflows().length > 0}>
-          <button type="button" class="relay-primary" onClick={() => void createWorkflow()}>
+          <button type="button" class={productPrimary} onClick={() => void createWorkflow()}>
             <Icon name="plus" size={15} /> New workflow
           </button>
         </Show>
@@ -99,9 +115,13 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
         fallback={
           <Show
             when={mode() === "workflows"}
-            fallback={<AtlasWorkspace atlas={atlas()} onOpen={props.onOpenRecipe} />}
+            fallback={
+              <div class="min-h-0 w-full flex-1">
+                <AtlasWorkspace atlas={atlas()} onOpen={props.onOpenRecipe} />
+              </div>
+            }
           >
-            <div class="mx-auto grid min-h-[520px] w-full max-w-[1180px] grid-cols-[280px_minmax(0,1fr)] overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger max-[850px]:grid-cols-1">
+            <div class="mx-auto grid min-h-0 w-full min-h-[520px] flex-1 grid-cols-[280px_minmax(0,1fr)] overflow-hidden max-[850px]:grid-cols-1">
               <aside class="border-r border-border-weak-base bg-surface-weak p-2 max-[850px]:border-r-0 max-[850px]:border-b">
                 <For
                   each={workflows()}
@@ -139,7 +159,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
                 fallback={
                   <div class="grid place-items-center p-10 text-center">
                     <div class="max-w-md">
-                      <span class="relay-eyebrow">Reusable building blocks</span>
+                      <span class={eyebrow}>Reusable building blocks</span>
                       <h3 class="mt-2 text-[20px]/[1.2] text-text-base">
                         Turn trusted tests into complete journeys
                       </h3>
@@ -148,7 +168,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
                       </p>
                       <button
                         type="button"
-                        class="relay-primary mt-5"
+                        class={cn(productPrimary, "mt-5")}
                         onClick={() => void createWorkflow()}
                       >
                         <Icon name="plus" size={15} /> Create your first flow
@@ -176,7 +196,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
                       <div class="flex items-center gap-1">
                         <button
                           type="button"
-                          class="relay-icon-button"
+                          class={productIconButton}
                           aria-label="Duplicate workflow"
                           onClick={() => void duplicateWorkflow(workflow())}
                         >
@@ -184,7 +204,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
                         </button>
                         <button
                           type="button"
-                          class="relay-icon-button relay-icon-button--danger"
+                          class={productIconButtonDanger}
                           aria-label="Delete workflow"
                           onClick={() => void deleteWorkflow(workflow())}
                         >
@@ -192,14 +212,14 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
                         </button>
                         <button
                           type="button"
-                          class="relay-secondary"
+                          class={productSecondary}
                           onClick={() => props.onOpenRecipe(workflow().id)}
                         >
                           Open as test
                         </button>
                         <button
                           type="button"
-                          class="relay-primary"
+                          class={productPrimary}
                           onClick={() => void server.runRecipeRemote(workflow().id)}
                         >
                           <Icon name="play" size={13} /> Run sequence
@@ -319,7 +339,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
                       </select>
                       <button
                         type="button"
-                        class="relay-secondary"
+                        class={productSecondary}
                         disabled={!adding()}
                         onClick={() => {
                           if (!adding()) return;
@@ -340,7 +360,9 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
           </Show>
         }
       >
-        <DiscoveryWorkspace onOpenRecipe={props.onOpenRecipe} />
+        <div class="min-h-0 w-full flex-1 overflow-hidden">
+          <DiscoveryWorkspace onOpenRecipe={props.onOpenRecipe} />
+        </div>
       </Show>
     </section>
   );

@@ -10,7 +10,6 @@ import {
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { DeviceStage } from "./stage";
-import { FrameCanvas } from "./frame-canvas";
 import { RecipeStepsEditor } from "./step-list";
 import { JourneyWorkspace } from "./journey-workspace";
 import { JourneyInspector, JourneyOutline } from "./journey-chrome";
@@ -27,8 +26,54 @@ import { toast } from "../context/toast";
 import { presentTarget } from "../lib/target-presentation";
 import { matrixRunPreview } from "../lib/matrix-presentation";
 import { nextRovingIndex } from "../lib/roving-focus";
-import { modalPanel, modalScrim } from "../lib/ui";
+import {
+  modalPanel,
+  modalScrim,
+  eyebrow,
+  productPrimary,
+  productSecondary,
+  productIconButton,
+  productIconButtonDanger,
+  productPage,
+  productPageHero,
+  productPageTitle,
+  productPageLead,
+  productStatus,
+} from "../lib/ui";
+import {
+  shellRoot,
+  shellRootLibraryVar,
+  shellRail,
+  shellMark,
+  shellRailNav,
+  shellRailItem,
+  shellRailItemActive,
+  shellMain,
+  shellTopbar,
+  shellTopbarContext,
+  shellTopbarActions,
+  shellBreadcrumb,
+  shellRecord,
+  shellRecordDot,
+  shellCapture,
+  shellCaptureActive,
+  shellStudio,
+  shellStudioBar,
+  shellViewTabs,
+  shellViewTab,
+  shellViewTabActive,
+  shellCount,
+  shellSaveState,
+  shellStudioBody,
+  shellStudioBodyJourney,
+  shellStageWrap,
+  shellSteps,
+  shellStepsHead,
+  shellStepsBody,
+  shellDragStrip,
+} from "../lib/shell-layout";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
+import { kindIcon, kindLabel } from "./step-list-metadata";
 import { sentenceForStep } from "../lib/step-sentence";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
 import type { SettingsSection } from "../pages/settings";
@@ -39,7 +84,7 @@ type StudioView = "live" | "journey";
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
   { id: "runs", label: "Runs", icon: "wave" },
-  { id: "map", label: "Map", icon: "move" },
+  { id: "map", label: "Atlas", icon: "move" },
 ];
 
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
@@ -62,6 +107,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   } | null>(null);
 
   const selected = () => server.selectedRecipe();
+  let previousSelectedId: string | null = null;
+  createEffect(() => {
+    const id = server.selectedRecipeId();
+    if (id && id !== previousSelectedId) setLibraryOpen(false);
+    else if (!id) setLibraryOpen(true);
+    previousSelectedId = id;
+  });
   const recordBlockedReason = () => {
     if (server.health() !== "online") return "Start the device server before recording";
     if (server.isEmptyDevices() || !server.selectedDevice()) {
@@ -138,30 +190,36 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.setSelectedRecipeId(id);
     setArea("tests");
     setStudioView("live");
-    setLibraryOpen(true);
+    setLibraryOpen(false);
   }
 
   return (
-    <div class={cn("relay-shell", (area() !== "tests" || !libraryOpen()) && "is-library-closed")}>
-      <div class="relay-window-drag-strip" aria-hidden="true" />
-      <aside class="relay-rail" aria-label="Product navigation">
+    <div class={shellRoot} style={shellRootLibraryVar(area() === "tests" && libraryOpen())}>
+      <div class={shellDragStrip} aria-hidden="true" />
+      <aside class={shellRail} aria-label="Product navigation">
         <button
-          class="relay-mark"
+          class={shellMark}
           type="button"
           aria-label="Relay home"
           onClick={() => setArea("tests")}
         >
-          <span class="relay-mark__orbit" aria-hidden="true" />
-          <span class="relay-mark__dot" aria-hidden="true" />
+          <span
+            class="absolute inset-[10px_8px] -rotate-[32deg] rounded-full border-[1.5px] border-white/80"
+            aria-hidden="true"
+          />
+          <span
+            class="absolute top-2 right-2 size-1.5 rounded-full bg-white shadow-[0_0_0_3px_rgb(255_255_255/16%)]"
+            aria-hidden="true"
+          />
         </button>
-        <nav class="relay-rail__nav">
+        <nav class={shellRailNav}>
           <For each={AREA_ITEMS}>
             {(item) => {
               const active = () => area() === item.id;
               return (
                 <button
                   type="button"
-                  class={cn("relay-rail__item", active() && "is-active")}
+                  class={cn(shellRailItem, active() && shellRailItemActive)}
                   aria-current={active() ? "page" : undefined}
                   onClick={() => {
                     setArea(item.id);
@@ -175,10 +233,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             }}
           </For>
         </nav>
-        <div class="relay-rail__foot">
+        <div class="flex w-full flex-col items-center">
           <button
             type="button"
-            class="relay-rail__item relay-rail__settings"
+            class={cn(shellRailItem, "min-h-[52px]")}
             aria-label="Open settings"
             onClick={() => props.onOpenSettings()}
           >
@@ -201,41 +259,46 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         />
       </Show>
 
-      <main class="relay-main">
-        <header class="relay-topbar">
-          <div class="relay-topbar__context">
+      <main class={shellMain}>
+        <header class={shellTopbar}>
+          <div class={shellTopbarContext}>
             <Show when={area() === "tests" && studioView() === "live"}>
               <button
                 type="button"
-                class="relay-icon-button"
+                class={productIconButton}
                 aria-label={libraryOpen() ? "Hide test library" : "Show test library"}
                 onClick={() => setLibraryOpen((value) => !value)}
               >
                 <Icon name="panel-left" size={17} />
               </button>
             </Show>
-            <div class="relay-breadcrumb">
-              <span>Relay</span>
-              <Icon name="chevron-right" size={13} />
+            <div class={shellBreadcrumb}>
               <strong>
                 {area() === "runs"
                   ? "Run history"
                   : area() === "map"
-                    ? "Product map"
+                    ? "Atlas"
                     : area() === "data"
                       ? "Test data"
-                      : selected()
-                        ? displayTitle(selected()!.title)
-                        : "Test studio"}
+                      : "Tests"}
               </strong>
+              <Show when={area() === "tests" && selected()}>
+                <Icon name="chevron-right" size={13} />
+                <span class="max-w-[min(32vw,360px)] truncate text-[var(--relay-text-secondary)]">
+                  {displayTitle(selected()!.title)}
+                </span>
+              </Show>
             </div>
           </div>
-          <div class="relay-topbar__actions">
-            <DevicePicker />
+          <div class={shellTopbarActions}>
+            <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
             <Show when={area() === "tests" && selected() && studioView() === "live"}>
               <button
                 type="button"
-                class={cn("relay-record", recorder.recording() && "is-recording")}
+                class={cn(shellCapture, recorder.recording() && shellCaptureActive)}
+                data-blocked={
+                  !recorder.recording() && Boolean(recordBlockedReason()) ? "" : undefined
+                }
                 data-tip={
                   recorder.recording()
                     ? "Stop recording"
@@ -269,7 +332,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   }
                 }}
               >
-                <span class="relay-record__dot" aria-hidden="true" />
+                <span
+                  class={cn(
+                    shellRecordDot,
+                    recorder.recording() ? "bg-current" : "bg-[var(--relay-red)]",
+                  )}
+                  aria-hidden="true"
+                />
                 {recorder.recording() ? "Stop recording" : "Record test"}
               </button>
             </Show>
@@ -277,18 +346,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         </header>
 
         <Show when={area() === "tests"}>
-          <section class="relay-studio">
+          <section class={shellStudio}>
             <Show when={selected()}>
-              <div class="relay-studio__bar">
-                <div class="relay-view-tabs" role="tablist" aria-label="Test view">
+              <div class={shellStudioBar}>
+                <div class={shellViewTabs} role="tablist" aria-label="Test view">
                   <button
                     type="button"
                     role="tab"
                     aria-selected={studioView() === "live"}
-                    class={cn(studioView() === "live" && "is-active")}
+                    class={cn(shellViewTab, studioView() === "live" && shellViewTabActive)}
                     onClick={() => {
                       setStudioView("live");
-                      setLibraryOpen(true);
+                      setLibraryOpen(false);
                     }}
                   >
                     <Icon name="smartphone" size={15} /> Build
@@ -297,7 +366,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     type="button"
                     role="tab"
                     aria-selected={studioView() === "journey"}
-                    class={cn(studioView() === "journey" && "is-active")}
+                    class={cn(shellViewTab, studioView() === "journey" && shellViewTabActive)}
                     disabled={draft.steps().length === 0 && server.frames().length === 0}
                     onClick={() => {
                       setStudioView("journey");
@@ -305,14 +374,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     }}
                   >
                     <Icon name="move" size={15} /> Flow
-                    <span class="relay-count">
-                      {server.frames().length || draft.steps().length}
-                    </span>
+                    <span class={shellCount}>{server.frames().length || draft.steps().length}</span>
                   </button>
                 </div>
-                <div class="relay-studio__tools">
+                <div class="relative flex items-center gap-2">
                   <Show when={selected()}>
-                    <span class="relay-save-state">
+                    <span class={shellSaveState}>
                       {draft.saveState() === "saving"
                         ? "Saving…"
                         : draft.saveState() === "invalid"
@@ -320,7 +387,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                           : "All changes saved"}
                     </span>
                     <button
-                      class="relay-icon-button"
+                      class={productIconButton}
                       type="button"
                       aria-label="More test options"
                       aria-expanded={studioActionsOpen()}
@@ -329,10 +396,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       <Icon name="more" size={16} />
                     </button>
                     <Show when={studioActionsOpen()}>
-                      <div class="relay-studio-actions-menu" role="menu">
+                      <div
+                        class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+                        role="menu"
+                      >
                         <button
                           type="button"
                           role="menuitem"
+                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
                             void duplicateSelected();
@@ -343,7 +414,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         <button
                           type="button"
                           role="menuitem"
-                          class="is-danger"
+                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-red)] hover:bg-[var(--relay-surface-strong)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
                             void deleteSelected();
@@ -357,7 +428,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </div>
               </div>
             </Show>
-            <div class={cn("relay-studio__body", studioView() === "journey" && "is-journey")}>
+            <div class={studioView() === "journey" ? shellStudioBodyJourney : shellStudioBody}>
               <Show
                 when={selected()}
                 fallback={
@@ -373,18 +444,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <JourneyOutline
                     onBack={() => {
                       setStudioView("live");
-                      setLibraryOpen(true);
+                      setLibraryOpen(false);
                     }}
                   />
                 </Show>
-                <div class="relay-stage-wrap">
+                <div class={shellStageWrap}>
                   <Show
                     when={studioView() === "live"}
                     fallback={
                       <JourneyWorkspace
                         onLive={() => {
                           setStudioView("live");
-                          setLibraryOpen(true);
+                          setLibraryOpen(false);
                         }}
                       />
                     }
@@ -404,7 +475,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <JourneyInspector
                     onEdit={() => {
                       setStudioView("live");
-                      setLibraryOpen(true);
+                      setLibraryOpen(false);
                     }}
                     onOpenTargets={() => props.onOpenSettings("matrices")}
                   />
@@ -435,53 +506,62 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         {(review) => (
           <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>
             <section
-              class={cn(modalPanel, "relay-import-review")}
+              class={cn(modalPanel, "grid w-[min(100%,480px)] gap-0 overflow-hidden rounded-xl")}
               role="dialog"
               aria-modal="true"
               aria-labelledby="import-review-title"
             >
-              <header>
+              <header class="flex items-start justify-between gap-3 border-b border-[var(--relay-line)] px-4 py-3.5">
                 <div>
-                  <span class="relay-eyebrow">Relay YAML</span>
-                  <h3 id="import-review-title">
+                  <span class={eyebrow}>Relay YAML</span>
+                  <h3
+                    id="import-review-title"
+                    class="mt-1 text-[16px] font-semibold text-[var(--relay-text)]"
+                  >
                     {review().exists ? "This test already exists" : "Import this test?"}
                   </h3>
                 </div>
                 <button
                   type="button"
-                  class="relay-icon-button"
+                  class={productIconButton}
                   aria-label="Close import review"
                   onClick={() => setImportReview(null)}
                 >
                   <Icon name="x" size={14} />
                 </button>
               </header>
-              <div class="relay-import-review__summary">
-                <span class="relay-import-review__icon">
+              <div class="mx-4 mt-3.5 flex items-center gap-3 rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] p-3">
+                <span class="grid size-9 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-green)_12%,transparent)] text-[var(--relay-green)]">
                   <Icon name="check" size={16} />
                 </span>
-                <div>
-                  <strong>{review().recipe.title}</strong>
-                  <small>
+                <div class="min-w-0">
+                  <strong class="block text-[13px] text-[var(--relay-text)]">
+                    {review().recipe.title}
+                  </strong>
+                  <small class="block text-[11px] text-[var(--relay-text-tertiary)]">
                     {review().recipe.id} · {review().recipe.steps.length} step
                     {review().recipe.steps.length === 1 ? "" : "s"} · schema valid
                   </small>
                 </div>
               </div>
-              <details>
-                <summary>Preview canonical YAML</summary>
-                <pre>{review().canonicalYaml}</pre>
+              <details class="mx-4 my-3 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] px-3 py-2">
+                <summary class="cursor-pointer text-[11px] text-[var(--relay-text-secondary)]">
+                  Preview canonical YAML
+                </summary>
+                <pre class="mt-2 max-h-48 overflow-auto font-mono text-[11px]/[1.5] text-[var(--relay-text-tertiary)]">
+                  {review().canonicalYaml}
+                </pre>
               </details>
-              <footer>
-                <p>
+              <footer class="flex items-center justify-between gap-3 border-t border-[var(--relay-line)] px-4 py-3">
+                <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--relay-text-tertiary)]">
                   {review().exists
                     ? "Replacing preserves the current definition in version history. Importing a copy creates a new test ID."
                     : "Relay will store the canonical definition in the tracked tests directory."}
                 </p>
-                <div>
+                <div class="flex shrink-0 flex-wrap justify-end gap-2">
                   <button
                     type="button"
-                    class="relay-secondary"
+                    class={productSecondary}
                     onClick={() => setImportReview(null)}
                   >
                     Cancel
@@ -489,7 +569,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <Show when={review().exists}>
                     <button
                       type="button"
-                      class="relay-secondary"
+                      class={productSecondary}
                       onClick={() => void confirmImport("copy")}
                     >
                       Import copy
@@ -497,7 +577,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </Show>
                   <button
                     type="button"
-                    class="relay-primary"
+                    class={productPrimary}
                     onClick={() => void confirmImport("replace")}
                   >
                     {review().exists ? "Replace test" : "Import test"}
@@ -687,22 +767,24 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
     });
   };
   return (
-    <aside class="relay-steps" aria-label="Test steps">
-      <div class="relay-steps__head">
-        <div class="relay-steps__title-row">
-          <div>
-            <span class="relay-eyebrow">Test</span>
+    <aside class={shellSteps} aria-label="Test steps">
+      <div class={shellStepsHead}>
+        <div class="flex items-start gap-3">
+          <div class="min-w-0 flex-1">
+            <span class={eyebrow}>Test</span>
             <input
+              class="mt-0.5 w-full min-w-0 rounded-md border-0 bg-transparent px-0 text-[17px] font-semibold tracking-[-0.02em] text-[var(--relay-text)] outline-none placeholder:text-[var(--relay-text-tertiary)] focus:bg-[var(--relay-surface-raised)] focus:px-2 focus:-mx-2 transition-[background-color,padding,margin] duration-100"
               aria-label="Test name"
               value={draft.title()}
               spellcheck={false}
+              placeholder="Untitled test"
               onInput={(event) => draft.setTitle(event.currentTarget.value)}
             />
           </div>
-          <div class="relay-run-control">
+          <div class="relative flex shrink-0 items-center gap-px">
             <button
               type="button"
-              class="relay-run"
+              class={cn(shellRecord, "rounded-r-none")}
               data-blocked={!canRun() ? "" : undefined}
               data-tip={runBlockedReason() || "Run this test"}
               onClick={() => attemptRun(1)}
@@ -711,7 +793,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
             </button>
             <button
               type="button"
-              class="relay-run relay-run--menu"
+              class={cn(shellRecord, "rounded-l-none px-2")}
               data-blocked={!canRun() ? "" : undefined}
               aria-label="Run options"
               aria-haspopup="dialog"
@@ -728,7 +810,11 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
               <Icon name="chevron-down" size={12} />
             </button>
             <Show when={runMenuOpen()}>
-              <div class="relay-run-menu" role="dialog" aria-label="Run options">
+              <div
+                class="absolute top-[calc(100%+6px)] right-0 z-40 grid w-[260px] gap-0.5 rounded-[12px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1.5 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-10 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-lg [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--relay-text-secondary)] hover:[&_button]:bg-[var(--relay-surface-strong)] hover:[&_button]:text-[var(--relay-text)] [&_strong]:block [&_strong]:text-[var(--relay-text)] [&_small]:block [&_small]:text-[10px] [&_small]:text-[var(--relay-text-tertiary)]"
+                role="dialog"
+                aria-label="Run options"
+              >
                 <button type="button" onClick={() => runTrials(1)}>
                   <Icon name="play" size={14} />
                   <span>
@@ -751,7 +837,10 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
                   </span>
                 </button>
                 <Show when={server.matrices().length > 0}>
-                  <section class="relay-run-menu__matrices" aria-label="Test environments">
+                  <section
+                    class="grid gap-1 border-t border-[var(--relay-line)] pt-1.5"
+                    aria-label="Test environments"
+                  >
                     <header>
                       <span>Test environments</span>
                       <div role="group" aria-label="Trials per environment">
@@ -779,7 +868,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
                           return value ? matrixRunPreview(value, matrixRepetitions()) : null;
                         };
                         return (
-                          <div class="relay-run-matrix">
+                          <div class="grid gap-1 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] p-2">
                             <button
                               type="button"
                               disabled={!expansion() || expansion()!.profiles.length === 0}
@@ -847,7 +936,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
                   </section>
                 </Show>
                 <Show when={server.matrices().length === 0}>
-                  <div class="relay-run-menu__empty">
+                  <div class="px-2 py-3 text-center text-[11px] text-[var(--relay-text-tertiary)]">
                     <strong>No test environment yet</strong>
                     <small>
                       Save a set of devices and OS versions to run this test across them.
@@ -892,6 +981,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           </div>
         </div>
         <textarea
+          class="mt-1 w-full resize-none rounded-md border-0 bg-transparent px-0 text-[12px]/[1.45] text-[var(--relay-text-secondary)] outline-none placeholder:text-[var(--relay-text-tertiary)] focus:bg-[var(--relay-surface-raised)] focus:px-2 focus:-mx-2 transition-[background-color,padding,margin] duration-100"
           aria-label="Test description"
           value={draft.description()}
           placeholder="Add a short description…"
@@ -899,7 +989,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           spellcheck={false}
           onInput={(event) => draft.setDescription(event.currentTarget.value)}
         />
-        <div class="relay-test-health">
+        <div class="relative mt-2 flex items-center gap-2 rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2 text-[11px] text-[var(--relay-text-tertiary)] [&>b]:rounded [&>b]:bg-[color-mix(in_srgb,var(--relay-amber)_16%,transparent)] [&>b]:px-1.5 [&>b]:py-0.5 [&>b]:font-medium [&>b]:text-[var(--relay-amber)]">
           <Show
             when={stability()?.passRate !== null && stability()?.passRate !== undefined}
             fallback={<span>No run baseline yet</span>}
@@ -917,7 +1007,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           </Show>
           <button
             type="button"
-            class="relay-test-health__more"
+            class="ml-auto grid size-7 place-items-center rounded-md text-[var(--relay-text-tertiary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
             aria-label="More test actions"
             aria-expanded={maintenanceOpen()}
             onClick={() => setMaintenanceOpen((open) => !open)}
@@ -925,7 +1015,10 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
             <Icon name="more" size={14} />
           </button>
           <Show when={maintenanceOpen()}>
-            <div class="relay-test-maintenance-menu" role="menu">
+            <div
+              class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[220px] gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-9 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-md [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--relay-text-secondary)] hover:[&_button]:bg-[var(--relay-surface-strong)]"
+              role="menu"
+            >
               <button
                 type="button"
                 role="menuitem"
@@ -966,7 +1059,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           </Show>
         </div>
         <Show when={historyOpen()}>
-          <div class="relay-history-popover">
+          <div class="absolute top-[calc(100%+6px)] right-0 z-40 grid w-[280px] gap-0 overflow-hidden rounded-[12px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha shadow-[var(--v2-elevation-overlay)] [&_header]:flex [&_header]:items-center [&_header]:justify-between [&_header]:border-b [&_header]:border-[var(--relay-line)] [&_header]:px-3 [&_header]:py-2.5 [&_button]:flex [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:px-3 [&_button]:py-2 [&_button]:text-left hover:[&_button]:bg-[var(--relay-surface-strong)] [&_strong]:text-[12px] [&_strong]:text-[var(--relay-text)] [&_small]:text-[10px] [&_small]:text-[var(--relay-text-tertiary)]">
             <header>
               <div>
                 <strong>Version history</strong>
@@ -1012,8 +1105,8 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
                 role="tab"
                 aria-selected={tab() === item}
                 class={cn(
-                  "relative inline-flex min-h-8 items-center gap-1.5 px-0.5 text-[11px]/[1.25] font-semibold text-text-weaker transition-colors after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:scale-x-0 after:rounded-full after:bg-surface-brand-base after:transition-transform hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
-                  tab() === item && "text-text-base after:scale-x-100",
+                  "relative inline-flex min-h-9 items-center gap-1.5 px-0.5 text-[12.5px]/[1.25] font-semibold text-text-weaker transition-colors after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:scale-x-0 after:rounded-full after:bg-surface-brand-base after:transition-transform hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+                  tab() === item && "text-text-strong after:scale-x-100",
                 )}
                 onClick={() => setTab(item)}
               >
@@ -1028,7 +1121,7 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           </For>
         </div>
       </div>
-      <div class="relay-steps__body" data-editor-tab={tab()}>
+      <div class={shellStepsBody} data-editor-tab={tab()}>
         <Show when={tab() === "steps"}>
           <div class="flex h-full min-h-0 flex-col">
             <AgentTestComposer />
@@ -1036,46 +1129,70 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
           </div>
         </Show>
         <Show when={tab() === "inputs"}>
-          <div class="relay-inputs-panel">
+          <div class="grid content-start gap-3.5 p-3">
             <FlowParametersEditor />
-            <div class="relay-inputs-panel__variables">
-              <div>
-                <Icon name="sparkle" size={17} />
-                <span>
-                  <strong>Workspace variables</strong>
-                  <small>
+            <div class="flex items-center justify-between gap-3 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_55%,transparent)] p-3">
+              <div class="flex min-w-0 items-start gap-2.5">
+                <Icon
+                  name="sparkle"
+                  size={17}
+                  class="mt-0.5 shrink-0 text-[var(--relay-accent-2)]"
+                />
+                <span class="min-w-0">
+                  <strong class="block text-[12px] text-[var(--relay-text)]">
+                    Workspace variables
+                  </strong>
+                  <small class="mt-0.5 block text-[11px]/[1.45] text-[var(--relay-text-tertiary)]">
                     Use {"{{variable_name}}"} in any step. Every run preserves its value.
                   </small>
                 </span>
               </div>
-              <button type="button" class="relay-secondary" onClick={props.onOpenData}>
+              <button type="button" class={productSecondary} onClick={props.onOpenData}>
                 Manage variables
               </button>
             </div>
           </div>
         </Show>
         <Show when={tab() === "yaml"}>
-          <div class="relay-code-panel">
-            <header>
-              <span>Source file</span>
-              <div class="relay-code-panel__actions">
+          <div class="flex h-full min-h-0 flex-col overflow-hidden">
+            <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--relay-line)] px-3">
+              <span class="text-[11px] font-semibold tracking-[0.06em] text-[var(--relay-text-tertiary)] uppercase">
+                Source file
+              </span>
+              <div class="flex items-center gap-1">
                 <Show when={!yamlEditing()}>
                   <button
                     type="button"
+                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => void navigator.clipboard?.writeText(yamlSource() ?? "")}
                   >
                     <Icon name="copy" size={13} /> Copy
                   </button>
-                  <button type="button" disabled={!yamlSource()} onClick={startYamlEdit}>
+                  <button
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)] disabled:opacity-40"
+                    disabled={!yamlSource()}
+                    onClick={startYamlEdit}
+                  >
                     <Icon name="edit" size={13} /> Edit
                   </button>
                 </Show>
                 <Show when={yamlEditing()}>
-                  <button type="button" onClick={cancelYamlEdit} disabled={yamlSaving()}>
+                  <button
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] disabled:opacity-40"
+                    onClick={cancelYamlEdit}
+                    disabled={yamlSaving()}
+                  >
                     Cancel
                   </button>
-                  <button type="button" onClick={() => void saveYaml()} disabled={yamlSaving()}>
+                  <button
+                    type="button"
+                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-[var(--relay-text)] hover:bg-[var(--relay-surface-strong)] disabled:opacity-40"
+                    onClick={() => void saveYaml()}
+                    disabled={yamlSaving()}
+                  >
                     {yamlSaving() ? "Saving…" : "Save YAML"}
                   </button>
                 </Show>
@@ -1083,11 +1200,22 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
             </header>
             <Show
               when={yamlSource()}
-              fallback={<div class="relay-code-panel__loading">Loading canonical YAML…</div>}
+              fallback={
+                <div class="grid flex-1 place-items-center text-[12px] text-[var(--relay-text-tertiary)]">
+                  Loading canonical YAML…
+                </div>
+              }
             >
-              <Show when={yamlEditing()} fallback={<pre>{yamlSource()}</pre>}>
+              <Show
+                when={yamlEditing()}
+                fallback={
+                  <pre class="m-0 min-h-0 flex-1 overflow-auto bg-[var(--relay-bg)] p-3 font-mono text-[11px]/[1.5] text-[var(--relay-text-secondary)]">
+                    {yamlSource()}
+                  </pre>
+                }
+              >
                 <textarea
-                  class="relay-code-panel__editor"
+                  class="min-h-0 flex-1 resize-none border-0 bg-[var(--relay-bg)] p-3 font-mono text-[11px]/[1.5] text-[var(--relay-text)] outline-none"
                   aria-label="Test YAML"
                   spellcheck={false}
                   value={yamlDraft()}
@@ -1099,7 +1227,17 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
               </Show>
               <Show when={yamlMessage()}>
                 {(message) => (
-                  <p class={cn("relay-code-panel__message", `is-${message().tone}`)} role="status">
+                  <p
+                    class={cn(
+                      "m-0 border-t border-[var(--relay-line)] px-3 py-2 text-[11px]",
+                      message().tone === "success" && "text-[var(--relay-green)]",
+                      message().tone === "error" && "text-[var(--relay-red)]",
+                      message().tone !== "success" &&
+                        message().tone !== "error" &&
+                        "text-[var(--relay-text-secondary)]",
+                    )}
+                    role="status"
+                  >
                     {message().text}
                   </p>
                 )}
@@ -1123,21 +1261,23 @@ function NewTestDialog(props: {
     if (value) props.onDescribe(value);
   };
   return (
-    <div class={cn(modalScrim, "relay-new-test-scrim")}>
+    <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>
       <section
-        class={cn(modalPanel, "relay-new-test")}
+        class={cn(modalPanel, "grid w-[min(100%,440px)] gap-3.5 p-4")}
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-test-title"
       >
-        <header>
+        <header class="flex items-start justify-between gap-3">
           <div>
-            <span class="relay-eyebrow">New test</span>
-            <h2 id="new-test-title">What should Relay verify?</h2>
+            <span class={eyebrow}>New test</span>
+            <h2 id="new-test-title" class="mt-1 text-[18px] font-semibold text-[var(--relay-text)]">
+              What should Relay verify?
+            </h2>
           </div>
           <button
             type="button"
-            class="relay-icon-button"
+            class={productIconButton}
             aria-label="Close"
             onClick={props.onClose}
           >
@@ -1147,6 +1287,7 @@ function NewTestDialog(props: {
         <label>
           <span class="sr-only">Describe the test</span>
           <textarea
+            class="min-h-[96px] w-full resize-y rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 py-2.5 text-[13px] leading-[1.45] text-[var(--relay-text)] outline-none placeholder:text-[var(--relay-text-tertiary)] focus:border-[var(--relay-accent-2)]"
             autofocus
             rows={4}
             value={description()}
@@ -1159,24 +1300,35 @@ function NewTestDialog(props: {
         </label>
         <button
           type="button"
-          class="relay-primary relay-new-test__submit"
+          class={cn(productPrimary, "w-full")}
           disabled={!description().trim()}
           onClick={submit}
         >
           <Icon name="sparkle" size={15} /> Create from description
         </button>
-        <div class="relay-new-test__divider">
-          <span>or capture the real flow</span>
+        <div class="relative my-0.5 flex items-center justify-center">
+          <span class="absolute inset-x-0 top-1/2 h-px bg-[var(--relay-line)]" />
+          <span class="relative bg-[var(--relay-panel)] px-2 text-[10px] text-[var(--relay-text-tertiary)]">
+            or capture the real flow
+          </span>
         </div>
-        <button type="button" class="relay-new-test__record" onClick={props.onRecord}>
-          <span class="relay-record__dot" aria-hidden="true" />
-          <span>
-            <strong>Record on a device</strong>
-            <small>Use the app normally; every interaction becomes an editable step.</small>
+        <button
+          type="button"
+          class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-[var(--relay-line-strong)] bg-[var(--relay-surface-raised)] px-3 py-3 text-left hover:bg-[var(--relay-surface-strong)]"
+          onClick={props.onRecord}
+        >
+          <span class={shellRecordDot} aria-hidden="true" />
+          <span class="min-w-0">
+            <strong class="block text-[13px] text-[var(--relay-text)]">Record on a device</strong>
+            <small class="mt-0.5 block text-[11px] text-[var(--relay-text-tertiary)]">
+              Use the app normally; every interaction becomes an editable step.
+            </small>
           </span>
           <Icon name="arrow-right" size={15} />
         </button>
-        <p>Import and advanced authoring remain available from the test library.</p>
+        <p class="m-0 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+          Import and advanced authoring remain available from the test library.
+        </p>
       </section>
     </div>
   );
@@ -1196,88 +1348,133 @@ function TestWelcome(props: {
   const targetReady = () =>
     Boolean(target()) && server.health() === "online" && target()!.booted !== false;
   return (
-    <section class="relay-welcome relay-first-test" aria-labelledby="test-welcome-title">
-      <div class="relay-first-test__content">
-        <span class="relay-eyebrow">Test studio</span>
-        <h2 id="test-welcome-title">Turn a manual flow into a repeatable test.</h2>
-        <p>
-          {targetReady()
-            ? "Press record and use the app normally. Relay captures editable steps as you go."
-            : target()
-              ? "Start this device, then record the flow exactly as a customer would."
-              : "Connect a device or browser. Every tap, swipe, and typed value becomes an editable step."}
-        </p>
-        <Show when={target()}>
-          <div class="relay-first-test__target" aria-live="polite">
-            <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={17} />
-            <div>
-              <strong>{targetCopy()!.displayName}</strong>
-              <span>{targetReady() ? "Ready to record" : "Needs setup"}</span>
-            </div>
-            <button
-              type="button"
-              class="relay-first-test__change"
-              onClick={() => props.onOpenSettings("targets")}
+    <section
+      class="col-span-full relative grid min-h-0 flex-1 place-items-center overflow-hidden px-10 py-8"
+      aria-labelledby="test-welcome-title"
+    >
+      <div
+        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_68%_38%,color-mix(in_srgb,var(--relay-accent)_7%,transparent),transparent_46%),radial-gradient(circle,color-mix(in_srgb,var(--relay-line-strong)_42%,transparent)_1px,transparent_1px)] [background-size:auto,22px_22px]"
+        aria-hidden="true"
+      />
+      <div class="relative grid w-full max-w-[980px] grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)] items-center gap-16 max-[1100px]:grid-cols-1 max-[1100px]:justify-items-center max-[1100px]:gap-8 max-[1100px]:text-center">
+        <div class="max-w-[500px]">
+          <span class={eyebrow}>Test studio</span>
+          <h2
+            id="test-welcome-title"
+            class="mt-3 text-[clamp(28px,3.2vw,38px)] font-semibold leading-[1.08] tracking-[-0.035em] text-balance text-[var(--relay-text)]"
+          >
+            Turn a manual flow into a repeatable test.
+          </h2>
+          <p class="mt-4 max-w-[46ch] text-[14px]/[1.6] text-[var(--relay-text-secondary)]">
+            {targetReady()
+              ? "Press record and use the app normally. Relay captures editable steps as you go."
+              : target()
+                ? "Start this device, then record the flow exactly as a customer would."
+                : "Connect a device or browser. Every tap, swipe, and typed value becomes an editable step."}
+          </p>
+          <Show when={target()}>
+            <div
+              class="mt-6 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-[14px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_72%,transparent)] px-3.5 py-3 text-left backdrop-blur-sm max-[1100px]:w-full max-[1100px]:max-w-[380px]"
+              aria-live="polite"
             >
-              Change
-            </button>
-          </div>
-        </Show>
-        <div class="relay-first-test__actions">
-          <Show
-            when={target()}
-            fallback={
+              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]">
+                <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={17} />
+              </span>
+              <div class="min-w-0">
+                <strong class="block overflow-hidden text-[13px] font-semibold text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
+                  {targetCopy()!.displayName}
+                </strong>
+                <span class="mt-0.5 inline-flex items-center gap-1.5 text-[11px] text-[var(--relay-text-tertiary)]">
+                  <i
+                    class={cn(
+                      "size-1.5 rounded-full",
+                      targetReady() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
+                    )}
+                  />
+                  {targetReady() ? "Ready to record" : "Needs setup"}
+                </span>
+              </div>
               <button
                 type="button"
-                class="relay-primary"
+                class="rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
                 onClick={() => props.onOpenSettings("targets")}
               >
-                Connect device or browser <Icon name="arrow-right" size={14} />
+                Change
               </button>
-            }
-          >
+            </div>
+          </Show>
+          <div class="mt-7 flex flex-wrap items-center gap-3 max-[1100px]:justify-center">
             <Show
-              when={targetReady()}
+              when={target()}
               fallback={
                 <button
                   type="button"
-                  class="relay-primary"
+                  class={productPrimary}
                   onClick={() => props.onOpenSettings("targets")}
                 >
-                  Set up this target <Icon name="arrow-right" size={14} />
+                  Connect device or browser <Icon name="arrow-right" size={14} />
                 </button>
               }
             >
-              <button
-                class="relay-primary"
-                type="button"
-                disabled={Boolean(props.recordBlockedReason)}
-                data-tip={props.recordBlockedReason || "Record device interactions"}
-                onClick={props.onRecord}
+              <Show
+                when={targetReady()}
+                fallback={
+                  <button
+                    type="button"
+                    class={productPrimary}
+                    onClick={() => props.onOpenSettings("targets")}
+                  >
+                    Set up this target <Icon name="arrow-right" size={14} />
+                  </button>
+                }
               >
-                <span class="relay-record__dot" /> Start recording
-              </button>
+                <button
+                  class={productPrimary}
+                  type="button"
+                  disabled={Boolean(props.recordBlockedReason)}
+                  data-tip={props.recordBlockedReason || "Record device interactions"}
+                  onClick={props.onRecord}
+                >
+                  <span class={shellRecordDot} /> Start recording
+                </button>
+              </Show>
             </Show>
-          </Show>
-          <button class="relay-first-test__manual" type="button" onClick={props.onCreate}>
-            Build without recording
-          </button>
+            <button
+              class="inline-flex min-h-[38px] items-center gap-1.5 rounded-[10px] px-3.5 text-[13px] font-semibold text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)] transition-colors hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text)]"
+              type="button"
+              onClick={props.onCreate}
+            >
+              Build without recording
+            </button>
+          </div>
+          <p class="mt-5 text-[11px] text-[var(--relay-text-tertiary)]">
+            Or drop a Relay YAML file into the library to import a test.
+          </p>
         </div>
-      </div>
-      <div class="relay-welcome__visual relay-first-test__visual" aria-hidden="true">
-        <div class="relay-welcome__phone">
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
-        <div class="relay-pointer-demo">
-          <Icon name="pointer" size={30} strokeWidth={1.8} />
-          <i />
-        </div>
-        <div class="relay-welcome__step">
-          <span>01</span>
-          <strong>Tap “Continue”</strong>
+        <div
+          class="relative mx-auto grid h-[420px] w-[min(100%,340px)] place-items-center max-[1100px]:hidden"
+          aria-hidden="true"
+        >
+          <div class="relative aspect-[9/19] w-[196px] rotate-[-5deg] rounded-[30px] border-[6px] border-[var(--relay-surface-strong)] bg-[linear-gradient(160deg,var(--relay-surface-raised),var(--relay-panel))] p-3.5 shadow-[0_40px_90px_rgb(0_0_0/45%),0_0_0_1px_rgb(255_255_255/4%)]">
+            <span class="mx-auto mb-5 block h-1 w-10 rounded-full bg-[var(--relay-line-strong)]" />
+            <span class="mb-2.5 block h-2.5 w-[72%] rounded bg-[color-mix(in_srgb,var(--relay-text)_16%,transparent)]" />
+            <span class="mb-2.5 block h-2.5 w-[88%] rounded bg-[color-mix(in_srgb,var(--relay-text)_10%,transparent)]" />
+            <span class="mb-6 block h-2.5 w-[54%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
+            <span class="block h-10 rounded-[11px] bg-[linear-gradient(135deg,#8b7cff,#6454e9)] shadow-[0_6px_18px_rgb(100_84_233/35%)]" />
+            <span class="mt-2.5 block h-10 rounded-[11px] bg-[color-mix(in_srgb,var(--relay-text)_6%,transparent)]" />
+          </div>
+          <div class="absolute top-14 -left-2 flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] px-3 py-2 shadow-[var(--v2-elevation-floating)] backdrop-blur-md">
+            <span class="font-mono text-[10px] text-[var(--relay-accent-2)]">01</span>
+            <strong class="text-[11px] font-medium text-[var(--relay-text)]">Tap “Continue”</strong>
+            <span class="font-mono text-[9px] text-[var(--relay-text-tertiary)]">248ms</span>
+          </div>
+          <div class="absolute right-0 bottom-24 flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] px-3 py-2 shadow-[var(--v2-elevation-floating)] backdrop-blur-md">
+            <span class="font-mono text-[10px] text-[var(--relay-accent-2)]">02</span>
+            <strong class="text-[11px] font-medium text-[var(--relay-text)]">Check welcome</strong>
+            <span class="grid size-3.5 place-items-center rounded-full bg-[color-mix(in_srgb,var(--relay-green)_18%,transparent)] text-[var(--relay-green)]">
+              <Icon name="check" size={9} strokeWidth={3} />
+            </span>
+          </div>
         </div>
       </div>
     </section>
@@ -1290,8 +1487,8 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
   const [selectedId, setSelectedId] = createSignal<string | null>(linkedRun);
   const [selectedRunStep, setSelectedRunStep] = createSignal(0);
   const [tab, setTab] = createSignal<
-    "summary" | "replay" | "evaluation" | "network" | "logs" | "compatibility"
-  >("summary");
+    "steps" | "summary" | "replay" | "evaluation" | "network" | "logs" | "compatibility"
+  >("steps");
   const [matrixReport, setMatrixReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
@@ -1333,7 +1530,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
     if (!requested || !rows().some((row) => row.id === requested)) return;
     setSelectedId(requested);
     setSelectedRunStep(0);
-    setTab("summary");
+    setTab("steps");
   });
   createEffect(() => {
     const job = selected();
@@ -1370,24 +1567,18 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
     tabs[next]?.click();
   };
   return (
-    <section
-      class={cn(
-        "relay-page",
-        rows().length === 0 && "relay-runs-empty",
-        selected() && "relay-runs-workspace-page",
-      )}
-    >
+    <section class={cn(selected() ? "flex min-h-0 flex-1 flex-col overflow-hidden" : productPage)}>
       <Show when={!selected()}>
-        <div class="relay-page__hero">
+        <div class={productPageHero}>
           <div>
-            <span class="relay-eyebrow">Execution</span>
-            <h2>Run history</h2>
-            <p>See what passed, what needs attention, and why.</p>
+            <span class={eyebrow}>Execution</span>
+            <h2 class={productPageTitle}>Run history</h2>
+            <p class={productPageLead}>See what passed, what needs attention, and why.</p>
           </div>
           <Show when={rows().length > 0}>
             <button
               type="button"
-              class="relay-secondary"
+              class={productSecondary}
               disabled={refreshing()}
               aria-busy={refreshing()}
               onClick={() => void refreshRuns()}
@@ -1395,7 +1586,10 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
               <Icon
                 name="refresh"
                 size={15}
-                class={refreshing() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"}
+                class={cn(
+                  refreshing() &&
+                    "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70",
+                )}
               />{" "}
               Refresh
             </button>
@@ -1421,221 +1615,187 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
       </Show>
       <div
         class={cn(
-          "mx-auto grid w-full max-w-[1180px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
-          selected() && "relay-run-workspace max-w-none",
-          rows().length === 0 && "place-items-center px-6 py-16",
+          selected()
+            ? "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1.02fr)_minmax(400px,0.98fr)] overflow-hidden max-[960px]:grid-cols-1 max-[960px]:overflow-y-auto"
+            : "mx-auto grid w-full max-w-[1180px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
+          !selected() && rows().length === 0 && "place-items-center px-6 py-16",
         )}
       >
-        <div
-          class={cn(
-            "w-full max-w-none overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger",
-            rows().length === 0 && "max-w-[680px] rounded-[20px]",
-            selected() && "relay-run-library max-h-none overflow-y-auto",
-          )}
-        >
-          <Show when={selected()}>
-            <header class="relay-run-library__head">
-              <div>
-                <span class="relay-eyebrow">Workspace</span>
-                <h2>Runs</h2>
-              </div>
-              <button
-                type="button"
-                aria-label="Refresh runs"
-                disabled={refreshing()}
-                onClick={() => void refreshRuns()}
-              >
-                <Icon
-                  name="refresh"
-                  size={14}
-                  class={refreshing() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"}
-                />
-              </button>
-            </header>
-          </Show>
-          <Show when={rows().length > 0 && !selected()}>
-            <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase [&>span]:min-w-0 [&>span]:truncate">
-              <span>Test</span>
-              <span>Status</span>
-              <span>Device</span>
-              <span>Started</span>
-              <span>Duration</span>
-            </div>
-          </Show>
-          <For
-            each={rows()}
-            fallback={
-              <div class="relay-runs-first">
-                <div class="relay-runs-first__visual" aria-hidden="true">
-                  <div class="relay-run-mini-device">
-                    <i />
-                    <span />
-                    <span />
-                    <b>Continue</b>
-                  </div>
-                  <div class="relay-run-mini-trace">
-                    <span>
-                      <i>01</i>
-                      <b>Tap “Continue”</b>
-                      <em>248ms</em>
-                    </span>
-                    <span>
-                      <i>02</i>
-                      <b>Enter account</b>
-                      <em>612ms</em>
-                    </span>
-                    <span>
-                      <i>03</i>
-                      <b>Check welcome</b>
-                      <em>Passed</em>
-                    </span>
-                  </div>
-                  <div class="relay-run-mini-artifacts">
-                    <span>
-                      <Icon name="camera" size={13} />
-                      <b>3 screenshots</b>
-                    </span>
-                    <span>
-                      <Icon name="wave" size={13} />
-                      <b>Network</b>
-                    </span>
-                    <span>
-                      <Icon name="check" size={13} />
-                      <b>Saved</b>
-                    </span>
-                  </div>
-                </div>
-                <span class="relay-eyebrow">Run history</span>
-                <h3>Every run keeps the evidence</h3>
-                <p>Run a test to keep its result, replay, diagnostics, and test data together.</p>
-                <button type="button" class="relay-primary" onClick={props.onOpenTests}>
-                  Run your first test <Icon name="arrow-right" size={14} />
-                </button>
-              </div>
-            }
+        <Show when={!selected()}>
+          <div
+            class={cn(
+              "w-full max-w-none overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger",
+              rows().length === 0 && "max-w-[680px] rounded-[20px]",
+            )}
           >
-            {(job) => {
-              const open = () => {
-                setSelectedId(job.id);
-                setSelectedRunStep(0);
-                setTab("summary");
-              };
-              return (
-                <Show
-                  when={selected()}
-                  fallback={<RunRow job={job} selected={selectedId() === job.id} onOpen={open} />}
-                >
-                  <RunNavigatorRow job={job} selected={selectedId() === job.id} onOpen={open} />
-                </Show>
-              );
-            }}
-          </For>
-        </div>
+            <Show when={rows().length > 0}>
+              <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase [&>span]:min-w-0 [&>span]:truncate">
+                <span>Test</span>
+                <span>Status</span>
+                <span>Device</span>
+                <span>Started</span>
+                <span>Duration</span>
+              </div>
+            </Show>
+            <For
+              each={rows()}
+              fallback={
+                <div class="grid place-items-center gap-3 px-8 py-12 text-center">
+                  <div
+                    class="mb-2 grid w-full max-w-[360px] grid-cols-[100px_minmax(0,1fr)] items-center gap-4"
+                    aria-hidden="true"
+                  >
+                    <div class="relative mx-auto aspect-[9/16] w-[88px] rounded-[18px] border-[5px] border-[var(--relay-surface-strong)] bg-[var(--relay-surface-raised)] p-2 shadow-[0_16px_40px_rgb(0_0_0/25%)]">
+                      <i class="mx-auto mb-3 block h-0.5 w-6 rounded-full bg-[var(--relay-line-strong)]" />
+                      <span class="mb-1.5 block h-1.5 w-[70%] rounded bg-[color-mix(in_srgb,var(--relay-text)_12%,transparent)]" />
+                      <span class="mb-1.5 block h-1.5 w-[88%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
+                      <b class="mt-auto block rounded-md bg-[var(--relay-accent-soft)] py-1 text-center text-[8px] text-[var(--relay-accent-2)]">
+                        Continue
+                      </b>
+                    </div>
+                    <div class="grid gap-1.5 text-left">
+                      <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
+                        <i class="font-mono text-[var(--relay-text-tertiary)]">01</i>
+                        <b class="truncate font-medium">Tap “Continue”</b>
+                        <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
+                          248ms
+                        </em>
+                      </span>
+                      <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
+                        <i class="font-mono text-[var(--relay-text-tertiary)]">02</i>
+                        <b class="truncate font-medium">Enter account</b>
+                        <em class="font-mono text-[9px] not-italic text-[var(--relay-text-tertiary)]">
+                          612ms
+                        </em>
+                      </span>
+                      <span class="grid grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 text-[10px] text-[var(--relay-text-secondary)]">
+                        <i class="font-mono text-[var(--relay-text-tertiary)]">03</i>
+                        <b class="truncate font-medium">Check welcome</b>
+                        <em class="font-mono text-[9px] not-italic text-[var(--relay-green)]">
+                          Passed
+                        </em>
+                      </span>
+                    </div>
+                  </div>
+                  <span class={eyebrow}>Run history</span>
+                  <h3 class="m-0 text-[18px] font-semibold text-[var(--relay-text)]">
+                    Every run keeps the evidence
+                  </h3>
+                  <p class="m-0 max-w-[36ch] text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
+                    Run a test to keep its result, replay, diagnostics, and test data together.
+                  </p>
+                  <button type="button" class={productPrimary} onClick={props.onOpenTests}>
+                    Run your first test <Icon name="arrow-right" size={14} />
+                  </button>
+                </div>
+              }
+            >
+              {(job) => {
+                const open = () => {
+                  setSelectedId(job.id);
+                  setSelectedRunStep(0);
+                  setTab("steps");
+                };
+                return <RunRow job={job} selected={selectedId() === job.id} onOpen={open} />;
+              }}
+            </For>
+          </div>
+        </Show>
         <Show when={selected()}>
           {(job) => (
-            <section class="relay-run-canvas-panel min-w-0 overflow-hidden border border-border-weak-base bg-background-stronger">
-              <header class="relay-run-canvas-panel__bar flex items-center justify-between gap-3 border-b border-border-weak-base px-3.5">
-                <div class="grid min-w-0 gap-1">
-                  <strong class="truncate text-[12px]/[1.25] font-semibold text-text-base">
-                    {server.recipes().find((recipe) => recipe.id === job().action)?.title ??
-                      job().title ??
-                      job().action}
-                  </strong>
-                </div>
-                <span class="relay-run-canvas-panel__mode">
-                  <Icon name="move" size={13} /> Observed journey
-                </span>
-                <span class={cn("relay-status", `is-${job().status}`)}>
-                  {job().status === "ok" || job().status === "healed"
-                    ? "Passed"
-                    : job().status === "error"
-                      ? "Needs attention"
-                      : titleize(job().status)}
-                </span>
-              </header>
-              <div class="relay-run-canvas-panel__body min-h-0 overflow-hidden">
-                <Show
-                  when={selectedCanvasItems().length > 0}
-                  fallback={
-                    <RunExecutionCanvas
-                      job={job()}
-                      selectedIndex={selectedRunStep()}
-                      onSelect={setSelectedRunStep}
-                    />
-                  }
-                >
-                  <FrameCanvas
-                    items={selectedCanvasItems()}
-                    selectedIndex={selectedRunStep()}
-                    onSelect={setSelectedRunStep}
-                    showInspector={false}
-                  />
-                </Show>
-              </div>
-            </section>
+            <RunReplayStage
+              job={job()}
+              items={selectedCanvasItems()}
+              selectedIndex={selectedRunStep()}
+              onSelect={setSelectedRunStep}
+              onBack={() => {
+                setSelectedId(null);
+                const url = new URL(window.location.href);
+                url.searchParams.delete("run");
+                window.history.replaceState({}, "", url);
+              }}
+            />
           )}
         </Show>
         <Show when={selected()}>
           {(job) => (
-            <aside class="relay-run-inspector min-w-0 overflow-hidden border border-border-weak-base bg-background-stronger max-[1120px]:col-span-2 max-[820px]:col-span-1">
-              <header class="flex min-h-18 items-center justify-between gap-3 px-4 py-3">
-                <div class="grid min-w-0 gap-1">
-                  <span class="relay-eyebrow">Diagnosis</span>
-                  <strong class="truncate text-[16px]/[1.25] font-semibold text-text-base">
-                    {server.recipes().find((r) => r.id === job().action)?.title ??
-                      job().title ??
-                      job().action}
-                  </strong>
-                  <small class="truncate text-[10px]/[1.25] text-text-weaker">
-                    {job().targetProfile?.name ?? job().serial ?? "Target not recorded"} ·{" "}
-                    {fmtAgo(job().finishedAt ?? job().startedAt ?? job().queuedAt, server.clock())}
-                  </small>
+            <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--relay-line)] bg-[var(--relay-panel)]">
+              <header class="grid shrink-0 gap-2.5 px-5 pt-5 pb-4">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="grid min-w-0 gap-1">
+                    <span class={eyebrow}>Run report</span>
+                    <strong class="truncate text-[21px]/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
+                      {server.recipes().find((r) => r.id === job().action)?.title ??
+                        job().title ??
+                        job().action}
+                    </strong>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      class="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-[11px]/[1.25] font-semibold text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
+                      aria-label="Copy report link"
+                      onClick={() => {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set("run", job().id);
+                        void navigator.clipboard?.writeText(url.toString());
+                        window.history.replaceState({}, "", url);
+                        toast("Report link copied", "success");
+                      }}
+                    >
+                      <Icon name="copy" size={13} /> Copy link
+                    </button>
+                    <button
+                      type="button"
+                      class="grid size-9 place-items-center rounded-lg text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
+                      aria-label="Close report"
+                      data-tip="Close report"
+                      onClick={() => {
+                        setSelectedId(null);
+                        const url = new URL(window.location.href);
+                        url.searchParams.delete("run");
+                        window.history.replaceState({}, "", url);
+                      }}
+                    >
+                      <Icon name="x" size={15} />
+                    </button>
+                  </div>
                 </div>
-                <div class="flex items-center gap-1">
-                  <button
-                    type="button"
-                    class="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-[11px]/[1.25] font-semibold text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
-                    aria-label="Copy report link"
-                    onClick={() => {
-                      const url = new URL(window.location.href);
-                      url.searchParams.set("run", job().id);
-                      void navigator.clipboard?.writeText(url.toString());
-                      window.history.replaceState({}, "", url);
-                      toast("Report link copied", "success");
-                    }}
-                  >
-                    <Icon name="copy" size={13} /> Copy link
-                  </button>
-                  <button
-                    type="button"
-                    class="grid size-10 place-items-center rounded-lg text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base focus-visible:outline-1 focus-visible:outline-border-strong-focus"
-                    aria-label="Close report"
-                    data-tip="Close report"
-                    onClick={() => {
-                      setSelectedId(null);
-                      const url = new URL(window.location.href);
-                      url.searchParams.delete("run");
-                      window.history.replaceState({}, "", url);
-                    }}
-                  >
-                    <Icon name="x" size={15} />
-                  </button>
+                <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[11px] text-text-weak">
+                  <span class={productStatus(String(job().status))}>
+                    {job().status === "ok" || job().status === "healed"
+                      ? "Passed"
+                      : job().status === "error"
+                        ? "Needs attention"
+                        : titleize(job().status)}
+                  </span>
+                  <span class="inline-flex items-center gap-1.5">
+                    <Icon name="clock" size={11} />
+                    <span class="font-mono tabular-nums">
+                      {fmtAgo(
+                        job().finishedAt ?? job().startedAt ?? job().queuedAt,
+                        server.clock(),
+                      ) || "now"}
+                    </span>
+                  </span>
+                  <Show when={fmtDur(job(), server.clock())}>
+                    <span class="font-mono tabular-nums">{fmtDur(job(), server.clock())}</span>
+                  </Show>
+                  <span class="truncate">
+                    {job().targetProfile?.name ?? job().serial ?? "Target not recorded"}
+                  </span>
                 </div>
               </header>
-              <RunStateInspector
-                job={job()}
-                index={selectedRunStep()}
-                items={selectedCanvasItems()}
-              />
               <nav
-                class="flex overflow-x-auto border-b border-border-weak-base px-2.5"
+                class="flex shrink-0 overflow-x-auto border-b border-border-weak-base px-3.5"
                 role="tablist"
                 aria-label="Run evidence"
               >
                 {(
                   [
+                    ["steps", "Steps"],
                     ["summary", "Summary"],
-                    ["evaluation", "Evaluation"],
+                    ["evaluation", "Checks"],
                     ["network", "Network"],
                     ["logs", "Logs"],
                   ] as const
@@ -1648,8 +1808,8 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
                     class={cn(
-                      "inline-flex h-9.5 shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2 text-[10px]/[1.25] text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
-                      tab() === id && "border-surface-brand-base text-text-base",
+                      "inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2.5 text-[12px]/[1.25] font-medium text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+                      tab() === id && "border-surface-brand-base text-text-strong",
                     )}
                     onClick={() => setTab(id)}
                     onKeyDown={onReportTabKeyDown}
@@ -1672,23 +1832,30 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     aria-selected={tab() === "compatibility"}
                     tabindex={tab() === "compatibility" ? 0 : -1}
                     class={cn(
-                      "inline-flex h-9.5 shrink-0 items-center border-b-2 border-transparent px-2 text-[10px]/[1.25] text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
-                      tab() === "compatibility" && "border-surface-brand-base text-text-base",
+                      "inline-flex h-10 shrink-0 items-center border-b-2 border-transparent px-2.5 text-[12px]/[1.25] font-medium text-text-weaker transition-colors hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+                      tab() === "compatibility" && "border-surface-brand-base text-text-strong",
                     )}
                     onClick={() => setTab("compatibility")}
                     onKeyDown={onReportTabKeyDown}
                   >
-                    Matrix
+                    Devices
                   </button>
                 </Show>
               </nav>
               <div
                 id="run-report-panel"
-                class="max-h-[570px] overflow-auto p-3.5"
+                class="min-h-0 flex-1 overflow-auto p-4"
                 role="tabpanel"
                 aria-labelledby={`run-report-tab-${tab()}`}
                 tabindex={0}
               >
+                <Show when={tab() === "steps"}>
+                  <RunStepList
+                    job={job()}
+                    selectedIndex={selectedRunStep()}
+                    onSelect={setSelectedRunStep}
+                  />
+                </Show>
                 <Show when={tab() === "summary"}>
                   <RunSummary
                     job={job()}
@@ -1782,7 +1949,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                   />
                 </Show>
                 <Show when={tab() === "logs"}>
-                  <pre class="relay-report-log">
+                  <pre class="m-0 max-h-64 overflow-auto rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] p-3 font-mono text-[10px]/[1.45] text-[var(--relay-text-secondary)]">
                     {job().logs?.join("\n") || "No logs were captured for this run."}
                   </pre>
                 </Show>
@@ -1823,58 +1990,78 @@ function CompatibilityReportPanel(props: {
   return (
     <Show
       when={props.report}
-      fallback={<div class="relay-table-empty">Preparing the comparison…</div>}
+      fallback={
+        <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-4 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+          Preparing the comparison…
+        </div>
+      }
     >
       {(report) => (
-        <div class="relay-compatibility-report">
-          <header>
+        <div class="grid gap-3">
+          <header class="flex items-start justify-between gap-3">
             <div>
-              <span class="relay-eyebrow">Compatibility matrix</span>
-              <strong>{report().matrixName ?? "Target comparison"}</strong>
-              <small>
+              <span class={eyebrow}>Compatibility matrix</span>
+              <strong class="mt-0.5 block text-[13px] text-[var(--relay-text)]">
+                {report().matrixName ?? "Target comparison"}
+              </strong>
+              <small class="mt-0.5 block text-[10px] text-[var(--relay-text-tertiary)]">
                 {report().profiles.length} target{report().profiles.length === 1 ? "" : "s"} ·{" "}
                 {report().total} evidence run{report().total === 1 ? "" : "s"}
               </small>
             </div>
-            <span class="relay-compatibility-report__proof">Same test setup</span>
+            <span class="shrink-0 rounded-full border border-[var(--relay-line)] px-[7px] py-1 text-[9px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+              Same test setup
+            </span>
           </header>
-          <div class="relay-compatibility-report__grid">
+          <div class="grid gap-2">
             <For each={report().profiles}>
               {(profile) => (
-                <article class={cn(profile.profile.id === props.selectedProfileId && "is-current")}>
-                  <header>
+                <article
+                  class={cn(
+                    "grid gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_55%,transparent)] p-3",
+                    profile.profile.id === props.selectedProfileId &&
+                      "border-[color-mix(in_srgb,var(--relay-accent-2)_58%,var(--relay-line))] shadow-[inset_2px_0_var(--relay-accent-2)]",
+                  )}
+                >
+                  <header class="flex items-start justify-between gap-3">
                     <div>
-                      <strong>{profile.profile.name}</strong>
-                      <small>
+                      <strong class="block text-[13px] text-[var(--relay-text)]">
+                        {profile.profile.name}
+                      </strong>
+                      <small class="mt-0.5 block text-[10px] text-[var(--relay-text-tertiary)]">
                         {profile.profile.platform}
                         {profile.profile.osVersion ? ` · ${profile.profile.osVersion}` : ""}
                       </small>
                     </div>
-                    <span class={cn("relay-status", profile.passRate === 1 ? "is-ok" : "is-error")}>
+                    <span class={productStatus(profile.passRate === 1 ? "ok" : "error")}>
                       {profile.passRate == null
                         ? "Pending"
                         : `${Math.round(profile.passRate * 100)}%`}
                     </span>
                   </header>
-                  <div class="relay-compatibility-report__metrics">
-                    <span>
-                      <b>Pass rate</b>
-                      <strong>
+                  <div class="grid grid-cols-2 gap-2">
+                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--relay-panel)] p-2">
+                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                        Pass rate
+                      </b>
+                      <strong class="text-[12px] text-[var(--relay-text)]">
                         {profile.passRate == null
                           ? "No product verdict yet"
                           : `${Math.round(profile.passRate * 100)}%`}
                       </strong>
                     </span>
-                    <span>
-                      <b>Median duration</b>
-                      <strong>
+                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--relay-panel)] p-2">
+                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                        Median duration
+                      </b>
+                      <strong class="text-[12px] text-[var(--relay-text)]">
                         {profile.medianDurationMs == null
                           ? "—"
                           : `${(profile.medianDurationMs / 1000).toFixed(1)}s`}
                       </strong>
                     </span>
                   </div>
-                  <p>
+                  <p class="m-0 text-[10px]/[1.45] text-[var(--relay-text-secondary)]">
                     {profile.passed} passed · {profile.productFailures} product ·{" "}
                     {profile.harnessFailures} harness
                     {profile.uncertain ? ` · ${profile.uncertain} uncertain` : ""}
@@ -1882,7 +2069,7 @@ function CompatibilityReportPanel(props: {
                   </p>
                   <Show when={profile.baseline}>
                     {(baseline) => (
-                      <footer>
+                      <footer class="border-t border-[var(--relay-line)] pt-2 text-[10px]/[1.4] text-[var(--relay-text-tertiary)]">
                         Versus {baseline().total} earlier run{baseline().total === 1 ? "" : "s"}:{" "}
                         {formatPassDelta(baseline().passRateDelta)} ·{" "}
                         {formatDurationDelta(baseline().durationDeltaMs)}
@@ -1952,18 +2139,48 @@ function formatStepDuration(durationMs: number): string {
   return durationMs < 1000 ? `${Math.round(durationMs)}ms` : `${(durationMs / 1000).toFixed(1)}s`;
 }
 
-function RunExecutionCanvas(props: {
+function runStateLabel(state: RunCanvasState): string {
+  switch (state) {
+    case "passed":
+      return "Passed";
+    case "failed":
+      return "Stopped here";
+    case "running":
+      return "Running";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return "Not reached";
+  }
+}
+
+function runStateDot(state: RunCanvasState): string {
+  if (state === "failed" || state === "cancelled") return "bg-[var(--relay-red)]";
+  if (state === "planned") return "bg-[var(--relay-line-strong)]";
+  if (state === "running") return "bg-[var(--relay-accent)] shadow-[0_0_8px_var(--relay-accent)]";
+  return "bg-[var(--relay-green)]";
+}
+
+/** Left half of a run report: the captured evidence, framed like a device,
+ * with a step timeline scrubber underneath. */
+function RunReplayStage(props: {
   job: JobInfo;
+  items: FrameCanvasItem[];
   selectedIndex: number;
   onSelect: (index: number) => void;
+  onBack: () => void;
 }) {
   const server = useServer();
-  const [zoom, setZoom] = createSignal(0.88);
   const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
-  const worldWidth = () => Math.max(700, nodes().length * 248 + 120);
-  const markerId = () => `run-arrow-${props.job.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const frameSource = (node: RunCanvasNode) => {
-    const frame = node.frame;
+  const count = () => Math.max(nodes().length, 1);
+  const index = () => Math.max(0, Math.min(props.selectedIndex, count() - 1));
+  const node = () => nodes()[index()];
+  const snapshot = () =>
+    props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
+  const frameSrc = () => {
+    const item = props.items[index()];
+    if (item?.src) return item.src;
+    const frame = node()?.frame;
     if (!frame) return null;
     if (frame.base64) return `data:${frame.mime || "image/png"};base64,${frame.base64}`;
     if (props.job.persisted || props.job.runDir) {
@@ -1971,178 +2188,220 @@ function RunExecutionCanvas(props: {
     }
     return null;
   };
-
+  const glyphFor = (stepIndex: number) => {
+    const kind = snapshot()?.steps[stepIndex]?.kind;
+    return kind ? kindIcon(kind) : "bolt";
+  };
+  const move = (delta: number) =>
+    props.onSelect(Math.max(0, Math.min(index() + delta, count() - 1)));
   return (
-    <div class="relay-run-canvas">
-      <div class="relay-run-canvas__hud">
-        <div class="relay-run-canvas__legend" aria-label="Canvas legend">
-          <span>
-            <i class="is-observed" /> Observed
-          </span>
-          <span>
-            <i class="is-planned" /> Planned
-          </span>
-          <span>
-            <i class="is-stopped" /> Stopped
-          </span>
-        </div>
-        <div class="relay-run-canvas__zoom" aria-label="Canvas zoom controls">
-          <button
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => setZoom(Math.max(0.62, Number((zoom() - 0.1).toFixed(2))))}
-          >
-            <span aria-hidden="true">−</span>
-          </button>
-          <button type="button" onClick={() => setZoom(0.88)}>
-            {Math.round(zoom() * 100)}%
-          </button>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => setZoom(Math.min(1.18, Number((zoom() + 0.1).toFixed(2))))}
-          >
-            <Icon name="plus" size={13} />
-          </button>
-        </div>
-      </div>
-      <div class="relay-run-canvas__viewport">
-        <div
-          class="relay-run-canvas__world"
-          style={{ width: `${worldWidth()}px`, transform: `scale(${zoom()})` }}
+    <section
+      class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[color-mix(in_srgb,var(--relay-bg)_94%,black)]"
+      aria-label="Run replay"
+      tabindex={-1}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") move(-1);
+        if (event.key === "ArrowRight") move(1);
+      }}
+    >
+      <div
+        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,color-mix(in_srgb,var(--relay-accent)_7%,transparent),transparent_52%),radial-gradient(circle,color-mix(in_srgb,var(--relay-line-strong)_42%,transparent)_1px,transparent_1px)] [background-size:auto,20px_20px]"
+        aria-hidden="true"
+      />
+      <header class="relative z-[1] flex shrink-0 items-center justify-between gap-3 px-4 pt-3.5">
+        <button
+          type="button"
+          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)]"
+          onClick={props.onBack}
         >
-          <svg
-            class="relay-run-canvas__edges"
-            width={worldWidth()}
-            height="420"
-            viewBox={`0 0 ${worldWidth()} 420`}
-            aria-hidden="true"
-          >
-            <defs>
-              <marker
-                id={markerId()}
-                markerWidth="8"
-                markerHeight="8"
-                refX="7"
-                refY="4"
-                orient="auto"
-              >
-                <path d="M0,0 L8,4 L0,8 Z" />
-              </marker>
-            </defs>
-            <For each={nodes().slice(0, -1)}>
-              {(node, index) => (
-                <path
-                  class={cn(
-                    "relay-run-canvas__edge",
-                    node.state === "failed" && "is-stopped",
-                    !nodes()[index() + 1]?.observed && "is-planned",
-                  )}
-                  d={`M ${236 + index() * 248} 239 C ${255 + index() * 248} 239, ${265 + index() * 248} 239, ${282 + index() * 248} 239`}
-                  marker-end={`url(#${markerId()})`}
+          <Icon name="chevron-left" size={14} /> All runs
+        </button>
+        <span class="inline-flex items-center gap-2 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_88%,transparent)] px-3 py-1.5 font-mono text-[10.5px] tracking-[0.05em] text-[var(--relay-text-tertiary)] uppercase backdrop-blur">
+          <i class={cn("size-1.5 rounded-full", runStateDot(node()?.state ?? "planned"))} />
+          Step {String(index() + 1).padStart(2, "0")} · {runStateLabel(node()?.state ?? "planned")}
+        </span>
+      </header>
+      <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
+        <Show
+          when={frameSrc()}
+          fallback={
+            <div class="grid aspect-[9/18] h-[min(100%,540px)] place-items-center rounded-[30px] border border-dashed border-[var(--relay-line-strong)] bg-[color-mix(in_srgb,var(--relay-panel)_65%,transparent)]">
+              <div class="grid justify-items-center gap-2.5 px-6 text-center">
+                <Icon
+                  name={node()?.state === "failed" ? "alert" : "camera"}
+                  size={24}
+                  class="text-[var(--relay-text-tertiary)]"
                 />
-              )}
-            </For>
-          </svg>
-          <For each={nodes()}>
-            {(node, index) => {
-              const image = () => frameSource(node);
-              return (
+                <strong class="text-[13px] font-medium text-[var(--relay-text-secondary)]">
+                  {node()?.observed ? "No screenshot for this step" : "Step not reached"}
+                </strong>
+                <small class="text-[11px]/[1.5] text-[var(--relay-text-tertiary)]">
+                  {node()?.observed
+                    ? "This step ran without capturing evidence."
+                    : "The run stopped before reaching this step."}
+                </small>
+              </div>
+            </div>
+          }
+        >
+          {(src) => (
+            <img
+              src={src()}
+              alt={`Step ${index() + 1} evidence`}
+              class="max-h-full w-auto max-w-full rounded-[26px] border-[6px] border-[var(--relay-surface-strong)] object-contain shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]"
+            />
+          )}
+        </Show>
+      </div>
+      <p class="relative z-[1] mx-auto mb-2 max-w-[70%] truncate px-4 text-center text-[12.5px] font-medium text-[var(--relay-text-secondary)]">
+        {node()?.title}
+      </p>
+      <footer class="relative z-[1] shrink-0 border-t border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_86%,transparent)] px-4 py-2.5 backdrop-blur">
+        <div class="flex items-center gap-3">
+          <div class="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              class="grid size-8 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-30"
+              aria-label="Previous step"
+              disabled={index() === 0}
+              onClick={() => move(-1)}
+            >
+              <Icon name="chevron-left" size={15} />
+            </button>
+            <button
+              type="button"
+              class="grid size-8 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-30"
+              aria-label="Next step"
+              disabled={index() === count() - 1}
+              onClick={() => move(1)}
+            >
+              <Icon name="chevron-right" size={15} />
+            </button>
+          </div>
+          <div
+            class="flex min-w-0 flex-1 items-stretch gap-1"
+            role="tablist"
+            aria-label="Run timeline"
+          >
+            <For each={nodes()}>
+              {(item) => (
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={item.index === index()}
+                  aria-label={`Step ${item.index + 1}: ${item.title}`}
+                  data-tip={item.title}
                   class={cn(
-                    "relay-run-state",
-                    `is-${node.state}`,
-                    props.selectedIndex === index() && "is-selected",
+                    "group flex min-w-0 flex-1 flex-col items-center justify-center gap-1.5 rounded-md px-0.5 py-1 transition-colors hover:bg-white/[0.05]",
                   )}
-                  style={{ left: `${48 + index() * 248}px` }}
-                  aria-pressed={props.selectedIndex === index()}
-                  onClick={() => props.onSelect(index())}
+                  onClick={() => props.onSelect(item.index)}
                 >
-                  <span class="relay-run-state__label">
-                    <i /> State {String(index() + 1).padStart(2, "0")}
-                  </span>
-                  <span class="relay-run-state__screen">
-                    <Show
-                      when={image()}
-                      fallback={
-                        <span class="relay-run-state__placeholder">
-                          <Icon name={node.state === "failed" ? "alert" : "camera"} size={21} />
-                          <small>{node.observed ? "State observed" : "Not reached"}</small>
-                        </span>
-                      }
-                    >
-                      {(source) => <img src={source()} alt="" />}
-                    </Show>
-                    <span class="relay-run-state__chrome" />
-                  </span>
-                  <span class="relay-run-state__copy">
-                    <strong>{node.title}</strong>
-                    <small>
-                      {node.state === "passed"
-                        ? "Observed"
-                        : node.state === "failed"
-                          ? "Stopped here"
-                          : node.state === "running"
-                            ? "In progress"
-                            : node.state === "cancelled"
-                              ? "Cancelled here"
-                              : "Planned · not reached"}
-                      {node.durationMs ? ` · ${formatStepDuration(node.durationMs)}` : ""}
-                    </small>
-                  </span>
+                  <Icon
+                    name={glyphFor(item.index)}
+                    size={12}
+                    class={cn(
+                      item.index === index()
+                        ? "text-[var(--relay-accent-2)]"
+                        : "text-[var(--relay-text-tertiary)] group-hover:text-[var(--relay-text-secondary)]",
+                    )}
+                  />
+                  <i
+                    class={cn(
+                      "h-1 w-full rounded-full transition-[background-color,box-shadow]",
+                      item.state === "failed" || item.state === "cancelled"
+                        ? "bg-[var(--relay-red)]"
+                        : item.state === "planned"
+                          ? "bg-[var(--relay-line-strong)]"
+                          : "bg-[var(--relay-accent)]",
+                      item.index === index() &&
+                        "shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_35%,transparent)]",
+                    )}
+                  />
                 </button>
-              );
-            }}
-          </For>
+              )}
+            </For>
+          </div>
+          <span class="shrink-0 font-mono text-[11px] tabular-nums text-[var(--relay-text-tertiary)]">
+            {String(index() + 1).padStart(2, "0")} / {String(count()).padStart(2, "0")}
+          </span>
         </div>
-      </div>
-      <div class="relay-run-canvas__minimap" aria-hidden="true">
-        <For each={nodes()}>{(node) => <i class={`is-${node.state}`} />}</For>
-      </div>
-    </div>
+      </footer>
+    </section>
   );
 }
 
-function RunStateInspector(props: { job: JobInfo; index: number; items: FrameCanvasItem[] }) {
+/** The Steps tab of a run report — the reference reading surface. */
+function RunStepList(props: {
+  job: JobInfo;
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+}) {
   const server = useServer();
   const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
-  const node = createMemo(() => nodes()[props.index]);
-  const item = createMemo(() => props.items[props.index]);
-  const inspectorTitle = () => item()?.caption ?? node()?.title ?? "Run state";
-  const inspectorStatus = () => {
-    const status = item()?.status;
-    if (status === "fail") return "failed";
-    if (status === "pass") return "passed";
-    if (status === "heal") return "passed";
-    return node()?.state ?? "planned";
-  };
-  const count = () => (props.items.length > 0 ? props.items.length : nodes().length);
+  const snapshot = () =>
+    props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
   return (
-    <Show when={node() || item()}>
-      <div class={cn("relay-run-state-inspector", item()?.src && "has-preview")}>
-        <Show when={item()?.src}>
-          {(source) => (
-            <div class="relay-run-state-inspector__preview">
-              <img src={source()} alt={inspectorTitle()} />
-              <span>
-                <Icon name="camera" size={12} /> Captured evidence
+    <div class="grid content-start gap-2">
+      <For
+        each={nodes()}
+        fallback={
+          <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-5 text-center text-[12px] text-[var(--relay-text-tertiary)]">
+            No steps were recorded for this run.
+          </div>
+        }
+      >
+        {(node) => {
+          const active = () => props.selectedIndex === node.index;
+          const kind = () => snapshot()?.steps[node.index]?.kind;
+          return (
+            <button
+              type="button"
+              class={cn(
+                "grid w-full grid-cols-[32px_minmax(0,1fr)] items-start gap-3 rounded-[12px] border p-3 text-left transition-colors",
+                active()
+                  ? "border-[color-mix(in_srgb,var(--relay-accent)_50%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]"
+                  : "border-[var(--relay-line)] hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)]",
+                node.state === "planned" && !active() && "opacity-65",
+              )}
+              onClick={() => props.onSelect(node.index)}
+            >
+              <span
+                class={cn(
+                  "grid size-8 place-items-center rounded-[9px] font-mono text-[12.5px] font-semibold tabular-nums",
+                  active()
+                    ? "bg-[var(--relay-accent)] text-white"
+                    : "bg-[var(--relay-surface-strong)] text-[var(--relay-text-secondary)]",
+                )}
+              >
+                {node.index + 1}
               </span>
-            </div>
-          )}
-        </Show>
-        <div class="relay-run-state-inspector__copy">
-          <span class={`relay-run-state-inspector__status is-${inspectorStatus()}`}>
-            <i /> {inspectorStatus() === "failed" ? "Stopped" : titleize(inspectorStatus())}
-          </span>
-          <strong>{inspectorTitle()}</strong>
-          <small>
-            State {props.index + 1} of {count()}
-            {node()?.durationMs ? ` · ${formatStepDuration(node()!.durationMs!)}` : ""}
-          </small>
-        </div>
-      </div>
-    </Show>
+              <span class="min-w-0">
+                <span class="flex min-w-0 items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.07em] text-[var(--relay-text-tertiary)] uppercase">
+                  <Icon
+                    name={kind() ? kindIcon(kind()!) : "bolt"}
+                    size={12}
+                    class={active() ? "text-[var(--relay-accent-2)]" : undefined}
+                  />
+                  {kind() ? kindLabel(kind()!) : "Step"}
+                  <Show when={node.durationMs}>
+                    <em class="font-mono text-[10.5px] font-normal tracking-normal normal-case not-italic">
+                      {formatStepDuration(node.durationMs!)}
+                    </em>
+                  </Show>
+                  <span class="ml-auto inline-flex shrink-0 items-center gap-1.5 font-medium tracking-normal normal-case">
+                    <i class={cn("size-1.5 rounded-full", runStateDot(node.state))} />
+                    {runStateLabel(node.state)}
+                  </span>
+                </span>
+                <strong class="mt-1.5 block text-[14px]/[1.45] font-medium tracking-[-0.005em] text-[var(--relay-text)]">
+                  {node.title}
+                </strong>
+              </span>
+            </button>
+          );
+        }}
+      </For>
+    </div>
   );
 }
 
@@ -2168,12 +2427,17 @@ function RunReplay(props: { job: JobInfo; workspace?: boolean }) {
   };
 
   return (
-    <div class={cn("relay-replay", props.workspace && "is-workspace")}>
+    <div
+      class={cn("grid gap-3", props.workspace && "min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]")}
+    >
       <Show
         when={firstVideo()}
         fallback={
-          <div class="relay-replay__empty">
-            <div class="relay-replay__empty-device" aria-hidden="true">
+          <div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[12px] border border-dashed border-[var(--relay-line-strong)] p-4">
+            <div
+              class="grid size-12 place-items-center rounded-[12px] bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]"
+              aria-hidden="true"
+            >
               <span />
               <Icon name={props.job.status === "error" ? "alert" : "camera"} size={22} />
             </div>
@@ -2191,7 +2455,7 @@ function RunReplay(props: { job: JobInfo; workspace?: boolean }) {
         }
       >
         {(path) => (
-          <div class="relay-replay__player">
+          <div class="grid gap-2 [&_video]:w-full [&_video]:rounded-[12px] [&_video]:border [&_video]:border-[var(--relay-line)]">
             <video
               ref={(element) => {
                 video = element;
@@ -2204,29 +2468,41 @@ function RunReplay(props: { job: JobInfo; workspace?: boolean }) {
               Video replay is not supported by this browser.
             </video>
             <div>
-              <span class="relay-eyebrow">Device replay</span>
+              <span class={eyebrow}>Device replay</span>
               <strong>Every action stays aligned with its evidence</strong>
             </div>
           </div>
         )}
       </Show>
-      <div class="relay-replay-list" aria-label="Run steps">
+      <div class="grid gap-1" aria-label="Run steps">
         <Show when={(props.job.steps?.length ?? 0) > 0}>
-          <div class="relay-replay-list__heading">
+          <div class="mb-1 flex items-center justify-between text-[10px] font-semibold tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase [&_small]:font-mono [&_small]:normal-case [&_small]:tracking-normal">
             <span>Timeline</span>
             <small>{props.job.steps!.length} steps</small>
           </div>
         </Show>
         <For
           each={props.job.steps ?? []}
-          fallback={<div class="relay-table-empty">No replay steps captured.</div>}
+          fallback={
+            <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-4 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+              No replay steps captured.
+            </div>
+          }
         >
           {(step, i) => (
-            <button type="button" onClick={() => seekToStep(step.startedAt)}>
-              <span>{i() + 1}</span>
-              <div>
-                <strong>{step.title}</strong>
-                <small>
+            <button
+              type="button"
+              class="grid min-h-11 w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left hover:bg-[var(--relay-surface-strong)]"
+              onClick={() => seekToStep(step.startedAt)}
+            >
+              <span class="grid size-7 place-items-center rounded-md bg-[var(--relay-surface-strong)] font-mono text-[10px] text-[var(--relay-text-tertiary)]">
+                {i() + 1}
+              </span>
+              <div class="min-w-0">
+                <strong class="block truncate text-[12px] text-[var(--relay-text)]">
+                  {step.title}
+                </strong>
+                <small class="text-[10px] text-[var(--relay-text-tertiary)]">
                   {step.status ?? "recorded"} · {step.durationMs ? `${step.durationMs}ms` : "—"}
                 </small>
               </div>
@@ -2244,16 +2520,27 @@ function EvidenceList(props: {
   empty: string;
 }) {
   return (
-    <div class="relay-evidence-list">
-      <For each={props.items} fallback={<div class="relay-table-empty">{props.empty}</div>}>
+    <div class="grid gap-2">
+      <For
+        each={props.items}
+        fallback={
+          <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-4 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+            {props.empty}
+          </div>
+        }
+      >
         {(item) => (
-          <details>
-            <summary>
-              <span>{new Date(item.capturedAt).toLocaleTimeString()}</span>
-              <strong>{item.kind}</strong>
-              <Icon name="chevron-down" size={13} />
+          <details class="overflow-hidden rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)]">
+            <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-[11px] text-[var(--relay-text-secondary)]">
+              <span class="font-mono text-[10px] text-[var(--relay-text-tertiary)]">
+                {new Date(item.capturedAt).toLocaleTimeString()}
+              </span>
+              <strong class="text-[var(--relay-text)]">{item.kind}</strong>
+              <Icon name="chevron-down" size={13} class="ml-auto" />
             </summary>
-            <pre>{JSON.stringify(item.data, null, 2)}</pre>
+            <pre class="m-0 overflow-auto border-t border-[var(--relay-line)] bg-[var(--relay-bg)] p-3 font-mono text-[10px] text-[var(--relay-text-secondary)]">
+              {JSON.stringify(item.data, null, 2)}
+            </pre>
           </details>
         )}
       </For>
@@ -2281,64 +2568,40 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
         : props.job.status === "error"
           ? "Failed"
           : titleize(props.job.status);
+  const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
   return (
     <button
       type="button"
       class={cn(
-        "grid min-h-14.5 w-full grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base px-4 text-left text-[11px]/[1.35] text-text-weak transition-colors last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus [&>span]:min-w-0 [&>span]:truncate",
+        "grid min-h-[60px] w-full grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base px-4 text-left text-[12px]/[1.35] text-text-weak transition-colors last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus [&>span]:min-w-0 [&>span]:truncate",
         props.selected && "bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}
       onClick={props.onOpen}
     >
       <span class="min-w-0">
-        <strong class="block truncate text-[12px]/[1.25] font-[550] text-text-base">
+        <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
           {recipe()?.title ?? props.job.action}
         </strong>
-        <Show when={props.job.appVersion}>
-          <small class="mt-1 block truncate font-mono text-[9px]/[1.25] text-text-weaker">
-            Build {props.job.appVersion}
-          </small>
-        </Show>
+        <span class="mt-1.5 flex items-center gap-1.5 text-text-weaker" aria-hidden="true">
+          <For each={glyphSteps().slice(0, 9)}>
+            {(step) => <Icon name={kindIcon(step.kind)} size={11} strokeWidth={1.75} />}
+          </For>
+          <Show when={glyphSteps().length > 9}>
+            <i class="font-mono text-[9px] not-italic">+{glyphSteps().length - 9}</i>
+          </Show>
+          <Show when={props.job.appVersion}>
+            <i class="font-mono text-[9px] not-italic">· build {props.job.appVersion}</i>
+          </Show>
+        </span>
       </span>
-      <span class={cn("relay-status", `is-${props.job.status}`)}>{status()}</span>
+      <span class={productStatus(String(props.job.status))}>{status()}</span>
       <span>{targetName()}</span>
-      <span>{fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}</span>
-      <span>{fmtDur(props.job, server.clock()) || "—"}</span>
-    </button>
-  );
-}
-
-function RunNavigatorRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) {
-  const server = useServer();
-  const recipe = () => server.recipes().find((item) => item.id === props.job.action);
-  const passed = () => props.job.status === "ok" || props.job.status === "healed";
-  return (
-    <button
-      type="button"
-      class={cn(
-        "grid min-h-14 w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2.5 border-b border-border-weak-base px-3 text-left transition-colors last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
-        props.selected && "bg-surface-base-active",
-      )}
-      aria-current={props.selected ? "true" : undefined}
-      onClick={props.onOpen}
-    >
-      <span
-        class={cn(
-          "size-2 rounded-full bg-text-weaker",
-          passed() && "bg-text-success-base",
-          props.job.status === "error" && "bg-text-critical-base",
-        )}
-        aria-hidden="true"
-      />
-      <span class="grid min-w-0 gap-1">
-        <strong class="truncate text-[11px]/[1.25] font-[550] text-text-base">
-          {recipe()?.title ?? props.job.title ?? props.job.action}
-        </strong>
-        <small class="truncate text-[9px]/[1.25] text-text-weaker">
-          {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"} ·{" "}
-          {fmtDur(props.job, server.clock()) || "—"}
-        </small>
+      <span class="font-mono text-[11px] tabular-nums">
+        {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
+      </span>
+      <span class="font-mono text-[11px] tabular-nums">
+        {fmtDur(props.job, server.clock()) || "—"}
       </span>
     </button>
   );
@@ -2351,18 +2614,20 @@ function Metric(props: {
   tone?: "success" | "danger";
 }) {
   return (
-    <div class="grid min-w-0 grid-cols-[auto_1fr] items-baseline gap-x-2 gap-y-0.5 px-3.5 py-2.5">
-      <span class="col-start-2 row-start-1 text-[11px]/[1.25] text-text-weak">{props.label}</span>
+    <div class="grid min-w-0 grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-0.5 px-4 py-3.5">
+      <span class="col-start-2 row-start-1 text-[12px]/[1.25] font-medium text-text-weak">
+        {props.label}
+      </span>
       <strong
         class={cn(
-          "col-start-1 row-span-2 row-start-1 self-center text-[20px]/none font-semibold tracking-[-0.04em] text-text-base",
+          "col-start-1 row-span-2 row-start-1 self-center font-mono text-[26px]/none font-semibold tracking-[-0.04em] tabular-nums text-text-strong",
           props.tone === "success" && "text-text-success-base",
           props.tone === "danger" && "text-text-critical-base",
         )}
       >
         {props.value}
       </strong>
-      <small class="col-start-2 row-start-2 text-[10px]/[1.25] text-text-weaker">
+      <small class="col-start-2 row-start-2 text-[11px]/[1.25] text-text-weaker">
         {props.detail}
       </small>
     </div>
@@ -2394,31 +2659,44 @@ function FlowParametersEditor() {
   const remove = (index: number) =>
     draft.setParameters(draft.parameters().filter((_, current) => current !== index));
 
+  const field =
+    "h-[30px] w-full min-w-0 rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-panel)] px-2 text-[11px] text-[var(--relay-text)] outline-none focus:border-[var(--relay-accent-2)] focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_14%,transparent)]";
+  const label = "grid min-w-0 gap-1 text-[10px] text-[var(--relay-text-tertiary)]";
+
   return (
-    <div class="relay-flow-inputs">
-      <header>
-        <div>
-          <span class="relay-eyebrow">Reusable flow</span>
-          <h3>Inputs</h3>
-          <p>
+    <div class="grid gap-3.5 p-4">
+      <header class="flex items-center justify-between gap-4 max-sm:grid max-sm:grid-cols-1">
+        <div class="grid min-w-0 gap-0.5">
+          <span class={eyebrow}>Reusable flow</span>
+          <h3 class="m-0 text-[16px] leading-[1.2] tracking-[-0.01em] text-[var(--relay-text)]">
+            Inputs
+          </h3>
+          <p class="m-0 max-w-[34rem] text-[11px]/[1.5] text-[var(--relay-text-secondary)]">
             Optional values callers can provide when they use this flow, such as{" "}
-            <code>{"{{login_email}}"}</code>.
+            <code class="font-mono text-[var(--relay-accent-2)]">{"{{login_email}}"}</code>.
           </p>
         </div>
-        <button type="button" class="relay-secondary relay-flow-inputs__add" onClick={add}>
+        <button
+          type="button"
+          class={cn(productSecondary, "shrink-0 whitespace-nowrap")}
+          onClick={add}
+        >
           <Icon name="plus" size={14} /> Add input
         </button>
       </header>
       <Show
         when={draft.parameters().length > 0}
         fallback={
-          <div class="relay-flow-inputs__empty">
-            <span class="relay-flow-inputs__empty-mark" aria-hidden="true">
+          <div class="flex items-center gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_48%,transparent)] px-3.5 py-3 text-[var(--relay-text-tertiary)]">
+            <span
+              class="grid size-7 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-green)_12%,transparent)] text-[var(--relay-green)]"
+              aria-hidden="true"
+            >
               <Icon name="check" size={16} />
             </span>
-            <div>
-              <strong>No inputs yet</strong>
-              <span>
+            <div class="grid min-w-0 gap-0.5">
+              <strong class="text-[12px] text-[var(--relay-text-secondary)]">No inputs yet</strong>
+              <span class="text-[11px]/[1.45]">
                 This flow is ready to attach. Add an input only when a caller needs to provide a
                 value.
               </span>
@@ -2426,23 +2704,24 @@ function FlowParametersEditor() {
           </div>
         }
       >
-        <div class="relay-flow-inputs__list">
+        <div class="grid gap-2">
           <Index each={draft.parameters()}>
             {(parameter, index) => (
-              <article>
-                <div class="relay-flow-inputs__row">
-                  <label>
+              <article class="grid gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_55%,transparent)] p-[11px]">
+                <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_28px] items-end gap-2 max-sm:grid-cols-1">
+                  <label class={label}>
                     <span>Variable name</span>
                     <input
-                      class="font-mono"
+                      class={cn(field, "font-mono")}
                       value={parameter().name}
                       placeholder="login_email"
                       onInput={(event) => patch(index, { name: event.currentTarget.value })}
                     />
                   </label>
-                  <label>
+                  <label class={label}>
                     <span>Label</span>
                     <input
+                      class={field}
                       value={parameter().label ?? ""}
                       placeholder="Login email"
                       onInput={(event) =>
@@ -2450,7 +2729,7 @@ function FlowParametersEditor() {
                       }
                     />
                   </label>
-                  <label class="relay-flow-inputs__required">
+                  <label class="flex h-[30px] items-center gap-1.5 whitespace-nowrap text-[10px] text-[var(--relay-text-secondary)]">
                     <input
                       type="checkbox"
                       checked={parameter().required === true}
@@ -2460,18 +2739,18 @@ function FlowParametersEditor() {
                   </label>
                   <button
                     type="button"
-                    class="relay-icon-button relay-icon-button--danger"
+                    class={productIconButtonDanger}
                     aria-label={`Remove ${parameter().label || parameter().name}`}
                     onClick={() => remove(index)}
                   >
                     <Icon name="trash" size={14} />
                   </button>
                 </div>
-                <div class="relay-flow-inputs__row relay-flow-inputs__row--detail">
-                  <label>
+                <div class="grid grid-cols-2 gap-2 max-sm:grid-cols-1">
+                  <label class={label}>
                     <span>Default</span>
                     <input
-                      class="font-mono"
+                      class={cn(field, "font-mono")}
                       value={parameter().default ?? ""}
                       placeholder="Optional safe default"
                       onInput={(event) =>
@@ -2479,9 +2758,10 @@ function FlowParametersEditor() {
                       }
                     />
                   </label>
-                  <label>
+                  <label class={label}>
                     <span>Guidance</span>
                     <input
+                      class={field}
                       value={parameter().description ?? ""}
                       placeholder="What the flow expects"
                       onInput={(event) =>
@@ -2497,7 +2777,10 @@ function FlowParametersEditor() {
       </Show>
       <Show when={draft.parameterIssue()}>
         {(message) => (
-          <p class="relay-flow-inputs__error" role="alert">
+          <p
+            class="m-0 rounded-lg border border-[color-mix(in_srgb,var(--relay-red)_45%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-red)_8%,transparent)] px-2.5 py-2 text-[11px] text-[var(--relay-red)]"
+            role="alert"
+          >
             {message()}
           </p>
         )}

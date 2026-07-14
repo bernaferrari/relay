@@ -190,7 +190,9 @@ export function Topbar(props: { onSettings: () => void }) {
                 name="refresh"
                 size={12}
                 class={
-                  refreshingDevices() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"
+                  refreshingDevices()
+                    ? "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70"
+                    : undefined
                 }
               />
               Refresh devices

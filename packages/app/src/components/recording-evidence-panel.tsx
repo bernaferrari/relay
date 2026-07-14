@@ -51,13 +51,16 @@ export function RecordingEvidencePanel(props: {
   };
 
   return (
-    <section class="recorded-evidence" aria-label="Recorded interaction evidence">
-      <header>
-        <div>
+    <section
+      class="min-w-0 overflow-hidden rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_82%,var(--relay-panel))]"
+      aria-label="Recorded interaction evidence"
+    >
+      <header class="flex min-h-[34px] items-center justify-between gap-2.5 border-b border-[var(--relay-line)] px-2.5">
+        <div class="flex min-w-0 items-center gap-1.5 text-[var(--relay-text-secondary)]">
           <Icon name="camera" size={13} />
-          <strong>Recorded evidence</strong>
+          <strong class="text-[10px] font-semibold">Recorded evidence</strong>
         </div>
-        <span>
+        <span class="shrink-0 font-mono text-[9px] text-[var(--relay-text-tertiary)] tabular-nums">
           {new Date(props.evidence.recordedAt).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -65,13 +68,17 @@ export function RecordingEvidencePanel(props: {
           })}
         </span>
       </header>
-      <div class="recorded-evidence__body">
+      <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2.5 p-2.5">
         <Show when={props.evidence.screenshot}>
-          <div class="recorded-evidence__shot">
-            <img src={screenshotUrl()} alt="Screen after this recorded interaction" />
+          <div class="relative aspect-[9/16] w-[76px] overflow-hidden rounded-lg bg-[var(--relay-surface-strong)] shadow-[inset_0_0_0_1px_var(--relay-line-strong)]">
+            <img
+              src={screenshotUrl()}
+              alt="Screen after this recorded interaction"
+              class="size-full object-cover"
+            />
             <Show when={props.evidence.pointer && props.evidence.deviceBounds}>
               <span
-                class="recorded-evidence__pointer"
+                class="absolute size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--relay-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_28%,transparent)]"
                 style={{
                   left: `${(props.evidence.pointer!.x / props.evidence.deviceBounds!.width) * 100}%`,
                   top: `${(props.evidence.pointer!.y / props.evidence.deviceBounds!.height) * 100}%`,
@@ -81,41 +88,60 @@ export function RecordingEvidencePanel(props: {
             </Show>
           </div>
         </Show>
-        <div class="recorded-evidence__content">
+        <div class="flex min-w-0 flex-col gap-[7px]">
           <Show when={props.evidence.node}>
             {(node) => (
-              <div class="recorded-evidence__node">
-                <span>{node().role ?? node().type ?? "Element"}</span>
-                <strong>{node().label ?? node().value ?? node().identifier ?? "Unlabelled"}</strong>
+              <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-[7px]">
+                <span class="text-[9px] text-[var(--relay-text-tertiary)] capitalize">
+                  {node().role ?? node().type ?? "Element"}
+                </span>
+                <strong class="overflow-hidden text-[10px] font-semibold text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
+                  {node().label ?? node().value ?? node().identifier ?? "Unlabelled"}
+                </strong>
               </div>
             )}
           </Show>
           <Show when={(props.evidence.candidates?.length ?? 0) > 0}>
             <div
-              class="recorded-evidence__candidates"
+              class="flex max-h-[132px] min-w-0 flex-col gap-0.5 overflow-y-auto"
               role="listbox"
               aria-label="Selector candidates"
             >
               <For each={props.evidence.candidates}>
-                {(candidate) => (
-                  <button
-                    type="button"
-                    role="option"
-                    class={cn(candidateIsActive(candidate, props.target ?? {}) && "is-active")}
-                    aria-selected={candidateIsActive(candidate, props.target ?? {})}
-                    onClick={() => props.onApply?.(candidate)}
-                    disabled={!props.onApply}
-                  >
-                    <span>{candidate.strategy}</span>
-                    <strong>{candidateValue(candidate)}</strong>
-                    <small>{candidate.source}</small>
-                  </button>
-                )}
+                {(candidate) => {
+                  const active = () => candidateIsActive(candidate, props.target ?? {});
+                  return (
+                    <button
+                      type="button"
+                      role="option"
+                      class={cn(
+                        "grid min-h-[30px] min-w-0 grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md px-[7px] text-left shadow-[inset_0_0_0_1px_var(--relay-line)] hover:enabled:bg-surface-raised-base-hover",
+                        active() &&
+                          "bg-[var(--relay-accent-soft)] shadow-[inset_0_0_0_1px_var(--border-interactive-base)]",
+                      )}
+                      aria-selected={active()}
+                      onClick={() => props.onApply?.(candidate)}
+                      disabled={!props.onApply}
+                    >
+                      <span class="text-[9px] text-[var(--relay-text-tertiary)] capitalize">
+                        {candidate.strategy}
+                      </span>
+                      <strong class="overflow-hidden font-mono text-[9px] font-medium text-ellipsis whitespace-nowrap text-[var(--relay-text-secondary)]">
+                        {candidateValue(candidate)}
+                      </strong>
+                      <small class="text-[9px] text-[var(--relay-text-tertiary)] capitalize">
+                        {candidate.source}
+                      </small>
+                    </button>
+                  );
+                }}
               </For>
             </div>
           </Show>
           <Show when={props.evidence.serial}>
-            <p>Captured on {props.evidence.serial}</p>
+            <p class="m-0 overflow-hidden font-mono text-[8px] text-ellipsis whitespace-nowrap text-[var(--relay-text-tertiary)]">
+              Captured on {props.evidence.serial}
+            </p>
           </Show>
         </div>
       </div>

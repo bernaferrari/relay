@@ -9,6 +9,7 @@ import { Icon, type IconName } from "./icon";
 import { FrameCanvas } from "./frame-canvas";
 import { AddMenu } from "./step-list-controls";
 import { kindLabel } from "./step-list-metadata";
+import { eyebrow } from "../lib/ui";
 
 type Viewport = { x: number; y: number; scale: number };
 type EdgeStyle = "flow" | "branch" | "failure";
@@ -16,6 +17,12 @@ type EdgeConfig = { label: string; style: EdgeStyle };
 
 const JOURNEY_NODE_WIDTH = 252;
 const JOURNEY_NODE_PORT_Y = 92;
+
+const boardChrome =
+  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
+
+const controlBtn =
+  "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-[7px] text-[10px] text-[var(--relay-text-secondary)] hover:bg-surface-raised-base-hover hover:text-[var(--relay-text)]";
 
 /**
  * Journey is always available. Captured frames use the full freeform graph;
@@ -137,7 +144,7 @@ function PlannedJourney() {
 
   return (
     <section
-      class="journey-board"
+      class="!absolute inset-0 cursor-grab touch-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--relay-text)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
       aria-label="Planned test journey"
       onWheel={(event) => {
         if (!event.ctrlKey && !event.metaKey) return;
@@ -162,43 +169,56 @@ function PlannedJourney() {
         drag = null;
       }}
     >
-      <div class="journey-board__mode">
-        <span>
-          <i /> Planned flow
+      <div
+        class={cn(
+          boardChrome,
+          "left-3.5 gap-2.5 px-2.5 text-[10px] text-[var(--relay-text-secondary)]",
+        )}
+      >
+        <span class="inline-flex items-center gap-1.5 font-semibold">
+          <i class="size-1.5 rounded-full bg-[var(--relay-accent)] shadow-[0_0_9px_color-mix(in_srgb,var(--relay-accent)_65%,transparent)]" />
+          Planned flow
         </span>
-        <b>
+        <b class="border-l border-[var(--relay-line)] pl-2.5 font-mono text-[9px] font-normal text-[var(--relay-text-tertiary)]">
           {nodes().length} action{nodes().length === 1 ? "" : "s"}
         </b>
       </div>
-      <div class="journey-board__controls">
-        <button type="button" onClick={() => zoom(-0.1)} aria-label="Zoom out">
+      <div class={cn(boardChrome, "right-3.5 gap-0.5 border-0 p-1")}>
+        <button type="button" class={controlBtn} onClick={() => zoom(-0.1)} aria-label="Zoom out">
           −
         </button>
-        <span>{Math.round(view().scale * 100)}%</span>
-        <button type="button" onClick={() => zoom(0.1)} aria-label="Zoom in">
+        <span class="inline-flex h-[30px] min-w-10 items-center justify-center font-mono text-[10px] text-[var(--relay-text-tertiary)]">
+          {Math.round(view().scale * 100)}%
+        </span>
+        <button type="button" class={controlBtn} onClick={() => zoom(0.1)} aria-label="Zoom in">
           +
         </button>
-        <button type="button" onClick={() => setView(fittedView())}>
+        <button type="button" class={controlBtn} onClick={() => setView(fittedView())}>
           Fit
         </button>
       </div>
 
       <Show when={selectedEdge() !== null}>
-        <div class="journey-edge-editor" onPointerDown={(event) => event.stopPropagation()}>
-          <div>
-            <span class="relay-eyebrow">Connection</span>
-            <strong>Customize arrow</strong>
+        <div
+          class="absolute top-[82px] right-3.5 z-[7] grid w-[260px] cursor-default gap-2.5 rounded-xl border border-[var(--relay-line)] bg-[var(--relay-panel)] p-3 text-[var(--relay-text)] shadow-[var(--v2-elevation-floating)]"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div class="grid gap-1">
+            <span class={eyebrow}>Connection</span>
+            <strong class="text-[13px] font-semibold">Customize arrow</strong>
           </div>
-          <label>
-            <span>Label</span>
+          <label class="grid gap-1">
+            <span class="text-[10px] text-[var(--relay-text-tertiary)]">Label</span>
             <input
+              class="h-8 w-full rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[var(--relay-text)] outline-none focus:border-[var(--relay-accent-2)]"
               value={edgeConfig()[selectedEdge()!]?.label ?? defaultEdge(selectedEdge()!).label}
               onInput={(event) => patchEdge(selectedEdge()!, { label: event.currentTarget.value })}
             />
           </label>
-          <label>
-            <span>Type</span>
+          <label class="grid gap-1">
+            <span class="text-[10px] text-[var(--relay-text-tertiary)]">Type</span>
             <select
+              class="h-8 w-full rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[var(--relay-text)] outline-none"
               value={edgeConfig()[selectedEdge()!]?.style ?? defaultEdge(selectedEdge()!).style}
               onChange={(event) =>
                 patchEdge(selectedEdge()!, { style: event.currentTarget.value as EdgeStyle })
@@ -211,6 +231,7 @@ function PlannedJourney() {
           </label>
           <button
             type="button"
+            class="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-[7px] text-[var(--relay-text-tertiary)] hover:bg-surface-raised-base-hover hover:text-[var(--relay-text)]"
             aria-label="Close arrow editor"
             onClick={() => setSelectedEdge(null)}
           >
@@ -222,24 +243,26 @@ function PlannedJourney() {
       <Show
         when={nodes().length > 0}
         fallback={
-          <div class="journey-board__empty">
-            <div>
+          <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+            <div class="grid size-11 place-items-center rounded-xl bg-[var(--relay-accent-soft)] text-[var(--relay-accent-2)]">
               <Icon name="move" size={22} />
             </div>
-            <strong>No journey yet</strong>
-            <p>Add a step or record the device. Screens will appear here as a navigable flow.</p>
+            <strong class="mt-3 text-[13px] text-[var(--relay-text)]">No journey yet</strong>
+            <p class="mt-1.5 max-w-[330px] text-[11px]/[1.5] text-[var(--relay-text-tertiary)]">
+              Add a step or record the device. Screens will appear here as a navigable flow.
+            </p>
           </div>
         }
       >
         <div
-          class="journey-board__world"
+          class="absolute top-16 left-0 h-[620px] origin-top-left will-change-transform"
           style={{
             transform: `translate3d(${view().x}px, ${view().y}px, 0) scale(${view().scale})`,
             width: `${width()}px`,
           }}
         >
           <svg
-            class="journey-board__edges"
+            class="pointer-events-auto absolute inset-0 overflow-visible"
             width={width()}
             height="620"
             aria-label="Journey connections"
@@ -254,7 +277,7 @@ function PlannedJourney() {
                 markerHeight="6"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 0 L 10 5 L 0 10 z" />
+                <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--relay-accent)] stroke-none" />
               </marker>
             </defs>
             <For each={nodes().slice(0, -1)}>
@@ -264,22 +287,37 @@ function PlannedJourney() {
                 const y1 = () => node.y + JOURNEY_NODE_PORT_Y;
                 const x2 = () => next().x - 13;
                 const y2 = () => next().y + JOURNEY_NODE_PORT_Y;
+                const style = () =>
+                  edgeConfig()[node.index]?.style ?? defaultEdge(node.index).style;
+                const lineClass = () =>
+                  cn(
+                    "pointer-events-none fill-none stroke-2",
+                    style() === "branch" &&
+                      "stroke-[var(--icon-warning-base)] [stroke-dasharray:2_5]",
+                    style() === "failure" &&
+                      "stroke-[var(--icon-critical-base)] [stroke-dasharray:8_5]",
+                    style() === "flow" &&
+                      "stroke-[color-mix(in_srgb,var(--relay-accent)_62%,var(--relay-line))] [stroke-dasharray:6_7]",
+                  );
                 return (
-                  <g
-                    class={`journey-edge is-${edgeConfig()[node.index]?.style ?? defaultEdge(node.index).style}`}
-                  >
+                  <g>
                     <path
-                      class="journey-edge__hit"
+                      class="cursor-pointer fill-none stroke-transparent [stroke-width:18]"
                       d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={() => setSelectedEdge(node.index)}
                     />
                     <path
-                      class="journey-edge__line"
+                      class={lineClass()}
                       marker-end="url(#journey-arrow)"
                       d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
                     />
-                    <text x={(x1() + x2()) / 2} y={(y1() + y2()) / 2 - 10} text-anchor="middle">
+                    <text
+                      class="pointer-events-none fill-[var(--relay-text-tertiary)] font-mono text-[9px]"
+                      x={(x1() + x2()) / 2}
+                      y={(y1() + y2()) / 2 - 10}
+                      text-anchor="middle"
+                    >
                       {edgeConfig()[node.index]?.label ?? defaultEdge(node.index).label}
                     </text>
                   </g>
@@ -288,51 +326,60 @@ function PlannedJourney() {
             </For>
           </svg>
           <For each={nodes()}>
-            {(node) => (
-              <div
-                role="button"
-                tabIndex={0}
-                class={cn("journey-node", workbench.focusedIndex() === node.index && "is-active")}
-                style={{
-                  transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
-                  "--journey-node-accent": accentForStep(node.step),
-                }}
-                onClick={() => workbench.focusStep(node.index)}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  workbench.focusStep(node.index);
-                }}
-              >
-                <JourneyPlanCard step={node.step} index={node.index} />
-                <Show when={node.index > 0}>
-                  <div class="journey-node__port is-input" aria-hidden="true" />
-                </Show>
-                <Show when={node.index < nodes().length - 1}>
-                  <div class="journey-node__port is-output" aria-hidden="true" />
-                </Show>
-                <button
-                  type="button"
-                  class="journey-node__add"
-                  aria-label={`Add step after ${node.index + 1}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setAddMenu({
-                      at: node.index + 1,
-                      anchor: {
-                        left: rect.left,
-                        top: rect.top,
-                        bottom: rect.bottom,
-                        width: rect.width,
-                      },
-                    });
+            {(node) => {
+              const active = () => workbench.focusedIndex() === node.index;
+              return (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  class="group absolute top-0 left-0 w-[252px] origin-top-left cursor-pointer rounded-[20px] p-0 text-left outline-none"
+                  style={{
+                    transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
+                    "--journey-node-accent": accentForStep(node.step),
+                  }}
+                  onClick={() => workbench.focusStep(node.index)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    workbench.focusStep(node.index);
                   }}
                 >
-                  <Icon name="plus" size={15} />
-                </button>
-              </div>
-            )}
+                  <JourneyPlanCard step={node.step} index={node.index} active={active()} />
+                  <Show when={node.index > 0}>
+                    <div
+                      class="absolute top-[87px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      aria-hidden="true"
+                    />
+                  </Show>
+                  <Show when={node.index < nodes().length - 1}>
+                    <div
+                      class="absolute top-[87px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      aria-hidden="true"
+                    />
+                  </Show>
+                  <button
+                    type="button"
+                    class="absolute top-[77px] right-[-59px] z-[4] grid size-[30px] scale-95 place-items-center rounded-full border border-[color-mix(in_srgb,var(--relay-accent)_52%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-accent)_88%,#171a22)] text-white opacity-0 shadow-[0_8px_24px_rgb(0_0_0/35%),0_0_0_4px_rgb(11_13_18/88%)] transition-[opacity,transform,background-color] duration-150 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 hover:bg-[var(--surface-brand-base-hover)] active:scale-90"
+                    aria-label={`Add step after ${node.index + 1}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setAddMenu({
+                        at: node.index + 1,
+                        anchor: {
+                          left: rect.left,
+                          top: rect.top,
+                          bottom: rect.bottom,
+                          width: rect.width,
+                        },
+                      });
+                    }}
+                  >
+                    <Icon name="plus" size={15} />
+                  </button>
+                </div>
+              );
+            }}
           </For>
         </div>
       </Show>
@@ -354,27 +401,45 @@ function PlannedJourney() {
   );
 }
 
-export function JourneyPlanCard(props: { step: RecipeStep; index: number }) {
+export function JourneyPlanCard(props: { step: RecipeStep; index: number; active?: boolean }) {
   const server = useServer();
   return (
-    <div class="journey-plan-card" style={{ "--journey-node-accent": accentForStep(props.step) }}>
-      <header>
-        <span class="journey-plan-card__index">{String(props.index + 1).padStart(2, "0")}</span>
-        <span class="journey-plan-card__kind">{kindLabel(props.step.kind)}</span>
+    <div
+      class={cn(
+        "relative grid h-[184px] grid-rows-[38px_minmax(0,1fr)_38px] overflow-hidden rounded-[15px] border border-[var(--relay-line-strong)] shadow-[0_12px_32px_rgb(0_0_0/20%)] transition-[border-color,box-shadow,transform] duration-150",
+        "bg-[radial-gradient(circle_at_14%_0%,color-mix(in_srgb,var(--journey-node-accent)_12%,transparent),transparent_42%),color-mix(in_srgb,var(--relay-panel)_92%,var(--relay-surface-raised))]",
+        "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
+        props.active &&
+          "-translate-y-0.5 border-[color-mix(in_srgb,var(--journey-node-accent)_62%,white_8%)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--journey-node-accent)_12%,transparent),0_18px_48px_rgb(0_0_0/30%)]",
+      )}
+      style={{ "--journey-node-accent": accentForStep(props.step) }}
+    >
+      <header class="grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-[color-mix(in_srgb,var(--relay-line)_72%,transparent)] px-3 text-[var(--relay-text-tertiary)]">
+        <span class="font-mono text-[11px] leading-none text-[var(--relay-text-secondary)]">
+          {String(props.index + 1).padStart(2, "0")}
+        </span>
+        <span class="text-[10px] font-semibold tracking-[0.09em] uppercase">
+          {kindLabel(props.step.kind)}
+        </span>
         <Icon name="more" size={14} />
       </header>
-      <div class="journey-plan-card__body">
-        <span class="journey-plan-card__icon">
+      <div class="grid min-w-0 grid-cols-[42px_minmax(0,1fr)] items-center gap-3 p-3.5">
+        <span class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
           <Icon name={iconForStep(props.step)} size={20} />
         </span>
-        <div>
-          <small>{actionForStep(props.step)}</small>
-          <strong>{sentenceForStep(props.step, server.recipes())}</strong>
+        <div class="min-w-0">
+          <small class="mb-1 block text-[10px] font-semibold tracking-[0.07em] text-[var(--relay-text-tertiary)] uppercase">
+            {actionForStep(props.step)}
+          </small>
+          <strong class="line-clamp-2 block text-[14px]/[1.35] font-semibold tracking-[-0.012em] text-[var(--relay-text)]">
+            {sentenceForStep(props.step, server.recipes())}
+          </strong>
         </div>
       </div>
-      <footer>
-        <span>
-          <i /> Evidence after run
+      <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--relay-line)_72%,transparent)] px-3 text-[var(--relay-text-tertiary)]">
+        <span class="inline-flex items-center gap-1.5 text-[10px]">
+          <i class="size-1.5 rounded-full bg-[var(--relay-line-strong)]" />
+          Evidence after run
         </span>
         <Icon name="chevron-right" size={13} />
       </footer>

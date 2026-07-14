@@ -4,6 +4,15 @@ import { useServer } from "../../context/server";
 import { toast } from "../../context/toast";
 import { cn } from "../../lib/cn";
 import { Icon } from "../icon";
+import {
+  eyebrow,
+  productPrimary,
+  productSecondary,
+  productPage,
+  productPageHero,
+  productPageTitle,
+  productPageLead,
+} from "../../lib/ui";
 
 type DataRow = {
   id: string;
@@ -93,20 +102,20 @@ export function DataWorkspace(props: { onConfigureProvider: () => void }) {
   };
 
   return (
-    <section class="relay-page">
-      <div class="relay-page__hero">
+    <section class={productPage}>
+      <div class={productPageHero}>
         <div>
-          <span class="relay-eyebrow">Variables</span>
-          <h2>Test data</h2>
-          <p>
+          <span class={eyebrow}>Variables</span>
+          <h2 class={productPageTitle}>Test data</h2>
+          <p class={productPageLead}>
             Prepare fresh inputs before a run while keeping every test deterministic and debuggable.
           </p>
         </div>
         <div class="flex items-center gap-2">
-          <button type="button" class="relay-secondary" onClick={props.onConfigureProvider}>
+          <button type="button" class={productSecondary} onClick={props.onConfigureProvider}>
             Generation settings
           </button>
-          <button type="button" class="relay-primary" onClick={addRow}>
+          <button type="button" class={productPrimary} onClick={addRow}>
             <Icon name="plus" size={15} /> New variable
           </button>
         </div>
@@ -169,7 +178,7 @@ export function DataWorkspace(props: { onConfigureProvider: () => void }) {
             >
               <header class="flex min-h-16 items-center justify-between border-b border-border-weak-base px-4">
                 <div class="min-w-0">
-                  <span class="relay-eyebrow">Variable</span>
+                  <span class={eyebrow}>Variable</span>
                   <strong class="mt-1 block truncate text-[16px]/[1.25] text-text-base">
                     {row().name}
                   </strong>

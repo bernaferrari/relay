@@ -4,6 +4,8 @@ import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { planTestPrompt } from "../lib/natural-language-plan";
 import { Icon } from "./icon";
+import { cn } from "../lib/cn";
+import { productPrimary } from "../lib/ui";
 
 export function AgentTestComposer() {
   const draft = useRecipeDraft();
@@ -40,34 +42,44 @@ export function AgentTestComposer() {
 
   return (
     <section
-      class="mx-2.5 mt-2.5 mb-0.5 shrink-0 overflow-hidden rounded-xl border bg-background-stronger transition-colors"
-      classList={{
-        "border-border-focus": open(),
-        "border-border-weak-base": !open(),
-      }}
+      class={cn(
+        "mx-3 mt-3 mb-0.5 shrink-0 overflow-hidden rounded-xl transition-colors",
+        open()
+          ? "bg-[var(--relay-panel)] ring-1 ring-[var(--relay-line-strong)]"
+          : "hover:bg-white/[0.03]",
+      )}
     >
       <button
         type="button"
-        class="grid min-h-[50px] w-full grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-2 px-2.5 py-2 text-left text-text-base focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
+        class="grid min-h-[44px] w-full grid-cols-[34px_minmax(0,1fr)_18px] items-center gap-3.5 px-3.5 py-2 text-left text-text-base focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
         aria-expanded={open()}
         onClick={() => setOpen((value) => !value)}
       >
-        <span class="grid size-7 place-items-center rounded-lg bg-surface-info-weak text-text-info-base">
+        <span class="grid size-[34px] place-items-center rounded-[10px] text-[var(--relay-accent-2)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--relay-accent)_35%,transparent)]">
           <Icon name="sparkle" size={16} />
         </span>
-        <span class="grid min-w-0 gap-0.5">
-          <strong class="text-[13px]/[1.25] font-semibold">Build with AI</strong>
-          <small class="truncate text-[11px]/[1.35] text-text-weak">
-            Describe what you want to test
+        <span class="flex min-w-0 items-baseline gap-2">
+          <strong class="text-[13.5px]/[1.25] font-medium text-[var(--relay-text-secondary)]">
+            Build with AI
+          </strong>
+          <small class="truncate text-[12px]/[1.35] text-[var(--relay-text-tertiary)]">
+            describe what you want to test
           </small>
         </span>
-        <Icon name={open() ? "chevron-up" : "chevron-down"} size={14} />
+        <Icon
+          name="chevron-down"
+          size={14}
+          class={cn(
+            "text-[var(--relay-text-tertiary)] transition-transform duration-150",
+            open() && "rotate-180",
+          )}
+        />
       </button>
       <Show when={open()}>
-        <div class="grid gap-2.5 border-t border-border-weak-base px-2.5 pb-2.5">
+        <div class="grid gap-2.5 border-t border-[var(--relay-line)] px-3.5 pb-3">
           <label
             for="agent-test-prompt"
-            class="pt-2.5 text-[11px]/[1.25] font-semibold tracking-[0.08em] text-text-weak uppercase"
+            class="pt-3 text-[11px]/[1.25] font-semibold tracking-[0.08em] text-text-weak uppercase"
           >
             What should happen?
           </label>
@@ -88,7 +100,7 @@ export function AgentTestComposer() {
             <span />
             <button
               type="button"
-              class="relay-primary"
+              class={productPrimary}
               disabled={!prompt().trim() || generating()}
               onClick={() => void createSteps()}
             >

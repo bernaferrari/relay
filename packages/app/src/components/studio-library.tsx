@@ -3,6 +3,8 @@ import type { RecipeInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo } from "../lib/job";
 import { Icon, type IconName } from "./icon";
+import { eyebrow, popover, productIconButton, productIconButtonSolid } from "../lib/ui";
+import { shellLibrary, shellLibraryClosed } from "../lib/shell-layout";
 
 export function LibraryPanel(props: {
   open: boolean;
@@ -38,17 +40,19 @@ export function LibraryPanel(props: {
 
   return (
     <aside
-      class="relay-library"
+      class={cn(shellLibrary, !props.open && shellLibraryClosed)}
       aria-label="Test library"
       aria-hidden={!props.open}
       inert={!props.open}
     >
-      <div class="relay-library__head">
+      <div class="flex min-h-[74px] items-center justify-between px-3.5 pt-3.5 pb-2.5">
         <div>
-          <span class="relay-eyebrow">Workspace</span>
-          <h1>Tests</h1>
+          <span class={eyebrow}>Workspace</span>
+          <h1 class="mt-0.5 text-[17px] font-semibold leading-[1.2] tracking-[-0.035em] text-balance text-text-strong">
+            Tests
+          </h1>
         </div>
-        <div class="relay-library__head-actions">
+        <div class="relative flex items-center gap-0.5">
           <input
             ref={(element) => (importInput = element)}
             class="sr-only"
@@ -64,7 +68,7 @@ export function LibraryPanel(props: {
           />
           <button
             type="button"
-            class="relay-icon-button relay-icon-button--solid"
+            class={productIconButtonSolid}
             aria-label="Create test"
             data-tip="Create test"
             onClick={props.onCreate}
@@ -73,7 +77,7 @@ export function LibraryPanel(props: {
           </button>
           <button
             type="button"
-            class="relay-icon-button"
+            class={productIconButton}
             aria-label="More library actions"
             aria-expanded={menuOpen()}
             onClick={() => setMenuOpen((open) => !open)}
@@ -81,30 +85,42 @@ export function LibraryPanel(props: {
             <Icon name="more" size={16} />
           </button>
           <Show when={menuOpen()}>
-            <div class="relay-library-actions-menu" role="menu">
+            <div
+              class={cn(
+                popover,
+                "absolute top-[calc(100%+7px)] right-0 z-40 w-[230px] origin-top-right p-1.5",
+              )}
+              role="menu"
+            >
               <button
                 type="button"
                 role="menuitem"
+                class="flex min-h-[46px] w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-text-base hover:bg-surface-raised-base-hover"
                 onClick={() => {
                   setMenuOpen(false);
                   importInput?.click();
                 }}
               >
                 <Icon name="upload" size={14} />
-                <span>
-                  <strong>Import test file</strong>
-                  <small>Open a Relay YAML file</small>
+                <span class="min-w-0">
+                  <strong class="block text-[11px] font-medium text-text-strong">
+                    Import test file
+                  </strong>
+                  <small class="mt-0.5 block text-[9px] text-text-weaker">
+                    Open a Relay YAML file
+                  </small>
                 </span>
               </button>
             </div>
           </Show>
         </div>
       </div>
-      <label class="relay-search">
+      <label class="relative mx-2.5 mb-2.5 flex h-[34px] shrink-0 items-center gap-2 rounded-[9px] bg-v2-background-bg-base px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:text-text-base focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base),0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_10%,transparent)]">
         <Icon name="search" size={15} />
         <span class="sr-only">Search tests</span>
         <input
           ref={(element) => (searchInput = element)}
+          class="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-text-strong outline-none placeholder:text-text-weaker"
           type="search"
           value={props.query}
           placeholder="Search tests"
@@ -118,7 +134,7 @@ export function LibraryPanel(props: {
           }}
         />
       </label>
-      <div class="relay-library__scroll">
+      <div class="min-h-0 flex-1 overflow-y-auto px-1.5">
         <RecipeGroup
           title="Tests"
           items={tests()}
@@ -153,7 +169,9 @@ export function LibraryPanel(props: {
           </section>
         </Show>
         <Show when={props.query.trim().length > 0 && props.items.length === 0}>
-          <div class="relay-library__empty">No tests match “{props.query}”.</div>
+          <div class="px-3 py-6 text-center text-12-regular text-text-weak">
+            No tests match “{props.query}”.
+          </div>
         </Show>
       </div>
     </aside>

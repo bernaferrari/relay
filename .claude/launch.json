@@ -12,7 +12,7 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "--filter",
-        "@grok-device/app",
+        "@relay/app",
         "exec",
         "vp",
         "dev",

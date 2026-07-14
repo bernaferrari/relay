@@ -399,7 +399,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
         stageEl = el;
       }}
       aria-label="Device stage"
-      class="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-5 py-6"
+      class="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-5"
     >
       <Show
         when={!server.isEmptyDevices()}
@@ -476,7 +476,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
           data-device-chrome
           class={cn(
             phoneShell,
-            "relative z-[2] aspect-[9/19.5] w-[min(272px,40vh)] max-h-[calc(100%-72px)] shrink-0",
+            "relative z-[2] h-[min(720px,calc(100%-64px))] w-auto max-w-[min(420px,calc(100%-56px))] shrink-0",
           )}
           data-empty={!frame() ? "1" : "0"}
           style={{ "aspect-ratio": frameAspect() }}
@@ -630,11 +630,14 @@ export function DeviceStage(props: { onExpandBoard?: () => void }) {
               )}
             </Show>
             <Show when={!frame() && !focusedStep()}>
-              <div class="relay-stage-empty absolute inset-0 z-[1] flex flex-col items-center justify-center p-7 text-center">
-                <div class="relay-stage-empty__preview" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
+              <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center p-7 text-center">
+                <div
+                  class="relative mb-4 grid h-24 w-16 place-items-center overflow-hidden rounded-[14px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-line)_50%,transparent)]"
+                  aria-hidden="true"
+                >
+                  <span class="absolute top-2 h-0.5 w-6 rounded-full bg-[var(--relay-line-strong)]" />
+                  <span class="mt-3 h-2 w-[70%] rounded bg-[color-mix(in_srgb,var(--relay-text)_12%,transparent)]" />
+                  <span class="mt-1.5 h-2 w-[50%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
                 </div>
                 <Show
                   when={targetReady()}

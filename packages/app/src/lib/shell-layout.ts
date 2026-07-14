@@ -1,0 +1,180 @@
+/**
+ * Product shell layout as Tailwind recipes.
+ * Prefer these over product BEM CSS. Tokens (--relay-*) live in tokens.css.
+ */
+import { cn } from "./cn";
+
+/**
+ * Root app grid: rail | library | main.
+ * The library track collapses via the --shell-lib var, which the shell sets
+ * with an INLINE STYLE (`shellRootLibraryVar`) — never via competing utility
+ * classes: cn() does not merge, and two classes setting the same property
+ * resolve by stylesheet order, not class-list order.
+ */
+export const shellRoot = cn(
+  "grid h-full w-full min-h-0 overflow-hidden text-[var(--relay-text)] bg-[var(--relay-bg)] isolation-isolate",
+  "grid-cols-[58px_var(--shell-lib,var(--relay-library-width))_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
+  "transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
+);
+
+/** Inline-style value for the root: pass to `style` so it always wins. */
+export function shellRootLibraryVar(open: boolean): Record<string, string> {
+  return { "--shell-lib": open ? "var(--relay-library-width)" : "0px" };
+}
+
+export const shellRail = cn(
+  "relative z-[3] col-start-1 row-start-1 flex min-h-0 flex-col items-center gap-4 border-r border-[var(--relay-line)]",
+  "bg-[color-mix(in_srgb,var(--relay-bg)_97%,black)] px-1.5 pt-[var(--rail-top-pad,14px)] pb-2.5",
+);
+
+export const shellMark = cn(
+  "relative size-8 shrink-0 rounded-[10px] text-white",
+  "bg-[linear-gradient(145deg,#a497ff,#6454e9)]",
+  "shadow-[0_8px_24px_rgb(96_78_226/28%),inset_0_1px_rgb(255_255_255/25%)]",
+  "active:scale-[0.97]",
+);
+
+export const shellRailNav = "flex w-full flex-1 flex-col gap-1.5";
+
+export const shellRailItem = cn(
+  "flex min-h-11 w-full flex-col items-center justify-center gap-0.5 rounded-lg",
+  "text-[10px] font-medium tracking-[0.01em] text-[var(--relay-text-tertiary)]",
+  "transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97]",
+  "hover:bg-white/[0.06] hover:text-[var(--relay-text)]",
+);
+
+export const shellRailItemActive = cn(
+  "bg-[var(--relay-surface-strong)] text-[var(--relay-text)]",
+  "[&_svg]:text-[var(--relay-accent-2)]",
+);
+
+export const shellLibrary = cn(
+  "relative z-[2] col-start-2 row-start-1 flex min-h-0 flex-col overflow-hidden",
+  "border-r border-[var(--relay-line)] bg-[var(--relay-panel)]",
+  "transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
+  "will-change-transform",
+  // Inner content keeps its width during the collapse so text does not reflow.
+  "[&>*]:w-[var(--relay-library-width)]",
+);
+
+export const shellLibraryClosed = "pointer-events-none -translate-x-3.5 opacity-0 border-r-0";
+
+export const shellMain =
+  "col-start-3 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--relay-bg)]";
+
+export const shellTopbar = cn(
+  "shell-drag flex min-h-[54px] shrink-0 items-center justify-between gap-4 border-b border-[var(--relay-line)]",
+  "bg-[rgb(9_11_16/94%)] px-4 backdrop-blur-xl",
+);
+
+export const shellTopbarContext = "flex min-w-0 items-center gap-2";
+export const shellTopbarActions = "flex items-center gap-2.5";
+
+export const shellBreadcrumb = cn(
+  "flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--relay-text-tertiary)]",
+  "[&_strong]:min-w-0 [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap",
+  "[&_strong]:font-medium [&_strong]:text-[var(--relay-text-secondary)]",
+);
+
+export const shellRecord = cn(
+  "inline-flex min-h-[38px] items-center justify-center gap-[7px] rounded-[10px] px-3.5",
+  "text-[13px] font-semibold text-white select-none",
+  "bg-[#705ff0] shadow-[inset_0_1px_rgb(255_255_255/18%),0_7px_22px_rgb(89_69_214/18%)]",
+  "transition-[color,background-color,box-shadow,transform] duration-150",
+  "hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.97]",
+  "disabled:cursor-not-allowed disabled:bg-[var(--relay-surface-raised)] disabled:text-[var(--relay-text-tertiary)]",
+  "disabled:shadow-[inset_0_0_0_1px_var(--relay-line)]",
+  "data-[blocked]:cursor-not-allowed data-[blocked]:bg-[var(--relay-surface-raised)] data-[blocked]:text-[var(--relay-text-tertiary)]",
+);
+
+export const shellRecordActive = "bg-[#d94c5c] hover:enabled:bg-[#d94c5c]";
+
+export const shellRecordDot = "size-[7px] shrink-0 rounded-full bg-current";
+
+/** Recording creates a test; it should not compete with the primary Run action. */
+export const shellCapture = cn(
+  "inline-flex min-h-[36px] items-center justify-center gap-[7px] rounded-[9px] px-3",
+  "text-[12.5px] font-semibold text-[var(--relay-text-secondary)] select-none",
+  "bg-[var(--relay-surface-raised)] shadow-[inset_0_0_0_1px_var(--relay-line-strong)]",
+  "transition-[color,background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]",
+  "hover:enabled:bg-[var(--relay-surface-strong)] hover:enabled:text-[var(--relay-text)] active:enabled:scale-[0.97]",
+  "disabled:cursor-not-allowed disabled:text-[var(--relay-text-tertiary)]",
+  "data-[blocked]:cursor-not-allowed data-[blocked]:text-[var(--relay-text-tertiary)]",
+);
+
+export const shellCaptureActive = cn(
+  "bg-[color-mix(in_srgb,var(--relay-red)_14%,var(--relay-surface-raised))] text-[var(--relay-red)]",
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-red)_38%,transparent)]",
+);
+
+export const shellStudio = "flex min-h-0 min-w-0 flex-1 flex-col";
+
+export const shellStudioBar = cn(
+  "shell-drag flex min-h-11 shrink-0 items-center justify-between border-b border-[var(--relay-line)] px-3.5",
+  "bg-[color-mix(in_srgb,var(--relay-panel)_72%,var(--relay-bg))]",
+);
+
+export const shellViewTabs = "flex items-center gap-1";
+
+export const shellViewTab = cn(
+  "inline-flex min-h-[30px] items-center gap-[7px] rounded-lg px-2.5",
+  "text-[12px] font-medium text-[var(--relay-text-tertiary)] transition-colors",
+  "hover:enabled:bg-white/[0.06] hover:enabled:text-[var(--relay-text)]",
+  "disabled:cursor-not-allowed disabled:opacity-40",
+);
+
+export const shellViewTabActive = cn(
+  "bg-[var(--relay-surface-strong)] text-[var(--relay-text)]",
+  "shadow-[inset_0_0_0_1px_var(--relay-line-strong)]",
+);
+
+export const shellCount = cn(
+  "grid h-[18px] min-w-[18px] place-items-center rounded-[5px] bg-white/[0.05]",
+  "font-mono text-[9px] text-[var(--relay-text-tertiary)]",
+);
+
+export const shellSaveState = "mr-1.5 text-[11px] text-[var(--relay-text-tertiary)]";
+
+export const shellStudioBody = cn(
+  "grid min-h-0 min-w-0 flex-1",
+  "grid-cols-[minmax(360px,1fr)_clamp(350px,34vw,480px)]",
+  "max-[1120px]:min-[901px]:grid-cols-[minmax(320px,1fr)_clamp(320px,38vw,410px)]",
+  "max-[900px]:grid-cols-1",
+);
+
+/**
+ * Journey cannot be composed with `shellStudioBody`: both recipes set
+ * grid-template-columns, and utility stylesheet order would decide which one
+ * wins. Keep this as a complete grid recipe and select it directly.
+ */
+export const shellStudioBodyJourney = cn(
+  "grid min-h-0 min-w-0 flex-1",
+  "grid-cols-[252px_minmax(420px,1fr)_372px]",
+  "max-[1380px]:min-[901px]:grid-cols-[218px_minmax(360px,1fr)_326px]",
+  "max-[900px]:grid-cols-1",
+);
+
+export const shellStudioBodyMap = "block overflow-hidden";
+
+export const shellStageWrap = cn(
+  "relative min-h-0 min-w-0 overflow-hidden",
+  "bg-[color-mix(in_srgb,var(--relay-bg)_91%,black)]",
+  "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:content-['']",
+  "before:bg-[radial-gradient(circle_at_50%_38%,rgb(139_124_255/10%),transparent_44%),radial-gradient(circle_at_1px_1px,rgb(255_255_255/3%)_1px,transparent_0)] before:bg-size-[auto,20px_20px]",
+  "[&>*]:relative [&>*]:z-[1]",
+);
+
+export const shellSteps = cn(
+  "flex min-h-0 min-w-0 flex-col border-l border-[var(--relay-line)] bg-[var(--relay-panel)]",
+);
+
+export const shellStepsHead =
+  "relative shrink-0 border-b border-[var(--relay-line)] px-[18px] pt-[18px] pb-3.5";
+
+export const shellStepsBody = "min-h-0 min-w-0 flex-1 overflow-hidden";
+
+export const shellHealth = "inline-block size-1.5 shrink-0 rounded-full bg-[var(--relay-red)]";
+export const shellHealthOnline = "bg-[var(--relay-green)]";
+
+export const shellDragStrip =
+  "shell-drag-strip pointer-events-none fixed top-0 right-0 left-[var(--traffic-pad,0px)] z-[100] hidden h-3";

@@ -196,7 +196,7 @@ export const modalScrim = "ui-scrim fixed inset-0 z-[90]";
 
 const stepIndexShell = cn(
   mono,
-  "grid size-[22px] shrink-0 place-items-center rounded-[5px]",
+  "grid size-[26px] shrink-0 place-items-center rounded-[7px]",
   "text-12-medium leading-none tabular-nums",
 );
 
@@ -216,6 +216,102 @@ export const kindPill = cn(
   "text-12-medium tracking-wide text-text-base",
   "bg-surface-base ring-1 ring-inset ring-border-weak-base",
 );
+
+/* ─── Product chrome (studio / pages) — prefer these over .relay-* CSS ─── */
+
+/** Uppercase section label used across shell surfaces */
+export const eyebrow = cn(
+  "block text-[11px]/[1.2] font-semibold tracking-[0.09em] text-text-weak uppercase",
+);
+
+const productControl = cn(
+  "inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-[10px] px-3.5",
+  "text-[13px] font-semibold select-none",
+  "transition-[color,background-color,box-shadow,transform] duration-150",
+  "active:enabled:scale-[0.97]",
+  "disabled:cursor-not-allowed",
+);
+
+/** Brand/product primary CTA (tests, maps, run actions) — same purple as Record/Run */
+export const productPrimary = cn(
+  productControl,
+  "bg-[#705ff0] text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_7px_22px_rgb(89_69_214/18%)]",
+  "hover:enabled:bg-[#7d6df5]",
+  "disabled:bg-surface-raised-strong disabled:text-text-weaker disabled:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
+  "data-[blocked]:cursor-not-allowed data-[blocked]:bg-surface-raised-strong data-[blocked]:text-text-weaker data-[blocked]:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
+);
+
+/** Quiet secondary control */
+export const productSecondary = cn(
+  productControl,
+  "bg-surface-raised-strong text-text-base shadow-[inset_0_0_0_1px_var(--border-weak-hover)]",
+  "hover:enabled:bg-surface-raised-stronger-non-alpha hover:enabled:text-text-strong",
+  "disabled:bg-background-base disabled:text-text-weaker disabled:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
+);
+
+/** 34×34 chrome icon button */
+export const productIconButton = cn(
+  "inline-grid size-[34px] shrink-0 place-items-center rounded-[9px] text-text-base select-none",
+  "transition-[color,background-color,transform] duration-150",
+  "hover:enabled:bg-white/[0.06] hover:enabled:text-text-strong",
+  "active:enabled:scale-[0.97]",
+  "disabled:cursor-not-allowed disabled:opacity-35",
+);
+
+export const productIconButtonSolid = cn(
+  productIconButton,
+  "bg-surface-raised-strong text-text-strong shadow-[inset_0_0_0_1px_var(--border-weak-hover)]",
+);
+
+export const productIconButtonDanger = cn(
+  productIconButton,
+  "hover:enabled:text-icon-critical-base",
+);
+
+/** Scrollable product page (data / runs / settings-style surfaces) */
+export const productPage = cn(
+  "min-h-0 flex-1 overflow-y-auto bg-v2-background-bg-deep",
+  "pt-8 pb-14 px-[clamp(1.5rem,4vw,3.5rem)]",
+);
+
+export const productPageHero = cn(
+  "mx-auto mb-8 flex max-w-[1180px] items-start justify-between gap-6",
+);
+
+export const productPageTitle = cn(
+  "m-0 text-[30px] font-semibold leading-[1.12] tracking-[-0.035em] text-balance text-text-strong",
+);
+
+export const productPageLead = cn("m-0 max-w-[720px] text-[13px]/[1.45] text-text-base");
+
+/* Colorless base — tones append exactly one text- and one bg- pair (cn never merges). */
+const statusBase = cn(
+  "inline-flex w-fit min-h-[22px] items-center gap-1 rounded-md px-2",
+  "text-[11px] font-semibold ring-1 ring-inset",
+);
+
+/** Job/run status chip — pass the job status or a simplified tone. */
+export function productStatus(tone: string): string {
+  if (tone === "ok" || tone === "healed") {
+    return cn(
+      statusBase,
+      "text-icon-success-base bg-surface-success-weak ring-border-success-base/35",
+    );
+  }
+  if (tone === "error" || tone === "cancelled") {
+    return cn(
+      statusBase,
+      "text-icon-critical-base bg-surface-critical-weak ring-border-critical-base/35",
+    );
+  }
+  if (tone === "running" || tone === "paused" || tone === "queued") {
+    return cn(
+      statusBase,
+      "text-text-interactive-base bg-surface-interactive-weak ring-border-interactive-base/35",
+    );
+  }
+  return cn(statusBase, "text-text-base bg-surface-raised-strong ring-border-weak-base");
+}
 
 export function kindPillTone(kind: string): string {
   switch (kind) {
