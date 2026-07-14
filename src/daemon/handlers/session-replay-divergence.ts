@@ -1,14 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { contextFromFlags } from '../context.ts';
 import { markSessionPartialRefsIssued, setSessionSnapshot } from '../session-snapshot.ts';
 import { isSparseSnapshotQualityVerdict } from '../../snapshot/snapshot-quality.ts';
 import { displayLabel, formatRole } from '../../snapshot/snapshot-lines.ts';
 import { redactDiagnosticData } from '../../kernel/redaction.ts';
+import type { CommandFlags } from '../../core/dispatch.ts';
 import type { DaemonError, ResponseLevel } from '../../kernel/contracts.ts';
-import type { RawSnapshotNode, SnapshotBackend, SnapshotNode } from '../../kernel/snapshot.ts';
-import { buildSnapshotState } from './snapshot-capture.ts';
+import type { SnapshotNode } from '../../kernel/snapshot.ts';
+import { captureSnapshot } from './snapshot-capture.ts';
 import {
   buildSelectorChainForNode,
   resolveSelectorChain,
@@ -199,10 +198,35 @@ export function toReplayRepairHintCapture(
 }
 
 /**
- * The single post-failure capture, blessed via the standard ref-issuing
- * sequence (setSessionSnapshot -> markSessionSnapshotRefsIssued -> store).
+ * The single post-failure capture, blessed via the ADR-0014 partial ref-issuing
+ * sequence (setSessionSnapshot -> markSessionPartialRefsIssued -> store): a
+ * divergence screen publishes only its bounded ref set, so it activates a
+ * PARTIAL frame authorizing exactly those bodies, not a complete namespace.
  * Sparse captures do not write back (selector-capture reliability contract),
  * so a sparse verdict degrades the whole observation.
+ *
+ * ADR 0012 decision 4 amendment (#1264): this routes through `captureSnapshot`
+ * — the EXACT wrapper the `snapshot` command's backend calls
+ * (`dispatchSnapshotViaRuntime` -> `createDaemonSnapshotBackend`), which owns
+ * Android freshness + post-action retry (`capturePostActionAwareSnapshot`) on
+ * top of the per-platform capture (Android snapshot-helper full-window route
+ * with its graceful app-scoped fallback; iOS bounded system-modal probe path;
+ * macOS/Linux surface-scoped branches). Calling the inner single-shot
+ * `captureSnapshotData` instead would let a divergence consume a first stale /
+ * app-scoped dump while a plain `snapshot` retries to the fresh full-window
+ * tree — a divergence STALER or NARROWER than `snapshot`, which is exactly the
+ * invariant this amendment forbids: an agent must never see a healthier
+ * `screen` in a divergence report than a plain `snapshot` would show it.
+ *
+ * The capture flags are a CLEAN, fixed divergence-capture policy, NOT the
+ * failed action's flags: `snapshotRaw`/`snapshotScope`/`snapshotDepth` from a
+ * failed `snapshot --raw`/scoped/`-d` action would narrow or reshape the
+ * diagnostic tree below what a plain `snapshot` shows, so they are dropped. The
+ * only carried policy is interactive-only (`divergenceCaptureInteractiveOnly` —
+ * full for non-rect `get`/`is`/`wait` reads so static-text targets survive,
+ * interactive otherwise), matching heal's long-standing rule. The chrome filter
+ * (`collectSettleChromeRefs`) and the meaningful-target filter stay layered ON
+ * TOP of this full capture as FILTERS, never as a narrower scoping.
  */
 export async function captureDivergenceObservation(params: {
   session: SessionState;
@@ -212,25 +236,15 @@ export async function captureDivergenceObservation(params: {
   action: SessionAction;
 }): Promise<DivergenceObservation> {
   const { session, sessionName, sessionStore, logPath, action } = params;
-  const snapshotInteractiveOnly = divergenceCaptureInteractiveOnly(action);
+  const flags = divergenceCaptureFlags(action);
   try {
-    const data = (await dispatchCommand(session.device, 'snapshot', [], undefined, {
-      ...contextFromFlags(
-        logPath,
-        { ...(action.flags ?? {}), snapshotInteractiveOnly },
-        session.appBundleId,
-        session.trace?.outPath,
-      ),
-    })) as {
-      nodes?: RawSnapshotNode[];
-      truncated?: boolean;
-      backend?: SnapshotBackend;
-      quality?: unknown;
-    };
-    const snapshot = buildSnapshotState(data, {
-      ...(action.flags ?? {}),
-      snapshotInteractiveOnly,
+    const capture = await captureSnapshot({
+      device: session.device,
+      session,
+      flags,
+      logPath,
     });
+    const snapshot = capture.snapshot;
     if (isSparseSnapshotQualityVerdict(snapshot.snapshotQuality)) {
       return {
         state: 'unavailable',
@@ -239,19 +253,17 @@ export async function captureDivergenceObservation(params: {
       };
     }
     setSessionSnapshot(session, snapshot);
-    // ADR 0014: the divergence screen digest publishes only its capped,
-    // non-covered, non-chrome refs — the same set `buildReplayDivergenceScreenRefs`
-    // renders. Activate a PARTIAL frame authorizing exactly those bodies.
-    const chromeRefs = collectSettleChromeRefs(snapshot.nodes, session.appBundleId);
-    const digestBodies = snapshot.nodes
-      .filter(
-        (node) =>
-          node.ref !== undefined &&
-          node.interactionBlocked !== 'covered' &&
-          !chromeRefs.has(node.ref),
-      )
-      .slice(0, SCREEN_REF_CAPTURE_LIMIT)
-      .map((node) => node.ref as string);
+    // ADR 0014 (#1257) + #1264: the divergence screen publishes exactly the
+    // ranked, occlusion-resolved, capped ref set `screen.refs` renders. Activate
+    // a PARTIAL frame authorizing precisely THOSE bodies — derived from the same
+    // `selectDivergenceScreenRefNodes` the digest uses, so the frame never
+    // authorizes a ref the screen hides (over-pin risk) nor rejects one the
+    // screen advertised (e.g. the mass-covered fallback surfaces covered refs
+    // that the old non-covered-only filter would have excluded here).
+    const digestBodies = selectDivergenceScreenRefNodes(
+      snapshot.nodes,
+      session.appBundleId,
+    ).nodes.map((node) => node.ref as string);
     markSessionPartialRefsIssued(session, digestBodies);
     sessionStore.set(sessionName, session);
     return {
@@ -267,6 +279,17 @@ export async function captureDivergenceObservation(params: {
       hint: `Post-failure snapshot capture failed (${error instanceof Error ? error.message : String(error)}); the original replay failure is unaffected.`,
     };
   }
+}
+
+/**
+ * The clean, fixed flags for a divergence capture (#1264): full-window
+ * (no `snapshotScope`), non-raw (no `snapshotRaw`), default depth (no
+ * `snapshotDepth`) — a failed scoped/raw/depth-limited action must never
+ * produce a narrowed divergence `screen`. Only the interactive-only policy is
+ * carried, since it governs whether static-text suggestion targets survive.
+ */
+function divergenceCaptureFlags(action: SessionAction): CommandFlags {
+  return { snapshotInteractiveOnly: divergenceCaptureInteractiveOnly(action) };
 }
 
 /**
@@ -324,6 +347,80 @@ function isMeaningfulDivergenceTarget(node: SnapshotNode): boolean {
   return Boolean(displayLabel(node, formatRole(node.type ?? 'Element'))) || node.hittable === true;
 }
 
+/**
+ * ADR 0012 decision 4 amendment (#1264): a hittable node owned by a window
+ * OTHER than the app under test — a system-overlay window (volume dialog,
+ * quick-settings shade, permission dialog) whose actionable nodes are the
+ * dismiss targets for whatever is covering the app. Ownership is the node's own
+ * `bundleId`/package: Android sets it per node from the accessibility `package`,
+ * so a systemui/permission-controller/`android` node reads as foreign; iOS and
+ * macOS leave per-node `bundleId` undefined, so this is inert there (those
+ * platforms surface separate-window modals through the dedicated probe path,
+ * not by cap-competing with app content). Guarded on a known `appBundleId` so a
+ * sessionless capture never reorders — without an app identity there is no
+ * "foreign" to promote.
+ */
+function isForeignOverlayDismissTarget(
+  node: SnapshotNode,
+  appBundleId: string | undefined,
+): boolean {
+  return (
+    appBundleId !== undefined &&
+    node.bundleId !== undefined &&
+    node.bundleId !== appBundleId &&
+    node.hittable === true
+  );
+}
+
+/**
+ * The single source of truth for which nodes a divergence `screen.refs`
+ * publishes, and in what order. Both the rendered `screen.refs` digest
+ * (`buildReplayDivergenceScreenRefs`) AND the ADR-0014 partial ref frame the
+ * capture authorizes (`captureDivergenceObservation` →
+ * `markSessionPartialRefsIssued`) derive from THIS function, so the authorized
+ * ref set is exactly the set the agent is shown — never a superset it can pin
+ * refs outside of, nor a subset that rejects a ref the screen advertised.
+ * Returns the capped node list plus whether ranking overflowed the cap.
+ */
+function selectDivergenceScreenRefNodes(
+  nodes: SnapshotNode[],
+  appBundleId: string | undefined,
+): { nodes: SnapshotNode[]; truncated: boolean } {
+  // Keyboard/IME chrome must not consume the ref budget: it reuses the exact
+  // structural classifier `--settle`'s tail already relies on (#1198/#1200)
+  // rather than a second keyboard/IME node-type list.
+  const chromeRefs = collectSettleChromeRefs(nodes, appBundleId);
+  const meaningful = nodes.filter(
+    (node) => node.ref && !chromeRefs.has(node.ref) && isMeaningfulDivergenceTarget(node),
+  );
+  // Occlusion fallback (#1264): a `covered` node is normally dropped — an agent
+  // cannot tap what an overlay hides. But when a system overlay MASS-COVERS the
+  // app, EVERY app node is annotated `covered`; dropping them all would emit an
+  // empty `screen.refs` while the capture plainly holds meaningful nodes — a
+  // report broken by construction (the agent is shown nothing to act on). So
+  // `covered` nodes are excluded only while non-covered candidates remain; if
+  // the entire meaningful surface is covered, they are surfaced rather than
+  // returning empty.
+  const visible = meaningful.filter((node) => node.interactionBlocked !== 'covered');
+  const pool = visible.length > 0 ? visible : meaningful;
+  // Rank within the cap instead of slicing document order (#1264 cap burial):
+  // `SCREEN_REF_CAPTURE_LIMIT` is a BYTE bound, NOT a "first 20 in tree order"
+  // policy. A separate-window overlay enumerates AFTER the app window's nodes,
+  // so on a realistic tree its dismiss target sits past position 20 and is
+  // truncated away even though it was captured. Foreign-bundle hittable overlay
+  // nodes (the dismiss targets) are promoted ahead of app content; ordering is
+  // otherwise STABLE — document order is preserved within each tier, so
+  // equal-priority app nodes are never reshuffled. `repairHint`/`suggestions`
+  // consume the FULL captured node list, not this slice, so hint routing is
+  // unaffected; only the agent-visible `screen.refs` selection changes.
+  const ranked = [
+    ...pool.filter((node) => isForeignOverlayDismissTarget(node, appBundleId)),
+    ...pool.filter((node) => !isForeignOverlayDismissTarget(node, appBundleId)),
+  ];
+  const selected = ranked.slice(0, SCREEN_REF_CAPTURE_LIMIT);
+  return { nodes: selected, truncated: ranked.length > selected.length };
+}
+
 function buildReplayDivergenceScreenRefs(
   nodes: SnapshotNode[],
   sanitize: DivergenceFieldSanitizer,
@@ -332,18 +429,8 @@ function buildReplayDivergenceScreenRefs(
   refs: ReplayDivergenceScreenRef[];
   truncated: boolean;
 } {
-  // Keyboard/IME chrome must not consume the ref budget: it reuses the exact
-  // structural classifier `--settle`'s tail already relies on (#1198/#1200)
-  // rather than a second keyboard/IME node-type list.
-  const chromeRefs = collectSettleChromeRefs(nodes, appBundleId);
-  const candidates = nodes.filter(
-    (node) =>
-      node.ref &&
-      node.interactionBlocked !== 'covered' &&
-      !chromeRefs.has(node.ref) &&
-      isMeaningfulDivergenceTarget(node),
-  );
-  const refs = candidates.slice(0, SCREEN_REF_CAPTURE_LIMIT).map((node) => {
+  const { nodes: selected, truncated } = selectDivergenceScreenRefNodes(nodes, appBundleId);
+  const refs = selected.map((node) => {
     const role = formatRole(node.type ?? 'Element');
     const label = displayLabel(node, role);
     return {
@@ -352,7 +439,7 @@ function buildReplayDivergenceScreenRefs(
       ...(label ? { label: sanitize(label) } : {}),
     };
   });
-  return { refs, truncated: candidates.length > refs.length };
+  return { refs, truncated };
 }
 
 const BASIS_RANK: Record<ReplayDivergenceSuggestionBasis, number> = {
