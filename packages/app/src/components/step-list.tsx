@@ -32,6 +32,11 @@ export function RecipeStepsEditor(): JSX.Element {
 
   const wb = useWorkbench();
 
+  createEffect(() => {
+    const requested = draft.expandedStep();
+    if (requested !== expanded()) setExpanded(requested);
+  });
+
   function setOpen(i: number | null): void {
     setExpanded(i);
     draft.setExpandedStep(i);

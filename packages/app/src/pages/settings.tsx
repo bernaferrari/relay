@@ -633,17 +633,17 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
   };
 
   const SECTIONS = [
-    ["appearance", "Appearance"],
     ["targets", "Targets"],
     ["matrices", "Test environments"],
-    ["server", "Server"],
-    ["recipes", "Accounts"],
+    ["recipes", "Providers & accounts"],
+    ["server", "Connection"],
+    ["appearance", "Appearance"],
     ["about", "About"],
   ] as const;
 
   return (
     <div
-      class={cn(modalScrim, "flex items-start justify-center px-5 pt-[8vh] pb-5")}
+      class={cn(modalScrim, "flex items-start justify-center px-5 pt-[5vh] pb-5")}
       onClick={(e) => {
         if (e.target === e.currentTarget) props.onClose();
       }}
@@ -655,7 +655,10 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
       }}
     >
       <div
-        class={cn(modalPanel, "flex max-h-[84vh] w-[min(620px,100%)] flex-col")}
+        class={cn(
+          modalPanel,
+          "flex max-h-[90vh] w-[min(920px,100%)] flex-col overflow-hidden rounded-2xl",
+        )}
         ref={(el) => {
           dialogRef = el;
         }}
@@ -675,7 +678,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
             <Icon name="x" size={14} />
           </IconButton>
         </div>
-        <main class="grid min-h-0 flex-1 grid-cols-[160px_1fr]">
+        <main class="grid min-h-0 flex-1 grid-cols-[210px_1fr]">
           <nav
             class="flex flex-col gap-px border-r border-border-weak-base bg-background-base p-2 text-text-strong"
             aria-label="Settings sections"

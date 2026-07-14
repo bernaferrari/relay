@@ -342,8 +342,17 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
         <button
           type="button"
           class="relay-primary"
-          disabled={!targetReady()}
-          onClick={() => void start()}
+          data-blocked={!targetReady() ? "" : undefined}
+          data-tip={
+            targetReady() ? "Start mapping this app" : "Choose a ready target from the top bar"
+          }
+          onClick={() => {
+            if (!targetReady()) {
+              toast("Choose or start a target from the top bar before mapping.", "warning");
+              return;
+            }
+            void start();
+          }}
         >
           <Icon name="plus" size={14} /> Start mapping
         </button>

@@ -102,9 +102,14 @@ export function DataWorkspace(props: { onConfigureProvider: () => void }) {
             Prepare fresh inputs before a run while keeping every test deterministic and debuggable.
           </p>
         </div>
-        <button type="button" class="relay-primary" onClick={addRow}>
-          <Icon name="plus" size={15} /> New variable
-        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" class="relay-secondary" onClick={props.onConfigureProvider}>
+            Generation settings
+          </button>
+          <button type="button" class="relay-primary" onClick={addRow}>
+            <Icon name="plus" size={15} /> New variable
+          </button>
+        </div>
       </div>
       <div
         class={cn(
@@ -113,22 +118,6 @@ export function DataWorkspace(props: { onConfigureProvider: () => void }) {
         )}
       >
         <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger">
-          <div class="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 border-b border-border-weak-base bg-surface-interactive-weak p-3">
-            <span class="grid size-9 place-items-center rounded-lg bg-surface-info-weak text-text-info-base">
-              <Icon name="sparkle" size={17} />
-            </span>
-            <span class="min-w-0">
-              <strong class="block text-[13px]/[1.25] text-text-base">
-                Fresh values, consistent runs
-              </strong>
-              <small class="mt-1 block text-[11px]/[1.3] text-text-weak">
-                Create inputs before a run, then keep the exact value with its result.
-              </small>
-            </span>
-            <button type="button" class="relay-secondary" onClick={props.onConfigureProvider}>
-              Generation settings
-            </button>
-          </div>
           <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-[10px]/[1.25] font-semibold tracking-wide text-text-weaker uppercase">
             <span>Variable</span>
             <span>Source</span>

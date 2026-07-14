@@ -12,6 +12,7 @@ export type IconName =
   | "chevron-up"
   | "chevron-down"
   | "chevron-right"
+  | "chevron-left"
   | "play"
   | "pause"
   | "square"
@@ -57,6 +58,7 @@ type Path = { d: string; fill?: boolean };
 const STROKE: Record<string, Path[]> = {
   "chevron-down": [{ d: "m6 9 6 6 6-6" }],
   "chevron-right": [{ d: "m9 18 6-6-6-6" }],
+  "chevron-left": [{ d: "m15 18-6-6 6-6" }],
   "chevron-up": [{ d: "m18 15-6-6-6 6" }],
   refresh: [{ d: "M3 12a9 9 0 1 0 3-6.7" }, { d: "M3 4v4h4" }],
   search: [{ d: "M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" }, { d: "m21 21-4.3-4.3" }],

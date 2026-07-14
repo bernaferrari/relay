@@ -235,9 +235,23 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
   const root = runsRoot();
   try {
     const entries = await readdir(root);
-    const match =
+    let match =
       entries.find((e) => e === needle || e.endsWith(`_${needle}`) || e.startsWith(`${needle}_`)) ??
       null;
+    if (!match) {
+      for (const entry of entries) {
+        try {
+          const raw = await readFile(join(root, entry, "run.json"), "utf8");
+          const parsed = JSON.parse(raw) as Pick<PersistedRun, "id">;
+          if (parsed.id === needle) {
+            match = entry;
+            break;
+          }
+        } catch {
+          /* skip incomplete or non-run directories */
+        }
+      }
+    }
     if (!match) return null;
     const dir = join(root, match);
     const raw = await readFile(join(dir, "run.json"), "utf8");

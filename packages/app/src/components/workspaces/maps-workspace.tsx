@@ -69,20 +69,25 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   return (
     <section class="relay-page relay-explore-page">
       <header class="relay-explore-toolbar">
-        <label class="relay-map-view-picker">
-          <span>View</span>
-          <select
-            aria-label="Product map view"
-            value={mode()}
-            onChange={(event) =>
-              setMode(event.currentTarget.value as "atlas" | "workflows" | "discovery")
-            }
-          >
-            <option value="discovery">Observed screens</option>
-            <option value="workflows">Reusable flows</option>
-            <option value="atlas">Coverage</option>
-          </select>
-        </label>
+        <div class="relay-map-segments" role="tablist" aria-label="Product map view">
+          {(
+            [
+              ["discovery", "Product"],
+              ["atlas", "Coverage"],
+              ["workflows", "Reuse"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode() === id}
+              class={cn(mode() === id && "is-active")}
+              onClick={() => setMode(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <Show when={mode() === "workflows" && workflows().length > 0}>
           <button type="button" class="relay-primary" onClick={() => void createWorkflow()}>
             <Icon name="plus" size={15} /> New workflow

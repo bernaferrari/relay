@@ -12,6 +12,50 @@ export type FrameCanvasItem = {
   edgeLabel?: string;
 };
 
+export function runFrameCanvasItems(input: {
+  job: JobInfo;
+  persistedFrameUrl: (run: PersistedRun, frame: TraceFrameRef) => string;
+}): FrameCanvasItem[] {
+  const frames = [
+    ...(input.job.frames ?? []),
+    ...(input.job.steps?.flatMap((step) => step.frames ?? []) ?? []),
+  ].filter(
+    (frame, index, all) =>
+      all.findIndex(
+        (candidate) => candidate.path === frame.path && candidate.capturedAt === frame.capturedAt,
+      ) === index,
+  );
+  const run = input.job as unknown as PersistedRun;
+  return frames.map((frame, index) => {
+    const step = input.job.steps?.find((candidate) =>
+      candidate.frames?.some(
+        (candidateFrame) =>
+          candidateFrame.path === frame.path && candidateFrame.capturedAt === frame.capturedAt,
+      ),
+    );
+    const caption = frame.caption || step?.title || `State ${index + 1}`;
+    const status = step
+      ? (stepStatusFromRun([step], 0) as ScreenNode["status"])
+      : input.job.status === "error" && index === frames.length - 1
+        ? "fail"
+        : input.job.status === "healed"
+          ? "heal"
+          : input.job.status === "ok"
+            ? "pass"
+            : "idle";
+    return {
+      id: `run-${input.job.id}-${index}`,
+      index,
+      caption,
+      src: frame.base64
+        ? `data:${frame.mime || "image/png"};base64,${frame.base64}`
+        : input.persistedFrameUrl(run, frame),
+      status,
+      edgeLabel: index === 0 ? undefined : shortLabel(step?.title ?? caption),
+    };
+  });
+}
+
 export function frameCanvasItems(input: {
   reviewed: RunChip | null;
   liveFrames: readonly Frame[];

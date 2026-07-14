@@ -10,8 +10,10 @@ import {
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { DeviceStage } from "./stage";
+import { FrameCanvas } from "./frame-canvas";
 import { RecipeStepsEditor } from "./step-list";
 import { JourneyWorkspace } from "./journey-workspace";
+import { JourneyInspector, JourneyOutline } from "./journey-chrome";
 import { DevicePicker } from "./device-picker";
 import { LibraryPanel } from "./studio-library";
 import { AgentTestComposer } from "./agent-test-composer";
@@ -27,15 +29,17 @@ import { matrixRunPreview } from "../lib/matrix-presentation";
 import { nextRovingIndex } from "../lib/roving-focus";
 import { modalPanel, modalScrim } from "../lib/ui";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
+import { sentenceForStep } from "../lib/step-sentence";
+import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
 import type { SettingsSection } from "../pages/settings";
 
-type ProductArea = "tests" | "runs" | "data";
-type StudioView = "live" | "journey" | "map";
+type ProductArea = "tests" | "runs" | "map" | "data";
+type StudioView = "live" | "journey";
 
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
   { id: "runs", label: "Runs", icon: "wave" },
-  { id: "data", label: "Data", icon: "sparkle" },
+  { id: "map", label: "Map", icon: "move" },
 ];
 
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
@@ -49,6 +53,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [query, setQuery] = createSignal("");
   const [libraryOpen, setLibraryOpen] = createSignal(true);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
+  const [newTestOpen, setNewTestOpen] = createSignal(false);
   const [importReview, setImportReview] = createSignal<{
     yaml: string;
     recipe: RecipeInfo;
@@ -76,14 +81,17 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         )
       : rows;
   });
-  async function createTest(record = false): Promise<void> {
+  async function createTest(record = false, description = ""): Promise<void> {
     const saved = await server.saveRecipeRemote({
-      title: nextUntitledTitle(server.recipes()),
-      description: "",
+      title: description
+        ? titleFromPrompt(description, server.recipes())
+        : nextUntitledTitle(server.recipes()),
+      description,
       steps: [],
     });
     if (!saved) return;
     server.setSelectedRecipeId(saved.id);
+    setNewTestOpen(false);
     setArea("tests");
     setStudioView("live");
     if (record) recorder.enterRecordMode();
@@ -130,6 +138,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.setSelectedRecipeId(id);
     setArea("tests");
     setStudioView("live");
+    setLibraryOpen(true);
   }
 
   return (
@@ -154,7 +163,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   type="button"
                   class={cn("relay-rail__item", active() && "is-active")}
                   aria-current={active() ? "page" : undefined}
-                  onClick={() => setArea(item.id)}
+                  onClick={() => {
+                    setArea(item.id);
+                    setLibraryOpen(item.id === "tests");
+                  }}
                 >
                   <Icon name={item.icon} size={18} />
                   <span>{item.label}</span>
@@ -184,7 +196,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           items={filteredRecipes()}
           selectedId={server.selectedRecipeId()}
           onSelect={openRecipe}
-          onCreate={() => void createTest(false)}
+          onCreate={() => setNewTestOpen(true)}
           onImport={importTestYaml}
         />
       </Show>
@@ -192,7 +204,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       <main class="relay-main">
         <header class="relay-topbar">
           <div class="relay-topbar__context">
-            <Show when={area() === "tests"}>
+            <Show when={area() === "tests" && studioView() === "live"}>
               <button
                 type="button"
                 class="relay-icon-button"
@@ -208,10 +220,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <strong>
                 {area() === "runs"
                   ? "Run history"
-                  : area() === "data"
-                    ? "Test data"
-                    : studioView() === "map"
-                      ? "Product map"
+                  : area() === "map"
+                    ? "Product map"
+                    : area() === "data"
+                      ? "Test data"
                       : selected()
                         ? displayTitle(selected()!.title)
                         : "Test studio"}
@@ -220,11 +232,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           </div>
           <div class="relay-topbar__actions">
             <DevicePicker />
-            <Show when={area() === "tests" && studioView() !== "map"}>
+            <Show when={area() === "tests" && selected() && studioView() === "live"}>
               <button
                 type="button"
                 class={cn("relay-record", recorder.recording() && "is-recording")}
-                disabled={!recorder.recording() && Boolean(recordBlockedReason())}
                 data-tip={
                   recorder.recording()
                     ? "Stop recording"
@@ -236,6 +247,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 onClick={() => {
                   if (recorder.recording()) {
                     void recorder.stopRecording();
+                    return;
+                  }
+                  if (recordBlockedReason()) {
+                    toast(recordBlockedReason(), "warning");
+                    props.onOpenSettings("targets");
                     return;
                   }
                   if (server.health() !== "online") {
@@ -262,121 +278,137 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
         <Show when={area() === "tests"}>
           <section class="relay-studio">
-            <div class="relay-studio__bar">
-              <div class="relay-view-tabs" role="tablist" aria-label="Test view">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={studioView() === "live"}
-                  class={cn(studioView() === "live" && "is-active")}
-                  disabled={!selected()}
-                  onClick={() => setStudioView("live")}
-                >
-                  <Icon name="smartphone" size={15} /> Live device
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={studioView() === "journey"}
-                  class={cn(studioView() === "journey" && "is-active")}
-                  disabled={
-                    !selected() || (draft.steps().length === 0 && server.frames().length === 0)
-                  }
-                  onClick={() => setStudioView("journey")}
-                >
-                  <Icon name="move" size={15} /> Journey
-                  <span class="relay-count">{server.frames().length || draft.steps().length}</span>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={studioView() === "map"}
-                  class={cn(studioView() === "map" && "is-active")}
-                  onClick={() => {
-                    setStudioView("map");
-                    setLibraryOpen(false);
-                  }}
-                >
-                  <Icon name="grid" size={15} /> Product map
-                </button>
-              </div>
-              <div class="relay-studio__tools">
-                <Show when={selected() && studioView() !== "map"}>
-                  <span class="relay-save-state">
-                    {draft.saveState() === "saving"
-                      ? "Saving…"
-                      : draft.saveState() === "invalid"
-                        ? `${draft.invalidCount()} incomplete`
-                        : "All changes saved"}
-                  </span>
+            <Show when={selected()}>
+              <div class="relay-studio__bar">
+                <div class="relay-view-tabs" role="tablist" aria-label="Test view">
                   <button
-                    class="relay-icon-button"
                     type="button"
-                    aria-label="More test options"
-                    aria-expanded={studioActionsOpen()}
-                    onClick={() => setStudioActionsOpen((open) => !open)}
+                    role="tab"
+                    aria-selected={studioView() === "live"}
+                    class={cn(studioView() === "live" && "is-active")}
+                    onClick={() => {
+                      setStudioView("live");
+                      setLibraryOpen(true);
+                    }}
                   >
-                    <Icon name="more" size={16} />
+                    <Icon name="smartphone" size={15} /> Build
                   </button>
-                  <Show when={studioActionsOpen()}>
-                    <div class="relay-studio-actions-menu" role="menu">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setStudioActionsOpen(false);
-                          void duplicateSelected();
-                        }}
-                      >
-                        <Icon name="copy" size={14} /> Duplicate test
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        class="is-danger"
-                        onClick={() => {
-                          setStudioActionsOpen(false);
-                          void deleteSelected();
-                        }}
-                      >
-                        <Icon name="trash" size={14} /> Delete test
-                      </button>
-                    </div>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={studioView() === "journey"}
+                    class={cn(studioView() === "journey" && "is-active")}
+                    disabled={draft.steps().length === 0 && server.frames().length === 0}
+                    onClick={() => {
+                      setStudioView("journey");
+                      setLibraryOpen(false);
+                    }}
+                  >
+                    <Icon name="move" size={15} /> Flow
+                    <span class="relay-count">
+                      {server.frames().length || draft.steps().length}
+                    </span>
+                  </button>
+                </div>
+                <div class="relay-studio__tools">
+                  <Show when={selected()}>
+                    <span class="relay-save-state">
+                      {draft.saveState() === "saving"
+                        ? "Saving…"
+                        : draft.saveState() === "invalid"
+                          ? `${draft.invalidCount()} incomplete`
+                          : "All changes saved"}
+                    </span>
+                    <button
+                      class="relay-icon-button"
+                      type="button"
+                      aria-label="More test options"
+                      aria-expanded={studioActionsOpen()}
+                      onClick={() => setStudioActionsOpen((open) => !open)}
+                    >
+                      <Icon name="more" size={16} />
+                    </button>
+                    <Show when={studioActionsOpen()}>
+                      <div class="relay-studio-actions-menu" role="menu">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setStudioActionsOpen(false);
+                            void duplicateSelected();
+                          }}
+                        >
+                          <Icon name="copy" size={14} /> Duplicate test
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          class="is-danger"
+                          onClick={() => {
+                            setStudioActionsOpen(false);
+                            void deleteSelected();
+                          }}
+                        >
+                          <Icon name="trash" size={14} /> Delete test
+                        </button>
+                      </div>
+                    </Show>
                   </Show>
-                </Show>
+                </div>
               </div>
-            </div>
-            <div class={cn("relay-studio__body", studioView() === "map" && "is-map")}>
+            </Show>
+            <div class={cn("relay-studio__body", studioView() === "journey" && "is-journey")}>
               <Show
-                when={studioView() === "map"}
+                when={selected()}
                 fallback={
+                  <TestWelcome
+                    onCreate={() => setNewTestOpen(true)}
+                    onRecord={() => void createTest(true)}
+                    onOpenSettings={props.onOpenSettings}
+                    recordBlockedReason={recordBlockedReason()}
+                  />
+                }
+              >
+                <Show when={studioView() === "journey"}>
+                  <JourneyOutline
+                    onBack={() => {
+                      setStudioView("live");
+                      setLibraryOpen(true);
+                    }}
+                  />
+                </Show>
+                <div class="relay-stage-wrap">
                   <Show
-                    when={selected()}
+                    when={studioView() === "live"}
                     fallback={
-                      <TestWelcome
-                        onCreate={() => void createTest(false)}
-                        onRecord={() => void createTest(true)}
-                        onOpenSettings={props.onOpenSettings}
-                        recordBlockedReason={recordBlockedReason()}
+                      <JourneyWorkspace
+                        onLive={() => {
+                          setStudioView("live");
+                          setLibraryOpen(true);
+                        }}
                       />
                     }
                   >
-                    <div class="relay-stage-wrap">
-                      <Show
-                        when={studioView() === "live"}
-                        fallback={<JourneyWorkspace onLive={() => setStudioView("live")} />}
-                      >
-                        <DeviceStage onExpandBoard={() => setStudioView("journey")} />
-                      </Show>
-                    </div>
+                    <DeviceStage onExpandBoard={() => setStudioView("journey")} />
+                  </Show>
+                </div>
+                <Show
+                  when={studioView() === "journey"}
+                  fallback={
                     <StepDocument
                       onOpenData={() => setArea("data")}
                       onOpenTargets={() => props.onOpenSettings("matrices")}
                     />
-                  </Show>
-                }
-              >
-                <MapsWorkspace onOpenRecipe={openRecipe} />
+                  }
+                >
+                  <JourneyInspector
+                    onEdit={() => {
+                      setStudioView("live");
+                      setLibraryOpen(true);
+                    }}
+                    onOpenTargets={() => props.onOpenSettings("matrices")}
+                  />
+                </Show>
               </Show>
             </div>
           </section>
@@ -385,10 +417,20 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         <Show when={area() === "runs"}>
           <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
         </Show>
+        <Show when={area() === "map"}>
+          <MapsWorkspace onOpenRecipe={openRecipe} />
+        </Show>
         <Show when={area() === "data"}>
           <DataWorkspace onConfigureProvider={props.onOpenSettings} />
         </Show>
       </main>
+      <Show when={newTestOpen()}>
+        <NewTestDialog
+          onClose={() => setNewTestOpen(false)}
+          onDescribe={(description) => void createTest(false, description)}
+          onRecord={() => void createTest(true)}
+        />
+      </Show>
       <Show when={importReview()}>
         {(review) => (
           <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>
@@ -500,6 +542,17 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
       false &&
     draft.invalidCount() === 0 &&
     draft.steps().length > 0;
+  const runBlockedReason = () => {
+    if (server.health() !== "online") return "Start the Relay server before running this test.";
+    if (server.isEmptyDevices() || !server.selectedDevice())
+      return "Choose a target before running this test.";
+    const target = server.devices().find((device) => device.serial === server.selectedDevice());
+    if (!target || target.booted === false) return "Start this target or choose another one.";
+    if (draft.steps().length === 0) return "Add at least one step before running this test.";
+    if (draft.invalidCount() > 0)
+      return `Complete ${draft.invalidCount()} unfinished step${draft.invalidCount() === 1 ? "" : "s"}.`;
+    return "";
+  };
   const matrixSize = () =>
     Math.max(5, ...server.projectVariables().value.map((variable) => variable.values?.length ?? 1));
   const activeSchedule = () =>
@@ -571,6 +624,15 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
     setRunMenuOpen(false);
     void server.runRecipeRemote(recipe.id, count);
   };
+  const attemptRun = (count: number) => {
+    const blocker = runBlockedReason();
+    if (!blocker) {
+      runTrials(count);
+      return;
+    }
+    toast(blocker, "warning");
+    if (!server.selectedDevice() || server.isEmptyDevices()) props.onOpenTargets();
+  };
   const runOnMatrix = (matrixId: string) => {
     const recipe = selected();
     if (!recipe) return;
@@ -641,19 +703,27 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
             <button
               type="button"
               class="relay-run"
-              disabled={!canRun()}
-              onClick={() => runTrials(1)}
+              data-blocked={!canRun() ? "" : undefined}
+              data-tip={runBlockedReason() || "Run this test"}
+              onClick={() => attemptRun(1)}
             >
               <Icon name="play" size={13} /> Run
             </button>
             <button
               type="button"
               class="relay-run relay-run--menu"
-              disabled={!canRun()}
+              data-blocked={!canRun() ? "" : undefined}
               aria-label="Run options"
               aria-haspopup="dialog"
               aria-expanded={runMenuOpen()}
-              onClick={() => setRunMenuOpen((open) => !open)}
+              onClick={() => {
+                const blocker = runBlockedReason();
+                if (blocker) {
+                  toast(blocker, "warning");
+                  return;
+                }
+                setRunMenuOpen((open) => !open);
+              }}
             >
               <Icon name="chevron-down" size={12} />
             </button>
@@ -1042,6 +1112,76 @@ function StepDocument(props: { onOpenData: () => void; onOpenTargets: () => void
   );
 }
 
+function NewTestDialog(props: {
+  onClose: () => void;
+  onDescribe: (description: string) => void;
+  onRecord: () => void;
+}) {
+  const [description, setDescription] = createSignal("");
+  const submit = () => {
+    const value = description().trim();
+    if (value) props.onDescribe(value);
+  };
+  return (
+    <div class={cn(modalScrim, "relay-new-test-scrim")}>
+      <section
+        class={cn(modalPanel, "relay-new-test")}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-test-title"
+      >
+        <header>
+          <div>
+            <span class="relay-eyebrow">New test</span>
+            <h2 id="new-test-title">What should Relay verify?</h2>
+          </div>
+          <button
+            type="button"
+            class="relay-icon-button"
+            aria-label="Close"
+            onClick={props.onClose}
+          >
+            <Icon name="x" size={15} />
+          </button>
+        </header>
+        <label>
+          <span class="sr-only">Describe the test</span>
+          <textarea
+            autofocus
+            rows={4}
+            value={description()}
+            placeholder="Sign in with email, open the dashboard, and verify the welcome message"
+            onInput={(event) => setDescription(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") submit();
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          class="relay-primary relay-new-test__submit"
+          disabled={!description().trim()}
+          onClick={submit}
+        >
+          <Icon name="sparkle" size={15} /> Create from description
+        </button>
+        <div class="relay-new-test__divider">
+          <span>or capture the real flow</span>
+        </div>
+        <button type="button" class="relay-new-test__record" onClick={props.onRecord}>
+          <span class="relay-record__dot" aria-hidden="true" />
+          <span>
+            <strong>Record on a device</strong>
+            <small>Use the app normally; every interaction becomes an editable step.</small>
+          </span>
+          <Icon name="arrow-right" size={15} />
+        </button>
+        <p>Import and advanced authoring remain available from the test library.</p>
+      </section>
+    </div>
+  );
+}
+
 function TestWelcome(props: {
   onCreate: () => void;
   onRecord: () => void;
@@ -1148,6 +1288,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
   const server = useServer();
   const linkedRun = new URLSearchParams(window.location.search).get("run");
   const [selectedId, setSelectedId] = createSignal<string | null>(linkedRun);
+  const [selectedRunStep, setSelectedRunStep] = createSignal(0);
   const [tab, setTab] = createSignal<
     "summary" | "replay" | "evaluation" | "network" | "logs" | "compatibility"
   >("summary");
@@ -1179,10 +1320,19 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
     );
   });
   const selected = () => rows().find((row) => row.id === selectedId()) ?? null;
+  const selectedCanvasItems = createMemo(() => {
+    const job = selected();
+    if (!job) return [];
+    return runFrameCanvasItems({
+      job,
+      persistedFrameUrl: (run, frame) => server.frameUrlForPersisted(run, frame),
+    });
+  });
   createEffect(() => {
     const requested = server.selectedJobId();
     if (!requested || !rows().some((row) => row.id === requested)) return;
     setSelectedId(requested);
+    setSelectedRunStep(0);
     setTab("summary");
   });
   createEffect(() => {
@@ -1220,30 +1370,38 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
     tabs[next]?.click();
   };
   return (
-    <section class={cn("relay-page", rows().length === 0 && "relay-runs-empty")}>
-      <div class="relay-page__hero">
-        <div>
-          <span class="relay-eyebrow">Execution</span>
-          <h2>Run history</h2>
-          <p>See what passed, what needs attention, and why.</p>
+    <section
+      class={cn(
+        "relay-page",
+        rows().length === 0 && "relay-runs-empty",
+        selected() && "relay-runs-workspace-page",
+      )}
+    >
+      <Show when={!selected()}>
+        <div class="relay-page__hero">
+          <div>
+            <span class="relay-eyebrow">Execution</span>
+            <h2>Run history</h2>
+            <p>See what passed, what needs attention, and why.</p>
+          </div>
+          <Show when={rows().length > 0}>
+            <button
+              type="button"
+              class="relay-secondary"
+              disabled={refreshing()}
+              aria-busy={refreshing()}
+              onClick={() => void refreshRuns()}
+            >
+              <Icon
+                name="refresh"
+                size={15}
+                class={refreshing() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"}
+              />{" "}
+              Refresh
+            </button>
+          </Show>
         </div>
-        <Show when={rows().length > 0}>
-          <button
-            type="button"
-            class="relay-secondary"
-            disabled={refreshing()}
-            aria-busy={refreshing()}
-            onClick={() => void refreshRuns()}
-          >
-            <Icon
-              name="refresh"
-              size={15}
-              class={refreshing() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"}
-            />{" "}
-            Refresh
-          </button>
-        </Show>
-      </div>
+      </Show>
       <Show when={rows().length > 0 && !selected()}>
         <div class="mx-auto mb-4 grid w-full max-w-[1180px] grid-cols-3 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger [&>*+*]:border-l [&>*+*]:border-border-weak-base">
           <Metric label="Total runs" value={rows().length} detail="all time" />
@@ -1264,7 +1422,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
       <div
         class={cn(
           "mx-auto grid w-full max-w-[1180px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
-          selected() && "relay-run-workspace max-w-[1320px]",
+          selected() && "relay-run-workspace max-w-none",
           rows().length === 0 && "place-items-center px-6 py-16",
         )}
       >
@@ -1272,9 +1430,29 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
           class={cn(
             "w-full max-w-none overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger",
             rows().length === 0 && "max-w-[680px] rounded-[20px]",
-            selected() && "max-h-[650px] overflow-y-auto max-[820px]:max-h-[260px]",
+            selected() && "relay-run-library max-h-none overflow-y-auto",
           )}
         >
+          <Show when={selected()}>
+            <header class="relay-run-library__head">
+              <div>
+                <span class="relay-eyebrow">Workspace</span>
+                <h2>Runs</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Refresh runs"
+                disabled={refreshing()}
+                onClick={() => void refreshRuns()}
+              >
+                <Icon
+                  name="refresh"
+                  size={14}
+                  class={refreshing() ? "relay-refresh-icon is-spinning" : "relay-refresh-icon"}
+                />
+              </button>
+            </header>
+          </Show>
           <Show when={rows().length > 0 && !selected()}>
             <div class="grid min-h-9.5 grid-cols-[minmax(0,1.5fr)_minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,0.6fr)] items-center gap-4 border-b border-border-weak-base bg-surface-weak px-4 text-[11px]/[1.25] font-semibold tracking-[0.07em] text-text-weaker uppercase [&>span]:min-w-0 [&>span]:truncate">
               <span>Test</span>
@@ -1339,6 +1517,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
             {(job) => {
               const open = () => {
                 setSelectedId(job.id);
+                setSelectedRunStep(0);
                 setTab("summary");
               };
               return (
@@ -1354,16 +1533,18 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
         </div>
         <Show when={selected()}>
           {(job) => (
-            <section class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger">
-              <header class="flex min-h-18 items-center justify-between gap-3 border-b border-border-weak-base px-4 py-3">
+            <section class="relay-run-canvas-panel min-w-0 overflow-hidden border border-border-weak-base bg-background-stronger">
+              <header class="relay-run-canvas-panel__bar flex items-center justify-between gap-3 border-b border-border-weak-base px-3.5">
                 <div class="grid min-w-0 gap-1">
-                  <span class="relay-eyebrow">Replay</span>
-                  <strong class="truncate text-[15px]/[1.25] font-semibold text-text-base">
+                  <strong class="truncate text-[12px]/[1.25] font-semibold text-text-base">
                     {server.recipes().find((recipe) => recipe.id === job().action)?.title ??
                       job().title ??
                       job().action}
                   </strong>
                 </div>
+                <span class="relay-run-canvas-panel__mode">
+                  <Icon name="move" size={13} /> Observed journey
+                </span>
                 <span class={cn("relay-status", `is-${job().status}`)}>
                   {job().status === "ok" || job().status === "healed"
                     ? "Passed"
@@ -1372,15 +1553,31 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                       : titleize(job().status)}
                 </span>
               </header>
-              <div class="max-h-[578px] overflow-auto p-3.5">
-                <RunReplay job={job()} workspace />
+              <div class="relay-run-canvas-panel__body min-h-0 overflow-hidden">
+                <Show
+                  when={selectedCanvasItems().length > 0}
+                  fallback={
+                    <RunExecutionCanvas
+                      job={job()}
+                      selectedIndex={selectedRunStep()}
+                      onSelect={setSelectedRunStep}
+                    />
+                  }
+                >
+                  <FrameCanvas
+                    items={selectedCanvasItems()}
+                    selectedIndex={selectedRunStep()}
+                    onSelect={setSelectedRunStep}
+                    showInspector={false}
+                  />
+                </Show>
               </div>
             </section>
           )}
         </Show>
         <Show when={selected()}>
           {(job) => (
-            <aside class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger max-[1120px]:col-span-2 max-[820px]:col-span-1">
+            <aside class="relay-run-inspector min-w-0 overflow-hidden border border-border-weak-base bg-background-stronger max-[1120px]:col-span-2 max-[820px]:col-span-1">
               <header class="flex min-h-18 items-center justify-between gap-3 px-4 py-3">
                 <div class="grid min-w-0 gap-1">
                   <span class="relay-eyebrow">Diagnosis</span>
@@ -1425,6 +1622,11 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                   </button>
                 </div>
               </header>
+              <RunStateInspector
+                job={job()}
+                index={selectedRunStep()}
+                items={selectedCanvasItems()}
+              />
               <nav
                 class="flex overflow-x-auto border-b border-border-weak-base px-2.5"
                 role="tablist"
@@ -1493,6 +1695,7 @@ function RunsWorkspace(props: { onOpenRecipe: (id: string) => void; onOpenTests:
                     clock={server.clock()}
                     previous={baseline()}
                     onOpenRecipe={props.onOpenRecipe}
+                    onRetry={(id) => void server.retrySelectedJob(id)}
                   />
                   <details class="group col-span-2 mt-2 border-t border-border-weak-base">
                     <summary class="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-[11px]/[1.25] text-text-weaker focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
@@ -1706,6 +1909,241 @@ function formatDurationDelta(value: number | null): string {
   if (value == null) return "no duration baseline";
   const seconds = value / 1000;
   return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
+}
+
+type RunCanvasState = "passed" | "failed" | "running" | "planned" | "cancelled";
+
+type RunCanvasNode = {
+  index: number;
+  title: string;
+  state: RunCanvasState;
+  durationMs?: number;
+  frame?: NonNullable<JobInfo["steps"]>[number]["frames"][number];
+  observed: boolean;
+};
+
+function runCanvasNodes(job: JobInfo, recipes: RecipeInfo[]): RunCanvasNode[] {
+  const recipe = job.recipeSnapshot ?? recipes.find((item) => item.id === job.action);
+  const observed = job.steps ?? [];
+  const count = Math.max(observed.length, recipe?.steps.length ?? 0, 1);
+
+  return Array.from({ length: count }, (_, index) => {
+    const trace = observed[index];
+    const planned = recipe?.steps[index];
+    let state: RunCanvasState = "planned";
+    if (trace) {
+      if (trace.status === "error" || trace.tone === "danger") state = "failed";
+      else if (job.status === "running" && index === observed.length - 1) state = "running";
+      else if (job.status === "cancelled" && index === observed.length - 1) state = "cancelled";
+      else state = "passed";
+    }
+    return {
+      index,
+      title: trace?.title ?? (planned ? sentenceForStep(planned, recipes) : "Run started"),
+      state,
+      durationMs: trace?.durationMs,
+      frame: trace?.frames?.at(-1),
+      observed: Boolean(trace),
+    };
+  });
+}
+
+function formatStepDuration(durationMs: number): string {
+  return durationMs < 1000 ? `${Math.round(durationMs)}ms` : `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function RunExecutionCanvas(props: {
+  job: JobInfo;
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+}) {
+  const server = useServer();
+  const [zoom, setZoom] = createSignal(0.88);
+  const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
+  const worldWidth = () => Math.max(700, nodes().length * 248 + 120);
+  const markerId = () => `run-arrow-${props.job.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const frameSource = (node: RunCanvasNode) => {
+    const frame = node.frame;
+    if (!frame) return null;
+    if (frame.base64) return `data:${frame.mime || "image/png"};base64,${frame.base64}`;
+    if (props.job.persisted || props.job.runDir) {
+      return server.frameUrlForPersisted(props.job as unknown as PersistedRun, frame);
+    }
+    return null;
+  };
+
+  return (
+    <div class="relay-run-canvas">
+      <div class="relay-run-canvas__hud">
+        <div class="relay-run-canvas__legend" aria-label="Canvas legend">
+          <span>
+            <i class="is-observed" /> Observed
+          </span>
+          <span>
+            <i class="is-planned" /> Planned
+          </span>
+          <span>
+            <i class="is-stopped" /> Stopped
+          </span>
+        </div>
+        <div class="relay-run-canvas__zoom" aria-label="Canvas zoom controls">
+          <button
+            type="button"
+            aria-label="Zoom out"
+            onClick={() => setZoom(Math.max(0.62, Number((zoom() - 0.1).toFixed(2))))}
+          >
+            <span aria-hidden="true">−</span>
+          </button>
+          <button type="button" onClick={() => setZoom(0.88)}>
+            {Math.round(zoom() * 100)}%
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            onClick={() => setZoom(Math.min(1.18, Number((zoom() + 0.1).toFixed(2))))}
+          >
+            <Icon name="plus" size={13} />
+          </button>
+        </div>
+      </div>
+      <div class="relay-run-canvas__viewport">
+        <div
+          class="relay-run-canvas__world"
+          style={{ width: `${worldWidth()}px`, transform: `scale(${zoom()})` }}
+        >
+          <svg
+            class="relay-run-canvas__edges"
+            width={worldWidth()}
+            height="420"
+            viewBox={`0 0 ${worldWidth()} 420`}
+            aria-hidden="true"
+          >
+            <defs>
+              <marker
+                id={markerId()}
+                markerWidth="8"
+                markerHeight="8"
+                refX="7"
+                refY="4"
+                orient="auto"
+              >
+                <path d="M0,0 L8,4 L0,8 Z" />
+              </marker>
+            </defs>
+            <For each={nodes().slice(0, -1)}>
+              {(node, index) => (
+                <path
+                  class={cn(
+                    "relay-run-canvas__edge",
+                    node.state === "failed" && "is-stopped",
+                    !nodes()[index() + 1]?.observed && "is-planned",
+                  )}
+                  d={`M ${236 + index() * 248} 239 C ${255 + index() * 248} 239, ${265 + index() * 248} 239, ${282 + index() * 248} 239`}
+                  marker-end={`url(#${markerId()})`}
+                />
+              )}
+            </For>
+          </svg>
+          <For each={nodes()}>
+            {(node, index) => {
+              const image = () => frameSource(node);
+              return (
+                <button
+                  type="button"
+                  class={cn(
+                    "relay-run-state",
+                    `is-${node.state}`,
+                    props.selectedIndex === index() && "is-selected",
+                  )}
+                  style={{ left: `${48 + index() * 248}px` }}
+                  aria-pressed={props.selectedIndex === index()}
+                  onClick={() => props.onSelect(index())}
+                >
+                  <span class="relay-run-state__label">
+                    <i /> State {String(index() + 1).padStart(2, "0")}
+                  </span>
+                  <span class="relay-run-state__screen">
+                    <Show
+                      when={image()}
+                      fallback={
+                        <span class="relay-run-state__placeholder">
+                          <Icon name={node.state === "failed" ? "alert" : "camera"} size={21} />
+                          <small>{node.observed ? "State observed" : "Not reached"}</small>
+                        </span>
+                      }
+                    >
+                      {(source) => <img src={source()} alt="" />}
+                    </Show>
+                    <span class="relay-run-state__chrome" />
+                  </span>
+                  <span class="relay-run-state__copy">
+                    <strong>{node.title}</strong>
+                    <small>
+                      {node.state === "passed"
+                        ? "Observed"
+                        : node.state === "failed"
+                          ? "Stopped here"
+                          : node.state === "running"
+                            ? "In progress"
+                            : node.state === "cancelled"
+                              ? "Cancelled here"
+                              : "Planned · not reached"}
+                      {node.durationMs ? ` · ${formatStepDuration(node.durationMs)}` : ""}
+                    </small>
+                  </span>
+                </button>
+              );
+            }}
+          </For>
+        </div>
+      </div>
+      <div class="relay-run-canvas__minimap" aria-hidden="true">
+        <For each={nodes()}>{(node) => <i class={`is-${node.state}`} />}</For>
+      </div>
+    </div>
+  );
+}
+
+function RunStateInspector(props: { job: JobInfo; index: number; items: FrameCanvasItem[] }) {
+  const server = useServer();
+  const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
+  const node = createMemo(() => nodes()[props.index]);
+  const item = createMemo(() => props.items[props.index]);
+  const inspectorTitle = () => item()?.caption ?? node()?.title ?? "Run state";
+  const inspectorStatus = () => {
+    const status = item()?.status;
+    if (status === "fail") return "failed";
+    if (status === "pass") return "passed";
+    if (status === "heal") return "passed";
+    return node()?.state ?? "planned";
+  };
+  const count = () => (props.items.length > 0 ? props.items.length : nodes().length);
+  return (
+    <Show when={node() || item()}>
+      <div class={cn("relay-run-state-inspector", item()?.src && "has-preview")}>
+        <Show when={item()?.src}>
+          {(source) => (
+            <div class="relay-run-state-inspector__preview">
+              <img src={source()} alt={inspectorTitle()} />
+              <span>
+                <Icon name="camera" size={12} /> Captured evidence
+              </span>
+            </div>
+          )}
+        </Show>
+        <div class="relay-run-state-inspector__copy">
+          <span class={`relay-run-state-inspector__status is-${inspectorStatus()}`}>
+            <i /> {inspectorStatus() === "failed" ? "Stopped" : titleize(inspectorStatus())}
+          </span>
+          <strong>{inspectorTitle()}</strong>
+          <small>
+            State {props.index + 1} of {count()}
+            {node()?.durationMs ? ` · ${formatStepDuration(node()!.durationMs!)}` : ""}
+          </small>
+        </div>
+      </div>
+    </Show>
+  );
 }
 
 function RunReplay(props: { job: JobInfo; workspace?: boolean }) {
@@ -2074,4 +2512,14 @@ function nextUntitledTitle(recipes: RecipeInfo[]): string {
   let index = 2;
   while (used.has(`Untitled test ${index}`)) index++;
   return `Untitled test ${index}`;
+}
+
+function titleFromPrompt(description: string, recipes: RecipeInfo[]): string {
+  const sentence = description.split(/[.!?\n]/, 1)[0]?.trim() || "New test";
+  const base = sentence.length > 52 ? `${sentence.slice(0, 49).trimEnd()}…` : sentence;
+  const normalized = base.charAt(0).toUpperCase() + base.slice(1);
+  if (!recipes.some((recipe) => recipe.title === normalized)) return normalized;
+  let index = 2;
+  while (recipes.some((recipe) => recipe.title === `${normalized} ${index}`)) index++;
+  return `${normalized} ${index}`;
 }

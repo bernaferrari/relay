@@ -4,7 +4,7 @@ import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
-import { frameCanvasItems } from "../lib/frame-canvas-presentation";
+import { frameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
 import { btnGhost, dividerY, easeOut, mono, stepIndexOn, tColor } from "../lib/ui";
 import {
   buildEdges,
@@ -27,7 +27,13 @@ const MAX_SCALE = 1.8;
 /** Screen-space px — click selects; beyond this is a freeform drag. */
 const DRAG_THRESHOLD_PX = 5;
 
-export function FrameCanvas(props: { onCollapse?: () => void }) {
+export function FrameCanvas(props: {
+  onCollapse?: () => void;
+  items?: FrameCanvasItem[];
+  selectedIndex?: number;
+  onSelect?: (index: number) => void;
+  showInspector?: boolean;
+}) {
   const server = useServer();
   const wb = useWorkbench();
   const [viewport, setViewport] = createSignal({ x: 40, y: 40, scale: 0.55 });
@@ -59,13 +65,15 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
       }
     | undefined;
 
-  const rawItems = createMemo(() =>
-    frameCanvasItems({
-      reviewed: wb.reviewedRun(),
-      liveFrames: server.frames(),
-      activeJob: wb.activeLiveJob(),
-      persistedFrameUrl: (run, frame) => server.frameUrlForPersisted(run, frame),
-    }),
+  const rawItems = createMemo(
+    () =>
+      props.items ??
+      frameCanvasItems({
+        reviewed: wb.reviewedRun(),
+        liveFrames: server.frames(),
+        activeJob: wb.activeLiveJob(),
+        persistedFrameUrl: (run, frame) => server.frameUrlForPersisted(run, frame),
+      }),
   );
 
   const nodes = createMemo(() => layoutScreenGraph(rawItems(), overrides(), undefined, aspects()));
@@ -165,6 +173,7 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
   function select(i: number) {
     setSelected(i);
     wb.focusFrame(i);
+    props.onSelect?.(i);
   }
 
   function fit() {
@@ -183,6 +192,10 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
   }
 
   createEffect(() => {
+    if (props.selectedIndex != null && props.selectedIndex >= 0) {
+      setSelected(Math.min(props.selectedIndex, Math.max(0, rawItems().length - 1)));
+      return;
+    }
     const i = server.frameIndex();
     if (i >= 0 && i < rawItems().length) setSelected(i);
   });
@@ -654,7 +667,7 @@ export function FrameCanvas(props: { onCollapse?: () => void }) {
           </div>
 
           {/* Selection inspector */}
-          <Show when={selectedNode()}>
+          <Show when={(props.showInspector ?? true) && selectedNode()}>
             {(n) => (
               <aside
                 data-fc-ui

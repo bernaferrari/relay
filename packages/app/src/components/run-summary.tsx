@@ -10,6 +10,7 @@ type RunSummaryProps = {
   clock: number;
   previous: JobInfo | null;
   onOpenRecipe: (id: string) => void;
+  onRetry: (id: string) => void;
 };
 
 /**
@@ -123,14 +124,21 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
           </For>
         </div>
       </Show>
-      <button
-        type="button"
-        class="relay-secondary relay-report-summary__open"
-        onClick={() => props.onOpenRecipe(job().action)}
-      >
-        <span>Open test</span>
-        <Icon name="arrow-right" size={13} />
-      </button>
+      <div class="relay-report-summary__actions">
+        <Show when={job().status === "error" || job().status === "cancelled"}>
+          <button type="button" class="relay-primary" onClick={() => props.onRetry(job().id)}>
+            <Icon name="refresh" size={13} /> Retry run
+          </button>
+        </Show>
+        <button
+          type="button"
+          class="relay-secondary relay-report-summary__open"
+          onClick={() => props.onOpenRecipe(job().action)}
+        >
+          <span>Fix in test</span>
+          <Icon name="arrow-right" size={13} />
+        </button>
+      </div>
     </div>
   );
 }

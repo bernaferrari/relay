@@ -46,7 +46,7 @@ export function LibraryPanel(props: {
       <div class="relay-library__head">
         <div>
           <span class="relay-eyebrow">Workspace</span>
-          <h1>Mobile QA</h1>
+          <h1>Tests</h1>
         </div>
         <div class="relay-library__head-actions">
           <input
