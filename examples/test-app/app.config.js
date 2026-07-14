@@ -1,5 +1,12 @@
+const accessorySetupConfig = require('./accessory-setup.config.json');
+
 const buildRunCacheDir =
   process.env.AGENT_DEVICE_EXPO_BUILD_CACHE_DIR?.trim() || './.expo/build-run-cache';
+
+const accessoryInfoPlist = {
+  NSAccessorySetupBluetoothServices: [accessorySetupConfig.serviceUuid],
+  NSAccessorySetupKitSupports: ['Bluetooth'],
+};
 
 module.exports = {
   expo: {
@@ -19,6 +26,7 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.callstack.agentdevicelab',
+      infoPlist: accessoryInfoPlist,
     },
     android: {
       package: 'com.callstack.agentdevicelab',
