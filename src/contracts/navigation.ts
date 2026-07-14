@@ -25,7 +25,19 @@ export type BackCommandResult = {
   message: string;
 };
 
-/** `rotate` — `{ action: 'rotate', orientation, message: 'Rotated to <orientation>' }`. */
+/** `orientation` — `{ action: 'orientation', orientation, message: 'Rotated to <orientation>' }`. */
+export type OrientationCommandResult = {
+  action: 'orientation';
+  orientation: DeviceRotation;
+  message: string;
+};
+
+/**
+ * @deprecated The `rotate` command was renamed to `orientation`. This is the
+ * legacy response contract (`action: 'rotate'`) that shipped in v0.18/v0.19,
+ * retained for existing SDK consumers until the next major version. New code
+ * should use {@link OrientationCommandResult}.
+ */
 export type RotateCommandResult = {
   action: 'rotate';
   orientation: DeviceRotation;
