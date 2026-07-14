@@ -66,7 +66,11 @@ jobs:
             -destination "platform=iOS Simulator,id=${{ steps.ios-simulator.outputs.simulator-udid }}" \
             -only-testing:AgentDeviceRunnerUITests/RunnerTests/testSinglePointerFlingFallsBackToXCTestCoordinateDragWhenPrivateSynthesisFails \
             -only-testing:AgentDeviceRunnerUITests/RunnerTests/testMissingBundleCommandInvalidatesCompleteCachedTargetState \
-            -only-testing:AgentDeviceRunnerUITests/RunnerTests/testCachedTargetInvalidationClearsProcessBoundState
+            -only-testing:AgentDeviceRunnerUITests/RunnerTests/testCachedTargetInvalidationClearsProcessBoundState \
+            -only-testing:AgentDeviceRunnerUITests/RunnerTests/testSystemModalProbeSliceSharesAndClampsToPlanDeadline \
+            -only-testing:AgentDeviceRunnerUITests/RunnerTests/testDispatchRecoverySkipsBookkeepingWhileXCTestChannelOccupied \
+            -only-testing:AgentDeviceRunnerUITests/RunnerTests/testBoundedSystemModalProbeTimeoutRecoversThenReleasesOnDrain \
+            -only-testing:AgentDeviceRunnerUITests/RunnerTests/testBoundedSystemModalProbeTimeoutRecoversThenReleasesOnDrainForSnapshotRaw
 
       - name: Prepare iOS runner
         run: |
