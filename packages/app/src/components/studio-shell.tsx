@@ -12,6 +12,7 @@ import { LibraryPanel } from "./studio-library";
 import { AgentTestComposer } from "./agent-test-composer";
 import { NewTestDialog, TestWelcome } from "./test-onboarding";
 import { RunsWorkspace } from "./runs-workspace";
+import { TestWorkbench } from "./test-workbench";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
@@ -27,9 +28,6 @@ import {
   productIconButtonDanger,
   tabUnderline,
   tabUnderlineActive,
-  seg,
-  segBtn,
-  segBtnOn,
   dividerY,
 } from "../lib/ui";
 import {
@@ -66,7 +64,7 @@ import { testRunBlocker } from "../lib/test-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "runs" | "map" | "data";
-type StudioView = "live" | "journey";
+type StudioView = "workbench" | "map" | "settings";
 
 const DataWorkspace = lazy(() =>
   import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
@@ -88,11 +86,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [area, setArea] = createSignal<ProductArea>(
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
   );
-  // Flow (the step graph / journey canvas) is the default "home" surface for
-  // any test that already has something to show there; Device is auxiliary,
-  // reserved for a brand-new test (nothing recorded yet) or for deliberately
-  // recording/watching a live run. See docs/PRODUCT_FLOWS.md "Journey".
-  const [studioView, setStudioView] = createSignal<StudioView>("journey");
+  // A test always opens on one continuous workbench: ordered steps, the real
+  // device, and the selected step's properties. Map and source-level settings
+  // are deliberate power-user destinations, never competing default tabs.
+  const [studioView, setStudioView] = createSignal<StudioView>("workbench");
   const [query, setQuery] = createSignal("");
   const [libraryOpen, setLibraryOpen] = createSignal(true);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
@@ -112,9 +109,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (!server.selectedRecipeId()) setLibraryOpen(true);
     previousReadyRecipeId = readyId;
   });
-  // Every test opens on its visual flow, including an empty one. The empty
-  // canvas is the creation surface (plain-language plan or record), so users
-  // never have to infer that Device is where a test begins.
+  // Every test opens on the device-first workbench. Remembering an advanced
+  // surface across tests makes a new selection feel broken or unpredictable.
   let defaultedViewForId: string | null = null;
   createEffect(() => {
     const id = server.selectedRecipeId();
@@ -125,7 +121,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (defaultedViewForId === id) return;
     const recipe = server.recipes().find((item) => item.id === id);
     if (!recipe) return;
-    setStudioView("journey");
+    setStudioView("workbench");
     defaultedViewForId = id;
   });
   const recordBlockedReason = () => {
@@ -136,6 +132,24 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     const target = server.devices().find((device) => device.serial === server.selectedDevice());
     if (!target || target.booted === false) return "Start or connect this target before recording";
     return "";
+  };
+  const testBlockedReason = () =>
+    testRunBlocker({
+      health: server.health(),
+      selectedDevice: server.selectedDevice(),
+      devices: server.devices(),
+      stepCount: draft.steps().length,
+      invalidCount: draft.invalidCount(),
+    });
+  const runSelectedTest = () => {
+    const blocker = testBlockedReason();
+    if (blocker) {
+      toast(blocker, "warning");
+      if (!server.selectedDevice() || server.isEmptyDevices()) props.onOpenSettings("targets");
+      return;
+    }
+    const recipe = selected();
+    if (recipe) void server.runRecipeRemote(recipe.id);
   };
   const filteredRecipes = createMemo(() => {
     const needle = query().trim().toLowerCase();
@@ -162,7 +176,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.setSelectedRecipeId(saved.id);
     setNewTestOpen(false);
     setArea("tests");
-    setStudioView(record ? "live" : "journey");
+    setStudioView("workbench");
     if (record) recorder.enterRecordMode();
   }
 
@@ -318,7 +332,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             <Show when={area() === "tests"}>
               <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
             </Show>
-            <Show when={area() === "tests" && selected() && studioView() === "live"}>
+            <Show when={area() === "tests" && selected() && studioView() === "workbench"}>
               <button
                 type="button"
                 class={cn(shellCapture, recorder.recording() && shellCaptureActive)}
@@ -353,7 +367,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   }
                   if (!selected()) void createTest(true);
                   else {
-                    setStudioView("live");
+                    setStudioView("workbench");
                     recorder.enterRecordMode();
                   }
                 }}
@@ -367,6 +381,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 />
                 {recorder.recording() ? "Stop" : "Record"}
               </button>
+              <button
+                type="button"
+                class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
+                data-tip={testBlockedReason() || "Run this test"}
+                onClick={runSelectedTest}
+              >
+                <Icon name="play" size={13} /> Run
+              </button>
             </Show>
           </div>
         </header>
@@ -375,36 +397,56 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           <section class={shellStudio}>
             <Show when={selected()}>
               <div class={shellStudioBar}>
-                <div class={seg} role="tablist" aria-label="Canvas mode">
-                  {/* Flow is the default working surface; Device is the
-                      secondary/auxiliary tab for recording or watching a live
-                      run — order reflects that. */}
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={studioView() === "journey"}
-                    class={cn(segBtn, studioView() === "journey" && segBtnOn)}
-                    onClick={() => {
-                      setStudioView("journey");
-                      setLibraryOpen(false);
-                    }}
+                <Show
+                  when={studioView() !== "settings"}
+                  fallback={
+                    <div class="flex min-w-0 items-center gap-2 px-1 text-[12px] text-[var(--relay-text-secondary)]">
+                      <Icon name="sliders" size={14} />
+                      <strong class="font-medium text-[var(--relay-text)]">Test settings</strong>
+                      <button
+                        type="button"
+                        class="ml-1 rounded-md px-2 py-1 text-[11px] text-[var(--text-interactive-base)] hover:bg-[var(--relay-surface-raised)] active:scale-[0.97]"
+                        onClick={() => setStudioView("workbench")}
+                      >
+                        Back to steps
+                      </button>
+                    </div>
+                  }
+                >
+                  <div
+                    class="flex items-center gap-0.5 rounded-lg bg-[var(--relay-bg)] p-0.5 shadow-[inset_0_0_0_1px_var(--relay-line)]"
+                    role="tablist"
+                    aria-label="Test view"
                   >
-                    <Icon name="move" size={13} /> Flow
-                    <span class={shellCount}>{server.frames().length || draft.steps().length}</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={studioView() === "live"}
-                    class={cn(segBtn, studioView() === "live" && segBtnOn)}
-                    onClick={() => {
-                      setStudioView("live");
-                      setLibraryOpen(false);
-                    }}
-                  >
-                    <Icon name="smartphone" size={13} /> Device
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={studioView() === "workbench"}
+                      class={cn(
+                        "flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium text-[var(--relay-text-tertiary)] transition-[background-color,color,transform] duration-150 ease-out hover:text-[var(--relay-text)] active:scale-[0.98]",
+                        studioView() === "workbench" &&
+                          "bg-[var(--relay-surface-raised)] text-[var(--relay-text)] shadow-[inset_0_0_0_1px_var(--relay-line)]",
+                      )}
+                      onClick={() => setStudioView("workbench")}
+                    >
+                      <Icon name="grid" size={13} /> Steps
+                      <span class={shellCount}>{draft.steps().length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={studioView() === "map"}
+                      class={cn(
+                        "flex min-h-8 items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium text-[var(--relay-text-tertiary)] transition-[background-color,color,transform] duration-150 ease-out hover:text-[var(--relay-text)] active:scale-[0.98]",
+                        studioView() === "map" &&
+                          "bg-[var(--relay-surface-raised)] text-[var(--relay-text)] shadow-[inset_0_0_0_1px_var(--relay-line)]",
+                      )}
+                      onClick={() => setStudioView("map")}
+                    >
+                      <Icon name="move" size={13} /> Map
+                    </button>
+                  </div>
+                </Show>
                 <div class="relative flex items-center gap-2">
                   <Show
                     when={
@@ -439,6 +481,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                           class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
+                            setStudioView("settings");
+                          }}
+                        >
+                          <Icon name="sliders" size={14} /> Inputs and YAML
+                        </button>
+                        <div class="my-0.5 h-px bg-[var(--relay-line)]" aria-hidden="true" />
+                        <button
+                          type="button"
+                          role="menuitem"
+                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
+                          onClick={() => {
+                            setStudioActionsOpen(false);
                             void duplicateSelected();
                           }}
                         >
@@ -461,15 +515,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </div>
               </div>
             </Show>
-            <div
-              class={
-                studioView() === "journey"
-                  ? draft.steps().length > 0
-                    ? shellStudioBodyJourney
-                    : "relative flex min-h-0 min-w-0 flex-1"
-                  : shellStudioBody
-              }
-            >
+            <div class={studioView() === "settings" ? shellStudioBody : shellStudioBodyJourney}>
               <Show
                 when={selected()}
                 fallback={
@@ -480,45 +526,41 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   />
                 }
               >
-                <Show when={studioView() === "journey" && draft.steps().length > 0}>
-                  <JourneyOutline />
+                <Show when={studioView() === "workbench"}>
+                  <TestWorkbench
+                    onOpenMap={() => setStudioView("map")}
+                    onOpenAdvanced={() => setStudioView("settings")}
+                    onOpenTargets={() => props.onOpenSettings("targets")}
+                  />
                 </Show>
-                <div class={cn(shellStageWrap, "flex-1")}>
-                  <Show
-                    when={studioView() === "live"}
-                    fallback={
-                      <JourneyWorkspace
-                        onLive={() => {
-                          setStudioView("live");
-                          setLibraryOpen(false);
-                        }}
-                      />
-                    }
-                  >
-                    <DeviceStage
-                      onExpandBoard={() => setStudioView("journey")}
-                      onOpenTargets={() => props.onOpenSettings("targets")}
-                    />
-                  </Show>
-                </div>
-                <Show
-                  when={studioView() === "journey"}
-                  fallback={
-                    <StepDocument
-                      onOpenData={() => setArea("data")}
-                      onOpenTargets={() => props.onOpenSettings("matrices")}
-                    />
-                  }
-                >
-                  <Show when={draft.steps().length > 0}>
-                    <JourneyInspector
-                      onEdit={() => {
-                        setStudioView("live");
+                <Show when={studioView() === "map"}>
+                  <JourneyOutline />
+                  <div class={cn(shellStageWrap, "flex-1")}>
+                    <JourneyWorkspace
+                      onLive={() => {
+                        setStudioView("workbench");
                         setLibraryOpen(false);
                       }}
+                    />
+                  </div>
+                  <Show when={draft.steps().length > 0}>
+                    <JourneyInspector
+                      onEdit={() => setStudioView("settings")}
                       onOpenTargets={() => props.onOpenSettings("matrices")}
                     />
                   </Show>
+                </Show>
+                <Show when={studioView() === "settings"}>
+                  <div class={cn(shellStageWrap, "flex-1")}>
+                    <DeviceStage
+                      onExpandBoard={() => setStudioView("map")}
+                      onOpenTargets={() => props.onOpenSettings("targets")}
+                    />
+                  </div>
+                  <StepDocument
+                    onOpenData={() => setArea("data")}
+                    onOpenTargets={() => props.onOpenSettings("matrices")}
+                  />
                 </Show>
               </Show>
             </div>

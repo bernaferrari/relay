@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer, type RecipeStep, type StepTarget } from "../context/server";
 import { toast } from "../context/toast";
@@ -81,55 +81,102 @@ function simpleField(step: RecipeStep): {
   return { label: "Note", value: step.note ?? "" };
 }
 
-export function JourneyOutline() {
+const QUICK_STEPS: {
+  label: string;
+  icon: "pointer" | "keyboard" | "check" | "clock" | "camera";
+  make: () => RecipeStep;
+}[] = [
+  { label: "Tap something", icon: "pointer", make: () => ({ kind: "tap", target: {} }) },
+  { label: "Type text", icon: "keyboard", make: () => ({ kind: "type", text: "" }) },
+  {
+    label: "Check something",
+    icon: "check",
+    make: () => ({ kind: "expect", target: {}, condition: "visible" }),
+  },
+  { label: "Wait", icon: "clock", make: () => ({ kind: "sleep", ms: 1_000 }) },
+  { label: "Take screenshot", icon: "camera", make: () => ({ kind: "screenshot" }) },
+];
+
+export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () => void } = {}) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
   const active = () => workbench.focusedIndex() ?? 0;
+  const [addOpen, setAddOpen] = createSignal(false);
+
+  const appendStep = (step: RecipeStep) => {
+    const index = draft.steps().length;
+    draft.insertStep(index, step);
+    workbench.focusStep(index);
+    setAddOpen(false);
+  };
 
   return (
     <aside
       class={cn(chromePanel, "border-r border-[var(--relay-line)] max-[900px]:!hidden")}
-      aria-label="Journey steps"
+      aria-label="Test steps"
     >
       <header class="border-b border-[var(--relay-line)] px-[15px] pt-[17px] pb-[15px]">
-        <span class={eyebrow}>Steps</span>
-        <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
-          {draft.title()}
-        </h2>
-        <Show when={draft.description()}>
-          <p class="mt-1.5 mb-[15px] line-clamp-2 text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
-            {draft.description()}
+        <Show
+          when={props.compact}
+          fallback={
+            <>
+              <span class={eyebrow}>Steps</span>
+              <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
+                {draft.title()}
+              </h2>
+              <Show when={draft.description()}>
+                <p class="mt-1.5 mb-[15px] line-clamp-2 text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
+                  {draft.description()}
+                </p>
+              </Show>
+              <div
+                class={cn(
+                  "grid grid-cols-[repeat(auto-fit,minmax(8px,1fr))] gap-1",
+                  !draft.description() && "mt-[15px]",
+                )}
+                aria-label={`Step ${active() + 1} of ${draft.steps().length}`}
+              >
+                <For each={draft.steps()}>
+                  {(_, index) => (
+                    <i
+                      class={cn(
+                        "h-0.5 rounded-full bg-[var(--relay-line-strong)]",
+                        index() <= active() && "bg-[var(--relay-accent)]",
+                      )}
+                    />
+                  )}
+                </For>
+              </div>
+              <small class="mt-2 block font-mono text-[10.5px]/[1.2] tabular-nums text-[var(--relay-text-tertiary)]">
+                Step {Math.min(active() + 1, draft.steps().length)} of {draft.steps().length}
+              </small>
+            </>
+          }
+        >
+          <div class="flex items-center justify-between gap-3">
+            <span class={eyebrow}>Steps</span>
+            <span class="font-mono text-[10.5px] tabular-nums text-[var(--relay-text-tertiary)]">
+              {draft.steps().length}
+            </span>
+          </div>
+          <p class="mt-1.5 line-clamp-1 text-[12px] text-[var(--relay-text-secondary)]">
+            {draft.description() || "Actions Relay will perform in order"}
           </p>
         </Show>
-        <div
-          class={cn(
-            "grid grid-cols-[repeat(auto-fit,minmax(8px,1fr))] gap-1",
-            !draft.description() && "mt-[15px]",
-          )}
-          aria-label={`Step ${active() + 1} of ${draft.steps().length}`}
-        >
-          <For each={draft.steps()}>
-            {(_, index) => (
-              <i
-                class={cn(
-                  "h-0.5 rounded-full bg-[var(--relay-line-strong)]",
-                  index() <= active() &&
-                    "bg-[linear-gradient(90deg,#6857e7,#9b84ff)] shadow-[0_0_10px_rgb(126_103_255/25%)]",
-                )}
-              />
-            )}
-          </For>
-        </div>
-        <small class="mt-2 block font-mono text-[10.5px]/[1.2] tabular-nums text-[var(--relay-text-tertiary)]">
-          Step {Math.min(active() + 1, draft.steps().length)} of {draft.steps().length}
-        </small>
       </header>
       <nav class="min-h-0 flex-1 overflow-y-auto p-2">
         <For each={draft.steps()}>
           {(step, index) => {
             const annotation = () => workbench.rowAnno(index());
             const isActive = () => active() === index();
+            const nestedCount = () => {
+              const id =
+                step.kind === "module" ? step.recipeId : step.kind === "flow" ? step.flow : null;
+              return id
+                ? (server.recipes().find((recipe) => recipe.id === id)?.steps.length ?? 0)
+                : 0;
+            };
             return (
               <button
                 type="button"
@@ -148,8 +195,14 @@ export function JourneyOutline() {
                   <Icon name={iconForStep(step)} size={15} />
                 </span>
                 <span class="min-w-0">
-                  <small class="mb-1 block font-mono text-[10px]/[1.2] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
-                    {String(index() + 1).padStart(2, "0")}
+                  <small class="mb-1 flex items-center gap-1.5 font-mono text-[10px]/[1.2] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                    <span>{String(index() + 1).padStart(2, "0")}</span>
+                    <Show when={nestedCount() > 0}>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {nestedCount()} action{nestedCount() === 1 ? "" : "s"}
+                      </span>
+                    </Show>
                   </small>
                   <strong class="block overflow-hidden text-[13px] font-medium leading-[1.35] text-ellipsis whitespace-nowrap text-inherit">
                     {sentenceForStep(step, server.recipes())}
@@ -163,11 +216,60 @@ export function JourneyOutline() {
           }}
         </For>
       </nav>
+      <Show when={props.compact}>
+        <footer class="relative shrink-0 border-t border-[var(--relay-line)] p-2.5">
+          <button
+            type="button"
+            class="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-[12px] font-medium text-[var(--relay-text-secondary)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text)] active:scale-[0.98]"
+            aria-expanded={addOpen()}
+            onClick={() => setAddOpen((open) => !open)}
+          >
+            <Icon name="plus" size={14} /> Add step
+          </button>
+          <Show when={addOpen()}>
+            <div
+              class="ui-pop absolute right-2.5 bottom-[calc(100%+6px)] left-2.5 z-20 grid gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+              role="menu"
+              aria-label="Add step"
+            >
+              <For each={QUICK_STEPS}>
+                {(item) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="flex min-h-9 items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)] active:scale-[0.98]"
+                    onClick={() => appendStep(item.make())}
+                  >
+                    <Icon name={item.icon} size={14} /> {item.label}
+                  </button>
+                )}
+              </For>
+              <Show when={props.onAdvancedAdd}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="mt-0.5 flex min-h-9 items-center gap-2 border-t border-[var(--relay-line)] px-2.5 pt-1 text-left text-[11px] text-[var(--relay-text-tertiary)] hover:text-[var(--relay-text)]"
+                  onClick={() => {
+                    setAddOpen(false);
+                    props.onAdvancedAdd?.();
+                  }}
+                >
+                  <Icon name="more" size={14} /> More actions…
+                </button>
+              </Show>
+            </div>
+          </Show>
+        </footer>
+      </Show>
     </aside>
   );
 }
 
-export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () => void }) {
+export function JourneyInspector(props: {
+  onEdit: () => void;
+  onOpenTargets: () => void;
+  compact?: boolean;
+}) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
@@ -270,94 +372,98 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
       aria-label="Selected journey step"
     >
       <header class="flex min-h-[67px] shrink-0 items-center justify-between gap-3 border-b border-[var(--relay-line)] px-[15px]">
-        <div>
+        <div class="min-w-0">
           <span class={eyebrow}>Step</span>
-          <strong class="mt-1 block text-[13px] leading-none font-semibold text-[var(--relay-text)]">
-            {index() + 1} of {draft.steps().length}
+          <strong class="mt-1 block truncate text-[13px] leading-[1.2] font-semibold text-[var(--relay-text)]">
+            {props.compact ? sentence() : `${index() + 1} of ${draft.steps().length}`}
           </strong>
         </div>
-        <button
-          type="button"
-          class={cn(productPrimary, "min-h-8 px-3 text-[12px]")}
-          onClick={run}
-          data-tip={runBlockedReason() || "Run this test"}
-        >
-          <Icon name="play" size={13} /> Run
-        </button>
+        <Show when={!props.compact}>
+          <button
+            type="button"
+            class={cn(productPrimary, "min-h-8 px-3 text-[12px]")}
+            onClick={run}
+            data-tip={runBlockedReason() || "Run this test"}
+          >
+            <Icon name="play" size={13} /> Run
+          </button>
+        </Show>
       </header>
       <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-        <Show
-          when={capturedFrame()}
-          fallback={
-            <section class="grid grid-cols-[42px_minmax(0,1fr)] gap-3 border-b border-[var(--relay-line)] bg-[radial-gradient(circle_at_20%_20%,rgb(126_101_255/9%),transparent_38%),var(--relay-bg)] px-[15px] py-[18px]">
-              <Show when={step()}>
-                {(current) => (
-                  <span
-                    class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_32%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_12%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_80%,white)]"
-                    style={{ "--journey-node-accent": accentForStep(current()) }}
-                  >
-                    <Icon name={iconForStep(current())} size={22} />
-                  </span>
-                )}
-              </Show>
-              <div class="min-w-0">
-                <small class="block text-[10.5px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
-                  {step() ? actionForStep(step()!) : "Planned action"}
-                </small>
-                <strong class="mt-1 block text-[15px]/[1.35] font-semibold tracking-[-0.01em] text-[var(--relay-text)]">
-                  {sentence()}
-                </strong>
-                <p class="mt-1.5 text-[12px]/[1.55] text-[var(--relay-text-tertiary)]">
-                  Run once to add the device screenshot and result.
-                </p>
-              </div>
-            </section>
-          }
-        >
-          {(src) => (
-            <div class="grid h-80 min-h-80 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_35%,rgb(126_101_255/12%),transparent_48%),radial-gradient(circle_at_1px_1px,rgb(255_255_255/5%)_1px,transparent_0)] bg-size-[auto,18px_18px] px-7 py-[22px] max-[1380px]:min-[901px]:p-[18px]">
-              <img
-                src={src()}
-                alt={`Captured step ${index() + 1}`}
-                class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--relay-surface-strong)] object-contain shadow-[0_24px_70px_rgb(0_0_0/38%),0_0_0_1px_rgb(255_255_255/5%)]"
-              />
-            </div>
-          )}
-        </Show>
-        <Show when={capturedFrame()}>
-          <section class="shrink-0 border-t border-[var(--relay-line)] p-[15px]">
-            <span class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-interactive-base)] uppercase">
-              <Show when={step()}>
-                {(current) => <Icon name={iconForStep(current())} size={14} />}
-              </Show>
-              Captured action
-            </span>
-            <h3 class="mt-2 mb-3.5 text-[15px] leading-[1.4] font-medium tracking-[-0.015em] text-[var(--relay-text)]">
-              {sentence()}
-            </h3>
-            <dl class="m-0 grid grid-cols-2 gap-2">
-              <div class="rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2">
-                <dt class="m-0 text-[10.5px] text-[var(--relay-text-tertiary)]">Evidence</dt>
-                <dd class="mt-1 text-[11px] font-semibold text-[var(--relay-text-secondary)] capitalize">
-                  Captured
-                </dd>
-              </div>
-              <div class="rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2">
-                <dt class="m-0 text-[10.5px] text-[var(--relay-text-tertiary)]">Status</dt>
-                <dd
-                  class={cn(
-                    "mt-1 text-[11px] font-semibold capitalize",
-                    annotation().status === "pass" && "text-[var(--relay-green)]",
-                    annotation().status === "fail" && "text-[var(--relay-red)]",
-                    annotation().status === "running" && "text-[var(--text-interactive-base)]",
-                    annotation().status === "idle" && "text-[var(--relay-text-secondary)]",
+        <Show when={!props.compact}>
+          <Show
+            when={capturedFrame()}
+            fallback={
+              <section class="grid grid-cols-[42px_minmax(0,1fr)] gap-3 border-b border-[var(--relay-line)] bg-[radial-gradient(circle_at_20%_20%,rgb(126_101_255/9%),transparent_38%),var(--relay-bg)] px-[15px] py-[18px]">
+                <Show when={step()}>
+                  {(current) => (
+                    <span
+                      class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_32%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_12%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_80%,white)]"
+                      style={{ "--journey-node-accent": accentForStep(current()) }}
+                    >
+                      <Icon name={iconForStep(current())} size={22} />
+                    </span>
                   )}
-                >
-                  {annotation().status === "idle" ? "Ready" : annotation().status}
-                </dd>
+                </Show>
+                <div class="min-w-0">
+                  <small class="block text-[10.5px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                    {step() ? actionForStep(step()!) : "Planned action"}
+                  </small>
+                  <strong class="mt-1 block text-[15px]/[1.35] font-semibold tracking-[-0.01em] text-[var(--relay-text)]">
+                    {sentence()}
+                  </strong>
+                  <p class="mt-1.5 text-[12px]/[1.55] text-[var(--relay-text-tertiary)]">
+                    Run once to add the device screenshot and result.
+                  </p>
+                </div>
+              </section>
+            }
+          >
+            {(src) => (
+              <div class="grid h-80 min-h-80 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_35%,rgb(126_101_255/12%),transparent_48%),radial-gradient(circle_at_1px_1px,rgb(255_255_255/5%)_1px,transparent_0)] bg-size-[auto,18px_18px] px-7 py-[22px] max-[1380px]:min-[901px]:p-[18px]">
+                <img
+                  src={src()}
+                  alt={`Captured step ${index() + 1}`}
+                  class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--relay-surface-strong)] object-contain shadow-[0_24px_70px_rgb(0_0_0/38%),0_0_0_1px_rgb(255_255_255/5%)]"
+                />
               </div>
-            </dl>
-          </section>
+            )}
+          </Show>
+          <Show when={capturedFrame()}>
+            <section class="shrink-0 border-t border-[var(--relay-line)] p-[15px]">
+              <span class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-interactive-base)] uppercase">
+                <Show when={step()}>
+                  {(current) => <Icon name={iconForStep(current())} size={14} />}
+                </Show>
+                Captured action
+              </span>
+              <h3 class="mt-2 mb-3.5 text-[15px] leading-[1.4] font-medium tracking-[-0.015em] text-[var(--relay-text)]">
+                {sentence()}
+              </h3>
+              <dl class="m-0 grid grid-cols-2 gap-2">
+                <div class="rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2">
+                  <dt class="m-0 text-[10.5px] text-[var(--relay-text-tertiary)]">Evidence</dt>
+                  <dd class="mt-1 text-[11px] font-semibold text-[var(--relay-text-secondary)] capitalize">
+                    Captured
+                  </dd>
+                </div>
+                <div class="rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2">
+                  <dt class="m-0 text-[10.5px] text-[var(--relay-text-tertiary)]">Status</dt>
+                  <dd
+                    class={cn(
+                      "mt-1 text-[11px] font-semibold capitalize",
+                      annotation().status === "pass" && "text-[var(--relay-green)]",
+                      annotation().status === "fail" && "text-[var(--relay-red)]",
+                      annotation().status === "running" && "text-[var(--text-interactive-base)]",
+                      annotation().status === "idle" && "text-[var(--relay-text-secondary)]",
+                    )}
+                  >
+                    {annotation().status === "idle" ? "Ready" : annotation().status}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          </Show>
         </Show>
         <Show when={step()}>
           {(current) => (
@@ -407,7 +513,11 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
             </section>
           )}
         </Show>
-        <Show when={annotation().error || annotation().log || recentRuns().length > 0}>
+        <Show
+          when={
+            annotation().error || annotation().log || (!props.compact && recentRuns().length > 0)
+          }
+        >
           <section class="border-t border-[var(--relay-line)] px-[15px] pt-3.5 pb-[18px]">
             <header class="mb-2 flex items-center justify-between">
               <span class="text-[11px] font-semibold tracking-[0.08em] text-[var(--relay-text-secondary)] uppercase">
@@ -430,24 +540,26 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
                 </code>
               </div>
             </Show>
-            <For each={recentRuns()}>
-              {(job) => (
-                <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--relay-line)_75%,transparent)]">
-                  <i class={statusDot(job.status)} />
-                  <span class="min-w-0">
-                    <strong class="block text-[12px] font-medium text-[var(--relay-text-secondary)] capitalize">
-                      {job.status === "ok" ? "Passed" : job.status}
-                    </strong>
-                    <small class="block font-mono text-[10px]/[1.4] text-[var(--relay-text-tertiary)]">
-                      {fmtAgo(job.at)}
-                    </small>
-                  </span>
-                  <b class="font-mono text-[10.5px]/[1.4] font-medium tabular-nums text-[var(--relay-text-tertiary)]">
-                    {job.duration}
-                  </b>
-                </div>
-              )}
-            </For>
+            <Show when={!props.compact}>
+              <For each={recentRuns()}>
+                {(job) => (
+                  <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--relay-line)_75%,transparent)]">
+                    <i class={statusDot(job.status)} />
+                    <span class="min-w-0">
+                      <strong class="block text-[12px] font-medium text-[var(--relay-text-secondary)] capitalize">
+                        {job.status === "ok" ? "Passed" : job.status}
+                      </strong>
+                      <small class="block font-mono text-[10px]/[1.4] text-[var(--relay-text-tertiary)]">
+                        {fmtAgo(job.at)}
+                      </small>
+                    </span>
+                    <b class="font-mono text-[10.5px]/[1.4] font-medium tabular-nums text-[var(--relay-text-tertiary)]">
+                      {job.duration}
+                    </b>
+                  </div>
+                )}
+              </For>
+            </Show>
           </section>
         </Show>
       </div>
@@ -481,7 +593,7 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
             queueMicrotask(() => draft.setExpandedStep(selected));
           }}
         >
-          <Icon name="sliders" size={13} /> Advanced
+          <Icon name="sliders" size={13} /> {props.compact ? "More fields" : "Advanced"}
         </button>
       </footer>
     </aside>
