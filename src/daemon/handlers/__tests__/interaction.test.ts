@@ -6,11 +6,7 @@ import type { CommandFlags } from '../../../core/dispatch.ts';
 import { attachRefs, type SnapshotBackend } from '../../../kernel/snapshot.ts';
 import { AppError } from '../../../kernel/errors.ts';
 import { buildSnapshotState } from '../snapshot-capture.ts';
-import {
-  markSessionSnapshotRefsIssued,
-  setSessionSnapshot,
-  STALE_SNAPSHOT_REFS_WARNING,
-} from '../../session-snapshot.ts';
+import { setSessionSnapshot, STALE_SNAPSHOT_REFS_WARNING } from '../../session-snapshot.ts';
 import { activateCompleteRefFrame, expireRefFrame } from '../../ref-frame.ts';
 import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts';
 import {
@@ -113,7 +109,7 @@ async function emulateCaptureSnapshotForSession(
   )) as { nodes?: never[]; truncated?: boolean; backend?: SnapshotBackend };
   const snapshot = buildSnapshotState(snapshotData ?? {}, effectiveFlags);
   // Mirror the real captureSnapshotForSession: session snapshot writes go
-  // through setSessionSnapshot so snapshotRefsStale tracking (#1076) applies.
+  // through setSessionSnapshot so the generation advances (#1076 versioned refs).
   setSessionSnapshot(session, snapshot);
   sessionStore.set(session.name, session);
   return snapshot;
@@ -3248,8 +3244,9 @@ function makeStaleRefSession(sessionName: string): SessionState {
     createdAt: Date.now(),
     backend: 'xctest',
   };
-  // As if the snapshot command just returned these refs to the client.
-  session.snapshotRefsStale = false;
+  // As if the snapshot command just returned these refs to the client: a
+  // complete, active ref frame (ADR 0014).
+  activateCompleteRefFrame(session);
   return session;
 }
 
@@ -3286,7 +3283,6 @@ test('press selector then press @ref rejects refs that outlived the stored snaps
     throw new Error(`selector press failed: ${JSON.stringify(selectorPress)}`);
   }
   expect(selectorPress.data?.warning).toBeUndefined();
-  expect(sessionStore.get(sessionName)?.snapshotRefsStale).toBe(true);
 
   // ADR 0014: the selector press crossed the side-effect seam and expired the
   // frame, so the ref that outlived it is rejected before dispatch.
@@ -3312,18 +3308,12 @@ test('a ref press crosses the ADR 0014 side-effect seam and expires the ref fram
     command === 'snapshot' ? { nodes: makeTwoButtonNodes(), backend: 'xctest' } : {},
   );
 
-  // A freshly issued frame is active (undefined === active).
-  expect(sessionStore.get(sessionName)?.refFrameState).toBeUndefined();
+  // A freshly issued complete frame is active.
+  expect(sessionStore.get(sessionName)?.refFrameState).toBe('active');
 
   const press = await runInteraction(sessionStore, sessionName, 'press', ['@e1']);
   expect(press?.ok).toBe(true);
   // The transition is wired at the leaf seam.
-  expect(sessionStore.get(sessionName)?.refFrameState).toBe('expired');
-
-  // ADR 0014: a PARTIAL publication (find/settle/divergence, via
-  // markSessionSnapshotRefsIssued) clears the coarse marker but must NOT
-  // re-authorize the complete frame — only a complete snapshot does.
-  markSessionSnapshotRefsIssued(sessionStore.get(sessionName)!);
   expect(sessionStore.get(sessionName)?.refFrameState).toBe('expired');
 });
 
@@ -3393,7 +3383,7 @@ test('press @ref directly after refs were issued does not warn', async () => {
   }
 });
 
-test('re-issuing refs clears the stale marker so press @ref does not warn', async () => {
+test('re-issuing a complete frame lets press @ref succeed again without warning', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'reissued-refs-no-warning';
   const session = makeStaleRefSession(sessionName);
@@ -3406,16 +3396,13 @@ test('re-issuing refs clears the stale marker so press @ref does not warn', asyn
     'label=Continue',
   ]);
   expect(selectorPress?.ok).toBe(true);
-  expect(sessionStore.get(sessionName)?.snapshotRefsStale).toBe(true);
   // The selector press expired the frame (ADR 0014 seam).
   expect(sessionStore.get(sessionName)?.refFrameState).toBe('expired');
 
   // Simulate the snapshot command re-issuing the complete ref namespace: it
-  // clears the marker AND re-activates a complete frame (through
-  // buildNextSnapshotSession; covered in snapshot-handler tests). Clearing the
-  // coarse marker alone would leave the frame expired.
+  // re-activates a complete frame (through buildNextSnapshotSession; covered in
+  // snapshot-handler tests). Without it the frame would stay expired.
   const stored = sessionStore.get(sessionName)!;
-  stored.snapshotRefsStale = false;
   activateCompleteRefFrame(stored);
   sessionStore.set(sessionName, stored);
 
@@ -3444,9 +3431,7 @@ test('fill @ref rejects after a device action expired the frame', async () => {
     createdAt: Date.now(),
     backend: 'xctest',
   };
-  // ADR 0014: an unobserved device action expired the frame; the coarse marker
-  // rides along and supplies the hint.
-  session.snapshotRefsStale = true;
+  // ADR 0014: an unobserved device action expired the frame.
   expireRefFrame(session);
   sessionStore.set(sessionName, session);
   mockDispatch.mockRejectedValue(
@@ -3467,11 +3452,59 @@ test('fill @ref rejects after a device action expired the frame', async () => {
   expect(mockDispatch).not.toHaveBeenCalled();
 });
 
-test('get text @ref warns while refs are stale', async () => {
+test('ADR 0014 evidence #17: get text @ref reads the retained frame tree, not a newer observation', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'read-frame-tree';
+  // Frame tree: @e1 = Continue, @e2 = Cancel.
+  const session = makeStaleRefSession(sessionName);
+  // A read-only capture replaced the OBSERVATION with a divergent tree where the
+  // same index means a different element. The frame tree is untouched.
+  setSessionSnapshot(session, {
+    nodes: attachRefs([
+      { index: 0, type: 'Application', rect: { x: 0, y: 0, width: 390, height: 844 } },
+      {
+        index: 1,
+        parentIndex: 0,
+        type: 'XCUIElementTypeButton',
+        label: 'Different',
+        rect: { x: 10, y: 20, width: 100, height: 40 },
+        enabled: true,
+        hittable: true,
+      },
+    ] as never),
+    createdAt: Date.now(),
+    backend: 'xctest',
+  });
+  sessionStore.set(sessionName, session);
+  mockDispatch.mockRejectedValue(new Error('get text @ref must not recapture'));
+
+  // Resolves against the frame tree's @e2 (Continue), never the observation's
+  // positional @e2 (Different) — no fall-through by positional coincidence.
+  const response = await runInteraction(sessionStore, sessionName, 'get', ['text', '@e2']);
+  expect(response?.ok).toBe(true);
+  if (response?.ok) {
+    expect(response.data?.ref).toBe('e2');
+    expect(String(response.data?.text)).toContain('Continue');
+    expect(String(response.data?.text)).not.toContain('Different');
+  }
+
+  // Missing frame evidence FAILS rather than resolving a newer observation.
+  const missing = await runInteraction(sessionStore, sessionName, 'get', ['text', '@e9']);
+  expect(missing?.ok).toBe(false);
+  if (missing && !missing.ok) {
+    expect(missing.error.code).toBe('COMMAND_FAILED');
+    expect(missing.error.message).toMatch(/not found/i);
+  }
+  expect(mockDispatch).not.toHaveBeenCalled();
+});
+
+test('get text @ref warns while the frame is expired (retained evidence still resolves)', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'stale-ref-get-text';
   const session = makeStaleRefSession(sessionName);
-  session.snapshotRefsStale = true;
+  // A device action expired the frame; the read still resolves against the
+  // retained frame tree and stays fail-open with a warning (ADR 0014).
+  expireRefFrame(session);
   sessionStore.set(sessionName, session);
   mockDispatch.mockRejectedValue(
     new Error('dispatch should not be called for snapshot-derived get text'),
@@ -3487,14 +3520,11 @@ test('get text @ref warns while refs are stale', async () => {
 
 // --- Versioned @ref pins (#1076 follow-up) ---
 
-test('press with a pinned ref matching the stored generation is clean even while the coarse marker is set', async () => {
+test('press with a pinned ref matching the current frame epoch is clean', async () => {
   const sessionStore = makeSessionStore();
   const sessionName = 'pinned-current-clean';
   const session = makeStaleRefSession(sessionName);
   session.snapshotGeneration = 5;
-  // Coarse marker set (e.g. a --verify evidence capture stored the SAME tree
-  // shape again) — the pin proves the client's ref came from this generation.
-  session.snapshotRefsStale = true;
   sessionStore.set(sessionName, session);
 
   const response = await runInteraction(sessionStore, sessionName, 'press', ['@e1~s5']);
@@ -3517,7 +3547,7 @@ test('press with a pinned ref from an older generation rejects with the precise 
   if (response && !response.ok) {
     expect(response.error.code).toBe('COMMAND_FAILED');
     expect(response.error.details?.hint).toBe(
-      'Ref @e1 was minted from snapshot s12 but the session tree is now s15 — re-run snapshot -i.',
+      "Ref @e1 was minted from snapshot s12 but the session's ref frame is now s15 — re-run snapshot -i.",
     );
   }
   expect(mockDispatch).not.toHaveBeenCalled();
@@ -3542,7 +3572,8 @@ test('fill with a pinned stale ref rejects; pinned current is clean', async () =
     backend: 'xctest',
   };
   session.snapshotGeneration = 3;
-  session.snapshotRefsStale = true;
+  // Re-issue the frame over the overridden snapshot so its source tree matches.
+  activateCompleteRefFrame(session);
   sessionStore.set(sessionName, session);
 
   const stale = await runInteraction(sessionStore, sessionName, 'fill', ['@e1~s2', 'hello']);
@@ -3550,7 +3581,7 @@ test('fill with a pinned stale ref rejects; pinned current is clean', async () =
   if (stale && !stale.ok) {
     expect(stale.error.code).toBe('COMMAND_FAILED');
     expect(stale.error.details?.hint).toBe(
-      'Ref @e1 was minted from snapshot s2 but the session tree is now s3 — re-run snapshot -i.',
+      "Ref @e1 was minted from snapshot s2 but the session's ref frame is now s3 — re-run snapshot -i.",
     );
   }
   expect(mockDispatch).not.toHaveBeenCalled();
@@ -3559,6 +3590,65 @@ test('fill with a pinned stale ref rejects; pinned current is clean', async () =
   expect(current?.ok).toBe(true);
   if (current?.ok) {
     expect(current.data?.warning).toBeUndefined();
+  }
+});
+
+test("ADR 0014 blocker-2: a mutating find's internal fill from an expired frame carries no stale-ref warning", async () => {
+  // Removing the coarse marker (step 8) means an expired frame now derives read
+  // staleness. A mutating `find fill` re-resolves the locator itself and re-enters
+  // the fill leaf with a LOCATOR-minted ref (`internal.findResolvedTarget`) — the
+  // caller never consumed a `@ref`, so the public find response must not claim
+  // stale refs even though the frame is expired.
+  const sessionStore = makeSessionStore();
+  const sessionName = 'find-internal-fill-expired';
+  const session = makeStaleRefSession(sessionName);
+  session.snapshot = {
+    nodes: attachRefs([
+      {
+        index: 0,
+        type: 'XCUIElementTypeTextField',
+        label: 'Email',
+        rect: { x: 10, y: 20, width: 200, height: 40 },
+        enabled: true,
+        hittable: true,
+      },
+    ]),
+    createdAt: Date.now(),
+    backend: 'xctest',
+  };
+  // Re-issue the frame over the overridden snapshot, then expire it as if a prior
+  // device side effect changed the screen.
+  activateCompleteRefFrame(session);
+  expireRefFrame(session);
+  sessionStore.set(sessionName, session);
+  mockDispatch.mockResolvedValue({ filled: true });
+
+  // Contrast: a user-supplied `@ref` against the expired frame rejects before
+  // dispatch (it consumed a stale ref).
+  const userRef = await runInteraction(sessionStore, sessionName, 'fill', ['@e1', 'hello']);
+  expect(userRef?.ok).toBe(false);
+  if (userRef && !userRef.ok) {
+    expect(userRef.error.details?.reason).toBe('ref_frame_expired');
+  }
+
+  // The mutating find's internal dispatch (the exact request find.ts hands the
+  // leaf) bypasses admission AND attaches no stale-ref warning.
+  const internal = await handleInteractionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'fill',
+      positionals: ['@e1', 'hello'],
+      flags: {},
+      internal: { findResolvedTarget: true },
+    },
+    sessionName,
+    sessionStore,
+    contextFromFlags,
+  });
+  expect(internal?.ok).toBe(true);
+  if (internal?.ok) {
+    expect(internal.data?.warning).toBeUndefined();
   }
 });
 
@@ -3576,22 +3666,28 @@ test('get text with a pinned stale ref gets the precise warning', async () => {
   expect(response?.ok).toBe(true);
   if (response?.ok) {
     expect(response.data?.warning).toBe(
-      'Ref @e1 was minted from snapshot s2 but the session tree is now s4 — re-run snapshot -i.',
+      "Ref @e1 was minted from snapshot s2 but the session's ref frame is now s4 — re-run snapshot -i.",
     );
     expect(response.data?.ref).toBe('e1');
   }
 });
 
-test('ADR 0014: a read-only capture that set the coarse marker does not invalidate a mutation ref', async () => {
-  // Evidence #6: an internal read-only capture advances the operational
-  // observation (and the coarse marker) but does NOT expire the frame, so a
-  // plain ref from the still-active frame is admitted and dispatches — the old
-  // coarse-marker mutation block was the ADR's false positive.
+test('ADR 0014 evidence #6: a read-only capture does not invalidate a mutation ref', async () => {
+  // An internal read-only capture advances the operational observation (and the
+  // generation counter) but does NOT expire the frame, so a plain ref from the
+  // still-active frame is admitted and dispatches — the old coarse-marker
+  // mutation block was the ADR's false positive.
   const sessionStore = makeSessionStore();
-  const sessionName = 'plain-ref-coarse';
+  const sessionName = 'read-capture-preserves';
   const session = makeStaleRefSession(sessionName);
-  session.snapshotGeneration = 7;
-  session.snapshotRefsStale = true;
+  // Simulate a read-only capture (e.g. --verify evidence) replacing the
+  // observation: it bumps the generation but leaves the frame active.
+  setSessionSnapshot(session, {
+    nodes: attachRefs(makeTwoButtonNodes() as never),
+    createdAt: Date.now(),
+    backend: 'xctest',
+  });
+  expect(session.refFrameState).toBe('active');
   sessionStore.set(sessionName, session);
   mockDispatch.mockResolvedValue({ pressed: true });
 
@@ -3641,7 +3737,6 @@ test('after a session reopen, a pin from the previous lifetime rejects (reseeded
   // one replacement deep (a per-lifetime count from 1 would collide here).
   const reopened = makeStaleRefSession(sessionName);
   setSessionSnapshot(reopened, { ...reopened.snapshot! });
-  reopened.snapshotRefsStale = false;
   sessionStore.set(sessionName, reopened);
   // Probabilistic (~1/900000 collision) — accepted residual risk.
   expect(reopened.snapshotGeneration).not.toBe(oldGeneration);
