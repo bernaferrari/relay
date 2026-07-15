@@ -495,16 +495,16 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
     if (annotation().status === "pass") return "Passed";
     if (annotation().status === "fail") return "Failed";
     if (annotation().status === "running") return "Running";
-    return screenshot() ? "Captured on device" : "Run to capture";
+    return screenshot() ? "Captured on device" : "Not captured";
   });
   return (
     <div
       class={cn(
-        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-[18px] border border-[var(--relay-line-strong)] shadow-[0_8px_24px_rgb(0_0_0/16%)] transition-[border-color,box-shadow] duration-150",
+        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-[18px] border border-[var(--relay-line-strong)] shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
         "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
-          "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_26%,transparent),0_12px_32px_rgb(0_0_0/24%)]",
+          "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_24%,transparent),0_6px_18px_rgb(0_0_0/18%)]",
         annotation().status === "fail" &&
           "border-[color-mix(in_srgb,var(--relay-red)_65%,var(--relay-line))]",
       )}
@@ -529,9 +529,6 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
               <strong class="line-clamp-3 block text-[14px]/[1.4] font-semibold tracking-[-0.012em] text-[var(--relay-text)]">
                 {sentenceForStep(props.step, server.recipes())}
               </strong>
-              <small class="mt-2 block text-[10.5px]/[1.45] text-[var(--relay-text-tertiary)]">
-                Run to capture this screen.
-              </small>
             </div>
           </div>
         }

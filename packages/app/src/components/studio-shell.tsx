@@ -41,6 +41,9 @@ import {
   shellCaptureActive,
   shellStudio,
   shellStudioBar,
+  shellViewTabs,
+  shellViewTab,
+  shellViewTabActive,
   shellSaveState,
   shellStudioBodyJourney,
   shellStageWrap,
@@ -413,25 +416,27 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           <section class={shellStudio}>
             <Show when={selected()}>
               <div class={shellStudioBar}>
-                <Show
-                  when={studioView() === "map"}
-                  fallback={
-                    <div class="flex min-h-8 items-center gap-2 px-1 text-[11.5px] text-[var(--relay-text-tertiary)]">
-                      <Icon name="grid" size={13} />
-                      <span>
-                        {draft.steps().length} {draft.steps().length === 1 ? "step" : "steps"}
-                      </span>
-                    </div>
-                  }
-                >
+                <div class={shellViewTabs} role="group" aria-label="Test view">
                   <button
                     type="button"
-                    class="flex min-h-8 items-center gap-1.5 rounded-md px-2 text-[11.5px] font-medium text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text)]"
+                    aria-pressed={studioView() === "workbench"}
+                    class={cn(shellViewTab, studioView() === "workbench" && shellViewTabActive)}
                     onClick={() => setStudioView("workbench")}
                   >
-                    <Icon name="chevron-left" size={13} /> Back to test
+                    <Icon name="grid" size={13} /> List
                   </button>
-                </Show>
+                  <button
+                    type="button"
+                    aria-pressed={studioView() === "map"}
+                    class={cn(shellViewTab, studioView() === "map" && shellViewTabActive)}
+                    onClick={() => {
+                      setDetailsOpen(false);
+                      setStudioView("map");
+                    }}
+                  >
+                    <Icon name="move" size={13} /> Map
+                  </button>
+                </div>
                 <div class="relative flex items-center gap-2">
                   <Show
                     when={
@@ -471,18 +476,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                           }}
                         >
                           <Icon name="sliders" size={14} /> Advanced editor
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
-                          onClick={() => {
-                            setStudioActionsOpen(false);
-                            setDetailsOpen(false);
-                            setStudioView("map");
-                          }}
-                        >
-                          <Icon name="move" size={14} /> View map
                         </button>
                         <div class="my-0.5 h-px bg-[var(--relay-line)]" aria-hidden="true" />
                         <button
@@ -529,6 +522,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     onOpenMap={() => setStudioView("map")}
                     onOpenAdvanced={() => setDetailsOpen(true)}
                     onOpenTargets={() => props.onOpenSettings("targets")}
+                    onOpenRun={(id) => {
+                      server.setSelectedJobId(id);
+                      setArea("runs");
+                    }}
                     details={
                       detailsOpen() ? (
                         <TestDetailsPanel
@@ -570,6 +567,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         <Show when={area() === "suites"}>
           <SuitesWorkspace
             onOpenTest={openRecipe}
+            onOpenRun={(id) => {
+              server.setSelectedJobId(id);
+              setArea("runs");
+            }}
             onOpenTargets={() => props.onOpenSettings("targets")}
             onRecordTest={(suiteId, sectionId) => void recordTestForSuite(suiteId, sectionId)}
           />

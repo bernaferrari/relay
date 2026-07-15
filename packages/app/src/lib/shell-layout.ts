@@ -152,7 +152,7 @@ export const shellStudioBody = cn(
 export const shellStudioBodyJourney = cn(
   "grid min-h-0 min-w-0 flex-1",
   "grid-cols-[252px_minmax(420px,1fr)_372px]",
-  "max-[1380px]:min-[901px]:grid-cols-[218px_minmax(360px,1fr)_326px]",
+  "max-[1380px]:min-[901px]:grid-cols-[238px_minmax(360px,1fr)_340px]",
   "max-[900px]:grid-cols-1",
 );
 

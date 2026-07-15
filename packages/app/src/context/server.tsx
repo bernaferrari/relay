@@ -601,6 +601,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           targetKind,
           ...(targetKind === "browser" ? { browserTargetId: serial } : {}),
         });
+        if (result.jobs[0]) setSelectedJobId(result.jobs[0].id);
         toast(
           `${result.jobs.length} ${result.jobs.length === 1 ? "test" : "tests"} queued`,
           "success",

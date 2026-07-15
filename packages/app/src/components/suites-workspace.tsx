@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { useServer, type SuiteSection, type TestSuite } from "../context/server";
 import { cn } from "../lib/cn";
 import {
@@ -9,10 +9,12 @@ import {
 } from "../lib/ui";
 import { shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
+import { ExecutionInspector } from "./execution-inspector";
 import { Icon } from "./icon";
 
 export function SuitesWorkspace(props: {
   onOpenTest: (id: string) => void;
+  onOpenRun: (id: string) => void;
   onOpenTargets: () => void;
   onRecordTest: (suiteId: string, sectionId: string) => void;
 }) {
@@ -33,6 +35,16 @@ export function SuitesWorkspace(props: {
   const selectedTest = createMemo(() =>
     server.recipes().find((test) => test.id === selectedEntry()?.testId),
   );
+  const suiteExecutionJob = createMemo(() => {
+    const suite = selectedSuite();
+    if (!suite) return null;
+    const contains = (testId: string) =>
+      suite.sections.some((section) => section.entries.some((entry) => entry.testId === testId));
+    const active = server.activeJob();
+    if (active && contains(active.action)) return active;
+    const selected = server.jobs().find((job) => job.id === server.selectedJobId());
+    return selected && contains(selected.action) ? selected : null;
+  });
 
   const save = (suite: TestSuite, sections = suite.sections, title = suite.title) =>
     server.saveSuiteRemote({
@@ -60,6 +72,17 @@ export function SuitesWorkspace(props: {
     setSelectedEntryId(entryId);
     server.setSelectedRecipeId(testId);
   };
+
+  createEffect(() => {
+    const suite = selectedSuite();
+    const job = suiteExecutionJob();
+    if (!suite || !job) return;
+    const entry = suite.sections
+      .flatMap((section) => section.entries)
+      .find((item) => item.testId === job.action);
+    if (!entry || selectedEntryId() === entry.id) return;
+    selectEntry(entry.id, entry.testId);
+  });
 
   const latestJob = (testId: string) =>
     server
@@ -205,7 +228,21 @@ export function SuitesWorkspace(props: {
 
       <Show when={selectedSuite()}>
         {(suite) => (
-          <aside class="flex min-h-0 flex-col border-l border-[var(--relay-line)] bg-[var(--relay-panel)]">
+          <aside class="relative flex min-h-0 flex-col border-l border-[var(--relay-line)] bg-[var(--relay-panel)]">
+            <Show
+              when={
+                suiteExecutionJob() &&
+                ["queued", "running", "paused"].includes(suiteExecutionJob()!.status)
+                  ? suiteExecutionJob()
+                  : null
+              }
+            >
+              {(job) => (
+                <div class="absolute inset-0 z-10 bg-[var(--relay-panel)]">
+                  <ExecutionInspector job={job()} onOpenReport={props.onOpenRun} />
+                </div>
+              )}
+            </Show>
             <header class="border-b border-[var(--relay-line)] px-4 py-3.5">
               <div class="flex items-center gap-2">
                 <input
@@ -249,13 +286,21 @@ export function SuitesWorkspace(props: {
                   type="button"
                   class={cn(productPrimary, "flex-1")}
                   disabled={
+                    Boolean(
+                      suiteExecutionJob() &&
+                      ["queued", "running", "paused"].includes(suiteExecutionJob()!.status),
+                    ) ||
                     !suite().sections.some((section) =>
                       section.entries.some((entry) => entry.enabled),
                     )
                   }
                   onClick={() => void server.runSuiteRemote(suite().id)}
                 >
-                  <Icon name="play" size={13} /> Run suite
+                  <Icon
+                    name={suiteExecutionJob()?.status === "running" ? "wave" : "play"}
+                    size={13}
+                  />
+                  {suiteExecutionJob()?.status === "running" ? "Running suite" : "Run suite"}
                 </button>
               </div>
             </header>

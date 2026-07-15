@@ -98,6 +98,12 @@ export function RunsWorkspace(props: {
     return formatReviewTime(durations[Math.floor(durations.length / 2)]!);
   });
   const selected = () => rows().find((row) => row.id === selectedId()) ?? null;
+  const openRun = (job: JobInfo) => {
+    setSelectedId(job.id);
+    server.setSelectedJobId(job.id);
+    setSelectedRunStep(initialRunReviewStep(job));
+    setTab("timeline");
+  };
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
   const selectedRecipe = createMemo(() => {
     const job = selected();
@@ -205,7 +211,7 @@ export function RunsWorkspace(props: {
       <div
         class={cn(
           selected()
-            ? "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(300px,1.08fr)_minmax(390px,0.92fr)] overflow-hidden max-[960px]:grid-cols-[minmax(280px,0.9fr)_minmax(360px,1.1fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
+            ? "grid min-h-0 min-w-0 flex-1 grid-cols-[238px_minmax(300px,1.08fr)_minmax(370px,0.92fr)] overflow-hidden max-[1180px]:grid-cols-[minmax(280px,0.9fr)_minmax(360px,1.1fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
             : "mx-auto grid w-full max-w-[1080px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
           !selected() && rows().length === 0 && "place-items-center px-6 py-16",
         )}
@@ -288,15 +294,19 @@ export function RunsWorkspace(props: {
               }
             >
               {(job) => {
-                const open = () => {
-                  setSelectedId(job.id);
-                  setSelectedRunStep(initialRunReviewStep(job));
-                  setTab("timeline");
-                };
-                return <RunRow job={job} selected={selectedId() === job.id} onOpen={open} />;
+                return (
+                  <RunRow
+                    job={job}
+                    selected={selectedId() === job.id}
+                    onOpen={() => openRun(job)}
+                  />
+                );
               }}
             </For>
           </div>
+        </Show>
+        <Show when={selected()}>
+          <RunBrowser rows={rows()} selectedId={selectedId()} onSelect={openRun} />
         </Show>
         <Show when={selected()}>
           {(job) => (
@@ -328,6 +338,16 @@ export function RunsWorkspace(props: {
                     </strong>
                   </div>
                   <div class="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      class={cn(productSecondary, "mr-1 min-h-8 px-2.5 text-[11px]")}
+                      onClick={() => {
+                        server.setSelectedJobId(job().id);
+                        props.onOpenRecipe(job().action);
+                      }}
+                    >
+                      <Icon name="edit" size={12} /> Open test
+                    </button>
                     <Show when={job().status === "error" || job().status === "cancelled"}>
                       <button
                         type="button"
@@ -423,8 +443,8 @@ export function RunsWorkspace(props: {
               >
                 {(
                   [
-                    ["timeline", "Timeline"],
-                    ["summary", "Overview"],
+                    ["timeline", "Steps"],
+                    ["summary", "Summary"],
                     ["evaluation", "Checks"],
                     ["network", "Network"],
                     ["logs", "Logs"],
@@ -589,6 +609,80 @@ export function RunsWorkspace(props: {
         </Show>
       </div>
     </section>
+  );
+}
+
+function RunBrowser(props: {
+  rows: JobInfo[];
+  selectedId: string | null;
+  onSelect: (job: JobInfo) => void;
+}) {
+  const server = useServer();
+  return (
+    <aside
+      class="flex min-h-0 flex-col border-r border-[var(--relay-line)] bg-[var(--relay-panel)] max-[1180px]:hidden"
+      aria-label="Run browser"
+    >
+      <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--relay-line)] px-3.5">
+        <div>
+          <strong class="block text-[12.5px] font-semibold text-[var(--relay-text)]">Runs</strong>
+          <small class="text-[10px] text-[var(--relay-text-tertiary)]">
+            {props.rows.length} saved
+          </small>
+        </div>
+        <span class="grid size-7 place-items-center rounded-lg bg-[var(--relay-surface-raised)] text-[var(--relay-text-tertiary)]">
+          <Icon name="wave" size={14} />
+        </span>
+      </header>
+      <nav class="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Saved runs">
+        <For each={props.rows}>
+          {(job) => {
+            const recipe = () => server.recipes().find((item) => item.id === job.action);
+            const status = () => jobStatusChip(job.status);
+            return (
+              <button
+                type="button"
+                class={cn(
+                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 text-left outline-none transition-[background-color,transform] duration-150 active:scale-[0.99] focus-visible:ring-1 focus-visible:ring-white/60",
+                  props.selectedId === job.id
+                    ? "bg-[var(--relay-surface-strong)]"
+                    : "hover:bg-[var(--relay-surface-raised)]",
+                )}
+                aria-current={props.selectedId === job.id ? "page" : undefined}
+                onClick={() => props.onSelect(job)}
+              >
+                <span
+                  class={cn(
+                    "size-1.5 rounded-full",
+                    status().tone === "pass"
+                      ? "bg-[var(--relay-green)]"
+                      : status().tone === "fail"
+                        ? "bg-[var(--relay-red)]"
+                        : "bg-[var(--relay-accent)]",
+                  )}
+                  aria-hidden="true"
+                />
+                <span class="min-w-0">
+                  <strong class="block truncate text-[11.5px] font-medium text-[var(--relay-text)]">
+                    {recipe()?.title ?? job.title ?? job.action}
+                  </strong>
+                  <small class="mt-1 flex items-center gap-1.5 text-[9.5px] text-[var(--relay-text-tertiary)]">
+                    <span>{status().label}</span>
+                    <span aria-hidden="true">·</span>
+                    <span class="font-mono tabular-nums">{fmtDur(job, server.clock()) || "—"}</span>
+                    <span aria-hidden="true">·</span>
+                    <span class="truncate">
+                      {fmtAgo(job.finishedAt ?? job.startedAt ?? job.queuedAt, server.clock()) ||
+                        "now"}
+                    </span>
+                  </small>
+                </span>
+              </button>
+            );
+          }}
+        </For>
+      </nav>
+    </aside>
   );
 }
 
