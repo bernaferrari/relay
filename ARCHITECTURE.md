@@ -41,17 +41,17 @@ connected mobile devices (not a coding agent).
 
 ## Packages
 
-| Package           | Role                                                                                                 |
-| ----------------- | ---------------------------------------------------------------------------------------------------- |
-| `@relay/core`     | Recipes/YAML, matrix resolver, action catalog, event bus, job sessions, snapshot/screenshot/interact |
-| `@relay/protocol` | Canonical connections, revisions, resources, generation, and event schemas                           |
-| `@relay/client`   | Authenticated project-scoped HTTP and fetch-streamed SSE client                                      |
-| `@relay/server`   | HTTP + SSE over core                                                                                 |
-| `@relay/cli`      | Host: TUI default, interactive, serve, direct actions                                                |
-| `@relay/tui`      | Terminal testing workspace                                                                           |
-| `@relay/ui`       | Solid design system + themes                                                                         |
-| `@relay/app`      | Solid product UI (workspace / inspector / screen / activity)                                         |
-| `@relay/desktop`  | Electron shell                                                                                       |
+| Package           | Role                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `@relay/core`     | Tests/YAML, suites, matrix resolver, action catalog, job sessions, snapshot/screenshot/interact |
+| `@relay/protocol` | Canonical connections, revisions, suites, resources, generation, and event schemas              |
+| `@relay/client`   | Authenticated project-scoped HTTP and fetch-streamed SSE client                                 |
+| `@relay/server`   | HTTP + SSE over core                                                                            |
+| `@relay/cli`      | Host: TUI default, interactive, serve, direct actions                                           |
+| `@relay/tui`      | Terminal testing workspace                                                                      |
+| `@relay/ui`       | Solid design system + themes                                                                    |
+| `@relay/app`      | Solid product UI (workspace / inspector / screen / activity)                                    |
+| `@relay/desktop`  | Electron shell                                                                                  |
 
 ## API surface
 
@@ -60,6 +60,7 @@ connected mobile devices (not a coding agent).
 - `GET/POST /targets`, `DELETE /targets/:id`, `POST /targets/:id/open`, and
   `POST /targets/:id/preflight`
 - `GET /recipes` `/recipes/:id`, `GET /recipes/:id/yaml`, and `POST /recipes/import`
+- `GET/POST /suites`, `PUT/DELETE /suites/:id`, `/suites/:id/history`, `/restore`, and `/run`
 - `GET/POST /projects` `/builds` `/device-pools` `/device-leases` `/matrices`
 - `GET /target-profiles` and `POST /matrices/:id/resolve` for frozen compatibility previews
 - `GET/PUT /project/variables` and `/recipes/:id/journey` with revision conflicts
@@ -88,6 +89,8 @@ connected mobile devices (not a coding agent).
 10. Compatibility matrices select only observed target profiles and preserve every exclusion reason.
 11. Desktop update feeds, signatures, and installation stay in Electron's main process. The shared UI
     receives only a typed update state and can request a check or restart after download.
+12. Tests are canonical library assets. Suites store ordered references, not copies; every suite run
+    freezes its exact suite revision, test revisions, target, and inputs before enqueueing work.
 
 ## Target boundary
 

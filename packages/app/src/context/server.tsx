@@ -64,6 +64,14 @@ import {
   saveRecipe as saveRecipeRemoteRequest,
 } from "../lib/server-recipe-remote";
 import { enqueueMatrix, enqueueRecipe, loadMatrixReport, retryJob } from "../lib/server-run-remote";
+import {
+  deleteSuite as deleteSuiteRequest,
+  listSuites as listSuitesRequest,
+  loadSuiteHistory as loadSuiteHistoryRequest,
+  restoreSuite as restoreSuiteRequest,
+  runSuite as runSuiteRequest,
+  saveSuite as saveSuiteRequest,
+} from "../lib/server-suite-remote";
 import type {
   ActionInfo,
   CompatibilityReport,
@@ -81,6 +89,8 @@ import type {
   TraceFrameRef,
   TestAtlas,
   LocalSchedule,
+  SaveSuiteInput,
+  TestSuite,
 } from "../lib/api-types";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
@@ -106,6 +116,10 @@ export type {
   TraceStep,
   TestAtlas,
   LocalSchedule,
+  SaveSuiteInput,
+  SuiteEntry,
+  SuiteSection,
+  TestSuite,
 } from "../lib/api-types";
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
@@ -127,6 +141,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     );
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
+    const [suites, setSuites] = createSignal<TestSuite[]>([]);
+    const [selectedSuiteId, setSelectedSuiteId] = createSignal<string | null>(null);
     // Selection is persisted (platform.storage "selectedRecipeId") so returning
     // users land on their last test; brand-new users (no stored id) land on the
     // first-run empty state — we never auto-select the first builtin.
@@ -529,6 +545,72 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function refreshSuites() {
+      if (health() === "offline") return;
+      try {
+        const list = await listSuitesRequest(request);
+        setSuites(list);
+        const selected = selectedSuiteId();
+        if (selected && !list.some((suite) => suite.id === selected)) setSelectedSuiteId(null);
+      } catch {
+        /* suites do not block the rest of the workspace */
+      }
+    }
+
+    async function saveSuiteRemote(input: SaveSuiteInput): Promise<TestSuite | null> {
+      try {
+        const suite = await saveSuiteRequest(request, input);
+        await refreshSuites();
+        setSelectedSuiteId(suite.id);
+        return suite;
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), "error");
+        return null;
+      }
+    }
+
+    async function deleteSuiteRemote(id: string): Promise<void> {
+      await deleteSuiteRequest(request, id);
+      if (selectedSuiteId() === id) setSelectedSuiteId(null);
+      await refreshSuites();
+      toast("Suite deleted", "success");
+    }
+
+    async function restoreSuiteRemote(id: string, updatedAt: number): Promise<TestSuite> {
+      const suite = await restoreSuiteRequest(request, id, updatedAt);
+      await refreshSuites();
+      return suite;
+    }
+
+    async function runSuiteRemote(id: string): Promise<void> {
+      if (health() !== "online") {
+        toast("Relay isn’t connected — can’t run yet", "warning");
+        return;
+      }
+      const serial = selectedDevice() ?? undefined;
+      if (!serial) {
+        toast("Choose a phone or browser first", "warning");
+        return;
+      }
+      const target = devices().find((device) => device.serial === serial);
+      const targetKind = target?.platform === "browser" ? "browser" : "device";
+      try {
+        const result = await runSuiteRequest(request, id, {
+          serial,
+          platform: target?.platform === "ios" ? "ios" : "android",
+          targetKind,
+          ...(targetKind === "browser" ? { browserTargetId: serial } : {}),
+        });
+        toast(
+          `${result.jobs.length} ${result.jobs.length === 1 ? "test" : "tests"} queued`,
+          "success",
+        );
+        await refreshJobs();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), "error");
+      }
+    }
+
     async function refreshJobs() {
       if (health() === "offline") return;
       try {
@@ -706,6 +788,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshDevices(),
         refreshActions(),
         refreshRecipes(),
+        refreshSuites(),
         refreshJobs(),
         refreshRuns(),
         refreshSchedules(),
@@ -1095,6 +1178,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshTargets(),
           refreshActions(),
           refreshRecipes(),
+          refreshSuites(),
           refreshJobs(),
           refreshRuns(),
           refreshSchedules(),
@@ -1116,6 +1200,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             void refreshActions();
             void refreshTargets();
             void refreshRecipes();
+            void refreshSuites();
             void refreshRuns();
             connectSse();
           }
@@ -1226,6 +1311,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setActiveDiscoverySessionId,
       actions,
       recipes,
+      suites,
+      selectedSuiteId,
+      setSelectedSuiteId,
       selectedRecipeId,
       setSelectedRecipeId,
       selectedRecipe,
@@ -1251,6 +1339,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runStep,
       refreshActions,
       refreshRecipes,
+      refreshSuites,
       refreshDevices,
       refreshTargets,
       refreshTargetProfiles,
@@ -1290,6 +1379,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       restoreRecipeVersion,
       loadRecipeStability,
       deleteRecipeRemote,
+      saveSuiteRemote,
+      deleteSuite: deleteSuiteRemote,
+      loadSuiteHistory: (id: string) => loadSuiteHistoryRequest(request, id),
+      restoreSuite: restoreSuiteRemote,
+      runSuiteRemote,
       cancelJob: cancelJobRemote,
       pauseJob: pauseJobRemote,
       resumeJob: resumeJobRemote,

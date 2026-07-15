@@ -1,3 +1,5 @@
+export * from "./suites.js";
+
 export type ConnectionAuth =
   | { type: "none" }
   | { type: "bearer"; token: string }

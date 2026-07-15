@@ -3,6 +3,16 @@
  * Kept in the app package (no core import) so the UI stays host-agnostic.
  */
 
+export type {
+  SaveSuiteInput,
+  SuiteEntry,
+  SuiteRunManifest,
+  SuiteRunManifestEntry,
+  SuiteSection,
+  SuiteVersion,
+  TestSuite,
+} from "@relay/protocol";
+
 export type DeviceInfo = {
   id?: string;
   serial: string;

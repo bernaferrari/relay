@@ -22,6 +22,7 @@ export * from "./run-evidence.js";
 export * from "./run-matrix.js";
 export * from "./atlas.js";
 export * from "./schedules.js";
+export * from "./suites.js";
 export * from "./targets.js";
 export * from "./browser-target.js";
 export * from "./matrix.js";

@@ -104,6 +104,14 @@ import {
   buildCompatibilityReport,
   buildDiscoveryCoverage,
   type RecipeParameter,
+  createSuiteRunManifest,
+  deleteSuite,
+  listSuiteHistory,
+  listSuites,
+  readSuite,
+  restoreSuiteHistory,
+  saveSuite,
+  type SaveSuiteInput,
 } from "@relay/core";
 import { RevisionConflict } from "@relay/protocol";
 import type {
@@ -1115,7 +1123,120 @@ async function handleRequest(
       return;
     }
 
-    // ---- Recipe CRUD ----
+    // ---- Suite CRUD and execution ----
+    if (method === "GET" && pathname === "/suites") {
+      json(res, 200, { suites: await listSuites() });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/suites") {
+      const body = (await parseJsonBody(req)) as SaveSuiteInput;
+      try {
+        const suite = await saveSuite(body);
+        json(res, 201, { suite });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
+    const suiteHistoryMatch = matchPath(pathname, "/suites/:id/history");
+    if (method === "GET" && suiteHistoryMatch) {
+      json(res, 200, { history: await listSuiteHistory(suiteHistoryMatch.id!) });
+      return;
+    }
+
+    const suiteRestoreMatch = matchPath(pathname, "/suites/:id/restore");
+    if (method === "POST" && suiteRestoreMatch) {
+      const body = (await parseJsonBody(req)) as { updatedAt?: number };
+      if (!Number.isFinite(body.updatedAt)) throw new HttpError(400, "updatedAt is required");
+      try {
+        const suite = await restoreSuiteHistory(suiteRestoreMatch.id!, body.updatedAt!);
+        json(res, 200, { suite });
+      } catch (error) {
+        throw new HttpError(404, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
+    const suiteRunMatch = matchPath(pathname, "/suites/:id/run");
+    if (method === "POST" && suiteRunMatch) {
+      const suite = await readSuite(suiteRunMatch.id!);
+      if (!suite) throw new HttpError(404, "Suite not found");
+      const body = (await parseJsonBody(req)) as {
+        serial?: string;
+        platform?: "android" | "ios";
+        targetKind?: "device" | "browser";
+        browserTargetId?: string;
+      };
+      const recipes = await listRecipes();
+      let manifest;
+      try {
+        manifest = createSuiteRunManifest(suite, recipes);
+      } catch (error) {
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
+      if (manifest.entries.length === 0)
+        throw new HttpError(409, "This suite has no enabled tests");
+      const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
+      for (const entry of manifest.entries) {
+        const current = recipesById.get(entry.testId);
+        if (current && current.updatedAt !== entry.testUpdatedAt) {
+          throw new HttpError(
+            409,
+            `“${current.title}” is pinned to an earlier version. Restore it or follow latest before running.`,
+          );
+        }
+      }
+      const jobs = manifest.entries.map((entry, index) => {
+        const recipe = recipesById.get(entry.testId)!;
+        return enqueueJob({
+          recipe: entry.testId,
+          title: recipe.title,
+          serial: body.serial,
+          platform: body.platform,
+          targetKind: body.targetKind,
+          browserTargetId: body.browserTargetId,
+          variables: entry.inputs,
+          batchId: manifest.id,
+          caseIndex: index,
+          caseCount: manifest.entries.length,
+          artifacts: [
+            {
+              kind: "suite-run-manifest",
+              capturedAt: manifest.createdAt,
+              data: { manifest, entry },
+            },
+          ],
+        });
+      });
+      json(res, 202, { manifest, jobs });
+      return;
+    }
+
+    const suiteMatch = matchPath(pathname, "/suites/:id");
+    if (method === "GET" && suiteMatch) {
+      const suite = await readSuite(suiteMatch.id!);
+      if (!suite) throw new HttpError(404, "Suite not found");
+      json(res, 200, { suite });
+      return;
+    }
+    if (method === "PUT" && suiteMatch) {
+      const body = (await parseJsonBody(req)) as SaveSuiteInput;
+      try {
+        const suite = await saveSuite({ ...body, id: suiteMatch.id! });
+        json(res, 200, { suite });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    if (method === "DELETE" && suiteMatch) {
+      await deleteSuite(suiteMatch.id!);
+      json(res, 200, { ok: true });
+      return;
+    }
+
     if (method === "GET" && pathname === "/recipes") {
       json(res, 200, { recipes: await listRecipes() });
       return;

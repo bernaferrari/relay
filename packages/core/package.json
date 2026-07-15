@@ -30,6 +30,7 @@
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./atlas": "./src/atlas.ts",
     "./schedules": "./src/schedules.ts",
+    "./suites": "./src/suites.ts",
     "./targets": "./src/targets.ts",
     "./browser-target": "./src/browser-target.ts"
   },

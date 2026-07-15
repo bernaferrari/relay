@@ -10,6 +10,7 @@ import { NewTestDialog, TestWelcome } from "./test-onboarding";
 import { RunsWorkspace } from "./runs-workspace";
 import { TestWorkbench } from "./test-workbench";
 import { TestDetailsPanel } from "./test-details-panel";
+import { SuitesWorkspace } from "./suites-workspace";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
@@ -49,7 +50,7 @@ import { planTestPrompt } from "../lib/natural-language-plan";
 import { testRunBlocker } from "../lib/test-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
-type ProductArea = "tests" | "runs" | "map" | "data";
+type ProductArea = "tests" | "suites" | "runs" | "map" | "data";
 type StudioView = "workbench" | "map";
 
 const DataWorkspace = lazy(() =>
@@ -61,6 +62,7 @@ const MapsWorkspace = lazy(() =>
 
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
+  { id: "suites", label: "Suites", icon: "check" },
   { id: "runs", label: "Runs", icon: "wave" },
   { id: "map", label: "Atlas", icon: "move" },
 ];
@@ -149,7 +151,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         )
       : rows;
   });
-  async function createTest(record = false, description = ""): Promise<void> {
+  async function createTest(record = false, description = ""): Promise<RecipeInfo | null> {
     const plannedSteps = description.trim()
       ? planTestPrompt(description).map((instruction) => instruction.step)
       : [];
@@ -160,13 +162,36 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       description,
       steps: plannedSteps,
     });
-    if (!saved) return;
+    if (!saved) return null;
     server.setSelectedRecipeId(saved.id);
     setNewTestOpen(false);
     setArea("tests");
     setStudioView("workbench");
     setDetailsOpen(false);
     if (record) recorder.enterRecordMode();
+    return saved;
+  }
+
+  async function recordTestForSuite(suiteId: string, sectionId: string): Promise<void> {
+    const saved = await createTest(true);
+    const suite = server.suites().find((item) => item.id === suiteId);
+    if (!saved || !suite) return;
+    await server.saveSuiteRemote({
+      id: suite.id,
+      title: suite.title,
+      description: suite.description,
+      sections: suite.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              entries: [
+                ...section.entries,
+                { id: crypto.randomUUID(), testId: saved.id, enabled: true, version: "latest" },
+              ],
+            }
+          : section,
+      ),
+    });
   }
 
   async function importTestYaml(yaml: string): Promise<void> {
@@ -303,11 +328,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <strong>
                 {area() === "runs"
                   ? "Run history"
-                  : area() === "map"
-                    ? "Atlas"
-                    : area() === "data"
-                      ? "Test data"
-                      : "Tests"}
+                  : area() === "suites"
+                    ? "Suites"
+                    : area() === "map"
+                      ? "Atlas"
+                      : area() === "data"
+                        ? "Test data"
+                        : "Tests"}
               </strong>
               <Show when={area() === "tests" && selected()}>
                 <Icon name="chevron-right" size={13} />
@@ -318,7 +345,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             </div>
           </div>
           <div class={shellTopbarActions}>
-            <Show when={area() === "tests"}>
+            <Show when={area() === "tests" || area() === "suites"}>
               <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
             </Show>
             <Show when={area() === "tests" && selected() && studioView() === "workbench"}>
@@ -539,6 +566,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
         <Show when={area() === "runs"}>
           <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
+        </Show>
+        <Show when={area() === "suites"}>
+          <SuitesWorkspace
+            onOpenTest={openRecipe}
+            onOpenTargets={() => props.onOpenSettings("targets")}
+            onRecordTest={(suiteId, sectionId) => void recordTestForSuite(suiteId, sectionId)}
+          />
         </Show>
         <Show when={area() === "map"}>
           <MapsWorkspace onOpenRecipe={openRecipe} />
