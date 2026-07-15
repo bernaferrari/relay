@@ -9,6 +9,7 @@ type BrowserSession = {
   context: BrowserContext;
   page: Page;
   targetId: string;
+  headless: boolean;
   recordingUnavailable?: string;
   recordingPath?: string;
   recordingVideo?: Video | null;
@@ -20,13 +21,16 @@ const sessions = new Map<string, Promise<BrowserSession>>();
 const INTERACTIVE =
   'button, a[href], input, textarea, select, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
 
-async function createSession(targetId: string): Promise<BrowserSession> {
+async function createSession(
+  targetId: string,
+  options: { headless?: boolean } = {},
+): Promise<BrowserSession> {
   const target = await readTarget(targetId);
   if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
   type ContextOptions = Parameters<typeof chromium.launchPersistentContext>[1];
   const baseOptions: ContextOptions = {
     executablePath: target.browser.executablePath,
-    headless: target.browser.headless ?? true,
+    headless: options.headless ?? target.browser.headless ?? false,
     viewport: target.browser.viewport ?? { width: 1280, height: 800 },
     acceptDownloads: true,
     permissions: ["clipboard-read", "clipboard-write"],
@@ -53,6 +57,7 @@ async function createSession(targetId: string): Promise<BrowserSession> {
     context,
     page,
     targetId,
+    headless: Boolean(baseOptions.headless),
     ...(recordingUnavailable ? { recordingUnavailable } : {}),
     console: [],
     network: [],
@@ -79,15 +84,46 @@ function attachEvidence(session: BrowserSession, page: Page): void {
   });
 }
 
-async function sessionFor(targetId: string): Promise<BrowserSession> {
+async function sessionFor(
+  targetId: string,
+  options: { headless?: boolean } = {},
+): Promise<BrowserSession> {
   const existing = sessions.get(targetId);
-  if (existing) return existing;
-  const pending = createSession(targetId).catch((error) => {
+  if (existing) {
+    const session = await existing;
+    if (options.headless === undefined || session.headless === options.headless) return session;
+    sessions.delete(targetId);
+    await session.context.close().catch(() => undefined);
+  }
+  const pending = createSession(targetId, options).catch((error) => {
     sessions.delete(targetId);
     throw error;
   });
   sessions.set(targetId, pending);
   return pending;
+}
+
+export type OpenBrowserTargetResult = {
+  targetId: string;
+  name: string;
+  url: string;
+};
+
+/**
+ * Opens a visible Relay-owned browser profile so a person can complete login,
+ * consent, MFA, or any other setup that should not be encoded into a test.
+ * The same isolated profile is reused by later app, CLI, and scheduled runs.
+ */
+export async function openBrowserTarget(targetId: string): Promise<OpenBrowserTargetResult> {
+  const target = await readTarget(targetId);
+  if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
+  const session = await sessionFor(targetId, { headless: false });
+  const page = await activePage(session);
+  if (page.url() === "about:blank") {
+    await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  }
+  await page.bringToFront();
+  return { targetId, name: target.name, url: page.url() };
 }
 
 async function activePage(session: BrowserSession): Promise<Page> {

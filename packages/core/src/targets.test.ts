@@ -65,6 +65,7 @@ test("managed browser targets preserve an explicit, path-safe id", async () => {
       startUrl: "https://example.test/",
     });
     assert.equal(target.id, "chat-staging");
+    assert.equal(target.browser?.headless, false);
     await assert.rejects(
       () =>
         saveBrowserTarget({

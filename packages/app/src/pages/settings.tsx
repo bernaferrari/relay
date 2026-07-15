@@ -290,6 +290,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
   const [targetName, setTargetName] = createSignal("Chat app");
   const [targetUrl, setTargetUrl] = createSignal("");
   const [targetBusy, setTargetBusy] = createSignal(false);
+  const [openingTargetId, setOpeningTargetId] = createSignal<string | null>(null);
   const [targetError, setTargetError] = createSignal("");
   const [preflight, setPreflight] = createSignal<{
     id: string;
@@ -386,6 +387,18 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
         ok: false,
         message: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  async function openTarget(id: string) {
+    setTargetError("");
+    setOpeningTargetId(id);
+    try {
+      await server.openBrowserTarget(id);
+    } catch (error) {
+      setTargetError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOpeningTargetId(null);
     }
   }
 
@@ -808,8 +821,8 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                 <div class="mb-4">
                   <h3 class="m-0 text-14-medium text-text-strong">Managed targets</h3>
                   <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
-                    Run the same editable tests in an isolated Chrome profile. Personal cookies and
-                    browsing history are never reused.
+                    Give each website a private browser. Sign in once, then record and replay the
+                    same tests you use on iOS and Android.
                   </p>
                 </div>
 
@@ -876,6 +889,14 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                               </span>
                             </div>
                             <div class="flex shrink-0 gap-1.5">
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                disabled={openingTargetId() === target.id}
+                                onClick={() => void openTarget(target.id)}
+                              >
+                                {openingTargetId() === target.id ? "Opening…" : "Open & sign in"}
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"

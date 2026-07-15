@@ -85,6 +85,7 @@ import {
   deleteTarget,
   deleteCompatibilityMatrix,
   preflightTarget,
+  openBrowserTarget,
   buildTargetProfiles,
   createDiscoverySession,
   renameDiscoverySession,
@@ -452,6 +453,15 @@ async function handleRequest(
       const target = await readTarget(targetPreflightMatch.id!);
       if (!target) throw new HttpError(404, "Target not found");
       json(res, 200, { preflight: await preflightTarget(target) });
+      return;
+    }
+
+    const targetOpenMatch = matchPath(pathname, "/targets/:id/open");
+    if (method === "POST" && targetOpenMatch) {
+      const target = await readTarget(targetOpenMatch.id!);
+      if (!target) throw new HttpError(404, "Target not found");
+      if (target.kind !== "browser") throw new HttpError(400, "Target is not a browser");
+      json(res, 200, { session: await openBrowserTarget(target.id) });
       return;
     }
 

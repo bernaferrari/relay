@@ -116,8 +116,8 @@ export function TestWelcome(props: {
             Create a test in seconds
           </h2>
           <p class="mx-auto mt-1.5 max-w-[430px] text-[12.5px]/[1.55] text-[var(--relay-text-secondary)]">
-            Say what a customer should do. Relay turns it into editable steps you can run on a real
-            device.
+            Say what a customer should do. Relay turns it into editable steps you can run on a phone
+            or browser.
           </p>
         </header>
 
@@ -142,7 +142,7 @@ export function TestWelcome(props: {
           </span>
           <span class="min-w-0">
             <strong class="block text-[12.5px] font-semibold text-[var(--relay-text)]">
-              {targetReady() ? `Record on ${targetCopy()!.displayName}` : "Connect a device"}
+              {targetReady() ? `Record on ${targetCopy()!.displayName}` : "Choose a test target"}
             </strong>
             <small class="mt-0.5 block text-[10.5px] text-[var(--relay-text-tertiary)]">
               {targetReady()

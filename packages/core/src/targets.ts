@@ -72,7 +72,9 @@ export async function saveBrowserTarget(input: {
     browser: {
       startUrl: url.toString(),
       executablePath: input.executablePath?.trim() || DEFAULT_CHROME,
-      headless: input.headless ?? true,
+      // Visible by default: browser targets are black-box environments where
+      // people often need to complete login or MFA before recording a test.
+      headless: input.headless ?? false,
       viewport: input.viewport ?? { width: 1280, height: 800 },
     },
   };

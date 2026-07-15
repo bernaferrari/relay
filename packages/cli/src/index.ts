@@ -12,6 +12,7 @@ import path from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { createInterface } from "node:readline/promises";
 import {
   ACTIONS,
   HOME_ACCOUNT_MATCH,
@@ -29,6 +30,11 @@ import {
   listDevices,
   listRecipes,
   listTargets,
+  saveBrowserTarget,
+  deleteTarget,
+  preflightTarget,
+  openBrowserTarget,
+  closeBrowserTarget,
   listYamlRecipeFiles,
   parseRecipeYaml,
   pauseJob,
@@ -61,7 +67,7 @@ const DEFAULT_SERVE_PORT = 8787;
 function usage(exitCode = 2): never {
   const actionLines = ACTIONS.map((a) => `  ${a.id.padEnd(22)} ${a.description}`).join("\n");
 
-  console.log(`Relay — mobile app testing on real devices
+  console.log(`Relay — black-box testing for iOS, Android, and web
 
 Usage:
   relay                              TTY → testing TUI (OpenCode-style)
@@ -77,6 +83,11 @@ Usage:
   relay test run <id> [flags]        Run an editable test by id
   relay test import <path> [--force] Import YAML; replacing an existing test requires --force
   relay test export <id> [--out p]   Print or write canonical YAML
+  relay target list                  List phones, simulators, and browsers
+  relay target add <name> <url>      Add an isolated visible browser
+  relay target login <id>            Open a browser to sign in or complete MFA
+  relay target check <id>            Check that a browser target is ready
+  relay target remove <id>           Remove a managed browser target
   relay matrix list [--json]         List named compatibility matrices
   relay matrix validate <id>         Preview a compatibility matrix against observed targets
   relay matrix format <path> [--check] Canonicalize a matrix YAML file
@@ -287,6 +298,80 @@ async function resolveTarget(target?: string): Promise<{
   return browser?.kind === "browser"
     ? { serial: target, targetKind: "browser", browserTargetId: target }
     : { serial: target, targetKind: "device" };
+}
+
+async function cmdTarget(argv: string[]): Promise<void> {
+  const command = argv[0];
+  if (command === "list") {
+    const [devices, browsers] = await Promise.all([listDevices().catch(() => []), listTargets()]);
+    if (devices.length === 0 && browsers.length === 0) {
+      console.log("No targets yet. Connect a phone or run `relay target add <name> <url>`. ");
+      return;
+    }
+    for (const device of devices) {
+      console.log(
+        `${device.serial.padEnd(30)} ${device.name ?? "Mobile device"} · ${device.platform}`,
+      );
+    }
+    for (const target of browsers) {
+      console.log(
+        `${target.id.padEnd(30)} ${target.name} · web · ${target.browser?.startUrl ?? ""}`,
+      );
+    }
+    return;
+  }
+  if (command === "add") {
+    const name = argv[1]?.trim();
+    const startUrl = argv[2]?.trim();
+    if (!name || !startUrl) throw new Error("relay target add requires <name> <url>");
+    const target = await saveBrowserTarget({
+      name,
+      startUrl,
+      headless: hasFlag(argv, "--headless"),
+    });
+    console.log(`Added ${target.name} (${target.id})`);
+    console.log(`Next: relay target login ${target.id}`);
+    return;
+  }
+  if (command === "login" || command === "open") {
+    const id = argv[1]?.trim();
+    if (!id) throw new Error(`relay target ${command} requires a target id`);
+    if (!process.stdin.isTTY) throw new Error("browser login requires an interactive terminal");
+    const session = await openBrowserTarget(id);
+    console.log(`Opened ${session.name} in a private Relay browser.`);
+    console.log("Sign in, complete MFA, and leave the app on any page you want.");
+    const prompt = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      await prompt.question("Press Enter here when you are finished… ");
+    } finally {
+      prompt.close();
+      await closeBrowserTarget(id);
+    }
+    console.log(`Login saved. Run a test with: relay test run <id> --target ${id}`);
+    return;
+  }
+  if (command === "check") {
+    const id = argv[1]?.trim();
+    if (!id) throw new Error("relay target check requires a target id");
+    const target = await readTarget(id);
+    if (!target) throw new Error(`Target not found: ${id}`);
+    const result = await preflightTarget(target);
+    for (const check of result.checks) {
+      const mark = check.status === "pass" ? "✓" : check.status === "warning" ? "!" : "✗";
+      console.log(`${mark} ${check.label}: ${check.message}`);
+    }
+    if (!result.ok) throw new Error(`${target.name} is not ready`);
+    return;
+  }
+  if (command === "remove") {
+    const id = argv[1]?.trim();
+    if (!id) throw new Error("relay target remove requires a target id");
+    await closeBrowserTarget(id);
+    await deleteTarget(id);
+    console.log(`Removed ${id}`);
+    return;
+  }
+  throw new Error(`Unknown target command: ${command ?? "(missing)"}`);
 }
 
 async function runRecipeViaJob(recipeId: string, argv: string[]): Promise<void> {
@@ -776,6 +861,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
   if (cmd === "matrix") {
     await cmdMatrix(argv.slice(1));
+    return;
+  }
+  if (cmd === "target") {
+    await cmdTarget(argv.slice(1));
     return;
   }
   if (cmd === "discover") {

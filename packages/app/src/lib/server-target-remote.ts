@@ -65,3 +65,20 @@ export async function preflightTarget(
   );
   return data.preflight;
 }
+
+export async function openBrowserTarget(
+  request: ServerRequest,
+  id: string,
+): Promise<{ targetId: string; name: string; url: string }> {
+  const data = await request<{
+    session: { targetId: string; name: string; url: string };
+  }>(
+    `/targets/${encodeURIComponent(id)}/open`,
+    {
+      method: "POST",
+      body: "{}",
+    },
+    30_000,
+  );
+  return data.session;
+}

@@ -125,9 +125,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     defaultedViewForId = id;
   });
   const recordBlockedReason = () => {
-    if (server.health() !== "online") return "Start the device server before recording";
+    if (server.health() !== "online") return "Start Relay before recording";
     if (server.isEmptyDevices() || !server.selectedDevice()) {
-      return "Connect or select a device before recording";
+      return "Choose a phone or browser before recording";
     }
     const target = server.devices().find((device) => device.serial === server.selectedDevice());
     if (!target || target.booted === false) return "Start or connect this target before recording";
@@ -342,7 +342,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 data-tip={
                   recorder.recording()
                     ? "Stop recording"
-                    : recordBlockedReason() || "Record device interactions"
+                    : recordBlockedReason() || "Record interactions"
                 }
                 aria-label={
                   recorder.recording() ? "Stop recording" : recordBlockedReason() || "Record test"
@@ -358,11 +358,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     return;
                   }
                   if (server.health() !== "online") {
-                    toast("Start the device server before recording.", "warning");
+                    toast("Start Relay before recording.", "warning");
                     return;
                   }
                   if (server.isEmptyDevices() || !server.selectedDevice()) {
-                    toast("Connect or select a device before recording.", "warning");
+                    toast("Choose a phone or browser before recording.", "warning");
                     return;
                   }
                   if (!selected()) void createTest(true);

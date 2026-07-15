@@ -49,6 +49,7 @@ import {
   listTargetProfiles,
   listTargets,
   preflightTarget,
+  openBrowserTarget as openBrowserTargetRemote,
   saveBrowserTarget as saveBrowserTargetRemote,
   selectDevice as selectDeviceRequest,
 } from "../lib/server-target-remote";
@@ -506,6 +507,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     async function preflightTargetRemote(id: string): Promise<TargetPreflight> {
       return preflightTarget(request, id);
+    }
+
+    async function openBrowserTarget(id: string): Promise<void> {
+      const session = await openBrowserTargetRemote(request, id);
+      toast(`${session.name} is ready for sign in`, "success");
     }
 
     async function refreshRecipes() {
@@ -1268,6 +1274,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       saveBrowserTarget,
       deleteTarget: deleteTargetRemote,
       preflightTarget: preflightTargetRemote,
+      openBrowserTarget,
       refreshJobs,
       refreshRuns,
       pollHealth,

@@ -1,7 +1,9 @@
 # Relay
 
-Production-minded **Android and iOS app testing** on physical devices, built on
-[agent-device](https://oss.callstack.com/agent-device/docs/quick-start).
+Black-box testing for **web, Android, and iOS**—designed for people who can use a product even when
+they cannot access or modify its source code. Mobile control is built on
+[agent-device](https://oss.callstack.com/agent-device/docs/quick-start); web control uses Playwright
+inside a Relay-owned browser profile.
 
 Architecture and theming follow [OpenCode](https://github.com/anomalyco/opencode) patterns
 (core · HTTP/SSE · thin hosts · full theme resolve/v2). Product craft aims at the bar set by
@@ -33,6 +35,23 @@ In the UI, open **Tests** and follow the single primary action: connect a device
 and use the app normally. Relay turns the interaction into editable steps. Review the steps and
 press **Run** to create the first report. If recording is not appropriate, **Build without
 recording** opens the same editor with manual and AI-assisted steps.
+
+For a website, open **Settings → Targets**, add its start URL, and choose **Open & sign in**. Relay
+opens a visible, isolated Chrome profile so login, MFA, consent, and CAPTCHA can be completed by a
+person. Cookies from that profile persist locally and are reused by recordings, CLI runs,
+schedules, and compatibility matrices; Relay never reads the user’s everyday browser profile.
+
+The equivalent CLI flow is:
+
+```bash
+relay target add "Store staging" https://staging.example.com
+relay target login <target-id>          # sign in normally, then press Enter
+relay test run checkout --target <target-id>
+```
+
+Tests remain target-neutral: a tap/click, text entry, wait, screenshot, assertion, or reusable flow
+has one recipe representation. Adapters translate it to the selected iOS, Android, or browser
+target, and unsupported device-only operations fail explicitly instead of being silently skipped.
 
 ### Reusable recorded setups and app builds
 
@@ -130,6 +149,13 @@ pnpm --filter @relay/cli exec tsx src/index.ts test list --json
 pnpm --filter @relay/cli exec tsx src/index.ts test validate
 pnpm --filter @relay/cli exec tsx src/index.ts test export login-x > tests/login-x.relay.yaml
 
+# Browser setup is interactive once; later runs reuse the private login profile
+pnpm --filter @relay/cli exec tsx src/index.ts target add "Store staging" https://staging.example.com
+pnpm --filter @relay/cli exec tsx src/index.ts target list
+pnpm --filter @relay/cli exec tsx src/index.ts target login <target-id>
+pnpm --filter @relay/cli exec tsx src/index.ts target check <target-id>
+pnpm --filter @relay/cli exec tsx src/index.ts test run login-x --target <target-id>
+
 # Named compatibility matrices freeze the observed targets before execution
 pnpm --filter @relay/cli exec tsx src/index.ts matrix list
 pnpm --filter @relay/cli exec tsx src/index.ts matrix validate release-smoke
@@ -185,6 +211,7 @@ GET  /devices /actions /jobs /jobs/:id
 POST /jobs  POST /jobs/:id/retry
 GET/POST /projects /builds /device-pools /device-leases
 GET/POST /matrices  POST /matrices/:id/resolve  GET /target-profiles
+GET/POST /targets  POST /targets/:id/open  POST /targets/:id/preflight
 GET /recipes/:id/yaml  POST /recipes/import
 GET/PUT  /project/variables /recipes/:id/journey
 POST /generate

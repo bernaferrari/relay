@@ -57,7 +57,8 @@ connected mobile devices (not a coding agent).
 
 - `GET /health` `/meta` `/events` (SSE)
 - `GET /devices` `/actions` `/jobs` `/jobs/:id`
-- `GET/POST /targets`, `DELETE /targets/:id`, and `POST /targets/:id/preflight`
+- `GET/POST /targets`, `DELETE /targets/:id`, `POST /targets/:id/open`, and
+  `POST /targets/:id/preflight`
 - `GET /recipes` `/recipes/:id`, `GET /recipes/:id/yaml`, and `POST /recipes/import`
 - `GET/POST /projects` `/builds` `/device-pools` `/device-leases` `/matrices`
 - `GET /target-profiles` and `POST /matrices/:id/resolve` for frozen compatibility previews
@@ -95,6 +96,10 @@ connected mobile devices (not a coding agent).
 recipe IR stays independent of Playwright and agent-device. A run freezes target preflight,
 performance, screenshots, logs, network activity, and video into immutable evidence. Managed
 browser profiles live under `.relay/browser-profiles/` and never reuse personal browser data.
+`POST /targets/:id/open` always launches a headed browser for human login, MFA, consent, or other
+setup. Closing that session flushes the isolated profile; future UI, CLI, scheduled, and matrix
+runs reuse it. Direct attachment to a personal browser profile is intentionally not the default
+because it is nondeterministic and may expose unrelated browsing data.
 
 ## Traces, heal, runs/, overlays
 
