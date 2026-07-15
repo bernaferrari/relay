@@ -321,6 +321,24 @@ export type SessionState = {
   recordSession?: boolean;
   saveScriptPath?: string;
   /**
+   * #1258: `--force`/`--overwrite` captured at the moment `--save-script` was
+   * armed (`open --save-script --force`, `close --save-script --force`, or
+   * `replay --save-script --force`'s first arm) — persisted here, like
+   * `saveScriptPath`, so a LATER write that does not repeat the flag (a bare
+   * `close` finishing a session opened with `open --save-script --force`, a
+   * `--from` continuation leg, or an unattended auto-commit teardown with no
+   * live request at all) still honors the overwrite the caller opted into up
+   * front. The effective decision at any write site is `req.flags?.force ||
+   * session.saveScriptForce`.
+   *
+   * Force is PER-TARGET, not a session-wide standing grant: it stays set while
+   * the target is unchanged, but re-arming a DIFFERENT `--save-script=<other>`
+   * without a live `--force` CLEARS it (`applySaveScriptRetarget`), so a later
+   * retarget can never silently overwrite a file the caller never opted into.
+   * A live `--force` on the retarget re-grants it for the new target.
+   */
+  saveScriptForce?: boolean;
+  /**
    * ADR 0012 decision 6, R6: `session.actions.length` at the `replay
    * --save-script` invocation that armed this session — the repair-run
    * boundary. The healed `.ad` serializes only `session.actions` from this
