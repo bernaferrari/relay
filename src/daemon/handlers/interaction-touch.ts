@@ -135,12 +135,14 @@ async function dispatchTargetedTouchViaRuntime(
       : parseTouchTarget(req.positionals ?? [], commandLabel);
   if (!parsedTarget.ok) return parsedTarget.response;
   // Staleness relative to what the client knew when it sent this @ref — read
-  // BEFORE any internal recapture (Android freshness refresh, --verify) flips
-  // the flag or advances the generation as a side effect of this same command
-  // (#1076). Pinned refs (`@e12~s3`) get a precise generation-mismatch
-  // warning; plain refs keep the coarse marker warning.
+  // BEFORE any internal recapture (Android freshness refresh, --verify) advances
+  // the generation as a side effect of this same command. Pinned refs
+  // (`@e12~s3`) get a precise generation-mismatch warning; a plain ref warns
+  // while the frame is expired. A mutating `find`'s internal dispatch supplies a
+  // locator-minted ref (`internal.findResolvedTarget`), so it carries no
+  // user-facing staleness — the caller never consumed a `@ref` (ADR 0014).
   const staleRefsWarning =
-    parsedTarget.target.kind === 'ref'
+    parsedTarget.target.kind === 'ref' && req.internal?.findResolvedTarget !== true
       ? resolveRefStalenessWarning({
           session,
           ref: parsedTarget.target.ref,
@@ -315,12 +317,11 @@ async function buildTargetedTouchResponsePayloads(params: {
 /**
  * #1101 `--settle`: a settle observation carrying a diff hands the client refs
  * minted from the freshly stored settled tree (added lines carry them), which
- * makes the response ref-issuing like snapshot/find (#1076): the coarse
- * `snapshotRefsStale` marker clears (the same accepted coarse blessing as
- * find's single re-issued ref) and the stored tree's generation rides inside
- * the settle payload for MCP per-ref pinning. Without a diff — never captured,
- * or sparse-quality capture that was not stored — nothing was issued and the
- * staleness machinery is left untouched.
+ * makes the response ref-issuing like snapshot/find: it activates a PARTIAL
+ * frame (ADR 0014) authorizing exactly those bodies, and the stored tree's
+ * generation rides inside the settle payload for MCP per-ref pinning. Without a
+ * diff — never captured, or sparse-quality capture that was not stored — nothing
+ * was issued and the frame is left as the press's leaf seam expired it.
  */
 function settleRefsGenerationIssue(
   session: SessionState,
@@ -643,11 +644,16 @@ async function prepareFillRefTarget(
   refGeneration: number | undefined,
 ): Promise<{ response?: DaemonResponse; staleRefsWarning?: string }> {
   if (target.kind !== 'ref') return {};
-  const staleRefsWarning = resolveRefStalenessWarning({
-    session,
-    ref: target.ref,
-    mintedGeneration: refGeneration,
-  });
+  // A mutating `find`'s internal dispatch supplies a locator-minted ref, so the
+  // public response must not claim the caller consumed a stale `@ref` (ADR 0014).
+  const staleRefsWarning =
+    params.req.internal?.findResolvedTarget === true
+      ? undefined
+      : resolveRefStalenessWarning({
+          session,
+          ref: target.ref,
+          mintedGeneration: refGeneration,
+        });
   const invalidRefFlagsResponse = params.refSnapshotFlagGuardResponse('fill', params.req.flags);
   if (invalidRefFlagsResponse) return { response: invalidRefFlagsResponse, staleRefsWarning };
   const admissionResponse = params.req.internal?.findResolvedTarget
