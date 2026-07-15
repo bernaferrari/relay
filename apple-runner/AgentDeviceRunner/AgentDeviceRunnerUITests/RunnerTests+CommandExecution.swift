@@ -337,26 +337,163 @@ extension RunnerTests {
     XCTAssertFalse(snapshotXCTestPenaltyWarmupExemptionPending)
   }
 
-  func testSkipAppActivationPreflightOnlyIncludesCoordinateOnlySynthesizedTaps() throws {
+  func testSkipAppActivationPreflightIncludesForegroundCachedCoordinateOnlyTaps() throws {
+    app.launch()
     currentApp = app
     currentBundleId = nil
     defer {
       currentApp = nil
       currentBundleId = nil
+      app.terminate()
     }
     let tap = try runnerCommandFixture(
-      #"{"command":"tap","commandId":"tap-1","x":10,"y":20,"synthesized":true}"#
+      #"{"command":"tap","commandId":"tap-1","x":10,"y":20}"#
     )
 
     XCTAssertTrue(shouldSkipAppActivationPreflight(tap))
   }
 
-  func testSkipAppActivationPreflightRejectsSelectorAndMixedSequenceGestures() throws {
+  func testSkipAppActivationPreflightRejectsMissingChangedAndBackgroundTargets() throws {
+    let coordinateTap = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-1","x":10,"y":20}"#
+    )
+    currentApp = nil
+    currentBundleId = nil
+    XCTAssertFalse(shouldSkipAppActivationPreflight(coordinateTap))
+
+    app.launch()
+    currentApp = app
+    currentBundleId = "com.example.current"
+    defer {
+      currentApp = nil
+      currentBundleId = nil
+      app.terminate()
+    }
+    let changedBundleTap = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-2","appBundleId":"com.example.other","x":10,"y":20}"#
+    )
+
+    XCTAssertFalse(shouldSkipAppActivationPreflight(changedBundleTap))
+
+    app.terminate()
+    currentApp = app
+    currentBundleId = nil
+
+    XCTAssertFalse(shouldSkipAppActivationPreflight(coordinateTap))
+  }
+
+  func testPrepareActiveCommandContextRoutesBlockingSystemModalToSpringboard() throws {
+    blockingSystemModalPresenceOverrideForTesting = true
+    currentApp = nil
+    currentBundleId = nil
+    defer {
+      blockingSystemModalPresenceOverrideForTesting = nil
+      currentApp = nil
+      currentBundleId = nil
+    }
+    let tap = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-1","x":10,"y":20}"#
+    )
+
+    let preparation = prepareActiveCommandContext(
+      command: tap,
+      routeToSpringboard: shouldRouteToSpringboardBlockingSystemModal(tap)
+    )
+
+    guard case .context(let context) = preparation else {
+      XCTFail("expected command context")
+      return
+    }
+    XCTAssertTrue(context.app === springboard)
+  }
+
+  func testExecuteDispatchedReturnsBusyBeforeBlockingSystemModalProbeDrains() throws {
+    app.launch()
     currentApp = app
     currentBundleId = nil
     defer {
       currentApp = nil
       currentBundleId = nil
+      systemModalProbeOverrideForTesting = nil
+      clearSnapshotXCTestChannelPenalty(reason: "test-cleanup")
+      app.terminate()
+    }
+
+    final class ResultBox {
+      var response: Response?
+      var error: Error?
+      var commandRecoveredBeforeRelease = false
+      var wasBusyBeforeRelease = false
+      var hadAbandonedProbeBeforeRelease = false
+      var drained = false
+    }
+    let box = ResultBox()
+    let probeStarted = expectation(description: "system-modal routing probe started")
+    let verificationFinished = expectation(description: "command recovery and modal probe drain verified")
+    let probeReleaseGate = DispatchSemaphore(value: 0)
+    let commandFinishedGate = DispatchSemaphore(value: 0)
+    systemModalProbeOverrideForTesting = { _ in
+      probeStarted.fulfill()
+      _ = probeReleaseGate.wait(timeout: .now() + 15)
+      return DataPayload(message: "late system modal")
+    }
+
+    let command = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"bounded-modal-routing","x":10,"y":20}"#
+    )
+    DispatchQueue(label: "agent-device.runner.tests.modal-routing-probe").async {
+      do {
+        box.response = try self.executeDispatched(command: command)
+      } catch {
+        box.error = error
+      }
+      commandFinishedGate.signal()
+    }
+    DispatchQueue(label: "agent-device.runner.tests.modal-routing-probe-verifier").async {
+      let commandWait = commandFinishedGate.wait(
+        timeout: .now() + self.systemModalProbeBudget + 3
+      )
+      box.commandRecoveredBeforeRelease = commandWait == .success
+        && box.error == nil
+        && box.response?.error?.code == "RUNNER_BUSY"
+      if case .busy = self.currentMainThreadBusyState() {
+        box.wasBusyBeforeRelease = true
+      }
+      box.hadAbandonedProbeBeforeRelease = self.hasAbandonedTreeCapture()
+
+      // The XCTest main thread is blocked inside the injected probe, so this verifier owns the
+      // ordered release after recording the command result and abandoned-work state above.
+      probeReleaseGate.signal()
+      let deadline = Date().addingTimeInterval(5)
+      while self.hasAbandonedTreeCapture(), Date() < deadline {
+        self.sleepFor(0.002)
+      }
+      box.drained = !self.hasAbandonedTreeCapture()
+      verificationFinished.fulfill()
+    }
+
+    wait(for: [probeStarted, verificationFinished], timeout: 15)
+    XCTAssertTrue(
+      box.commandRecoveredBeforeRelease,
+      "the public coordinate tap must return RUNNER_BUSY before the blocked modal probe drains"
+    )
+    XCTAssertTrue(box.wasBusyBeforeRelease)
+    XCTAssertTrue(box.hadAbandonedProbeBeforeRelease)
+    XCTAssertTrue(box.drained)
+    guard case .idle = currentMainThreadBusyState() else {
+      return XCTFail("expected the runner to become idle after the routing probe drained")
+    }
+    XCTAssertFalse(hasAbandonedTreeCapture())
+  }
+
+  func testSkipAppActivationPreflightRejectsSelectorAndMixedSequenceGestures() throws {
+    app.launch()
+    currentApp = app
+    currentBundleId = nil
+    defer {
+      currentApp = nil
+      currentBundleId = nil
+      app.terminate()
     }
     let selectorTap = try runnerCommandFixture(
       #"{"command":"tap","commandId":"tap-1","selectorKey":"label","selectorValue":"Search","synthesized":true}"#
@@ -378,7 +515,7 @@ extension RunnerTests {
     XCTAssertFalse(shouldSkipAppActivationPreflight(mixedSequence))
   }
 
-  func testSkipAppActivationPreflightRequiresCachedTarget() throws {
+  func testSkipAppActivationPreflightRequiresCachedForegroundTarget() throws {
     currentApp = nil
     currentBundleId = nil
     let scroll = try runnerCommandFixture(
@@ -389,11 +526,13 @@ extension RunnerTests {
   }
 
   func testSkipAppActivationPreflightKeepsDragScrollAndSequenceOnForegroundGuard() throws {
+    app.launch()
     currentApp = app
     currentBundleId = nil
     defer {
       currentApp = nil
       currentBundleId = nil
+      app.terminate()
     }
     let drag = try runnerCommandFixture(
       #"{"command":"drag","commandId":"drag-1","x":10,"y":20,"x2":30,"y2":40,"synthesized":true}"#
@@ -413,6 +552,14 @@ extension RunnerTests {
     XCTAssertFalse(shouldSkipAppActivationPreflight(drag))
     XCTAssertFalse(shouldSkipAppActivationPreflight(scroll))
     XCTAssertFalse(shouldSkipAppActivationPreflight(sequence))
+  }
+
+  func testSkipAppActivationPreflightIncludesAlertCommands() throws {
+    let alert = try runnerCommandFixture(
+      #"{"command":"alert","commandId":"alert-1","action":"get"}"#
+    )
+
+    XCTAssertTrue(shouldSkipAppActivationPreflight(alert))
   }
 
   func testExecuteDispatchedReturnsBusyBeforeMainThreadFastPath() throws {
@@ -450,6 +597,7 @@ extension RunnerTests {
   func testAlertResolutionCannotBypassRequestedDeadline() throws {
     final class ResultBox {
       var error: Error?
+      var probeDeadline: Date?
       var observedDeadline: Date?
     }
     let box = ResultBox()
@@ -458,10 +606,14 @@ extension RunnerTests {
     let commandFinished = expectation(description: "alert command respected its deadline")
     let startedAt = Date()
     let command = try runnerCommandFixture(
-      #"{"command":"alert","commandId":"alert-deadline","appBundleId":"com.apple.springboard","action":"get","timeoutMs":50}"#
+      #"{"command":"alert","commandId":"alert-deadline","appBundleId":"com.apple.springboard","action":"get","timeoutMs":500}"#
     )
     currentApp = springboard
     currentBundleId = Self.springboardBundleId
+    systemModalProbeOverrideForTesting = { deadline in
+      box.probeDeadline = deadline
+      return nil
+    }
     alertResolutionOverrideForTesting = { deadline in
       box.observedDeadline = deadline
       _ = releaseResolution.wait(timeout: .now() + 1)
@@ -470,6 +622,7 @@ extension RunnerTests {
     }
     defer {
       releaseResolution.signal()
+      systemModalProbeOverrideForTesting = nil
       alertResolutionOverrideForTesting = nil
       currentApp = nil
       currentBundleId = nil
@@ -488,10 +641,12 @@ extension RunnerTests {
     let error = box.error as NSError?
     XCTAssertEqual(error?.domain, RunnerErrorDomain.general)
     XCTAssertEqual(error?.code, RunnerErrorCode.mainThreadExecutionTimedOut)
+    XCTAssertNotNil(box.probeDeadline)
     XCTAssertNotNil(box.observedDeadline)
-    if let observedDeadline = box.observedDeadline {
+    if let probeDeadline = box.probeDeadline, let observedDeadline = box.observedDeadline {
+      XCTAssertEqual(probeDeadline.timeIntervalSince(observedDeadline), 0, accuracy: 0.01)
       XCTAssertGreaterThan(observedDeadline.timeIntervalSince(startedAt), 0)
-      XCTAssertLessThan(observedDeadline.timeIntervalSince(startedAt), 0.2)
+      XCTAssertLessThan(observedDeadline.timeIntervalSince(startedAt), 0.75)
     }
 
     releaseResolution.signal()
@@ -723,38 +878,63 @@ extension RunnerTests {
     )
   }
 
-  private func executeDispatched(command: Command) throws -> Response {
-    // XCTest work cannot be cancelled mid-flight: once the watchdog abandons a main-queue
-    // block, queueing more main-thread commands behind it only buries the runner deeper.
-    // Refuse fast instead so the daemon backs off while the abandoned work drains; past the
-    // wedge threshold, escalate so the daemon recycles this runner (#1105).
+  private func runnerUnavailableResponse(command: Command) -> Response? {
     switch currentMainThreadBusyState() {
     case .idle:
-      break
+      return nil
     case .busy(let abandonedForSeconds):
       return runnerBusyResponse(command: command, abandonedForSeconds: abandonedForSeconds)
     case .wedged(let abandonedForSeconds):
       return runnerWedgedResponse(command: command, abandonedForSeconds: abandonedForSeconds)
     }
+  }
+
+  private func executeDispatched(command: Command) throws -> Response {
+    // XCTest work cannot be cancelled mid-flight: once the watchdog abandons a main-queue
+    // block, queueing more main-thread commands behind it only buries the runner deeper.
+    // Refuse fast instead so the daemon backs off while the abandoned work drains; past the
+    // wedge threshold, escalate so the daemon recycles this runner (#1105).
+    if let unavailable = runnerUnavailableResponse(command: command) {
+      return unavailable
+    }
+    let alertDeadline = command.command == .alert
+      ? Date().addingTimeInterval(Self.alertCommandTimeout(timeoutMs: command.timeoutMs))
+      : nil
     if Thread.isMainThread {
-      let alertDeadline = command.command == .alert
-        ? Date().addingTimeInterval(Self.alertCommandTimeout(timeoutMs: command.timeoutMs))
-        : nil
-      return try executeOnMainSafely(command: command, alertDeadline: alertDeadline)
+      let routeToSpringboard = shouldRouteToSpringboardBlockingSystemModal(
+        command,
+        deadline: alertDeadline
+      )
+      return try executeOnMainSafely(
+        command: command,
+        alertDeadline: alertDeadline,
+        routeToSpringboard: routeToSpringboard
+      )
+    }
+    // Resolve this before the command's outer main-thread block. If the bounded probe abandons
+    // slow XCTest enumeration, return the established recoverable response instead of queueing
+    // command preparation behind work that may outlive the 30-second command watchdog.
+    let routeToSpringboard = shouldRouteToSpringboardBlockingSystemModal(
+      command,
+      deadline: alertDeadline
+    )
+    if let unavailable = runnerUnavailableResponse(command: command) {
+      return unavailable
     }
     if command.command == .snapshot {
       return try executeSnapshotDispatched(command: command)
     }
-    if command.command == .alert {
-      let deadline = Date().addingTimeInterval(
-        Self.alertCommandTimeout(timeoutMs: command.timeoutMs)
-      )
+    if command.command == .alert, let deadline = alertDeadline {
       return try runMainThreadWork(
         command: command,
         timeout: max(0.001, deadline.timeIntervalSinceNow),
         timeoutError: mainThreadExecutionTimeoutError
       ) {
-        try self.executeOnMainSafely(command: command, alertDeadline: deadline)
+        try self.executeOnMainSafely(
+          command: command,
+          alertDeadline: deadline,
+          routeToSpringboard: routeToSpringboard
+        )
       }
     }
     return try runMainThreadWork(
@@ -762,7 +942,7 @@ extension RunnerTests {
       timeout: mainThreadExecutionTimeout,
       timeoutError: mainThreadExecutionTimeoutError
     ) {
-      try self.executeOnMainSafely(command: command)
+      try self.executeOnMainSafely(command: command, routeToSpringboard: routeToSpringboard)
     }
   }
 
@@ -842,7 +1022,8 @@ extension RunnerTests {
 
   private func executeOnMainSafely(
     command: Command,
-    alertDeadline: Date? = nil
+    alertDeadline: Date? = nil,
+    routeToSpringboard: Bool
   ) throws -> Response {
     var hasRetried = false
     while true {
@@ -851,7 +1032,11 @@ extension RunnerTests {
       let failureCountBefore = currentXCTestFailureCount()
       let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
         do {
-          response = try self.executeOnMain(command: command, alertDeadline: alertDeadline)
+          response = try self.executeOnMain(
+            command: command,
+            alertDeadline: alertDeadline,
+            routeToSpringboard: routeToSpringboard
+          )
         } catch {
           swiftError = error
         }
@@ -981,7 +1166,7 @@ extension RunnerTests {
       timeout: mainThreadExecutionTimeout,
       timeoutError: mainThreadExecutionTimeoutError
     ) {
-      try self.prepareActiveCommandContextSafely(command: command)
+      try self.prepareActiveCommandContextSafely(command: command, routeToSpringboard: false)
     }
     switch preparation {
     case .response(let response):
@@ -1060,10 +1245,16 @@ extension RunnerTests {
     }
   }
 
-  private func prepareActiveCommandContextSafely(command: Command) throws -> ActiveCommandPreparation {
+  private func prepareActiveCommandContextSafely(
+    command: Command,
+    routeToSpringboard: Bool
+  ) throws -> ActiveCommandPreparation {
     var preparation: ActiveCommandPreparation?
     let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
-      preparation = self.prepareActiveCommandContext(command: command)
+      preparation = self.prepareActiveCommandContext(
+        command: command,
+        routeToSpringboard: routeToSpringboard
+      )
     })
     if let exceptionMessage {
       throw NSError(
@@ -1082,8 +1273,15 @@ extension RunnerTests {
     return preparation
   }
 
-  private func executeOnMain(command: Command, alertDeadline: Date?) throws -> Response {
-    let preparation = prepareActiveCommandContext(command: command)
+  private func executeOnMain(
+    command: Command,
+    alertDeadline: Date?,
+    routeToSpringboard: Bool
+  ) throws -> Response {
+    let preparation = prepareActiveCommandContext(
+      command: command,
+      routeToSpringboard: routeToSpringboard
+    )
     let activeApp: XCUIApplication
     switch preparation {
     case .response(let response):
@@ -1169,9 +1367,14 @@ extension RunnerTests {
     )
   }
 
-  private func prepareActiveCommandContext(command: Command) -> ActiveCommandPreparation {
+  private func prepareActiveCommandContext(
+    command: Command,
+    routeToSpringboard: Bool = false
+  ) -> ActiveCommandPreparation {
     var activeApp = currentApp ?? app
-    if shouldSkipAppActivationPreflight(command) {
+    if routeToSpringboard {
+      activeApp = springboard
+    } else if shouldSkipAppActivationPreflight(command) {
       activeApp = resolveAppWithoutActivation(command: command)
     } else if !isRunnerLifecycleCommand(command.command) {
       let normalizedBundleId = command.appBundleId?
@@ -2034,23 +2237,63 @@ extension RunnerTests {
 
   private func shouldSkipAppActivationPreflight(_ command: Command) -> Bool {
 #if os(iOS)
-    // Coordinate-only synthesized taps can run after an AX-fatal screen because they do not
+    if command.command == .alert {
+      return true
+    }
+    // Coordinate-only synthesized taps can run after an AX-fatal foreground screen because they do not
     // need app activation, window lookup, keyboard lookup, or element resolution. Selector/text
     // interactions intentionally stay on the normal AX path because they need an element query.
     // Scroll/drag/sequence keep the normal foreground guard and stabilization path.
     guard command.text == nil, command.selectorKey == nil else { return false }
     guard hasCachedTargetForActivationSkip(command: command) else { return false }
-    return command.command == .tap
-      && command.synthesized == true
-      && command.x != nil
-      && command.y != nil
+    return isCoordinateOnlyTap(command)
 #else
     return false
 #endif
   }
 
+  private func shouldRouteToSpringboardBlockingSystemModal(
+    _ command: Command,
+    deadline: Date? = nil
+  ) -> Bool {
+#if os(iOS)
+    guard command.command == .alert || isCoordinateOnlyTap(command) else {
+      return false
+    }
+    #if AGENT_DEVICE_RUNNER_UNIT_TESTS
+    if let override = blockingSystemModalPresenceOverrideForTesting {
+      return override
+    }
+    #endif
+    let budgetDeadline = Date().addingTimeInterval(systemModalProbeBudget)
+    let probeDeadline = deadline.map { min($0, budgetDeadline) } ?? budgetDeadline
+    // `runMainThreadWork` executes inline for a main-thread caller, so that path cannot use its
+    // timeout machinery. Direct main-thread dispatch keeps the prior synchronous modal check;
+    // normal off-main command dispatch uses the bounded probe and post-probe busy recovery.
+    if Thread.isMainThread {
+      return firstBlockingSystemModal(
+        in: springboard,
+        deadline: probeDeadline
+      ) != nil
+    }
+    return boundedBlockingSystemAlertSnapshot(
+      deadline: probeDeadline
+    ) != nil
+#else
+    return false
+#endif
+  }
+
+  private func isCoordinateOnlyTap(_ command: Command) -> Bool {
+    return command.command == .tap
+      && command.text == nil
+      && command.selectorKey == nil
+      && command.x != nil
+      && command.y != nil
+  }
+
   private func hasCachedTargetForActivationSkip(command: Command) -> Bool {
-    guard currentApp != nil else { return false }
+    guard let currentApp, currentApp.state == .runningForeground else { return false }
     guard let bundleId = command.appBundleId?.trimmingCharacters(in: .whitespacesAndNewlines),
       !bundleId.isEmpty
     else {
