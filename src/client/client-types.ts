@@ -252,6 +252,12 @@ export type SessionCloseResult = {
   session: string;
   shutdown?: TargetShutdownResult;
   provider?: CloudProviderSessionResult;
+  /**
+   * #1258: absolute path of the committed session/healed script when this close
+   * published one (`close --save-script`, or a repair-armed session's finalize)
+   * — so a client that requested publication learns where the file landed.
+   */
+  savedScript?: string;
   identifiers: AgentDeviceIdentifiers;
 };
 
@@ -292,6 +298,8 @@ export type AppOpenOptions = AgentDeviceRequestOverrides &
     launchArgs?: string[];
     relaunch?: boolean;
     saveScript?: boolean | string;
+    /** #1258: overwrite an existing --save-script target instead of refusing. Alias: --overwrite. */
+    force?: boolean;
     deviceHub?: boolean;
     testIme?: boolean;
     noRecord?: boolean;
@@ -316,12 +324,21 @@ export type AppOpenResult = {
 export type AppCloseOptions = AgentDeviceRequestOverrides & {
   app?: string;
   shutdown?: boolean;
+  saveScript?: boolean | string;
+  /** #1258: overwrite an existing --save-script target instead of refusing. Alias: --overwrite. */
+  force?: boolean;
 };
 
 export type AppCloseResult = {
   session: string;
   closedApp?: string;
   shutdown?: TargetShutdownResult;
+  /**
+   * #1258: absolute path of the committed session/healed script when this close
+   * published one (`close --save-script`, or a repair-armed session's finalize)
+   * — so a client that requested publication learns where the file landed.
+   */
+  savedScript?: string;
   identifiers: AgentDeviceIdentifiers;
 };
 
@@ -866,6 +883,8 @@ export type ReplayRunOptions = AgentDeviceRequestOverrides &
      * `<stem>.healed.ad` when the repair ends with `close --save-script`.
      */
     saveScript?: boolean | string;
+    /** #1258: overwrite an existing --save-script target instead of refusing. Alias: --overwrite. */
+    force?: boolean;
   };
 
 export type ReplayTestOptions = AgentDeviceRequestOverrides &
@@ -1072,6 +1091,8 @@ export type InternalRequestOptions = AgentDeviceClientConfig &
     relaunch?: boolean;
     shutdown?: boolean;
     saveScript?: boolean | string;
+    /** #1258: overwrite an existing --save-script target instead of refusing. Alias: --overwrite. */
+    force?: boolean;
     deviceHub?: boolean;
     testIme?: boolean;
     noRecord?: boolean;
@@ -1110,7 +1131,12 @@ export type AgentDeviceClient = {
       options?: AgentDeviceRequestOverrides & Pick<AgentDeviceClientConfig, 'stateDir'>,
     ) => Promise<string>;
     close: (
-      options?: AgentDeviceRequestOverrides & { shutdown?: boolean },
+      options?: AgentDeviceRequestOverrides & {
+        shutdown?: boolean;
+        saveScript?: boolean | string;
+        /** #1258: overwrite an existing --save-script target instead of refusing. Alias: --overwrite. */
+        force?: boolean;
+      },
     ) => Promise<SessionCloseResult>;
     artifacts: (options?: CloudArtifactsOptions) => Promise<AgentArtifactsResult>;
   };

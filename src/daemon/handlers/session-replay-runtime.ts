@@ -10,6 +10,7 @@ import {
 } from '../../request/progress.ts';
 import { SessionStore } from '../session-store.ts';
 import { expandSessionPath } from '../session-paths.ts';
+import { applySaveScriptRetarget } from '../session-action-recorder.ts';
 import { type ReplayScriptMetadata } from '../../replay/script.ts';
 import { computeReplayPlanDigest } from '../../replay/plan-digest.ts';
 import { errorResponse, noActiveSessionError } from './response.ts';
@@ -245,13 +246,38 @@ export async function runReplayScriptFile(params: {
       // key clears any prior reap tombstone before starting a new transaction.
       sessionStore.clearRepairTombstone(sessionName);
     }
+    const preRunSession = sessionStore.get(sessionName);
+    // #1258: arm-time EEXIST preflight — fail HERE, before any step of this
+    // invocation dispatches, rather than letting the whole run (and, for a
+    // fresh repair, its very first `open`) execute only to hit the SAME
+    // refuse-on-exist at publish time (`publishHealedScriptAtomically`, at
+    // `close`/completion). Computes the SAME target `armReplaySaveScriptStep`
+    // below would resolve, without needing the session to exist yet, and
+    // honors the SAME effective force decision publication uses — read-only:
+    // it never mutates the session (it runs BEFORE `applySaveScriptRetarget`),
+    // so `liveForce`/`persistedForce` are passed separately for it to apply the
+    // per-target rule against the target it computes.
+    const saveScriptPreflight = preflightSaveScriptTarget({
+      saveScript: req.flags?.saveScript,
+      liveForce: req.flags?.force,
+      persistedForce: preRunSession?.saveScriptForce,
+      sourcePath: resolved,
+      existingSaveScriptPath: preRunSession?.saveScriptPath,
+    });
+    if (saveScriptPreflight) return saveScriptPreflight;
     // ADR 0012 decision 6 (C2): a repair-armed resume re-opens the completion
     // window — a leg that re-diverges must not inherit a prior leg's COMPLETE
-    // flag and let a later `close` commit a now-stale transaction.
-    const preRunSession = sessionStore.get(sessionName);
+    // flag and let a later `close` commit a now-stale transaction. #1258: this
+    // reset MUST run AFTER the preflight's early-return above — a preflight
+    // REJECTION (a retarget to an existing target without force) leaves the
+    // session untouched, so a prior COMPLETE transaction stays committable at
+    // its ORIGINAL target; resetting before the return would corrupt it (a
+    // later `close` would then refuse to commit the original). The reset is
+    // correct only when this run actually proceeds to re-arm.
     if (preRunSession?.saveScriptBoundary !== undefined) preRunSession.saveScriptComplete = false;
     const armReplaySaveScriptStep = createReplaySaveScriptArmer({
       saveScript: req.flags?.saveScript,
+      force: req.flags?.force,
       sessionStore,
       sessionName,
       sourcePath: resolved,
@@ -504,6 +530,54 @@ function preflightReplayAgainstActiveRepair(params: {
 }
 
 /**
+ * #1258: arm-time EEXIST preflight. Absent this, a repair-armed run's target
+ * is only checked at PUBLISH time (`publishHealedScriptAtomically`, on
+ * `close`/completion) — by then the ENTIRE repair (agent's corrective steps
+ * included) may already have executed against the device, only to fail on a
+ * pre-existing target at the very end. Resolves the SAME target
+ * `armReplaySaveScriptStep` would (explicit `--save-script=<path>` always
+ * wins; otherwise an already-armed session's existing path if this is a
+ * `--from` continuation leg reusing it, else the default `<stem>.healed.ad`
+ * sibling) WITHOUT needing the session to exist yet, so it runs before step 1
+ * dispatches even when that step is the `open` that creates the session.
+ * READ-ONLY: it never mutates the session (it runs before
+ * `applySaveScriptRetarget`).
+ *
+ * The effective-force decision MATCHES `applySaveScriptRetarget`'s per-target
+ * contract, computed against the target THIS request resolves to: a live
+ * `--force`/`--overwrite` always bypasses; a PERSISTED `saveScriptForce`
+ * bypasses ONLY when this request writes to the SAME target it was granted for
+ * (`targetPath === existingSaveScriptPath`). An explicit RETARGET to a
+ * different path without a live force does NOT bypass here — because
+ * `applySaveScriptRetarget` will CLEAR that persisted force for the new target
+ * before publication anyway, so letting the run execute (mutating the session
+ * mid-flight) only to refuse the existing target at the end is exactly what
+ * this preflight exists to prevent. A no-op when `--save-script` was not passed.
+ */
+function preflightSaveScriptTarget(params: {
+  saveScript: boolean | string | undefined;
+  liveForce: boolean | undefined;
+  persistedForce: boolean | undefined;
+  sourcePath: string;
+  existingSaveScriptPath: string | undefined;
+}): DaemonResponse | undefined {
+  const { saveScript, liveForce, persistedForce, sourcePath, existingSaveScriptPath } = params;
+  if (!saveScript) return undefined;
+  const targetPath =
+    typeof saveScript === 'string'
+      ? expandSessionPath(saveScript)
+      : (existingSaveScriptPath ?? healedScriptSiblingPath(sourcePath));
+  const effectiveForce =
+    Boolean(liveForce) || (Boolean(persistedForce) && targetPath === existingSaveScriptPath);
+  if (effectiveForce) return undefined;
+  if (!fs.existsSync(targetPath)) return undefined;
+  return errorResponse(
+    'COMMAND_FAILED',
+    `A file already exists at ${targetPath}; remove it, pass replay --save-script=<other-path>, or pass --force/--overwrite to replace it.`,
+  );
+}
+
+/**
  * ADR 0012 decision 6 (Fix 3): the source plan's own terminal `close` is
  * lifecycle, not a script step to replay, while a repair is armed — the agent
  * finalizes the transaction with `close --save-script` instead
@@ -536,15 +610,16 @@ function isRepairArmedTerminalClose(params: {
  */
 function createReplaySaveScriptArmer(params: {
   saveScript: boolean | string | undefined;
+  force: boolean | undefined;
   sessionStore: SessionStore;
   sessionName: string;
   sourcePath: string;
 }): () => void {
-  const { saveScript, sessionStore, sessionName, sourcePath } = params;
+  const { saveScript, force, sessionStore, sessionName, sourcePath } = params;
   if (!saveScript) return () => {};
   let firstArm = true;
   return () => {
-    armReplaySaveScriptStep({ sessionStore, sessionName, saveScript, sourcePath, firstArm });
+    armReplaySaveScriptStep({ sessionStore, sessionName, saveScript, force, sourcePath, firstArm });
     firstArm = false;
   };
 }
@@ -564,10 +639,11 @@ function armReplaySaveScriptStep(params: {
   sessionStore: SessionStore;
   sessionName: string;
   saveScript: boolean | string;
+  force: boolean | undefined;
   sourcePath: string;
   firstArm: boolean;
 }): void {
-  const { sessionStore, sessionName, saveScript, sourcePath, firstArm } = params;
+  const { sessionStore, sessionName, saveScript, force, sourcePath, firstArm } = params;
   const session = sessionStore.get(sessionName);
   if (!session) return;
   session.recordSession = true;
@@ -579,12 +655,18 @@ function armReplaySaveScriptStep(params: {
     // (`publishHealedScriptAtomically`) and refuses ANY pre-existing target,
     // an explicit caller-directed path included, exactly like the default
     // healed sibling.
-    session.saveScriptPath = expandSessionPath(saveScript);
+    applySaveScriptRetarget(session, expandSessionPath(saveScript), force);
     session.saveScriptDefaultedHealedPath = false;
   } else if (session.saveScriptPath === undefined) {
     session.saveScriptPath = healedScriptSiblingPath(sourcePath);
     session.saveScriptDefaultedHealedPath = true;
   }
+  // #1258: force is per-target — a LIVE `--force`/`--overwrite` persists onto
+  // the session (`saveScriptForce`) so a LATER `--from` continuation leg or an
+  // unattended auto-commit teardown (no live request) still honors it. Set
+  // AFTER `applySaveScriptRetarget` so a live flag always wins over a
+  // retarget-clear.
+  if (force) session.saveScriptForce = true;
   if (session.saveScriptBoundary === undefined) {
     session.saveScriptBoundary = firstArm ? session.actions.length : 0;
   }
