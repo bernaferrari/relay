@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Show, type JSX } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { cn } from "../lib/cn";
 import { eyebrow } from "../lib/ui";
@@ -15,6 +15,7 @@ export function TestWorkbench(props: {
   onOpenMap: () => void;
   onOpenAdvanced: () => void;
   onOpenTargets: () => void;
+  details?: JSX.Element;
 }) {
   const draft = useRecipeDraft();
 
@@ -25,24 +26,31 @@ export function TestWorkbench(props: {
         <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
       </div>
       <Show
-        when={draft.steps().length > 0}
+        when={props.details}
         fallback={
-          <aside class="flex min-h-0 flex-col border-l border-[var(--relay-line)] bg-[var(--relay-panel)] p-5 text-[12px] text-[var(--relay-text-tertiary)]">
-            <span class={eyebrow}>Step properties</span>
-            <strong class="mt-2 text-[14px] text-[var(--relay-text)]">
-              Record your first action
-            </strong>
-            <p class="mt-1.5 max-w-[30ch] leading-[1.55]">
-              Actions appear here as editable steps while you use the device.
-            </p>
-          </aside>
+          <Show
+            when={draft.steps().length > 0}
+            fallback={
+              <aside class="flex min-h-0 flex-col border-l border-[var(--relay-line)] bg-[var(--relay-panel)] p-5 text-[12px] text-[var(--relay-text-tertiary)]">
+                <span class={eyebrow}>Step properties</span>
+                <strong class="mt-2 text-[14px] text-[var(--relay-text)]">
+                  Record your first action
+                </strong>
+                <p class="mt-1.5 max-w-[30ch] leading-[1.55]">
+                  Actions appear here as editable steps while you use the device.
+                </p>
+              </aside>
+            }
+          >
+            <JourneyInspector
+              compact
+              onEdit={props.onOpenAdvanced}
+              onOpenTargets={props.onOpenTargets}
+            />
+          </Show>
         }
       >
-        <JourneyInspector
-          compact
-          onEdit={props.onOpenAdvanced}
-          onOpenTargets={props.onOpenTargets}
-        />
+        {props.details}
       </Show>
     </>
   );
