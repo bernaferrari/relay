@@ -36,10 +36,7 @@ import {
   type ReplayRepairHintCapture,
 } from './session-replay-repair-hint.ts';
 import { buildReplayDivergenceFailureResponse } from './session-replay-runtime-failure-response.ts';
-import {
-  buildReplayDivergenceResume,
-  stampPendingRecordAndHealWatermark,
-} from './session-replay-resume.ts';
+import { buildAndPersistReplayDivergenceResume } from './session-replay-resume.ts';
 import {
   classifyReplayTarget,
   identityFieldMismatches,
@@ -135,26 +132,14 @@ function buildTargetBindingDivergenceResponse(
     targetEvidence: recorded,
     capture: built.repairCapture,
   });
-  // Fetched before the resume so its existence can gate the empty-tail
-  // `alternateFrom` (the watermark stamped below needs a live session).
-  const session = sessionStore.get(sessionName);
-  const resume = buildReplayDivergenceResume({
+  const resume = buildAndPersistReplayDivergenceResume({
     failedIndex: step,
     actions: planActions,
     planDigest,
     repairHint,
-    sessionExists: session !== undefined,
+    sessionStore,
+    sessionName,
   });
-  if (session) {
-    stampPendingRecordAndHealWatermark({
-      session,
-      resume,
-      repairHint,
-      failedIndex: step,
-      actions: planActions,
-    });
-    sessionStore.set(sessionName, session);
-  }
 
   const divergence: ReplayDivergence = {
     version: 1,
@@ -174,10 +159,9 @@ function buildTargetBindingDivergenceResponse(
     // executed — resuming AT `step` re-runs exactly the action that did not
     // send (unless `repairHint` is `record-and-heal`, in which case the agent
     // performs it manually and `buildReplayDivergenceResume` targets `step +
-    // 1` instead). `buildReplayDivergenceResume` runs the same skip-safety
-    // preflight as an action-failure divergence (allowed unless a skipped
-    // step produces outputEnv or the range crosses runtime control flow).
-    // This is the only resume site for target-binding divergences.
+    // 1` instead). Generic `.ad` actions have no runtime variable producers
+    // or control wrappers, so the reported ordinal is resumable. This is the
+    // only resume site for target-binding divergences.
     resume,
     repairHint,
     targetBinding,

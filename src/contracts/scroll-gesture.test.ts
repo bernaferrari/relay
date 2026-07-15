@@ -3,10 +3,46 @@ import assert from 'node:assert/strict';
 import { AppError } from '../kernel/errors.ts';
 import {
   assertScrollGestureInput,
+  buildInPageSwipeGesturePlan,
   buildScrollGesturePlan,
   clampGestureCoordinate,
-  pointFromPercentInFrame,
 } from './scroll-gesture.ts';
+
+test('buildInPageSwipeGesturePlan applies one inset lane policy in every direction', () => {
+  const frame = { referenceWidth: 400, referenceHeight: 800 };
+
+  assert.deepEqual(buildInPageSwipeGesturePlan('left', frame), {
+    direction: 'left',
+    x1: 340,
+    y1: 400,
+    x2: 60,
+    y2: 400,
+    ...frame,
+  });
+  assert.deepEqual(buildInPageSwipeGesturePlan('down', frame), {
+    direction: 'down',
+    x1: 200,
+    y1: 120,
+    x2: 200,
+    y2: 680,
+    ...frame,
+  });
+});
+
+test('buildInPageSwipeGesturePlan truncates percentage coordinates on odd viewports', () => {
+  assert.deepEqual(
+    buildInPageSwipeGesturePlan('left', { referenceWidth: 401, referenceHeight: 801 }),
+    {
+      direction: 'left',
+      x1: 340,
+      y1: 400,
+      x2: 60,
+      y2: 400,
+      referenceWidth: 401,
+      referenceHeight: 801,
+    },
+  );
+});
 
 // The buildScrollGesturePlan vectors below are the canonical cross-language parity vectors,
 // mirrored by RunnerTests+ScrollGesture.swift (runnerScrollGesturePlan). If you change the scroll
@@ -177,14 +213,6 @@ test('assertScrollGestureInput rejects non-positive or non-finite pixels', () =>
         /pixels must be a positive integer/i.test(error.message),
     );
   }
-});
-
-test('pointFromPercentInFrame preserves authored percentages within valid pixel bounds', () => {
-  const frame = { referenceWidth: 400, referenceHeight: 800 };
-
-  assert.deepEqual(pointFromPercentInFrame(frame, 10, 30), { x: 40, y: 240 });
-  assert.deepEqual(pointFromPercentInFrame(frame, 100, 0), { x: 399, y: 0 });
-  assert.deepEqual(pointFromPercentInFrame(frame, -10, 100), { x: 0, y: 799 });
 });
 
 test('clampGestureCoordinate rounds values and clamps them into the safe gesture band', () => {

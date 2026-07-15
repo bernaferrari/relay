@@ -2,10 +2,11 @@ export const MAESTRO_COMPAT_SUPPORTED_CAPABILITIES = [
   'app launch with Apple-platform launch arguments and Android/iOS simulator clearState',
   'runFlow file/inline with when.platform, when.visible, when.notVisible, and limited when.true boolean/platform expressions',
   'onFlowStart and onFlowComplete hooks',
-  'deterministic repeat.times',
-  'tapOn including optional, index, childOf, label, and absolute/percentage point taps',
+  'deterministic repeat.times and retry blocks',
+  'tapOn including index, childOf, label, and absolute/percentage point taps',
   'doubleTapOn and longPressOn',
-  'inputText, focused-field eraseText, and pasteText',
+  'optional target and assertion commands',
+  'inputText and focused-field eraseText',
   'openLink',
   'visibility assertions and extendedWaitUntil',
   'scroll and scrollUntilVisible',
@@ -17,8 +18,6 @@ export const MAESTRO_COMPAT_SUPPORTED_CAPABILITIES = [
 ] as const;
 
 export const MAESTRO_COMPAT_TRACKER_URL = 'https://github.com/callstack/agent-device/issues/558';
-
-export const MAESTRO_NEW_ISSUE_URL = 'https://github.com/callstack/agent-device/issues/new';
 
 export function formatMaestroSupportedSubsetForCli(): string {
   return `Supported subset: ${formatMaestroCapabilityList(MAESTRO_COMPAT_SUPPORTED_CAPABILITIES)}.`;

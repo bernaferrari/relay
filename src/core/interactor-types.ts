@@ -9,6 +9,7 @@ import type { BackendSnapshotResult } from '../backend.ts';
 import type { RunnerLogicalLeaseContext } from './runner-lease-context.ts';
 import type {
   RawSnapshotNode,
+  Point,
   Rect,
   SnapshotBackend,
   SnapshotOptions as BaseSnapshotOptions,
@@ -49,6 +50,7 @@ export type ScreenshotOptions = {
   stabilize?: boolean;
   surface?: SessionSurface;
   skipIosSimulatorBootCheck?: boolean;
+  captureBackend?: 'runner';
 };
 
 export type ElementSelectorKey = 'id' | 'label' | 'text' | 'value';
@@ -57,6 +59,7 @@ export type ElementSelectorTapOptions = {
   key: ElementSelectorKey;
   value: string;
   allowNonHittableCoordinateFallback?: boolean;
+  expectedPoint?: Point;
 };
 
 /**

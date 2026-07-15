@@ -377,6 +377,7 @@ function readDirectSelectorWithMaestroFallback(
     ...(flags?.maestro?.allowNonHittableCoordinateFallback
       ? { allowNonHittableCoordinateFallback: true }
       : {}),
+    ...(flags?.maestro?.expectedTapPoint ? { expectedPoint: flags.maestro.expectedTapPoint } : {}),
   };
 }
 

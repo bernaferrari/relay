@@ -7,13 +7,13 @@ import type { ElementSelectorKey } from './interactor-types.ts';
 import type { SwipePattern } from '../contracts/scroll-gesture.ts';
 import type { SessionSurface } from '../contracts/session-surface.ts';
 import type { RunnerLogicalLeaseContext } from './runner-lease-context.ts';
+import type { Point } from '../kernel/snapshot.ts';
 
 export type MaestroRuntimeFlags = {
   allowNonHittableCoordinateFallback?: boolean;
-  allowAlreadyPastLoading?: boolean;
-  optional?: boolean;
+  expectedTapPoint?: Point;
   prewarmRunnerBeforeOpen?: boolean;
-  runScriptEnv?: Record<string, string>;
+  screenshotCaptureBackend?: 'runner';
 };
 
 export type CommandFlags = Omit<CliFlags, DaemonExcludedCliFlag> & {
@@ -55,6 +55,7 @@ export type DispatchContext = ScreenshotDispatchFlags & {
   iosXctestDerivedDataPath?: string;
   iosXctestEnvDir?: string;
   runnerLeaseContext?: RunnerLogicalLeaseContext;
+  screenshotCaptureBackend?: 'runner';
   snapshotInteractiveOnly?: boolean;
   snapshotDepth?: number;
   snapshotScope?: string;
@@ -79,5 +80,6 @@ export type DispatchContext = ScreenshotDispatchFlags & {
     value: string;
     raw: string;
     allowNonHittableCoordinateFallback?: boolean;
+    expectedPoint?: Point;
   };
 };

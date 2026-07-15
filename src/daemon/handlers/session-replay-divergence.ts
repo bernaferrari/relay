@@ -16,16 +16,15 @@ import {
 } from '../../selectors/index.ts';
 import { collectReplaySelectorCandidates } from './session-replay-heal.ts';
 import { collectSettleChromeRefs } from '../../core/snapshot-chrome.ts';
-import {
-  buildReplayDivergenceResume,
-  stampPendingRecordAndHealWatermark,
-} from './session-replay-resume.ts';
+import { buildAndPersistReplayDivergenceResume } from './session-replay-resume.ts';
+import { rankAndDedupeReplaySuggestions } from './session-replay-suggestion-ranking.ts';
 import { formatDivergenceActionLabel, isTouchTargetCommand } from '../../replay/script-utils.ts';
 import {
   computeReplayRepairHint,
   type ReplayRepairHintCapture,
 } from './session-replay-repair-hint.ts';
 import { SessionStore } from '../session-store.ts';
+import type { ReplayReportAction } from './session-replay-report-action.ts';
 import type { SessionAction, SessionState } from '../types.ts';
 import {
   REPLAY_DIVERGENCE_SUGGESTION_LIMIT,
@@ -50,7 +49,7 @@ export type DivergenceFieldSanitizer = (value: string, limit?: number) => string
  */
 export async function buildReplayFailureDivergence(params: {
   error: DaemonError;
-  action: SessionAction;
+  action: ReplayReportAction;
   index: number;
   sourcePath: string;
   sourceLine: number;
@@ -118,25 +117,14 @@ export async function buildReplayFailureDivergence(params: {
     capture: toReplayRepairHintCapture(observation),
   });
 
-  const resume = buildReplayDivergenceResume({
+  const resume = buildAndPersistReplayDivergenceResume({
     failedIndex: index + 1,
     actions: planActions,
     planDigest,
     repairHint,
-    // A live session is required to stamp the empty-tail watermark below, so it
-    // gates whether the one-past-the-end `alternateFrom` may be advertised.
-    sessionExists: session !== undefined,
+    sessionStore,
+    sessionName,
   });
-  if (session) {
-    stampPendingRecordAndHealWatermark({
-      session,
-      resume,
-      repairHint,
-      failedIndex: index + 1,
-      actions: planActions,
-    });
-    sessionStore.set(sessionName, session);
-  }
 
   const divergence: ReplayDivergence = {
     version: 1,
@@ -233,7 +221,7 @@ export async function captureDivergenceObservation(params: {
   sessionName: string;
   sessionStore: SessionStore;
   logPath: string;
-  action: SessionAction;
+  action: ReplayReportAction;
 }): Promise<DivergenceObservation> {
   const { session, sessionName, sessionStore, logPath, action } = params;
   const flags = divergenceCaptureFlags(action);
@@ -288,7 +276,7 @@ export async function captureDivergenceObservation(params: {
  * produce a narrowed divergence `screen`. Only the interactive-only policy is
  * carried, since it governs whether static-text suggestion targets survive.
  */
-function divergenceCaptureFlags(action: SessionAction): CommandFlags {
+function divergenceCaptureFlags(action: ReplayReportAction): CommandFlags {
   return { snapshotInteractiveOnly: divergenceCaptureInteractiveOnly(action) };
 }
 
@@ -297,7 +285,7 @@ function divergenceCaptureFlags(action: SessionAction): CommandFlags {
  * (`get`/`is`/`wait`) whose suggestion targets include static text — the
  * same `snapshotInteractiveOnly: requiresRect` rule heal always used.
  */
-function divergenceCaptureInteractiveOnly(action: SessionAction): boolean {
+function divergenceCaptureInteractiveOnly(action: ReplayReportAction): boolean {
   if (!isSuggestionEligibleCommand(action.command)) return true;
   return resolveSuggestionMatchingConfig(action).requiresRect;
 }
@@ -442,13 +430,6 @@ function buildReplayDivergenceScreenRefs(
   return { refs, truncated };
 }
 
-const BASIS_RANK: Record<ReplayDivergenceSuggestionBasis, number> = {
-  id: 0,
-  'role-label': 1,
-  label: 2,
-  other: 3,
-};
-
 function classifySuggestionBasis(selector: Selector): ReplayDivergenceSuggestionBasis {
   const keys = new Set(selector.terms.map((term) => term.key));
   if (keys.has('id')) return 'id';
@@ -466,7 +447,7 @@ function classifySuggestionBasis(selector: Selector): ReplayDivergenceSuggestion
  * recorded evidence (migration step 4).
  */
 function collectReplayDivergenceSuggestions(params: {
-  action: SessionAction;
+  action: ReplayReportAction;
   session: SessionState;
   nodes: SnapshotNode[];
   sanitize: DivergenceFieldSanitizer;
@@ -485,7 +466,9 @@ function isSuggestionEligibleCommand(command: string): boolean {
 
 export type SuggestionMatchingConfig = { requiresRect: boolean; allowDisambiguation: boolean };
 
-export function resolveSuggestionMatchingConfig(action: SessionAction): SuggestionMatchingConfig {
+export function resolveSuggestionMatchingConfig(
+  action: ReplayReportAction,
+): SuggestionMatchingConfig {
   const isTouch = isTouchTargetCommand(action.command);
   return {
     requiresRect: isTouch || action.command === 'fill',
@@ -498,7 +481,7 @@ export function resolveSuggestionMatchingConfig(action: SessionAction): Suggesti
 
 type RankedSuggestion = {
   suggestion: ReplayDivergenceSuggestion;
-  basisRank: number;
+  basis: ReplayDivergenceSuggestionBasis;
   nodeIndex: number;
 };
 
@@ -506,7 +489,7 @@ function rankSuggestionCandidates(params: {
   candidates: string[];
   nodes: SnapshotNode[];
   session: SessionState;
-  action: SessionAction;
+  action: ReplayReportAction;
   matching: SuggestionMatchingConfig;
   sanitize: DivergenceFieldSanitizer;
 }): ReplayDivergenceSuggestion[] {
@@ -515,7 +498,7 @@ function rankSuggestionCandidates(params: {
   // per the ADR: a node reachable through several recorded selector terms
   // appears once, tagged with its strongest basis — not whichever candidate
   // happened to resolve it first.
-  const byNode = new Map<number, RankedSuggestion>();
+  const entries: RankedSuggestion[] = [];
   for (const candidate of candidates) {
     const entry = resolveSuggestionCandidate({
       candidate,
@@ -526,19 +509,16 @@ function rankSuggestionCandidates(params: {
       sanitize,
     });
     if (!entry) continue;
-    const existing = byNode.get(entry.nodeIndex);
-    if (!existing || entry.basisRank < existing.basisRank) byNode.set(entry.nodeIndex, entry);
+    entries.push(entry);
   }
-  return [...byNode.values()]
-    .sort((a, b) => a.basisRank - b.basisRank || a.nodeIndex - b.nodeIndex)
-    .map((entry) => entry.suggestion);
+  return rankAndDedupeReplaySuggestions(entries).map((entry) => entry.suggestion);
 }
 
 function resolveSuggestionCandidate(params: {
   candidate: string;
   nodes: SnapshotNode[];
   session: SessionState;
-  action: SessionAction;
+  action: ReplayReportAction;
   matching: SuggestionMatchingConfig;
   sanitize: DivergenceFieldSanitizer;
 }): RankedSuggestion | undefined {
@@ -552,24 +532,40 @@ function resolveSuggestionCandidate(params: {
     disambiguateAmbiguous: matching.allowDisambiguation,
   });
   if (!resolved) return undefined;
+  const basis = classifySuggestionBasis(resolved.selector);
+  return {
+    suggestion: buildReplayDivergenceSuggestionForNode({
+      node: resolved.node,
+      session,
+      action,
+      basis,
+      sanitize,
+    }),
+    basis,
+    nodeIndex: resolved.node.index,
+  };
+}
 
-  const selectorChain = buildSelectorChainForNode(resolved.node, session.device.platform, {
+export function buildReplayDivergenceSuggestionForNode(params: {
+  node: SnapshotNode;
+  session: SessionState;
+  action: ReplayReportAction;
+  basis: ReplayDivergenceSuggestionBasis;
+  sanitize: DivergenceFieldSanitizer;
+}): ReplayDivergenceSuggestion {
+  const { node, session, action, basis, sanitize } = params;
+  const selectorChain = buildSelectorChainForNode(node, session.device.platform, {
     action:
       action.command === 'fill' ? 'fill' : isTouchTargetCommand(action.command) ? 'click' : 'get',
   });
-  const basis = classifySuggestionBasis(resolved.selector);
-  const role = formatRole(resolved.node.type ?? 'Element');
-  const label = displayLabel(resolved.node, role);
+  const role = formatRole(node.type ?? 'Element');
+  const label = displayLabel(node, role);
   return {
-    suggestion: {
-      selector: sanitize(selectorChain.join(' || ')),
-      basis,
-      ...(resolved.node.ref ? { ref: resolved.node.ref } : {}),
-      role: sanitize(role),
-      ...(label ? { label: sanitize(label) } : {}),
-    },
-    basisRank: BASIS_RANK[basis],
-    nodeIndex: resolved.node.index,
+    selector: sanitize(selectorChain.join(' || ')),
+    basis,
+    ...(node.ref ? { ref: node.ref } : {}),
+    role: sanitize(role),
+    ...(label ? { label: sanitize(label) } : {}),
   };
 }
 

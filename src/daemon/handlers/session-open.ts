@@ -4,6 +4,7 @@ import type { SessionSurface } from '../../contracts/session-surface.ts';
 import { contextFromFlags } from '../context.ts';
 import { createRequestCanceledError, isRequestCanceled } from '../../request/cancel.ts';
 import {
+  notifyIosRunnerAppRelaunched,
   prewarmIosRunnerSession,
   stopIosRunnerSession,
 } from '../../platforms/apple/core/runner/runner-client.ts';
@@ -289,6 +290,7 @@ async function completeOpenCommand(params: {
     schedulePrewarm({ ...runnerPrewarmOptions, propagateError: true });
     await awaitPrewarm();
   }
+  const runnerTargetPredatesOpen = runnerPrewarmAwaited;
   const openStartedAtMs = Date.now();
   const provisionalSession = await prepareOpenDispatchSession({
     req,
@@ -332,6 +334,9 @@ async function completeOpenCommand(params: {
     await awaitPrewarm();
   } else if (runnerPrewarm && !runnerPrewarmAwaited) {
     timing.runnerPrewarmWaited = false;
+  }
+  if (isIosSimulator(device) && (shouldRelaunch || runnerTargetPredatesOpen)) {
+    await notifyIosRunnerAppRelaunched(device, runnerPrewarmOptions);
   }
   sessionAppBundleId = await inferAndroidPackageAfterOpen(device, openTarget, sessionAppBundleId);
   if (device.platform === 'android' && sessionAppBundleId) {

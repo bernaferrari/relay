@@ -1,6 +1,10 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { ANDROID_EMULATOR } from '../../../__tests__/test-utils/index.ts';
+import {
+  ANDROID_EMULATOR,
+  ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+  createAndroidSnapshotHelperExecutor,
+} from '../../../__tests__/test-utils/index.ts';
 import { AppError } from '../../../kernel/errors.ts';
 import { fillAndroid, typeAndroid } from '../input-actions.ts';
 import { withAndroidAdbProvider, type AndroidAdbExecutor } from '../adb-executor.ts';
@@ -14,11 +18,16 @@ import {
 test('fillAndroid reports when the IME captures input instead of the app field', async () => {
   const calls: string[][] = [];
   let imeText = '';
+  let snapshotCount = 0;
   await withFillAdb(
     async (args) => {
       calls.push(args);
       if (isTextInput(args)) imeText = args[3] ?? '';
-      return adbResult(args[0] === 'exec-out' ? imeCaptureHierarchy(imeText) : '');
+      return adbResult('');
+    },
+    () => {
+      snapshotCount += 1;
+      return imeCaptureHierarchy(imeText);
     },
     async () => {
       await assert.rejects(
@@ -48,12 +57,13 @@ test('fillAndroid reports when the IME captures input instead of the app field',
     false,
   );
   assert.equal(calls.filter(isTextInput).length, 1);
-  assert.equal(calls.filter((args) => args[0] === 'exec-out').length, 1);
+  assert.equal(snapshotCount, 1);
 });
 
 test('fillAndroid detects unknown active IME package during verification', async () => {
   const calls: string[][] = [];
   let imeText = '';
+  let snapshotCount = 0;
   await withFillAdb(
     async (args) => {
       calls.push(args);
@@ -61,7 +71,11 @@ test('fillAndroid detects unknown active IME package during verification', async
         return adbResult(vendorImeWithAppFocusInputMethodDump());
       }
       if (isTextInput(args)) imeText = args[3] ?? '';
-      return adbResult(args[0] === 'exec-out' ? vendorImeCaptureHierarchy(imeText) : '');
+      return adbResult('');
+    },
+    () => {
+      snapshotCount += 1;
+      return vendorImeCaptureHierarchy(imeText);
     },
     async () => {
       await assert.rejects(
@@ -82,7 +96,7 @@ test('fillAndroid detects unknown active IME package during verification', async
   );
 
   assert.equal(calls.filter(isTextInput).length, 1);
-  assert.equal(calls.filter((args) => args[0] === 'exec-out').length, 1);
+  assert.equal(snapshotCount, 1);
 });
 
 test('typeAndroid rejects unicode text without provider-native injection', async () => {
@@ -167,12 +181,13 @@ test('fillAndroid delegates target replacement to provider-native text injection
   let value = '';
   await withAndroidAdbProvider(
     {
-      exec: async (args) => {
-        if (args[0] === 'exec-out') {
-          return adbResult(androidInputXml({ text: value }));
-        }
-        throw new Error(`unexpected adb call: ${args.join(' ')}`);
-      },
+      snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+      exec: createAndroidSnapshotHelperExecutor({
+        exec: async (args) => {
+          throw new Error(`unexpected adb call: ${args.join(' ')}`);
+        },
+        captureXml: () => androidInputXml({ text: value }),
+      }),
       text: async (request) => {
         calls.push(request);
         value = request.text;
@@ -205,12 +220,12 @@ test('fillAndroid waits for settled app text before reporting success', async ()
         inputCount += 1;
         typed += args[3] ?? '';
       }
-      if (args[0] === 'exec-out') {
-        dumpCount += 1;
-        const visibleText = dumpCount <= 1 ? typed : dumpCount <= 3 ? 'file' : 'filed';
-        return adbResult(androidInputXml({ text: visibleText }));
-      }
       return adbResult('');
+    },
+    () => {
+      dumpCount += 1;
+      const visibleText = dumpCount <= 1 ? typed : dumpCount <= 3 ? 'file' : 'filed';
+      return androidInputXml({ text: visibleText });
     },
     async () => {
       await fillAndroid(ANDROID_EMULATOR, 10, 10, 'filed');
@@ -313,8 +328,9 @@ test('fillAndroid accepts matching-length masked password verification', async (
     async (args) => {
       if (isDeleteKey(args)) typed = '';
       if (isTextInput(args)) typed = args[3] ?? '';
-      return adbResult(args[0] === 'exec-out' ? passwordHierarchy(maskBullets(typed)) : '');
+      return adbResult('');
     },
+    () => passwordHierarchy(maskBullets(typed)),
     async () => {
       await fillAndroid(ANDROID_EMULATOR, 10, 10, 'Test@123');
     },
@@ -344,8 +360,31 @@ test('readAndroidTextAtPointInHierarchy prefers focused edit text over point fal
 
 const IME_RESOURCE_ID = 'com.google.android.inputmethod.latin:id/0_resource_name_obfuscated';
 
-async function withFillAdb(exec: AndroidAdbExecutor, fn: () => Promise<void>): Promise<void> {
-  await withAndroidAdbProvider({ exec }, { serial: ANDROID_EMULATOR.id }, fn);
+async function withFillAdb(exec: AndroidAdbExecutor, fn: () => Promise<void>): Promise<void>;
+async function withFillAdb(
+  exec: AndroidAdbExecutor,
+  captureXml: () => string | Promise<string>,
+  fn: () => Promise<void>,
+): Promise<void>;
+async function withFillAdb(
+  exec: AndroidAdbExecutor,
+  captureXmlOrFn: (() => string | Promise<string>) | (() => Promise<void>),
+  maybeFn?: () => Promise<void>,
+): Promise<void> {
+  const captureXml = maybeFn
+    ? (captureXmlOrFn as () => string | Promise<string>)
+    : () => {
+        throw new Error('snapshot helper capture was not expected');
+      };
+  const fn = maybeFn ?? (captureXmlOrFn as () => Promise<void>);
+  await withAndroidAdbProvider(
+    {
+      exec: createAndroidSnapshotHelperExecutor({ exec, captureXml }),
+      snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+    },
+    { serial: ANDROID_EMULATOR.id },
+    fn,
+  );
 }
 
 function adbResult(stdout: string) {

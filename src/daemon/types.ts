@@ -17,7 +17,7 @@ import type { RecordingExportQuality } from '../core/recording-export-quality.ts
 import type { RecordingScope } from '../contracts/recording-scope.ts';
 import type { DeviceInfo, Platform, PlatformSelector } from '../kernel/device.ts';
 import type { ExecBackgroundResult, ExecResult } from '../utils/exec.ts';
-import type { SnapshotState } from '../kernel/snapshot.ts';
+import type { Rect, SnapshotState } from '../kernel/snapshot.ts';
 // Type-only import; erased at runtime. ref-frame.ts imports SessionState from
 // here, so this back-edge must stay type-only to avoid a runtime cycle.
 import type { RefFrameScope, RefFrameState } from './ref-frame.ts';
@@ -60,6 +60,10 @@ export type DaemonOpenLifecycle = {
 type DaemonRequestInternal = {
   openLifecycle?: DaemonOpenLifecycle;
   admittedLease?: DeviceLease;
+  /** Terminate the targeted app without ending the owning daemon session. */
+  closeAppOnly?: boolean;
+  /** Provider-owned viewport already resolved while normalizing a nested gesture command. */
+  gestureViewport?: Rect;
   /**
    * ADR 0012 step 4 post-resolution guard: the verified target member's
    * normalized local identity AND structural denotation (document order +
@@ -411,9 +415,9 @@ export type SessionState = {
    * failed step's index unchanged (never made illegal) — but ONLY when the
    * diverged step is the plan's LAST one: those hints have a legitimate
    * record-and-heal-SHAPED alternate repair targeting `failedIndex + 1`,
-   * stamped when that target is independently preflight-safe
-   * (`stampPendingRecordAndHealWatermark`, `session-replay-resume.ts`). A
-   * MID-PLAN `caution`/`manual` `failedIndex + 1` was already unconditionally
+   * stamped by `stampPendingRecordAndHealWatermark`
+   * (`session-replay-resume.ts`). A MID-PLAN `caution`/`manual`
+   * `failedIndex + 1` was already unconditionally
    * legal (in range) and un-gated before #1262 — these hints never mandate a
    * corrective action the way `record-and-heal` does, so an agent may
    * legitimately skip the diverged step without repairing it — and stays
@@ -425,9 +429,8 @@ export type SessionState = {
    * new action recorded since) is rejected — proof the corrective press
    * never happened, so the resume would silently skip the unrepaired step
    * instead of healing it. Overwritten by the next divergence (cleared to
-   * `undefined` for any hint outside the eligible set, a mid-plan
-   * `caution`/`manual` divergence, or a last-step `caution`/`manual`
-   * divergence whose `failedIndex + 1` target is not itself preflight-safe),
+   * `undefined` for any hint outside the eligible set or a mid-plan
+   * `caution`/`manual` divergence),
    * and cleared once a `--from` request observes the action count having
    * grown, so it never fires against an unrelated later request.
    */
@@ -479,35 +482,11 @@ export type SessionState = {
   appLogFailure?: AppLogFailure;
 };
 
-/**
- * Per-nested-action source provenance for control-flow wrappers, parallel to
- * `actions`; `undefined` at an index means "the wrapping control action's own
- * file". The runtime block invoker reads it so a failure inside a wrapped
- * `runFlow` include reports the include's file+line, not the wrapper's.
- */
-export type ReplayControlActionSource = { path: string; line: number };
-
-export type SessionReplayControl =
-  | {
-      kind: 'maestroRunFlowWhen';
-      mode: 'visible' | 'notVisible';
-      selector: string;
-      actions: SessionAction[];
-      actionSources?: (ReplayControlActionSource | undefined)[];
-    }
-  | {
-      kind: 'retry';
-      maxRetries: number;
-      actions: SessionAction[];
-      actionSources?: (ReplayControlActionSource | undefined)[];
-    };
-
 export type SessionAction = {
   ts: number;
   command: string;
   positionals: string[];
   runtime?: SessionRuntimeHints;
-  replayControl?: SessionReplayControl;
   flags: Partial<CommandFlags> & {
     snapshotInteractiveOnly?: boolean;
     snapshotDepth?: number;

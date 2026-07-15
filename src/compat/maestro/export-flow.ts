@@ -7,9 +7,11 @@ import {
   readReplayScriptMetadata,
   type ReplayScriptMetadata,
 } from '../../replay/script.ts';
-import { stringifyMaestroYamlDocuments } from './flow-yaml.ts';
-import { formatMaestroPoint } from './points.ts';
-import type { MaestroCommand, MaestroFlowConfig } from './types.ts';
+import { formatMaestroPoint } from './export-points.ts';
+import { DEFAULT_MAESTRO_COMPATIBILITY_TIMING_POLICY } from './compatibility-policy.ts';
+import type { MaestroExportCommand, MaestroExportConfig } from './export-types.ts';
+import { stringifyMaestroYamlDocuments } from './export-yaml.ts';
+import { MAESTRO_STATE_SELECTOR_KEYS, MAESTRO_TEXT_SELECTOR_KEYS } from './selector-vocabulary.ts';
 
 export type MaestroExportWarning = {
   line: number;
@@ -22,8 +24,6 @@ export type MaestroExportResult = {
   warnings: MaestroExportWarning[];
 };
 
-type MaestroExportConfig = Pick<MaestroFlowConfig, 'appId' | 'env'>;
-
 type ExportContext = {
   config: MaestroExportConfig;
   warnings: MaestroExportWarning[];
@@ -31,8 +31,8 @@ type ExportContext = {
 };
 
 type ConvertedAction =
-  | { kind: 'commands'; commands: MaestroCommand[]; warnings?: string[] }
-  | { kind: 'config'; appId: string; commands: MaestroCommand[]; warnings?: string[] }
+  | { kind: 'commands'; commands: MaestroExportCommand[]; warnings?: string[] }
+  | { kind: 'config'; appId: string; commands: MaestroExportCommand[]; warnings?: string[] }
   | { kind: 'unsupported'; message: string };
 
 type ActionConverter = (action: SessionAction) => ConvertedAction;
@@ -42,8 +42,8 @@ type SwipeGeometry = {
   duration?: number;
 };
 
-const TEXT_SELECTOR_KEYS = new Set(['id', 'text', 'label']);
-const STATE_SELECTOR_KEYS = new Set(['enabled', 'selected']);
+const TEXT_SELECTOR_KEYS = new Set<string>(MAESTRO_TEXT_SELECTOR_KEYS);
+const STATE_SELECTOR_KEYS = new Set<string>(MAESTRO_STATE_SELECTOR_KEYS);
 const LONG_PRESS_DURATION_WARNING =
   'long-press duration exports as Maestro longPressOn; Maestro uses its default long-press duration';
 
@@ -67,7 +67,7 @@ function exportReplayActionsToMaestro(
     warnings: [],
     unsupported: [],
   };
-  const commands: MaestroCommand[] = [];
+  const commands: MaestroExportCommand[] = [];
 
   for (const [index, action] of actions.entries()) {
     const line = options.actionLines?.[index] ?? index + 1;
@@ -155,7 +155,7 @@ function convertOpenAction(action: SessionAction): ConvertedAction {
   return { kind: 'config', appId: first, commands: [launchApp] };
 }
 
-function buildLaunchAppCommand(action: SessionAction, appId: string): MaestroCommand {
+function buildLaunchAppCommand(action: SessionAction, appId: string): MaestroExportCommand {
   const options = buildLaunchAppOptions(action);
   return options ? { launchApp: { appId, ...options } } : 'launchApp';
 }
@@ -290,14 +290,34 @@ function convertWaitAction(action: SessionAction): ConvertedAction {
   if (first === 'text' && second) {
     return {
       kind: 'commands',
-      commands: [{ extendedWaitUntil: { visible: second, timeout: readTimeout(action, 17_000) } }],
+      commands: [
+        {
+          extendedWaitUntil: {
+            visible: second,
+            timeout: readTimeout(
+              action,
+              DEFAULT_MAESTRO_COMPATIBILITY_TIMING_POLICY.extendedWaitUntilTimeoutMs,
+            ),
+          },
+        },
+      ],
     };
   }
   const selector = selectorExpressionToMaestro(first);
   if (!selector) return { kind: 'unsupported', message: 'wait selector is not Maestro-compatible' };
   return {
     kind: 'commands',
-    commands: [{ extendedWaitUntil: { visible: selector, timeout: readTimeout(action, 17_000) } }],
+    commands: [
+      {
+        extendedWaitUntil: {
+          visible: selector,
+          timeout: readTimeout(
+            action,
+            DEFAULT_MAESTRO_COMPATIBILITY_TIMING_POLICY.extendedWaitUntilTimeoutMs,
+          ),
+        },
+      },
+    ],
   };
 }
 
@@ -448,7 +468,7 @@ function readUnsupportedRepeatedTapOption(action: SessionAction): string | undef
   return undefined;
 }
 
-function withTapOptions(target: unknown, options: Record<string, unknown>): MaestroCommand {
+function withTapOptions(target: unknown, options: Record<string, unknown>): MaestroExportCommand {
   if (Object.keys(options).length === 0) return { tapOn: target };
   if (typeof target === 'string') return { tapOn: { text: target, ...options } };
   if (target && typeof target === 'object' && !Array.isArray(target)) {
@@ -503,7 +523,7 @@ function readTimeout(action: SessionAction, fallback: number): number {
   return candidate && isNumber(candidate) ? Number(candidate) : fallback;
 }
 
-function formatMaestroYaml(config: MaestroExportConfig, commands: MaestroCommand[]): string {
+function formatMaestroYaml(config: MaestroExportConfig, commands: MaestroExportCommand[]): string {
   const hasConfig = Object.keys(config).length > 0;
   const docs: unknown[] = hasConfig ? [config, commands] : [commands];
   return stringifyMaestroYamlDocuments(docs);
