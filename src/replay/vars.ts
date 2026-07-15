@@ -55,13 +55,6 @@ export function buildReplayVarScope(sources: ReplayVarSources): ReplayVarScope {
   return { values: merged, expandedBuiltinNames: new Set() };
 }
 
-export function mergeReplayVarScopeValues(
-  scope: ReplayVarScope,
-  values: Record<string, string>,
-): void {
-  Object.assign(scope.values as Record<string, string>, values);
-}
-
 export function collectReplayShellEnv(processEnv: NodeJS.ProcessEnv): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [rawKey, value] of Object.entries(processEnv)) {
@@ -159,27 +152,7 @@ export function resolveReplayAction(
     positionals: (action.positionals ?? []).map((token) => resolveReplayString(token, scope, loc)),
     flags: resolveStringProps(action.flags, scope, loc) ?? {},
     runtime: resolveStringProps(action.runtime, scope, loc),
-    replayControl: resolveReplayControl(action.replayControl, scope, loc),
   };
-}
-
-function resolveReplayControl(
-  control: SessionAction['replayControl'] | undefined,
-  scope: ReplayVarScope,
-  loc: { file: string; line: number },
-): SessionAction['replayControl'] | undefined {
-  if (!control) return control;
-  switch (control.kind) {
-    case 'maestroRunFlowWhen':
-      return {
-        ...control,
-        selector: resolveReplayString(control.selector, scope, loc),
-      };
-    case 'retry':
-      return control;
-  }
-  const _exhaustive: never = control;
-  return _exhaustive;
 }
 
 function resolveStringProps<T extends object>(

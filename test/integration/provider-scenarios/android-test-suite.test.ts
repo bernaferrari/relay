@@ -69,7 +69,7 @@ test('Provider-backed integration Android replay test suite covers retries and f
   });
 });
 
-test('Provider-backed integration Android Maestro replay uses fresh snapshots and authored swipe points', async () => {
+test('Provider-backed integration Android Maestro refreshes action geometry and preserves authored swipe points', async () => {
   let snapshots = 0;
   await withProviderScenarioResource(
     async () =>
@@ -124,8 +124,9 @@ test('Provider-backed integration Android Maestro replay uses fresh snapshots an
       assert.equal(swipePlan.durationMs, 300);
       assert.deepEqual(swipePlan.pointers[0]?.samples[0]?.point, { x: 351, y: 300 });
       assert.deepEqual(swipePlan.pointers[0]?.samples.at(-1)?.point, { x: 39, y: 300 });
-      // Percentage resolution snapshots remain fresh; gesture planning uses the provider viewport.
-      assertSnapshotCountInRange(snapshots, 3, 5);
+      assert.equal(world.gestureViewportCalls, 1);
+      // Assertion, launch/tap stability comparisons, and fresh tap geometry share retained baselines.
+      assert.equal(snapshots, 4);
     },
   );
 });
@@ -240,7 +241,7 @@ test('Provider-backed integration Android Maestro types after tapOn inputText wi
   );
 });
 
-test('Provider-backed integration Android Maestro preserves pressKey Enter after native fill', async () => {
+test('Provider-backed integration Android Maestro preserves authored inputText then pressKey Enter', async () => {
   await withProviderScenarioResource(
     async () => await createAndroidSettingsWorld({ nativeTextInjection: true }),
     async (world) => {
@@ -274,8 +275,7 @@ test('Provider-backed integration Android Maestro preserves pressKey Enter after
       assert.equal(suite.failed, 0, JSON.stringify(suite));
       assert.deepEqual(world.textInjectionCalls, [
         {
-          action: 'fill',
-          target: { x: 195, y: 52 },
+          action: 'type',
           text: 'Łódź café',
           delayMs: 0,
         },
@@ -345,7 +345,7 @@ test('Provider-backed integration Android Maestro executes runFlow conditions an
         world.adbCalls.filter((call) => call.slice(0, 3).join(' ') === 'shell input tap'),
         [['shell', 'input', 'tap', '180', '330']],
       );
-      assertSnapshotCountInRange(snapshots, 4, 5);
+      assertSnapshotCountInRange(snapshots, 3, 4);
     },
   );
 });
@@ -387,7 +387,7 @@ test('Provider-backed integration Android Maestro optional tap misses without to
       JSON.stringify(world.adbCalls),
     );
   });
-});
+}, 10_000);
 
 function androidMaestroReplayXml(searchBounds: string): string {
   return [

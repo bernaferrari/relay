@@ -6,6 +6,7 @@ import {
   mockDispatch,
   mockResolveTargetDevice,
   mockPrewarmIosRunnerSession,
+  mockNotifyIosRunnerAppRelaunched,
   mockStopIosRunner,
   mockScheduleIosRunnerIdleStop,
   mockDismissMacOsAlert,
@@ -201,6 +202,10 @@ test('open --relaunch on iOS simulator collapses into one terminate-running open
   expect(response?.ok).toBe(true);
   expect(calls).toEqual(['open:com.example.app']);
   expect(openContext?.terminateRunningApp).toBe(true);
+  expect(mockNotifyIosRunnerAppRelaunched).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 'sim-1' }),
+    expect.any(Object),
+  );
 });
 
 test('open <app> <url> --relaunch on iOS simulator keeps close-first ordering', async () => {
@@ -746,6 +751,49 @@ test('close <app> on iOS simulator retains runner while terminating app', async 
   expect(response).toBeTruthy();
   expect(response?.ok).toBe(true);
   expect(calls).toEqual(['close:com.example.app']);
+});
+
+test('app-only close terminates an iOS simulator app without ending its session', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-simulator-app-only-close';
+  sessionStore.set(sessionName, {
+    ...makeSession(sessionName, {
+      platform: 'apple',
+      id: 'sim-1',
+      name: 'iPhone 17 Pro',
+      kind: 'simulator',
+      booted: true,
+    }),
+    appBundleId: 'com.example.app',
+    appName: 'Example App',
+  });
+
+  mockDispatch.mockImplementation(async () => ({}));
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'close',
+      positionals: ['com.example.app'],
+      internal: { closeAppOnly: true },
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockDispatch).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 'sim-1' }),
+    'close',
+    ['com.example.app'],
+    undefined,
+    expect.any(Object),
+  );
+  expect(mockStopIosRunner).not.toHaveBeenCalled();
+  expect(sessionStore.get(sessionName)).toBeDefined();
 });
 
 test('close <app> on macOS stops runner before app close dispatch and dismisses automation alert', async () => {

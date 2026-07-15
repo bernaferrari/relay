@@ -1,6 +1,6 @@
 import { isIosFamily, type DeviceInfo } from '../kernel/device.ts';
 import { AppError, asAppError } from '../kernel/errors.ts';
-import { execFailureDetails } from '../utils/exec.ts';
+import { execFailureDetails, type ExecResult } from '../utils/exec.ts';
 import type { SessionRuntimeHints } from './types.ts';
 import {
   resolveRuntimeTransportHints,
@@ -28,7 +28,7 @@ const IOS_PACKAGER_SCHEME_KEY = 'RCT_packager_scheme';
 const ANDROID_RUN_AS_HINT =
   'React Native runtime hints require adb run-as access to the app sandbox. Verify the app is debuggable and the selected package/device are correct.';
 const ANDROID_WRITE_HINT =
-  'adb run-as succeeded, but writing the React Native dev-server preference file failed. Inspect stderr/details for the failing shell command.';
+  'adb run-as succeeded, but writing React Native dev-server preferences failed. Inspect stderr/details for the failing shell command.';
 const ANDROID_PROBE_HINT =
   'adb shell run-as probe failed. Check adb connectivity and that the device is reachable. Inspect stderr/details for more information.';
 const DEFAULT_ANDROID_PREFS_XML = [
@@ -92,29 +92,32 @@ async function applyAndroidRuntimeHints(
   transport: ResolvedRuntimeTransport,
 ): Promise<void> {
   assertAndroidRuntimePackageName(packageName);
+  const files: Array<{ path: string; xml: string }> = [];
   for (const prefsPath of androidDevPrefsPaths(packageName)) {
     const currentXml = await readAndroidDevPrefs(device, packageName, prefsPath);
-    let nextXml = upsertAndroidStringPref(
+    let xml = upsertAndroidStringPref(
       currentXml,
       ANDROID_DEBUG_HOST_KEY,
       `${transport.host}:${transport.port}`,
     );
-    nextXml = upsertAndroidBooleanPref(nextXml, ANDROID_HTTPS_KEY, transport.scheme === 'https');
-    await writeAndroidDevPrefs(device, packageName, prefsPath, nextXml);
+    xml = upsertAndroidBooleanPref(xml, ANDROID_HTTPS_KEY, transport.scheme === 'https');
+    files.push({ path: prefsPath, xml });
   }
+  await writeAndroidDevPrefs(device, packageName, files);
 }
 
 async function clearAndroidRuntimeHints(device: DeviceInfo, packageName: string): Promise<void> {
   assertAndroidRuntimePackageName(packageName);
+  const files: Array<{ path: string; xml: string }> = [];
   for (const prefsPath of androidDevPrefsPaths(packageName)) {
     const currentXml = await readAndroidDevPrefs(device, packageName, prefsPath);
     const withoutHost = removeAndroidPrefEntry(currentXml, ANDROID_DEBUG_HOST_KEY);
-    const withoutHttps = removeAndroidPrefEntry(withoutHost, ANDROID_HTTPS_KEY);
-    if (withoutHttps === currentXml) continue;
-    await writeAndroidDevPrefs(device, packageName, prefsPath, withoutHttps);
+    const xml = removeAndroidPrefEntry(withoutHost, ANDROID_HTTPS_KEY);
+    if (xml !== currentXml) files.push({ path: prefsPath, xml });
   }
+  if (files.length === 0) return;
+  await writeAndroidDevPrefs(device, packageName, files);
 }
-
 async function readAndroidDevPrefs(
   device: DeviceInfo,
   packageName: string,
@@ -130,53 +133,79 @@ async function readAndroidDevPrefs(
 async function writeAndroidDevPrefs(
   device: DeviceInfo,
   packageName: string,
-  prefsPath: string,
-  xml: string,
+  files: Array<{ path: string; xml: string }>,
+): Promise<void> {
+  await assertAndroidAppSandboxAccessible(device, packageName);
+  try {
+    await writeAndroidDevPrefsFiles(device, packageName, files);
+  } catch (error) {
+    throw androidRuntimeHintsWriteError(error, packageName);
+  }
+}
+
+async function assertAndroidAppSandboxAccessible(
+  device: DeviceInfo,
+  packageName: string,
 ): Promise<void> {
   const probeArgs = ['shell', 'run-as', packageName, 'id'];
   const probeResult = await runAndroidAdb(device, probeArgs, { allowFailure: true });
-  if (probeResult.exitCode !== 0) {
-    const runAsDenied = isAndroidRunAsDeniedOutput(probeResult.stdout, probeResult.stderr);
-    throw new AppError(
-      'COMMAND_FAILED',
-      runAsDenied
-        ? `Failed to access Android app sandbox for ${packageName}`
-        : `Failed to probe Android app sandbox for ${packageName}`,
-      execFailureDetails(probeResult, {
-        package: packageName,
-        cmd: 'adb',
-        args: probeArgs,
-        hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_PROBE_HINT,
-      }),
-    );
-  }
+  if (probeResult.exitCode === 0) return;
+  throw androidRuntimeHintsProbeError(probeResult, packageName, probeArgs);
+}
 
-  try {
-    await runAndroidAdb(device, ['shell', 'run-as', packageName, 'mkdir', '-p', 'shared_prefs']);
-    await runAndroidAdb(device, ['shell', 'run-as', packageName, 'tee', prefsPath], {
-      stdin: xml.trimEnd(),
+function androidRuntimeHintsProbeError(
+  result: ExecResult,
+  packageName: string,
+  args: string[],
+): AppError {
+  const runAsDenied = isAndroidRunAsDeniedOutput(result.stdout, result.stderr);
+  return new AppError(
+    'COMMAND_FAILED',
+    runAsDenied
+      ? `Failed to access Android app sandbox for ${packageName}`
+      : `Failed to probe Android app sandbox for ${packageName}`,
+    execFailureDetails(result, {
+      package: packageName,
+      cmd: 'adb',
+      args,
+      hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_PROBE_HINT,
+    }),
+  );
+}
+
+async function writeAndroidDevPrefsFiles(
+  device: DeviceInfo,
+  packageName: string,
+  files: Array<{ path: string; xml: string }>,
+): Promise<void> {
+  await runAndroidAdb(device, ['shell', 'run-as', packageName, 'mkdir', '-p', 'shared_prefs']);
+  for (const file of files) {
+    await runAndroidAdb(device, ['shell', 'run-as', packageName, 'tee', file.path], {
+      stdin: file.xml.trimEnd(),
     });
-  } catch (error) {
-    const appErr = asAppError(error);
-    if (appErr.code === 'TOOL_MISSING') throw appErr;
-    const stdout = typeof appErr.details?.stdout === 'string' ? appErr.details.stdout : '';
-    const stderr = typeof appErr.details?.stderr === 'string' ? appErr.details.stderr : '';
-    const runAsDenied = isAndroidRunAsDeniedOutput(stdout, stderr);
-    throw new AppError(
-      'COMMAND_FAILED',
-      runAsDenied
-        ? `Failed to access Android app sandbox for ${packageName}`
-        : `Failed to write Android runtime hints for ${packageName}`,
-      {
-        ...(appErr.details ?? {}),
-        package: packageName,
-        cmd: 'adb',
-        phase: 'write-runtime-hints',
-        hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_WRITE_HINT,
-      },
-      appErr,
-    );
   }
+}
+
+function androidRuntimeHintsWriteError(error: unknown, packageName: string): AppError {
+  const appErr = asAppError(error);
+  if (appErr.code === 'TOOL_MISSING') return appErr;
+  const stdout = typeof appErr.details?.stdout === 'string' ? appErr.details.stdout : '';
+  const stderr = typeof appErr.details?.stderr === 'string' ? appErr.details.stderr : '';
+  const runAsDenied = isAndroidRunAsDeniedOutput(stdout, stderr);
+  return new AppError(
+    'COMMAND_FAILED',
+    runAsDenied
+      ? `Failed to access Android app sandbox for ${packageName}`
+      : `Failed to write Android runtime hints for ${packageName}`,
+    {
+      ...(appErr.details ?? {}),
+      package: packageName,
+      cmd: 'adb',
+      phase: 'write-runtime-hints',
+      hint: runAsDenied ? ANDROID_RUN_AS_HINT : ANDROID_WRITE_HINT,
+    },
+    appErr,
+  );
 }
 
 async function applyIosSimulatorRuntimeHints(

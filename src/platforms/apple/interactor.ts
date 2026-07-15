@@ -7,6 +7,7 @@ import {
   setIosSetting,
   writeIosClipboardText,
 } from './core/apps.ts';
+import { captureScreenshotViaRunner } from './core/screenshot.ts';
 import { iosRunnerOverrides, resolveAppleBackRunnerCommand } from './interactions.ts';
 import { appleRemotePressCommand } from './os/tvos/remote.ts';
 import { runMacOsScreenshotAction } from './os/macos/helper.ts';
@@ -168,6 +169,18 @@ async function runAppleScreenshot(
       surface: options.surface,
       fullscreen: options.fullscreen,
     });
+    return;
+  }
+  if (options.captureBackend === 'runner') {
+    // Runner capture returns the XCTest surface as-is; density and simulator
+    // status-bar normalization belong only to the simctl capture pipeline.
+    await captureScreenshotViaRunner(
+      device,
+      outPath,
+      options.appBundleId,
+      options.fullscreen,
+      runnerOpts,
+    );
     return;
   }
   await screenshotIos(device, outPath, {

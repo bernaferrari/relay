@@ -5,6 +5,7 @@ import {
   type Rect,
   type SnapshotNode,
 } from '../kernel/snapshot.ts';
+import { rectArea } from '../kernel/rect.ts';
 
 type ReactNativeOverlayNode = Pick<
   RawSnapshotNode,
@@ -13,7 +14,6 @@ type ReactNativeOverlayNode = Pick<
 
 export type ReactNativeOverlayState = {
   detected: boolean;
-  redBox: boolean;
   dismissNodes: SnapshotNode[];
   minimizeNodes: SnapshotNode[];
   collapsedNodes: SnapshotNode[];
@@ -33,14 +33,11 @@ type ReactNativeOverlayFacts = {
   dismissNodes: SnapshotNode[];
   minimizeNodes: SnapshotNode[];
   collapsedNodes: SnapshotNode[];
-  redBox: boolean;
   detected: boolean;
 };
 
 const KNOWN_OVERLAY_TEXT_PATTERN =
   /\b(logbox|redbox|reload js|copy stack|component stack|call stack|runtime error|open debugger to view warnings)\b/;
-const REDBOX_TEXT_PATTERN =
-  /\b(redbox|runtime error|reload js|copy stack|component stack|call stack)\b/;
 const REACT_NATIVE_STACK_FRAME_PATTERNS = [
   /\b[\w.$<>/-]+\.(?:tsx?|jsx?):\d+(?::\d+)?\b/,
   /\b[\w.$<>/-]+\.(?:tsx?|jsx?)\s+\(\d+:\d+\)/,
@@ -70,28 +67,17 @@ export function formatReactNativeOverlayWarning(nodes: SnapshotNode[]): string |
   ].join('\n');
 }
 
-export function detectReactNativeOverlay(nodes: SnapshotNode[]): ReactNativeOverlayState {
-  return analyzeReactNativeOverlay(nodes);
-}
-
 export function analyzeReactNativeOverlay(nodes: SnapshotNode[]): ReactNativeOverlayState {
   const facts = collectReactNativeOverlayFacts(nodes);
   const primaryAction = facts.detected ? resolveSafeDismissAction(facts) : null;
 
   return {
     detected: facts.detected,
-    redBox: facts.redBox,
     dismissNodes: facts.dismissNodes,
     minimizeNodes: facts.minimizeNodes,
     collapsedNodes: facts.collapsedNodes,
     primaryAction,
   };
-}
-
-export function readReactNativeOverlayActionNodes(
-  overlay: Pick<ReactNativeOverlayState, 'dismissNodes' | 'minimizeNodes' | 'collapsedNodes'>,
-): SnapshotNode[] {
-  return [...overlay.dismissNodes, ...overlay.minimizeNodes, ...overlay.collapsedNodes];
 }
 
 export function isReactNativeCollapsedWarningWrapperCandidate(
@@ -117,7 +103,7 @@ export function isReactNativeCollapsedWarningWrapperWithVisibleBanner(
 function collectReactNativeOverlayFacts(nodes: SnapshotNode[]): ReactNativeOverlayFacts {
   const text = nodes.map(formatNodeSearchText).join('\n').toLowerCase();
   const dismissNodes = collectOverlayNodes(nodes, isDismissControlLabel);
-  const minimizeNodes = collectOverlayNodes(nodes, isMinimizeLabel);
+  const minimizeNodes = collectOverlayNodes(nodes, isReactNativeOverlayMinimizeLabel);
   const collapsedNodes = collectOverlayNodes(
     nodes,
     isReactNativeCollapsedWarningLabel,
@@ -134,7 +120,6 @@ function collectReactNativeOverlayFacts(nodes: SnapshotNode[]): ReactNativeOverl
     dismissNodes,
     minimizeNodes,
     collapsedNodes,
-    redBox: isReactNativeRedBox(text, hasReactNativeStackFrame, hasOverlayControl),
     detected: isReactNativeOverlayDetected({
       text,
       hasReactNativeStackFrame,
@@ -191,18 +176,6 @@ function hasReactNativeOverlayControlText(
   );
 }
 
-function isReactNativeRedBox(
-  text: string,
-  hasReactNativeStackFrame: boolean,
-  hasOverlayControl: boolean,
-): boolean {
-  return (
-    REDBOX_TEXT_PATTERN.test(text) ||
-    hasUnableToDownloadAssetRedBox(text) ||
-    (hasReactNativeStackFrame && hasOverlayControl)
-  );
-}
-
 function isReactNativeOverlayDetected(params: {
   text: string;
   hasReactNativeStackFrame: boolean;
@@ -234,10 +207,10 @@ function isReactNativeOpenDebuggerWarningLabel(label: string): boolean {
 }
 
 function isDismissControlLabel(label: string): boolean {
-  return isDismissLabel(label) || isCloseLabel(label) || isCloseIconLabel(label);
+  return isReactNativeOverlayDismissLabel(label) || isCloseLabel(label) || isCloseIconLabel(label);
 }
 
-function isDismissLabel(label: string): boolean {
+export function isReactNativeOverlayDismissLabel(label: string): boolean {
   return /^dismiss(?:\s*\([^)]*\))?$/i.test(label);
 }
 
@@ -249,7 +222,7 @@ function isCloseIconLabel(label: string): boolean {
   return CLOSE_ICON_LABELS.has(label);
 }
 
-function isMinimizeLabel(label: string): boolean {
+export function isReactNativeOverlayMinimizeLabel(label: string): boolean {
   return /^minimi[sz]e(?:\b|\s|\()/i.test(label);
 }
 
@@ -306,15 +279,11 @@ function isSemanticControlNode(node: ReactNativeOverlayNode): boolean {
   return /\b(button|menuitem|link)\b/.test(roleText);
 }
 
-function rectArea(rect: Rect | undefined): number {
-  return rect ? rect.width * rect.height : Number.POSITIVE_INFINITY;
-}
-
 function controlNodeScores(node: SnapshotNode): number[] {
   return [
     booleanScore(isSemanticControlNode(node)),
     booleanScore(node.hittable),
-    -rectArea(node.rect),
+    -(node.rect ? rectArea(node.rect) : Number.POSITIVE_INFINITY),
   ];
 }
 
@@ -336,7 +305,7 @@ function targetFromNode(
 
 function actionFromDismissNode(node: SnapshotNode): ReactNativeOverlayDismissTarget['action'] {
   const label = readNodeLabel(node)?.trim().toLowerCase();
-  if (label && isDismissLabel(label)) return 'dismiss';
+  if (label && isReactNativeOverlayDismissLabel(label)) return 'dismiss';
   return 'close';
 }
 

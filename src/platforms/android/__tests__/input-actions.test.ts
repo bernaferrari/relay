@@ -10,8 +10,15 @@ import {
 } from '../input-actions.ts';
 import { AppError } from '../../../kernel/errors.ts';
 import { withScriptedAdb } from '../../../__tests__/test-utils/mocked-binaries.ts';
-import { ANDROID_EMULATOR } from '../../../__tests__/test-utils/index.ts';
-import { withAndroidAdbProvider, type AndroidTouchInjector } from '../adb-executor.ts';
+import {
+  ANDROID_EMULATOR,
+  ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+} from '../../../__tests__/test-utils/index.ts';
+import {
+  createDeviceAdbExecutor,
+  withAndroidAdbProvider,
+  type AndroidTouchInjector,
+} from '../adb-executor.ts';
 
 test('scrollAndroid plans explicit pixel travel through semantic touch injection', async () => {
   const touchCalls: Parameters<AndroidTouchInjector>[0][] = [];
@@ -236,17 +243,14 @@ test('fillAndroid uses chunk-safe shell input and retries when verification stil
       '  fi',
       '  exit 0',
       'fi',
-      'if [ "$1" = "exec-out" ] && [ "$2" = "uiautomator" ] && [ "$3" = "dump" ] && [ "$4" = "/dev/tty" ]; then',
-      '  text="$(cat "$STATE_FILE" 2>/dev/null)"',
-      '  printf "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?><hierarchy><node class=\\"android.widget.EditText\\" text=\\"%s\\" focused=\\"true\\" bounds=\\"[0,0][200,100]\\"/></hierarchy>" "$text"',
-      '  exit 0',
-      'fi',
       'echo "unexpected args: $@" >&2',
       'exit 1',
       '',
     ].join('\n'),
     async ({ argsLogPath, device }) => {
-      await fillAndroid(device, 10, 10, 'curtis.layne+test+73kmc@uber.com');
+      await withScriptedSnapshotHelper(device, async () => {
+        await fillAndroid(device, 10, 10, 'curtis.layne+test+73kmc@uber.com');
+      });
       const logged = await fs.readFile(argsLogPath, 'utf8');
       assert.doesNotMatch(logged, /shell\ncmd\nclipboard\nset\ntext/);
       assert.doesNotMatch(logged, /shell\ninput\nkeyevent\nKEYCODE_PASTE/);
@@ -283,17 +287,14 @@ test('fillAndroid keeps delayed typing in typed-input mode', async () => {
       '  printf "%s" "$4" >> "$STATE_FILE"',
       '  exit 0',
       'fi',
-      'if [ "$1" = "exec-out" ] && [ "$2" = "uiautomator" ] && [ "$3" = "dump" ] && [ "$4" = "/dev/tty" ]; then',
-      '  text="$(cat "$STATE_FILE" 2>/dev/null)"',
-      '  printf "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?><hierarchy><node class=\\"android.widget.EditText\\" text=\\"%s\\" focused=\\"true\\" bounds=\\"[0,0][200,100]\\"/></hierarchy>" "$text"',
-      '  exit 0',
-      'fi',
       'echo "unexpected args: $@" >&2',
       'exit 1',
       '',
     ].join('\n'),
     async ({ argsLogPath, device }) => {
-      await fillAndroid(device, 10, 10, 'go', 1);
+      await withScriptedSnapshotHelper(device, async () => {
+        await fillAndroid(device, 10, 10, 'go', 1);
+      });
       const logged = await fs.readFile(argsLogPath, 'utf8');
       const shellInputTextCount = (logged.match(/shell\ninput\ntext\n/g) ?? []).length;
       assert.equal(shellInputTextCount, 2);
@@ -316,6 +317,16 @@ test('fillAndroid tolerates delayed React Native text verification', async () =>
       '  shift',
       '  shift',
       'fi',
+      ...androidSnapshotHelperStateFileScript([
+        'count="$(cat "$DUMP_COUNT_FILE" 2>/dev/null || echo 0)"',
+        'count=$((count + 1))',
+        'printf "%s" "$count" > "$DUMP_COUNT_FILE"',
+        'if [ "$count" -eq 1 ]; then',
+        '  text="sent the updat"',
+        'else',
+        '  text="$(cat "$STATE_FILE" 2>/dev/null)"',
+        'fi',
+      ]),
       'if [ "$1" = "shell" ] && [ "$2" = "input" ] && [ "$3" = "tap" ]; then',
       '  exit 0',
       'fi',
@@ -331,24 +342,14 @@ test('fillAndroid tolerates delayed React Native text verification', async () =>
       '  printf "%s" "$text" >> "$STATE_FILE"',
       '  exit 0',
       'fi',
-      'if [ "$1" = "exec-out" ] && [ "$2" = "uiautomator" ] && [ "$3" = "dump" ] && [ "$4" = "/dev/tty" ]; then',
-      '  count="$(cat "$DUMP_COUNT_FILE" 2>/dev/null || echo 0)"',
-      '  count=$((count + 1))',
-      '  printf "%s" "$count" > "$DUMP_COUNT_FILE"',
-      '  if [ "$count" -eq 1 ]; then',
-      '    text="sent the updat"',
-      '  else',
-      '    text="$(cat "$STATE_FILE" 2>/dev/null)"',
-      '  fi',
-      '  printf "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?><hierarchy><node class=\\"android.widget.EditText\\" text=\\"%s\\" focused=\\"true\\" bounds=\\"[0,0][200,100]\\"/></hierarchy>" "$text"',
-      '  exit 0',
-      'fi',
       'echo "unexpected args: $@" >&2',
       'exit 1',
       '',
     ].join('\n'),
     async ({ device }) => {
-      await fillAndroid(device, 10, 10, 'sent the update');
+      await withScriptedSnapshotHelper(device, async () => {
+        await fillAndroid(device, 10, 10, 'sent the update');
+      });
     },
   );
 }, 10_000);
@@ -389,14 +390,16 @@ test('typeAndroid reports clear error when unicode input is unsupported', async 
   );
 });
 
-function androidSnapshotHelperStateFileScript(): string[] {
+function androidSnapshotHelperStateFileScript(
+  resolveText: readonly string[] = ['text="$(cat "$STATE_FILE" 2>/dev/null)"'],
+): string[] {
   return [
     'if [ "$1" = "shell" ] && [ "$2" = "cmd" ] && [ "$3" = "package" ] && [ "$4" = "list" ] && [ "$5" = "packages" ] && [ "$6" = "--show-versioncode" ] && [ "$7" = "com.callstack.agentdevice.snapshothelper" ]; then',
     '  printf "package:com.callstack.agentdevice.snapshothelper versionCode:999999\\n"',
     '  exit 0',
     'fi',
     'if [ "$1" = "shell" ] && [ "$2" = "am" ] && [ "$3" = "instrument" ]; then',
-    '  text="$(cat "$STATE_FILE" 2>/dev/null)"',
+    ...resolveText.map((line) => `  ${line}`),
     '  xml="$(printf "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?><hierarchy><node class=\\"android.widget.EditText\\" text=\\"%s\\" focused=\\"true\\" bounds=\\"[0,0][200,100]\\"/></hierarchy>" "$text")"',
     '  payload="$(printf "%s" "$xml" | base64 | tr -d "\\n")"',
     '  printf "INSTRUMENTATION_STATUS: agentDeviceProtocol=android-snapshot-helper-v1\\n"',
@@ -413,4 +416,18 @@ function androidSnapshotHelperStateFileScript(): string[] {
     '  exit 0',
     'fi',
   ];
+}
+
+async function withScriptedSnapshotHelper(
+  device: typeof ANDROID_EMULATOR,
+  run: () => Promise<void>,
+): Promise<void> {
+  await withAndroidAdbProvider(
+    {
+      exec: createDeviceAdbExecutor(device),
+      snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+    },
+    { serial: device.id },
+    run,
+  );
 }

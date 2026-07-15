@@ -25,6 +25,13 @@ export {
   walkNonRawAndroidFixture,
 } from './android-ui-hierarchy-fixtures.ts';
 
+export {
+  ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+  androidSnapshotHelperOutput,
+  createAndroidSnapshotHelperExecutor,
+  isAndroidSnapshotHelperCapture,
+} from './android-snapshot-helper.ts';
+
 export { makeSessionStore } from './store-factory.ts';
 
 export { withNoColor } from './color.ts';
