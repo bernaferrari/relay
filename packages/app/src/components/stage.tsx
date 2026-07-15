@@ -20,7 +20,7 @@ import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import { cn } from "../lib/cn";
-import { evidenceForStep } from "./journey-workspace";
+import { evidenceForStep } from "./journey-step-presentation";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
 import {
   deviceBody,

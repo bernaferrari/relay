@@ -7,8 +7,14 @@ import { cn } from "../lib/cn";
 import { sentenceForStep } from "../lib/step-sentence";
 import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { fmtAgo, fmtDur } from "../lib/job";
+import { testRunBlocker } from "../lib/test-run-readiness";
 import { Icon } from "./icon";
-import { accentForStep, actionForStep, evidenceForStep, iconForStep } from "./journey-workspace";
+import {
+  accentForStep,
+  actionForStep,
+  evidenceForStep,
+  iconForStep,
+} from "./journey-step-presentation";
 import { kindLabel } from "./step-list-metadata";
 import { eyebrow, productPrimary, productSecondary } from "../lib/ui";
 
@@ -208,15 +214,14 @@ export function JourneyInspector(props: { onEdit: () => void; onOpenTargets: () 
       }));
     return [...live, ...disk].sort((a, b) => b.at - a.at).slice(0, 3);
   });
-  const runBlockedReason = () => {
-    if (server.health() !== "online") return "Start the Relay server before running this test.";
-    if (server.isEmptyDevices() || !server.selectedDevice())
-      return "Choose a target before running this test.";
-    const target = server.devices().find((device) => device.serial === server.selectedDevice());
-    if (!target || target.booted === false) return "Start this target or choose another one.";
-    if (draft.invalidCount() > 0) return "Complete the unfinished steps before running.";
-    return "";
-  };
+  const runBlockedReason = () =>
+    testRunBlocker({
+      health: server.health(),
+      selectedDevice: server.selectedDevice(),
+      devices: server.devices(),
+      stepCount: draft.steps().length,
+      invalidCount: draft.invalidCount(),
+    });
   const run = () => {
     const blocker = runBlockedReason();
     if (blocker) {

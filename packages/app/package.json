@@ -14,7 +14,7 @@
     "preview": "vp preview",
     "check:ui": "node scripts/check-ui-boundaries.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/lib/step-sentence.test.ts src/lib/run-gates.test.ts src/lib/run-review-model.test.ts src/lib/natural-language-plan.test.ts src/lib/target-presentation.test.ts src/lib/discovery-presentation.test.ts src/lib/matrix-presentation.test.ts src/lib/roving-focus.test.ts src/lib/server-url.test.ts src/lib/server-interaction.test.ts src/lib/server-matrix-remote.test.ts src/lib/server-discovery-remote.test.ts src/lib/server-target-remote.test.ts src/lib/server-recipe-remote.test.ts src/lib/server-run-remote.test.ts src/lib/server-capture.test.ts src/lib/frame-canvas-presentation.test.ts src/components/run-panel-presentation.test.ts src/components/journey-workspace.test.ts"
+    "test": "tsx --test src/lib/step-sentence.test.ts src/lib/run-gates.test.ts src/lib/run-review-model.test.ts src/lib/natural-language-plan.test.ts src/lib/test-run-readiness.test.ts src/lib/target-presentation.test.ts src/lib/discovery-presentation.test.ts src/lib/matrix-presentation.test.ts src/lib/roving-focus.test.ts src/lib/server-url.test.ts src/lib/server-interaction.test.ts src/lib/server-matrix-remote.test.ts src/lib/server-discovery-remote.test.ts src/lib/server-target-remote.test.ts src/lib/server-recipe-remote.test.ts src/lib/server-run-remote.test.ts src/lib/server-capture.test.ts src/lib/frame-canvas-presentation.test.ts src/components/run-panel-presentation.test.ts src/components/journey-workspace.test.ts"
   },
   "dependencies": {
     "@relay/client": "workspace:*",
