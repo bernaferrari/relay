@@ -24,13 +24,14 @@ import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { kindIcon, kindLabel } from "./step-list-metadata";
 import { sentenceForStep } from "../lib/step-sentence";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
+import { executionMoments } from "../lib/execution-moments";
+import { ExecutionTimeline } from "./execution-timeline";
 import {
   formatReviewTime,
   initialRunReviewStep,
   runCompletion,
   runElapsedAtStep,
   runReviewCounts,
-  runTimelineWeights,
 } from "../lib/run-review-model";
 
 export function RunsWorkspace(props: {
@@ -874,19 +875,6 @@ function runStateDot(state: RunCanvasState): string {
   return "bg-[var(--relay-green)]";
 }
 
-/** Timeline scrubber segment fill — deliberately calmer than `runStateDot`'s
- * small status dots. Passed steps stay a neutral surface tone rather than a
- * saturated green field; color is reserved as a muted tint for the segment
- * that is currently failed or in progress, never an opaque alarm fill. */
-function runTimelineSegmentFill(state: RunCanvasState): string {
-  if (state === "failed" || state === "cancelled")
-    return "bg-[color-mix(in_srgb,var(--relay-red)_20%,var(--relay-surface-raised))]";
-  if (state === "running")
-    return "bg-[color-mix(in_srgb,var(--relay-accent)_20%,var(--relay-surface-raised))]";
-  if (state === "planned") return "bg-[var(--relay-line-strong)]";
-  return "bg-[var(--relay-surface-raised)]";
-}
-
 /** Left half of a run report: the captured evidence, framed like a device,
  * with a step timeline scrubber underneath. */
 function RunReplayStage(props: {
@@ -902,7 +890,6 @@ function RunReplayStage(props: {
   const count = () => Math.max(nodes().length, 1);
   const index = () => Math.max(0, Math.min(props.selectedIndex, count() - 1));
   const node = () => nodes()[index()];
-  const timelineWeights = createMemo(() => runTimelineWeights(props.job.steps ?? [], count()));
   const elapsed = () => runElapsedAtStep(props.job.steps ?? [], index());
   const totalDuration = () =>
     (props.job.steps ?? []).reduce(
@@ -911,6 +898,9 @@ function RunReplayStage(props: {
     );
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
+  const timelineMoments = createMemo(() =>
+    executionMoments({ recipe: snapshot(), job: props.job, recipes: server.recipes() }),
+  );
   const frameSrc = () => {
     const item = props.items[index()];
     if (item?.src) return item.src;
@@ -926,14 +916,6 @@ function RunReplayStage(props: {
     const kind = snapshot()?.steps[stepIndex]?.kind;
     return kind ? kindIcon(kind) : "bolt";
   };
-  /** Marker position for the scrubber handle — center of the active segment. */
-  const progressPct = createMemo(() => {
-    const weights = timelineWeights();
-    const i = index();
-    let before = 0;
-    for (let k = 0; k < i; k++) before += weights[k] ?? 0;
-    return Math.min(100, Math.max(0, (before + (weights[i] ?? 0) * 0.5) * 100));
-  });
   const move = (delta: number) =>
     props.onSelect(Math.max(0, Math.min(index() + delta, count() - 1)));
   const togglePlayback = () => {
@@ -1042,104 +1024,27 @@ function RunReplayStage(props: {
         />
         <p class="m-0 truncate text-[12.5px] font-medium text-text-base">{node()?.title}</p>
       </div>
-      <footer class="relative z-[1] shrink-0 border-t border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_86%,transparent)] px-4 py-3 backdrop-blur">
-        <div class="flex items-center gap-3">
-          <div class="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              class="grid size-8 place-items-center rounded-lg bg-[var(--relay-surface-strong)] text-[var(--relay-text)] transition-[background-color,transform] duration-150 hover:bg-white/[0.1] active:scale-[0.96]"
-              aria-label={playing() ? "Pause run playback" : "Play run playback"}
-              aria-pressed={playing()}
-              onClick={togglePlayback}
-            >
-              <Icon name={playing() ? "pause" : "play"} size={12} />
-            </button>
-            <button
-              type="button"
-              class="grid size-8 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-30"
-              aria-label="Previous step"
-              disabled={index() === 0}
-              onClick={() => {
-                setPlaying(false);
-                move(-1);
-              }}
-            >
-              <Icon name="chevron-left" size={15} />
-            </button>
-            <button
-              type="button"
-              class="grid size-8 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-30"
-              aria-label="Next step"
-              disabled={index() === count() - 1}
-              onClick={() => {
-                setPlaying(false);
-                move(1);
-              }}
-            >
-              <Icon name="chevron-right" size={15} />
-            </button>
-          </div>
-          <span class={cn(mono, "shrink-0 text-[11px] text-text-weaker")}>
-            {formatReviewTime(elapsed())} <span class="text-text-weaker">/</span>{" "}
-            {formatReviewTime(totalDuration())}
-          </span>
-          {/* Segmented scrubber: one bar per step, width proportional to its
-              duration (clamped so short steps stay targetable), step number
-              underneath. Passed steps stay a neutral surface tone; only the
-              failed or in-progress segment gets a muted color tint. No
-              per-action ticks — the trace only records one timestamp per
-              step, not per glyph. */}
-          <div class="relative min-w-0 flex-1 py-1">
-            <div class="flex items-end gap-[3px]" role="tablist" aria-label="Run timeline">
-              <For each={nodes()}>
-                {(item) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={item.index === index()}
-                    aria-label={`Step ${item.index + 1}: ${item.title} — ${runStateLabel(item.state)}`}
-                    data-tip={item.title}
-                    class="group flex min-w-[14px] flex-1 flex-col items-center gap-1"
-                    style={{
-                      "flex-grow": String(timelineWeights()[item.index] ?? 1),
-                      "flex-basis": "0",
-                    }}
-                    onClick={() => {
-                      setPlaying(false);
-                      props.onSelect(item.index);
-                    }}
-                  >
-                    <span
-                      class={cn(
-                        "h-6 w-full rounded-[3px] transition-[background-color,box-shadow]",
-                        runTimelineSegmentFill(item.state),
-                        "group-hover:opacity-90",
-                        item.index === index() &&
-                          "shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_40%,transparent)]",
-                      )}
-                    />
-                    <i
-                      class={cn(
-                        "font-mono text-[11px] tabular-nums not-italic",
-                        item.index === index()
-                          ? "font-semibold text-text-interactive-base"
-                          : "text-text-weaker",
-                      )}
-                    >
-                      {item.index + 1}
-                    </i>
-                  </button>
-                )}
-              </For>
-            </div>
-            <span
-              class="pointer-events-none absolute -top-1 h-6 w-0.5 -translate-x-1/2 rounded-full bg-[var(--relay-accent)] shadow-[0_0_6px_var(--relay-accent)]"
-              style={{ left: `${progressPct()}%` }}
-              aria-hidden="true"
-            />
-          </div>
-        </div>
-      </footer>
+      <ExecutionTimeline
+        moments={timelineMoments()}
+        selectedIndex={index()}
+        onSelect={(nextIndex) => {
+          setPlaying(false);
+          props.onSelect(nextIndex);
+        }}
+        mode="replay"
+        playing={playing()}
+        onTogglePlayback={togglePlayback}
+        onPrevious={() => {
+          setPlaying(false);
+          move(-1);
+        }}
+        onNext={() => {
+          setPlaying(false);
+          move(1);
+        }}
+        elapsedMs={elapsed()}
+        totalDurationMs={totalDuration()}
+      />
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { useServer, type SuiteSection, type TestSuite } from "../context/server";
+import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import {
   productIconButton,
@@ -10,8 +11,10 @@ import {
 import { shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
 import { ExecutionInspector } from "./execution-inspector";
+import { ExecutionTimeline } from "./execution-timeline";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
+import { executionDuration, executionElapsedAt, executionMoments } from "../lib/execution-moments";
 
 export function SuitesWorkspace(props: {
   onOpenTest: (id: string) => void;
@@ -20,6 +23,7 @@ export function SuitesWorkspace(props: {
   onRecordTest: (suiteId: string, sectionId: string) => void;
 }) {
   const server = useServer();
+  const workbench = useWorkbench();
   const [selectedEntryId, setSelectedEntryId] = createSignal<string | null>(null);
   const [addingTest, setAddingTest] = createSignal<Record<string, string>>({});
   const [history, setHistory] = createSignal<TestSuite[] | null>(null);
@@ -46,6 +50,14 @@ export function SuitesWorkspace(props: {
     const selected = server.jobs().find((job) => job.id === server.selectedJobId());
     return selected && contains(selected.action) ? selected : null;
   });
+  const moments = createMemo(() =>
+    executionMoments({
+      recipe: selectedTest(),
+      job: suiteExecutionJob(),
+      recipes: server.recipes(),
+    }),
+  );
+  const selectedMoment = createMemo(() => workbench.focusedIndex() ?? 0);
 
   const save = (suite: TestSuite, sections = suite.sections, title = suite.title) =>
     server.saveSuiteRemote({
@@ -209,10 +221,24 @@ export function SuitesWorkspace(props: {
               />
             }
           >
-            <DeviceStage
-              onExpandBoard={() => props.onOpenTest(selectedTest()!.id)}
-              onOpenTargets={props.onOpenTargets}
-            />
+            <div class="flex h-full min-h-0 flex-col">
+              <div class="min-h-0 flex-1">
+                <DeviceStage
+                  onExpandBoard={() => props.onOpenTest(selectedTest()!.id)}
+                  onOpenTargets={props.onOpenTargets}
+                />
+              </div>
+              <Show when={moments().length > 0}>
+                <ExecutionTimeline
+                  moments={moments()}
+                  selectedIndex={selectedMoment()}
+                  onSelect={workbench.focusStep}
+                  mode={suiteExecutionJob() ? "live" : "plan"}
+                  elapsedMs={executionElapsedAt(moments(), selectedMoment())}
+                  totalDurationMs={executionDuration(moments())}
+                />
+              </Show>
+            </div>
           </Show>
         </Show>
       </div>

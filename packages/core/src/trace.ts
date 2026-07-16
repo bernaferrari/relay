@@ -34,6 +34,14 @@ export type TraceFrameRef = {
   height?: number;
 };
 
+/** A single operation observed inside a human-readable step. Unlike `glyphs`,
+ * this list preserves order and repetition for execution timelines. */
+export type TraceAction = {
+  kind: Glyph;
+  at: number;
+  label?: string;
+};
+
 export type TraceStep = {
   id: string;
   index: number;
@@ -42,6 +50,7 @@ export type TraceStep = {
   title: string;
   /** glyph keys for the meta row */
   glyphs: Glyph[];
+  actions?: TraceAction[];
   startedAt: number;
   finishedAt?: number;
   durationMs?: number;

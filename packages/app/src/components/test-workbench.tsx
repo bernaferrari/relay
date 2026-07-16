@@ -8,6 +8,8 @@ import { shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
 import { JourneyInspector, JourneyOutline } from "./journey-chrome";
 import { ExecutionInspector } from "./execution-inspector";
+import { ExecutionTimeline } from "./execution-timeline";
+import { executionDuration, executionElapsedAt, executionMoments } from "../lib/execution-moments";
 
 function persistedAsExecution(run: PersistedRun): JobInfo {
   const status = ["queued", "running", "paused", "ok", "error", "healed", "cancelled"].includes(
@@ -56,12 +58,33 @@ export function TestWorkbench(props: {
       return selected;
     return workbench.activeLiveJob();
   });
+  const moments = createMemo(() =>
+    executionMoments({
+      steps: draft.steps(),
+      recipe: server.selectedRecipe(),
+      job: execution(),
+      recipes: server.recipes(),
+    }),
+  );
+  const selectedMoment = createMemo(() => workbench.focusedIndex() ?? 0);
 
   return (
     <>
       <JourneyOutline compact onAdvancedAdd={props.onOpenAdvanced} />
-      <div class={cn(shellStageWrap, "flex-1")}>
-        <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
+      <div class={cn(shellStageWrap, "flex min-h-0 flex-1 flex-col")}>
+        <div class="min-h-0 flex-1">
+          <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
+        </div>
+        <Show when={moments().length > 0}>
+          <ExecutionTimeline
+            moments={moments()}
+            selectedIndex={selectedMoment()}
+            onSelect={workbench.focusStep}
+            mode={execution() ? "live" : "plan"}
+            elapsedMs={executionElapsedAt(moments(), selectedMoment())}
+            totalDurationMs={executionDuration(moments())}
+          />
+        </Show>
       </div>
       <Show
         when={props.details}

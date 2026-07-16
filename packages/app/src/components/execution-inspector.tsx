@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo } from "solid-js";
+import { Show, createEffect, createMemo } from "solid-js";
 import { useServer, type JobInfo } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
@@ -151,35 +151,6 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
           <span class="font-mono text-[10.5px] tabular-nums text-[var(--relay-text-tertiary)]">
             {Math.min(observed(), total())} reached
           </span>
-        </div>
-        <div class="mt-2 grid grid-flow-col auto-cols-fr gap-1" aria-label="Run progress">
-          <For each={Array.from({ length: total() })}>
-            {(_, index) => {
-              const itemState = () => stepState(props.job, index());
-              return (
-                <button
-                  type="button"
-                  class={cn(
-                    "group grid h-8 place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-white/60",
-                    focusedIndex() === index() &&
-                      "ring-1 ring-white/50 ring-offset-1 ring-offset-[var(--relay-panel)]",
-                  )}
-                  aria-label={`Select step ${index() + 1}`}
-                  aria-current={focusedIndex() === index() ? "step" : undefined}
-                  onClick={() => workbench.focusStep(index())}
-                >
-                  <span
-                    class={cn(
-                      "h-1.5 w-full rounded-full bg-[var(--relay-line-strong)] transition-[height,background-color] duration-150 group-hover:h-2",
-                      itemState() === "passed" && "bg-[var(--relay-green)]",
-                      itemState() === "failed" && "bg-[var(--relay-red)]",
-                      itemState() === "running" && "bg-[var(--relay-accent)]",
-                    )}
-                  />
-                </button>
-              );
-            }}
-          </For>
         </div>
       </header>
 

@@ -26,7 +26,6 @@ import { withRefreshFeedback } from "../lib/refresh-feedback";
 import {
   deviceIconWell,
   deviceTitle,
-  btnGhost,
   mono,
   phoneBezel,
   phoneScreen,
@@ -731,108 +730,6 @@ export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?:
             {frame()!.caption}
           </div>
         </Show>
-      </Show>
-
-      {/* Dense evidence filmstrip under the phone */}
-      <Show when={server.frames().length > 0}>
-        <div class="z-[2] mt-3.5 w-full max-w-[min(340px,92%)]">
-          <div class="flex flex-col gap-2 rounded-2xl bg-surface-raised-stronger-non-alpha px-2 py-2 text-text-strong shadow-sm ring-1 ring-inset ring-border-weak-base">
-            {/* Thumbnail filmstrip — denser row, selected is unmistakable */}
-            <div
-              class="flex gap-1 overflow-x-auto px-0.5 py-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              role="listbox"
-              aria-label="Frame filmstrip"
-            >
-              <For each={server.frames()}>
-                {(f, i) => (
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={i() === server.frameIndex()}
-                    aria-label={`frame ${i() + 1}: ${f.caption ?? "capture"}`}
-                    data-tip={f.caption || `Frame ${i() + 1}`}
-                    class={cn(
-                      "relative h-[46px] w-[26px] shrink-0 overflow-hidden rounded-[5px]",
-                      "bg-surface-weak ring-1 ring-border-weak-base transition-[box-shadow,ring-color,transform] duration-150",
-                      "hover:ring-border-strong-base",
-                      i() === server.frameIndex()
-                        ? "scale-[1.04] ring-2 ring-border-interactive-base"
-                        : "opacity-80 hover:opacity-100",
-                    )}
-                    onClick={() => wb.focusFrame(i())}
-                  >
-                    <img
-                      class="h-full w-full object-cover object-top"
-                      alt=""
-                      draggable={false}
-                      src={`data:${f.mime};base64,${f.base64}`}
-                    />
-                    <Show when={i() === server.frameIndex()}>
-                      <span
-                        class="absolute inset-x-0 bottom-0 h-0.5 bg-surface-brand-base"
-                        aria-hidden="true"
-                      />
-                    </Show>
-                  </button>
-                )}
-              </For>
-            </div>
-            <div class="flex items-center gap-2 px-0.5">
-              <button
-                type="button"
-                class={cn(
-                  "grid size-6 shrink-0 place-items-center rounded-md bg-button-primary-base text-icon-invert-base",
-                  "transition-transform ",
-                )}
-                data-tip={server.playing() ? "Pause" : "Replay"}
-                aria-label={server.playing() ? "Pause playback" : "Replay frames"}
-                onClick={() => server.togglePlayback()}
-              >
-                <Icon name={server.playing() ? "pause" : "play"} size={13} />
-              </button>
-              <div
-                class="relative flex h-1.5 flex-1 items-center gap-px overflow-hidden rounded-full bg-surface-weak"
-                role="group"
-                aria-label="Capture timeline"
-              >
-                <For each={server.frames()}>
-                  {(f, i) => (
-                    <button
-                      type="button"
-                      class={cn(
-                        "h-full min-w-[2px] flex-1 border-0 transition-colors",
-                        i() < server.frameIndex() && "bg-surface-brand-base/50",
-                        i() === server.frameIndex() && "bg-surface-brand-base",
-                        i() > server.frameIndex() && "bg-transparent hover:bg-text-weaker/35",
-                      )}
-                      data-tip={f.caption || `Frame ${i() + 1}`}
-                      aria-label={`frame ${i() + 1}: ${f.caption}`}
-                      aria-current={i() === server.frameIndex() ? "true" : undefined}
-                      onClick={() => wb.focusFrame(i())}
-                    />
-                  )}
-                </For>
-              </div>
-              <span class={cn(mono, "shrink-0 text-12-regular tabular-nums text-text-weak")}>
-                {server.frameIndex() + 1}
-                <span class="text-text-weaker/45">/</span>
-                {server.frames().length}
-              </span>
-              <Show when={props.onExpandBoard}>
-                <button
-                  type="button"
-                  class={cn(btnGhost, "h-7 gap-1 px-2")}
-                  data-tip="Map of captures"
-                  aria-label="Expand frame board"
-                  onClick={() => props.onExpandBoard?.()}
-                >
-                  <Icon name="grid" size={12} />
-                  Map
-                </button>
-              </Show>
-            </div>
-          </div>
-        </div>
       </Show>
 
       {/* Mode toolbar — only when a device can act; never greyed theatre */}

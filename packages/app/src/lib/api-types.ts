@@ -54,6 +54,8 @@ export type TraceStep = {
   tone: string;
   title: string;
   glyphs: string[];
+  /** Ordered, repeated operations observed inside this readable step. */
+  actions?: { kind: string; at: number; label?: string }[];
   startedAt: number;
   finishedAt?: number;
   durationMs?: number;

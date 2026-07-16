@@ -336,6 +336,7 @@ function openStep(
     heal: partial.heal,
     status: partial.status ?? "running",
   };
+  step.actions = partial.glyphs.map((kind) => ({ kind, at: step.startedAt }));
   job.steps.push(step);
   publish({
     type: "job.step",
@@ -359,6 +360,13 @@ function appendStepLog(step: TraceStep | undefined, line: string): void {
   // enrich glyphs from live logs
   const inferred = glyphsFromLogLine(line);
   step.glyphs = [...new Set([...step.glyphs, ...inferred])].slice(0, 6);
+  if (inferred.length > 0) {
+    const at = now();
+    step.actions = [
+      ...(step.actions ?? []),
+      ...inferred.map((kind) => ({ kind, at, label: line })),
+    ];
+  }
 }
 
 async function drainQueue(): Promise<void> {
@@ -865,6 +873,7 @@ export async function attachJobFrame(opts: {
     if (!step.glyphs.includes("shot")) {
       step.glyphs = [...step.glyphs, "shot" as Glyph].slice(0, 6);
     }
+    step.actions = [...(step.actions ?? []), { kind: "shot" as Glyph, at: frame.capturedAt }];
   }
   publish({
     type: "job.frame",
