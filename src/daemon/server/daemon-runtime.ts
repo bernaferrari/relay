@@ -6,12 +6,16 @@ import { resolveDaemonPaths, resolveDaemonServerMode } from '../config.ts';
 import { createDaemonHttpServer } from './http-server.ts';
 import { trackDownloadableArtifact } from '../artifact-tracking.ts';
 import { createDefaultCloudArtifactProvider } from '../../default-cloud-artifact-provider.ts';
-import { createDefaultCloudWebDriverProviderRuntimes } from '../../cloud-webdriver/provider-runtimes.ts';
 import {
   composeCloudArtifactProviders,
   createProviderDeviceRuntimeRequestProviders,
 } from '../../provider-device-runtime.ts';
+import {
+  createDefaultProviderDeviceRuntimes,
+  DEFAULT_PROVIDER_RUNTIME_REQUIRED_IDS,
+} from '../../provider-device-runtimes.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
+import { createExpiredProviderLeaseReleaser } from '../provider-lease-expiry.ts';
 import { createRequestHandler } from '../request-router.ts';
 import { teardownSessionResources } from '../session-teardown.ts';
 import { closeDaemonServers } from './server-shutdown.ts';
@@ -88,19 +92,32 @@ export async function startDaemonRuntime(
   cleanupStaleAppLogProcesses(sessionsDir);
 
   const sessionStore = new SessionStore(sessionsDir);
+  const version = readVersion();
+  const token = crypto.randomBytes(24).toString('hex');
+  const daemonProcessStartTime = readProcessStartTime(process.pid) ?? undefined;
+  const daemonCodeSignature = resolveDaemonCodeSignature();
+  const providerDeviceRuntimes = await createDefaultProviderDeviceRuntimes(env);
+  const providerRuntimeProviders = createProviderDeviceRuntimeRequestProviders(
+    providerDeviceRuntimes,
+    { providerRuntimeRequiredIds: DEFAULT_PROVIDER_RUNTIME_REQUIRED_IDS },
+  );
+  const expiredProviderLeaseReleaser = createExpiredProviderLeaseReleaser({
+    leaseLifecycleProvider: providerRuntimeProviders.leaseLifecycleProvider,
+    providerRuntimeIds: providerRuntimeProviders.providerRuntimeIds,
+    recoverExpiredLease: providerRuntimeProviders.recoverExpiredLease,
+    stateDir: baseDir,
+    recoverableProviderIds: providerRuntimeProviders.recoverableProviderIds,
+  });
+  void expiredProviderLeaseReleaser.retryPending();
   const leaseRegistry = new LeaseRegistry({
     maxActiveSimulatorLeases: parseIntegerEnv(env.AGENT_DEVICE_MAX_SIMULATOR_LEASES),
     defaultLeaseTtlMs: parseIntegerEnv(env.AGENT_DEVICE_LEASE_TTL_MS),
     minLeaseTtlMs: parseIntegerEnv(env.AGENT_DEVICE_LEASE_MIN_TTL_MS),
     maxLeaseTtlMs: parseIntegerEnv(env.AGENT_DEVICE_LEASE_MAX_TTL_MS),
+    onLeaseExpired: (lease) => {
+      void expiredProviderLeaseReleaser.release(lease);
+    },
   });
-  const version = readVersion();
-  const token = crypto.randomBytes(24).toString('hex');
-  const daemonProcessStartTime = readProcessStartTime(process.pid) ?? undefined;
-  const daemonCodeSignature = resolveDaemonCodeSignature();
-  const providerDeviceRuntimes = createDefaultCloudWebDriverProviderRuntimes(env);
-  const providerRuntimeProviders =
-    createProviderDeviceRuntimeRequestProviders(providerDeviceRuntimes);
   const cloudArtifactProvider = composeCloudArtifactProviders(
     providerRuntimeProviders.cloudArtifactProvider,
     createDefaultCloudArtifactProvider(env),
@@ -115,6 +132,8 @@ export async function startDaemonRuntime(
     leaseLifecycleProvider: providerRuntimeProviders.leaseLifecycleProvider,
     cloudArtifactProvider,
     deviceInventoryProvider: providerRuntimeProviders.deviceInventoryProvider,
+    providerRuntimeIds: providerRuntimeProviders.providerRuntimeIds,
+    providerRuntimeRequiredIds: providerRuntimeProviders.providerRuntimeRequiredIds,
     providerDeviceRuntimeScope: providerRuntimeProviders.providerDeviceRuntimeScope,
     trackDownloadableArtifact,
   });
@@ -288,6 +307,7 @@ export async function startDaemonRuntime(
     idleReap.cancel();
     if (shuttingDown) return;
     shuttingDown = true;
+    expiredProviderLeaseReleaser.shutdown();
     if (shutdownOptions.cause) {
       await emitFatalDiagnostic(shutdownOptions.cause);
     }

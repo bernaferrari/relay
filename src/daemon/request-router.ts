@@ -34,6 +34,7 @@ import {
   loadGenericRequestHandlerModule,
   runRequestHandlerChain,
 } from './request-handler-chain.ts';
+import type { LeaseLifecycleProvider } from './handlers/lease.ts';
 import {
   createRequestExecutionScope,
   type LockedRequestScope,
@@ -43,7 +44,6 @@ import {
 import { buildRequestFinishedEvent, shouldRecordEventForRequest } from './session-event-log.ts';
 import { canRunReplayScopedAction } from './daemon-command-registry.ts';
 import { createAgentBrowserWebProvider } from '../platforms/web/agent-browser-provider.ts';
-import type { LeaseLifecycleProvider } from './handlers/lease.ts';
 import { openWebSessionNames } from './web-session-names.ts';
 
 // ---------------------------------------------------------------------------
@@ -64,6 +64,8 @@ export type RequestRouterDeps = {
   appLogProvider?: AppLogProviderResolver;
   recordingProvider?: RecordingProviderResolver;
   deviceInventoryProvider?: DeviceInventoryProvider;
+  providerRuntimeIds?: readonly string[];
+  providerRuntimeRequiredIds?: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
   providerDeviceRuntimeScope?: <T>(task: () => Promise<T>) => Promise<T>;
@@ -88,6 +90,8 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     appLogProvider,
     recordingProvider,
     deviceInventoryProvider,
+    providerRuntimeIds,
+    providerRuntimeRequiredIds,
     leaseLifecycleProvider,
     cloudArtifactProvider,
     providerDeviceRuntimeScope,
@@ -213,6 +217,8 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       sessionStore,
       leaseRegistry,
       leaseLifecycleProvider,
+      providerRuntimeIds,
+      providerRuntimeRequiredIds,
       cloudArtifactProvider,
       invoke: handleRequest,
       invokeReplayAction: allowReplayActions

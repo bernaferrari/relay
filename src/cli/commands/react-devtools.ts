@@ -11,22 +11,27 @@ const AGENT_REACT_DEVTOOLS_VERSION = '0.4.0';
 export const AGENT_REACT_DEVTOOLS_PACKAGE = `agent-react-devtools@${AGENT_REACT_DEVTOOLS_VERSION}`;
 const AGENT_REACT_DEVTOOLS_BIN = 'agent-react-devtools';
 
+type ReactDevtoolsFlags = Pick<
+  CliFlags,
+  | 'leaseBackend'
+  | 'metroProxyBaseUrl'
+  | 'metroBearerToken'
+  | 'tenant'
+  | 'runId'
+  | 'leaseId'
+  | 'remoteConfig'
+  | 'session'
+> & {
+  leaseProvider?: string;
+};
+
 type ReactDevtoolsCommandOptions = {
-  flags?: Pick<
-    CliFlags,
-    | 'leaseBackend'
-    | 'metroProxyBaseUrl'
-    | 'metroBearerToken'
-    | 'tenant'
-    | 'runId'
-    | 'leaseId'
-    | 'remoteConfig'
-    | 'session'
-  >;
+  flags?: ReactDevtoolsFlags;
   stateDir?: string;
   session?: string;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  configureDirectPortReverse?: () => Promise<void>;
 };
 
 type RemoteBridgeConfig = {
@@ -155,6 +160,21 @@ async function withRemoteDevtoolsCompanion<T>(
   return await action();
 }
 
+function shouldConfigureDirectReverse(
+  args: string[],
+  options: ReactDevtoolsCommandOptions,
+): boolean {
+  if (args[0] !== 'start') return false;
+  const { flags } = options;
+  if (!flags) return false;
+  return (
+    flags.leaseProvider === 'limrun' &&
+    flags.leaseBackend === 'android-instance' &&
+    flags.metroProxyBaseUrl === undefined &&
+    options.configureDirectPortReverse !== undefined
+  );
+}
+
 export async function runReactDevtoolsCommand(
   args: string[],
   options: ReactDevtoolsCommandOptions = {},
@@ -162,6 +182,9 @@ export async function runReactDevtoolsCommand(
   const cwd = options.cwd ?? process.cwd();
   const env = options.env ?? process.env;
   const exitCode = await withRemoteDevtoolsCompanion(args, options, async () => {
+    if (shouldConfigureDirectReverse(args, options)) {
+      await options.configureDirectPortReverse?.();
+    }
     const result = await runCmdStreaming('npm', buildReactDevtoolsNpmExecArgs(args), {
       cwd,
       env,

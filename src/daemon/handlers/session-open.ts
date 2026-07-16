@@ -35,6 +35,7 @@ import { resetAndroidFramePerfStats } from '../../platforms/android/perf.ts';
 import { activateAndroidTestIme } from '../../platforms/android/ime-lifecycle.ts';
 import { withKeyedLock } from '../../utils/keyed-lock.ts';
 import { emitDiagnostic, getDiagnosticsMeta } from '../../utils/diagnostics.ts';
+import { isActiveProviderDevice } from '../../provider-device-runtime.ts';
 import { inferAndroidPackageAfterOpen } from './session-open-target.ts';
 import {
   invalidOpenArgs,
@@ -166,6 +167,22 @@ function buildStartupPerfSample(
   };
 }
 
+function shouldRunRelaunchPreClose(params: {
+  shouldRelaunch: boolean;
+  openTarget: string | undefined;
+  collapseSimulatorRelaunch: boolean;
+  device: DeviceInfo;
+  existingSession: SessionState | undefined;
+}): boolean {
+  if (!params.shouldRelaunch || !params.openTarget || params.collapseSimulatorRelaunch) {
+    return false;
+  }
+  if (!params.existingSession && isActiveProviderDevice(params.device)) {
+    return false;
+  }
+  return true;
+}
+
 // fallow-ignore-next-line complexity
 async function completeOpenCommand(params: {
   req: DaemonRequest;
@@ -203,6 +220,7 @@ async function completeOpenCommand(params: {
 
   const shouldPrewarmIosRunner =
     isIosFamily(device) &&
+    !isActiveProviderDevice(device) &&
     surface === 'app' &&
     openPositionals.length > 0 &&
     Boolean(sessionAppBundleId);
@@ -242,9 +260,10 @@ async function completeOpenCommand(params: {
     schedulePrewarm();
   }
 
-  // iOS simulators relaunch with one `simctl launch --terminate-running-process`
-  // instead of terminate + settle + launch (~1s per relaunch). Runtime hints
-  // written below are user-defaults reads at that launch, so ordering holds.
+  // Local iOS simulators relaunch with one `simctl launch --terminate-running-process`
+  // instead of terminate + settle + launch (~1s per relaunch). Provider simulators
+  // must dispatch an explicit close because their interactors own app termination.
+  // Runtime hints written below are user-defaults reads at that launch, so ordering holds.
   // Only the single app-launch form collapses: `open <app> <url>` dispatches
   // through the URL path, where a deep-link open never launches the app and
   // so cannot carry the terminate; those keep the close-first ordering, as
@@ -254,8 +273,18 @@ async function completeOpenCommand(params: {
     Boolean(openTarget) &&
     openPositionals.length === 1 &&
     isIosSimulator(device) &&
+    !isActiveProviderDevice(device) &&
     req.flags?.clearAppState !== true;
-  if (shouldRelaunch && openTarget && !collapseSimulatorRelaunch) {
+  if (
+    shouldRunRelaunchPreClose({
+      shouldRelaunch,
+      openTarget,
+      collapseSimulatorRelaunch,
+      device,
+      existingSession,
+    }) &&
+    openTarget
+  ) {
     // ADR 0014 side-effect seam: the relaunch close is the FIRST device dispatch
     // against the existing session. Expire its frame before awaiting the close,
     // so a close timeout/failure that may already have torn the app down still
@@ -335,7 +364,11 @@ async function completeOpenCommand(params: {
   } else if (runnerPrewarm && !runnerPrewarmAwaited) {
     timing.runnerPrewarmWaited = false;
   }
-  if (isIosSimulator(device) && (shouldRelaunch || runnerTargetPredatesOpen)) {
+  if (
+    !isActiveProviderDevice(device) &&
+    isIosSimulator(device) &&
+    (shouldRelaunch || runnerTargetPredatesOpen)
+  ) {
     await notifyIosRunnerAppRelaunched(device, runnerPrewarmOptions);
   }
   sessionAppBundleId = await inferAndroidPackageAfterOpen(device, openTarget, sessionAppBundleId);

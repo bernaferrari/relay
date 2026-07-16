@@ -27,6 +27,7 @@ export type ProviderDeviceInstallOptions = {
 export type ProviderDeviceRuntime = {
   provider: string;
   leaseLifecycle: LeaseLifecycleProvider;
+  recoverExpiredLease?: ProviderExpiredLeaseRecovery;
   cloudArtifacts?: CloudArtifactProvider;
   deviceInventoryProvider: DeviceInventoryProvider;
   ownsDevice(device: DeviceInfo): boolean;
@@ -45,9 +46,6 @@ export type ProviderDeviceRuntime = {
   configurePortReverse?(
     options: ProviderPortReverseOptions,
   ): Promise<Record<string, unknown> | undefined>;
-  removePortReverse?(
-    options: ProviderPortReverseOptions,
-  ): Promise<Record<string, unknown> | undefined>;
   shutdown(): Promise<void>;
 };
 
@@ -60,11 +58,17 @@ export type ProviderPortReverseOptions = {
 };
 
 export type ProviderDeviceRuntimeRequestProviders = {
+  providerRuntimeIds: readonly string[];
+  providerRuntimeRequiredIds: readonly string[];
+  recoverableProviderIds: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
+  recoverExpiredLease?: ProviderExpiredLeaseRecovery;
   cloudArtifactProvider?: CloudArtifactProvider;
   deviceInventoryProvider?: DeviceInventoryProvider;
   providerDeviceRuntimeScope?: <T>(task: () => Promise<T>) => Promise<T>;
 };
+
+export type ProviderExpiredLeaseRecovery = (lease: DeviceLease) => Promise<void>;
 
 let activeProviderDeviceRuntimes: ProviderDeviceRuntime[] = [];
 const providerDeviceRuntimeScope = new AsyncLocalStorage<ProviderDeviceRuntime[]>();
@@ -142,31 +146,54 @@ export async function configureProviderPortReverse(
   return undefined;
 }
 
-export async function removeProviderPortReverse(
-  options: ProviderPortReverseOptions,
-): Promise<Record<string, unknown> | undefined> {
-  for (const runtime of getActiveProviderDeviceRuntimes()) {
-    if (!runtimeMatchesProvider(runtime, options.provider)) continue;
-    const result = await runtime.removePortReverse?.(options);
-    if (result) return result;
-  }
-  return undefined;
-}
-
 function getActiveProviderDeviceRuntimes(): ProviderDeviceRuntime[] {
   return providerDeviceRuntimeScope.getStore() ?? activeProviderDeviceRuntimes;
 }
 
 export function createProviderDeviceRuntimeRequestProviders(
   runtimes: ProviderDeviceRuntime[],
+  options: { providerRuntimeRequiredIds?: readonly string[] } = {},
 ): ProviderDeviceRuntimeRequestProviders {
+  const providerRuntimeIds = runtimes.map((runtime) => runtime.provider);
   return {
+    providerRuntimeIds,
+    providerRuntimeRequiredIds: uniqueProviderIds([
+      ...providerRuntimeIds,
+      ...(options.providerRuntimeRequiredIds ?? []),
+    ]),
     leaseLifecycleProvider: composeLeaseProvider(runtimes),
+    recoverableProviderIds: runtimes
+      .filter((runtime) => runtime.recoverExpiredLease !== undefined)
+      .map((runtime) => runtime.provider),
+    recoverExpiredLease: composeExpiredLeaseRecovery(runtimes),
     cloudArtifactProvider: composeCloudArtifactProvider(runtimes),
     deviceInventoryProvider: composeDeviceInventoryProvider(runtimes),
     providerDeviceRuntimeScope: async (task) =>
       await withProviderDeviceRuntimeScope(runtimes, task),
   };
+}
+
+function composeExpiredLeaseRecovery(
+  runtimes: ProviderDeviceRuntime[],
+): ProviderExpiredLeaseRecovery | undefined {
+  if (!runtimes.some((runtime) => runtime.recoverExpiredLease !== undefined)) return undefined;
+  return async (lease) => {
+    const runtime = runtimes.find((candidate) =>
+      runtimeMatchesProvider(candidate, lease.leaseProvider),
+    );
+    if (!runtime?.recoverExpiredLease) {
+      throw new AppError(
+        'UNSUPPORTED_OPERATION',
+        `Provider ${lease.leaseProvider ?? 'unknown'} cannot recover an expired lease.`,
+        { provider: lease.leaseProvider, leaseId: lease.leaseId },
+      );
+    }
+    await runtime.recoverExpiredLease(lease);
+  };
+}
+
+function uniqueProviderIds(providerIds: readonly string[]): string[] {
+  return [...new Set(providerIds)];
 }
 
 export function composeCloudArtifactProviders(

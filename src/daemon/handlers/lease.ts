@@ -40,6 +40,8 @@ type LeaseHandlerArgs = {
   sessionName: string;
   sessionStore: SessionStore;
   leaseRegistry: LeaseRegistry;
+  providerRuntimeIds?: readonly string[];
+  providerRuntimeRequiredIds?: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
 };
@@ -50,6 +52,8 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
     sessionName,
     sessionStore,
     leaseRegistry,
+    providerRuntimeIds,
+    providerRuntimeRequiredIds,
     leaseLifecycleProvider,
     cloudArtifactProvider,
   } = args;
@@ -66,6 +70,11 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
       };
     }
     case 'lease_allocate': {
+      assertProviderRuntimeAvailable(
+        leaseScope.leaseProvider,
+        providerRuntimeIds,
+        providerRuntimeRequiredIds,
+      );
       const lease = leaseRegistry.allocateLease(leaseScopeToAllocateRequest(leaseScope));
       let providerData: Record<string, unknown> | undefined;
       try {
@@ -98,10 +107,12 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
       };
     }
     case 'lease_release': {
-      const result = leaseRegistry.releaseLease(leaseScopeToReleaseRequest(leaseScope));
-      const providerData = result.lease
-        ? await leaseLifecycleProvider?.release?.(result.lease, { req })
+      const releaseRequest = leaseScopeToReleaseRequest(leaseScope);
+      const lease = leaseRegistry.getLease(releaseRequest);
+      const providerData = lease
+        ? await leaseLifecycleProvider?.release?.(lease, { req })
         : undefined;
+      const result = leaseRegistry.releaseLease(releaseRequest);
       return {
         ok: true,
         data: { released: result.released, ...(providerData ? { provider: providerData } : {}) },
@@ -110,6 +121,30 @@ export async function handleLeaseCommands(args: LeaseHandlerArgs): Promise<Daemo
     default:
       return null;
   }
+}
+
+function assertProviderRuntimeAvailable(
+  provider: string | undefined,
+  providerRuntimeIds: readonly string[] | undefined,
+  providerRuntimeRequiredIds: readonly string[] | undefined,
+): void {
+  if (
+    !provider ||
+    providerRuntimeIds === undefined ||
+    providerRuntimeRequiredIds === undefined ||
+    !providerRuntimeRequiredIds.includes(provider) ||
+    providerRuntimeIds.includes(provider)
+  ) {
+    return;
+  }
+  throw new AppError(
+    'UNSUPPORTED_OPERATION',
+    `Provider "${provider}" is not available in this daemon runtime.`,
+    {
+      provider,
+      hint: `Restart the daemon with ${provider} configured, then retry lease allocation.`,
+    },
+  );
 }
 
 async function listArtifactsForRequest(

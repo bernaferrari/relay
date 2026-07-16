@@ -63,6 +63,7 @@ import { cleanupAndroidNativePerfSession } from '../../../platforms/android/perf
 import { stopAndroidSnapshotHelperSessionForDevice } from '../../../platforms/android/snapshot-helper.ts';
 import { stopIosRunnerSession } from '../../../platforms/apple/core/runner/runner-client.ts';
 import { WEB_DESKTOP_DEVICE } from '../../../__tests__/test-utils/index.ts';
+import { setActiveProviderDeviceRuntimes } from '../../../provider-device-runtime.ts';
 
 const mockShutdownSimulator = vi.mocked(shutdownSimulator);
 const mockRunCmd = vi.mocked(runCmd);
@@ -92,6 +93,7 @@ function makeSession(name: string, device: SessionState['device']): SessionState
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setActiveProviderDeviceRuntimes([]);
 });
 
 test('close --shutdown calls shutdownSimulator for iOS simulator and includes result in response', async () => {
@@ -141,6 +143,47 @@ test('close --shutdown calls shutdownSimulator for iOS simulator and includes re
       stderr: '',
     });
   }
+});
+
+test('close --shutdown leaves provider-owned iOS simulators to their provider', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'provider-ios-shutdown-session';
+  const device = {
+    platform: 'apple' as const,
+    id: 'limrun:ios:lease-a',
+    name: 'Limrun iOS',
+    kind: 'simulator' as const,
+    booted: true,
+  };
+  sessionStore.set(sessionName, makeSession(sessionName, device));
+  setActiveProviderDeviceRuntimes([
+    {
+      provider: 'limrun',
+      leaseLifecycle: {},
+      deviceInventoryProvider: async () => [],
+      ownsDevice: (candidate) => candidate.id === device.id,
+      getInteractor: () => undefined,
+      shutdown: async () => undefined,
+    },
+  ]);
+
+  const response = await handleSessionCommands({
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'close',
+      positionals: [],
+      flags: { shutdown: true },
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    invoke: noopInvoke,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(mockShutdownSimulator).not.toHaveBeenCalled();
+  if (response?.ok) expect(response.data?.shutdown).toBeUndefined();
 });
 
 test('close --shutdown calls shutdownAndroidEmulator for Android emulator and includes result in response', async () => {
@@ -481,7 +524,7 @@ test('close dispatches web session cleanup without a positional target', async (
   expect(sessionStore.get(sessionName)).toBeUndefined();
 });
 
-test('close deletes local session when provider lease release fails', async () => {
+test('close preserves the session and lease when provider release fails so it can be retried', async () => {
   const sessionStore = makeSessionStore();
   const leaseRegistry = new LeaseRegistry();
   const sessionName = 'provider-release-failure-session';
@@ -506,28 +549,49 @@ test('close deletes local session when provider lease release fails', async () =
     },
   });
 
-  await expect(
-    handleSessionCommands({
-      req: {
-        token: 't',
-        session: sessionName,
-        command: 'close',
-        positionals: [],
-        flags: {},
-      },
-      sessionName,
-      logPath: path.join(os.tmpdir(), 'daemon.log'),
-      sessionStore,
-      leaseRegistry,
-      leaseLifecycleProvider: {
-        release: async () => {
+  let releaseAttempts = 0;
+  const request = {
+    req: {
+      token: 't',
+      session: sessionName,
+      command: 'close',
+      positionals: [],
+      flags: {},
+    },
+    sessionName,
+    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    sessionStore,
+    leaseRegistry,
+    leaseLifecycleProvider: {
+      release: async () => {
+        releaseAttempts += 1;
+        if (releaseAttempts === 1) {
           throw new AppError('COMMAND_FAILED', 'provider cleanup failed');
-        },
+        }
+        return { releasedBy: 'provider' };
       },
-      invoke: noopInvoke,
-    }),
-  ).rejects.toThrow('provider cleanup failed');
+    },
+    invoke: noopInvoke,
+  };
 
+  const failed = await handleSessionCommands(request);
+  expect(failed).toMatchObject({
+    ok: false,
+    error: {
+      code: 'COMMAND_FAILED',
+      retriable: true,
+      details: { session: sessionName },
+    },
+  });
+  expect(sessionStore.get(sessionName)?.lease?.leaseId).toBe(lease.leaseId);
+  expect(leaseRegistry.listActiveLeases()).toHaveLength(1);
+
+  const retried = await handleSessionCommands(request);
+  expect(retried).toMatchObject({
+    ok: true,
+    data: { provider: { releasedBy: 'provider' } },
+  });
+  expect(releaseAttempts).toBe(2);
   expect(sessionStore.get(sessionName)).toBeUndefined();
   expect(leaseRegistry.listActiveLeases()).toHaveLength(0);
 });

@@ -24,6 +24,7 @@ export type LeaseRegistryOptions = {
   minLeaseTtlMs?: number;
   maxLeaseTtlMs?: number;
   now?: () => number;
+  onLeaseExpired?: (lease: DeviceLease) => void;
 };
 
 export type AllocateLeaseRequest = {
@@ -214,6 +215,7 @@ export class LeaseRegistry {
   private readonly minLeaseTtlMs: number;
   private readonly maxLeaseTtlMs: number;
   private readonly now: () => number;
+  private readonly onLeaseExpired?: (lease: DeviceLease) => void;
 
   constructor(options: LeaseRegistryOptions = {}) {
     this.maxActiveSimulatorLeases = Number.isInteger(options.maxActiveSimulatorLeases)
@@ -229,6 +231,7 @@ export class LeaseRegistry {
       ? Math.max(this.minLeaseTtlMs, Number(options.maxLeaseTtlMs))
       : MAX_LEASE_TTL_MS;
     this.now = options.now ?? (() => Date.now());
+    this.onLeaseExpired = options.onLeaseExpired;
   }
 
   allocateLease(request: AllocateLeaseRequest): DeviceLease {
@@ -294,17 +297,28 @@ export class LeaseRegistry {
   }
 
   releaseLease(request: ReleaseLeaseRequest): { released: boolean; lease?: DeviceLease } {
-    const leaseId = this.normalizeRequiredLeaseId(request.leaseId);
-    this.cleanupExpiredLeases();
-    const lease = this.leases.get(leaseId);
+    const lease = this.getLease(request);
     if (!lease) {
       return { released: false };
     }
+    this.leases.delete(lease.leaseId);
+    this.unbindLease(lease);
+    return { released: true, lease };
+  }
+
+  /**
+   * Reads a releasable lease without committing its removal. Callers with an
+   * external provider use this to release the remote resource first, so a
+   * transient provider failure leaves the local lease available for retry.
+   */
+  getLease(request: ReleaseLeaseRequest): DeviceLease | undefined {
+    const leaseId = this.normalizeRequiredLeaseId(request.leaseId);
+    this.cleanupExpiredLeases();
+    const lease = this.leases.get(leaseId);
+    if (!lease) return undefined;
     this.assertRequiredScopeForDeviceAwareLease(lease, request);
     this.assertOptionalScopeMatch(lease, request);
-    this.leases.delete(leaseId);
-    this.unbindLease(lease);
-    return { released: true, lease: { ...lease } };
+    return { ...lease };
   }
 
   assertLeaseAdmission(request: AdmissionRequest): void {
@@ -345,7 +359,9 @@ export class LeaseRegistry {
       if (lease.expiresAt > now) continue;
       this.leases.delete(lease.leaseId);
       this.unbindLease(lease);
-      expired.push({ ...lease });
+      const expiredLease = { ...lease };
+      expired.push(expiredLease);
+      this.onLeaseExpired?.(expiredLease);
     }
     return expired;
   }
@@ -357,7 +373,9 @@ export class LeaseRegistry {
     if (!lease || lease.expiresAt > this.now()) return undefined;
     this.leases.delete(lease.leaseId);
     this.unbindLease(lease);
-    return { ...lease };
+    const expiredLease = { ...lease };
+    this.onLeaseExpired?.(expiredLease);
+    return expiredLease;
   }
 
   private cleanupExpiredLeases(): void {
