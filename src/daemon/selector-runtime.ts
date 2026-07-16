@@ -33,6 +33,7 @@ import {
   toDaemonWaitData,
 } from './selector-recording.ts';
 import { maybeWaitTimeoutSurfaceResponse } from './wait-current-surface.ts';
+import { withSystemSurfaceDisclosure } from './handlers/system-surface-disclosure.ts';
 import {
   isDirectIosSelectorFallbackError,
   readSimpleIosSelectorTarget,
@@ -87,7 +88,7 @@ export async function dispatchFindReadOnlyViaRuntime(
   });
   if (!resolvedRuntime.ok) return resolvedRuntime.response;
 
-  return await toDaemonResponse(async () => {
+  const response = await toDaemonResponse(async () => {
     const result = await resolvedRuntime.runtime.selectors.find({
       session: params.sessionName,
       requestId: req.meta?.requestId,
@@ -122,6 +123,15 @@ export async function dispatchFindReadOnlyViaRuntime(
     }
     return data;
   });
+  // The consumed capture was just stored on the session: when it is an occluding system surface,
+  // both found and not-found outcomes must disclose that app content is occluded.
+  return withSystemSurfaceDisclosure(response, consumedSessionSnapshot(params));
+}
+
+function consumedSessionSnapshot(params: SelectorRuntimeParams) {
+  // The capture runtime reports the consumed snapshot directly; sessionless selector routes have
+  // no session record, so the stored-session read is only a fallback for pre-captured snapshots.
+  return params.consumedSnapshot?.state ?? params.sessionStore.get(params.sessionName)?.snapshot;
 }
 
 export async function dispatchGetViaRuntime(
@@ -166,7 +176,7 @@ export async function dispatchGetViaRuntime(
           mintedGeneration: target.refGeneration,
         })
       : undefined;
-  return await toDaemonResponse(async () => {
+  const response = await toDaemonResponse(async () => {
     const result = await resolvedRuntime.runtime.selectors.get({
       session: params.sessionName,
       requestId: req.meta?.requestId,
@@ -187,6 +197,7 @@ export async function dispatchGetViaRuntime(
     const data = toDaemonGetData(result);
     return staleRefsWarning ? { ...data, warning: staleRefsWarning } : data;
   });
+  return withSystemSurfaceDisclosure(response, consumedSessionSnapshot(params));
 }
 
 export async function dispatchIsViaRuntime(
@@ -234,7 +245,10 @@ export async function dispatchIsViaRuntime(
     recordIfSession(params.sessionStore, params.sessionName, req, result);
     return stripSelectorChain(result);
   });
-  return await maybeAndroidForegroundBlockerResponse(params, response, `is ${predicate}`);
+  return withSystemSurfaceDisclosure(
+    await maybeAndroidForegroundBlockerResponse(params, response, `is ${predicate}`),
+    consumedSessionSnapshot(params),
+  );
 }
 
 export async function dispatchWaitViaRuntime(
@@ -277,6 +291,9 @@ export async function dispatchWaitViaRuntime(
       mintedGeneration: versionedRef.generation,
     });
   }
+  // Wait builds its runtime directly (no createSelectorRuntime), so the consumed-snapshot slot
+  // must be initialized here too or sessionless waits have nowhere to report the capture from.
+  params.consumedSnapshot ??= {};
   const execute = async () => {
     const runtime = createSelectorRuntimeForDevice({
       ...params,
@@ -300,8 +317,14 @@ export async function dispatchWaitViaRuntime(
     // Keep generic wait-surface details first so Android blocker detection can own the top-level message.
     return await maybeAndroidForegroundBlockerResponse(params, enrichedResponse, 'wait');
   };
+  // A pure sleep consumes no capture, so it never earns the system-surface disclosure below.
   if (parsed.kind === 'sleep') return await execute();
-  return await withSessionlessRunnerCleanup(session, device, execute);
+  // Both a satisfied wait and a timeout consumed the polled capture stored on the session:
+  // when it is an occluding system surface, the outcome must disclose the occlusion.
+  return withSystemSurfaceDisclosure(
+    await withSessionlessRunnerCleanup(session, device, execute),
+    consumedSessionSnapshot(params),
+  );
 }
 
 function readDirectIosGetSelector(
