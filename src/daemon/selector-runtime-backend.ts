@@ -42,7 +42,14 @@ type AppleRunnerFindTextTarget = {
 };
 
 type SnapshotFlagOverrides = Partial<
-  Pick<CommandFlags, 'snapshotInteractiveOnly' | 'snapshotScope' | 'snapshotDepth' | 'snapshotRaw'>
+  Pick<
+    CommandFlags,
+    | 'snapshotInteractiveOnly'
+    | 'snapshotScope'
+    | 'snapshotDepth'
+    | 'snapshotRaw'
+    | 'snapshotIncludeHiddenContentHints'
+  >
 >;
 
 export function createSelectorRuntimeForDevice(params: SelectorRuntimeDeviceParams) {
@@ -145,12 +152,15 @@ function createSelectorBackend(params: SelectorRuntimeDeviceParams): AgentDevice
 }
 
 function snapshotFlagOverrides(options: BackendSnapshotOptions | undefined): SnapshotFlagOverrides {
+  const { interactiveOnly, scope, depth, raw, includeHiddenContentHints } = options ?? {};
   const flags: SnapshotFlagOverrides = {};
-  if (options?.interactiveOnly !== undefined)
-    flags.snapshotInteractiveOnly = options.interactiveOnly;
-  if (options?.scope !== undefined) flags.snapshotScope = options.scope;
-  if (options?.depth !== undefined) flags.snapshotDepth = options.depth;
-  if (options?.raw !== undefined) flags.snapshotRaw = options.raw;
+  if (interactiveOnly !== undefined) flags.snapshotInteractiveOnly = interactiveOnly;
+  if (scope !== undefined) flags.snapshotScope = scope;
+  if (depth !== undefined) flags.snapshotDepth = depth;
+  if (raw !== undefined) flags.snapshotRaw = raw;
+  if (includeHiddenContentHints !== undefined) {
+    flags.snapshotIncludeHiddenContentHints = includeHiddenContentHints;
+  }
   return flags;
 }
 
@@ -229,6 +239,9 @@ async function captureWaitSnapshot(params: SelectorRuntimeDeviceParams) {
     flags: {
       ...params.req.flags,
       snapshotInteractiveOnly: false,
+      // Presence-only wait poll (findText is only called from waitForText):
+      // skip scroll-hint derivation (#1270).
+      snapshotIncludeHiddenContentHints: false,
     },
     cache: {
       forceFresh: true,
