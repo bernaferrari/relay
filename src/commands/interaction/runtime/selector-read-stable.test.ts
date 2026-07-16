@@ -43,6 +43,133 @@ test('runtime wait stable settles after two unchanged captures', async () => {
   assert.equal(captures, 3);
 });
 
+// A clock whose sleep lands `undershootMs` short of what was asked, modelling
+// the real defect: `setTimeout(n)` can advance `Date.now()` by only n-1,
+// because libuv times the sleep on the monotonic loop clock while `now()` reads
+// the wall clock. It yields to the event loop like a real sleep does, so a loop
+// that fails to terminate fails the test on its timeout rather than starving
+// the runner on microtasks.
+function createUndershootingClock(undershootMs = 1): {
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+} {
+  let elapsed = 0;
+  return {
+    now: () => elapsed,
+    sleep: async (ms: number) => {
+      elapsed += Math.max(0, ms - undershootMs);
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+    },
+  };
+}
+
+function createStableCaptureDevice(clock: {
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+}) {
+  const snapshot = selectorReadSnapshot();
+  const counter = { captures: 0 };
+  const device = createAgentDevice({
+    backend: {
+      platform: 'ios',
+      captureSnapshot: async () => {
+        counter.captures += 1;
+        return { snapshot };
+      },
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
+    policy: localCommandPolicy(),
+    clock,
+  });
+  return { device, counter };
+}
+
+test('runtime wait stable settles at the second capture even when the sleep undershoots', async () => {
+  // A 300ms quiet window equals the poll cadence, so the second capture is the
+  // one that decides `settled` — and a sleep that lands 1ms short must not
+  // change the verdict (#1306).
+  const { device, counter } = createStableCaptureDevice(createUndershootingClock());
+
+  const result = await device.selectors.wait({
+    session: 'default',
+    target: { kind: 'stable', quietMs: 300, timeoutMs: 10_000 },
+  });
+
+  assert.equal(result.kind, 'stable');
+  if (result.kind === 'stable') assert.equal(result.captures, 2);
+  assert.equal(counter.captures, 2);
+});
+
+test('runtime wait stable still takes its settling capture when the budget barely clears the window', async () => {
+  // One millisecond of budget past the quiet window is enough to settle, and
+  // the deadline-aware sleep must not spend it on the epsilon: overshooting the
+  // deadline would drop the settling capture the plain cadence would have taken.
+  const { device, counter } = createStableCaptureDevice(createFakeClock());
+
+  const result = await device.selectors.wait({
+    session: 'default',
+    target: { kind: 'stable', quietMs: 300, timeoutMs: 301 },
+  });
+
+  assert.equal(result.kind, 'stable');
+  if (result.kind === 'stable') {
+    assert.equal(result.captures, 2);
+    assert.ok(
+      result.waitedMs <= 301,
+      `waitedMs must stay within the budget, got ${result.waitedMs}`,
+    );
+  }
+  assert.equal(counter.captures, 2);
+});
+
+test('runtime wait stable cannot settle when the budget only reaches the quiet deadline', async () => {
+  // The other side of the boundary: the window has to ELAPSE inside the budget,
+  // so a budget equal to it leaves no instant where two captures span it. The
+  // deadline-aware sleep must neither manufacture a settle here nor run past
+  // the budget once no further capture can land inside it.
+  const clock = createFakeClock();
+  const { device } = createStableCaptureDevice(clock);
+
+  await assert.rejects(
+    () =>
+      device.selectors.wait({
+        session: 'default',
+        target: { kind: 'stable', quietMs: 300, timeoutMs: 300 },
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as { details?: { reason?: string } }).details?.reason === 'wait_stable_timeout',
+  );
+  assert.ok(clock.now() <= 300, `loop must not run past its budget, elapsed ${clock.now()}ms`);
+});
+
+test('runtime wait stable uses the final budget without spinning when sleep undershoots', async () => {
+  // The two hazards combined: a budget that leaves a 1ms landing window, and a
+  // sleep that loses 1ms to skew. Asking for that 1ms buys no time, so a loop
+  // that trusts the sleep to carry it past the deadline never gets there and
+  // hammers the device with captures instead. Spending the full 2ms advances
+  // this clock to 300ms and earns the valid settling capture; an exact clock
+  // would land on the 301ms deadline and exit without another capture.
+  const clock = createUndershootingClock();
+  const { device, counter } = createStableCaptureDevice(clock);
+
+  const result = await device.selectors.wait({
+    session: 'default',
+    target: { kind: 'stable', quietMs: 300, timeoutMs: 301 },
+  });
+
+  assert.equal(result.kind, 'stable');
+  if (result.kind === 'stable') {
+    assert.equal(result.captures, 3);
+    assert.ok(result.waitedMs <= 301, `waitedMs must stay within budget, got ${result.waitedMs}`);
+  }
+  assert.equal(counter.captures, 3, `loop must not spin, took ${counter.captures} captures`);
+  assert.ok(clock.now() <= 301, `loop must not run past its budget, elapsed ${clock.now()}ms`);
+});
+
 test('runtime wait stable hints when it settles on a nearly-empty tree', async () => {
   const tinySnapshot = makeSnapshotState([
     {
