@@ -26,9 +26,7 @@ import java.util.Locale;
 import java.util.concurrent.TimeoutException;
 
 public final class SnapshotInstrumentation extends Instrumentation {
-  private static final String PROTOCOL = "android-snapshot-helper-v1";
-  private static final String OUTPUT_FORMAT = "uiautomator-xml";
-  private static final String HELPER_API_VERSION = "1";
+  private static final long GESTURE_UI_AUTOMATION_CONNECT_TIMEOUT_MS = 8_000;
   private static final int CHUNK_SIZE = 2 * 1024;
   // Match the host default: bounded wait for microinteraction reliability without the stock
   // uiautomator idle tax. Direct callers can pass 0 when immediate capture is preferred.
@@ -59,10 +57,22 @@ public final class SnapshotInstrumentation extends Instrumentation {
     String outputPath = readStringArgument(arguments, "outputPath");
     boolean emitChunks = readBooleanArgument(arguments, "emitChunks", true);
     int sessionPort = readIntArgument(arguments, "sessionPort", 0);
+    String mode = readStringArgument(arguments, "mode");
     Bundle result = new Bundle();
     putBaseMetadata(result, waitForIdleTimeoutMs, waitForIdleQuietMs, timeoutMs, maxDepth, maxNodes);
 
     try {
+      if ("viewport".equals(mode)) {
+        runOneShotViewport(result);
+        return;
+      }
+      if ("gesture".equals(mode)) {
+        runOneShotGesture(result, readStringArgument(arguments, "payloadBase64"));
+        return;
+      }
+      if (mode != null && !"snapshot".equals(mode)) {
+        throw new IllegalArgumentException("Unsupported mode: " + mode);
+      }
       if (sessionPort > 0) {
         runSnapshotSession(
             sessionPort, waitForIdleQuietMs, waitForIdleTimeoutMs, timeoutMs, maxDepth, maxNodes);
@@ -98,9 +108,9 @@ public final class SnapshotInstrumentation extends Instrumentation {
       long timeoutMs,
       int maxDepth,
       int maxNodes) {
-    result.putString("agentDeviceProtocol", PROTOCOL);
-    result.putString("helperApiVersion", HELPER_API_VERSION);
-    result.putString("outputFormat", OUTPUT_FORMAT);
+    result.putString("agentDeviceProtocol", HelperProtocol.PROTOCOL);
+    result.putString("helperApiVersion", HelperProtocol.HELPER_API_VERSION);
+    result.putString("outputFormat", HelperProtocol.OUTPUT_FORMAT);
     result.putString("waitForIdleTimeoutMs", Long.toString(waitForIdleTimeoutMs));
     result.putString("waitForIdleQuietMs", Long.toString(waitForIdleQuietMs));
     result.putString("timeoutMs", Long.toString(timeoutMs));
@@ -115,6 +125,24 @@ public final class SnapshotInstrumentation extends Instrumentation {
     result.putString("nodeCount", Integer.toString(capture.nodeCount));
     result.putString("truncated", Boolean.toString(capture.truncated));
     result.putString("elapsedMs", Long.toString(elapsedMs));
+  }
+
+  private void runOneShotViewport(Bundle result) {
+    TouchCommandHandler.populateViewport(result, getConnectedUiAutomationUnchecked());
+    finishSafely(0, result);
+  }
+
+  private void runOneShotGesture(Bundle result, String payloadBase64) throws Exception {
+    TouchCommandHandler.populateGesture(result, getConnectedUiAutomationUnchecked(), payloadBase64);
+    finishSafely(0, result);
+  }
+
+  private UiAutomation getConnectedUiAutomationUnchecked() {
+    try {
+      return getConnectedUiAutomation(GESTURE_UI_AUTOMATION_CONNECT_TIMEOUT_MS);
+    } catch (TimeoutException error) {
+      throw new IllegalStateException(error.getMessage(), error);
+    }
   }
 
   private void runSnapshotSession(
@@ -141,18 +169,32 @@ public final class SnapshotInstrumentation extends Instrumentation {
                       new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
                   .readLine();
           if (command == null) {
-            writeSessionError(socket.getOutputStream(), "", "java.io.EOFException", "empty command");
+            SessionResponseWriter.writeSessionError(
+                socket.getOutputStream(), "", "java.io.EOFException", "empty command");
             continue;
           }
-          String[] parts = command.trim().split("\\s+", 2);
+          String[] parts = command.trim().split("\\s+", 3);
           String action = parts.length > 0 ? parts[0] : "";
           String requestId = parts.length > 1 ? parts[1] : "";
           if ("quit".equals(action)) {
-            writeSessionOk(socket.getOutputStream(), requestId);
+            SessionResponseWriter.writeSessionOk(socket.getOutputStream(), requestId);
             return;
           }
+          if ("viewport".equals(action)) {
+            TouchCommandHandler.writeSessionViewport(
+                socket.getOutputStream(), requestId, getConnectedUiAutomationUnchecked());
+            continue;
+          }
+          if ("gesture".equals(action)) {
+            TouchCommandHandler.writeSessionGesture(
+                socket.getOutputStream(),
+                requestId,
+                parts.length > 2 ? parts[2] : "",
+                getConnectedUiAutomationUnchecked());
+            continue;
+          }
           if (!"snapshot".equals(action)) {
-            writeSessionError(
+            SessionResponseWriter.writeSessionError(
                 socket.getOutputStream(),
                 requestId,
                 "java.lang.IllegalArgumentException",
@@ -191,56 +233,14 @@ public final class SnapshotInstrumentation extends Instrumentation {
       result.putString("ok", "true");
       putCaptureMetadata(result, capture, System.currentTimeMillis() - startedAtMs);
       result.putString("byteLength", Integer.toString(capture.xml.getBytes(StandardCharsets.UTF_8).length));
-      writeSessionResponse(output, result, capture.xml);
+      SessionResponseWriter.writeSessionResponse(output, result, capture.xml);
     } catch (Throwable error) {
-      writeSessionError(
+      SessionResponseWriter.writeSessionError(
           output,
           requestId,
           error.getClass().getName(),
           error.getMessage() == null ? error.getClass().getName() : error.getMessage());
     }
-  }
-
-  private static void writeSessionOk(OutputStream output, String requestId) throws IOException {
-    Bundle result = new Bundle();
-    result.putString("agentDeviceProtocol", PROTOCOL);
-    result.putString("helperApiVersion", HELPER_API_VERSION);
-    result.putString("outputFormat", OUTPUT_FORMAT);
-    result.putString("requestId", requestId);
-    result.putString("ok", "true");
-    writeSessionResponse(output, result, "");
-  }
-
-  private static void writeSessionError(
-      OutputStream output, String requestId, String errorType, String message) throws IOException {
-    Bundle result = new Bundle();
-    result.putString("agentDeviceProtocol", PROTOCOL);
-    result.putString("helperApiVersion", HELPER_API_VERSION);
-    result.putString("outputFormat", OUTPUT_FORMAT);
-    result.putString("requestId", requestId);
-    result.putString("ok", "false");
-    result.putString("errorType", errorType);
-    result.putString("message", message);
-    writeSessionResponse(output, result, "");
-  }
-
-  private static void writeSessionResponse(OutputStream output, Bundle result, String body)
-      throws IOException {
-    StringBuilder headers = new StringBuilder();
-    for (String key : result.keySet()) {
-      Object value = result.get(key);
-      if (value != null) {
-        headers.append(key).append('=').append(sanitizeHeaderValue(value.toString())).append('\n');
-      }
-    }
-    headers.append('\n');
-    output.write(headers.toString().getBytes(StandardCharsets.UTF_8));
-    output.write(body.getBytes(StandardCharsets.UTF_8));
-    output.flush();
-  }
-
-  private static String sanitizeHeaderValue(String value) {
-    return value.replace('\r', ' ').replace('\n', ' ');
   }
 
   private static String readStringArgument(Bundle arguments, String key) {
@@ -505,9 +505,9 @@ public final class SnapshotInstrumentation extends Instrumentation {
       int start = index * CHUNK_SIZE;
       int end = Math.min(bytes.length, start + CHUNK_SIZE);
       Bundle status = new Bundle();
-      status.putString("agentDeviceProtocol", PROTOCOL);
-      status.putString("helperApiVersion", HELPER_API_VERSION);
-      status.putString("outputFormat", OUTPUT_FORMAT);
+      status.putString("agentDeviceProtocol", HelperProtocol.PROTOCOL);
+      status.putString("helperApiVersion", HelperProtocol.HELPER_API_VERSION);
+      status.putString("outputFormat", HelperProtocol.OUTPUT_FORMAT);
       status.putString("chunkIndex", Integer.toString(index));
       status.putString("chunkCount", Integer.toString(chunkCount));
       status.putString(
