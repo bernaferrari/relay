@@ -168,10 +168,25 @@ const scrollFields = {
   }),
 };
 
+// #1271 stage 2 (ADR 0012 amendment): `get`/`is`/`find` are observation-only,
+// so a repair-armed heal excludes an OUT-OF-BAND one by default. Both flags
+// are exposed here so the Node SDK's typed options and the MCP tool schema can
+// set them, mirroring `--no-record`/`--record` on the CLI. On `find`, `record`
+// is valid only for a read-only action — a mutating `find … click|fill|focus|
+// type` is refused as INVALID_ARGS by the daemon (`handleFindCommands`), since
+// the observe-vs-mutate split is a positional the schema cannot see.
+const recordControlFields = () => ({
+  noRecord: booleanField('Do not record this action.'),
+  record: booleanField(
+    'Force-record this out-of-band observation into a repair-armed heal (mutually exclusive with noRecord). Authored replay steps are recorded automatically and never need this. On find, valid only for a read-only action.',
+  ),
+});
+
 const getFields = {
   format: requiredField(enumField(['text', 'attrs'] as const)),
   target: requiredField(elementTargetField()),
   ...selectorSnapshotFields(),
+  ...recordControlFields(),
 };
 
 const isFields = {
@@ -181,6 +196,7 @@ const isFields = {
   selector: requiredField(stringField()),
   value: stringField(),
   ...selectorSnapshotFields(),
+  ...recordControlFields(),
 };
 
 const findFields = {
@@ -193,6 +209,7 @@ const findFields = {
   last: booleanField(),
   depth: integerField(),
   raw: booleanField(),
+  ...recordControlFields(),
 };
 
 const gestureFields = {
