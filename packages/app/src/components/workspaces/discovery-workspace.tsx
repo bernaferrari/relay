@@ -14,6 +14,7 @@ import {
   productIconButton,
 } from "../../lib/ui";
 import { Icon } from "../icon";
+import { EmptyState } from "../empty-state";
 
 export const DISCOVERY_NODE_DIMENSIONS = {
   width: 204,
@@ -431,16 +432,15 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
         <Show
           when={active()}
           fallback={
-            <div class="absolute inset-0 grid place-items-center p-8">
-              <div class="grid max-w-[320px] justify-items-center gap-2 text-center">
-                <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
-                  <Icon name="move" size={17} />
-                </span>
-                <p class="m-0 text-[12.5px]/[1.5] text-[var(--relay-text-tertiary)]">
-                  No map selected. Start mapping from the sidebar to see observed screens here.
-                </p>
-              </div>
-            </div>
+            <EmptyState
+              size="lg"
+              icon="move"
+              title="Map your product"
+              description="Capture reachable screens and paths as you explore the app."
+              actionLabel="Start mapping"
+              onAction={() => void start()}
+              class="absolute inset-0 justify-center"
+            />
           }
         >
           {(session) => (

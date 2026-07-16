@@ -1,7 +1,8 @@
 import { Show, createEffect, createSignal } from "solid-js";
 import { useServer } from "../../context/server";
 import { cn } from "../../lib/cn";
-import { shellViewTab, shellViewTabActive, shellViewTabs } from "../../lib/shell-layout";
+import { nextRovingIndex } from "../../lib/roving-focus";
+import { tabUnderline, tabUnderlineActive } from "../../lib/ui";
 import { AtlasWorkspace } from "./atlas-workspace";
 import { DiscoveryWorkspace } from "./discovery-workspace";
 
@@ -26,10 +27,25 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
     if (mode() === "product") void server.refreshDiscoverySessions();
   });
 
+  const onTabKeyDown = (event: KeyboardEvent) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const currentTarget = event.currentTarget as HTMLButtonElement;
+    const tabs = [
+      ...(currentTarget
+        .closest<HTMLElement>("[role='tablist']")
+        ?.querySelectorAll<HTMLButtonElement>("[role='tab']") ?? []),
+    ];
+    const next = nextRovingIndex(event.key, tabs.indexOf(currentTarget), tabs.length, "horizontal");
+    if (next === null) return;
+    event.preventDefault();
+    tabs[next]?.focus();
+    tabs[next]?.click();
+  };
+
   return (
     <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header class="flex min-h-14 shrink-0 items-center border-b border-[var(--relay-line)] px-4">
-        <div class={shellViewTabs} role="tablist" aria-label="Atlas view">
+      <header class="flex min-h-12 shrink-0 items-end border-b border-[var(--relay-line)] px-3">
+        <div class="flex h-full items-end gap-1" role="tablist" aria-label="Atlas view">
           {(
             [
               ["product", "Product"],
@@ -40,7 +56,9 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
               type="button"
               role="tab"
               aria-selected={mode() === id}
-              class={cn(shellViewTab, mode() === id && shellViewTabActive)}
+              tabindex={mode() === id ? 0 : -1}
+              class={cn(tabUnderline, mode() === id && tabUnderlineActive)}
+              onKeyDown={onTabKeyDown}
               onClick={() => setMode(id)}
             >
               {label}

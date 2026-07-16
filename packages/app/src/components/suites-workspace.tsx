@@ -10,6 +10,7 @@ import {
 import { shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
 import { ExecutionInspector } from "./execution-inspector";
+import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
 
 export function SuitesWorkspace(props: {
@@ -185,44 +186,27 @@ export function SuitesWorkspace(props: {
         <Show
           when={selectedSuite()}
           fallback={
-            <div class="grid h-full place-items-center px-8 text-center">
-              <div class="max-w-[360px]">
-                <span class="mx-auto grid size-11 place-items-center rounded-[13px] bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)]">
-                  <Icon name="check" size={18} />
-                </span>
-                <h2 class="mt-4 text-[19px] font-semibold tracking-[-0.025em] text-[var(--relay-text)]">
-                  Create a release suite
-                </h2>
-                <p class="mt-1.5 text-[12.5px]/[1.55] text-[var(--relay-text-secondary)]">
-                  Group existing tests into a checklist your team can edit, reuse, and run together.
-                </p>
-                <button
-                  type="button"
-                  class={cn(productPrimary, "mt-4")}
-                  onClick={() => void createSuite()}
-                >
-                  Create your first suite
-                </button>
-              </div>
-            </div>
+            <EmptyState
+              size="lg"
+              icon="check"
+              title="Create a release suite"
+              description="Group existing tests into a checklist your team can edit, reuse, and run together."
+              actionLabel="Create a suite"
+              onAction={() => void createSuite()}
+              class="h-full justify-center"
+            />
           }
         >
           <Show
             when={selectedTest()}
             fallback={
-              <div class="grid h-full place-items-center px-8 text-center">
-                <div class="max-w-[330px]">
-                  <span class="mx-auto grid size-11 place-items-center rounded-xl bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)]">
-                    <Icon name="smartphone" size={18} />
-                  </span>
-                  <h2 class="mt-3 text-[17px] font-semibold text-[var(--relay-text)]">
-                    Select a test
-                  </h2>
-                  <p class="mt-1.5 text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
-                    Its real device capture and latest evidence appear here.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                size="lg"
+                icon="smartphone"
+                title="Select a test"
+                description="Its real device capture and latest evidence appear here."
+                class="h-full justify-center"
+              />
             }
           >
             <DeviceStage

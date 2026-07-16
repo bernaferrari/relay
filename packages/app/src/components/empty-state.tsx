@@ -3,14 +3,15 @@ import { Show } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
 import { mono } from "../lib/ui";
+import { Icon, type IconName } from "./icon";
 
 export type EmptyStateProps = {
   title: string;
   description?: string;
   /** Optional mono command / path line under description */
   code?: string;
-  /** Icons dropped for chrome empties — AB quiet type-first hierarchy */
-  icon?: "server" | "device" | "frame" | "run" | "artifact" | "info";
+  /** Optional quiet visual anchor for workspace-level empty states. */
+  icon?: IconName;
   actionLabel?: string;
   onAction?: () => void;
   secondaryLabel?: string;
@@ -24,8 +25,8 @@ export type EmptyStateProps = {
 };
 
 /**
- * Single empty language: 14-medium title · 14-regular body · one primary CTA.
- * Matches AgentBoard list/panel empties (no brand wells, no marketing hero).
+ * One empty-state language for workspaces and panels: a quiet visual anchor,
+ * concise explanation, and at most one primary next step.
  */
 export function EmptyState(props: EmptyStateProps) {
   const size = () => props.size ?? "md";
@@ -44,6 +45,19 @@ export function EmptyState(props: EmptyStateProps) {
       )}
       role="status"
     >
+      <Show when={props.icon}>
+        {(icon) => (
+          <span
+            class={cn(
+              "grid shrink-0 place-items-center rounded-xl bg-surface-raised-strong text-text-weak ring-1 ring-inset ring-border-weak-base",
+              size() === "sm" ? "mb-1 size-9" : size() === "lg" ? "mb-2 size-11" : "mb-1.5 size-10",
+            )}
+            aria-hidden="true"
+          >
+            <Icon name={icon()} size={size() === "lg" ? 18 : 16} />
+          </span>
+        )}
+      </Show>
       <div
         class={cn("flex flex-col", align() === "start" ? "items-start" : "items-center", "gap-1")}
       >
@@ -53,7 +67,7 @@ export function EmptyState(props: EmptyStateProps) {
             size() === "sm"
               ? "text-12-medium"
               : size() === "lg"
-                ? "text-16-medium"
+                ? "text-[17px] font-semibold tracking-[-0.02em]"
                 : "text-14-medium",
           )}
         >

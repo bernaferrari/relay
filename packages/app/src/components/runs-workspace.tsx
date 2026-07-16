@@ -4,6 +4,7 @@ import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon, type IconName } from "./icon";
 import { StatusChip, jobStatusChip } from "./status-chip";
 import { ActionIconTrail } from "./action-icon-trail";
+import { EmptyState } from "./empty-state";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { toast } from "../context/toast";
@@ -262,34 +263,25 @@ export function RunsWorkspace(props: {
                 <Show
                   when={rows().length === 0}
                   fallback={
-                    <div class="grid place-items-center gap-2 px-8 py-14 text-center">
-                      <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
-                        <Icon name="search" size={17} />
-                      </span>
-                      <strong class="text-[13px] font-medium text-text-base">
-                        No {runFilter()} runs
-                      </strong>
-                      <button
-                        type="button"
-                        class="text-[11.5px] font-medium text-text-interactive-base hover:underline"
-                        onClick={() => setRunFilter("all")}
-                      >
-                        Show all runs
-                      </button>
-                    </div>
+                    <EmptyState
+                      size="sm"
+                      icon="search"
+                      title={`No ${runFilter()} runs`}
+                      secondaryLabel="Show all runs"
+                      onSecondary={() => setRunFilter("all")}
+                      class="py-14"
+                    />
                   }
                 >
-                  <div class="grid place-items-center gap-3 px-8 py-14 text-center">
-                    <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
-                      <Icon name="wave" size={17} />
-                    </span>
-                    <p class="m-0 max-w-[32ch] text-[12.5px]/[1.5] text-text-weak">
-                      Run a test to keep its result, replay, and diagnostics together.
-                    </p>
-                    <button type="button" class={productPrimary} onClick={props.onOpenTests}>
-                      Run your first test
-                    </button>
-                  </div>
+                  <EmptyState
+                    size="lg"
+                    icon="wave"
+                    title="No runs yet"
+                    description="Run a test to keep its result, replay, and diagnostics together."
+                    actionLabel="Run a test"
+                    onAction={props.onOpenTests}
+                    class="py-14"
+                  />
                 </Show>
               }
             >
