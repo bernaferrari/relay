@@ -21,6 +21,7 @@ import type {
   SnapshotVisibility,
 } from '../../../kernel/snapshot.ts';
 import { buildSnapshotVisibility } from '../../../snapshot/snapshot-visibility.ts';
+import { ANDROID_SYSTEM_SURFACE_DISCLOSURE } from '../../../snapshot/system-surface-disclosure.ts';
 import { formatReactNativeOverlayWarning } from '../../react-native/overlay.ts';
 import {
   buildUnchangedSnapshotMetadata,
@@ -243,11 +244,21 @@ function buildSnapshotWarnings(params: {
   const reactNativeOverlayWarning = formatReactNativeOverlayWarning(params.snapshot.nodes);
   if (reactNativeOverlayWarning) warnings.push(reactNativeOverlayWarning);
 
+  const systemSurfaceWarning = formatAndroidSystemSurfaceWarning(params.annotations);
+  if (systemSurfaceWarning) warnings.push(systemSurfaceWarning);
+
   const recentDropWarning = formatRecentSnapshotDropWarning(params);
   if (recentDropWarning) warnings.push(recentDropWarning);
 
   warnings.push(...formatFreshnessWarnings(params.annotations.freshness, params.snapshot.backend));
   return Array.from(new Set(warnings));
+}
+
+function formatAndroidSystemSurfaceWarning(
+  annotations: SnapshotCaptureAnnotations,
+): string | undefined {
+  if (annotations.androidSnapshot?.systemSurfaceOnly !== true) return undefined;
+  return ANDROID_SYSTEM_SURFACE_DISCLOSURE;
 }
 
 function buildSparseIosInteractiveWarnings(params: {
