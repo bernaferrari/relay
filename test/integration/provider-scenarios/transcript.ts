@@ -12,7 +12,21 @@ export interface ProviderScenarioProviderEntry<
 > extends ProviderScenarioProviderScope {
   command: string;
   request?: unknown;
-  result?: TResult;
+  /** A factory is invoked per call, so repeated calls can return fresh results. */
+  result?: TResult | (() => TResult);
+  /**
+   * Serves every matching call instead of being consumed by the first, and never
+   * counts as unconsumed. Use it where the call COUNT is not the contract — a
+   * quiet UI returns the same tree to every capture, a busy one returns a fresh
+   * tree per capture (pair with a `result` factory). Scripting an exact count
+   * there would assert the runner's speed rather than the behaviour.
+   *
+   * A repeat is the FALLBACK for its command: matching one-shot entries are
+   * always served first, whatever order the entries are declared in, so a
+   * repeat can never strand one. Unsupported in ordered transcripts, where a
+   * repeat would never advance the queue.
+   */
+  repeat?: boolean;
   error?: Error | string;
 }
 
@@ -39,6 +53,11 @@ export function createProviderTranscript(
   entries: readonly ProviderScenarioProviderEntry[],
   options: { ordered?: boolean } = {},
 ): ProviderScenarioTranscript {
+  if (options.ordered && entries.some((entry) => entry.repeat)) {
+    throw new Error(
+      'Ordered provider transcripts cannot use `repeat` entries: ordered lookup only reads the head, so a repeat never advances and strands every entry behind it.',
+    );
+  }
   const pending = [...entries];
   const calls: ProviderScenarioProviderCall[] = [];
 
@@ -54,25 +73,23 @@ export function createProviderTranscript(
       request?: unknown,
       scope: ProviderScenarioProviderScope = {},
     ): TResult {
-      const entryIndex = options.ordered
-        ? 0
-        : pending.findIndex((candidate) =>
-            providerEntryMatches(candidate, command, request, scope),
-          );
-      const entry = entryIndex >= 0 ? pending.splice(entryIndex, 1)[0] : undefined;
+      const entryIndex = options.ordered ? 0 : findEntryIndex(pending, command, request, scope);
+      const entry = entryIndex >= 0 ? pending[entryIndex] : undefined;
       assert.ok(entry, `Unexpected provider call: ${formatCall(command, scope)}`);
+      if (!entry.repeat) pending.splice(entryIndex, 1);
       assert.equal(command, entry.command, 'Provider command mismatch');
       assertScope(scope, entry);
       if (Object.hasOwn(entry, 'request')) {
         assert.deepEqual(request, entry.request, 'Provider request mismatch');
       }
 
+      const result = resolveEntryResult(entry) as TResult;
       const call = {
         command,
         request,
         deviceId: scope.deviceId,
         platform: scope.platform,
-        result: entry.result as TResult,
+        result,
       };
       calls.push(call);
 
@@ -80,13 +97,14 @@ export function createProviderTranscript(
         throw entry.error instanceof Error ? entry.error : new Error(entry.error);
       }
 
-      return entry.result as TResult;
+      return result;
     },
     assertComplete() {
+      const outstanding = pending.filter((entry) => !entry.repeat);
       assert.equal(
-        pending.length,
+        outstanding.length,
         0,
-        `Unconsumed provider transcript entries: ${pending.map(formatEntry).join(', ')}`,
+        `Unconsumed provider transcript entries: ${outstanding.map(formatEntry).join(', ')}`,
       );
     },
   };
@@ -96,6 +114,27 @@ export function createOrderedProviderTranscript(
   entries: readonly ProviderScenarioProviderEntry[],
 ): ProviderScenarioTranscript {
   return createProviderTranscript(entries, { ordered: true });
+}
+
+/**
+ * One-shot entries are served before repeats regardless of declaration order: a
+ * repeat is its command's fallback, so taking the first match would let one
+ * shadow a one-shot forever and strand it as permanently unconsumed.
+ */
+function findEntryIndex(
+  pending: readonly ProviderScenarioProviderEntry[],
+  command: string,
+  request: unknown,
+  scope: ProviderScenarioProviderScope,
+): number {
+  const matches = (candidate: ProviderScenarioProviderEntry): boolean =>
+    providerEntryMatches(candidate, command, request, scope);
+  const oneShotIndex = pending.findIndex((candidate) => !candidate.repeat && matches(candidate));
+  return oneShotIndex >= 0 ? oneShotIndex : pending.findIndex(matches);
+}
+
+function resolveEntryResult(entry: ProviderScenarioProviderEntry): unknown {
+  return typeof entry.result === 'function' ? (entry.result as () => unknown)() : entry.result;
 }
 
 function providerEntryMatches(
