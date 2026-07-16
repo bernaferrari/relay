@@ -25,9 +25,18 @@ const SESSION_PROCESS_EXIT_TIMEOUT_MS = 2_000;
 const SESSION_REQUEST_OVERHEAD_MS = 10_000;
 const FORWARD_TIMEOUT_MS = 5_000;
 
+type AndroidSnapshotHelperSessionHelperIdentity = {
+  packageName: string;
+  runner: string;
+  helperVersion?: string;
+  helperVersionCode?: number;
+  sha256?: string;
+};
+
 type AndroidSnapshotHelperSession = {
   identity: string;
   deviceKey: string;
+  helper: AndroidSnapshotHelperSessionHelperIdentity;
   port: number;
   adb: AndroidAdbExecutor;
   process: AndroidAdbProcess;
@@ -91,6 +100,104 @@ export async function captureAndroidSnapshotWithHelperSession(
   } catch (error) {
     await stopAndroidSnapshotHelperSession(deviceKey);
     throw error;
+  }
+}
+
+// Touch commands piggyback on a live snapshot session so gestures do not restart instrumentation
+// (Android permits one UiAutomation owner). They never start a session: without one, callers use
+// the same helper APK through a one-shot `am instrument` run instead.
+export async function runAndroidSnapshotHelperSessionTouchCommand(params: {
+  deviceKey: string;
+  action: 'gesture' | 'viewport';
+  helper: AndroidSnapshotHelperSessionHelperIdentity;
+  payloadBase64?: string;
+  timeoutMs: number;
+}): Promise<Record<string, string> | undefined> {
+  const session = sessions.get(params.deviceKey);
+  if (!session) return undefined;
+  if (!matchesSessionHelperIdentity(session.helper, params.helper)) {
+    // A different helper binary was selected for this device (e.g. a provider-supplied artifact).
+    // The live session belongs to the previous helper, so stop it and let the touch command run
+    // one-shot against the selected artifact; the next snapshot restarts the session with it.
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'android_snapshot_helper_session_touch_identity_mismatch',
+      data: {
+        deviceKey: params.deviceKey,
+        sessionHelper: session.helper,
+        requestedHelper: params.helper,
+      },
+    });
+    await stopAndroidSnapshotHelperSession(params.deviceKey);
+    return undefined;
+  }
+  const requestId = `${params.action}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const command = params.payloadBase64
+    ? `${params.action} ${requestId} ${params.payloadBase64}`
+    : `${params.action} ${requestId}`;
+  let headers: Record<string, string>;
+  try {
+    const response = await sendSessionCommand(session, command, params.timeoutMs);
+    headers = parseSessionHeaders(response.slice(0, findSessionHeaderEnd(response)));
+    assertTouchSessionHeaders(headers, requestId);
+  } catch (error) {
+    // Transport-level failure: the session process can no longer be trusted. Stop it so the next
+    // command runs against a fresh helper instead of a wedged socket.
+    await stopAndroidSnapshotHelperSession(params.deviceKey);
+    throw error;
+  }
+  if (headers.ok !== 'true') {
+    // The helper ran and reported a structured failure; the session itself stays healthy.
+    throw new AppError(
+      'COMMAND_FAILED',
+      headers.message || headers.errorType || `Android automation helper ${params.action} failed`,
+      { errorType: headers.errorType, helper: headers },
+    );
+  }
+  return headers;
+}
+
+function matchesSessionHelperIdentity(
+  session: AndroidSnapshotHelperSessionHelperIdentity,
+  requested: AndroidSnapshotHelperSessionHelperIdentity,
+): boolean {
+  return (
+    session.packageName === requested.packageName &&
+    session.runner === requested.runner &&
+    matchesWhenBothDefined(session.helperVersion, requested.helperVersion) &&
+    matchesWhenBothDefined(session.helperVersionCode, requested.helperVersionCode) &&
+    matchesWhenBothDefined(session.sha256, requested.sha256)
+  );
+}
+
+function matchesWhenBothDefined<Value>(a: Value | undefined, b: Value | undefined): boolean {
+  return a === undefined || b === undefined || a === b;
+}
+
+function findSessionHeaderEnd(response: string): number {
+  const separator = response.indexOf('\n\n');
+  return separator < 0 ? response.length : separator;
+}
+
+function assertTouchSessionHeaders(headers: Record<string, string>, requestId: string): void {
+  if (headers.agentDeviceProtocol !== ANDROID_SNAPSHOT_HELPER_PROTOCOL) {
+    throw new AppError(
+      'COMMAND_FAILED',
+      'Android automation helper session returned wrong protocol',
+      {
+        headers,
+      },
+    );
+  }
+  if (headers.requestId !== requestId) {
+    throw new AppError(
+      'COMMAND_FAILED',
+      'Android automation helper session returned stale output',
+      {
+        headers,
+        requestId,
+      },
+    );
   }
 }
 
@@ -186,6 +293,13 @@ async function startAndroidSnapshotHelperSession(params: {
   const session: AndroidSnapshotHelperSession = {
     identity: params.identity,
     deviceKey: params.deviceKey,
+    helper: {
+      packageName: params.resolved.packageName,
+      runner: params.resolved.runner,
+      helperVersion: params.options.helperVersion,
+      helperVersionCode: params.options.helperVersionCode,
+      sha256: params.options.helperSha256,
+    },
     port,
     adb: params.options.adb,
     process,
@@ -449,6 +563,7 @@ function createSessionIdentity(
     runner: resolved.runner,
     helperVersion: options.helperVersion,
     helperVersionCode: options.helperVersionCode,
+    helperSha256: options.helperSha256,
     waitForIdleTimeoutMs: resolved.waitForIdleTimeoutMs,
     waitForIdleQuietMs: resolved.waitForIdleQuietMs,
     timeoutMs: resolved.timeoutMs,
