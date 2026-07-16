@@ -15,6 +15,7 @@ import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
 import { DeviceConnectState } from "./device-connect-state";
+import { DeviceEvidenceEmptyState } from "./device-evidence-empty-state";
 import { IconButton } from "@relay/ui/icon-button";
 import { useCommand } from "../context/command";
 import { displayTitle } from "../lib/job";
@@ -23,7 +24,6 @@ import { cn } from "../lib/cn";
 import { evidenceForStep } from "./journey-step-presentation";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
 import {
-  deviceBody,
   deviceIconWell,
   deviceTitle,
   btnGhost,
@@ -31,8 +31,6 @@ import {
   phoneBezel,
   phoneScreen,
   popover,
-  productPrimary,
-  productSecondary,
   seg,
   segBtn,
   segBtnOn,
@@ -463,11 +461,23 @@ export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?:
           </div>
         </Show>
 
+        <Show when={!displayImageSrc()}>
+          <DeviceEvidenceEmptyState
+            deviceName={currentDevice()?.name}
+            ready={targetReady()}
+            step={focusedStep()}
+            refreshing={refreshingTarget()}
+            onChooseDevice={() => props.onOpenTargets?.()}
+            onRefresh={() => void refreshTarget()}
+          />
+        </Show>
+
         <div
           data-device-chrome
           class={cn(
             phoneShell,
             "relative z-[2] h-[min(720px,calc(100%-64px))] w-auto max-w-[min(420px,calc(100%-56px))] shrink-0",
+            !displayImageSrc() && "hidden",
           )}
           data-empty={!displayImageSrc() ? "1" : "0"}
           style={{ "aspect-ratio": frameAspect() }}
@@ -593,92 +603,6 @@ export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?:
                   />
                 )}
               </Show>
-            </Show>
-            {/* No frame yet: step-focused glass (Uber energy) */}
-            <Show when={!displayImageSrc() && focusedStep()}>
-              {(s) => (
-                <div class="absolute inset-0 z-[1] overflow-hidden [background:linear-gradient(160deg,#111520,#090b10_72%)]">
-                  <div class="absolute inset-x-5 top-7 grid gap-3 opacity-70" aria-hidden="true">
-                    <span class="h-2 w-[38%] rounded-full bg-white/10" />
-                    <span class="h-2 w-[70%] rounded-full bg-white/[0.06]" />
-                    <span class="h-20 rounded-[14px] border border-white/[0.06] bg-white/[0.035]" />
-                    <span class="h-10 rounded-[11px] bg-[linear-gradient(135deg,rgb(126_101_255/24%),rgb(100_84_233/14%))]" />
-                    <span class="h-10 rounded-[11px] bg-white/[0.035]" />
-                  </div>
-                  <div class="absolute right-3 bottom-3 left-3 flex items-center gap-2 rounded-[10px] border border-white/[0.08] bg-[#121620] px-3 py-2.5 text-left shadow-[0_10px_30px_rgb(0_0_0/30%)]">
-                    <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/65">
-                      <Icon name="camera" size={14} />
-                    </span>
-                    <span class="min-w-0 flex-1">
-                      <strong class="block text-[10.5px] font-medium text-white/80">
-                        Waiting for device capture
-                      </strong>
-                      <small class="mt-0.5 block truncate text-[9px] text-white/40">
-                        Step {s().index + 1} · {s().title}
-                      </small>
-                    </span>
-                  </div>
-                </div>
-              )}
-            </Show>
-            <Show when={!displayImageSrc() && !focusedStep()}>
-              <div class="absolute inset-0 z-[1] flex flex-col items-center justify-center p-7 text-center">
-                <div
-                  class="relative mb-4 grid h-24 w-16 place-items-center overflow-hidden rounded-[14px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-line)_50%,transparent)]"
-                  aria-hidden="true"
-                >
-                  <span class="absolute top-2 h-0.5 w-6 rounded-full bg-[var(--relay-line-strong)]" />
-                  <span class="mt-3 h-2 w-[70%] rounded bg-[color-mix(in_srgb,var(--relay-text)_12%,transparent)]" />
-                  <span class="mt-1.5 h-2 w-[50%] rounded bg-[color-mix(in_srgb,var(--relay-text)_8%,transparent)]" />
-                </div>
-                <Show
-                  when={targetReady()}
-                  fallback={
-                    <>
-                      <p class={cn("m-0 text-14-medium tracking-tight", deviceTitle)}>
-                        Device not running
-                      </p>
-                      <p class={cn("m-0 max-w-[15em] text-12-regular leading-relaxed", deviceBody)}>
-                        Start it, or choose another device.
-                      </p>
-                      <div class="mt-3.5 flex flex-wrap items-center justify-center gap-2">
-                        <button
-                          type="button"
-                          class={cn(productPrimary, "min-h-[34px] px-[11px]")}
-                          onClick={() => props.onOpenTargets?.()}
-                        >
-                          <Icon name="smartphone" size={14} />
-                          Choose device
-                        </button>
-                        <button
-                          type="button"
-                          class={cn(productSecondary, "min-h-[34px] px-[11px]")}
-                          disabled={refreshingTarget()}
-                          aria-busy={refreshingTarget()}
-                          onClick={() => void refreshTarget()}
-                        >
-                          <Icon
-                            name="refresh"
-                            size={14}
-                            class={cn(
-                              refreshingTarget() &&
-                                "animate-spin origin-center motion-reduce:animate-none motion-reduce:opacity-70",
-                            )}
-                          />
-                          Refresh
-                        </button>
-                      </div>
-                    </>
-                  }
-                >
-                  <p class={cn("m-0 text-14-medium tracking-tight", deviceTitle)}>
-                    Ready to capture
-                  </p>
-                  <p class={cn("m-0 max-w-[13em] text-12-regular leading-relaxed", deviceBody)}>
-                    Select a step, then run it.
-                  </p>
-                </Show>
-              </div>
             </Show>
             {/* Selected step chip over live frame */}
             <Show when={displayImageSrc() ? focusedStep() : null}>

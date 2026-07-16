@@ -107,7 +107,14 @@ export function SuitesWorkspace(props: {
       ).length;
 
   return (
-    <section class="grid min-h-0 min-w-0 flex-1 grid-cols-[224px_minmax(420px,1fr)_390px] overflow-hidden max-[1160px]:grid-cols-[200px_minmax(360px,1fr)_340px] max-[900px]:grid-cols-1">
+    <section
+      class={cn(
+        "grid min-h-0 min-w-0 flex-1 overflow-hidden max-[900px]:grid-cols-1",
+        selectedSuite()
+          ? "grid-cols-[224px_minmax(420px,1fr)_390px] max-[1160px]:grid-cols-[200px_minmax(360px,1fr)_340px]"
+          : "grid-cols-[224px_minmax(0,1fr)] max-[1160px]:grid-cols-[200px_minmax(0,1fr)]",
+      )}
+    >
       <aside class="flex min-h-0 flex-col border-r border-[var(--relay-line)] bg-[var(--relay-panel)]">
         <header class="flex min-h-14 items-center justify-between gap-2 border-b border-[var(--relay-line)] px-3">
           <div>
@@ -179,15 +186,15 @@ export function SuitesWorkspace(props: {
           when={selectedSuite()}
           fallback={
             <div class="grid h-full place-items-center px-8 text-center">
-              <div class="max-w-[340px]">
-                <span class="mx-auto grid size-12 place-items-center rounded-xl bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)]">
-                  <Icon name="check" size={20} />
+              <div class="max-w-[360px]">
+                <span class="mx-auto grid size-11 place-items-center rounded-[13px] bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)]">
+                  <Icon name="check" size={18} />
                 </span>
-                <h2 class="mt-4 text-[20px] font-semibold tracking-[-0.02em] text-[var(--relay-text)]">
-                  Build confidence once
+                <h2 class="mt-4 text-[19px] font-semibold tracking-[-0.025em] text-[var(--relay-text)]">
+                  Create a release suite
                 </h2>
-                <p class="mt-2 text-[13px]/[1.55] text-[var(--relay-text-secondary)]">
-                  Record tests once, then reuse them across every release suite.
+                <p class="mt-1.5 text-[12.5px]/[1.55] text-[var(--relay-text-secondary)]">
+                  Group existing tests into a checklist your team can edit, reuse, and run together.
                 </p>
                 <button
                   type="button"

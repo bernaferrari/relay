@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, lazy } from "solid-js";
+import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy } from "solid-js";
 import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
@@ -62,7 +62,6 @@ const DataWorkspace = lazy(() =>
 const MapsWorkspace = lazy(() =>
   import("./workspaces/maps-workspace").then((module) => ({ default: module.MapsWorkspace })),
 );
-
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
   { id: "suites", label: "Suites", icon: "check" },
@@ -576,7 +575,20 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           />
         </Show>
         <Show when={area() === "map"}>
-          <MapsWorkspace onOpenRecipe={openRecipe} />
+          <Suspense
+            fallback={
+              <div class="grid min-h-0 flex-1 place-items-center bg-[var(--relay-bg)] p-8 text-center">
+                <div>
+                  <span class="mx-auto grid size-10 place-items-center rounded-xl bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)]">
+                    <Icon name="move" size={16} />
+                  </span>
+                  <p class="mt-3 text-[12px] text-[var(--relay-text-tertiary)]">Loading Atlas…</p>
+                </div>
+              </div>
+            }
+          >
+            <MapsWorkspace onOpenRecipe={openRecipe} />
+          </Suspense>
         </Show>
         <Show when={area() === "data"}>
           <DataWorkspace onConfigureProvider={props.onOpenSettings} />

@@ -643,7 +643,7 @@ function RunBrowser(props: {
               <button
                 type="button"
                 class={cn(
-                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 text-left outline-none transition-[background-color,transform] duration-150 active:scale-[0.99] focus-visible:ring-1 focus-visible:ring-white/60",
+                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 text-left outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-white/60",
                   props.selectedId === job.id
                     ? "bg-[var(--relay-surface-strong)]"
                     : "hover:bg-[var(--relay-surface-raised)]",
@@ -1409,7 +1409,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
     <button
       type="button"
       class={cn(
-        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_7px_20px_rgb(0_0_0/7%)] transition-[background-color,border-color,transform,box-shadow] duration-150 last:mb-0 hover:-translate-y-px hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)] hover:shadow-[0_11px_28px_rgb(0_0_0/13%)] active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
         props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}
@@ -1478,11 +1478,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
           <span class={cn(mono, "text-[10.5px]")}>
             {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
           </span>
-          <Icon
-            name="chevron-right"
-            size={13}
-            class="transition-transform group-hover:translate-x-0.5"
-          />
+          <Icon name="chevron-right" size={13} />
         </span>
       </span>
     </button>

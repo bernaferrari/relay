@@ -1,0 +1,92 @@
+import { Show } from "solid-js";
+import { cn } from "../lib/cn";
+import { eyebrow, productPrimary, productSecondary } from "../lib/ui";
+import { Icon } from "./icon";
+
+export function DeviceEvidenceEmptyState(props: {
+  deviceName?: string;
+  ready: boolean;
+  step?: { index: number; title: string } | null;
+  refreshing: boolean;
+  onChooseDevice: () => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <section
+      class="relative z-[2] w-full max-w-[360px] overflow-hidden rounded-[18px] bg-[var(--relay-panel)] p-5 text-left shadow-[inset_0_0_0_1px_var(--relay-line-strong)]"
+      aria-label="Device evidence"
+    >
+      <div class="flex items-start gap-3.5">
+        <span class="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)]">
+          <Icon name={props.ready ? "camera" : "smartphone"} size={17} />
+        </span>
+        <div class="min-w-0 flex-1">
+          <span class={eyebrow}>Device evidence</span>
+          <h2 class="mt-1.5 text-[16px] font-semibold tracking-[-0.02em] text-[var(--relay-text)]">
+            {props.ready ? "No capture yet" : "Device unavailable"}
+          </h2>
+          <p class="mt-1.5 text-[11.5px]/[1.55] text-[var(--relay-text-secondary)]">
+            {props.ready
+              ? props.step
+                ? "Run or record this test to attach the real screen for this step."
+                : "Select a step, then run or record the test to capture its real screen."
+              : "Start this target or choose another device before capturing evidence."}
+          </p>
+        </div>
+      </div>
+
+      <Show when={props.step}>
+        {(step) => (
+          <div class="mt-4 flex min-w-0 items-center gap-2.5 rounded-[11px] bg-[var(--relay-surface-raised)] px-3 py-2.5 shadow-[inset_0_0_0_1px_var(--relay-line)]">
+            <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-accent)_12%,transparent)] font-mono text-[10px] tabular-nums text-[var(--text-interactive-base)]">
+              {String(step().index + 1).padStart(2, "0")}
+            </span>
+            <strong class="min-w-0 truncate text-[11.5px] font-medium text-[var(--relay-text)]">
+              {step().title}
+            </strong>
+          </div>
+        )}
+      </Show>
+
+      <footer class="mt-4 flex min-h-9 items-center justify-between gap-3 border-t border-[var(--relay-line)] pt-3">
+        <span class="inline-flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--relay-text-tertiary)]">
+          <i
+            class={cn(
+              "size-1.5 shrink-0 rounded-full",
+              props.ready ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
+            )}
+          />
+          <span class="truncate">{props.deviceName ?? "No device selected"}</span>
+        </span>
+        <Show when={!props.ready}>
+          <div class="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              class={cn(productSecondary, "min-h-8 px-2.5 text-[10.5px]")}
+              disabled={props.refreshing}
+              aria-busy={props.refreshing}
+              onClick={props.onRefresh}
+            >
+              <Icon
+                name="refresh"
+                size={12}
+                class={cn(
+                  props.refreshing &&
+                    "animate-spin origin-center motion-reduce:animate-none motion-reduce:opacity-70",
+                )}
+              />
+              Refresh
+            </button>
+            <button
+              type="button"
+              class={cn(productPrimary, "min-h-8 px-2.5 text-[10.5px]")}
+              onClick={props.onChooseDevice}
+            >
+              Choose
+            </button>
+          </div>
+        </Show>
+      </footer>
+    </section>
+  );
+}
