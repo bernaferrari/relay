@@ -13,6 +13,7 @@ import {
   forgetAndroidSnapshotHelperInstall,
   resetAndroidSnapshotHelperInstallCache,
 } from '../snapshot-helper-install.ts';
+import { AppError } from '../../../kernel/errors.ts';
 import { parseAndroidSnapshotHelperManifest } from '../snapshot-helper-artifact.ts';
 import { verifyAndroidHelperApkChecksum } from '../helper-package-install.ts';
 import type {
@@ -202,6 +203,80 @@ test('ensureAndroidSnapshotHelper installs when missing and skips a newer versio
 
   assert.equal(skipped.installed, false);
   assert.equal(skipped.reason, 'current');
+});
+
+test('ensureAndroidSnapshotHelper tags a device-side install rejection distinctly from artifact resolution', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-install-reject-'));
+  const apkPath = path.join(tmpDir, 'helper.apk');
+  await fs.writeFile(apkPath, 'helper-apk');
+  const adb: AndroidAdbExecutor = async (args) => {
+    if (args.includes('--show-versioncode')) {
+      return { exitCode: 1, stdout: '', stderr: 'not found' };
+    }
+    if (args[0] === 'install') {
+      return { exitCode: 1, stdout: '', stderr: 'Failure [INSTALL_FAILED_TEST_ONLY]' };
+    }
+    throw new Error(`unexpected adb call: ${args.join(' ')}`);
+  };
+
+  await assert.rejects(
+    () =>
+      ensureAndroidSnapshotHelper({
+        adb,
+        artifact: { apkPath, manifest: { ...manifest, sha256: sha256Text('helper-apk') } },
+      }),
+    (error) => {
+      assert.match((error as Error).message, /Failed to install Android snapshot helper/);
+      assert.equal(
+        (error as { details?: Record<string, unknown> }).details
+          ?.androidSnapshotHelperInstallFailure,
+        true,
+      );
+      return true;
+    },
+  );
+});
+
+test('ensureAndroidSnapshotHelper tags a rejected provider install without losing the enriched error', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'snapshot-helper-install-throw-'));
+  const apkPath = path.join(tmpDir, 'helper.apk');
+  await fs.writeFile(apkPath, 'helper-apk');
+  const installError = new AppError('COMMAND_FAILED', 'Failed to install Android snapshot helper', {
+    stderr: 'adb: failed to install helper.apk: Failure [INSTALL_FAILED_TEST_ONLY]',
+    stdout: '',
+    exitCode: 1,
+    processExitError: true,
+    hint: 'The Android package installer rejected the APK — see the INSTALL_FAILED code in the error output for the exact cause.',
+  });
+  const adb: AndroidAdbExecutor = async (args) => {
+    if (args.includes('--show-versioncode')) {
+      return { exitCode: 1, stdout: '', stderr: 'not found' };
+    }
+    throw new Error(`unexpected adb call: ${args.join(' ')}`);
+  };
+  const adbProvider: AndroidAdbProvider = {
+    exec: adb,
+    install: async () => {
+      throw installError;
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      ensureAndroidSnapshotHelper({
+        adb,
+        adbProvider,
+        artifact: { apkPath, manifest: { ...manifest, sha256: sha256Text('helper-apk') } },
+      }),
+    (error) => {
+      assert.equal(error, installError);
+      const details = (error as AppError).details;
+      assert.equal(details?.androidSnapshotHelperInstallFailure, true);
+      assert.match(String(details?.stderr), /INSTALL_FAILED_TEST_ONLY/);
+      assert.match(String(details?.hint), /package installer rejected the APK/);
+      return true;
+    },
+  );
 });
 
 test('ensureAndroidSnapshotHelper replaces same-version helper when APK bytes differ', async () => {
