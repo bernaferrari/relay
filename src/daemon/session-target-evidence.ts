@@ -17,7 +17,11 @@
 import type { SnapshotNode } from '../kernel/snapshot.ts';
 import { resolveRectCenter } from '../utils/rect-center.ts';
 import { findNearestScrollableContainer } from './snapshot-presentation/tree.ts';
-import { readNodeLocalIdentity, siblingOrdinal } from '../replay/target-identity-node.ts';
+import {
+  idMatchCountInTree,
+  readNodeLocalIdentity,
+  siblingOrdinal,
+} from '../replay/target-identity-node.ts';
 import {
   classifyTargetBindingMatch,
   matchesAncestryPrefix,
@@ -45,7 +49,7 @@ export function computeTargetEvidence(
   const { node, preActionNodes: nodes } = capture;
   if (typeof node.index !== 'number') return undefined;
   const byIndex = buildIndexMap(nodes);
-  const identity = boundedLocalIdentity(node);
+  const identity = demoteNonUniqueId(boundedLocalIdentity(node), nodes);
   const ancestryWalk = buildAncestryChain(node, byIndex, TARGET_ANNOTATION_MAX_ANCESTRY);
   const fullAncestry = ancestryWalk.chain;
   const sibling = computeSiblingOrdinal(nodes, node);
@@ -235,6 +239,29 @@ export function filterIdentitySet(
     // A candidate with a broken parent walk cannot prove the prefix.
     return !observed.broken && matchesAncestryPrefix(observed.chain, ancestry);
   });
+}
+
+/**
+ * ADR 0012 decision 3 amendment (#1269): an id is identity only when it
+ * uniquely denotes the target in the record-time tree. `boundedLocalIdentity`
+ * reads a node's id unconditionally, but a shared framework resource id
+ * (Android's `android:id/title` matching every list row is the measured
+ * case — #1269) is not selective: on replay the id-led identity set spans
+ * every row, position drifts, and verification correctly refuses a
+ * confident bind. `idMatchCountInTree` — the SAME predicate
+ * `buildSelectorChainForNode` uses for the selector chain — counts nodes
+ * sharing this canonical id across the whole tree; when more than one, fall
+ * back to role+label, exactly the identity an unrecorded id already computes.
+ * Both sites sharing one predicate is what keeps the tuple and the chain from
+ * disagreeing (demoting one but not the other). The rule is capture-time
+ * uniqueness, not an id-namespace heuristic: a reused RN `FlatList` `testID`
+ * hits the same demotion on iOS.
+ */
+function demoteNonUniqueId(identity: LocalIdentity, nodes: readonly SnapshotNode[]): LocalIdentity {
+  if (identity.id === undefined) return identity;
+  if (idMatchCountInTree(nodes, identity.id) <= 1) return identity;
+  const { role, label } = identity;
+  return { role, ...(label !== undefined ? { label } : {}) };
 }
 
 function computeDisambiguationDomain(params: {
