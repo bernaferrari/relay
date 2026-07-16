@@ -16,6 +16,7 @@ import {
   type SelectorResolution,
 } from '../../../selectors/index.ts';
 import { buildSelectorChainForNode } from '../../../selectors/build.ts';
+import { resolvePressRecordingTarget } from '../../../core/press-retarget.ts';
 import {
   findNodeByLabel,
   normalizeType,
@@ -31,6 +32,7 @@ import { truncateUtf8 } from '../../../utils/truncate-utf8.ts';
 import type {
   InteractionTarget,
   PointTarget,
+  RecordingTargetOverride,
   ResolutionDiagnosticEntry,
   ResolutionDisclosure,
   ResolvedInteractionTarget,
@@ -383,7 +385,9 @@ function buildResolutionDiagnosticEntry(
 }
 
 // Shared tail of a resolved ref/selector interaction target: the node itself
-// plus everything derived from it for the response.
+// plus everything derived from it for the response. Every response field
+// describes the DISPATCHED node — the #1280 retarget rides only on the
+// `recordingTarget` side channel below.
 function describeResolvedInteractionNode(
   runtime: AgentDeviceRuntime,
   node: SnapshotNode,
@@ -398,6 +402,7 @@ function describeResolvedInteractionNode(
   hint?: string;
   preActionNodes: SnapshotState['nodes'];
   resolution: ResolutionDisclosure;
+  recordingTarget?: RecordingTargetOverride;
 } {
   return {
     node,
@@ -409,6 +414,38 @@ function describeResolvedInteractionNode(
     ...describeNonHittableTarget(node, action),
     preActionNodes: nodes,
     resolution,
+    ...pressRecordingTargetOverride(runtime, node, nodes, action),
+  };
+}
+
+/**
+ * #1280 (ADR 0012 decision 3 amendment): the recording-only side channel.
+ * When a click/press resolves to an identity-empty container, the RECORDED
+ * step retargets to its first labeled descendant — node, chain, and
+ * ref-label computed together here so the recorded action entry and its
+ * `target-v1` evidence can never half-retarget. The response payloads never
+ * consume this (see `interaction-touch-response.ts`). `fill` is deliberately
+ * excluded: its chain carries `editable=true` constraints a label descendant
+ * cannot satisfy, which would record an unreplayable selector.
+ */
+function pressRecordingTargetOverride(
+  runtime: AgentDeviceRuntime,
+  node: SnapshotNode,
+  nodes: SnapshotState['nodes'],
+  action: InteractionAction,
+): { recordingTarget?: RecordingTargetOverride } {
+  if (action !== 'click' && action !== 'press') return {};
+  const recordingNode = resolvePressRecordingTarget(node, nodes);
+  if (recordingNode === node) return {};
+  return {
+    recordingTarget: {
+      node: recordingNode,
+      selectorChain: buildSelectorChainForNode(recordingNode, runtime.backend.platform, {
+        action: 'click',
+        nodes,
+      }),
+      refLabel: resolveRefLabel(recordingNode, nodes),
+    },
   };
 }
 
