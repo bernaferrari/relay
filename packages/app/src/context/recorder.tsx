@@ -57,7 +57,7 @@ export function migrateLegacyStep(step: LegacyRecStep): RecipeStep {
   return { kind: "tap", target: { point: { x: step.x, y: step.y } } };
 }
 
-/** Human-readable one-liner for a RecipeStep (stage / run-panel row / log
+/** Human-readable one-liner for a RecipeStep (stage / execution row / log
  *  captions) — re-exported here so existing `from "../context/recorder"`
  *  imports keep working. Canonical implementation lives in lib/step-sentence
  *  so it's shared by the row list without pulling in this context. */

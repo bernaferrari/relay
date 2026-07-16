@@ -7,6 +7,7 @@ import { cn } from "../lib/cn";
 import { mono, popover } from "../lib/ui";
 import { presentTarget } from "../lib/target-presentation";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
+import { executionStateLabel } from "../lib/execution-moments";
 
 /**
  * Topbar — brand · device picker · [spacer] · runbar pill · Settings.
@@ -242,7 +243,7 @@ export function Topbar(props: { onSettings: () => void }) {
             </button>
             <span class={cn(mono, "shrink-0 text-12-regular text-text-weak")}>
               <Show when={job().waitingFor} fallback={fmtDur(job(), server.clock())}>
-                Your turn
+                {executionStateLabel("paused")}
               </Show>
             </span>
             {/* Pause/cancel: reveal on hover — quiet chrome at rest */}

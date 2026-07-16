@@ -28,17 +28,17 @@ export function FlowParametersEditor() {
     draft.setParameters(draft.parameters().filter((_, current) => current !== index));
 
   const field =
-    "h-[30px] w-full min-w-0 rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-panel)] px-2 text-[11px] text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)]";
-  const label = "grid min-w-0 gap-1 text-[10px] text-[var(--relay-text-tertiary)]";
+    "h-[30px] w-full min-w-0 rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-2 text-[11px] text-[var(--text-strong)] outline-none focus:border-[var(--text-interactive-base)]";
+  const label = "grid min-w-0 gap-1 text-[10px] text-[var(--text-weak)]";
 
   return (
     <div class="grid gap-3.5">
       <header class="flex items-center justify-between gap-4 max-sm:grid max-sm:grid-cols-1">
         <div class="grid min-w-0 gap-1">
-          <h3 class="m-0 text-[15px] font-semibold leading-[1.2] tracking-[-0.01em] text-[var(--relay-text)]">
+          <h3 class="m-0 text-[15px] font-semibold leading-[1.2] tracking-[-0.01em] text-[var(--text-strong)]">
             Inputs
           </h3>
-          <p class="m-0 max-w-[34rem] text-[10.5px]/[1.45] text-[var(--relay-text-tertiary)]">
+          <p class="m-0 max-w-[34rem] text-[10.5px]/[1.45] text-[var(--text-weak)]">
             Values someone can change when they reuse this test.
           </p>
         </div>
@@ -53,12 +53,12 @@ export function FlowParametersEditor() {
       <Show
         when={draft.parameters().length > 0}
         fallback={
-          <div class="grid min-h-24 place-items-center border-y border-dashed border-[var(--relay-line)] px-4 py-5 text-center">
+          <div class="grid min-h-24 place-items-center border-y border-dashed border-[var(--v2-border-border-muted)] px-4 py-5 text-center">
             <div>
-              <strong class="block text-[11.5px] font-medium text-[var(--relay-text-secondary)]">
+              <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
                 No inputs needed
               </strong>
-              <span class="mt-1 block text-[10px] text-[var(--relay-text-tertiary)]">
+              <span class="mt-1 block text-[10px] text-[var(--text-weak)]">
                 This test uses the values you recorded.
               </span>
             </div>
@@ -68,7 +68,7 @@ export function FlowParametersEditor() {
         <div class="grid gap-2">
           <Index each={draft.parameters()}>
             {(parameter, index) => (
-              <article class="grid gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-surface-raised-stronger-non-alpha p-[11px]">
+              <article class="grid gap-2.5 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-surface-raised-stronger-non-alpha p-[11px]">
                 <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_28px] items-end gap-2 max-sm:grid-cols-1">
                   <label class={label}>
                     <span>Variable name</span>
@@ -90,7 +90,7 @@ export function FlowParametersEditor() {
                       }
                     />
                   </label>
-                  <label class="flex h-[30px] items-center gap-1.5 whitespace-nowrap text-[10px] text-[var(--relay-text-secondary)]">
+                  <label class="flex h-[30px] items-center gap-1.5 whitespace-nowrap text-[10px] text-[var(--text-base)]">
                     <input
                       type="checkbox"
                       checked={parameter().required === true}
@@ -139,7 +139,7 @@ export function FlowParametersEditor() {
       <Show when={draft.parameterIssue()}>
         {(message) => (
           <p
-            class="m-0 rounded-lg border border-[color-mix(in_srgb,var(--relay-red)_45%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-red)_8%,transparent)] px-2.5 py-2 text-[11px] text-[var(--relay-red)]"
+            class="m-0 rounded-lg border border-[color-mix(in_srgb,var(--icon-critical-base)_45%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--icon-critical-base)_8%,transparent)] px-2.5 py-2 text-[11px] text-[var(--icon-critical-base)]"
             role="alert"
           >
             {message()}

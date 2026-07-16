@@ -4,6 +4,7 @@ import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
+import { EmptyState } from "./empty-state";
 import { frameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
 import { btnGhost, dividerY, easeOut, mono, stepIndexOn, tColor } from "../lib/ui";
 import {
@@ -428,22 +429,13 @@ export function FrameCanvas(props: {
         <Show
           when={nodes().length > 0}
           fallback={
-            <div class="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-              <div
-                class={cn(
-                  "grid size-14 place-items-center rounded-2xl",
-                  "bg-surface-base text-text-weak ring-1 ring-inset ring-border-weak-base",
-                )}
-              >
-                <Icon name="camera" size={22} />
-              </div>
-              <div class="flex flex-col gap-1.5">
-                <p class="m-0 text-14-medium tracking-tight text-text-strong">No screens yet</p>
-                <p class="m-0 max-w-[280px] text-12-regular leading-relaxed text-text-weak">
-                  Run a test to capture screenshots — they’ll land here as a free-form journey map.
-                </p>
-              </div>
-            </div>
+            <EmptyState
+              size="lg"
+              icon="camera"
+              title="No screens yet"
+              description="Run a test to capture screenshots. They’ll appear here as a free-form journey map."
+              class="flex-1 justify-center"
+            />
           }
         >
           {/* Canvas */}

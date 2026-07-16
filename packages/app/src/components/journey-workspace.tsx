@@ -27,10 +27,10 @@ const JOURNEY_NODE_PORT_Y = 200;
 const JOURNEY_NODE_GAP = 96;
 
 const boardChrome =
-  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
+  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
 
 const controlBtn =
-  "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-[7px] text-[10px] text-[var(--relay-text-secondary)] hover:bg-surface-raised-base-hover hover:text-[var(--relay-text)]";
+  "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-[7px] text-[10px] text-[var(--text-base)] hover:bg-surface-raised-base-hover hover:text-[var(--text-strong)]";
 
 /**
  * Journey is always available. Planned steps, captured device frames, and run
@@ -183,7 +183,7 @@ function PlannedJourney(props: { onLive: () => void }) {
       ref={(element) => {
         board = element;
       }}
-      class="!absolute inset-0 cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--relay-text)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
+      class="!absolute inset-0 cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-strong)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
       aria-label="Planned test journey"
       onWheel={(event) => {
         if (!event.ctrlKey && !event.metaKey) return;
@@ -216,17 +216,12 @@ function PlannedJourney(props: { onLive: () => void }) {
         drag = null;
       }}
     >
-      <div
-        class={cn(
-          boardChrome,
-          "left-3.5 gap-2.5 px-2.5 text-[10px] text-[var(--relay-text-secondary)]",
-        )}
-      >
+      <div class={cn(boardChrome, "left-3.5 gap-2.5 px-2.5 text-[10px] text-[var(--text-base)]")}>
         <span class="inline-flex items-center gap-1.5 font-semibold">
-          <i class="size-1.5 rounded-full bg-[var(--relay-accent)] shadow-[0_0_9px_color-mix(in_srgb,var(--relay-accent)_65%,transparent)]" />
+          <i class="size-1.5 rounded-full bg-[var(--v2-background-bg-accent)] shadow-[0_0_9px_color-mix(in_srgb,var(--v2-background-bg-accent)_65%,transparent)]" />
           {nodes().length} {nodes().length === 1 ? "step" : "steps"}
         </span>
-        <b class="border-l border-[var(--relay-line)] pl-2.5 font-mono text-[9px] font-normal text-[var(--relay-text-tertiary)]">
+        <b class="border-l border-[var(--v2-border-border-muted)] pl-2.5 font-mono text-[9px] font-normal text-[var(--text-weak)]">
           <Show
             when={
               resultCounts().running > 0 || resultCounts().passed > 0 || resultCounts().failed > 0
@@ -245,7 +240,7 @@ function PlannedJourney(props: { onLive: () => void }) {
         <button type="button" class={controlBtn} onClick={() => zoom(-0.1)} aria-label="Zoom out">
           −
         </button>
-        <span class="inline-flex h-[30px] min-w-10 items-center justify-center font-mono text-[10px] text-[var(--relay-text-tertiary)]">
+        <span class="inline-flex h-[30px] min-w-10 items-center justify-center font-mono text-[10px] text-[var(--text-weak)]">
           {Math.round(view().scale * 100)}%
         </span>
         <button type="button" class={controlBtn} onClick={() => zoom(0.1)} aria-label="Zoom in">
@@ -258,7 +253,7 @@ function PlannedJourney(props: { onLive: () => void }) {
 
       <Show when={selectedEdge() !== null}>
         <div
-          class="absolute top-[82px] right-3.5 z-[7] grid w-[260px] cursor-default gap-2.5 rounded-xl border border-[var(--relay-line)] bg-[var(--relay-panel)] p-3 text-[var(--relay-text)] shadow-[var(--v2-elevation-floating)]"
+          class="absolute top-[82px] right-3.5 z-[7] grid w-[260px] cursor-default gap-2.5 rounded-xl border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-3 text-[var(--text-strong)] shadow-[var(--v2-elevation-floating)]"
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div class="grid gap-1">
@@ -266,17 +261,17 @@ function PlannedJourney(props: { onLive: () => void }) {
             <strong class="text-[13px] font-semibold">Customize arrow</strong>
           </div>
           <label class="grid gap-1">
-            <span class="text-[10px] text-[var(--relay-text-tertiary)]">Label</span>
+            <span class="text-[10px] text-[var(--text-weak)]">Label</span>
             <input
-              class="h-8 w-full rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)]"
+              class="h-8 w-full rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[var(--text-strong)] outline-none focus:border-[var(--text-interactive-base)]"
               value={edgeConfig()[selectedEdge()!]?.label ?? defaultEdge(selectedEdge()!).label}
               onInput={(event) => patchEdge(selectedEdge()!, { label: event.currentTarget.value })}
             />
           </label>
           <label class="grid gap-1">
-            <span class="text-[10px] text-[var(--relay-text-tertiary)]">Type</span>
+            <span class="text-[10px] text-[var(--text-weak)]">Type</span>
             <select
-              class="h-8 w-full rounded-[7px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[var(--relay-text)] outline-none"
+              class="h-8 w-full rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[var(--text-strong)] outline-none"
               value={edgeConfig()[selectedEdge()!]?.style ?? defaultEdge(selectedEdge()!).style}
               onChange={(event) =>
                 patchEdge(selectedEdge()!, { style: event.currentTarget.value as EdgeStyle })
@@ -289,7 +284,7 @@ function PlannedJourney(props: { onLive: () => void }) {
           </label>
           <button
             type="button"
-            class="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-[7px] text-[var(--relay-text-tertiary)] hover:bg-surface-raised-base-hover hover:text-[var(--relay-text)]"
+            class="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-[7px] text-[var(--text-weak)] hover:bg-surface-raised-base-hover hover:text-[var(--text-strong)]"
             aria-label="Close arrow editor"
             onClick={() => setSelectedEdge(null)}
           >
@@ -302,27 +297,27 @@ function PlannedJourney(props: { onLive: () => void }) {
         when={nodes().length > 0}
         fallback={
           <div class="absolute inset-0 flex flex-col items-center justify-center px-5 text-center">
-            <span class="mb-2 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--relay-text-tertiary)] uppercase">
+            <span class="mb-2 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
               New test
             </span>
-            <h2 class="m-0 text-[24px] font-semibold tracking-[-0.035em] text-[var(--relay-text)]">
+            <h2 class="m-0 text-[24px] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
               What should happen?
             </h2>
-            <p class="mt-2 mb-5 max-w-[430px] text-[12.5px]/[1.55] text-[var(--relay-text-secondary)]">
+            <p class="mt-2 mb-5 max-w-[430px] text-[12.5px]/[1.55] text-[var(--text-base)]">
               Describe the journey in plain language. Relay will turn it into editable device states
               you can run and inspect.
             </p>
             <AgentTestComposer variant="canvas" defaultOpen />
-            <div class="mt-4 flex items-center gap-3 text-[11px] text-[var(--relay-text-tertiary)]">
-              <span class="h-px w-12 bg-[var(--relay-line)]" /> or
+            <div class="mt-4 flex items-center gap-3 text-[11px] text-[var(--text-weak)]">
+              <span class="h-px w-12 bg-[var(--v2-border-border-muted)]" /> or
               <button
                 type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-medium text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text)]"
+                class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]"
                 onClick={props.onLive}
               >
                 <Icon name="circle" size={13} /> Record on a device
               </button>
-              <span class="h-px w-12 bg-[var(--relay-line)]" />
+              <span class="h-px w-12 bg-[var(--v2-border-border-muted)]" />
             </div>
           </div>
         }
@@ -350,7 +345,10 @@ function PlannedJourney(props: { onLive: () => void }) {
                 markerHeight="6"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--relay-accent)] stroke-none" />
+                <path
+                  d="M 0 0 L 10 5 L 0 10 z"
+                  class="fill-[var(--v2-background-bg-accent)] stroke-none"
+                />
               </marker>
             </defs>
             <For each={nodes().slice(0, -1)}>
@@ -370,7 +368,7 @@ function PlannedJourney(props: { onLive: () => void }) {
                     style() === "failure" &&
                       "stroke-[var(--icon-critical-base)] [stroke-dasharray:8_5]",
                     style() === "flow" &&
-                      "stroke-[color-mix(in_srgb,var(--relay-accent)_62%,var(--relay-line))] [stroke-dasharray:6_7]",
+                      "stroke-[color-mix(in_srgb,var(--v2-background-bg-accent)_62%,var(--v2-border-border-muted))] [stroke-dasharray:6_7]",
                   );
                 return (
                   <g>
@@ -386,7 +384,7 @@ function PlannedJourney(props: { onLive: () => void }) {
                       d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
                     />
                     <text
-                      class="pointer-events-none fill-[var(--relay-text-tertiary)] font-mono text-[9px]"
+                      class="pointer-events-none fill-[var(--text-weak)] font-mono text-[9px]"
                       x={(x1() + x2()) / 2}
                       y={(y1() + y2()) / 2 - 10}
                       text-anchor="middle"
@@ -420,13 +418,13 @@ function PlannedJourney(props: { onLive: () => void }) {
                   <JourneyPlanCard step={node.step} index={node.index} active={active()} />
                   <Show when={node.index > 0}>
                     <div
-                      class="absolute top-[195px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      class="absolute top-[195px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
                       aria-hidden="true"
                     />
                   </Show>
                   <Show when={node.index < nodes().length - 1}>
                     <div
-                      class="absolute top-[195px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--relay-panel)] bg-[var(--relay-accent)]"
+                      class="absolute top-[195px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
                       aria-hidden="true"
                     />
                   </Show>
@@ -500,18 +498,18 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
   return (
     <div
       class={cn(
-        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-[18px] border border-[var(--relay-line-strong)] shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
+        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-[18px] border border-[var(--v2-border-border-strong)] shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
         "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
-          "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--relay-accent)_24%,transparent),0_6px_18px_rgb(0_0_0/18%)]",
+          "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_24%,transparent),0_6px_18px_rgb(0_0_0/18%)]",
         annotation().status === "fail" &&
-          "border-[color-mix(in_srgb,var(--relay-red)_65%,var(--relay-line))]",
+          "border-[color-mix(in_srgb,var(--icon-critical-base)_65%,var(--v2-border-border-muted))]",
       )}
       style={{ "--journey-node-accent": accentForStep(props.step) }}
     >
-      <header class="grid grid-cols-[auto_1fr] items-center gap-2 border-b border-[color-mix(in_srgb,var(--relay-line)_72%,transparent)] px-3 text-[var(--relay-text-tertiary)]">
-        <span class="font-mono text-[11px] leading-none text-[var(--relay-text-secondary)]">
+      <header class="grid grid-cols-[auto_1fr] items-center gap-2 border-b border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
+        <span class="font-mono text-[11px] leading-none text-[var(--text-base)]">
           {String(props.index + 1).padStart(2, "0")}
         </span>
         <span class="text-[10px] font-semibold tracking-[0.09em] uppercase">
@@ -521,12 +519,12 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
       <Show
         when={screenshot()}
         fallback={
-          <div class="grid min-w-0 place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--journey-node-accent)_13%,transparent),transparent_42%),var(--relay-bg)] p-5 text-center">
-            <span class="grid size-[46px] place-items-center rounded-[14px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
+          <div class="grid min-w-0 place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--journey-node-accent)_13%,transparent),transparent_42%),var(--v2-background-bg-deep)] p-5 text-center">
+            <span class="grid size-[46px] place-items-center rounded-[14px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--v2-background-bg-layer-01))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
               <Icon name={iconForStep(props.step)} size={22} />
             </span>
             <div class="mt-4 min-w-0">
-              <strong class="line-clamp-3 block text-[14px]/[1.4] font-semibold tracking-[-0.012em] text-[var(--relay-text)]">
+              <strong class="line-clamp-3 block text-[14px]/[1.4] font-semibold tracking-[-0.012em] text-[var(--text-strong)]">
                 {sentenceForStep(props.step, server.recipes())}
               </strong>
             </div>
@@ -552,17 +550,17 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
           </div>
         )}
       </Show>
-      <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--relay-line)_72%,transparent)] px-3 text-[var(--relay-text-tertiary)]">
+      <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
         <span class="inline-flex items-center gap-1.5 text-[10px]">
           <i
             class={cn(
               "size-1.5 rounded-full",
-              annotation().status === "pass" && "bg-[var(--relay-green)]",
-              annotation().status === "fail" && "bg-[var(--relay-red)]",
+              annotation().status === "pass" && "bg-[var(--icon-success-base)]",
+              annotation().status === "fail" && "bg-[var(--icon-critical-base)]",
               annotation().status === "running" &&
-                "bg-[var(--relay-accent)] shadow-[0_0_8px_var(--relay-accent)]",
+                "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]",
               annotation().status === "idle" &&
-                (screenshot() ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]"),
+                (screenshot() ? "bg-[var(--icon-success-base)]" : "bg-[var(--icon-warning-base)]"),
             )}
           />
           {statusLabel()}

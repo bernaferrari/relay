@@ -18,7 +18,7 @@ export type EmptyStateProps = {
   onSecondary?: () => void;
   /** compact = list/panel; full = stage/gate; start = document left-aligned (default for panels) */
   size?: "sm" | "md" | "lg";
-  /** left-aligned document empty (run-panel pattern) vs centered */
+  /** Left-aligned document empty vs centered. */
   align?: "start" | "center";
   class?: string;
   children?: JSX.Element;

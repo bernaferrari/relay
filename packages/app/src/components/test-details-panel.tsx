@@ -75,10 +75,10 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
       <div class={shellStepsHead}>
         <div class="flex min-h-9 items-center justify-between gap-3">
           <div class="min-w-0">
-            <span class="block text-[10px] font-semibold tracking-[0.12em] text-[var(--relay-text-tertiary)] uppercase">
+            <span class="block text-[10px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
               Advanced editor
             </span>
-            <strong class="mt-0.5 block truncate text-[13px] font-semibold text-[var(--relay-text)]">
+            <strong class="mt-0.5 block truncate text-[13px] font-semibold text-[var(--text-strong)]">
               {draft.title() || "Untitled test"}
             </strong>
           </div>
@@ -124,7 +124,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
         <Show when={tab() === "inputs"}>
           <div class="grid content-start gap-4 p-4">
             <FlowParametersEditor />
-            <div class="flex items-center justify-between gap-3 border-t border-[var(--relay-line)] pt-3.5">
+            <div class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] pt-3.5">
               <div class="flex min-w-0 items-center gap-2.5">
                 <Icon
                   name="sparkle"
@@ -132,10 +132,10 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
                   class="shrink-0 text-[var(--text-interactive-base)]"
                 />
                 <span class="min-w-0">
-                  <strong class="block text-[11.5px] font-medium text-[var(--relay-text-secondary)]">
+                  <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
                     Values shared across tests
                   </strong>
-                  <small class="mt-0.5 block text-[10px] text-[var(--relay-text-tertiary)]">
+                  <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
                     Workspace variables use {"{{variable_name}}"}.
                   </small>
                 </span>
@@ -153,15 +153,15 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
 
         <Show when={tab() === "yaml"}>
           <div class="flex h-full min-h-0 flex-col overflow-hidden">
-            <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--relay-line)] px-3">
-              <span class="text-[11px] font-semibold tracking-[0.06em] text-[var(--relay-text-tertiary)] uppercase">
+            <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
+              <span class="text-[11px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
                 Source file
               </span>
               <div class="flex items-center gap-1">
                 <Show when={!yamlEditing()}>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] disabled:opacity-40"
+                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => void navigator.clipboard?.writeText(yamlSource() ?? "")}
                   >
@@ -169,7 +169,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
                   </button>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] disabled:opacity-40"
+                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -183,7 +183,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
                 <Show when={yamlEditing()}>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center rounded-md px-2 text-[11px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)]"
+                    class="inline-flex h-7 items-center rounded-md px-2 text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
                     disabled={yamlSaving()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -195,7 +195,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
                   </button>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center rounded-md px-2 text-[11px] font-semibold text-[var(--relay-text)] hover:bg-[var(--relay-surface-strong)] disabled:opacity-40"
+                    class="inline-flex h-7 items-center rounded-md px-2 text-[11px] font-semibold text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
                     disabled={yamlSaving()}
                     onClick={() => void saveYaml()}
                   >
@@ -207,7 +207,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
             <Show
               when={yamlSource()}
               fallback={
-                <div class="grid flex-1 place-items-center text-[12px] text-[var(--relay-text-tertiary)]">
+                <div class="grid flex-1 place-items-center text-[12px] text-[var(--text-weak)]">
                   Loading YAML…
                 </div>
               }
@@ -215,13 +215,13 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
               <Show
                 when={yamlEditing()}
                 fallback={
-                  <pre class="m-0 min-h-0 flex-1 overflow-auto bg-[var(--relay-bg)] p-3 font-mono text-[11px]/[1.5] text-[var(--relay-text-secondary)]">
+                  <pre class="m-0 min-h-0 flex-1 overflow-auto bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-base)]">
                     {yamlSource()}
                   </pre>
                 }
               >
                 <textarea
-                  class="min-h-0 flex-1 resize-none border-0 bg-[var(--relay-bg)] p-3 font-mono text-[11px]/[1.5] text-[var(--relay-text)] outline-none"
+                  class="min-h-0 flex-1 resize-none border-0 bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-strong)] outline-none"
                   aria-label="Test YAML"
                   spellcheck={false}
                   value={yamlDraft()}
@@ -235,10 +235,10 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
                 {(message) => (
                   <p
                     class={cn(
-                      "m-0 border-t border-[var(--relay-line)] px-3 py-2 text-[11px]",
+                      "m-0 border-t border-[var(--v2-border-border-muted)] px-3 py-2 text-[11px]",
                       message().tone === "success"
-                        ? "text-[var(--relay-green)]"
-                        : "text-[var(--relay-red)]",
+                        ? "text-[var(--icon-success-base)]"
+                        : "text-[var(--icon-critical-base)]",
                     )}
                     role="status"
                   >

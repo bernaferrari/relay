@@ -14,6 +14,7 @@ import { ExecutionInspector } from "./execution-inspector";
 import { ExecutionTimeline } from "./execution-timeline";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
+import { SelectableRow } from "./selectable-row";
 import { executionDuration, executionElapsedAt, executionMoments } from "../lib/execution-moments";
 
 export function SuitesWorkspace(props: {
@@ -105,12 +106,12 @@ export function SuitesWorkspace(props: {
 
   const statusTone = (status?: string) =>
     status === "ok" || status === "healed"
-      ? "bg-[var(--relay-green)]"
+      ? "bg-[var(--icon-success-base)]"
       : status === "error"
-        ? "bg-[var(--relay-red)]"
+        ? "bg-[var(--icon-critical-base)]"
         : status === "running" || status === "queued" || status === "paused"
           ? "bg-[var(--text-interactive-base)]"
-          : "bg-[var(--relay-text-tertiary)]";
+          : "bg-[var(--text-weak)]";
 
   const usedIn = (testId: string) =>
     server
@@ -128,11 +129,13 @@ export function SuitesWorkspace(props: {
           : "grid-cols-[224px_minmax(0,1fr)] max-[1160px]:grid-cols-[200px_minmax(0,1fr)]",
       )}
     >
-      <aside class="flex min-h-0 flex-col border-r border-[var(--relay-line)] bg-[var(--relay-panel)]">
-        <header class="flex min-h-14 items-center justify-between gap-2 border-b border-[var(--relay-line)] px-3">
+      <aside class="flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
+        <header class="flex min-h-14 items-center justify-between gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
           <div>
-            <strong class="block text-[13px] font-semibold text-[var(--relay-text)]">Suites</strong>
-            <small class="text-[10px] text-[var(--relay-text-tertiary)]">
+            <strong class="block text-[13px] font-semibold text-[var(--text-strong)]">
+              Suites
+            </strong>
+            <small class="text-[10px] text-[var(--text-weak)]">
               {server.suites().length} saved
             </small>
           </div>
@@ -149,45 +152,40 @@ export function SuitesWorkspace(props: {
           <For
             each={server.suites()}
             fallback={
-              <div class="grid min-h-48 place-items-center px-4 text-center">
-                <div>
-                  <strong class="text-[12px] text-[var(--relay-text)]">No suites yet</strong>
-                  <p class="mt-1 text-[11px]/[1.45] text-[var(--relay-text-tertiary)]">
-                    Your release checklists will appear here.
-                  </p>
-                </div>
-              </div>
+              <EmptyState
+                size="sm"
+                icon="check"
+                title="No suites yet"
+                description="Your release checklists will appear here."
+                class="min-h-48 justify-center"
+              />
             }
           >
             {(suite) => {
               const count = () =>
                 suite.sections.reduce((sum, section) => sum + section.entries.length, 0);
               return (
-                <button
-                  type="button"
-                  class={cn(
-                    "flex min-h-12 w-full items-center gap-2 rounded-lg px-2.5 text-left outline-none hover:bg-[var(--relay-surface-raised)] focus-visible:outline-1 focus-visible:outline-offset-1",
-                    selectedSuite()?.id === suite.id && "bg-[var(--relay-surface-strong)]",
-                  )}
-                  aria-current={selectedSuite()?.id === suite.id ? "page" : undefined}
+                <SelectableRow
+                  selected={selectedSuite()?.id === suite.id}
+                  class="flex min-h-12 items-center gap-2 px-2.5"
                   onClick={() => {
                     server.setSelectedSuiteId(suite.id);
                     setSelectedEntryId(null);
                     setHistoryOpen(false);
                   }}
                 >
-                  <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--relay-surface-strong)] text-[var(--relay-text-secondary)]">
+                  <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]">
                     <Icon name="check" size={14} />
                   </span>
                   <span class="min-w-0">
-                    <strong class="block truncate text-[12px] font-medium text-[var(--relay-text)]">
+                    <strong class="block truncate text-[12px] font-medium text-[var(--text-strong)]">
                       {suite.title}
                     </strong>
-                    <small class="text-[10px] text-[var(--relay-text-tertiary)]">
+                    <small class="text-[10px] text-[var(--text-weak)]">
                       {count()} {count() === 1 ? "test" : "tests"}
                     </small>
                   </span>
-                </button>
+                </SelectableRow>
               );
             }}
           </For>
@@ -245,7 +243,7 @@ export function SuitesWorkspace(props: {
 
       <Show when={selectedSuite()}>
         {(suite) => (
-          <aside class="relative flex min-h-0 flex-col border-l border-[var(--relay-line)] bg-[var(--relay-panel)]">
+          <aside class="relative flex min-h-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
             <Show
               when={
                 suiteExecutionJob() &&
@@ -255,16 +253,16 @@ export function SuitesWorkspace(props: {
               }
             >
               {(job) => (
-                <div class="absolute inset-0 z-10 bg-[var(--relay-panel)]">
+                <div class="absolute inset-0 z-10 bg-[var(--v2-background-bg-base)]">
                   <ExecutionInspector job={job()} onOpenReport={props.onOpenRun} />
                 </div>
               )}
             </Show>
-            <header class="border-b border-[var(--relay-line)] px-4 py-3.5">
+            <header class="border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
               <div class="flex items-center gap-2">
                 <input
                   aria-label="Suite name"
-                  class="min-w-0 flex-1 rounded-md bg-transparent text-[16px] font-semibold tracking-[-0.015em] text-[var(--relay-text)] outline-none focus:bg-[var(--relay-surface-raised)] focus:px-2"
+                  class="min-w-0 flex-1 rounded-md bg-transparent text-[16px] font-semibold tracking-[-0.015em] text-[var(--text-strong)] outline-none focus:bg-[var(--v2-background-bg-layer-01)] focus:px-2"
                   value={suite().title}
                   onChange={(event) =>
                     void save(suite(), suite().sections, event.currentTarget.value)
@@ -323,11 +321,9 @@ export function SuitesWorkspace(props: {
             </header>
 
             <Show when={historyOpen()}>
-              <div class="max-h-52 overflow-y-auto border-b border-[var(--relay-line)] bg-[var(--relay-bg)] p-2">
+              <div class="max-h-52 overflow-y-auto border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] p-2">
                 <div class="mb-1 flex min-h-8 items-center justify-between px-1.5">
-                  <strong class="text-[11px] text-[var(--relay-text-secondary)]">
-                    Version history
-                  </strong>
+                  <strong class="text-[11px] text-[var(--text-base)]">Version history</strong>
                   <button
                     type="button"
                     class={productIconButton}
@@ -340,7 +336,7 @@ export function SuitesWorkspace(props: {
                 <For
                   each={history() ?? []}
                   fallback={
-                    <p class="px-2 py-3 text-[11px] text-[var(--relay-text-tertiary)]">
+                    <p class="px-2 py-3 text-[11px] text-[var(--text-weak)]">
                       No earlier versions yet.
                     </p>
                   }
@@ -348,7 +344,7 @@ export function SuitesWorkspace(props: {
                   {(version) => (
                     <button
                       type="button"
-                      class="flex min-h-10 w-full items-center justify-between rounded-md px-2 text-left hover:bg-[var(--relay-surface-raised)]"
+                      class="flex min-h-10 w-full items-center justify-between rounded-md px-2 text-left hover:bg-[var(--v2-background-bg-layer-01)]"
                       onClick={() =>
                         void server
                           .restoreSuite(suite().id, version.updatedAt)
@@ -356,10 +352,10 @@ export function SuitesWorkspace(props: {
                       }
                     >
                       <span>
-                        <strong class="block text-[11px] font-medium text-[var(--relay-text)]">
+                        <strong class="block text-[11px] font-medium text-[var(--text-strong)]">
                           {new Date(version.updatedAt).toLocaleString()}
                         </strong>
-                        <small class="text-[10px] text-[var(--relay-text-tertiary)]">
+                        <small class="text-[10px] text-[var(--text-weak)]">
                           {version.sections.length} sections
                         </small>
                       </span>
@@ -377,7 +373,7 @@ export function SuitesWorkspace(props: {
                     <div class="flex min-h-9 items-center gap-2 px-1">
                       <input
                         aria-label={`Section ${sectionIndex() + 1} name`}
-                        class="min-w-0 flex-1 bg-transparent text-[10px] font-semibold tracking-[0.1em] text-[var(--relay-text-tertiary)] uppercase outline-none focus:text-[var(--relay-text)] max-[900px]:text-[16px]"
+                        class="min-w-0 flex-1 bg-transparent text-[10px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase outline-none focus:text-[var(--text-strong)] max-[900px]:text-[16px]"
                         value={section.title}
                         onChange={(event) =>
                           patchSection(suite(), section.id, {
@@ -386,7 +382,7 @@ export function SuitesWorkspace(props: {
                           })
                         }
                       />
-                      <span class="text-[10px] tabular-nums text-[var(--relay-text-tertiary)]">
+                      <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
                         {section.entries.length}
                       </span>
                       <button
@@ -413,7 +409,7 @@ export function SuitesWorkspace(props: {
                       <For
                         each={section.entries}
                         fallback={
-                          <p class="m-0 rounded-lg border border-dashed border-[var(--relay-line)] px-3 py-4 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+                          <p class="m-0 rounded-lg border border-dashed border-[var(--v2-border-border-muted)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
                             Add an existing test or record a new one.
                           </p>
                         }
@@ -425,9 +421,9 @@ export function SuitesWorkspace(props: {
                           return (
                             <div
                               class={cn(
-                                "group grid min-h-14 grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 outline-none hover:bg-[var(--relay-surface-raised)]",
+                                "group grid min-h-14 grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 outline-none hover:bg-[var(--v2-background-bg-layer-01)]",
                                 selectedEntryId() === entry.id &&
-                                  "bg-[var(--relay-surface-strong)]",
+                                  "bg-[var(--v2-background-bg-layer-02)]",
                               )}
                             >
                               <label
@@ -460,11 +456,11 @@ export function SuitesWorkspace(props: {
                                       statusTone(job()?.status),
                                     )}
                                   />
-                                  <strong class="truncate text-[12px] font-medium text-[var(--relay-text)]">
+                                  <strong class="truncate text-[12px] font-medium text-[var(--text-strong)]">
                                     {test()?.title ?? "Missing test"}
                                   </strong>
                                 </span>
-                                <small class="mt-1 block truncate text-[10px] text-[var(--relay-text-tertiary)]">
+                                <small class="mt-1 block truncate text-[10px] text-[var(--text-weak)]">
                                   {usedIn(entry.testId)}{" "}
                                   {usedIn(entry.testId) === 1 ? "suite" : "suites"} ·{" "}
                                   {entry.version === "latest" ? "Follows latest" : "Pinned"}
@@ -527,7 +523,7 @@ export function SuitesWorkspace(props: {
                     <div class="mt-2 flex items-center gap-1.5">
                       <select
                         aria-label={`Test to add to ${section.title}`}
-                        class="min-h-9 min-w-0 flex-1 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] px-2 text-[11px] text-[var(--relay-text)] outline-none focus:border-[var(--relay-line-strong)] max-[900px]:text-[16px]"
+                        class="min-h-9 min-w-0 flex-1 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-2 text-[11px] text-[var(--text-strong)] outline-none focus:border-[var(--v2-border-border-strong)] max-[900px]:text-[16px]"
                         value={addingTest()[section.id] ?? ""}
                         onChange={(event) =>
                           setAddingTest((items) => ({
@@ -567,7 +563,7 @@ export function SuitesWorkspace(props: {
                         aria-label={`Record a new test in ${section.title}`}
                         onClick={() => props.onRecordTest(suite().id, section.id)}
                       >
-                        <span class="size-2 rounded-full bg-[var(--relay-red)]" />
+                        <span class="size-2 rounded-full bg-[var(--icon-critical-base)]" />
                       </button>
                     </div>
                   </section>
@@ -592,7 +588,7 @@ export function SuitesWorkspace(props: {
             </div>
             <Show when={selectedTest()}>
               {(test) => (
-                <footer class="border-t border-[var(--relay-line)] p-3">
+                <footer class="border-t border-[var(--v2-border-border-muted)] p-3">
                   <button
                     type="button"
                     class={cn(productSecondary, "w-full")}

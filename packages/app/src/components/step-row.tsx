@@ -21,7 +21,7 @@ const valueCls = cn(fieldInput, "min-w-0 flex-1");
 const valueTimeoutCls = cn(fieldInput, "w-[52px] min-w-0 flex-none text-center tabular-nums");
 const editorPanel = cn(
   "flex w-full min-w-0 flex-col gap-2.5 overflow-hidden border-t border-border-weak-base",
-  "bg-[color-mix(in_srgb,var(--relay-bg)_64%,var(--relay-panel))] px-3.5 py-3 pl-3.5",
+  "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_64%,var(--v2-background-bg-base))] px-3.5 py-3 pl-3.5",
 );
 
 function isTargetKind(
@@ -220,14 +220,14 @@ export function StepRow(props: {
         "group/session relative w-full min-w-0 overflow-hidden rounded-[11px] transition-[background-color,box-shadow] duration-150",
         "hover:bg-white/[0.03] [&:has(:focus-visible)]:bg-white/[0.03]",
         selected() &&
-          "bg-[color-mix(in_srgb,var(--relay-accent)_8%,var(--relay-panel))] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_14%,var(--relay-line))] hover:bg-[color-mix(in_srgb,var(--relay-accent)_10%,var(--relay-panel))]",
+          "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_8%,var(--v2-background-bg-base))] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_14%,var(--v2-border-border-muted))] hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_10%,var(--v2-background-bg-base))]",
         !selected() &&
           props.expanded() &&
-          "bg-[var(--relay-panel)] shadow-[inset_0_0_0_1px_var(--relay-line)]",
+          "bg-[var(--v2-background-bg-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]",
         selected() &&
           props.expanded() &&
-          "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_22%,var(--relay-line))]",
-        props.flash() && "bg-[color-mix(in_srgb,var(--relay-accent)_9%,transparent)]",
+          "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_22%,var(--v2-border-border-muted))]",
+        props.flash() && "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_9%,transparent)]",
       )}
       data-selected={selected() ? "true" : undefined}
       data-expanded={props.expanded() ? "true" : undefined}
@@ -1076,21 +1076,21 @@ export function StepRow(props: {
                     </select>
                   </div>
                   <Show when={parameters().length > 0}>
-                    <div class="my-0.5 mb-1 grid gap-2 rounded-[9px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_60%,transparent)] p-2.5">
-                      <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-[var(--relay-text-secondary)]">
+                    <div class="my-0.5 mb-1 grid gap-2 rounded-[9px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_60%,transparent)] p-2.5">
+                      <div class="flex items-center justify-between gap-2 text-[11px] font-semibold text-[var(--text-base)]">
                         <span>Flow inputs</span>
-                        <small class="text-[10px] font-normal text-[var(--relay-text-tertiary)]">
+                        <small class="text-[10px] font-normal text-[var(--text-weak)]">
                           Used in this run
                         </small>
                       </div>
                       <For each={parameters()}>
                         {(parameter) => (
-                          <label class="grid gap-1 text-[10px] text-[var(--relay-text-secondary)]">
+                          <label class="grid gap-1 text-[10px] text-[var(--text-base)]">
                             <span class="flex items-center justify-between gap-2">
                               {parameter.label || parameter.name}
                               <Show when={parameter.required}>
                                 <b
-                                  class="text-[9px] font-semibold tracking-[0.03em] text-[var(--relay-amber)] uppercase"
+                                  class="text-[9px] font-semibold tracking-[0.03em] text-[var(--icon-warning-base)] uppercase"
                                   aria-label="Required"
                                 >
                                   Required
@@ -1106,7 +1106,7 @@ export function StepRow(props: {
                               }
                             />
                             <Show when={parameter.description}>
-                              <small class="text-[10px] font-normal leading-[1.35] text-[var(--relay-text-tertiary)]">
+                              <small class="text-[10px] font-normal leading-[1.35] text-[var(--text-weak)]">
                                 {parameter.description}
                               </small>
                             </Show>
@@ -1115,7 +1115,7 @@ export function StepRow(props: {
                       </For>
                     </div>
                   </Show>
-                  <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
+                  <p class="mt-1 text-[11px] leading-[1.45] text-[var(--text-weak)]">
                     Record any repeatable routine once—sign-in, onboarding, permissions, or a
                     recovery path—then attach it here. It stays editable and receives this run’s
                     frozen variables, such as {"{{login_email}}"}.
@@ -1254,7 +1254,7 @@ export function StepRow(props: {
                       onInput={(event) => onEdit({ ...s, source: event.currentTarget.value })}
                     />
                   </div>
-                  <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
+                  <p class="mt-1 text-[11px] leading-[1.45] text-[var(--text-weak)]">
                     Safe commands: set name = value, copy new = existing, delete name, assert name
                     contains value.
                   </p>
@@ -1407,7 +1407,7 @@ export function StepRow(props: {
                         onInput={(e) => onEdit({ ...s, artifact: e.currentTarget.value })}
                       />
                     </div>
-                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
+                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--text-weak)]">
                       Android only. Relay runs the selected local APK directly and freezes the
                       observed installed version into the report.
                     </p>
@@ -1461,7 +1461,7 @@ export function StepRow(props: {
                         </select>
                       </div>
                     </Show>
-                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
+                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--text-weak)]">
                       Relay records the installed version with the result. Credentials and app files
                       stay on your machine.
                     </p>
@@ -1500,7 +1500,7 @@ export function StepRow(props: {
                       targetPlatform === "ios" && (s.action === "lock" || s.action === "unlock")
                     }
                   >
-                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--relay-text-tertiary)]">
+                    <p class="mt-1 text-[11px] leading-[1.45] text-[var(--text-weak)]">
                       Lock-screen control is unavailable on this iOS runner. Relay will report a
                       capability failure instead of guessing.
                     </p>

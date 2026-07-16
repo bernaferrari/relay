@@ -13,19 +13,19 @@ export function DeviceEvidenceEmptyState(props: {
 }) {
   return (
     <section
-      class="relative z-[2] w-full max-w-[360px] overflow-hidden rounded-[18px] bg-[var(--relay-panel)] p-5 text-left shadow-[inset_0_0_0_1px_var(--relay-line-strong)]"
+      class="relative z-[2] w-full max-w-[360px] overflow-hidden rounded-[18px] bg-[var(--v2-background-bg-base)] p-5 text-left shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
       aria-label="Device evidence"
     >
       <div class="flex items-start gap-3.5">
-        <span class="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)]">
+        <span class="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
           <Icon name={props.ready ? "camera" : "smartphone"} size={17} />
         </span>
         <div class="min-w-0 flex-1">
           <span class={eyebrow}>Device evidence</span>
-          <h2 class="mt-1.5 text-[16px] font-semibold tracking-[-0.02em] text-[var(--relay-text)]">
+          <h2 class="mt-1.5 text-[16px] font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
             {props.ready ? "No capture yet" : "Device unavailable"}
           </h2>
-          <p class="mt-1.5 text-[11.5px]/[1.55] text-[var(--relay-text-secondary)]">
+          <p class="mt-1.5 text-[11.5px]/[1.55] text-[var(--text-base)]">
             {props.ready
               ? props.step
                 ? "Run or record this test to attach the real screen for this step."
@@ -37,23 +37,23 @@ export function DeviceEvidenceEmptyState(props: {
 
       <Show when={props.step}>
         {(step) => (
-          <div class="mt-4 flex min-w-0 items-center gap-2.5 rounded-[11px] bg-[var(--relay-surface-raised)] px-3 py-2.5 shadow-[inset_0_0_0_1px_var(--relay-line)]">
-            <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-accent)_12%,transparent)] font-mono text-[10px] tabular-nums text-[var(--text-interactive-base)]">
+          <div class="mt-4 flex min-w-0 items-center gap-2.5 rounded-[11px] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+            <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)] font-mono text-[10px] tabular-nums text-[var(--text-interactive-base)]">
               {String(step().index + 1).padStart(2, "0")}
             </span>
-            <strong class="min-w-0 truncate text-[11.5px] font-medium text-[var(--relay-text)]">
+            <strong class="min-w-0 truncate text-[11.5px] font-medium text-[var(--text-strong)]">
               {step().title}
             </strong>
           </div>
         )}
       </Show>
 
-      <footer class="mt-4 flex min-h-9 items-center justify-between gap-3 border-t border-[var(--relay-line)] pt-3">
-        <span class="inline-flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--relay-text-tertiary)]">
+      <footer class="mt-4 flex min-h-9 items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] pt-3">
+        <span class="inline-flex min-w-0 items-center gap-1.5 text-[10.5px] text-[var(--text-weak)]">
           <i
             class={cn(
               "size-1.5 shrink-0 rounded-full",
-              props.ready ? "bg-[var(--relay-green)]" : "bg-[var(--relay-amber)]",
+              props.ready ? "bg-[var(--icon-success-base)]" : "bg-[var(--icon-warning-base)]",
             )}
           />
           <span class="truncate">{props.deviceName ?? "No device selected"}</span>

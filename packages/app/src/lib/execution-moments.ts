@@ -22,6 +22,68 @@ export type ExecutionMoment = {
   observed: boolean;
 };
 
+export type ExecutionStateScope = "run" | "step";
+
+export function executionStateForJob(status: JobInfo["status"]): ExecutionMomentState {
+  if (status === "queued") return "queued";
+  if (status === "running") return "running";
+  if (status === "paused") return "paused";
+  if (status === "ok" || status === "healed") return "passed";
+  if (status === "cancelled") return "cancelled";
+  return "failed";
+}
+
+export function executionStateLabel(
+  state: ExecutionMomentState,
+  scope: ExecutionStateScope = "run",
+): string {
+  switch (state) {
+    case "queued":
+      return "Queued";
+    case "running":
+      return "Running";
+    case "paused":
+      return "Waiting for you";
+    case "passed":
+      return "Passed";
+    case "failed":
+      return scope === "step" ? "Failed here" : "Failed";
+    case "cancelled":
+      return "Stopped";
+    default:
+      return scope === "step" ? "Not reached" : "Ready to run";
+  }
+}
+
+export function executionStateDetail(state: ExecutionMomentState): string {
+  switch (state) {
+    case "queued":
+      return "Relay will start when the target is free.";
+    case "running":
+      return "Watch the device and steps move together.";
+    case "paused":
+      return "Complete the action on the device, then continue.";
+    case "passed":
+      return "Every required step completed.";
+    case "failed":
+      return "Relay stopped where the result changed.";
+    case "cancelled":
+      return "This run was stopped before it finished.";
+    default:
+      return "Choose a target, then run the test.";
+  }
+}
+
+export function executionStateForMoments(moments: ExecutionMoment[]): ExecutionMomentState {
+  if (moments.some((moment) => moment.state === "running")) return "running";
+  if (moments.some((moment) => moment.state === "paused")) return "paused";
+  if (moments.some((moment) => moment.state === "failed")) return "failed";
+  if (moments.some((moment) => moment.state === "cancelled")) return "cancelled";
+  if (moments.length > 0 && moments.every((moment) => moment.state === "passed")) return "passed";
+  if (moments.some((moment) => moment.state === "queued")) return "queued";
+  return "planned";
+}
+
 const ACTION_GLYPH: Partial<Record<RecipeStep["kind"], string>> = {
   tap: "tap",
   type: "type",
@@ -91,13 +153,14 @@ export function executionMoments(input: {
           ? sentenceForStep(step, input.recipes)
           : `Step ${String(index + 1).padStart(2, "0")}`),
       state: stateForTrace(input.job ?? undefined, trace),
-      actions: trace?.actions?.length
-        ? trace.actions.map((action) => action.kind)
-        : trace?.glyphs?.length
-          ? trace.glyphs
-          : fallbackAction
-            ? [fallbackAction]
-            : ["bolt"],
+      actions:
+        trace?.actions !== undefined
+          ? trace.actions.map((action) => action.kind)
+          : trace?.glyphs?.length
+            ? trace.glyphs
+            : fallbackAction
+              ? [fallbackAction]
+              : ["bolt"],
       durationMs: trace?.durationMs,
       startedAt: trace?.startedAt,
       finishedAt: trace?.finishedAt,

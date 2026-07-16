@@ -16,6 +16,7 @@ import { trapFocus } from "../lib/modal";
 import { cn } from "../lib/cn";
 import { mono, modalPanel, modalScrim, seg, segBtnOn, segBtn } from "../lib/ui";
 import { platformLabel } from "../lib/target-presentation";
+import { EmptyState } from "../components/empty-state";
 
 const rowCls =
   "flex items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-b-0";
@@ -873,7 +874,14 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                   <Show
                     when={server.targets().length > 0}
                     fallback={
-                      <p class="m-0 text-12-regular text-text-weak">No managed targets yet.</p>
+                      <EmptyState
+                        size="sm"
+                        align="start"
+                        icon="server"
+                        title="No browser targets yet"
+                        description="Add a site above to record and replay web tests."
+                        class="px-0"
+                      />
                     }
                   >
                     <For each={server.targets()}>

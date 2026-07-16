@@ -52,15 +52,15 @@ export function RecordingEvidencePanel(props: {
 
   return (
     <section
-      class="min-w-0 overflow-hidden rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_82%,var(--relay-panel))]"
+      class="min-w-0 overflow-hidden rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_82%,var(--v2-background-bg-base))]"
       aria-label="Recorded interaction evidence"
     >
-      <header class="flex min-h-[34px] items-center justify-between gap-2.5 border-b border-[var(--relay-line)] px-2.5">
-        <div class="flex min-w-0 items-center gap-1.5 text-[var(--relay-text-secondary)]">
+      <header class="flex min-h-[34px] items-center justify-between gap-2.5 border-b border-[var(--v2-border-border-muted)] px-2.5">
+        <div class="flex min-w-0 items-center gap-1.5 text-[var(--text-base)]">
           <Icon name="camera" size={13} />
           <strong class="text-[10px] font-semibold">Recorded evidence</strong>
         </div>
-        <span class="shrink-0 font-mono text-[9px] text-[var(--relay-text-tertiary)] tabular-nums">
+        <span class="shrink-0 font-mono text-[9px] text-[var(--text-weak)] tabular-nums">
           {new Date(props.evidence.recordedAt).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -70,7 +70,7 @@ export function RecordingEvidencePanel(props: {
       </header>
       <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2.5 p-2.5">
         <Show when={props.evidence.screenshot}>
-          <div class="relative aspect-[9/16] w-[76px] overflow-hidden rounded-lg bg-[var(--relay-surface-strong)] shadow-[inset_0_0_0_1px_var(--relay-line-strong)]">
+          <div class="relative aspect-[9/16] w-[76px] overflow-hidden rounded-lg bg-[var(--v2-background-bg-layer-02)] shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]">
             <img
               src={screenshotUrl()}
               alt="Screen after this recorded interaction"
@@ -78,7 +78,7 @@ export function RecordingEvidencePanel(props: {
             />
             <Show when={props.evidence.pointer && props.evidence.deviceBounds}>
               <span
-                class="absolute size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--relay-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--relay-accent)_28%,transparent)]"
+                class="absolute size-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]"
                 style={{
                   left: `${(props.evidence.pointer!.x / props.evidence.deviceBounds!.width) * 100}%`,
                   top: `${(props.evidence.pointer!.y / props.evidence.deviceBounds!.height) * 100}%`,
@@ -92,10 +92,10 @@ export function RecordingEvidencePanel(props: {
           <Show when={props.evidence.node}>
             {(node) => (
               <div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-[7px]">
-                <span class="text-[9px] text-[var(--relay-text-tertiary)] capitalize">
+                <span class="text-[9px] text-[var(--text-weak)] capitalize">
                   {node().role ?? node().type ?? "Element"}
                 </span>
-                <strong class="overflow-hidden text-[10px] font-semibold text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
+                <strong class="overflow-hidden text-[10px] font-semibold text-ellipsis whitespace-nowrap text-[var(--text-strong)]">
                   {node().label ?? node().value ?? node().identifier ?? "Unlabelled"}
                 </strong>
               </div>
@@ -115,21 +115,21 @@ export function RecordingEvidencePanel(props: {
                       type="button"
                       role="option"
                       class={cn(
-                        "grid min-h-[30px] min-w-0 grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md px-[7px] text-left shadow-[inset_0_0_0_1px_var(--relay-line)] hover:enabled:bg-surface-raised-base-hover",
+                        "grid min-h-[30px] min-w-0 grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md px-[7px] text-left shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] hover:enabled:bg-surface-raised-base-hover",
                         active() &&
-                          "bg-[var(--relay-accent-soft)] shadow-[inset_0_0_0_1px_var(--border-interactive-base)]",
+                          "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_var(--border-interactive-base)]",
                       )}
                       aria-selected={active()}
                       onClick={() => props.onApply?.(candidate)}
                       disabled={!props.onApply}
                     >
-                      <span class="text-[9px] text-[var(--relay-text-tertiary)] capitalize">
+                      <span class="text-[9px] text-[var(--text-weak)] capitalize">
                         {candidate.strategy}
                       </span>
-                      <strong class="overflow-hidden font-mono text-[9px] font-medium text-ellipsis whitespace-nowrap text-[var(--relay-text-secondary)]">
+                      <strong class="overflow-hidden font-mono text-[9px] font-medium text-ellipsis whitespace-nowrap text-[var(--text-base)]">
                         {candidateValue(candidate)}
                       </strong>
-                      <small class="text-[9px] text-[var(--relay-text-tertiary)] capitalize">
+                      <small class="text-[9px] text-[var(--text-weak)] capitalize">
                         {candidate.source}
                       </small>
                     </button>
@@ -139,7 +139,7 @@ export function RecordingEvidencePanel(props: {
             </div>
           </Show>
           <Show when={props.evidence.serial}>
-            <p class="m-0 overflow-hidden font-mono text-[8px] text-ellipsis whitespace-nowrap text-[var(--relay-text-tertiary)]">
+            <p class="m-0 overflow-hidden font-mono text-[8px] text-ellipsis whitespace-nowrap text-[var(--text-weak)]">
               Captured on {props.evidence.serial}
             </p>
           </Show>

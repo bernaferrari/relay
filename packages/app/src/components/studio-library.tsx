@@ -5,6 +5,7 @@ import { displayTitle, fmtAgo } from "../lib/job";
 import { Icon, type IconName } from "./icon";
 import { mono, popover, productIconButton, productIconButtonSolid } from "../lib/ui";
 import { shellLibrary, shellLibraryClosed } from "../lib/shell-layout";
+import { SelectableRow } from "./selectable-row";
 
 export function LibraryPanel(props: {
   open: boolean;
@@ -211,13 +212,9 @@ function RecipeRow(props: {
   onSelect: (id: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      class={cn(
-        "group grid min-h-[46px] w-full grid-cols-[26px_minmax(0,1fr)_14px] items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors duration-100 focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
-        props.selected ? "bg-surface-base-active" : "hover:bg-surface-base-hover",
-      )}
-      aria-current={props.selected ? "page" : undefined}
+    <SelectableRow
+      selected={props.selected}
+      class="grid min-h-[46px] grid-cols-[26px_minmax(0,1fr)_14px] items-center gap-2 px-2 py-1"
       title={displayTitle(props.recipe.title)}
       onClick={() => props.onSelect(props.recipe.id)}
     >
@@ -255,7 +252,7 @@ function RecipeRow(props: {
           props.selected && "opacity-100",
         )}
       />
-    </button>
+    </SelectableRow>
   );
 }
 

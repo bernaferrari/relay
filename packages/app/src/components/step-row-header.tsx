@@ -123,15 +123,15 @@ export function StepRowHeader(props: {
             class={cn(
               "grid size-[30px] place-items-center rounded-[9px] font-mono text-[12px] font-medium tabular-nums transition-[background-color,color,box-shadow] duration-150",
               props.selected()
-                ? "bg-[color-mix(in_srgb,var(--relay-accent)_16%,transparent)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--relay-accent)_30%,transparent)]"
-                : "text-[var(--relay-text-secondary)] ring-1 ring-inset ring-[var(--relay-line-strong)]",
+                ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_16%,transparent)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_30%,transparent)]"
+                : "text-[var(--text-base)] ring-1 ring-inset ring-[var(--v2-border-border-strong)]",
             )}
           >
             {props.index + 1}
           </span>
 
           <div class="min-w-0 overflow-hidden">
-            <div class="flex w-full min-w-0 items-center gap-2 overflow-hidden text-[12.5px]/none font-medium text-[var(--relay-text-tertiary)]">
+            <div class="flex w-full min-w-0 items-center gap-2 overflow-hidden text-[12.5px]/none font-medium text-[var(--text-weak)]">
               <Icon
                 name={kindIcon(kind())}
                 size={13}
@@ -139,14 +139,14 @@ export function StepRowHeader(props: {
                 class={cn("shrink-0", props.selected() && "text-[var(--text-interactive-base)]")}
                 aria-hidden={true}
               />
-              <span class={cn(props.selected() && "text-[var(--relay-text-secondary)]")}>
+              <span class={cn(props.selected() && "text-[var(--text-base)]")}>
                 {kindLabel(kind())}
               </span>
               <span class="ml-auto shrink-0 pl-2">
                 <StepAnno anno={props.anno} />
               </span>
             </div>
-            <span class="mt-1.5 block w-full min-w-0 truncate text-[14px]/[1.4] font-medium tracking-[-0.005em] text-[var(--relay-text)]">
+            <span class="mt-1.5 block w-full min-w-0 truncate text-[14px]/[1.4] font-medium tracking-[-0.005em] text-[var(--text-strong)]">
               {stepDetail(props.step(), server.recipes())}
             </span>
             <Show when={issue() && !props.expanded()}>

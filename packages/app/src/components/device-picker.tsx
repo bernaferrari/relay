@@ -106,11 +106,11 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
         ref={(element) => (trigger = element)}
         type="button"
         class={cn(
-          "inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--relay-text-secondary)] transition-colors",
-          "shadow-[inset_0_0_0_1px_var(--relay-line)]",
-          "hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]",
-          "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--relay-line-strong)]",
-          open() && "bg-[var(--relay-surface-strong)] text-[var(--relay-text)]",
+          "inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--text-base)] transition-colors",
+          "shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]",
+          "hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
+          "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]",
+          open() && "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
         )}
         aria-haspopup="dialog"
         aria-controls="target-picker-dialog"
@@ -120,7 +120,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
         <Icon
           name={device()?.platform === "browser" ? "server" : "smartphone"}
           size={13}
-          class={ready() ? "text-[var(--relay-text-secondary)]" : "text-[var(--relay-amber)]"}
+          class={ready() ? "text-[var(--text-base)]" : "text-[var(--icon-warning-base)]"}
         />
         <span class="max-w-[150px] truncate">
           {device()?.name ?? (online() ? "No target" : "Connection unavailable")}
@@ -129,7 +129,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
           name="chevron-down"
           size={13}
           class={cn(
-            "ml-px text-[var(--relay-text-tertiary)] transition-transform duration-150",
+            "ml-px text-[var(--text-weak)] transition-transform duration-150",
             open() && "rotate-180",
           )}
         />
@@ -138,7 +138,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
         <div
           ref={(element) => (dialog = element)}
           id="target-picker-dialog"
-          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[90] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-[11px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha text-[var(--relay-text)] shadow-[0_18px_50px_rgb(0_0_0/38%)]"
+          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[90] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-[11px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha text-[var(--text-strong)] shadow-[0_18px_50px_rgb(0_0_0/38%)]"
           role="dialog"
           aria-labelledby="target-picker-title"
           onKeyDown={(event) => {
@@ -164,13 +164,13 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
           <header class="flex shrink-0 items-center justify-between gap-2 px-3 pt-2.5 pb-2">
             <span
               id="target-picker-title"
-              class="text-[12px] font-semibold text-[var(--relay-text-secondary)]"
+              class="text-[12px] font-semibold text-[var(--text-base)]"
             >
               Devices
             </span>
             <button
               type="button"
-              class="grid size-7 shrink-0 place-items-center rounded-md text-[var(--relay-text-tertiary)] transition-colors hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
+              class="grid size-7 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
               disabled={refreshing()}
               aria-busy={refreshing()}
               aria-label="Refresh targets"
@@ -188,12 +188,12 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
             </button>
           </header>
           <Show when={server.devices().length > 0}>
-            <label class="mx-2.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[var(--relay-bg)] px-2.5 text-[var(--relay-text-tertiary)] shadow-[inset_0_0_0_1px_var(--relay-line)] focus-within:shadow-[inset_0_0_0_1px_var(--text-interactive-base)]">
+            <label class="mx-2.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[var(--v2-background-bg-deep)] px-2.5 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] focus-within:shadow-[inset_0_0_0_1px_var(--text-interactive-base)]">
               <Icon name="search" size={14} />
               <span class="sr-only">Filter targets</span>
               <input
                 ref={(element) => (searchInput = element)}
-                class="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[var(--relay-text)] outline-none placeholder:text-[var(--relay-text-tertiary)]"
+                class="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
                 type="search"
                 value={query()}
                 placeholder="Search devices"
@@ -206,20 +206,20 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
               when={server.devices().length > 0}
               fallback={
                 <div class="flex flex-col items-center px-4 pt-7 pb-6 text-center">
-                  <span class="grid size-11 place-items-center rounded-[9px] bg-[var(--relay-accent-soft)] text-[var(--text-interactive-base)]">
+                  <span class="grid size-11 place-items-center rounded-[9px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                     <Icon name="smartphone" size={20} />
                   </span>
-                  <strong class="mt-3 text-[13px] font-semibold text-[var(--relay-text)]">
+                  <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
                     No target available
                   </strong>
-                  <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--relay-text-tertiary)]">
+                  <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
                     Connect a device over USB or Wi-Fi, or add a managed browser.
                   </p>
                 </div>
               }
             >
               <Show when={readyGroups().length > 0}>
-                <div class="px-2.5 pt-1 pb-1 text-[10px] font-medium text-[var(--relay-text-tertiary)]">
+                <div class="px-2.5 pt-1 pb-1 text-[10px] font-medium text-[var(--text-weak)]">
                   Choose one
                 </div>
                 <For each={readyGroups()}>
@@ -238,7 +238,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
               <Show when={unavailableGroups().length > 0}>
                 <button
                   type="button"
-                  class="mt-1 flex min-h-8 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-[10px] font-medium text-[var(--relay-text-tertiary)] transition-colors hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text-secondary)]"
+                  class="mt-1 flex min-h-8 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-[10px] font-medium text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-base)]"
                   aria-expanded={unavailableExpanded()}
                   onClick={() => setShowUnavailable((value) => !value)}
                 >
@@ -268,17 +268,17 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                 </Show>
               </Show>
               <Show when={readyGroups().length === 0 && unavailableGroups().length === 0}>
-                <div class="px-4 py-6 text-center text-[12px] text-[var(--relay-text-tertiary)]">
+                <div class="px-4 py-6 text-center text-[12px] text-[var(--text-weak)]">
                   {query() ? `No targets match “${query()}”.` : "No available targets."}
                 </div>
               </Show>
             </Show>
           </div>
           <Show when={props.onManageTargets}>
-            <footer class="shrink-0 border-t border-[var(--relay-line)] p-1">
+            <footer class="shrink-0 border-t border-[var(--v2-border-border-muted)] p-1">
               <button
                 type="button"
-                class="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--relay-text-secondary)] transition-colors hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
+                class="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={() => {
                   closePicker();
                   props.onManageTargets!();
@@ -305,15 +305,15 @@ function TargetRow(props: { group: TargetGroup; selected: boolean; onPick: () =>
       aria-current={props.selected ? "true" : undefined}
       class={cn(
         "grid min-h-10 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors",
-        "hover:bg-[var(--relay-surface-strong)]",
-        "focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[var(--relay-line-strong)]",
-        props.selected && "bg-[var(--relay-surface-strong)]",
+        "hover:bg-[var(--v2-background-bg-layer-02)]",
+        "focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[var(--v2-border-border-strong)]",
+        props.selected && "bg-[var(--v2-background-bg-layer-02)]",
       )}
       onClick={props.onPick}
     >
       <span
         class={cn(
-          "grid size-[22px] place-items-center text-[var(--relay-text-tertiary)]",
+          "grid size-[22px] place-items-center text-[var(--text-weak)]",
           props.selected && "text-[var(--text-interactive-base)]",
         )}
         aria-hidden="true"
@@ -324,12 +324,12 @@ function TargetRow(props: { group: TargetGroup; selected: boolean; onPick: () =>
         <strong
           class={cn(
             "block truncate text-[12px]/[1.3] font-medium",
-            props.selected ? "text-[var(--relay-text)]" : "text-[var(--relay-text-secondary)]",
+            props.selected ? "text-[var(--text-strong)]" : "text-[var(--text-base)]",
           )}
         >
           {target().displayName}
         </strong>
-        <small class="mt-px block truncate text-[10px]/[1.3] text-[var(--relay-text-tertiary)]">
+        <small class="mt-px block truncate text-[10px]/[1.3] text-[var(--text-weak)]">
           {target().kindLabel}
           {props.group.count > 1 ? ` · ${props.group.count}` : ""}
           {available() ? "" : " · Off"}

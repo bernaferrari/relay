@@ -1,46 +1,32 @@
 import { For, Show, createEffect, createMemo } from "solid-js";
-import type { ExecutionMoment, ExecutionMomentState } from "../lib/execution-moments";
+import {
+  executionStateForMoments,
+  executionStateLabel,
+  type ExecutionMoment,
+  type ExecutionMomentState,
+} from "../lib/execution-moments";
 import { cn } from "../lib/cn";
 import { formatReviewTime } from "../lib/run-review-model";
 import { GLYPH_ICON, GLYPH_META, Icon } from "./icon";
 
 export type ExecutionTimelineMode = "plan" | "live" | "replay";
 
-function stateLabel(state: ExecutionMomentState): string {
-  switch (state) {
-    case "queued":
-      return "Queued";
-    case "running":
-      return "Running";
-    case "paused":
-      return "Waiting for you";
-    case "passed":
-      return "Passed";
-    case "failed":
-      return "Failed";
-    case "cancelled":
-      return "Cancelled";
-    default:
-      return "Planned";
-  }
-}
-
 function stateDot(state: ExecutionMomentState): string {
-  if (state === "failed" || state === "cancelled") return "bg-[var(--relay-red)]";
-  if (state === "passed") return "bg-[var(--relay-green)]";
-  if (state === "paused") return "bg-[var(--relay-orange)]";
-  if (state === "running") return "bg-[var(--relay-accent)]";
-  return "bg-[var(--relay-text-tertiary)]";
+  if (state === "failed" || state === "cancelled") return "bg-[var(--icon-critical-base)]";
+  if (state === "passed") return "bg-[var(--icon-success-base)]";
+  if (state === "paused") return "bg-[var(--icon-warning-base)]";
+  if (state === "running") return "bg-[var(--v2-background-bg-accent)]";
+  return "bg-[var(--text-weak)]";
 }
 
 function segmentSurface(state: ExecutionMomentState, selected: boolean): string {
   if (selected)
-    return "bg-[color-mix(in_srgb,var(--relay-accent)_16%,var(--relay-surface-raised))] ring-1 ring-inset ring-[color-mix(in_srgb,var(--relay-accent)_54%,transparent)]";
+    return "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_16%,var(--v2-background-bg-layer-01))] ring-1 ring-inset ring-[color-mix(in_srgb,var(--v2-background-bg-accent)_54%,transparent)]";
   if (state === "failed" || state === "cancelled")
-    return "bg-[color-mix(in_srgb,var(--relay-red)_10%,var(--relay-surface-raised))]";
+    return "bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,var(--v2-background-bg-layer-01))]";
   if (state === "running")
-    return "bg-[color-mix(in_srgb,var(--relay-accent)_10%,var(--relay-surface-raised))]";
-  return "bg-[var(--relay-surface-raised)]";
+    return "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_10%,var(--v2-background-bg-layer-01))]";
+  return "bg-[var(--v2-background-bg-layer-01)]";
 }
 
 export function ExecutionTimeline(props: {
@@ -61,14 +47,7 @@ export function ExecutionTimeline(props: {
     Math.max(0, Math.min(props.selectedIndex, Math.max(0, props.moments.length - 1))),
   );
   const selected = createMemo(() => props.moments[safeIndex()]);
-  const runState = createMemo(() => {
-    if (props.moments.some((moment) => moment.state === "running")) return "running";
-    if (props.moments.some((moment) => moment.state === "paused")) return "paused";
-    if (props.moments.some((moment) => moment.state === "failed")) return "failed";
-    if (props.moments.length > 0 && props.moments.every((moment) => moment.state === "passed"))
-      return "passed";
-    return "planned";
-  });
+  const runState = createMemo(() => executionStateForMoments(props.moments));
 
   createEffect(() => {
     safeIndex();
@@ -84,7 +63,7 @@ export function ExecutionTimeline(props: {
   return (
     <section
       class={cn(
-        "relative z-[3] shrink-0 border-t border-[var(--relay-line)] bg-[var(--relay-panel)] px-3 py-2.5",
+        "relative z-[3] shrink-0 border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-3 py-2.5",
         props.class,
       )}
       aria-label={props.mode === "replay" ? "Run timeline" : "Execution timeline"}
@@ -117,7 +96,7 @@ export function ExecutionTimeline(props: {
           <Show
             when={props.mode === "replay" && props.onTogglePlayback}
             fallback={
-              <span class="grid size-7 place-items-center rounded-lg bg-[var(--relay-surface-raised)]">
+              <span class="grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-01)]">
                 <i
                   class={cn(
                     "size-2 rounded-full",
@@ -130,7 +109,7 @@ export function ExecutionTimeline(props: {
           >
             <button
               type="button"
-              class="grid size-7 place-items-center rounded-lg bg-[var(--relay-surface-strong)] text-[var(--relay-text)] transition-transform duration-150 active:scale-[0.96]"
+              class="grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)] transition-transform duration-150 active:scale-[0.96]"
               aria-label={props.playing ? "Pause run playback" : "Play run playback"}
               aria-pressed={props.playing}
               onClick={() => props.onTogglePlayback?.()}
@@ -139,16 +118,16 @@ export function ExecutionTimeline(props: {
             </button>
           </Show>
           <div class="min-w-0">
-            <strong class="block truncate text-[11px] font-medium text-[var(--relay-text)]">
+            <strong class="block truncate text-[11px] font-medium text-[var(--text-strong)]">
               {props.mode === "plan"
                 ? "Ready to run"
                 : props.mode === "live"
-                  ? stateLabel(runState())
+                  ? executionStateLabel(runState())
                   : props.playing
                     ? "Playing"
                     : "Replay"}
             </strong>
-            <small class="block truncate font-mono text-[9.5px] tabular-nums text-[var(--relay-text-tertiary)]">
+            <small class="block truncate font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
               <Show
                 when={(props.totalDurationMs ?? 0) > 0}
                 fallback={`${props.moments.length} ${props.moments.length === 1 ? "step" : "steps"}`}
@@ -179,11 +158,11 @@ export function ExecutionTimeline(props: {
                   aria-selected={isSelected()}
                   aria-label={`Step ${moment.index + 1}: ${moment.title}. ${moment.actions
                     .map((action) => GLYPH_META[action]?.label ?? action)
-                    .join(", ")}. ${stateLabel(moment.state)}`}
+                    .join(", ")}. ${executionStateLabel(moment.state, "step")}`}
                   class={cn(
                     "group relative flex h-11 min-w-[88px] flex-1 items-center gap-2 rounded-lg px-2.5 text-left outline-none",
                     "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]",
-                    "focus-visible:ring-2 focus-visible:ring-[var(--relay-accent)] active:scale-[0.985]",
+                    "focus-visible:ring-2 focus-visible:ring-[var(--v2-background-bg-accent)] active:scale-[0.985]",
                     segmentSurface(moment.state, isSelected()),
                   )}
                   style={{
@@ -195,25 +174,25 @@ export function ExecutionTimeline(props: {
                   onClick={() => props.onSelect(moment.index)}
                 >
                   <span class="relative grid size-6 shrink-0 place-items-center">
-                    <span class="font-mono text-[10px] tabular-nums text-[var(--relay-text-secondary)]">
+                    <span class="font-mono text-[10px] tabular-nums text-[var(--text-base)]">
                       {moment.index + 1}
                     </span>
                     <i
                       class={cn(
-                        "absolute right-0 bottom-0 size-1.5 rounded-full ring-2 ring-[var(--relay-surface-raised)]",
+                        "absolute right-0 bottom-0 size-1.5 rounded-full ring-2 ring-[var(--v2-background-bg-layer-01)]",
                         stateDot(moment.state),
                       )}
                     />
                   </span>
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate text-[10.5px] font-medium text-[var(--relay-text)]">
+                    <span class="block truncate text-[10.5px] font-medium text-[var(--text-strong)]">
                       {moment.title}
                     </span>
                     <span class="mt-0.5 flex h-3 items-center gap-0.5" aria-hidden="true">
                       <For each={moment.actions}>
                         {(glyph) => (
                           <span
-                            class="grid size-3.5 place-items-center text-[var(--relay-text-tertiary)]"
+                            class="grid size-3.5 place-items-center text-[var(--text-weak)]"
                             data-tip={GLYPH_META[glyph]?.label ?? glyph}
                           >
                             <Show
@@ -236,19 +215,19 @@ export function ExecutionTimeline(props: {
         <div class="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            class="grid size-7 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-25"
+            class="grid size-7 place-items-center rounded-lg text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)] disabled:opacity-25"
             aria-label="Previous step"
             disabled={safeIndex() === 0}
             onClick={() => (props.onPrevious ? props.onPrevious() : move(-1))}
           >
             <Icon name="chevron-left" size={13} />
           </button>
-          <span class="min-w-9 text-center font-mono text-[9.5px] tabular-nums text-[var(--relay-text-tertiary)]">
+          <span class="min-w-9 text-center font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
             {props.moments.length ? safeIndex() + 1 : 0}/{props.moments.length}
           </span>
           <button
             type="button"
-            class="grid size-7 place-items-center rounded-lg text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)] disabled:opacity-25"
+            class="grid size-7 place-items-center rounded-lg text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)] disabled:opacity-25"
             aria-label="Next step"
             disabled={safeIndex() >= props.moments.length - 1}
             onClick={() => (props.onNext ? props.onNext() : move(1))}

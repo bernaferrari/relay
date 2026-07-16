@@ -44,7 +44,7 @@ export function MapsWorkspace(props: { onOpenRecipe: (id: string) => void }) {
 
   return (
     <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <header class="flex min-h-12 shrink-0 items-end border-b border-[var(--relay-line)] px-3">
+      <header class="flex min-h-12 shrink-0 items-end border-b border-[var(--v2-border-border-muted)] px-3">
         <div class="flex h-full items-end gap-1" role="tablist" aria-label="Atlas view">
           {(
             [

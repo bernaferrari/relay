@@ -232,6 +232,13 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
       return s && s.kind === "run" ? s.chip : null;
     };
 
+    /** Exact trace evidence for the selected human-readable step. */
+    const focusedTraceStep = () => {
+      const s = source();
+      const index = focusedIndex();
+      return s?.kind === "run" && index != null ? s.steps[index] : undefined;
+    };
+
     /** Row annotation for step index `i` — the one lookup every list uses. */
     function rowAnno(i: number): RowAnno {
       const s = source();
@@ -270,19 +277,24 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
      */
     function focusStep(i: number | null): void {
       setFocusedIndex(i);
-      if (i == null) return;
-      const n = server.frames().length;
-      if (n > 0) {
-        server.stopPlayback();
-        server.setFrameIndex(Math.min(i, n - 1));
-      }
+      if (i != null) server.stopPlayback();
     }
 
     /** Select a frame — lights the matching step without forcing the editor open. */
     function focusFrame(i: number): void {
-      setFocusedIndex(i);
       server.stopPlayback();
       server.setFrameIndex(i);
+      const frame = server.frames()[i];
+      const s = source();
+      if (!frame || s?.kind !== "run") return;
+      const matched = s.steps.findIndex((step) =>
+        step.frames.some(
+          (candidate) =>
+            candidate.capturedAt === frame.capturedAt ||
+            (candidate.path && frame.path && candidate.path === frame.path),
+        ),
+      );
+      if (matched >= 0) setFocusedIndex(matched);
     }
 
     return {
@@ -297,6 +309,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
       toggleChip,
       activeLiveJob,
       reviewedRun,
+      focusedTraceStep,
       rowAnno,
       focusedIndex,
       focusStep,

@@ -65,6 +65,8 @@ export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?:
     if (step) return { index: i, title: sentenceForStep(step, server.recipes()) };
     return { index: i, title: `Step ${i + 1}` };
   });
+  const frameDataUrl = (value: { mime: string; base64: string }) =>
+    `data:${value.mime};base64,${value.base64}`;
   const frame = () =>
     rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
   const recordedEvidenceSrc = createMemo(() => {
@@ -74,8 +76,40 @@ export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?:
     return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
   });
   const displayImageSrc = createMemo(() => {
-    const current = frame();
-    return current ? `data:${current.mime};base64,${current.base64}` : recordedEvidenceSrc();
+    if (rec.interacting()) {
+      const live = server.liveFrame() ?? server.currentFrame();
+      return live ? frameDataUrl(live) : "";
+    }
+
+    const traceFrame = wb.focusedTraceStep()?.frames.at(-1);
+    if (traceFrame) {
+      if (traceFrame.base64) {
+        return `data:${traceFrame.mime || "image/png"};base64,${traceFrame.base64}`;
+      }
+      const captured = server
+        .frames()
+        .find(
+          (candidate) =>
+            candidate.capturedAt === traceFrame.capturedAt ||
+            (candidate.path && candidate.path === traceFrame.path),
+        );
+      if (captured) return frameDataUrl(captured);
+      const reviewed = wb.reviewedRun();
+      if (reviewed?.kind === "disk") return server.frameUrlForPersisted(reviewed.run, traceFrame);
+    }
+
+    const recorded = recordedEvidenceSrc();
+    if (recorded) return recorded;
+    if (wb.focusedIndex() != null) return "";
+    const current = server.currentFrame();
+    return current ? frameDataUrl(current) : "";
+  });
+  const displayCaption = createMemo(() => {
+    if (rec.interacting()) return frame()?.caption ?? "Live device";
+    const traceCaption = wb.focusedTraceStep()?.frames.at(-1)?.caption;
+    if (traceCaption) return traceCaption;
+    if (recordedEvidenceSrc()) return focusedStep()?.title ?? "Recorded device evidence";
+    return wb.focusedIndex() == null ? (server.currentFrame()?.caption ?? "") : "";
   });
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   // transient tap feedback (positioned in % of the glass)
@@ -488,7 +522,7 @@ export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?:
                   "block h-full w-full select-none object-contain",
                   rec.interacting() && "cursor-crosshair",
                 )}
-                alt={frame()?.caption ?? "recorded device evidence"}
+                alt={displayCaption() || "Recorded device evidence"}
                 src={displayImageSrc()}
                 draggable={false}
                 onLoad={(e) => {
@@ -720,14 +754,14 @@ export function DeviceStage(props: { onExpandBoard?: () => void; onOpenTargets?:
           </div>
         </Show>
 
-        <Show when={frame()?.caption}>
+        <Show when={displayCaption()}>
           <div
             class={cn(
               mono,
               "z-[2] mt-2.5 max-w-[280px] truncate text-center text-12-regular text-text-weak",
             )}
           >
-            {frame()!.caption}
+            {displayCaption()}
           </div>
         </Show>
       </Show>

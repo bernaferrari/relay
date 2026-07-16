@@ -335,20 +335,20 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       )}
     >
       <aside
-        class="flex min-h-0 flex-col gap-2.5 overflow-hidden border-r border-[var(--relay-line)] bg-[var(--relay-panel)] p-4"
+        class="flex min-h-0 flex-col gap-2.5 overflow-hidden border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-4"
         aria-label="Discovery sessions"
       >
         <div>
           <span class={eyebrow}>Product map</span>
-          <h3 class="mt-1 text-[17px] font-semibold leading-[1.2] tracking-[-0.02em] text-[var(--relay-text)]">
+          <h3 class="mt-1 text-[17px] font-semibold leading-[1.2] tracking-[-0.02em] text-[var(--text-strong)]">
             Observed screens
           </h3>
-          <p class="mt-1.5 text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
+          <p class="mt-1.5 text-[12px]/[1.5] text-[var(--text-weak)]">
             Drive the app yourself or let Relay safely discover reachable screens and branches.
           </p>
         </div>
         <div
-          class="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-lg border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-bg)_72%,transparent)] px-2 py-2 text-[11px] text-[var(--relay-text-secondary)]"
+          class="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-[7px] rounded-lg border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_72%,transparent)] px-2 py-2 text-[11px] text-[var(--text-base)]"
           aria-live="polite"
         >
           <Icon
@@ -385,7 +385,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
           <For
             each={server.discoverySessions()}
             fallback={
-              <small class="px-1 py-2.5 text-[11px] text-[var(--relay-text-tertiary)]">
+              <small class="px-1 py-2.5 text-[11px] text-[var(--text-weak)]">
                 No saved maps yet.
               </small>
             }
@@ -406,16 +406,16 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   );
                 }}
               >
-                <strong class="truncate text-[12.5px]/[1.3] font-medium text-[var(--relay-text)]">
+                <strong class="truncate text-[12.5px]/[1.3] font-medium text-[var(--text-strong)]">
                   {session.name}
                 </strong>
-                <small class="inline-flex items-center gap-1.5 text-[10.5px] text-[var(--relay-text-tertiary)]">
+                <small class="inline-flex items-center gap-1.5 text-[10.5px] text-[var(--text-weak)]">
                   <i
                     class={cn(
                       "size-1.5 rounded-full",
                       session.status === "running"
-                        ? "bg-[var(--relay-green)]"
-                        : "bg-[var(--relay-line-strong)]",
+                        ? "bg-[var(--icon-success-base)]"
+                        : "bg-[var(--v2-border-border-strong)]",
                     )}
                   />
                   {session.status} · {session.screens.length} screens
@@ -428,7 +428,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
           <DiscoveryCoveragePanel coverage={coverage()} />
         </Show>
       </aside>
-      <main class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--relay-bg)]">
+      <main class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--v2-background-bg-deep)]">
         <Show
           when={active()}
           fallback={
@@ -445,15 +445,15 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
         >
           {(session) => (
             <>
-              <header class="relative flex shrink-0 items-center justify-between gap-4 border-b border-[var(--relay-line)] px-4 py-3">
+              <header class="relative flex shrink-0 items-center justify-between gap-4 border-b border-[var(--v2-border-border-muted)] px-4 py-3">
                 <div class="min-w-0">
-                  <span class="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.09em] text-[var(--relay-text-tertiary)] uppercase">
+                  <span class="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.09em] text-[var(--text-weak)] uppercase">
                     <i
                       class={cn(
                         "size-1.5 rounded-full",
                         session().status === "running"
-                          ? "bg-[var(--relay-green)]"
-                          : "bg-[var(--relay-line-strong)]",
+                          ? "bg-[var(--icon-success-base)]"
+                          : "bg-[var(--v2-border-border-strong)]",
                       )}
                     />
                     {session().status === "running"
@@ -466,27 +466,27 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   </span>
                   <input
                     aria-label="Map name"
-                    class="mt-0.5 w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[16px] font-semibold text-[var(--relay-text)] outline-none hover:border-[var(--relay-line)] focus:border-[var(--text-interactive-base)]"
+                    class="mt-0.5 w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[16px] font-semibold text-[var(--text-strong)] outline-none hover:border-[var(--v2-border-border-muted)] focus:border-[var(--text-interactive-base)]"
                     value={mapNameDraft()}
                     onInput={(event) => setMapNameDraft(event.currentTarget.value)}
                     onChange={() => void rename(session(), mapNameDraft())}
                   />
-                  <p class="m-0 px-1 font-mono text-[10px] text-[var(--relay-text-tertiary)]">
+                  <p class="m-0 px-1 font-mono text-[10px] text-[var(--text-weak)]">
                     {session().screens.length} screens · {session().transitions.length} paths
                   </p>
                 </div>
                 <div class="relative flex shrink-0 items-center gap-2">
                   <div
-                    class="inline-flex gap-0.5 rounded-lg border border-[var(--relay-line)] p-0.5"
+                    class="inline-flex gap-0.5 rounded-lg border border-[var(--v2-border-border-muted)] p-0.5"
                     role="group"
                     aria-label="Map view"
                   >
                     <button
                       type="button"
                       class={cn(
-                        "min-h-7 rounded-md px-2.5 text-[11.5px] font-medium text-[var(--relay-text-tertiary)] transition-colors hover:text-[var(--relay-text)]",
+                        "min-h-7 rounded-md px-2.5 text-[11.5px] font-medium text-[var(--text-weak)] transition-colors hover:text-[var(--text-strong)]",
                         projection() === "canvas" &&
-                          "bg-[var(--relay-surface-strong)] text-[var(--relay-text)]",
+                          "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
                       )}
                       aria-pressed={projection() === "canvas"}
                       onClick={() => setProjection("canvas")}
@@ -496,9 +496,9 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     <button
                       type="button"
                       class={cn(
-                        "min-h-7 rounded-md px-2.5 text-[11.5px] font-medium text-[var(--relay-text-tertiary)] transition-colors hover:text-[var(--relay-text)]",
+                        "min-h-7 rounded-md px-2.5 text-[11.5px] font-medium text-[var(--text-weak)] transition-colors hover:text-[var(--text-strong)]",
                         projection() === "list" &&
-                          "bg-[var(--relay-surface-strong)] text-[var(--relay-text)]",
+                          "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
                       )}
                       aria-pressed={projection() === "list"}
                       onClick={() => setProjection("list")}
@@ -525,7 +525,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   </button>
                   <Show when={actionsOpen()}>
                     <div
-                      class="absolute top-[calc(100%+7px)] right-0 z-20 grid w-[190px] gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-9 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-md [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--relay-text-secondary)] hover:[&_button]:bg-[var(--relay-surface-strong)] hover:[&_button]:text-[var(--relay-text)] [&_button:disabled]:opacity-40 [&_button.is-danger]:text-[var(--relay-red)]"
+                      class="absolute top-[calc(100%+7px)] right-0 z-20 grid w-[190px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-9 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-md [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--text-base)] hover:[&_button]:bg-[var(--v2-background-bg-layer-02)] hover:[&_button]:text-[var(--text-strong)] [&_button:disabled]:opacity-40 [&_button.is-danger]:text-[var(--icon-critical-base)]"
                       role="menu"
                     >
                       <button type="button" role="menuitem" onClick={() => void toggleCoverage()}>
@@ -591,16 +591,16 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       </main>
       <Show when={active() && selectedScreen()}>
         <aside
-          class="flex min-h-0 flex-col gap-3 overflow-y-auto border-l border-[var(--relay-line)] bg-[var(--relay-panel)] p-3.5"
+          class="flex min-h-0 flex-col gap-3 overflow-y-auto border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-3.5"
           aria-label="Selected screen details"
         >
           <header class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <span class={eyebrow}>Selected screen</span>
-              <strong class="mt-0.5 block truncate text-[15px] font-semibold text-[var(--relay-text)]">
+              <strong class="mt-0.5 block truncate text-[15px] font-semibold text-[var(--text-strong)]">
                 {selectedScreen()!.title ?? "Observed screen"}
               </strong>
-              <small class="text-[11px] text-[var(--relay-text-tertiary)]">
+              <small class="text-[11px] text-[var(--text-weak)]">
                 {selectedScreen()!.controls?.length ?? 0} available action
                 {(selectedScreen()!.controls?.length ?? 0) === 1 ? "" : "s"}
               </small>
@@ -614,11 +614,11 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
               <Icon name="x" size={13} />
             </button>
           </header>
-          <div class="shrink-0 overflow-hidden rounded-[12px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] [&_img]:block [&_img]:max-h-72 [&_img]:w-full [&_img]:object-contain">
+          <div class="shrink-0 overflow-hidden rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] [&_img]:block [&_img]:max-h-72 [&_img]:w-full [&_img]:object-contain">
             <Show
               when={selectedScreen()!.screenshotPath}
               fallback={
-                <span class="grid min-h-40 place-items-center text-[var(--relay-text-tertiary)]">
+                <span class="grid min-h-40 place-items-center text-[var(--text-weak)]">
                   <Icon name="smartphone" size={24} />
                 </span>
               }
@@ -657,12 +657,12 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
               {(next) => (
                 <button
                   type="button"
-                  class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border border-[color-mix(in_srgb,var(--relay-accent)_45%,var(--relay-line))] bg-[var(--relay-accent-soft)] px-3 py-2.5 text-left transition-colors hover:border-[var(--relay-accent)] disabled:opacity-45"
+                  class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border border-[color-mix(in_srgb,var(--v2-background-bg-accent)_45%,var(--v2-border-border-muted))] bg-[var(--product-accent-soft)] px-3 py-2.5 text-left transition-colors hover:border-[var(--v2-background-bg-accent)] disabled:opacity-45"
                   disabled={active()!.status !== "running"}
                   onClick={() => void explore(next().control)}
                 >
                   <span class="min-w-0">
-                    <strong class="block truncate text-[12.5px] font-semibold text-[var(--relay-text)]">
+                    <strong class="block truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
                       {next().control.label}
                     </strong>
                     <small class="text-[10.5px] text-[var(--text-interactive-base)]">
@@ -677,24 +677,22 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
               {(control) => (
                 <button
                   type="button"
-                  class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 py-2.5 text-left transition-colors hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-strong)] disabled:opacity-45"
+                  class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-left transition-colors hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-45"
                   disabled={active()!.status !== "running"}
                   onClick={() => void explore(control)}
                 >
                   <span class="min-w-0">
-                    <strong class="block truncate text-[12.5px] font-medium text-[var(--relay-text)]">
+                    <strong class="block truncate text-[12.5px] font-medium text-[var(--text-strong)]">
                       {control.label}
                     </strong>
-                    <small class="text-[10.5px] text-[var(--relay-text-tertiary)]">
-                      Open this branch
-                    </small>
+                    <small class="text-[10.5px] text-[var(--text-weak)]">Open this branch</small>
                   </span>
-                  <Icon name="chevron-right" size={14} class="text-[var(--relay-text-tertiary)]" />
+                  <Icon name="chevron-right" size={14} class="text-[var(--text-weak)]" />
                 </button>
               )}
             </For>
             <Show when={remainingControls().length === 0 && !suggestion()}>
-              <small class="text-[11px] text-[var(--relay-text-tertiary)]">
+              <small class="text-[11px] text-[var(--text-weak)]">
                 Every safe action here is already mapped.
               </small>
             </Show>
@@ -718,12 +716,12 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                 aria-modal="true"
                 aria-labelledby="discovery-review-title"
               >
-                <header class="flex items-start justify-between gap-3 border-b border-[var(--relay-line)] px-4 py-3.5">
+                <header class="flex items-start justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
                   <div>
                     <span class={eyebrow}>Create editable test</span>
                     <h3
                       id="discovery-review-title"
-                      class="mt-1 text-[16px] font-semibold text-[var(--relay-text)]"
+                      class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
                     >
                       Review this path
                     </h3>
@@ -737,10 +735,10 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     <Icon name="x" size={14} />
                   </button>
                 </header>
-                <label class="grid gap-1.5 px-4 pt-3.5 text-[11px] text-[var(--relay-text-tertiary)]">
+                <label class="grid gap-1.5 px-4 pt-3.5 text-[11px] text-[var(--text-weak)]">
                   <span>Test name</span>
                   <input
-                    class="h-9 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 text-[13px] text-[var(--relay-text)] outline-none focus:border-[var(--text-interactive-base)]"
+                    class="h-9 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[13px] text-[var(--text-strong)] outline-none focus:border-[var(--text-interactive-base)]"
                     value={promotionTitle()}
                     autofocus
                     onInput={(event) => setPromotionTitle(event.currentTarget.value)}
@@ -750,16 +748,16 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   <For each={transitions()}>
                     {(transition, index) => (
                       <li class="grid grid-cols-[28px_minmax(0,1fr)] items-start gap-2">
-                        <span class="grid size-7 place-items-center rounded-md bg-[var(--relay-surface-strong)] font-mono text-[10px] text-[var(--relay-text-secondary)]">
+                        <span class="grid size-7 place-items-center rounded-md bg-[var(--v2-background-bg-layer-02)] font-mono text-[10px] text-[var(--text-base)]">
                           {index() + 1}
                         </span>
                         <div class="grid min-w-0 gap-1">
-                          <small class="text-[10px] text-[var(--relay-text-tertiary)]">
+                          <small class="text-[10px] text-[var(--text-weak)]">
                             {screenTitle(transition.fromScreenId)} →{" "}
                             {screenTitle(transition.toScreenId)}
                           </small>
                           <input
-                            class="h-8 rounded-md border border-[var(--relay-line)] bg-[var(--relay-panel)] px-2 text-[12px] text-[var(--relay-text)] outline-none"
+                            class="h-8 rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-2 text-[12px] text-[var(--text-strong)] outline-none"
                             aria-label={`Action ${index() + 1} label`}
                             value={promotionLabels()[transition.id] ?? ""}
                             onInput={(event) =>
@@ -774,8 +772,8 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     )}
                   </For>
                 </ol>
-                <footer class="flex items-center justify-between gap-3 border-t border-[var(--relay-line)] px-4 py-3">
-                  <p class="m-0 text-[11px]/[1.45] text-[var(--relay-text-tertiary)]">
+                <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3">
+                  <p class="m-0 text-[11px]/[1.45] text-[var(--text-weak)]">
                     Names change the editable test only. Captured evidence stays untouched.
                   </p>
                   <div class="flex shrink-0 gap-2">
@@ -820,11 +818,11 @@ function DiscoveryPathList(props: {
       <header class="flex items-baseline justify-between gap-3 px-1 pb-1">
         <div>
           <span class={eyebrow}>Accessible map</span>
-          <strong class="mt-0.5 block text-[15px] font-semibold text-[var(--relay-text)]">
+          <strong class="mt-0.5 block text-[15px] font-semibold text-[var(--text-strong)]">
             Observed paths
           </strong>
         </div>
-        <small class="text-[11px] text-[var(--relay-text-tertiary)]">
+        <small class="text-[11px] text-[var(--text-weak)]">
           Ordered from the first captured screen
         </small>
       </header>
@@ -832,7 +830,7 @@ function DiscoveryPathList(props: {
         <For
           each={rows()}
           fallback={
-            <li class="grid place-items-center py-10 text-[12px] text-[var(--relay-text-tertiary)]">
+            <li class="grid place-items-center py-10 text-[12px] text-[var(--text-weak)]">
               Capture a screen to begin.
             </li>
           }
@@ -842,10 +840,10 @@ function DiscoveryPathList(props: {
               <button
                 type="button"
                 class={cn(
-                  "grid w-full grid-cols-[28px_auto_minmax(0,1fr)_16px] items-center gap-3 rounded-[12px] border bg-[var(--relay-panel)] p-2.5 text-left transition-colors",
+                  "grid w-full grid-cols-[28px_auto_minmax(0,1fr)_16px] items-center gap-3 rounded-[12px] border bg-[var(--v2-background-bg-base)] p-2.5 text-left transition-colors",
                   row.screen.id === props.selectedScreenId
-                    ? "border-[var(--relay-accent)] bg-[var(--relay-accent-soft)]"
-                    : "border-[var(--relay-line)] hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)]",
+                    ? "border-[var(--v2-background-bg-accent)] bg-[var(--product-accent-soft)]"
+                    : "border-[var(--v2-border-border-muted)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-01)]",
                   !row.reachable && "opacity-70",
                 )}
                 aria-current={row.screen.id === props.selectedScreenId ? "true" : undefined}
@@ -854,10 +852,10 @@ function DiscoveryPathList(props: {
                 }`}
                 onClick={() => props.onSelectScreen(row.screen.id)}
               >
-                <span class="grid size-7 place-items-center rounded-lg bg-[var(--relay-surface-strong)] font-mono text-[10px] text-[var(--relay-text-secondary)]">
+                <span class="grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] font-mono text-[10px] text-[var(--text-base)]">
                   {String(index() + 1).padStart(2, "0")}
                 </span>
-                <span class="grid aspect-[9/16] w-14 place-items-center overflow-hidden rounded-lg bg-[var(--relay-surface-strong)] text-[var(--relay-text-tertiary)] [&_img]:size-full [&_img]:object-cover">
+                <span class="grid aspect-[9/16] w-14 place-items-center overflow-hidden rounded-lg bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)] [&_img]:size-full [&_img]:object-cover">
                   <Show
                     when={row.screen.screenshotPath}
                     fallback={<Icon name="smartphone" size={18} />}
@@ -873,16 +871,16 @@ function DiscoveryPathList(props: {
                         ? "Starting screen"
                         : "Unlinked capture"}
                   </small>
-                  <strong class="truncate text-[13px] font-semibold text-[var(--relay-text)]">
+                  <strong class="truncate text-[13px] font-semibold text-[var(--text-strong)]">
                     {row.screen.title ?? "Observed screen"}
                   </strong>
-                  <span class="text-[11px] text-[var(--relay-text-tertiary)]">
+                  <span class="text-[11px] text-[var(--text-weak)]">
                     {row.depth > 0 ? `${row.depth} ${row.depth === 1 ? "step" : "steps"}` : "Start"}
                     {" · "}
                     {row.screen.controls?.length ?? 0} available actions
                   </span>
                 </span>
-                <Icon name="chevron-right" size={14} class="text-[var(--relay-text-tertiary)]" />
+                <Icon name="chevron-right" size={14} class="text-[var(--text-weak)]" />
               </button>
             </li>
           )}
@@ -1049,8 +1047,8 @@ function DiscoveryCanvas(props: {
       class="relative min-h-0 flex-1 overflow-hidden"
       aria-label="Observed screen map"
       style={{
-        "--relay-discovery-node-width": `${DISCOVERY_NODE_DIMENSIONS.width}px`,
-        "--relay-discovery-node-height": `${DISCOVERY_NODE_DIMENSIONS.height}px`,
+        "--discovery-node-width": `${DISCOVERY_NODE_DIMENSIONS.width}px`,
+        "--discovery-node-height": `${DISCOVERY_NODE_DIMENSIONS.height}px`,
       }}
       onWheel={(event) => {
         event.preventDefault();
@@ -1082,14 +1080,14 @@ function DiscoveryCanvas(props: {
       }}
     >
       <div
-        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,color-mix(in_srgb,var(--relay-line-strong)_46%,transparent)_1px,transparent_1px)] [background-size:20px_20px]"
+        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,color-mix(in_srgb,var(--v2-border-border-strong)_46%,transparent)_1px,transparent_1px)] [background-size:20px_20px]"
         aria-hidden="true"
       />
-      <div class="absolute top-3 right-3 z-[5] flex items-center gap-0.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur [&>button]:grid [&>button]:min-w-7 [&>button]:place-items-center [&>button]:rounded-md [&>button]:px-1.5 [&>button]:py-1 [&>button]:text-[12px] [&>button]:text-[var(--relay-text-secondary)] hover:[&>button]:bg-[var(--relay-surface-strong)] hover:[&>button]:text-[var(--relay-text)]">
+      <div class="absolute top-3 right-3 z-[5] flex items-center gap-0.5 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur [&>button]:grid [&>button]:min-w-7 [&>button]:place-items-center [&>button]:rounded-md [&>button]:px-1.5 [&>button]:py-1 [&>button]:text-[12px] [&>button]:text-[var(--text-base)] hover:[&>button]:bg-[var(--v2-background-bg-layer-02)] hover:[&>button]:text-[var(--text-strong)]">
         <button type="button" aria-label="Zoom out" onClick={() => zoom(-0.1)}>
           −
         </button>
-        <span class="px-1 font-mono text-[10.5px] tabular-nums text-[var(--relay-text-tertiary)]">
+        <span class="px-1 font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]">
           {Math.round(props.view.scale * 100)}%
         </span>
         <button type="button" aria-label="Zoom in" onClick={() => zoom(0.1)}>
@@ -1102,7 +1100,7 @@ function DiscoveryCanvas(props: {
       <Show
         when={props.session.screens.length > 0}
         fallback={
-          <div class="absolute inset-0 grid place-items-center p-8 text-center text-[12.5px] text-[var(--relay-text-tertiary)]">
+          <div class="absolute inset-0 grid place-items-center p-8 text-center text-[12.5px] text-[var(--text-weak)]">
             Capture a screen to begin the evidence map.
           </div>
         }
@@ -1118,7 +1116,7 @@ function DiscoveryCanvas(props: {
           <svg
             aria-hidden="true"
             viewBox={`0 0 ${extent().width} ${extent().height}`}
-            class="absolute inset-0 size-full overflow-visible [&_marker_path]:fill-[var(--relay-accent)] [&_path]:fill-none [&_path]:stroke-[color-mix(in_srgb,var(--relay-accent)_62%,var(--relay-line-strong))] [&_path]:stroke-[1.5] [&_path]:[stroke-dasharray:5_5] [&_g_rect]:fill-[color-mix(in_srgb,var(--relay-panel)_94%,transparent)] [&_g_rect]:stroke-[var(--relay-line)] [&_g_text]:fill-[var(--relay-text-secondary)] [&_g_text]:font-mono [&_g_text]:text-[9.5px] [&_g_text]:[text-anchor:middle]"
+            class="absolute inset-0 size-full overflow-visible [&_marker_path]:fill-[var(--v2-background-bg-accent)] [&_path]:fill-none [&_path]:stroke-[color-mix(in_srgb,var(--v2-background-bg-accent)_62%,var(--v2-border-border-strong))] [&_path]:stroke-[1.5] [&_path]:[stroke-dasharray:5_5] [&_g_rect]:fill-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] [&_g_rect]:stroke-[var(--v2-border-border-muted)] [&_g_text]:fill-[var(--text-base)] [&_g_text]:font-mono [&_g_text]:text-[9.5px] [&_g_text]:[text-anchor:middle]"
           >
             <defs>
               <marker
@@ -1187,10 +1185,10 @@ function DiscoveryCanvas(props: {
                 <button
                   type="button"
                   class={cn(
-                    "absolute grid w-[var(--relay-discovery-node-width)] grid-rows-[minmax(0,1fr)_auto_auto] gap-1.5 rounded-[16px] border bg-[var(--relay-panel)] p-2 text-left transition-[border-color,box-shadow] duration-150",
+                    "absolute grid w-[var(--discovery-node-width)] grid-rows-[minmax(0,1fr)_auto_auto] gap-1.5 rounded-[16px] border bg-[var(--v2-background-bg-base)] p-2 text-left transition-[border-color,box-shadow] duration-150",
                     props.selectedScreenId === screen.id
-                      ? "border-[var(--relay-accent)] shadow-[0_18px_44px_rgb(0_0_0/30%)]"
-                      : "border-[var(--relay-line-strong)] shadow-[0_12px_32px_rgb(0_0_0/22%)] hover:border-[color-mix(in_srgb,var(--relay-accent)_45%,var(--relay-line-strong))]",
+                      ? "border-[var(--v2-background-bg-accent)] shadow-[0_18px_44px_rgb(0_0_0/30%)]"
+                      : "border-[var(--v2-border-border-strong)] shadow-[0_12px_32px_rgb(0_0_0/22%)] hover:border-[color-mix(in_srgb,var(--v2-background-bg-accent)_45%,var(--v2-border-border-strong))]",
                     !position().reachable && "opacity-70 [&_img]:grayscale",
                   )}
                   aria-pressed={props.selectedScreenId === screen.id}
@@ -1199,7 +1197,7 @@ function DiscoveryCanvas(props: {
                   }, ${screen.controls?.length ?? 0} safe controls`}
                   style={{
                     transform: `translate3d(${position().x}px, ${position().y}px, 0)`,
-                    height: `var(--relay-discovery-node-height)`,
+                    height: `var(--discovery-node-height)`,
                   }}
                   onClick={() => props.onSelectScreen(screen.id)}
                 >
@@ -1207,17 +1205,17 @@ function DiscoveryCanvas(props: {
                     class={cn(
                       "absolute -top-2 -right-2 z-[1] grid size-6 place-items-center rounded-[8px] font-mono text-[10px] font-semibold",
                       props.selectedScreenId === screen.id
-                        ? "bg-[var(--relay-accent)] text-white"
-                        : "bg-[var(--relay-surface-strong)] text-[var(--relay-text-secondary)] ring-1 ring-[var(--relay-line-strong)]",
+                        ? "bg-[var(--v2-background-bg-accent)] text-white"
+                        : "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)] ring-1 ring-[var(--v2-border-border-strong)]",
                     )}
                   >
                     {String(index() + 1).padStart(2, "0")}
                   </span>
-                  <div class="min-h-0 flex-1 overflow-hidden rounded-[10px] bg-[var(--relay-surface-raised)] [&_img]:size-full [&_img]:object-cover [&_img]:object-top">
+                  <div class="min-h-0 flex-1 overflow-hidden rounded-[10px] bg-[var(--v2-background-bg-layer-01)] [&_img]:size-full [&_img]:object-cover [&_img]:object-top">
                     <Show
                       when={screen.screenshotPath}
                       fallback={
-                        <span class="grid h-full place-items-center text-[var(--relay-text-tertiary)]">
+                        <span class="grid h-full place-items-center text-[var(--text-weak)]">
                           <Icon name="smartphone" size={24} />
                         </span>
                       }
@@ -1228,10 +1226,10 @@ function DiscoveryCanvas(props: {
                       />
                     </Show>
                   </div>
-                  <strong class="truncate px-0.5 text-[11.5px] font-semibold text-[var(--relay-text)]">
+                  <strong class="truncate px-0.5 text-[11.5px] font-semibold text-[var(--text-strong)]">
                     {screen.title ?? "Observed screen"}
                   </strong>
-                  <small class="truncate px-0.5 pb-0.5 text-[9.5px] text-[var(--relay-text-tertiary)]">
+                  <small class="truncate px-0.5 pb-0.5 text-[9.5px] text-[var(--text-weak)]">
                     {screen.controls?.length ?? 0} available actions ·{" "}
                     {new Date(screen.capturedAt).toLocaleTimeString()}
                   </small>

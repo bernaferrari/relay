@@ -1,6 +1,8 @@
 import { type JSX } from "solid-js";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
+import { executionStateForJob, executionStateLabel } from "../lib/execution-moments";
+import type { JobInfo } from "../context/server";
 
 export type StatusChipTone = "pass" | "attention" | "fail" | "run" | "idle";
 
@@ -47,12 +49,17 @@ export function StatusChip(props: {
 }
 
 /** Maps a job's raw status to the chip vocabulary used across the Runs area. */
-export function jobStatusChip(status: string): { tone: StatusChipTone; label: string } {
-  if (status === "ok" || status === "healed") return { tone: "pass", label: "Passed" };
-  if (status === "error") return { tone: "fail", label: "Failed" };
-  if (status === "cancelled") return { tone: "fail", label: "Stopped" };
-  if (status === "paused") return { tone: "attention", label: "Needs attention" };
-  if (status === "running") return { tone: "run", label: "Running" };
-  if (status === "queued") return { tone: "run", label: "Queued" };
-  return { tone: "idle", label: status };
+export function jobStatusChip(status: JobInfo["status"]): { tone: StatusChipTone; label: string } {
+  const state = executionStateForJob(status);
+  const tone: StatusChipTone =
+    state === "passed"
+      ? "pass"
+      : state === "failed" || state === "cancelled"
+        ? "fail"
+        : state === "paused"
+          ? "attention"
+          : state === "running" || state === "queued"
+            ? "run"
+            : "idle";
+  return { tone, label: executionStateLabel(state) };
 }

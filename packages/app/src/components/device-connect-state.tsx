@@ -32,10 +32,10 @@ export function DeviceConnectState(props: {
         <Icon name="smartphone" size={18} />
       </span>
       <div>
-        <p class="m-0 text-[13px] font-medium text-[var(--relay-text)]">
+        <p class="m-0 text-[13px] font-medium text-[var(--text-strong)]">
           {props.offline ? "Connection unavailable" : "No device connected"}
         </p>
-        <p class="mt-1 text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
+        <p class="mt-1 text-[12px]/[1.5] text-[var(--text-weak)]">
           Plug in over USB or join over Wi‑Fi to record and inspect on the real app.
         </p>
       </div>

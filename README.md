@@ -186,7 +186,7 @@ curl -s localhost:8787/report/junit
 - **Server offline** — full overlay with `pnpm dev:serve` + Retry
 - **No devices** — empty states + adb hint
 - **Job fail** — heal callout + Retry / heal
-- **Frames** — scrubber only when captures exist
+- **Execution timeline** — one planned/live/replay timeline; screenshots attach to the exact step
 - **Themes** — OpenCode resolve + v2 (Settings / top bar Theme)
 - **Desktop updates** — packaged macOS/Windows builds check at launch and every four hours; a
   downloaded signed release shows its changelog with **Restart & update** or **Skip this version**

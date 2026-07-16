@@ -340,7 +340,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               </strong>
               <Show when={area() === "tests" && selected()}>
                 <Icon name="chevron-right" size={13} />
-                <span class="max-w-[min(32vw,360px)] truncate text-[var(--relay-text-secondary)]">
+                <span class="max-w-[min(32vw,360px)] truncate text-[var(--text-base)]">
                   {displayTitle(selected()!.title)}
                 </span>
               </Show>
@@ -393,7 +393,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <span
                   class={cn(
                     shellRecordDot,
-                    recorder.recording() ? "bg-current" : "bg-[var(--relay-red)]",
+                    recorder.recording() ? "bg-current" : "bg-[var(--icon-critical-base)]",
                   )}
                   aria-hidden="true"
                 />
@@ -461,13 +461,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     </button>
                     <Show when={studioActionsOpen()}>
                       <div
-                        class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+                        class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
                         role="menu"
                       >
                         <button
                           type="button"
                           role="menuitem"
-                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
+                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
                             setStudioView("workbench");
@@ -476,11 +476,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         >
                           <Icon name="sliders" size={14} /> Advanced editor
                         </button>
-                        <div class="my-0.5 h-px bg-[var(--relay-line)]" aria-hidden="true" />
+                        <div
+                          class="my-0.5 h-px bg-[var(--v2-border-border-muted)]"
+                          aria-hidden="true"
+                        />
                         <button
                           type="button"
                           role="menuitem"
-                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)]"
+                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
                             void duplicateSelected();
@@ -491,7 +494,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         <button
                           type="button"
                           role="menuitem"
-                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-red)] hover:bg-[var(--relay-surface-strong)]"
+                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
                             void deleteSelected();
@@ -577,12 +580,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         <Show when={area() === "map"}>
           <Suspense
             fallback={
-              <div class="grid min-h-0 flex-1 place-items-center bg-[var(--relay-bg)] p-8 text-center">
+              <div class="grid min-h-0 flex-1 place-items-center bg-[var(--v2-background-bg-deep)] p-8 text-center">
                 <div>
-                  <span class="mx-auto grid size-10 place-items-center rounded-xl bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] shadow-[inset_0_0_0_1px_var(--relay-line)]">
+                  <span class="mx-auto grid size-10 place-items-center rounded-xl bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
                     <Icon name="move" size={16} />
                   </span>
-                  <p class="mt-3 text-[12px] text-[var(--relay-text-tertiary)]">Loading Atlas…</p>
+                  <p class="mt-3 text-[12px] text-[var(--text-weak)]">Loading Atlas…</p>
                 </div>
               </div>
             }
@@ -610,12 +613,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               aria-modal="true"
               aria-labelledby="import-review-title"
             >
-              <header class="flex items-start justify-between gap-3 border-b border-[var(--relay-line)] px-4 py-3.5">
+              <header class="flex items-start justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
                 <div>
                   <span class={eyebrow}>Relay YAML</span>
                   <h3
                     id="import-review-title"
-                    class="mt-1 text-[16px] font-semibold text-[var(--relay-text)]"
+                    class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
                   >
                     {review().exists ? "This test already exists" : "Import this test?"}
                   </h3>
@@ -629,30 +632,30 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <Icon name="x" size={14} />
                 </button>
               </header>
-              <div class="mx-4 mt-3.5 flex items-center gap-3 rounded-[10px] border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] p-3">
-                <span class="grid size-9 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-green)_12%,transparent)] text-[var(--relay-green)]">
+              <div class="mx-4 mt-3.5 flex items-center gap-3 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] p-3">
+                <span class="grid size-9 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--icon-success-base)_12%,transparent)] text-[var(--icon-success-base)]">
                   <Icon name="check" size={16} />
                 </span>
                 <div class="min-w-0">
-                  <strong class="block text-[13px] text-[var(--relay-text)]">
+                  <strong class="block text-[13px] text-[var(--text-strong)]">
                     {review().recipe.title}
                   </strong>
-                  <small class="block text-[11px] text-[var(--relay-text-tertiary)]">
+                  <small class="block text-[11px] text-[var(--text-weak)]">
                     {review().recipe.id} · {review().recipe.steps.length} step
                     {review().recipe.steps.length === 1 ? "" : "s"} · schema valid
                   </small>
                 </div>
               </div>
-              <details class="mx-4 my-3 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] px-3 py-2">
-                <summary class="cursor-pointer text-[11px] text-[var(--relay-text-secondary)]">
+              <details class="mx-4 my-3 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-3 py-2">
+                <summary class="cursor-pointer text-[11px] text-[var(--text-base)]">
                   Preview canonical YAML
                 </summary>
-                <pre class="mt-2 max-h-48 overflow-auto font-mono text-[11px]/[1.5] text-[var(--relay-text-tertiary)]">
+                <pre class="mt-2 max-h-48 overflow-auto font-mono text-[11px]/[1.5] text-[var(--text-weak)]">
                   {review().canonicalYaml}
                 </pre>
               </details>
-              <footer class="flex items-center justify-between gap-3 border-t border-[var(--relay-line)] px-4 py-3">
-                <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--relay-text-tertiary)]">
+              <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3">
+                <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--text-weak)]">
                   {review().exists
                     ? "Replacing preserves the current definition in version history. Importing a copy creates a new test ID."
                     : "Relay will store the canonical definition in the tracked tests directory."}

@@ -335,8 +335,11 @@ function openStep(
     log: partial.log ?? "",
     heal: partial.heal,
     status: partial.status ?? "running",
+    // `glyphs` describes the plan; `actions` is an ordered observation log.
+    // Keeping the empty array is intentional: old traces omit the field and
+    // may fall back to glyphs, while new traces never present plans as facts.
+    actions: [],
   };
-  step.actions = partial.glyphs.map((kind) => ({ kind, at: step.startedAt }));
   job.steps.push(step);
   publish({
     type: "job.step",
@@ -362,11 +365,19 @@ function appendStepLog(step: TraceStep | undefined, line: string): void {
   step.glyphs = [...new Set([...step.glyphs, ...inferred])].slice(0, 6);
   if (inferred.length > 0) {
     const at = now();
-    step.actions = [
-      ...(step.actions ?? []),
-      ...inferred.map((kind) => ({ kind, at, label: line })),
-    ];
+    const actions = step.actions ?? [];
+    for (const kind of inferred) {
+      const previous = actions.at(-1);
+      if (previous?.kind === kind && at - previous.at < 250) continue;
+      actions.push({ kind, at, label: line });
+    }
+    step.actions = actions;
   }
+}
+
+function observeStepActions(step: TraceStep, glyphs: Glyph[]): void {
+  const at = now();
+  step.actions = [...(step.actions ?? []), ...glyphs.map((kind) => ({ kind, at }))];
 }
 
 async function drainQueue(): Promise<void> {
@@ -551,6 +562,9 @@ async function runRecipeSteps(
     });
     setCurrentStep(ts);
     try {
+      // The command is now being attempted. Record it here—not when the plan
+      // was created—so the timeline distinguishes intent from observation.
+      observeStepActions(ts, glyphsForStep(step));
       await runRecipeStep(device, resolveRecipeStep(step, job.resolvedInputs), {
         log: pushLog,
         job,
@@ -873,7 +887,10 @@ export async function attachJobFrame(opts: {
     if (!step.glyphs.includes("shot")) {
       step.glyphs = [...step.glyphs, "shot" as Glyph].slice(0, 6);
     }
-    step.actions = [...(step.actions ?? []), { kind: "shot" as Glyph, at: frame.capturedAt }];
+    const previous = step.actions?.at(-1);
+    if (previous?.kind !== "shot" || frame.capturedAt - previous.at >= 250) {
+      step.actions = [...(step.actions ?? []), { kind: "shot" as Glyph, at: frame.capturedAt }];
+    }
   }
   publish({
     type: "job.frame",

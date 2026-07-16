@@ -19,18 +19,18 @@ import { kindLabel } from "./step-list-metadata";
 import { eyebrow, productPrimary, productSecondary } from "../lib/ui";
 
 const chromePanel =
-  "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--relay-panel)_96%,var(--relay-bg))]";
+  "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,var(--v2-background-bg-deep))]";
 
 const statusDot = (status: string) =>
   cn(
     "size-1.5 rounded-full",
     status === "ok" || status === "healed" || status === "pass"
-      ? "bg-[var(--relay-green)]"
+      ? "bg-[var(--icon-success-base)]"
       : status === "error" || status === "cancelled" || status === "fail"
-        ? "bg-[var(--relay-red)]"
+        ? "bg-[var(--icon-critical-base)]"
         : status === "running"
-          ? "bg-[var(--relay-accent)] shadow-[0_0_10px_var(--relay-accent)]"
-          : "bg-[var(--relay-text-tertiary)]",
+          ? "bg-[var(--v2-background-bg-accent)] shadow-[0_0_10px_var(--v2-background-bg-accent)]"
+          : "bg-[var(--text-weak)]",
   );
 
 type TargetStep = Extract<
@@ -113,20 +113,20 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
 
   return (
     <aside
-      class={cn(chromePanel, "border-r border-[var(--relay-line)] max-[900px]:!hidden")}
+      class={cn(chromePanel, "border-r border-[var(--v2-border-border-muted)] max-[900px]:!hidden")}
       aria-label="Test steps"
     >
-      <header class="border-b border-[var(--relay-line)] px-[15px] pt-[17px] pb-[15px]">
+      <header class="border-b border-[var(--v2-border-border-muted)] px-[15px] pt-[17px] pb-[15px]">
         <Show
           when={props.compact}
           fallback={
             <>
               <span class={eyebrow}>Steps</span>
-              <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--relay-text)]">
+              <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--text-strong)]">
                 {draft.title()}
               </h2>
               <Show when={draft.description()}>
-                <p class="mt-1.5 mb-[15px] line-clamp-2 text-[12px]/[1.5] text-[var(--relay-text-tertiary)]">
+                <p class="mt-1.5 mb-[15px] line-clamp-2 text-[12px]/[1.5] text-[var(--text-weak)]">
                   {draft.description()}
                 </p>
               </Show>
@@ -141,14 +141,14 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
                   {(_, index) => (
                     <i
                       class={cn(
-                        "h-0.5 rounded-full bg-[var(--relay-line-strong)]",
-                        index() <= active() && "bg-[var(--relay-accent)]",
+                        "h-0.5 rounded-full bg-[var(--v2-border-border-strong)]",
+                        index() <= active() && "bg-[var(--v2-background-bg-accent)]",
                       )}
                     />
                   )}
                 </For>
               </div>
-              <small class="mt-2 block font-mono text-[10.5px]/[1.2] tabular-nums text-[var(--relay-text-tertiary)]">
+              <small class="mt-2 block font-mono text-[10.5px]/[1.2] tabular-nums text-[var(--text-weak)]">
                 Step {Math.min(active() + 1, draft.steps().length)} of {draft.steps().length}
               </small>
             </>
@@ -156,11 +156,11 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
         >
           <div class="flex items-center justify-between gap-3">
             <span class={eyebrow}>Steps</span>
-            <span class="font-mono text-[10.5px] tabular-nums text-[var(--relay-text-tertiary)]">
+            <span class="font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]">
               {draft.steps().length}
             </span>
           </div>
-          <p class="mt-1.5 line-clamp-1 text-[12px] text-[var(--relay-text-secondary)]">
+          <p class="mt-1.5 line-clamp-1 text-[12px] text-[var(--text-base)]">
             {draft.description() || "Actions Relay will perform in order"}
           </p>
         </Show>
@@ -181,21 +181,21 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
               <button
                 type="button"
                 class={cn(
-                  "relative grid min-h-[56px] w-full grid-cols-[32px_minmax(0,1fr)_7px] items-center gap-2.5 rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[var(--relay-text-tertiary)] transition-colors duration-150",
-                  "hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text-secondary)]",
+                  "relative grid min-h-[56px] w-full grid-cols-[32px_minmax(0,1fr)_7px] items-center gap-2.5 rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[var(--text-weak)] transition-colors duration-150",
+                  "hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-base)]",
                   isActive() &&
-                    "border-[rgb(139_114_255/30%)] bg-[rgb(116_92_242/13%)] text-[var(--relay-text)] hover:bg-[rgb(116_92_242/13%)] hover:text-[var(--relay-text)]",
+                    "border-[rgb(139_114_255/30%)] bg-[rgb(116_92_242/13%)] text-[var(--text-strong)] hover:bg-[rgb(116_92_242/13%)] hover:text-[var(--text-strong)]",
                 )}
                 onClick={() => workbench.focusStep(index())}
               >
                 <span
-                  class="grid size-8 place-items-center rounded-[9px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_75%,white)]"
+                  class="grid size-8 place-items-center rounded-[9px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--v2-background-bg-layer-01))] text-[color-mix(in_srgb,var(--journey-node-accent)_75%,white)]"
                   style={{ "--journey-node-accent": accentForStep(step) }}
                 >
                   <Icon name={iconForStep(step)} size={15} />
                 </span>
                 <span class="min-w-0">
-                  <small class="mb-1 flex items-center gap-1.5 font-mono text-[10px]/[1.2] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                  <small class="mb-1 flex items-center gap-1.5 font-mono text-[10px]/[1.2] tracking-[0.08em] text-[var(--text-weak)] uppercase">
                     <span>{String(index() + 1).padStart(2, "0")}</span>
                     <Show when={nestedCount() > 0}>
                       <span aria-hidden="true">·</span>
@@ -217,10 +217,10 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
         </For>
       </nav>
       <Show when={props.compact}>
-        <footer class="relative shrink-0 border-t border-[var(--relay-line)] p-2.5">
+        <footer class="relative shrink-0 border-t border-[var(--v2-border-border-muted)] p-2.5">
           <button
             type="button"
-            class="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-[12px] font-medium text-[var(--relay-text-secondary)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--relay-surface-raised)] hover:text-[var(--relay-text)] active:scale-[0.98]"
+            class="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] active:scale-[0.98]"
             aria-expanded={addOpen()}
             onClick={() => setAddOpen((open) => !open)}
           >
@@ -228,7 +228,7 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
           </button>
           <Show when={addOpen()}>
             <div
-              class="ui-pop absolute right-2.5 bottom-[calc(100%+6px)] left-2.5 z-20 grid gap-0.5 rounded-[10px] border border-[var(--relay-line-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+              class="ui-pop absolute right-2.5 bottom-[calc(100%+6px)] left-2.5 z-20 grid gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
               role="menu"
               aria-label="Add step"
             >
@@ -237,7 +237,7 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
                   <button
                     type="button"
                     role="menuitem"
-                    class="flex min-h-9 items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--relay-text-secondary)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--relay-surface-strong)] hover:text-[var(--relay-text)] active:scale-[0.98]"
+                    class="flex min-h-9 items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.98]"
                     onClick={() => appendStep(item.make())}
                   >
                     <Icon name={item.icon} size={14} /> {item.label}
@@ -248,7 +248,7 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
                 <button
                   type="button"
                   role="menuitem"
-                  class="mt-0.5 flex min-h-9 items-center gap-2 border-t border-[var(--relay-line)] px-2.5 pt-1 text-left text-[11px] text-[var(--relay-text-tertiary)] hover:text-[var(--relay-text)]"
+                  class="mt-0.5 flex min-h-9 items-center gap-2 border-t border-[var(--v2-border-border-muted)] px-2.5 pt-1 text-left text-[11px] text-[var(--text-weak)] hover:text-[var(--text-strong)]"
                   onClick={() => {
                     setAddOpen(false);
                     props.onAdvancedAdd?.();
@@ -361,20 +361,20 @@ export function JourneyInspector(props: {
   }
 
   const navBtn =
-    "grid size-8 place-items-center rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] text-[var(--relay-text-secondary)] hover:enabled:bg-[var(--relay-surface-strong)] hover:enabled:text-[var(--relay-text)] disabled:opacity-35";
+    "grid size-8 place-items-center rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] disabled:opacity-35";
 
   return (
     <aside
       class={cn(
         chromePanel,
-        "border-l border-[var(--relay-line)] max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6] max-[900px]:flex max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))] max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
+        "border-l border-[var(--v2-border-border-muted)] max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6] max-[900px]:flex max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))] max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
       )}
       aria-label="Selected journey step"
     >
-      <header class="flex min-h-[67px] shrink-0 items-center justify-between gap-3 border-b border-[var(--relay-line)] px-[15px]">
+      <header class="flex min-h-[67px] shrink-0 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-[15px]">
         <div class="min-w-0">
           <span class={eyebrow}>Step</span>
-          <strong class="mt-1 block truncate text-[13px] leading-[1.2] font-semibold text-[var(--relay-text)]">
+          <strong class="mt-1 block truncate text-[13px] leading-[1.2] font-semibold text-[var(--text-strong)]">
             {props.compact ? sentence() : `${index() + 1} of ${draft.steps().length}`}
           </strong>
         </div>
@@ -394,11 +394,11 @@ export function JourneyInspector(props: {
           <Show
             when={capturedFrame()}
             fallback={
-              <section class="grid grid-cols-[42px_minmax(0,1fr)] gap-3 border-b border-[var(--relay-line)] bg-[radial-gradient(circle_at_20%_20%,rgb(126_101_255/9%),transparent_38%),var(--relay-bg)] px-[15px] py-[18px]">
+              <section class="grid grid-cols-[42px_minmax(0,1fr)] gap-3 border-b border-[var(--v2-border-border-muted)] bg-[radial-gradient(circle_at_20%_20%,rgb(126_101_255/9%),transparent_38%),var(--v2-background-bg-deep)] px-[15px] py-[18px]">
                 <Show when={step()}>
                   {(current) => (
                     <span
-                      class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_32%,var(--relay-line))] bg-[color-mix(in_srgb,var(--journey-node-accent)_12%,var(--relay-surface-raised))] text-[color-mix(in_srgb,var(--journey-node-accent)_80%,white)]"
+                      class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_32%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--journey-node-accent)_12%,var(--v2-background-bg-layer-01))] text-[color-mix(in_srgb,var(--journey-node-accent)_80%,white)]"
                       style={{ "--journey-node-accent": accentForStep(current()) }}
                     >
                       <Icon name={iconForStep(current())} size={22} />
@@ -406,13 +406,13 @@ export function JourneyInspector(props: {
                   )}
                 </Show>
                 <div class="min-w-0">
-                  <small class="block text-[10.5px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                  <small class="block text-[10.5px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
                     {step() ? actionForStep(step()!) : "Planned action"}
                   </small>
-                  <strong class="mt-1 block text-[15px]/[1.35] font-semibold tracking-[-0.01em] text-[var(--relay-text)]">
+                  <strong class="mt-1 block text-[15px]/[1.35] font-semibold tracking-[-0.01em] text-[var(--text-strong)]">
                     {sentence()}
                   </strong>
-                  <p class="mt-1.5 text-[12px]/[1.55] text-[var(--relay-text-tertiary)]">
+                  <p class="mt-1.5 text-[12px]/[1.55] text-[var(--text-weak)]">
                     Run once to add the device screenshot and result.
                   </p>
                 </div>
@@ -424,38 +424,38 @@ export function JourneyInspector(props: {
                 <img
                   src={src()}
                   alt={`Captured step ${index() + 1}`}
-                  class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--relay-surface-strong)] object-contain shadow-[0_24px_70px_rgb(0_0_0/38%),0_0_0_1px_rgb(255_255_255/5%)]"
+                  class="block h-auto max-h-full w-auto max-w-full rounded-[26px] border-[5px] border-[var(--v2-background-bg-layer-02)] object-contain shadow-[0_24px_70px_rgb(0_0_0/38%),0_0_0_1px_rgb(255_255_255/5%)]"
                 />
               </div>
             )}
           </Show>
           <Show when={capturedFrame()}>
-            <section class="shrink-0 border-t border-[var(--relay-line)] p-[15px]">
+            <section class="shrink-0 border-t border-[var(--v2-border-border-muted)] p-[15px]">
               <span class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-interactive-base)] uppercase">
                 <Show when={step()}>
                   {(current) => <Icon name={iconForStep(current())} size={14} />}
                 </Show>
                 Captured action
               </span>
-              <h3 class="mt-2 mb-3.5 text-[15px] leading-[1.4] font-medium tracking-[-0.015em] text-[var(--relay-text)]">
+              <h3 class="mt-2 mb-3.5 text-[15px] leading-[1.4] font-medium tracking-[-0.015em] text-[var(--text-strong)]">
                 {sentence()}
               </h3>
               <dl class="m-0 grid grid-cols-2 gap-2">
-                <div class="rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2">
-                  <dt class="m-0 text-[10.5px] text-[var(--relay-text-tertiary)]">Evidence</dt>
-                  <dd class="mt-1 text-[11px] font-semibold text-[var(--relay-text-secondary)] capitalize">
+                <div class="rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 py-2">
+                  <dt class="m-0 text-[10.5px] text-[var(--text-weak)]">Evidence</dt>
+                  <dd class="mt-1 text-[11px] font-semibold text-[var(--text-base)] capitalize">
                     Captured
                   </dd>
                 </div>
-                <div class="rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-2.5 py-2">
-                  <dt class="m-0 text-[10.5px] text-[var(--relay-text-tertiary)]">Status</dt>
+                <div class="rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 py-2">
+                  <dt class="m-0 text-[10.5px] text-[var(--text-weak)]">Status</dt>
                   <dd
                     class={cn(
                       "mt-1 text-[11px] font-semibold capitalize",
-                      annotation().status === "pass" && "text-[var(--relay-green)]",
-                      annotation().status === "fail" && "text-[var(--relay-red)]",
+                      annotation().status === "pass" && "text-[var(--icon-success-base)]",
+                      annotation().status === "fail" && "text-[var(--icon-critical-base)]",
                       annotation().status === "running" && "text-[var(--text-interactive-base)]",
-                      annotation().status === "idle" && "text-[var(--relay-text-secondary)]",
+                      annotation().status === "idle" && "text-[var(--text-base)]",
                     )}
                   >
                     {annotation().status === "idle" ? "Ready" : annotation().status}
@@ -467,12 +467,12 @@ export function JourneyInspector(props: {
         </Show>
         <Show when={step()}>
           {(current) => (
-            <section class="border-t border-[var(--relay-line)] px-[15px] py-[16px]">
+            <section class="border-t border-[var(--v2-border-border-muted)] px-[15px] py-[16px]">
               <header class="mb-3 flex items-center justify-between">
-                <span class="text-[10.5px] font-semibold tracking-[0.08em] text-[var(--relay-text-secondary)] uppercase">
+                <span class="text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-base)] uppercase">
                   Properties
                 </span>
-                <span class="rounded-md bg-[var(--relay-surface-raised)] px-2 py-1 text-[9.5px] font-medium text-[var(--relay-text-tertiary)] capitalize">
+                <span class="rounded-md bg-[var(--v2-background-bg-layer-01)] px-2 py-1 text-[9.5px] font-medium text-[var(--text-weak)] capitalize">
                   {kindLabel(current().kind)}
                 </span>
               </header>
@@ -480,11 +480,11 @@ export function JourneyInspector(props: {
                 when={editableTarget(current())}
                 fallback={
                   <label class="grid gap-1.5">
-                    <span class="text-[10.5px] text-[var(--relay-text-tertiary)]">
+                    <span class="text-[10.5px] text-[var(--text-weak)]">
                       {simpleField(current()).label}
                     </span>
                     <input
-                      class="h-9 w-full rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 text-[12px] text-[var(--relay-text)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                      class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
                       type={simpleField(current()).number ? "number" : "text"}
                       min={simpleField(current()).number ? 0 : undefined}
                       step={simpleField(current()).number ? 0.5 : undefined}
@@ -497,14 +497,14 @@ export function JourneyInspector(props: {
               >
                 {(target) => (
                   <label class="grid gap-1.5">
-                    <span class="text-[10.5px] text-[var(--relay-text-tertiary)]">Target</span>
+                    <span class="text-[10.5px] text-[var(--text-weak)]">Target</span>
                     <input
-                      class="h-9 w-full rounded-lg border border-[var(--relay-line)] bg-[var(--relay-surface-raised)] px-3 text-[12px] text-[var(--relay-text)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                      class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
                       value={targetText(target())}
                       placeholder="What should Relay find?"
                       onInput={(event) => updateTarget(event.currentTarget.value)}
                     />
-                    <small class="text-[10px]/[1.45] text-[var(--relay-text-tertiary)]">
+                    <small class="text-[10px]/[1.45] text-[var(--text-weak)]">
                       Use the words someone can see on the screen.
                     </small>
                   </label>
@@ -518,22 +518,22 @@ export function JourneyInspector(props: {
             annotation().error || annotation().log || (!props.compact && recentRuns().length > 0)
           }
         >
-          <section class="border-t border-[var(--relay-line)] px-[15px] pt-3.5 pb-[18px]">
+          <section class="border-t border-[var(--v2-border-border-muted)] px-[15px] pt-3.5 pb-[18px]">
             <header class="mb-2 flex items-center justify-between">
-              <span class="text-[11px] font-semibold tracking-[0.08em] text-[var(--relay-text-secondary)] uppercase">
+              <span class="text-[11px] font-semibold tracking-[0.08em] text-[var(--text-base)] uppercase">
                 Activity
               </span>
-              <small class="text-[10.5px] text-[var(--relay-text-tertiary)]">Latest runs</small>
+              <small class="text-[10.5px] text-[var(--text-weak)]">Latest runs</small>
             </header>
             <Show when={annotation().error || annotation().log}>
-              <div class="mb-2 grid gap-1 rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] px-2.5 py-2">
-                <span class="text-[9.5px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+              <div class="mb-2 grid gap-1 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-2.5 py-2">
+                <span class="text-[9.5px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
                   {annotation().error ? "Error" : "Step log"}
                 </span>
                 <code
                   class={cn(
-                    "line-clamp-3 font-mono text-[10.5px]/[1.5] text-[var(--relay-text-secondary)]",
-                    annotation().error && "text-[var(--relay-red)]",
+                    "line-clamp-3 font-mono text-[10.5px]/[1.5] text-[var(--text-base)]",
+                    annotation().error && "text-[var(--icon-critical-base)]",
                   )}
                 >
                   {annotation().error ?? annotation().log}
@@ -543,17 +543,17 @@ export function JourneyInspector(props: {
             <Show when={!props.compact}>
               <For each={recentRuns()}>
                 {(job) => (
-                  <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--relay-line)_75%,transparent)]">
+                  <div class="grid min-h-[48px] grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-[color-mix(in_srgb,var(--v2-border-border-muted)_75%,transparent)]">
                     <i class={statusDot(job.status)} />
                     <span class="min-w-0">
-                      <strong class="block text-[12px] font-medium text-[var(--relay-text-secondary)] capitalize">
+                      <strong class="block text-[12px] font-medium text-[var(--text-base)] capitalize">
                         {job.status === "ok" ? "Passed" : job.status}
                       </strong>
-                      <small class="block font-mono text-[10px]/[1.4] text-[var(--relay-text-tertiary)]">
+                      <small class="block font-mono text-[10px]/[1.4] text-[var(--text-weak)]">
                         {fmtAgo(job.at)}
                       </small>
                     </span>
-                    <b class="font-mono text-[10.5px]/[1.4] font-medium tabular-nums text-[var(--relay-text-tertiary)]">
+                    <b class="font-mono text-[10.5px]/[1.4] font-medium tabular-nums text-[var(--text-weak)]">
                       {job.duration}
                     </b>
                   </div>
@@ -563,7 +563,7 @@ export function JourneyInspector(props: {
           </section>
         </Show>
       </div>
-      <footer class="flex min-h-14 shrink-0 items-center justify-between border-t border-[var(--relay-line)] px-[15px]">
+      <footer class="flex min-h-14 shrink-0 items-center justify-between border-t border-[var(--v2-border-border-muted)] px-[15px]">
         <div class="flex gap-1">
           <button
             type="button"

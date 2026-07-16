@@ -2,6 +2,7 @@ import { For, Show, createMemo } from "solid-js";
 import type { TestAtlas } from "../../context/server";
 import { cn } from "../../lib/cn";
 import { Icon } from "../icon";
+import { EmptyState } from "../empty-state";
 
 export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: string) => void }) {
   const title = (id: string) => props.atlas?.nodes.find((node) => node.id === id)?.title ?? id;
@@ -27,8 +28,8 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
         </header>
 
         <div class="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-[900px]:grid-cols-1">
-          <section class="overflow-hidden rounded-[18px] border border-[var(--relay-line)] bg-[var(--relay-panel)]">
-            <header class="flex items-center justify-between gap-4 border-b border-[var(--relay-line)] px-5 py-3.5">
+          <section class="overflow-hidden rounded-[18px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
+            <header class="flex items-center justify-between gap-4 border-b border-[var(--v2-border-border-muted)] px-5 py-3.5">
               <h3 class="m-0 text-[13px] font-semibold text-text-strong">Coverage</h3>
               <span class="rounded-full bg-surface-base-active px-2.5 py-1 font-mono text-[10px] text-text-weak">
                 {props.atlas?.coverage.length ?? 0} tracked
@@ -49,7 +50,7 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
                   const width = () => Math.max(10, (item.tests / maxCoverage()) * 100);
                   return (
                     <div class="group grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2.5 py-3 transition-colors duration-150 hover:bg-white/[0.035]">
-                      <span class="grid size-9 place-items-center rounded-[11px] bg-[color-mix(in_srgb,var(--relay-accent)_11%,transparent)] text-[var(--text-interactive-base)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--relay-accent)_20%,transparent)]">
+                      <span class="grid size-9 place-items-center rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,transparent)] text-[var(--text-interactive-base)] ring-1 ring-inset ring-[color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent)]">
                         <Icon name={index() === 0 ? "pointer" : "bolt"} size={15} />
                       </span>
                       <div class="min-w-0">
@@ -63,7 +64,7 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
                         </div>
                         <div class="h-1.5 overflow-hidden rounded-full bg-white/[0.055]">
                           <span
-                            class="block h-full rounded-full bg-[var(--relay-accent)]"
+                            class="block h-full rounded-full bg-[var(--v2-background-bg-accent)]"
                             style={{ width: `${width()}%` }}
                           />
                         </div>
@@ -80,11 +81,11 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
             </div>
           </section>
 
-          <section class="overflow-hidden rounded-[18px] border border-[var(--relay-line)] bg-[var(--relay-panel)]">
-            <header class="flex items-center justify-between gap-3 border-b border-[var(--relay-line)] px-5 py-3.5">
+          <section class="overflow-hidden rounded-[18px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
+            <header class="flex items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-5 py-3.5">
               <h3 class="m-0 text-[13px] font-semibold text-text-strong">Reuse opportunities</h3>
               <Show when={duplicates() > 0}>
-                <span class="rounded-full bg-[color-mix(in_srgb,var(--relay-amber)_13%,transparent)] px-2.5 py-1 text-[10px] font-medium text-[var(--relay-amber)]">
+                <span class="rounded-full bg-[color-mix(in_srgb,var(--icon-warning-base)_13%,transparent)] px-2.5 py-1 text-[10px] font-medium text-[var(--icon-warning-base)]">
                   {duplicates()} found
                 </span>
               </Show>
@@ -103,14 +104,14 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
                 {(cluster) => (
                   <button
                     type="button"
-                    class="group grid min-h-[78px] w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-3 rounded-[13px] border border-transparent bg-white/[0.025] px-3 text-left transition-[background-color,border-color,transform] duration-150 hover:border-[var(--relay-line)] hover:bg-white/[0.045] active:scale-[0.99]"
+                    class="group grid min-h-[78px] w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-3 rounded-[13px] border border-transparent bg-white/[0.025] px-3 text-left transition-[background-color,border-color,transform] duration-150 hover:border-[var(--v2-border-border-muted)] hover:bg-white/[0.045] active:scale-[0.99]"
                     onClick={() => props.onOpen(cluster.recipeIds[0]!)}
                   >
                     <span class="relative grid size-10 place-items-center">
-                      <i class="absolute top-1 left-0 grid size-7 place-items-center rounded-lg bg-[var(--relay-surface-strong)] text-text-weak ring-1 ring-[var(--relay-line)]">
+                      <i class="absolute top-1 left-0 grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] text-text-weak ring-1 ring-[var(--v2-border-border-muted)]">
                         <Icon name="bolt" size={12} />
                       </i>
-                      <i class="absolute right-0 bottom-1 grid size-7 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-accent)_16%,var(--relay-surface-strong))] text-[var(--text-interactive-base)] ring-1 ring-[color-mix(in_srgb,var(--relay-accent)_26%,var(--relay-line))]">
+                      <i class="absolute right-0 bottom-1 grid size-7 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_16%,var(--v2-background-bg-layer-02))] text-[var(--text-interactive-base)] ring-1 ring-[color-mix(in_srgb,var(--v2-background-bg-accent)_26%,var(--v2-border-border-muted))]">
                         <Icon name="bolt" size={12} />
                       </i>
                     </span>
@@ -166,14 +167,12 @@ function AtlasStat(props: { value: number; label: string; tone?: "brand" }) {
 
 function AtlasEmpty(props: { icon: "scan" | "check"; title: string; detail: string }) {
   return (
-    <div class="grid min-h-44 place-items-center px-6 py-8 text-center">
-      <div class="max-w-[260px]">
-        <span class="mx-auto grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
-          <Icon name={props.icon} size={17} />
-        </span>
-        <strong class="mt-3 block text-[12.5px] font-medium text-text-base">{props.title}</strong>
-        <p class="mt-1 text-[10.5px]/[1.5] text-text-weaker">{props.detail}</p>
-      </div>
-    </div>
+    <EmptyState
+      size="sm"
+      icon={props.icon}
+      title={props.title}
+      description={props.detail}
+      class="min-h-44 justify-center"
+    />
   );
 }

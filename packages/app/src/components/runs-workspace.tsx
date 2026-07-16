@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import { useServer, type JobInfo, type PersistedRun, type RecipeInfo } from "../context/server";
+import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon, type IconName } from "./icon";
 import { StatusChip, jobStatusChip } from "./status-chip";
@@ -22,9 +22,12 @@ import {
 } from "../lib/ui";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { kindIcon, kindLabel } from "./step-list-metadata";
-import { sentenceForStep } from "../lib/step-sentence";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
-import { executionMoments } from "../lib/execution-moments";
+import {
+  executionMoments,
+  executionStateLabel,
+  type ExecutionMomentState,
+} from "../lib/execution-moments";
 import { ExecutionTimeline } from "./execution-timeline";
 import {
   formatReviewTime,
@@ -319,7 +322,7 @@ export function RunsWorkspace(props: {
         </Show>
         <Show when={selected()}>
           {(job) => (
-            <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--relay-line)] bg-[var(--relay-panel)]">
+            <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
               <header class="grid shrink-0 gap-2.5 px-5 pt-4 pb-3.5">
                 <div class="flex items-start justify-between gap-2">
                   <div class="grid min-w-0 gap-1">
@@ -412,8 +415,8 @@ export function RunsWorkspace(props: {
                 </div>
               </header>
               <Show when={job().status === "error" || job().status === "cancelled"}>
-                <div class="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--relay-red)_28%,var(--relay-line))] bg-[color-mix(in_srgb,var(--relay-red)_7%,transparent)] px-3 py-2.5">
-                  <span class="mt-0.5 grid size-6 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--relay-red)_14%,transparent)] text-[var(--relay-red)]">
+                <div class="mx-4 mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2.5 rounded-xl border border-[color-mix(in_srgb,var(--icon-critical-base)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)] px-3 py-2.5">
+                  <span class="mt-0.5 grid size-6 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] text-[var(--icon-critical-base)]">
                     <Icon name="alert" size={13} />
                   </span>
                   <div class="min-w-0">
@@ -586,7 +589,7 @@ export function RunsWorkspace(props: {
                   />
                 </Show>
                 <Show when={tab() === "logs"}>
-                  <pre class="m-0 max-h-64 overflow-auto rounded-lg border border-[var(--relay-line)] bg-[var(--relay-bg)] p-3 font-mono text-[10px]/[1.45] text-[var(--relay-text-secondary)]">
+                  <pre class="m-0 max-h-64 overflow-auto rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[10px]/[1.45] text-[var(--text-base)]">
                     {job().logs?.join("\n") || "No logs were captured for this run."}
                   </pre>
                 </Show>
@@ -613,17 +616,15 @@ function RunBrowser(props: {
   const server = useServer();
   return (
     <aside
-      class="flex min-h-0 flex-col border-r border-[var(--relay-line)] bg-[var(--relay-panel)] max-[1180px]:hidden"
+      class="flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[1180px]:hidden"
       aria-label="Run browser"
     >
-      <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--relay-line)] px-3.5">
+      <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3.5">
         <div>
-          <strong class="block text-[12.5px] font-semibold text-[var(--relay-text)]">Runs</strong>
-          <small class="text-[10px] text-[var(--relay-text-tertiary)]">
-            {props.rows.length} saved
-          </small>
+          <strong class="block text-[12.5px] font-semibold text-[var(--text-strong)]">Runs</strong>
+          <small class="text-[10px] text-[var(--text-weak)]">{props.rows.length} saved</small>
         </div>
-        <span class="grid size-7 place-items-center rounded-lg bg-[var(--relay-surface-raised)] text-[var(--relay-text-tertiary)]">
+        <span class="grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]">
           <Icon name="wave" size={14} />
         </span>
       </header>
@@ -638,8 +639,8 @@ function RunBrowser(props: {
                 class={cn(
                   "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 text-left outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-white/60",
                   props.selectedId === job.id
-                    ? "bg-[var(--relay-surface-strong)]"
-                    : "hover:bg-[var(--relay-surface-raised)]",
+                    ? "bg-[var(--v2-background-bg-layer-02)]"
+                    : "hover:bg-[var(--v2-background-bg-layer-01)]",
                 )}
                 aria-current={props.selectedId === job.id ? "page" : undefined}
                 onClick={() => props.onSelect(job)}
@@ -648,18 +649,18 @@ function RunBrowser(props: {
                   class={cn(
                     "size-1.5 rounded-full",
                     status().tone === "pass"
-                      ? "bg-[var(--relay-green)]"
+                      ? "bg-[var(--icon-success-base)]"
                       : status().tone === "fail"
-                        ? "bg-[var(--relay-red)]"
-                        : "bg-[var(--relay-accent)]",
+                        ? "bg-[var(--icon-critical-base)]"
+                        : "bg-[var(--v2-background-bg-accent)]",
                   )}
                   aria-hidden="true"
                 />
                 <span class="min-w-0">
-                  <strong class="block truncate text-[11.5px] font-medium text-[var(--relay-text)]">
+                  <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
                     {recipe()?.title ?? job.title ?? job.action}
                   </strong>
-                  <small class="mt-1 flex items-center gap-1.5 text-[9.5px] text-[var(--relay-text-tertiary)]">
+                  <small class="mt-1 flex items-center gap-1.5 text-[9.5px] text-[var(--text-weak)]">
                     <span>{status().label}</span>
                     <span aria-hidden="true">·</span>
                     <span class="font-mono tabular-nums">{fmtDur(job, server.clock()) || "—"}</span>
@@ -702,7 +703,7 @@ function CompatibilityReportPanel(props: {
     <Show
       when={props.report}
       fallback={
-        <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-4 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+        <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
           Preparing the comparison…
         </div>
       }
@@ -712,15 +713,15 @@ function CompatibilityReportPanel(props: {
           <header class="flex items-start justify-between gap-3">
             <div>
               <span class={eyebrow}>Compatibility matrix</span>
-              <strong class="mt-0.5 block text-[13px] text-[var(--relay-text)]">
+              <strong class="mt-0.5 block text-[13px] text-[var(--text-strong)]">
                 {report().matrixName ?? "Target comparison"}
               </strong>
-              <small class="mt-0.5 block text-[10px] text-[var(--relay-text-tertiary)]">
+              <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
                 {report().profiles.length} target{report().profiles.length === 1 ? "" : "s"} ·{" "}
                 {report().total} evidence run{report().total === 1 ? "" : "s"}
               </small>
             </div>
-            <span class="shrink-0 rounded-full border border-[var(--relay-line)] px-[7px] py-1 text-[9px] tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+            <span class="shrink-0 rounded-full border border-[var(--v2-border-border-muted)] px-[7px] py-1 text-[9px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
               Same test setup
             </span>
           </header>
@@ -729,17 +730,17 @@ function CompatibilityReportPanel(props: {
               {(profile) => (
                 <article
                   class={cn(
-                    "grid gap-2.5 rounded-[10px] border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-surface-raised)_55%,transparent)] p-3",
+                    "grid gap-2.5 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_55%,transparent)] p-3",
                     profile.profile.id === props.selectedProfileId &&
-                      "border-[color-mix(in_srgb,var(--text-interactive-base)_58%,var(--relay-line))] shadow-[inset_2px_0_var(--text-interactive-base)]",
+                      "border-border-interactive-base bg-surface-interactive-weak",
                   )}
                 >
                   <header class="flex items-start justify-between gap-3">
                     <div>
-                      <strong class="block text-[13px] text-[var(--relay-text)]">
+                      <strong class="block text-[13px] text-[var(--text-strong)]">
                         {profile.profile.name}
                       </strong>
-                      <small class="mt-0.5 block text-[10px] text-[var(--relay-text-tertiary)]">
+                      <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
                         {profile.profile.platform}
                         {profile.profile.osVersion ? ` · ${profile.profile.osVersion}` : ""}
                       </small>
@@ -751,28 +752,28 @@ function CompatibilityReportPanel(props: {
                     </span>
                   </header>
                   <div class="grid grid-cols-2 gap-2">
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--relay-panel)] p-2">
-                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--v2-background-bg-base)] p-2">
+                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
                         Pass rate
                       </b>
-                      <strong class="text-[12px] text-[var(--relay-text)]">
+                      <strong class="text-[12px] text-[var(--text-strong)]">
                         {profile.passRate == null
                           ? "No product verdict yet"
                           : `${Math.round(profile.passRate * 100)}%`}
                       </strong>
                     </span>
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--relay-panel)] p-2">
-                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--relay-text-tertiary)] uppercase">
+                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--v2-background-bg-base)] p-2">
+                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
                         Median duration
                       </b>
-                      <strong class="text-[12px] text-[var(--relay-text)]">
+                      <strong class="text-[12px] text-[var(--text-strong)]">
                         {profile.medianDurationMs == null
                           ? "—"
                           : `${(profile.medianDurationMs / 1000).toFixed(1)}s`}
                       </strong>
                     </span>
                   </div>
-                  <p class="m-0 text-[10px]/[1.45] text-[var(--relay-text-secondary)]">
+                  <p class="m-0 text-[10px]/[1.45] text-[var(--text-base)]">
                     {profile.passed} passed · {profile.productFailures} product ·{" "}
                     {profile.harnessFailures} harness
                     {profile.uncertain ? ` · ${profile.uncertain} uncertain` : ""}
@@ -780,7 +781,7 @@ function CompatibilityReportPanel(props: {
                   </p>
                   <Show when={profile.baseline}>
                     {(baseline) => (
-                      <footer class="border-t border-[var(--relay-line)] pt-2 text-[10px]/[1.4] text-[var(--relay-text-tertiary)]">
+                      <footer class="border-t border-[var(--v2-border-border-muted)] pt-2 text-[10px]/[1.4] text-[var(--text-weak)]">
                         Versus {baseline().total} earlier run{baseline().total === 1 ? "" : "s"}:{" "}
                         {formatPassDelta(baseline().passRateDelta)} ·{" "}
                         {formatDurationDelta(baseline().durationDeltaMs)}
@@ -809,70 +810,16 @@ function formatDurationDelta(value: number | null): string {
   return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
 }
 
-type RunCanvasState = "passed" | "failed" | "running" | "planned" | "cancelled";
-
-type RunCanvasNode = {
-  index: number;
-  title: string;
-  state: RunCanvasState;
-  durationMs?: number;
-  frame?: NonNullable<JobInfo["steps"]>[number]["frames"][number];
-  observed: boolean;
-  /** Low-level actions the step performed (tap, wait, type, ...), when traced. */
-  glyphs?: string[];
-};
-
-function runCanvasNodes(job: JobInfo, recipes: RecipeInfo[]): RunCanvasNode[] {
-  const recipe = job.recipeSnapshot ?? recipes.find((item) => item.id === job.action);
-  const observed = job.steps ?? [];
-  const count = Math.max(observed.length, recipe?.steps.length ?? 0, 1);
-
-  return Array.from({ length: count }, (_, index) => {
-    const trace = observed[index];
-    const planned = recipe?.steps[index];
-    let state: RunCanvasState = "planned";
-    if (trace) {
-      if (trace.status === "error" || trace.tone === "danger") state = "failed";
-      else if (job.status === "running" && index === observed.length - 1) state = "running";
-      else if (job.status === "cancelled" && index === observed.length - 1) state = "cancelled";
-      else state = "passed";
-    }
-    return {
-      index,
-      title: trace?.title ?? (planned ? sentenceForStep(planned, recipes) : "Run started"),
-      state,
-      durationMs: trace?.durationMs,
-      frame: trace?.frames?.at(-1),
-      observed: Boolean(trace),
-      glyphs: trace?.glyphs && trace.glyphs.length > 0 ? trace.glyphs : undefined,
-    };
-  });
-}
-
 function formatStepDuration(durationMs: number): string {
   return durationMs < 1000 ? `${Math.round(durationMs)}ms` : `${(durationMs / 1000).toFixed(1)}s`;
 }
 
-function runStateLabel(state: RunCanvasState): string {
-  switch (state) {
-    case "passed":
-      return "Passed";
-    case "failed":
-      return "Stopped here";
-    case "running":
-      return "Running";
-    case "cancelled":
-      return "Cancelled";
-    default:
-      return "Not reached";
-  }
-}
-
-function runStateDot(state: RunCanvasState): string {
-  if (state === "failed" || state === "cancelled") return "bg-[var(--relay-red)]";
-  if (state === "planned") return "bg-[var(--relay-line-strong)]";
-  if (state === "running") return "bg-[var(--relay-accent)] shadow-[0_0_8px_var(--relay-accent)]";
-  return "bg-[var(--relay-green)]";
+function runStateDot(state: ExecutionMomentState): string {
+  if (state === "failed" || state === "cancelled") return "bg-[var(--icon-critical-base)]";
+  if (state === "planned") return "bg-[var(--v2-border-border-strong)]";
+  if (state === "running")
+    return "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]";
+  return "bg-[var(--icon-success-base)]";
 }
 
 /** Left half of a run report: the captured evidence, framed like a device,
@@ -886,7 +833,11 @@ function RunReplayStage(props: {
 }) {
   const server = useServer();
   const [playing, setPlaying] = createSignal(false);
-  const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
+  const snapshot = () =>
+    props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
+  const nodes = createMemo(() =>
+    executionMoments({ recipe: snapshot(), job: props.job, recipes: server.recipes() }),
+  );
   const count = () => Math.max(nodes().length, 1);
   const index = () => Math.max(0, Math.min(props.selectedIndex, count() - 1));
   const node = () => nodes()[index()];
@@ -896,11 +847,6 @@ function RunReplayStage(props: {
       (duration, step) => duration + Math.max(0, step.durationMs ?? 0),
       0,
     );
-  const snapshot = () =>
-    props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
-  const timelineMoments = createMemo(() =>
-    executionMoments({ recipe: snapshot(), job: props.job, recipes: server.recipes() }),
-  );
   const frameSrc = () => {
     const item = props.items[index()];
     if (item?.src) return item.src;
@@ -942,7 +888,7 @@ function RunReplayStage(props: {
   });
   return (
     <section
-      class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[color-mix(in_srgb,var(--relay-bg)_94%,black)]"
+      class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_94%,black)]"
       aria-label="Run replay"
       tabindex={-1}
       onKeyDown={(event) => {
@@ -961,13 +907,13 @@ function RunReplayStage(props: {
       }}
     >
       <div
-        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,color-mix(in_srgb,var(--relay-accent)_7%,transparent),transparent_52%),radial-gradient(circle,color-mix(in_srgb,var(--relay-line-strong)_42%,transparent)_1px,transparent_1px)] [background-size:auto,20px_20px]"
+        class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,color-mix(in_srgb,var(--v2-background-bg-accent)_7%,transparent),transparent_52%),radial-gradient(circle,color-mix(in_srgb,var(--v2-border-border-strong)_42%,transparent)_1px,transparent_1px)] [background-size:auto,20px_20px]"
         aria-hidden="true"
       />
       <header class="relative z-[1] flex shrink-0 items-center justify-between gap-3 px-4 pt-3.5">
         <button
           type="button"
-          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-[var(--relay-text-secondary)] transition-colors hover:bg-white/[0.06] hover:text-[var(--relay-text)]"
+          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)]"
           onClick={props.onBack}
         >
           <Icon name="chevron-left" size={14} /> All runs
@@ -977,17 +923,17 @@ function RunReplayStage(props: {
         {/* Phone bezel — always renders; only the interior swaps between the
             captured frame and a calm inline note when evidence is missing. */}
         <div class="relative flex h-full max-h-[560px] w-full max-w-[300px] items-center justify-center">
-          <span class="absolute top-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--relay-line)] bg-[color-mix(in_srgb,var(--relay-panel)_90%,transparent)] px-2.5 py-1 font-mono text-[9.5px] tracking-[0.05em] text-[var(--relay-text-tertiary)] uppercase shadow-[0_6px_16px_rgb(0_0_0/30%)] backdrop-blur">
+          <span class="absolute top-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] px-2.5 py-1 font-mono text-[9.5px] tracking-[0.05em] text-[var(--text-weak)] uppercase shadow-[0_6px_16px_rgb(0_0_0/30%)] backdrop-blur">
             <i class={cn("size-1.5 rounded-full", runStateDot(node()?.state ?? "planned"))} />
             Step {String(index() + 1).padStart(2, "0")} ·{" "}
-            {runStateLabel(node()?.state ?? "planned")}
+            {executionStateLabel(node()?.state ?? "planned", "step")}
           </span>
           {/* Bezel border stays neutral regardless of run state — the floating
               step badge's dot is the accent that carries pass/fail, per the
               rule that alarm colors never tint a large chrome surface. */}
-          <div class="relative flex aspect-[9/19] h-full max-h-full w-full items-center justify-center overflow-hidden rounded-[32px] border-[6px] border-[var(--relay-surface-strong)] bg-[var(--relay-panel)] shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]">
+          <div class="relative flex aspect-[9/19] h-full max-h-full w-full items-center justify-center overflow-hidden rounded-[32px] border-[6px] border-[var(--v2-background-bg-layer-02)] bg-[var(--v2-background-bg-base)] shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]">
             <span
-              class="absolute top-0 left-1/2 z-[1] h-4 w-24 -translate-x-1/2 rounded-b-xl bg-[var(--relay-surface-strong)]"
+              class="absolute top-0 left-1/2 z-[1] h-4 w-24 -translate-x-1/2 rounded-b-xl bg-[var(--v2-background-bg-layer-02)]"
               aria-hidden="true"
             />
             <Show
@@ -1025,7 +971,7 @@ function RunReplayStage(props: {
         <p class="m-0 truncate text-[12.5px] font-medium text-text-base">{node()?.title}</p>
       </div>
       <ExecutionTimeline
-        moments={timelineMoments()}
+        moments={nodes()}
         selectedIndex={index()}
         onSelect={(nextIndex) => {
           setPlaying(false);
@@ -1056,16 +1002,18 @@ function RunStepList(props: {
   onSelect: (index: number) => void;
 }) {
   const server = useServer();
-  const nodes = createMemo(() => runCanvasNodes(props.job, server.recipes()));
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
+  const nodes = createMemo(() =>
+    executionMoments({ recipe: snapshot(), job: props.job, recipes: server.recipes() }),
+  );
   return (
     <div class="grid content-start">
-      <div class="relative grid content-start before:absolute before:top-8 before:bottom-8 before:left-6 before:w-px before:bg-[var(--relay-line-strong)]">
+      <div class="relative grid content-start before:absolute before:top-8 before:bottom-8 before:left-6 before:w-px before:bg-[var(--v2-border-border-strong)]">
         <For
           each={nodes()}
           fallback={
-            <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-5 text-center text-[12px] text-[var(--relay-text-tertiary)]">
+            <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-5 text-center text-[12px] text-[var(--text-weak)]">
               No steps were recorded for this run.
             </div>
           }
@@ -1079,8 +1027,8 @@ function RunStepList(props: {
                 class={cn(
                   "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-150 active:scale-[0.99]",
                   active()
-                    ? "bg-[color-mix(in_srgb,var(--relay-accent)_11%,var(--relay-panel))]"
-                    : "hover:bg-[var(--relay-surface-raised)]",
+                    ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,var(--v2-background-bg-base))]"
+                    : "hover:bg-[var(--v2-background-bg-layer-01)]",
                   node.state === "planned" && !active() && "opacity-55",
                 )}
                 aria-current={active() ? "step" : undefined}
@@ -1091,12 +1039,12 @@ function RunStepList(props: {
                     selection language used across the run report. */}
                 <span
                   class={cn(
-                    "relative z-[1] grid size-8 place-items-center rounded-[9px] border bg-[var(--relay-panel)] font-mono text-[11px] font-semibold tabular-nums",
+                    "relative z-[1] grid size-8 place-items-center rounded-[9px] border bg-[var(--v2-background-bg-base)] font-mono text-[11px] font-semibold tabular-nums",
                     active()
-                      ? "border-[var(--relay-accent)] text-[var(--text-interactive-base)]"
+                      ? "border-[var(--v2-background-bg-accent)] text-[var(--text-interactive-base)]"
                       : node.state === "failed"
-                        ? "border-[var(--relay-red)] text-[var(--relay-red)]"
-                        : "border-[var(--relay-line-strong)] text-[var(--relay-text-tertiary)]",
+                        ? "border-[var(--icon-critical-base)] text-[var(--icon-critical-base)]"
+                        : "border-[var(--v2-border-border-strong)] text-[var(--text-weak)]",
                   )}
                 >
                   {node.index + 1}
@@ -1113,11 +1061,11 @@ function RunStepList(props: {
                         {formatStepDuration(node.durationMs!)}
                       </span>
                     </Show>
-                    <Show when={node.glyphs}>
-                      {(glyphs) => (
+                    <Show when={node.actions.length > 0 ? node.actions : undefined}>
+                      {(actions) => (
                         <>
                           <span class="shrink-0 text-text-weaker/70">·</span>
-                          <ActionIconTrail glyphs={glyphs()} max={6} />
+                          <ActionIconTrail glyphs={actions()} max={6} />
                         </>
                       )}
                     </Show>
@@ -1147,7 +1095,7 @@ function EvidenceList(props: {
       <For
         each={props.items}
         fallback={
-          <div class="rounded-[10px] border border-dashed border-[var(--relay-line)] px-3 py-4 text-center text-[11px] text-[var(--relay-text-tertiary)]">
+          <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
             {props.empty}
           </div>
         }
@@ -1155,7 +1103,7 @@ function EvidenceList(props: {
         {(item) => {
           const summary = () => evidenceSummary(item.data);
           return (
-            <article class="overflow-hidden rounded-xl border border-[var(--relay-line)] bg-[var(--relay-surface-raised)]">
+            <article class="overflow-hidden rounded-xl border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]">
               <header class="grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2.5 px-3 py-2.5">
                 <span class="grid size-[30px] place-items-center rounded-lg bg-surface-base-active text-text-weak">
                   <Icon name={evidenceIcon(item.kind)} size={14} />
@@ -1178,7 +1126,7 @@ function EvidenceList(props: {
                   })}
                 </time>
               </header>
-              <details class="group border-t border-[var(--relay-line)]">
+              <details class="group border-t border-[var(--v2-border-border-muted)]">
                 <summary class="flex min-h-8 cursor-pointer list-none items-center gap-1.5 px-3 text-[10px] font-medium text-text-weaker hover:text-text-base [&::-webkit-details-marker]:hidden">
                   View payload
                   <Icon
@@ -1187,7 +1135,7 @@ function EvidenceList(props: {
                     class="transition-transform duration-150 group-open:rotate-180"
                   />
                 </summary>
-                <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--relay-line)] bg-[var(--relay-bg)] p-3 font-mono text-[10px]/[1.5] text-[var(--relay-text-secondary)]">
+                <pre class="m-0 max-h-64 overflow-auto border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[10px]/[1.5] text-[var(--text-base)]">
                   {JSON.stringify(item.data, null, 2)}
                 </pre>
               </details>
@@ -1306,7 +1254,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
     <button
       type="button"
       class={cn(
-        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--relay-line-strong)] hover:bg-[var(--relay-surface-raised)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
         props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}

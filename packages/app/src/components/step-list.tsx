@@ -154,13 +154,13 @@ export function RecipeStepsEditor(): JSX.Element {
             aria-label="Add first step"
           >
             <div class="w-[min(100%,390px)]">
-              <span class="mb-1.5 block text-[10px] font-semibold tracking-[0.1em] text-[var(--relay-text-tertiary)] uppercase">
+              <span class="mb-1.5 block text-[10px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase">
                 Manual step
               </span>
-              <h3 class="m-0 text-[18px] font-semibold leading-[1.25] tracking-[-0.025em] text-balance text-[var(--relay-text)]">
+              <h3 class="m-0 text-[18px] font-semibold leading-[1.25] tracking-[-0.025em] text-balance text-[var(--text-strong)]">
                 Start with an action
               </h3>
-              <p class="mt-[7px] max-w-[360px] text-[12px]/[1.55] text-[var(--relay-text-tertiary)]">
+              <p class="mt-[7px] max-w-[360px] text-[12px]/[1.55] text-[var(--text-weak)]">
                 Choose one to configure it. Recording on the device adds steps here automatically.
               </p>
               <div class="mt-[18px] grid grid-cols-2 gap-2 max-[1040px]:grid-cols-1">
@@ -168,11 +168,11 @@ export function RecipeStepsEditor(): JSX.Element {
                   {(s) => (
                     <button
                       type="button"
-                      class="grid min-h-[68px] min-w-0 cursor-pointer grid-cols-[30px_minmax(0,1fr)_14px] items-center gap-2 rounded-[10px] bg-[var(--relay-surface-raised)] p-2.5 text-left text-[var(--relay-text)] shadow-[inset_0_0_0_1px_var(--relay-line)] transition-[background-color,box-shadow,transform] duration-120 hover:bg-surface-raised-base-hover active:scale-[0.99]"
+                      class="grid min-h-[68px] min-w-0 cursor-pointer grid-cols-[30px_minmax(0,1fr)_14px] items-center gap-2 rounded-[10px] bg-[var(--v2-background-bg-layer-01)] p-2.5 text-left text-[var(--text-strong)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-[background-color,box-shadow,transform] duration-120 hover:bg-surface-raised-base-hover active:scale-[0.99]"
                       onClick={() => insertAt(0, s.make())}
                     >
                       <span
-                        class="grid size-[30px] place-items-center rounded-lg bg-[var(--relay-accent-soft)] text-[var(--relay-accent)]"
+                        class="grid size-[30px] place-items-center rounded-lg bg-[var(--product-accent-soft)] text-[var(--v2-background-bg-accent)]"
                         aria-hidden="true"
                       >
                         <Icon name={s.icon} size={16} strokeWidth={1.8} />
@@ -181,15 +181,9 @@ export function RecipeStepsEditor(): JSX.Element {
                         <strong class="overflow-hidden text-[12px] font-semibold leading-[1.3] text-ellipsis whitespace-nowrap">
                           {s.label}
                         </strong>
-                        <small class="text-[10px] text-[var(--relay-text-tertiary)]">
-                          {s.description}
-                        </small>
+                        <small class="text-[10px] text-[var(--text-weak)]">{s.description}</small>
                       </span>
-                      <Icon
-                        name="chevron-right"
-                        size={14}
-                        class="text-[var(--relay-text-tertiary)]"
-                      />
+                      <Icon name="chevron-right" size={14} class="text-[var(--text-weak)]" />
                     </button>
                   )}
                 </For>
