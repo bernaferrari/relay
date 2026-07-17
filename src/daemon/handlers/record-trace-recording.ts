@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { AppError, toAppErrorCode } from '../../kernel/errors.ts';
 import { sleep } from '../../utils/timeouts.ts';
 import { resolveTargetDevice } from '../../core/dispatch.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
@@ -519,6 +520,55 @@ async function releaseRecordOnlySession(
     sessionStore.writeSessionLog(session);
   }
   sessionStore.delete(sessionName);
+}
+
+/**
+ * Best-effort finalization of a session's still-active recording during
+ * teardown (session close or daemon shutdown). The normal `test --record-video`
+ * and `record stop` flows stop the recorder explicitly, but a session torn down
+ * while a recording is still active — e.g. the daemon is signalled/reaped or the
+ * session is closed before an explicit stop — otherwise leaks its recorder
+ * process. On the iOS simulator the `simctl io … recordVideo` child then
+ * reparents to launchd (PPID 1) and, because simctl only finalizes the mp4 on
+ * SIGINT, leaves a 0-byte file that also holds the device's single host
+ * recording slot (later attempts fail with "Host recording is already in
+ * progress"). Routing through the normal {@link stopActiveRecording} path sends
+ * SIGINT to the recorder and awaits the finalized file on every platform.
+ *
+ * The recording is detached from the session first so a late explicit
+ * `record stop` (or a second teardown pass) cannot double-stop the same
+ * recorder. A typed stop failure (the recorder could not be finalized) is
+ * rethrown as an {@link AppError} so both callers' isolated cleanup channels
+ * (`runIsolatedSessionCleanup` / `attemptCleanup`) record it as a `recording`
+ * cleanup failure instead of silently reporting successful cleanup; later
+ * cleanup steps still run because those channels isolate per-step failures.
+ */
+export async function stopSessionRecordingForTeardown(
+  session: SessionState,
+  logPath?: string,
+): Promise<void> {
+  const recording = session.recording;
+  if (!recording) return;
+  session.recording = undefined;
+  const req: DaemonRequest = {
+    token: '',
+    session: session.name,
+    command: 'record',
+    positionals: ['stop'],
+    flags: {},
+  };
+  const stopFailure = await stopActiveRecording({
+    req,
+    activeSession: session,
+    device: session.device,
+    logPath,
+    deps: buildRecordTraceDeps(),
+    recording,
+    stopRequestedAt: Date.now(),
+  });
+  if (stopFailure && stopFailure.ok === false) {
+    throw new AppError(toAppErrorCode(stopFailure.error.code), stopFailure.error.message);
+  }
 }
 
 // --- Main command handler ---
