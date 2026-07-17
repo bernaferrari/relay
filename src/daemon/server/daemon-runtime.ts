@@ -16,12 +16,14 @@ import {
 } from '../../provider-device-runtimes.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { createExpiredProviderLeaseReleaser } from '../provider-lease-expiry.ts';
+import { clearDaemonShutdownReport, writeDaemonShutdownReport } from '../daemon-shutdown-report.ts';
 import { createRequestHandler } from '../request-router.ts';
 import { teardownSessionResources } from '../session-teardown.ts';
 import { IOS_SIMULATOR_RECORDING_STOP_ESCALATION_BUDGET_MS } from '../handlers/record-trace-ios-simulator.ts';
 import { closeDaemonServers } from './server-shutdown.ts';
 import type { DaemonInvokeFn, SessionState } from '../types.ts';
 import { createDaemonIdleReap } from './daemon-idle-reap.ts';
+import { finalizeDaemonSessionLease } from './daemon-session-lease-finalizer.ts';
 import {
   emitDiagnostic,
   flushDiagnosticsToSessionFile,
@@ -56,7 +58,9 @@ import {
 } from '../../platforms/android/ime-lifecycle.ts';
 
 const DAEMON_SESSION_TEARDOWN_TIMEOUT_MS = 5_000;
+const DAEMON_SESSION_LEASE_RELEASE_TIMEOUT_MS = 1_000;
 const DAEMON_PNG_WORKER_TERMINATE_TIMEOUT_MS = 1_000;
+const DAEMON_PROVIDER_RELEASE_DRAIN_TIMEOUT_MS = 2_000;
 
 type WritableOutput = {
   write: (chunk: string) => unknown;
@@ -90,8 +94,9 @@ export async function teardownDaemonSessionForShutdown(params: {
   sessionStore: SessionStore;
   stateDir?: string;
   stderr: WritableOutput;
+  beforeDelete?: (session: SessionState) => Promise<void>;
 }): Promise<void> {
-  const { session, sessionStore, stateDir, stderr } = params;
+  const { session, sessionStore, stateDir, stderr, beforeDelete } = params;
   const timeoutMs = resolveDaemonSessionTeardownTimeoutMs(session);
   const teardown = teardownSessionResources(session, session.name, stateDir).catch((error) => {
     stderr.write(
@@ -110,6 +115,7 @@ export async function teardownDaemonSessionForShutdown(params: {
   // `.ad` iff the repair transaction completed, else leave a bounded
   // `REPAIR_SESSION_EXPIRED` tombstone for the reaped-before-finalize case.
   sessionStore.finalizeRepairTeardown(session);
+  await beforeDelete?.(session);
   sessionStore.delete(session.name);
 }
 
@@ -207,7 +213,19 @@ export async function startDaemonRuntime(
   };
 
   const teardownDaemonSession = async (session: SessionState): Promise<void> =>
-    await teardownDaemonSessionForShutdown({ session, sessionStore, stateDir: baseDir, stderr });
+    await teardownDaemonSessionForShutdown({
+      session,
+      sessionStore,
+      stateDir: baseDir,
+      stderr,
+      beforeDelete: async (sessionToFinalize) =>
+        await finalizeDaemonSessionLease({
+          session: sessionToFinalize,
+          leaseRegistry,
+          expiredProviderLeaseReleaser,
+          timeoutMs: DAEMON_SESSION_LEASE_RELEASE_TIMEOUT_MS,
+        }),
+    });
 
   const teardownDaemonSessions = async (): Promise<void> => {
     const sessionsToStop = sessionStore.toArray();
@@ -300,6 +318,7 @@ export async function startDaemonRuntime(
     exit(0);
     return null;
   }
+  clearDaemonShutdownReport(baseDir);
 
   let servers: DaemonServer[] = [];
   let socketPort: number | undefined;
@@ -341,7 +360,6 @@ export async function startDaemonRuntime(
     idleReap.cancel();
     if (shuttingDown) return;
     shuttingDown = true;
-    expiredProviderLeaseReleaser.shutdown();
     if (shutdownOptions.cause) {
       await emitFatalDiagnostic(shutdownOptions.cause);
     }
@@ -354,7 +372,21 @@ export async function startDaemonRuntime(
     try {
       await detachIosSimulatorRunnerSessionsForShutdown();
     } catch {}
+    expiredProviderLeaseReleaser.beginShutdown();
     await teardownDaemonSessions();
+    const providerReleaseDrain = await expiredProviderLeaseReleaser.drain(
+      DAEMON_PROVIDER_RELEASE_DRAIN_TIMEOUT_MS,
+    );
+    writeDaemonShutdownReport(baseDir, providerReleaseDrain);
+    emitDiagnostic({
+      level: providerReleaseDrain.pending.length === 0 ? 'info' : 'warn',
+      phase: 'daemon_shutdown_provider_release_drain',
+      data: {
+        releasedLeaseIds: providerReleaseDrain.released.map((lease) => lease.leaseId),
+        pendingLeaseIds: providerReleaseDrain.pending.map((lease) => lease.leaseId),
+      },
+    });
+    expiredProviderLeaseReleaser.shutdown();
     await Promise.allSettled(
       providerDeviceRuntimes.map(async (runtime) => await runtime.shutdown()),
     );

@@ -120,3 +120,47 @@ test('does not release until the expired lease record is durable', async () => {
     fs.rmSync(stateDir, { recursive: true, force: true });
   }
 });
+
+test('shutdown drain reports releases completed before and during its final retry', async () => {
+  const leaseRegistry = new LeaseRegistry();
+  const releasedBeforeShutdown = leaseRegistry.allocateLease({
+    tenantId: 'tenant-a',
+    runId: 'run-0',
+    leaseProvider: 'browserstack',
+  });
+  const releasedDuringShutdown = leaseRegistry.allocateLease({
+    tenantId: 'tenant-a',
+    runId: 'run-1',
+    leaseProvider: 'browserstack',
+  });
+  const lease = leaseRegistry.allocateLease({
+    tenantId: 'tenant-a',
+    runId: 'run-2',
+    leaseProvider: 'browserstack',
+  });
+  const release = vi
+    .fn()
+    .mockResolvedValueOnce({})
+    .mockRejectedValueOnce(new Error('temporary outage'))
+    .mockResolvedValue({});
+  const releaser = createExpiredProviderLeaseReleaser({
+    leaseLifecycleProvider: { release },
+    providerRuntimeIds: ['browserstack'],
+  });
+
+  try {
+    await releaser.release(releasedBeforeShutdown);
+    releaser.beginShutdown();
+    await releaser.release(releasedDuringShutdown);
+    await releaser.release(lease);
+    const drained = await releaser.drain(10);
+
+    expect(release).toHaveBeenCalledTimes(4);
+    expect(release).toHaveBeenCalledWith(lease);
+    expect(drained.released).toHaveLength(2);
+    expect(drained.released).toEqual(expect.arrayContaining([releasedDuringShutdown, lease]));
+    expect(drained.pending).toEqual([]);
+  } finally {
+    releaser.shutdown();
+  }
+});
