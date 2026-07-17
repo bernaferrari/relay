@@ -20,7 +20,7 @@ export * from './gesture-plan-types.ts';
 
 export const GESTURE_SAMPLE_INTERVAL_MS = 16;
 export const GESTURE_INITIAL_ANGLE_DEGREES = -90;
-export const GESTURE_FLING_DEFAULT_DISTANCE = 180;
+const GESTURE_FLING_DEFAULT_DISTANCE = 180;
 
 const GESTURE_INITIAL_SPAN_RATIO = 0.25;
 const GESTURE_PINCH_INITIAL_SPAN_RATIO = 0.4;
@@ -182,18 +182,6 @@ function buildPanPlan(
     DEFAULT_PAN_DURATION_MS,
     'gesture pan durationMs',
   );
-  if ('preset' in input) {
-    const { from, to } = presetGestureEndpoints(input.preset, viewport);
-    return buildSinglePointerPlan(
-      'pan',
-      from,
-      to,
-      durationMs,
-      viewport,
-      input.executionProfile ?? 'timed-pan',
-      profile,
-    );
-  }
   if ((input.pointerCount ?? 1) === 1) {
     const start = finitePoint(input.origin, 'gesture pan origin');
     const delta = finitePoint(input.delta, 'gesture pan delta');

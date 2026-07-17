@@ -3,7 +3,6 @@ import {
   gesturePayloadToPositionals,
   normalizePublicGesture,
   normalizePublicSwipeMotion,
-  type GestureDeprecation,
   type SwipePayload,
 } from '../../contracts/gesture-normalization.ts';
 import { requireGestureSupported } from '../../core/capabilities.ts';
@@ -16,6 +15,7 @@ import {
 import { AppError, normalizeError } from '../../kernel/errors.ts';
 import { readOptionalInteger } from '../../kernel/input-validation.ts';
 import type { Point } from '../../kernel/snapshot.ts';
+import type { GestureSemanticInput } from '../../contracts/gesture-plan-types.ts';
 import { isActiveProviderDevice } from '../../provider-device-runtime.ts';
 import { sleep } from '../../utils/timeouts.ts';
 import type { DaemonResponse, SessionState } from '../types.ts';
@@ -46,6 +46,9 @@ export async function dispatchGestureViaRuntime(
   return await dispatchGestureInteraction(params, 'gesture', async (session) => {
     const input = readGesturePayload(params.req.input);
     const normalized = normalizePublicGesture(input);
+    if (normalized.gesture.intent === 'pan' && params.req.internal?.gestureExecutionProfile) {
+      normalized.gesture.executionProfile = params.req.internal.gestureExecutionProfile;
+    }
     requireGestureSupported(normalized.gesture, session.device);
     const result = await createGestureRuntime(params).interactions.gesture({
       session: params.sessionName,
@@ -55,7 +58,9 @@ export async function dispatchGestureViaRuntime(
     return {
       positionals: gesturePayloadToPositionals(input),
       flags: gestureReplayFlags(input, params.req.flags),
-      responseData: gestureResponseData(result, normalized.deprecations),
+      responseData: gestureResponseData(result, {
+        executionProfile: resolveExecutionProfile(normalized.gesture),
+      }),
       ...(input.kind === 'pinch' ? { recordingResultExtra: { scale: input.scale } } : {}),
     };
   });
@@ -75,7 +80,7 @@ export async function dispatchSwipeViaRuntime(
     return {
       positionals: swipeReplayPositionals(input),
       flags: params.req.flags,
-      responseData: gestureResponseData(result, result.deprecations ?? [], {
+      responseData: gestureResponseData(result, {
         from: input.from,
         to: input.to,
         x1: input.from.x,
@@ -84,6 +89,7 @@ export async function dispatchSwipeViaRuntime(
         y2: input.to.y,
         effectiveDurationMs: result.durationMs,
         timingMode: 'direct',
+        executionProfile: 'endpoint-hold',
         count,
         pauseMs,
         pattern,
@@ -147,11 +153,18 @@ async function dispatchGestureInteraction(
   }
 }
 
+function resolveExecutionProfile(gesture: GestureSemanticInput): string | undefined {
+  if (gesture.intent === 'fling') return 'endpoint-hold';
+  if (gesture.intent === 'pan') return gesture.executionProfile ?? 'timed-pan';
+  return undefined;
+}
+
 function gestureResponseData(
   result: GestureRuntimeResult,
-  deprecations: readonly GestureDeprecation[],
   extra: Record<string, unknown> = {},
 ): Record<string, unknown> {
+  const executionProfile =
+    typeof extra.executionProfile === 'string' ? extra.executionProfile : undefined;
   return {
     kind: result.kind,
     durationMs: result.durationMs,
@@ -160,7 +173,14 @@ function gestureResponseData(
     to: result.to,
     ...(result.backendResult ?? {}),
     ...extra,
-    ...(deprecations.length > 0 ? { deprecations } : {}),
+    ...(executionProfile
+      ? {
+          timing: {
+            executionProfile,
+            gestureDurationMs: result.durationMs,
+          },
+        }
+      : {}),
     message: result.message,
   };
 }
@@ -170,6 +190,12 @@ function readSwipeInput(input: unknown): SwipePayload {
     throw new AppError('INVALID_ARGS', 'swipe requires structured object input');
   }
   const record = input as Record<string, unknown>;
+  if (record.durationMs !== undefined) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'swipe does not accept durationMs; use gesture pan for timed movement',
+    );
+  }
   const pattern = record.pattern;
   if (pattern !== undefined && pattern !== 'one-way' && pattern !== 'ping-pong') {
     throw new AppError('INVALID_ARGS', 'swipe pattern must be one-way or ping-pong');
@@ -177,7 +203,6 @@ function readSwipeInput(input: unknown): SwipePayload {
   const payload: SwipePayload = {
     from: readSwipePoint(record.from, 'swipe from'),
     to: readSwipePoint(record.to, 'swipe to'),
-    durationMs: readOptionalInteger(record, 'durationMs', { min: 16, max: 10_000 }),
     count: readOptionalInteger(record, 'count', { min: 1, max: SWIPE_REPETITION_MAX }),
     pauseMs: readOptionalInteger(record, 'pauseMs', { min: 0, max: SWIPE_PAUSE_MAX_MS }),
     pattern,
@@ -189,7 +214,7 @@ function readSwipeInput(input: unknown): SwipePayload {
 function assertSwipeSeriesFitsRequest(input: SwipePayload): void {
   const count = input.count ?? 1;
   const pauseMs = input.pauseMs ?? 0;
-  const gestureDurationMs = input.durationMs ?? GESTURE_FLING_DURATION_MS;
+  const gestureDurationMs = GESTURE_FLING_DURATION_MS;
   const scheduledDurationMs = count * gestureDurationMs + Math.max(0, count - 1) * pauseMs;
   if (scheduledDurationMs <= SWIPE_SERIES_MAX_SCHEDULED_DURATION_MS) return;
   throw new AppError(
@@ -200,7 +225,7 @@ function assertSwipeSeriesFitsRequest(input: SwipePayload): void {
       pauseMs,
       gestureDurationMs,
       scheduledDurationMs,
-      hint: 'Reduce --count, --pause-ms, or the deprecated swipe duration.',
+      hint: 'Reduce --count or --pause-ms.',
     },
   );
 }
@@ -220,13 +245,7 @@ function readSwipePoint(value: unknown, field: string): Point {
 }
 
 function swipeReplayPositionals(input: SwipePayload): string[] {
-  return [
-    String(input.from.x),
-    String(input.from.y),
-    String(input.to.x),
-    String(input.to.y),
-    ...(input.durationMs === undefined ? [] : [String(input.durationMs)]),
-  ];
+  return [String(input.from.x), String(input.from.y), String(input.to.x), String(input.to.y)];
 }
 
 async function runSwipeRepetitions(
@@ -238,7 +257,6 @@ async function runSwipeRepetitions(
   pattern: 'one-way' | 'ping-pong',
 ) {
   let result: Awaited<ReturnType<typeof runtime.interactions.gesture>> | undefined;
-  const deprecations = normalizePublicSwipeMotion(input).deprecations;
   for (let index = 0; index < count; index += 1) {
     const normalized = normalizePublicSwipeMotion(swipeMotionAtIndex(input, pattern, index));
     result = await runtime.interactions.gesture({
@@ -249,10 +267,7 @@ async function runSwipeRepetitions(
     if (pauseMs > 0 && index + 1 < count) await sleep(pauseMs);
   }
   if (!result) throw new Error('Swipe orchestration did not execute a gesture.');
-  return {
-    ...result,
-    ...(deprecations.length > 0 ? { deprecations } : {}),
-  };
+  return result;
 }
 
 function swipeMotionAtIndex(
