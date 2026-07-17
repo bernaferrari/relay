@@ -9,6 +9,7 @@ import {
 import { BASE_COMMAND_CAPABILITY_MATRIX } from '../../capabilities.ts';
 import {
   DAEMON_COMMAND_DESCRIPTORS,
+  canRunReplayScopedAction,
   type DaemonCommandDescriptor,
 } from '../../../daemon/daemon-command-registry.ts';
 import type { DaemonRequest } from '../../../daemon/types.ts';
@@ -20,6 +21,8 @@ import {
   listDescriptorDispatchCommandNames,
   listCapabilityCheckedCommandNames,
   listMcpExposedCommandNames,
+  resolveCommandRecordsSessionAction,
+  RAW_COMMAND_DESCRIPTORS,
 } from '../registry.ts';
 
 // Function-valued traits cannot be deep-equaled across re-authored closures, so
@@ -292,4 +295,55 @@ test('capability-checked command list is built from descriptor capabilities', ()
     'control-plane capabilities command stays capability-exempt',
   );
   assert.equal(expectedNames.has('debug'), false, 'local debug command stays capability-exempt');
+});
+
+// #1310: every raw descriptor explicitly decides recording; the daemon
+// replayScopedAction trait and MCP schema projection are both derived from it.
+test('recordsSessionAction is explicit on every raw descriptor and drives daemon replay policy', () => {
+  for (const descriptor of RAW_COMMAND_DESCRIPTORS) {
+    assert.equal(
+      typeof descriptor.recordsSessionAction,
+      'boolean',
+      `${descriptor.name} declares an explicit recordsSessionAction boolean`,
+    );
+    const daemon = ('daemon' in descriptor ? descriptor.daemon : undefined) as
+      | { replayScopedAction?: boolean }
+      | undefined;
+    assert.equal(
+      'replayScopedAction' in (daemon ?? {}),
+      false,
+      `${descriptor.name} does not set replayScopedAction on the daemon trait (it is derived)`,
+    );
+  }
+
+  for (const descriptor of commandDescriptors) {
+    assert.equal(
+      typeof resolveCommandRecordsSessionAction(descriptor.name),
+      'boolean',
+      `${descriptor.name} has a resolved recordsSessionAction boolean`,
+    );
+    // replayScopedAction only exists for daemon-routed commands; the MCP schema
+    // projection uses recordsSessionAction directly and covers commands whose
+    // public surface maps to an internal daemon command (e.g. install-from-source).
+    if (!('daemon' in descriptor)) continue;
+    assert.equal(
+      resolveCommandRecordsSessionAction(descriptor.name),
+      canRunReplayScopedAction(descriptor.name),
+      `${descriptor.name} recordsSessionAction matches daemon replayScopedAction`,
+    );
+  }
+
+  const recordable = commandDescriptors
+    .filter((descriptor) => resolveCommandRecordsSessionAction(descriptor.name))
+    .map((descriptor) => descriptor.name)
+    .sort();
+  assert.ok(recordable.includes('press'), 'press is classified as recordable');
+  assert.ok(recordable.includes('click'), 'click is classified as recordable');
+  assert.ok(recordable.includes('close'), 'close is classified as recordable');
+  assert.ok(recordable.includes('open'), 'open is classified as recordable');
+  assert.ok(
+    recordable.includes('install-from-source'),
+    'install-from-source is classified as recordable',
+  );
+  assert.ok(!recordable.includes('devices'), 'devices is not classified as recordable');
 });

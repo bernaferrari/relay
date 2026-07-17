@@ -138,4 +138,11 @@ export type CommandDescriptor = {
   responseDataTransform?: CommandResponseDataTransform;
   catalog: CommandCatalogFacet;
   dispatch?: CommandDispatchFacet;
+  /**
+   * Whether the command records an action into the active session replay script
+   * by default, making `--no-record` meaningful. Declared on every raw descriptor
+   * so the recording decision is explicit; the daemon `replayScopedAction` trait and
+   * MCP `noRecord` schema projection are both derived from this value.
+   */
+  recordsSessionAction: boolean;
 };

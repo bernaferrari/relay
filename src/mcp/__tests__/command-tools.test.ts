@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { AgentDeviceClient } from '../../client/client-types.ts';
 import { createCommandToolExecutor, listCommandTools } from '../command-tools.ts';
+import { resolveCommandRecordsSessionAction } from '../../core/command-descriptor/registry.ts';
 import { COMMAND_OUTPUT_SCHEMAS } from '../command-output-schemas.ts';
 import { AppError } from '../../kernel/errors.ts';
 import { NAVIGATION_COMMAND_PROJECTIONS } from '../../commands/system/navigation-projection.ts';
@@ -1200,6 +1201,56 @@ test('MCP forwards record/noRecord from a get tool call through to the executed 
     {
       name: 'get',
       input: { format: 'text', target: { kind: 'ref', ref: '@e5' }, record: true },
+    },
+  ]);
+});
+
+// --- #1310: `noRecord` on every recordable command's MCP tool schema ---
+
+test('MCP tool schemas advertise noRecord for every recordable command', () => {
+  for (const tool of listCommandTools()) {
+    const properties = tool.inputSchema.properties ?? {};
+    if (resolveCommandRecordsSessionAction(tool.name)) {
+      assert.equal(
+        (properties.noRecord as { type?: string } | undefined)?.type,
+        'boolean',
+        `${tool.name} tool is missing a boolean 'noRecord' input`,
+      );
+      // --record is scoped to observation-only commands; mutating actions record by default.
+      if (properties.record !== undefined) {
+        assert.equal(
+          (properties.record as { type?: string } | undefined)?.type,
+          'boolean',
+          `${tool.name} tool has a non-boolean 'record' input`,
+        );
+      }
+    } else {
+      assert.equal(
+        properties.noRecord,
+        undefined,
+        `${tool.name} tool should not expose 'noRecord'`,
+      );
+    }
+  }
+});
+
+test('MCP forwards noRecord from a press tool call through to the executed command input', async () => {
+  const calls: unknown[] = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      calls.push({ name, input });
+      return {};
+    },
+  });
+  await executor.execute('press', {
+    target: { kind: 'ref', ref: '@e5' },
+    noRecord: true,
+  });
+  assert.deepEqual(calls, [
+    {
+      name: 'press',
+      input: { target: { kind: 'ref', ref: '@e5' }, noRecord: true },
     },
   ]);
 });
