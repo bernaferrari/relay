@@ -5,7 +5,10 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { AppError } from '../kernel/errors.ts';
 import type { DaemonArtifact, DaemonRequest, DaemonResponse } from '../daemon/types.ts';
-import { buildDaemonHttpAuthHeaders } from '../daemon/http-contract.ts';
+import {
+  buildDaemonHttpAuthHeaders,
+  buildDaemonHttpTenantHeaders,
+} from '../daemon/http-contract.ts';
 import {
   appendRecordingExtensionWhenMissing,
   recordingExtensionForPlatform,
@@ -311,7 +314,7 @@ export async function materializeRemoteArtifacts(
       token: info.token,
       artifactId: artifact.artifactId,
       destinationPath: localPath,
-      requestId: req.meta?.requestId,
+      requestScope: req.meta,
     });
     nextData[artifact.field] = localPath;
     nextArtifacts.push({
@@ -340,7 +343,7 @@ type DownloadRemoteArtifactParams = {
   token: string;
   artifactId: string;
   destinationPath: string;
-  requestId?: string;
+  requestScope: DaemonRequest['meta'];
   timeoutMs?: number;
 };
 
@@ -368,7 +371,10 @@ export async function downloadRemoteArtifact(params: DownloadRemoteArtifactParam
         port: artifactUrl.port,
         method: 'GET',
         path: artifactUrl.pathname + artifactUrl.search,
-        headers: buildDaemonHttpAuthHeaders(params.token),
+        headers: {
+          ...buildDaemonHttpAuthHeaders(params.token),
+          ...buildDaemonHttpTenantHeaders(params.requestScope?.tenantId),
+        },
       },
       (res) => {
         if ((res.statusCode ?? 500) >= 400) {
@@ -382,7 +388,7 @@ export async function downloadRemoteArtifact(params: DownloadRemoteArtifactParam
               new AppError('COMMAND_FAILED', 'Failed to download remote artifact', {
                 artifactId: params.artifactId,
                 statusCode: res.statusCode,
-                requestId: params.requestId,
+                requestId: params.requestScope?.requestId,
                 body,
               }),
             );
@@ -393,7 +399,7 @@ export async function downloadRemoteArtifact(params: DownloadRemoteArtifactParam
           settle(
             new AppError('COMMAND_FAILED', 'Remote artifact download was interrupted', {
               artifactId: params.artifactId,
-              requestId: params.requestId,
+              requestId: params.requestScope?.requestId,
             }),
           );
         });
@@ -406,7 +412,7 @@ export async function downloadRemoteArtifact(params: DownloadRemoteArtifactParam
     const timeoutHandle = setTimeout(() => {
       const timeoutError = new AppError('COMMAND_FAILED', 'Remote artifact download timed out', {
         artifactId: params.artifactId,
-        requestId: params.requestId,
+        requestId: params.requestScope?.requestId,
         timeoutMs,
       });
       settle(timeoutError);
@@ -423,7 +429,7 @@ export async function downloadRemoteArtifact(params: DownloadRemoteArtifactParam
           'Failed to download remote artifact',
           {
             artifactId: params.artifactId,
-            requestId: params.requestId,
+            requestId: params.requestScope?.requestId,
             timeoutMs,
           },
           error instanceof Error ? error : undefined,
