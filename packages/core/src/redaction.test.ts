@@ -12,7 +12,7 @@ import {
   setRedactionEnabled,
 } from "./redaction.js";
 
-test("redaction is safe by default, persisted, reversible, and environment-lockable", async () => {
+test("redaction defaults off, persists changes, and can be environment-locked", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-redaction-"));
   const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
   const previousMode = process.env.RELAY_REDACTION_MODE;
@@ -20,7 +20,7 @@ test("redaction is safe by default, persisted, reversible, and environment-locka
   delete process.env.RELAY_REDACTION_MODE;
   try {
     assert.deepEqual(await loadRedactionPolicy(), {
-      enabled: true,
+      enabled: false,
       source: "default",
       locked: false,
     });
@@ -32,6 +32,10 @@ test("redaction is safe by default, persisted, reversible, and environment-locka
       url: `https://example.test/path?token=${sentinel}`,
       nested: { cookie: sentinel },
     };
+    assert.equal(redactValue(evidence), evidence);
+    assert.deepEqual(redactResolvedInputs({ password: sentinel }), { password: sentinel });
+
+    await setRedactionEnabled(true);
     const redacted = redactValue(evidence);
     assert.equal(JSON.stringify(redacted).includes(sentinel), false);
     assert.equal((redacted as { clipboard: string }).clipboard, REDACTED);

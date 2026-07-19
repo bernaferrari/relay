@@ -31,7 +31,7 @@ export function PrivacySettingsPanel() {
     const source = server.redactionPolicy()?.source;
     if (source === "environment") return "Controlled by RELAY_REDACTION_MODE";
     if (source === "workspace") return "Saved for this workspace";
-    return "Safe default";
+    return "Default: raw evidence";
   };
 
   return (
@@ -49,7 +49,7 @@ export function PrivacySettingsPanel() {
         <button
           type="button"
           role="switch"
-          aria-checked={server.redactionPolicy()?.enabled ?? true}
+          aria-checked={server.redactionPolicy()?.enabled ?? false}
           aria-label="Redact sensitive evidence"
           disabled={!server.redactionPolicy() || server.redactionPolicy()?.locked || busy()}
           class={cn(
@@ -75,16 +75,20 @@ export function PrivacySettingsPanel() {
         <span
           class={cn(
             "text-12-medium",
-            server.redactionPolicy()?.enabled
-              ? "text-icon-success-base"
-              : "text-icon-critical-base",
+            !server.redactionPolicy()
+              ? "text-text-weak"
+              : server.redactionPolicy()?.enabled
+                ? "text-icon-success-base"
+                : "text-icon-critical-base",
           )}
         >
           {busy()
             ? "Saving…"
-            : server.redactionPolicy()?.enabled === false
-              ? "Raw evidence enabled"
-              : "Protected"}
+            : !server.redactionPolicy()
+              ? "Loading…"
+              : server.redactionPolicy()?.enabled
+                ? "Protected"
+                : "Raw evidence enabled"}
         </span>
       </div>
 

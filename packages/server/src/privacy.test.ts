@@ -25,15 +25,15 @@ test("privacy policy can be toggled locally and survives a restart", async () =>
   try {
     const client = clientFor(server.port);
     assert.deepEqual(await client.redactionPolicy(), {
-      policy: { enabled: true, source: "default", locked: false },
+      policy: { enabled: false, source: "default", locked: false },
     });
-    const disabled = await client.setRedactionEnabled(false);
-    assert.equal(disabled.policy.enabled, false);
-    assert.equal(disabled.policy.source, "workspace");
+    const enabled = await client.setRedactionEnabled(true);
+    assert.equal(enabled.policy.enabled, true);
+    assert.equal(enabled.policy.source, "workspace");
 
     await server.close();
     server = await startServer({ host: "127.0.0.1", port: 0 });
-    assert.equal((await clientFor(server.port).redactionPolicy()).policy.enabled, false);
+    assert.equal((await clientFor(server.port).redactionPolicy()).policy.enabled, true);
   } finally {
     await server.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

@@ -129,7 +129,7 @@ network summaries, performance, and video are automatic where supported. Audio a
 remain explicitly unsupported unless an adapter and consent policy implement them. Network bodies
 and audio are never enabled implicitly. Redaction runs before disk and HTTP serialization.
 
-The default-on policy is persisted at `.relay/privacy.json`, can be locked with
+The default-off policy is persisted at `.relay/privacy.json`, can be locked with
 `RELAY_REDACTION_MODE`, and cannot be disabled on a non-loopback server binding. CLI and in-process
 TUI hosts load the same policy before collecting evidence.
 

@@ -21,7 +21,7 @@ export class RedactionPolicyLockedError extends Error {
 const REDACTION_ENV = "RELAY_REDACTION_MODE";
 const REDACTION_FILE = join(".relay", "privacy.json");
 const DEFAULT_POLICY: RedactionPolicy = {
-  enabled: true,
+  enabled: false,
   source: "default",
   locked: false,
 };

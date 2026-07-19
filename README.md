@@ -245,7 +245,7 @@ The HTTP server refuses non-loopback bindings without a bearer token. For LAN or
 set a long random `RELAY_AUTH_TOKEN` (24+ characters) or pass `--token`. Keep the default
 loopback binding for local desktop development.
 
-Sensitive evidence redaction is on by default and can be changed in **Settings → Privacy &
+Sensitive evidence redaction is off by default and can be changed in **Settings → Privacy &
 evidence**. The choice is stored in `.relay/privacy.json` and applies to future evidence and API
 responses; finalized runs are never rewritten. `RELAY_REDACTION_MODE=on|off` overrides and locks
 the UI setting. Relay refuses non-loopback bindings whenever redaction is disabled.
