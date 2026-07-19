@@ -15,7 +15,11 @@ import {
   parseJobSummary,
   type JobSummary,
   type RedactionPolicy,
+  type EvidenceCollectionPolicy,
+  type SensitiveEvidenceChannel,
   type RunSummary,
+  type MatrixExpansion,
+  type SoakReport,
 } from "@relay/protocol";
 
 export class ApiError<T = unknown> extends Error {
@@ -99,6 +103,19 @@ export class RelayClient {
       body: JSON.stringify({ enabled }),
     });
   }
+  evidenceCollectionPolicy(): Promise<{ policy: EvidenceCollectionPolicy }> {
+    return this.request("/settings/evidence");
+  }
+  setSensitiveEvidenceConsent(
+    channel: SensitiveEvidenceChannel,
+    enabled: boolean,
+    reason?: string,
+  ): Promise<{ policy: EvidenceCollectionPolicy }> {
+    return this.request("/settings/evidence", {
+      method: "PUT",
+      body: JSON.stringify({ channel, enabled, ...(reason ? { reason } : {}) }),
+    });
+  }
   async jobs(): Promise<{ jobs: JobSummary[] }> {
     const body = await this.request<{ jobs?: unknown }>("/jobs?full=0");
     if (!body || !Array.isArray(body.jobs))
@@ -118,6 +135,22 @@ export class RelayClient {
     } catch (error) {
       throw new ApiError(502, error instanceof Error ? error.message : String(error), body);
     }
+  }
+  startSoak(input: {
+    recipe: string;
+    matrixId: string;
+    repetitions?: number;
+    prodAccountMatch?: string;
+  }): Promise<{
+    jobs: JobSummary[];
+    matrix: MatrixExpansion;
+    batchId: string;
+    repetitions: number;
+  }> {
+    return this.request("/jobs/soak", { method: "POST", body: JSON.stringify(input) });
+  }
+  soakReport(batchId: string): Promise<{ report: SoakReport }> {
+    return this.request(`/reports/soak/${encodeURIComponent(batchId)}`);
   }
   projects(): Promise<{ projects: Project[] }> {
     return this.request("/projects");

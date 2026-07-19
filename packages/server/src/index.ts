@@ -29,7 +29,6 @@ import {
   listActionsWithTrace,
   listDevices,
   listJobs,
-  summarizeJob,
   listRecipes,
   readRecipe,
   readRecipeEvidenceImage,
@@ -40,12 +39,7 @@ import {
   validateRecipeSteps,
   now,
   publish,
-  retryJob,
-  cancelJob,
-  pauseJob,
   parseRecipeYaml,
-  resumeJob,
-  cancelActiveJob,
   runsRoot,
   selectDevice,
   runDoctor,
@@ -70,7 +64,6 @@ import {
   saveProject,
   writeJourney,
   writeProjectVariables,
-  prepareRunMatrix,
   buildTestAtlas,
   listRecipeHistory,
   restoreRecipeHistory,
@@ -111,14 +104,18 @@ import {
   saveSuite,
   type SaveSuiteInput,
   getRedactionPolicy,
+  getEvidenceCollectionPolicy,
+  loadEvidenceCollectionPolicy,
   loadRedactionPolicy,
   RedactionPolicyLockedError,
   setRedactionEnabled,
+  setSensitiveEvidenceConsent,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
 import { handleRunRoute } from "./run-routes.js";
-import { assertJobAccess, assertTargetControl } from "./access-control.js";
+import { handleJobRoute } from "./job-routes.js";
+import { assertTargetControl } from "./access-control.js";
 import {
   CORS_HEADERS,
   HttpError,
@@ -137,6 +134,7 @@ import type {
   Project,
   RevisionWrite,
   TestVariable,
+  SensitiveEvidenceChannel,
 } from "@relay/protocol";
 
 export type StartServerOptions = {
@@ -247,6 +245,40 @@ async function handleRequest(
         }
         throw error;
       }
+      return;
+    }
+    if (method === "GET" && pathname === "/settings/evidence") {
+      json(res, 200, { policy: getEvidenceCollectionPolicy() });
+      return;
+    }
+    if (method === "PUT" && pathname === "/settings/evidence") {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Evidence consent can only be changed from a local Relay host");
+      }
+      const body = (await parseJsonBody(req)) as {
+        channel?: unknown;
+        enabled?: unknown;
+        reason?: unknown;
+      };
+      if (body.channel !== "audio" && body.channel !== "crash" && body.channel !== "network-body") {
+        throw new HttpError(400, "channel must be audio, crash, or network-body");
+      }
+      if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled must be a boolean");
+      if (body.reason !== undefined && typeof body.reason !== "string") {
+        throw new HttpError(400, "reason must be a string");
+      }
+      const policy = await setSensitiveEvidenceConsent({
+        channel: body.channel as SensitiveEvidenceChannel,
+        enabled: body.enabled,
+        grantedBy: scope.subject,
+        ...(typeof body.reason === "string" ? { reason: body.reason } : {}),
+      });
+      recordAudit(scope, {
+        action: body.enabled ? "evidence.consent.grant" : "evidence.consent.revoke",
+        resource: body.channel,
+        result: "allow",
+      });
+      json(res, 200, { policy });
       return;
     }
     if (method === "GET" && pathname === "/audit") {
@@ -823,229 +855,7 @@ async function handleRequest(
       return;
     }
 
-    if (method === "GET" && pathname === "/jobs") {
-      const limit = parseLimit(url.searchParams.get("limit"), 50);
-      const full = url.searchParams.get("full") !== "0";
-      json(res, 200, {
-        jobs: (scope.localTrusted
-          ? listJobs(limit)
-          : listJobs(limit).filter(
-              (job) => job.projectId === scope.projectId && job.ownerId === scope.subject,
-            )
-        ).map((job) => (full ? job : summarizeJob(job))),
-        active:
-          scope.localTrusted ||
-          (getActiveJob()?.projectId === scope.projectId &&
-            getActiveJob()?.ownerId === scope.subject)
-            ? getActiveJob()
-            : null,
-      });
-      return;
-    }
-
-    const jobMatch = matchPath(pathname, "/jobs/:id");
-    if (method === "GET" && jobMatch) {
-      const job = getJob(jobMatch.id!);
-      assertJobAccess(scope, job);
-      json(res, 200, { job });
-      return;
-    }
-
-    const retryMatch = matchPath(pathname, "/jobs/:id/retry");
-    if (method === "POST" && retryMatch) {
-      const previous = getJob(retryMatch.id!);
-      assertJobAccess(scope, previous);
-      await assertTargetControl(scope, previous?.browserTargetId ?? previous?.serial);
-      const job = retryJob(retryMatch.id!);
-      json(res, 202, { job });
-      return;
-    }
-
-    const cancelMatch = matchPath(pathname, "/jobs/:id/cancel");
-    if (method === "POST" && cancelMatch) {
-      const job = cancelJob(cancelMatch.id!);
-      json(res, 200, { job });
-      return;
-    }
-
-    const pauseMatch = matchPath(pathname, "/jobs/:id/pause");
-    if (method === "POST" && pauseMatch) {
-      assertJobAccess(scope, getJob(pauseMatch.id!));
-      const job = pauseJob(pauseMatch.id!);
-      json(res, 200, { job });
-      return;
-    }
-
-    const resumeMatch = matchPath(pathname, "/jobs/:id/resume");
-    if (method === "POST" && resumeMatch) {
-      assertJobAccess(scope, getJob(resumeMatch.id!));
-      const job = resumeJob(resumeMatch.id!);
-      json(res, 200, { job });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/jobs/active/cancel") {
-      assertJobAccess(scope, getActiveJob() ?? undefined);
-      const job = cancelActiveJob();
-      if (!job) throw new HttpError(404, "No active job");
-      json(res, 200, { job });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/jobs/matrix") {
-      const body = (await parseJsonBody(req)) as {
-        recipe?: string;
-        serial?: string;
-        platform?: "android" | "ios";
-        targetKind?: "device" | "browser";
-        browserTargetId?: string;
-        prodAccountMatch?: string;
-        repetitions?: number;
-        seed?: number;
-        projectId?: string;
-      };
-      if (!body.recipe) throw new HttpError(400, "recipe is required");
-      await assertTargetControl(scope, body.browserTargetId ?? body.serial);
-      if (body.projectId?.trim() && body.projectId.trim() !== scope.projectId) {
-        recordAudit(scope, { action: "run.matrix", resource: "project", result: "deny" });
-        throw new HttpError(403, "Project is outside the authenticated scope");
-      }
-      const definitions = await readProjectVariables(scope.projectId);
-      const matrix = await prepareRunMatrix({
-        variables: definitions.value,
-        repetitions: body.repetitions,
-        seed: body.seed,
-      });
-      const jobs = matrix.cases.map((item) =>
-        enqueueJob({
-          recipe: body.recipe,
-          serial: body.serial,
-          platform: body.platform,
-          targetKind: body.targetKind,
-          browserTargetId: body.browserTargetId,
-          prodAccountMatch: body.prodAccountMatch,
-          variables: item.values,
-          batchId: matrix.id,
-          caseIndex: item.index,
-          caseCount: matrix.cases.length,
-          artifacts: [
-            {
-              kind: "frozen-inputs",
-              capturedAt: matrix.createdAt,
-              data: {
-                matrixId: matrix.id,
-                seed: matrix.seed,
-                caseIndex: item.index,
-                caseCount: matrix.cases.length,
-                values: item.values,
-                provenance: item.provenance,
-              },
-            },
-          ],
-          projectId: scope.projectId,
-          ownerId: scope.subject,
-        }),
-      );
-      json(res, 202, { matrix, jobs });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/jobs/compatibility-matrix") {
-      const body = (await parseJsonBody(req)) as {
-        recipe?: string;
-        matrixId?: string;
-        repetitions?: number;
-        prodAccountMatch?: string;
-      };
-      if (!body.recipe || !body.matrixId) {
-        throw new HttpError(400, "recipe and matrixId are required");
-      }
-      const matrix = await readCompatibilityMatrix(scope.projectId, body.matrixId);
-      if (!matrix) throw new HttpError(404, "Compatibility matrix not found");
-      const profiles = buildTargetProfiles({
-        devices: await listDevices().catch(() => []),
-        targets: await listTargets(),
-      });
-      const expansion = resolveCompatibilityMatrix(matrix, profiles);
-      if (expansion.profiles.length === 0) {
-        const details = expansion.excluded.map((item) => item.reason).join("; ");
-        throw new HttpError(
-          400,
-          `Compatibility matrix “${matrix.name}” matched no targets${details ? ` (${details})` : ""}`,
-        );
-      }
-      for (const profile of expansion.profiles) {
-        await assertTargetControl(scope, profile.targetId);
-      }
-      const repetitions = Math.min(Math.max(Math.floor(body.repetitions ?? 1), 1), 20);
-      const batchId = `compatibility-${matrix.id}-${now()}`;
-      const jobs = expansion.profiles.flatMap((profile) =>
-        Array.from({ length: repetitions }, (_, repetition) =>
-          enqueueJob({
-            recipe: body.recipe,
-            serial: profile.targetId,
-            platform: profile.platform === "ios" ? "ios" : "android",
-            targetKind: profile.source === "browser" ? "browser" : "device",
-            ...(profile.source === "browser" ? { browserTargetId: profile.targetId } : {}),
-            targetProfile: profile,
-            prodAccountMatch: body.prodAccountMatch,
-            batchId,
-            caseIndex: repetition,
-            caseCount: repetitions,
-            artifacts: [
-              {
-                kind: "compatibility-profile",
-                capturedAt: expansion.resolvedAt,
-                data: { matrixId: matrix.id, matrixName: matrix.name, profile },
-              },
-            ],
-            projectId: scope.projectId,
-            ownerId: scope.subject,
-          }),
-        ),
-      );
-      json(res, 202, { matrix: expansion, jobs });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/jobs") {
-      const body = (await parseJsonBody(req)) as {
-        action?: string;
-        recipe?: string;
-        serial?: string;
-        platform?: "android" | "ios";
-        targetKind?: "device" | "browser";
-        browserTargetId?: string;
-        prodAccountMatch?: string;
-        retryOf?: string;
-        variables?: Record<string, string>;
-      };
-      if (!body.action && !body.recipe && !body.retryOf) {
-        throw new HttpError(400, "action or recipe is required");
-      }
-      await assertTargetControl(scope, body.browserTargetId ?? body.serial);
-      let job;
-      try {
-        job = body.retryOf
-          ? retryJob(body.retryOf)
-          : enqueueJob({
-              action: body.action,
-              recipe: body.recipe,
-              serial: body.serial,
-              platform: body.platform,
-              targetKind: body.targetKind,
-              browserTargetId: body.browserTargetId,
-              prodAccountMatch: body.prodAccountMatch,
-              variables: body.variables,
-              projectId: scope.projectId,
-              ownerId: scope.subject,
-            });
-      } catch (err) {
-        // enqueueJob throws "Unknown action: <id>" for bad action ids — surface as 400, not 500.
-        const message = err instanceof Error ? err.message : String(err);
-        throw new HttpError(400, message);
-      }
-      json(res, 202, { job });
+    if (await handleJobRoute({ method, pathname, url, request: req, response: res, scope })) {
       return;
     }
 
@@ -1593,11 +1403,13 @@ async function handleRequest(
         endpoints: [
           "GET /health",
           "GET/PUT /settings/privacy",
+          "GET/PUT /settings/evidence",
           "GET /doctor",
           "GET /report",
           "GET /report/:jobId",
           "GET /report/junit",
           "GET /reports/matrix/:batchId",
+          "GET /reports/soak/:batchId",
           "GET /events (SSE)",
           "GET /actions",
           "GET /devices",
@@ -1618,6 +1430,7 @@ async function handleRequest(
           "POST /jobs",
           "POST /jobs/matrix",
           "POST /jobs/compatibility-matrix",
+          "POST /jobs/soak",
           "POST /jobs/:id/retry",
           "POST /jobs/:id/cancel",
           "POST /jobs/:id/pause",
@@ -1668,6 +1481,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
   const redaction = await loadRedactionPolicy();
+  await loadEvidenceCollectionPolicy();
   assertSafeBinding(host, token);
   if (!isLoopbackHost(host) && !redaction.enabled) {
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");

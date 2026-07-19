@@ -56,9 +56,16 @@ import {
 import { getBrowserDevice } from "./browser-target.js";
 import { preflightTarget, readTarget } from "./targets.js";
 import { runWithTargetContext, type TargetContext } from "./target-context.js";
-import type { EvidenceManifest, FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
+import type {
+  EvidenceCollectionPolicy,
+  EvidenceManifest,
+  FailureCategory,
+  RunOutcome,
+  TargetProfile,
+} from "@relay/protocol";
 import type { JobSummary } from "@relay/protocol";
 import { redactText } from "./redaction.js";
+import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -145,6 +152,8 @@ export type TestJob = {
   recipeSnapshot?: Recipe;
   /** Structured completeness and ordered evidence timeline for this run. */
   evidence?: EvidenceManifest;
+  /** Consent grants frozen before collectors start. */
+  evidencePolicy: EvidenceCollectionPolicy;
   /** Present while a recipe is deliberately waiting for a person to act. */
   waitingFor?: {
     kind: "human";
@@ -251,6 +260,7 @@ export type EnqueueJobInput = {
   recipeSnapshot?: Recipe;
   projectId?: string;
   ownerId?: string;
+  evidencePolicy?: EvidenceCollectionPolicy;
 };
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
@@ -284,6 +294,9 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     caseCount: input.caseCount ?? parent?.caseCount,
     resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
     recipeSnapshot: structuredClone(input.recipeSnapshot ?? parent?.recipeSnapshot),
+    evidencePolicy: structuredClone(
+      input.evidencePolicy ?? parent?.evidencePolicy ?? getEvidenceCollectionPolicy(),
+    ),
     options: {
       prodAccountMatch: input.prodAccountMatch ?? parent?.options?.prodAccountMatch,
     },

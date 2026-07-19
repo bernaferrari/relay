@@ -4,6 +4,7 @@ import type { EvidenceChannel, EvidenceChannelRecord, EvidenceManifest } from "@
 import { base, type Device } from "./device.js";
 import { now } from "./events.js";
 import { redactValue } from "./redaction.js";
+import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
 
@@ -24,6 +25,8 @@ export type RunEvidenceHandle = {
   monotonicStart: number;
   recordingStarted: boolean;
   logsStarted: boolean;
+  audioStarted: boolean;
+  crashStarted: boolean;
   stopped: boolean;
   manifest: EvidenceManifest;
 };
@@ -35,6 +38,8 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
     monotonicStart: performance.now(),
     recordingStarted: false,
     logsStarted: false,
+    audioStarted: false,
+    crashStarted: false,
     stopped: false,
     manifest: createManifest(job, startedAt),
   };
@@ -45,8 +50,20 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
   channel(handle, "screenshot").startedAt = startedAt;
   channel(handle, "ui-tree").status = "partial";
   channel(handle, "ui-tree").startedAt = startedAt;
-  channel(handle, "crash").message = "automatic crash collector is unavailable for this adapter";
-  channel(handle, "audio").message = "audio is opt-in and was not requested";
+  const crash = channel(handle, "crash");
+  crash.status = "denied";
+  crash.message = "crash diagnostics require an explicit workspace consent grant";
+  const audio = channel(handle, "audio");
+  audio.status = "denied";
+  audio.message = "audio probing requires an explicit workspace consent grant";
+  for (const [name, grant] of Object.entries(job.evidencePolicy.sensitive)) {
+    const channelName: EvidenceChannel =
+      name === "network-body" ? "network" : (name as EvidenceChannel);
+    event(handle, channelName, "consent.granted", {
+      sensitiveChannel: name,
+      grant,
+    });
+  }
   event(handle, "input", "run.started", { target: handle.manifest.target });
   return handle;
 }
@@ -73,6 +90,7 @@ function createManifest(job: TestJob, startedAt: number): EvidenceManifest {
       ...(job.targetProfile ? { profileId: job.targetProfile.id } : {}),
     },
     startedAt,
+    collectionPolicy: structuredClone(job.evidencePolicy),
     channels: Object.fromEntries(
       CHANNELS.map((channel) => [channel, emptyChannel(channel)]),
     ) as Record<EvidenceChannel, EvidenceChannelRecord>,
@@ -113,8 +131,10 @@ function failed(
   log: (line: string) => void,
 ): void {
   const record = channel(handle, name);
-  record.status = "failed";
   record.message = messageOf(error);
+  record.status = /unsupported|unavailable|requires a selected|capability/i.test(record.message)
+    ? "unsupported"
+    : "failed";
   record.finishedAt = now();
   event(handle, name, "capture.failed", { message: record.message });
   log(`warn: ${name} evidence unavailable: ${record.message}`);
@@ -163,6 +183,66 @@ export async function startRunEvidence(
     event(handle, "logs", "capture.started");
   } catch (error) {
     failed(handle, "logs", error, log);
+  }
+
+  try {
+    const include = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
+      ? "all"
+      : "summary";
+    await withTimeout(
+      device.observability.network({ ...base(), action: "log", include, limit: 1_000 }),
+      5_000,
+      "network capture start",
+    );
+    const record = channel(handle, "network");
+    record.status = "captured";
+    record.startedAt = startedAt;
+    record.message = include === "all" ? "request and response bodies consented" : "summary only";
+    event(handle, "network", "capture.started", { include });
+  } catch (error) {
+    failed(handle, "network", error, log);
+  }
+
+  if (hasSensitiveEvidenceConsent(job.evidencePolicy, "crash")) {
+    try {
+      await withTimeout(
+        device.observability.crashes({ action: "start", since: startedAt }),
+        5_000,
+        "crash diagnostics start",
+      );
+      const record = channel(handle, "crash");
+      record.status = "captured";
+      record.startedAt = startedAt;
+      record.message = undefined;
+      handle.crashStarted = true;
+      event(handle, "crash", "capture.started");
+    } catch (error) {
+      failed(handle, "crash", error, log);
+    }
+  }
+
+  if (hasSensitiveEvidenceConsent(job.evidencePolicy, "audio")) {
+    try {
+      const result = await withTimeout(
+        device.observability.audio({
+          ...base(),
+          action: "probe",
+          probeAction: "start",
+          bucketMs: 250,
+        }),
+        5_000,
+        "audio probe start",
+      );
+      const record = channel(handle, "audio");
+      record.status = "captured";
+      record.startedAt = startedAt;
+      record.message = undefined;
+      handle.audioStarted = true;
+      addArtifact(job, { kind: "audio-start", capturedAt: now(), data: redactValue(result) });
+      event(handle, "audio", "capture.started", result);
+    } catch (error) {
+      failed(handle, "audio", error, log);
+    }
   }
 
   try {
@@ -266,7 +346,9 @@ export async function stopRunEvidence(
         device.observability.network({
           ...base(),
           action: "dump",
-          include: "summary",
+          include: hasSensitiveEvidenceConsent(job.evidencePolicy, "network-body")
+            ? "all"
+            : "summary",
           limit: 1_000,
         }),
         5_000,
@@ -285,6 +367,50 @@ export async function stopRunEvidence(
       event(handle, "network", "capture.stopped", { entries: record.entries });
     } catch (error) {
       failed(handle, "network", error, log);
+    }
+
+    if (handle.crashStarted) {
+      try {
+        const result = await withTimeout(
+          device.observability.crashes({ action: "dump", since: handle.startedAt }),
+          10_000,
+          "crash diagnostics",
+        );
+        const data = redactValue(result);
+        addArtifact(job, { kind: "crash", capturedAt: now(), data });
+        const record = channel(handle, "crash");
+        record.entries = result.entries.length;
+        record.bytes = byteCount(data);
+        record.dropped = result.truncated ? 1 : 0;
+        record.status = result.truncated ? "partial" : "captured";
+        record.finishedAt = now();
+        event(handle, "crash", "capture.stopped", {
+          entries: record.entries,
+          truncated: result.truncated,
+        });
+      } catch (error) {
+        failed(handle, "crash", error, log);
+      }
+    }
+
+    if (handle.audioStarted) {
+      try {
+        const result = await withTimeout(
+          device.observability.audio({ ...base(), action: "probe", probeAction: "stop" }),
+          10_000,
+          "audio probe stop",
+        );
+        const data = redactValue(result);
+        addArtifact(job, { kind: "audio", capturedAt: now(), data });
+        const record = channel(handle, "audio");
+        record.entries = entryCount(result);
+        record.bytes = byteCount(data);
+        record.status = "captured";
+        record.finishedAt = now();
+        event(handle, "audio", "capture.stopped", { entries: record.entries });
+      } catch (error) {
+        failed(handle, "audio", error, log);
+      }
     }
 
     if (handle.recordingStarted) {
@@ -325,7 +451,7 @@ export async function stopRunEvidence(
       }
     }
   } else {
-    for (const name of ["performance", "logs", "network", "video"] as const) {
+    for (const name of ["performance", "logs", "network", "video", "crash", "audio"] as const) {
       if (channel(handle, name).status !== "unsupported") {
         channel(handle, name).status = "partial";
         channel(handle, name).message = "target adapter became unavailable before finalization";

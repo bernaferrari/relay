@@ -1,6 +1,7 @@
 import { Show, createSignal, onMount } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
+import { SensitiveEvidenceControls } from "./sensitive-evidence-controls";
 
 export function PrivacySettingsPanel() {
   const server = useServer();
@@ -8,9 +9,10 @@ export function PrivacySettingsPanel() {
   const [error, setError] = createSignal("");
 
   onMount(() => {
-    void server.refreshRedactionPolicy().catch((cause) => {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    });
+    void Promise.all([
+      server.refreshRedactionPolicy(),
+      server.refreshEvidenceCollectionPolicy(),
+    ]).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   });
 
   async function toggle(): Promise<void> {
@@ -63,7 +65,7 @@ export function PrivacySettingsPanel() {
           <span
             aria-hidden="true"
             class={cn(
-              "absolute top-0.5 left-0.5 size-3.5 rounded-full bg-white shadow-sm transition-transform",
+              "absolute top-0.5 left-0.5 size-3.5 rounded-full bg-text-on-brand-base shadow-sm transition-transform",
               server.redactionPolicy()?.enabled && "translate-x-4",
             )}
           />
@@ -112,6 +114,7 @@ export function PrivacySettingsPanel() {
         This setting applies to future collection and responses. Finalized run artifacts are
         immutable and are not rewritten.
       </p>
+      <SensitiveEvidenceControls />
     </section>
   );
 }

@@ -130,6 +130,35 @@ pnpm --filter @relay/cli exec tsx src/index.ts test run <id> --target <target-id
 
 Evidence lands in `runs/<timestamp>_<action>_<device>_<id>/`.
 
+### Collection policy and soak trials
+
+Relay records input events, screenshots, video, UI trees, device/browser logs, network summaries,
+and performance data automatically when the target exposes them. Three higher-risk collectors stay
+off until explicitly enabled in **Settings → Privacy**: request/response bodies, audio-level probes,
+and crash diagnostics. Consent is stored in `.relay/evidence.json`, attributed to the local user,
+and frozen into every queued job and evidence manifest. Turning a collector off affects future jobs;
+already-frozen runs remain auditable.
+
+Evidence redaction is a separate, easy workspace toggle and defaults **off**. Its state is stored in
+`.relay/privacy.json`; `RELAY_REDACTION_MODE=on|off` can lock it for a process. Relay refuses a
+non-loopback server binding while redaction is off. With redaction disabled—or with network bodies
+enabled—run artifacts may contain credentials, personal data, prompts, or customer content, so use
+isolated trial accounts and control access to `runs/`.
+
+For repeatable data-collection trials, define a compatibility matrix and run a bounded soak:
+
+```bash
+relay matrix validate release-trials
+relay soak checkout --matrix release-trials --repeat 10
+relay soak checkout --matrix release-trials --repeat 10 --json > soak-report.json
+```
+
+A soak freezes the observed Android, iOS, and browser targets before enqueueing, supports up to 100
+repetitions per target and 500 total jobs, and reports product failures separately from harness
+failures and uncertainty. Its evidence table exposes captured, partial, unsupported, denied,
+failed, and missing counts per channel so a trial cannot look successful while silently collecting
+poor data. The HTTP equivalents are `POST /jobs/soak` and `GET /reports/soak/:batchId`.
+
 ## CLI (CI-friendly)
 
 ```bash
@@ -160,6 +189,9 @@ pnpm --filter @relay/cli exec tsx src/index.ts test run login-x --target <target
 pnpm --filter @relay/cli exec tsx src/index.ts matrix list
 pnpm --filter @relay/cli exec tsx src/index.ts matrix validate release-smoke
 pnpm --filter @relay/cli exec tsx src/index.ts test run login-x --matrix release-smoke --junit ./matrix.xml
+
+# Bounded cross-platform trial campaign with aggregate evidence coverage
+pnpm --filter @relay/cli exec tsx src/index.ts soak login-x --matrix release-smoke --repeat 10
 
 # Flake retries (default 3)
 RELAY_RETRY_ATTEMPTS=5 pnpm --filter @relay/cli exec tsx src/index.ts run login-google
@@ -199,6 +231,7 @@ curl -s localhost:8787/report/junit
 ```
 runs/<iso>_<action>_<device>_<id8>/
   run.json      # status, errorCode, deviceName, steps, frames index
+  evidence.json # channel completeness, ordered events, frozen consent grants
   log.txt
   frames/001.png …
 ```
@@ -207,9 +240,10 @@ runs/<iso>_<action>_<device>_<id8>/
 
 ```
 GET  /health /doctor /meta /events
-GET/PUT /settings/privacy
+GET/PUT /settings/privacy /settings/evidence
 GET  /devices /actions /jobs /jobs/:id
 POST /jobs  POST /jobs/:id/retry
+POST /jobs/soak  GET /reports/soak/:batchId
 GET/POST /projects /builds /device-pools /device-leases
 GET/POST /matrices  POST /matrices/:id/resolve  GET /target-profiles
 GET/POST /targets  POST /targets/:id/open  POST /targets/:id/preflight

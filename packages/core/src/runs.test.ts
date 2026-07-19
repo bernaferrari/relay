@@ -28,6 +28,7 @@ function job(root: string, status: TestJob["status"] = "ok"): TestJob {
     title: "Evidence test",
     runDir: root,
     resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
   };
 }
 

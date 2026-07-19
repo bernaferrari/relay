@@ -14,15 +14,33 @@ type BrowserSession = {
   recordingPath?: string;
   recordingVideo?: Video | null;
   console: Array<{ level: string; text: string; at: number }>;
-  network: Array<{ method: string; url: string; status?: number; at: number }>;
+  network: BrowserNetworkEntry[];
+  networkInclude: "summary" | "headers" | "body" | "all";
+  networkPending: Set<Promise<void>>;
+  crashes: Array<{ at: number; source: string; message: string }>;
+  crashCapture: boolean;
   consoleDropped: number;
   networkDropped: number;
+};
+
+type BrowserNetworkEntry = {
+  method: string;
+  url: string;
+  status?: number;
+  at: number;
+  requestHeaders?: Record<string, string>;
+  requestBody?: string;
+  responseHeaders?: Record<string, string>;
+  responseBody?: string;
+  responseBodyEncoding?: "utf8" | "base64";
+  responseBodyTruncated?: boolean;
 };
 
 const sessions = new Map<string, Promise<BrowserSession>>();
 const INTERACTIVE =
   'button, a[href], input, textarea, select, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
 const MAX_EVIDENCE_ENTRIES = 1_000;
+const MAX_NETWORK_BODY_BYTES = 256 * 1024;
 
 async function createSession(
   targetId: string,
@@ -64,6 +82,10 @@ async function createSession(
     ...(recordingUnavailable ? { recordingUnavailable } : {}),
     console: [],
     network: [],
+    networkInclude: "summary",
+    networkPending: new Set(),
+    crashes: [],
+    crashCapture: false,
     consoleDropped: 0,
     networkDropped: 0,
   };
@@ -82,22 +104,61 @@ function attachEvidence(session: BrowserSession, page: Page): void {
     }
     session.console.push({ level: message.type(), text: message.text(), at: Date.now() });
   });
+  page.on("pageerror", (error) => {
+    if (!session.crashCapture) return;
+    if (session.crashes.length >= MAX_EVIDENCE_ENTRIES) session.crashes.shift();
+    session.crashes.push({ at: Date.now(), source: "browser-pageerror", message: error.message });
+  });
   page.on("request", (request) => {
     if (session.network.length >= MAX_EVIDENCE_ENTRIES) {
       session.network.shift();
       session.networkDropped += 1;
     }
-    session.network.push({ method: request.method(), url: request.url(), at: Date.now() });
+    const includeHeaders = session.networkInclude === "headers" || session.networkInclude === "all";
+    const includeBody = session.networkInclude === "body" || session.networkInclude === "all";
+    session.network.push({
+      method: request.method(),
+      url: request.url(),
+      at: Date.now(),
+      ...(includeHeaders ? { requestHeaders: request.headers() } : {}),
+      ...(includeBody && request.postData() ? { requestBody: request.postData()! } : {}),
+    });
   });
   page.on("response", (response) => {
     for (let index = session.network.length - 1; index >= 0; index -= 1) {
       const entry = session.network[index];
       if (entry?.url === response.url() && entry.status === undefined) {
         entry.status = response.status();
+        if (session.networkInclude === "headers" || session.networkInclude === "all") {
+          entry.responseHeaders = response.headers();
+        }
+        if (session.networkInclude === "body" || session.networkInclude === "all") {
+          const pending = captureResponseBody(response, entry);
+          session.networkPending.add(pending);
+          void pending.finally(() => session.networkPending.delete(pending));
+        }
         break;
       }
     }
   });
+}
+
+async function captureResponseBody(
+  response: import("playwright-core").Response,
+  entry: BrowserNetworkEntry,
+): Promise<void> {
+  try {
+    const body = await response.body();
+    const truncated = body.byteLength > MAX_NETWORK_BODY_BYTES;
+    const bounded = body.subarray(0, MAX_NETWORK_BODY_BYTES);
+    const contentType = response.headers()["content-type"] ?? "";
+    const textual = /(?:json|text|javascript|xml|html|css|form-urlencoded)/i.test(contentType);
+    entry.responseBody = textual ? bounded.toString("utf8") : bounded.toString("base64");
+    entry.responseBodyEncoding = textual ? "utf8" : "base64";
+    if (truncated) entry.responseBodyTruncated = true;
+  } catch {
+    // Redirects, cached responses, and streaming bodies may not be readable.
+  }
 }
 
 export async function performBrowserFind(
@@ -399,10 +460,33 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         }
         return { entries: [...session.console], dropped: session.consoleDropped };
       },
-      network: async () => ({
-        entries: [...session.network],
-        dropped: session.networkDropped,
-      }),
+      network: async (input) => {
+        if (input?.action === "log") {
+          session.network = [];
+          session.networkDropped = 0;
+          session.networkInclude = input.include ?? "summary";
+          return { started: true, include: session.networkInclude };
+        }
+        await Promise.allSettled(session.networkPending);
+        return { entries: [...session.network], dropped: session.networkDropped };
+      },
+      audio: async () => unsupported("browser audio probe"),
+      crashes: async (input) => {
+        if (input.action === "start") {
+          session.crashes = [];
+          session.crashCapture = true;
+        }
+        if (input.action === "dump") session.crashCapture = false;
+        return {
+          platform: "browser" as const,
+          since: input.since,
+          entries:
+            input.action === "start"
+              ? []
+              : session.crashes.filter((entry) => entry.at >= input.since),
+          truncated: false,
+        };
+      },
     },
     recording: {
       record: async (input: { action: "start" | "stop"; path?: string }) => {

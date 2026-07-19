@@ -1,8 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 import type { RedactionPolicy } from "@relay/protocol";
-import { findWorkspaceRoot } from "./workspace-root.js";
+import {
+  readWorkspaceSetting,
+  workspaceSettingFile,
+  writeWorkspaceSetting,
+} from "./workspace-settings.js";
 
 const SENSITIVE_KEY =
   /(?:authorization|cookie|password|passwd|secret|token|api[-_]?key|clipboard)/i;
@@ -19,7 +21,7 @@ export class RedactionPolicyLockedError extends Error {
 }
 
 const REDACTION_ENV = "RELAY_REDACTION_MODE";
-const REDACTION_FILE = join(".relay", "privacy.json");
+const REDACTION_FILE = "privacy.json";
 const DEFAULT_POLICY: RedactionPolicy = {
   enabled: false,
   source: "default",
@@ -34,12 +36,8 @@ type PersistedRedactionPolicy = {
   updatedAt: number;
 };
 
-function workspaceRoot(): string {
-  return process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot();
-}
-
 export function redactionPolicyFile(): string {
-  return join(workspaceRoot(), REDACTION_FILE);
+  return workspaceSettingFile(REDACTION_FILE);
 }
 
 function environmentPolicy(): RedactionPolicy | null {
@@ -66,10 +64,9 @@ export async function loadRedactionPolicy(): Promise<RedactionPolicy> {
     return getRedactionPolicy();
   }
 
-  try {
-    const raw = JSON.parse(
-      await readFile(redactionPolicyFile(), "utf8"),
-    ) as Partial<PersistedRedactionPolicy>;
+  const value = await readWorkspaceSetting(REDACTION_FILE);
+  if (value !== null) {
+    const raw = value as Partial<PersistedRedactionPolicy>;
     if (raw.schemaVersion !== 1 || typeof raw.enabled !== "boolean") {
       throw new Error("Privacy settings have an unsupported format");
     }
@@ -79,8 +76,7 @@ export async function loadRedactionPolicy(): Promise<RedactionPolicy> {
       locked: false,
       ...(typeof raw.updatedAt === "number" ? { updatedAt: raw.updatedAt } : {}),
     };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  } else {
     activePolicy = DEFAULT_POLICY;
   }
   return getRedactionPolicy();
@@ -95,19 +91,7 @@ export async function setRedactionEnabled(enabled: boolean): Promise<RedactionPo
 
   const updatedAt = Date.now();
   const next: PersistedRedactionPolicy = { schemaVersion: 1, enabled, updatedAt };
-  const file = redactionPolicyFile();
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  await mkdir(dirname(file), { recursive: true });
-  try {
-    await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-    await rename(temporary, file);
-  } catch (error) {
-    await unlink(temporary).catch(() => undefined);
-    throw error;
-  }
+  await writeWorkspaceSetting(REDACTION_FILE, next);
   activePolicy = { enabled, source: "workspace", locked: false, updatedAt };
   return getRedactionPolicy();
 }

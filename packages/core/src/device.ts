@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry } from "./retry.js";
 import { currentTargetContext } from "./target-context.js";
+import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
 
 export type DevicePlatform = "android" | "ios";
 export const PLATFORM = "android" as const;
@@ -86,6 +87,8 @@ export type Device = {
     network: (
       options?: Parameters<NativeDevice["observability"]["network"]>[0],
     ) => Promise<unknown>;
+    audio: (options?: Parameters<NativeDevice["observability"]["audio"]>[0]) => Promise<unknown>;
+    crashes: (options: { action: "start" | "dump"; since: number }) => Promise<CrashEvidenceResult>;
   };
   recording: {
     record: (options: Parameters<NativeDevice["recording"]["record"]>[0]) => Promise<{
@@ -124,9 +127,24 @@ export type SnapshotNode = {
 let _device: Device | null = null;
 export function createDevice(): Device {
   if (!_device) {
-    _device = createAgentDeviceClient({
+    const native = createAgentDeviceClient({
       session: process.env.AGENT_DEVICE_SESSION?.trim() || "relay-actions",
     });
+    _device = {
+      ...native,
+      observability: {
+        ...native.observability,
+        crashes: ({ action, since }) =>
+          action === "start"
+            ? Promise.resolve({
+                platform: selectedPlatform(),
+                since,
+                entries: [],
+                truncated: false,
+              })
+            : captureNativeCrashEvidence(since),
+      },
+    };
   }
   return _device;
 }

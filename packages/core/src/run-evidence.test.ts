@@ -49,6 +49,7 @@ test("run evidence records video and performance without affecting the run", asy
     title: "Chat smoke",
     artifacts: [],
     resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
   } as TestJob;
 
   try {
@@ -91,6 +92,7 @@ test("run evidence capture failures remain warnings", async () => {
     title: "Chat smoke",
     artifacts: [],
     resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
   } as TestJob;
 
   const handle = await startRunEvidence(job, device, (line) => warnings.push(line));
@@ -126,6 +128,7 @@ test("run evidence keeps the run healthy when a recorder reports no encoder", as
     title: "Chat smoke",
     artifacts: [],
     resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
   } as TestJob;
 
   const handle = await startRunEvidence(job, device, (line) => warnings.push(line));
@@ -137,4 +140,65 @@ test("run evidence keeps the run healthy when a recorder reports no encoder", as
     false,
   );
   assert.equal(job.status, "running");
+});
+
+test("consent grants activate audio, crash, and network-body collectors", async () => {
+  const networkIncludes: string[] = [];
+  const device = {
+    observability: {
+      perf: async () => ({}),
+      logs: async () => ({ entries: [] }),
+      network: async (options: { include?: string }) => {
+        networkIncludes.push(options.include ?? "summary");
+        return { entries: [{ requestBody: "prompt", responseBody: "answer" }] };
+      },
+      audio: async (options: { probeAction?: string }) => ({
+        entries: [{ bucketMs: 250, level: 0.4 }],
+        action: options.probeAction,
+      }),
+      crashes: async (options: { action: string; since: number }) => ({
+        platform: "android" as const,
+        since: options.since,
+        entries: options.action === "dump" ? [{ source: "logcat", message: "fatal" }] : [],
+        truncated: false,
+      }),
+    },
+    recording: { record: async () => ({ started: false, warning: "no encoder" }) },
+  } as unknown as Device;
+  const job = {
+    id: "evidence-sensitive",
+    action: "chat-smoke",
+    platform: "android",
+    status: "running",
+    queuedAt: Date.now(),
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Sensitive evidence",
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: {
+      schemaVersion: 1,
+      sensitive: Object.fromEntries(
+        ["audio", "crash", "network-body"].map((channel) => [
+          channel,
+          { grantedAt: Date.now(), grantedBy: "tester", reason: "trial" },
+        ]),
+      ),
+    },
+  } as TestJob;
+
+  const handle = await startRunEvidence(job, device, () => undefined);
+  await stopRunEvidence(handle, job, device, () => undefined);
+
+  assert.deepEqual(networkIncludes, ["all", "all"]);
+  assert.ok(job.artifacts.some((artifact) => artifact.kind === "audio"));
+  assert.ok(job.artifacts.some((artifact) => artifact.kind === "crash"));
+  assert.equal(job.evidence?.channels.audio.status, "captured");
+  assert.equal(job.evidence?.channels.crash.status, "captured");
+  assert.equal(job.evidence?.collectionPolicy?.sensitive["network-body"]?.grantedBy, "tester");
 });

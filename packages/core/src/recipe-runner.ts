@@ -1014,13 +1014,20 @@ export async function runRecipeStep(
     }
 
     case "network": {
+      const include = step.include ?? "summary";
+      if (
+        (include === "body" || include === "all") &&
+        !ctx.job?.evidencePolicy?.sensitive["network-body"]
+      ) {
+        throw new Error("network body capture requires consent in Settings → Privacy & evidence");
+      }
       const result = await captureNetwork(device, {
         action: step.action,
-        include: step.include,
+        include,
         limit: step.limit,
       });
       job?.artifacts.push({ kind: "network", capturedAt: now(), data: result });
-      log(`network: captured ${step.include ?? "summary"}`);
+      log(`network: captured ${include}`);
       break;
     }
 

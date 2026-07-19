@@ -34,6 +34,12 @@ test("privacy policy can be toggled locally and survives a restart", async () =>
     await server.close();
     server = await startServer({ host: "127.0.0.1", port: 0 });
     assert.equal((await clientFor(server.port).redactionPolicy()).policy.enabled, true);
+    const consented = await clientFor(server.port).setSensitiveEvidenceConsent(
+      "network-body",
+      true,
+      "Controlled trial",
+    );
+    assert.equal(consented.policy.sensitive["network-body"]?.grantedBy, "local-user");
   } finally {
     await server.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

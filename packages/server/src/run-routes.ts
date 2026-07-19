@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import {
   applyRunRetention,
   buildCompatibilityReport,
+  buildSoakReport,
   compareEvidenceMetrics,
   extractEvidenceMetrics,
   listJobs,
@@ -50,6 +51,17 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     const byId = new Map([...persisted, ...live].map((run) => [run.id, run]));
     const report = buildCompatibilityReport([...byId.values()], matrixReportMatch.batchId!);
     if (!report) throw new HttpError(404, "Compatibility matrix report not found");
+    json(response, 200, { report });
+    return true;
+  }
+
+  const soakReportMatch = matchPath(pathname, "/reports/soak/:batchId");
+  if (method === "GET" && soakReportMatch) {
+    const persisted = await listPersistedRuns(1_000);
+    const live = listJobs(1_000);
+    const byId = new Map([...persisted, ...live].map((run) => [run.id, run]));
+    const report = buildSoakReport([...byId.values()], soakReportMatch.batchId!);
+    if (!report) throw new HttpError(404, "Soak report not found");
     json(response, 200, { report });
     return true;
   }

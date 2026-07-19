@@ -10,26 +10,17 @@ import type {
   DiscoveryControl,
   JourneyMetadata,
   CompatibilityMatrix,
-  MatrixExpansion,
   Revisioned,
-  RedactionPolicy,
   ServerConnection,
   TestVariable,
   TargetProfile,
   TargetDefinition,
-  TargetPreflight,
 } from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
 import { asArray, levelFromLine, normalizeLocalBase, uid } from "../lib/api";
 import { createServerCapture } from "../lib/server-capture";
-import {
-  deleteMatrix,
-  importMatrixYaml,
-  loadMatrixYaml,
-  resolveMatrix,
-  saveMatrix,
-} from "../lib/server-matrix-remote";
+import { createServerTargetController } from "../lib/server-target-controller";
 import {
   approveDiscoverySuggestion as approveDiscoverySuggestionRemote,
   backtrackDiscovery as backtrackDiscoveryRemote,
@@ -44,14 +35,8 @@ import {
   setDiscoveryStatus,
 } from "../lib/server-discovery-remote";
 import {
-  deleteTarget,
   listActions,
   listDevices,
-  listTargetProfiles,
-  listTargets,
-  preflightTarget,
-  openBrowserTarget as openBrowserTargetRemote,
-  saveBrowserTarget as saveBrowserTargetRemote,
   selectDevice as selectDeviceRequest,
 } from "../lib/server-target-remote";
 import {
@@ -64,11 +49,8 @@ import {
   restoreRecipeVersion as restoreRecipeVersionRemote,
   saveRecipe as saveRecipeRemoteRequest,
 } from "../lib/server-recipe-remote";
-import {
-  loadRedactionPolicy as loadRedactionPolicyRemote,
-  setRedactionEnabled as setRedactionEnabledRemote,
-} from "../lib/server-privacy-remote";
-import { enqueueMatrix, enqueueRecipe, loadMatrixReport, retryJob } from "../lib/server-run-remote";
+import { createServerPrivacyController } from "../lib/server-privacy-controller";
+import { createServerRunController } from "../lib/server-run-controller";
 import {
   deleteSuite as deleteSuiteRequest,
   listSuites as listSuitesRequest,
@@ -79,7 +61,6 @@ import {
 } from "../lib/server-suite-remote";
 import type {
   ActionInfo,
-  CompatibilityReport,
   DeviceInfo,
   Frame,
   HealthState,
@@ -166,7 +147,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
     const [schedules, setSchedules] = createSignal<LocalSchedule[]>([]);
     const [runsRoot, setRunsRoot] = createSignal("");
-    const [redactionPolicy, setRedactionPolicy] = createSignal<RedactionPolicy | null>(null);
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
     const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
@@ -230,7 +210,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (!connection) await resolveConnection();
       connection = { ...(connection as ServerConnection), url: next };
       client = new RelayClient(connection, { fetch: fetcher() });
-      setRedactionPolicy(null);
+      clearPrivacyPolicies();
       if (platform.setServerConnection) await platform.setServerConnection(connection);
       else await platform.setServerUrl?.(next);
       connectSse();
@@ -319,6 +299,42 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       });
     }
 
+    const {
+      redactionPolicy,
+      evidenceCollectionPolicy,
+      refreshRedactionPolicy,
+      refreshEvidenceCollectionPolicy,
+      updateRedactionEnabled,
+      updateSensitiveEvidenceConsent,
+      clearPrivacyPolicies,
+    } = createServerPrivacyController(request);
+
+    const {
+      refreshTargets,
+      refreshTargetProfiles,
+      refreshMatrices,
+      saveCompatibilityMatrix: saveCompatibilityMatrixRemote,
+      deleteCompatibilityMatrix: deleteCompatibilityMatrixRemote,
+      resolveCompatibilityMatrix: resolveCompatibilityMatrixRemote,
+      loadCompatibilityMatrixYaml,
+      importCompatibilityMatrixYaml,
+      saveBrowserTarget,
+      deleteTargetRemote,
+      preflightTargetRemote,
+      openBrowserTarget,
+    } = createServerTargetController({
+      request,
+      health,
+      matrices,
+      selectedDevice,
+      setTargets,
+      setTargetProfiles,
+      setMatrices,
+      selectDevice: selectDeviceRemote,
+      refreshDevices,
+      appendLog,
+    });
+
     function dismissError() {
       setError(null);
     }
@@ -353,22 +369,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         if (health() === "offline") return;
         setError(err instanceof Error ? err.message : String(err));
       }
-    }
-
-    async function refreshTargets() {
-      if (health() === "offline") return;
-      setTargets(await listTargets(request));
-    }
-
-    async function refreshTargetProfiles() {
-      if (health() === "offline") return;
-      setTargetProfiles(await listTargetProfiles(request));
-    }
-
-    async function refreshMatrices() {
-      if (health() === "offline") return;
-      const data = await request<{ matrices: CompatibilityMatrix[] }>("/matrices");
-      setMatrices(data.matrices ?? []);
     }
 
     async function refreshDiscoverySessions() {
@@ -460,81 +460,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const changed = await backtrackDiscoveryRemote(request, id);
       await refreshDiscoverySessions();
       return changed;
-    }
-
-    async function saveCompatibilityMatrixRemote(input: {
-      id: string;
-      name: string;
-      selectors: CompatibilityMatrix["selectors"];
-    }): Promise<CompatibilityMatrix> {
-      const existing = matrices().some((matrix) => matrix.id === input.id);
-      const data = await saveMatrix(request, input, existing);
-      await refreshMatrices();
-      return data.matrix;
-    }
-
-    async function deleteCompatibilityMatrixRemote(id: string): Promise<void> {
-      await deleteMatrix(request, id);
-      await refreshMatrices();
-    }
-
-    async function resolveCompatibilityMatrixRemote(id: string): Promise<MatrixExpansion> {
-      return resolveMatrix(request, id);
-    }
-
-    async function loadCompatibilityMatrixYaml(id: string): Promise<string | null> {
-      try {
-        return await loadMatrixYaml(request, id);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        appendLog(message, "error");
-        toast(message, "error");
-        return null;
-      }
-    }
-
-    async function importCompatibilityMatrixYaml(
-      yaml: string,
-      conflict: "reject" | "replace" = "reject",
-    ): Promise<CompatibilityMatrix | null> {
-      try {
-        const matrix = await importMatrixYaml(request, yaml, conflict);
-        await refreshMatrices();
-        toast(`Imported “${matrix.name}”`, "success");
-        return matrix;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        appendLog(message, "error");
-        toast(message, "error");
-        return null;
-      }
-    }
-
-    async function saveBrowserTarget(input: {
-      id?: string;
-      name: string;
-      startUrl: string;
-      executablePath?: string;
-      headless?: boolean;
-    }): Promise<TargetDefinition> {
-      const target = await saveBrowserTargetRemote(request, input);
-      await Promise.all([refreshTargets(), refreshTargetProfiles(), refreshDevices()]);
-      return target;
-    }
-
-    async function deleteTargetRemote(id: string): Promise<void> {
-      await deleteTarget(request, id);
-      if (selectedDevice() === id) await selectDeviceRemote(null);
-      await Promise.all([refreshTargets(), refreshTargetProfiles(), refreshDevices()]);
-    }
-
-    async function preflightTargetRemote(id: string): Promise<TargetPreflight> {
-      return preflightTarget(request, id);
-    }
-
-    async function openBrowserTarget(id: string): Promise<void> {
-      const session = await openBrowserTargetRemote(request, id);
-      toast(`${session.name} is ready for sign in`, "success");
     }
 
     async function refreshRecipes() {
@@ -805,18 +730,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSchedules(data.schedules ?? []);
     }
 
-    async function refreshRedactionPolicy(): Promise<RedactionPolicy> {
-      const policy = await loadRedactionPolicyRemote(request);
-      setRedactionPolicy(policy);
-      return policy;
-    }
-
-    async function updateRedactionEnabled(enabled: boolean): Promise<RedactionPolicy> {
-      const policy = await setRedactionEnabledRemote(request, enabled);
-      setRedactionPolicy(policy);
-      return policy;
-    }
-
     async function deleteLocalSchedule(id: string): Promise<void> {
       await request(`/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
       setSchedules((items) => items.filter((item) => item.id !== id));
@@ -850,6 +763,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshSchedules(),
         refreshProjectVariables(),
         refreshRedactionPolicy(),
+        refreshEvidenceCollectionPolicy(),
       ]);
       connectSse();
     }
@@ -1065,113 +979,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function runRecipeRemote(id: string, repetitions = 1): Promise<void> {
-      if (health() !== "online") {
-        toast("Relay isn’t connected — can’t run yet", "warning");
-        return;
-      }
-      const serial = selectedDevice() ?? undefined;
-      const targetPlatform =
-        devices().find((device) => device.serial === serial)?.platform ?? "android";
-      // Snapshot before enqueue so the toast reports the right queue position.
-      // The new job lands behind the active job + any already-queued jobs.
-      const queuedBefore = queuedJobs().length;
-      const willQueue = Boolean(activeJob()) || queuedBefore > 0;
-      appendLog(`enqueue recipe ${id}${serial ? ` on ${serial}` : ""}…`, "info");
-
-      try {
-        await captureUiScreenshot(`before · ${id}`, undefined, id).catch(() => undefined);
-        const data = await enqueueRecipe(request, {
-          recipe: id,
-          ...(serial ? { serial } : {}),
-          ...(targetPlatform === "browser"
-            ? { targetKind: "browser" as const, browserTargetId: serial }
-            : { targetKind: "device" as const, platform: targetPlatform }),
-          repetitions,
-          projectId: connection?.projectId ?? "default",
-          ...(prodAccountMatch() ? { prodAccountMatch: prodAccountMatch() } : {}),
-        });
-        const first = data.jobs[0];
-        if (first) setSelectedJobId(first.id);
-        const title = recipes().find((r) => r.id === id)?.title ?? id;
-        if (repetitions > 1) {
-          toast(`Queued ${repetitions} frozen trials for ${title}`, "success");
-          void platform.notify?.("Stage", `Queued ${repetitions} trials for ${title}`);
-        } else if (willQueue) {
-          toast(`Queued ${title} — position ${queuedBefore + 1}`, "info");
-          void platform.notify?.("Stage", `Queued ${title} — position ${queuedBefore + 1}`);
-        } else {
-          toast(`Running ${title}`, "success");
-          void platform.notify?.("Stage", `Running ${title}`);
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        appendLog(msg, "error");
-        toast(msg, "error");
-        setError(msg);
-      }
-    }
-
-    async function runCompatibilityMatrixRemote(
-      recipeId: string,
-      matrixId: string,
-      repetitions = 1,
-    ): Promise<void> {
-      if (health() !== "online") {
-        toast("Relay isn’t connected — can’t run yet", "warning");
-        return;
-      }
-      const matrix = matrices().find((item) => item.id === matrixId);
-      try {
-        const data = await enqueueMatrix(request, {
-          recipe: recipeId,
-          matrixId,
-          repetitions,
-          ...(prodAccountMatch() ? { prodAccountMatch: prodAccountMatch() } : {}),
-        });
-        if (data.jobs[0]) setSelectedJobId(data.jobs[0].id);
-        toast(
-          `Queued ${data.jobs.length} ${data.jobs.length === 1 ? "run" : "runs"} across ${data.matrix.profiles.length} target${data.matrix.profiles.length === 1 ? "" : "s"}${matrix ? ` · ${matrix.name}` : ""}`,
-          "success",
-        );
-        await refreshJobs();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        appendLog(message, "error");
-        toast(message, "error");
-      }
-    }
-
-    async function loadCompatibilityReport(batchId: string): Promise<CompatibilityReport | null> {
-      try {
-        return await loadMatrixReport(request, batchId);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        // A batch can be visible while its first job is still being written. That
-        // is an expected empty state, not a user-facing error.
-        if (!/not found/i.test(message)) appendLog(message, "error");
-        return null;
-      }
-    }
-
-    async function retrySelectedJob(jobId?: string) {
-      const id = jobId ?? selectedJobId();
-      if (!id) {
-        appendLog("No job to retry", "error");
-        return;
-      }
-      appendLog(`retry / heal ${id.slice(0, 8)}…`, "info");
-
-      try {
-        const job = await retryJob(request, id);
-        setSelectedJobId(job.id);
-        setSelectedAction(job.action);
-        void refreshJobs();
-      } catch (err) {
-        appendLog(err instanceof Error ? err.message : String(err), "error");
-      }
-    }
-
     const {
       captureUiSnapshot,
       captureUiScreenshot,
@@ -1241,6 +1048,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshSchedules(),
           refreshProjectVariables(),
           refreshRedactionPolicy(),
+          refreshEvidenceCollectionPolicy(),
         ]);
         connectSse();
       }
@@ -1261,6 +1069,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             void refreshSuites();
             void refreshRuns();
             void refreshRedactionPolicy();
+            void refreshEvidenceCollectionPolicy();
             connectSse();
           }
         }
@@ -1338,6 +1147,32 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       jobs()
         .filter((j) => j.status === "queued")
         .reverse();
+    const {
+      runRecipe: runRecipeRemote,
+      runCompatibilityMatrix: runCompatibilityMatrixRemote,
+      loadCompatibilityReport,
+      retrySelectedJob,
+    } = createServerRunController({
+      request,
+      health,
+      devices,
+      recipes,
+      matrices,
+      selectedDevice,
+      selectedJobId,
+      prodAccountMatch,
+      projectId: () => connection?.projectId ?? "default",
+      activeJob,
+      queuedJobs,
+      captureBeforeRun: (label, actionId) => captureUiScreenshot(label, undefined, actionId),
+      appendLog,
+      setSelectedJobId,
+      setSelectedAction,
+      setError,
+      refreshJobs,
+      notify: platform.notify,
+    });
+
     const selectedRecipe = createMemo(
       () => recipes().find((recipe) => recipe.id === selectedRecipeId()) ?? null,
     );
@@ -1381,8 +1216,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       schedules,
       runsRoot,
       redactionPolicy,
+      evidenceCollectionPolicy,
       refreshRedactionPolicy,
+      refreshEvidenceCollectionPolicy,
       setRedactionEnabled: updateRedactionEnabled,
+      setSensitiveEvidenceConsent: updateSensitiveEvidenceConsent,
       selectedDevice,
       setSelectedDevice: selectDeviceRemote,
       selectedAction,

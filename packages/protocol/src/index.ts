@@ -60,6 +60,21 @@ export type RedactionPolicy = {
   updatedAt?: number;
 };
 
+export type SensitiveEvidenceChannel = "audio" | "crash" | "network-body";
+
+export type EvidenceConsentGrant = {
+  grantedAt: number;
+  grantedBy: string;
+  reason: string;
+};
+
+/** Workspace policy frozen into a run before any sensitive collector starts. */
+export type EvidenceCollectionPolicy = {
+  schemaVersion: 1;
+  sensitive: Partial<Record<SensitiveEvidenceChannel, EvidenceConsentGrant>>;
+  updatedAt?: number;
+};
+
 export type EvidenceChannelRecord = {
   channel: EvidenceChannel;
   status: EvidenceChannelStatus;
@@ -96,6 +111,7 @@ export type EvidenceManifest = {
   };
   startedAt: number;
   finishedAt?: number;
+  collectionPolicy?: EvidenceCollectionPolicy;
   channels: Record<EvidenceChannel, EvidenceChannelRecord>;
   events: EvidenceEvent[];
 };
@@ -238,11 +254,26 @@ export type RelayEndpointMap = {
     request: { enabled: boolean };
     response: { policy: RedactionPolicy };
   };
+  "GET /settings/evidence": { response: { policy: EvidenceCollectionPolicy } };
+  "PUT /settings/evidence": {
+    request: { channel: SensitiveEvidenceChannel; enabled: boolean; reason?: string };
+    response: { policy: EvidenceCollectionPolicy };
+  };
   "GET /jobs?full=0": { response: { jobs: JobSummary[] } };
+  "POST /jobs/soak": {
+    request: { recipe: string; matrixId: string; repetitions?: number; prodAccountMatch?: string };
+    response: {
+      jobs: JobSummary[];
+      matrix: MatrixExpansion;
+      batchId: string;
+      repetitions: number;
+    };
+  };
   "GET /runs": { response: { runs: RunSummary[] } };
   "GET /runs/:id/signals": {
     response: { metrics: EvidenceMetric[]; signals: RegressionSignal[]; reason?: string };
   };
+  "GET /reports/soak/:batchId": { response: { report: SoakReport } };
   "POST /runs/:id/pin": { request: { pinned: boolean }; response: { ok: true; pinned: boolean } };
 };
 
@@ -380,6 +411,39 @@ export type CompatibilityReport = {
   generatedAt: number;
   total: number;
   profiles: CompatibilityProfileReport[];
+};
+
+export type SoakEvidenceChannelReport = {
+  channel: EvidenceChannel;
+  expected: number;
+  captured: number;
+  partial: number;
+  denied: number;
+  unsupported: number;
+  failed: number;
+  missing: number;
+  coverageRate: number | null;
+};
+
+/** Aggregate quality and evidence coverage for a repeated compatibility run. */
+export type SoakReport = {
+  schemaVersion: 1;
+  batchId: string;
+  recipeId: string;
+  matrixId?: string;
+  matrixName?: string;
+  generatedAt: number;
+  repetitions: number;
+  total: number;
+  complete: number;
+  pending: number;
+  passed: number;
+  productFailures: number;
+  harnessFailures: number;
+  uncertain: number;
+  targetProfiles: TargetProfile[];
+  collectionPolicy?: EvidenceCollectionPolicy;
+  evidence: SoakEvidenceChannelReport[];
 };
 
 export type DiscoveryScope = {

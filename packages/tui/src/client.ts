@@ -11,6 +11,7 @@ import {
   listDevices,
   listJobs,
   loadRedactionPolicy,
+  loadEvidenceCollectionPolicy,
   pauseJob,
   resumeJob,
   selectDevice,
@@ -244,7 +245,7 @@ export async function createClient(serverUrl?: string): Promise<DeviceClient> {
   if (serverUrl || envUrl || (await probe(candidate))) {
     if (await probe(candidate)) return httpClient(candidate);
   }
-  await loadRedactionPolicy();
+  await Promise.all([loadRedactionPolicy(), loadEvidenceCollectionPolicy()]);
   // ensure device client constructable
   createDevice();
   return inProcessClient();

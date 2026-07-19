@@ -142,6 +142,19 @@ describe("runRecipeStep conversational evidence", () => {
     return { resolvedInputs: {}, artifacts: [] } as unknown as TestJob;
   }
 
+  it("refuses network bodies without the frozen workspace consent", async () => {
+    const owner = job();
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          stubDevice({}),
+          { kind: "network", action: "dump", include: "all" },
+          { log: () => {}, job: owner },
+        ),
+      /network body capture requires consent/,
+    );
+  });
+
   it("extracts accessible response content into a frozen run variable", async () => {
     const owner = job();
     const device = stubDevice({

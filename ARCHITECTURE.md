@@ -56,7 +56,8 @@ connected mobile devices (not a coding agent).
 ## API surface
 
 - `GET /health` `/meta` `/events` (SSE)
-- `GET/PUT /settings/privacy` for the workspace redaction policy
+- `GET/PUT /settings/privacy` for workspace redaction and `GET/PUT /settings/evidence` for
+  consent-backed sensitive collectors
 - `GET /devices` `/actions` `/jobs` `/jobs/:id`
 - `GET/POST /targets`, `DELETE /targets/:id`, `POST /targets/:id/open`, and
   `POST /targets/:id/preflight`
@@ -69,6 +70,7 @@ connected mobile devices (not a coding agent).
 - `POST /recipes/:id/evidence` + `GET /recipes/:id/evidence/:evidenceId` persist recorder
   screenshots beside recipes without embedding base64 in recipe JSON
 - `POST /jobs` `{ action, serial?, … }` → 202 job
+- `POST /jobs/soak` and `GET /reports/soak/:batchId` for bounded repeated collection campaigns
 - `POST /actions/:id/run` → wait for job (compat)
 - `GET /snapshot` `/screenshot`
 - `POST /interact` `{ kind: label|point|ref|find|text-match, … }`
@@ -125,23 +127,27 @@ SQLite catalog; artifact files and manifests remain authoritative. Run/job list 
 protocol summaries, while detail and artifact routes resolve one exact run.
 
 `core/run-evidence.ts` owns the run-scoped evidence manifest. Input, screenshots, UI trees, logs,
-network summaries, performance, and video are automatic where supported. Audio and crash capture
-remain explicitly unsupported unless an adapter and consent policy implement them. Network bodies
-and audio are never enabled implicitly. Redaction runs before disk and HTTP serialization.
+network summaries, performance, and video are automatic where supported. Network bodies,
+time-bucketed audio probes, and crash diagnostics require an explicit workspace consent grant;
+the policy is frozen before collectors start. Native crash collection uses Android's crash log
+buffer, iOS Simulator unified logs, or physical-device system crash reports. Browser request and
+response bodies are bounded per response. Unsupported adapters remain visible as unsupported
+channels rather than silently succeeding. Redaction runs before disk and HTTP serialization.
 
-The default-off policy is persisted at `.relay/privacy.json`, can be locked with
+The default-off redaction policy is persisted at `.relay/privacy.json`, can be locked with
 `RELAY_REDACTION_MODE`, and cannot be disabled on a non-loopback server binding. CLI and in-process
-TUI hosts load the same policy before collecting evidence.
+TUI hosts load the same policy before collecting evidence. Sensitive collector consent is separate
+and persisted at `.relay/evidence.json`; it defaults to no grants.
 
 `@relay/protocol` is canonical for summaries, traces, evidence, metrics, and endpoint contracts.
 `server/sse.ts` owns event-client lifecycle and `server/scheduler.ts` owns schedule timers. The app's
 `context/server.tsx` remains a compatibility composition façade; resource requests live in the
-focused `lib/server-*-remote.ts` modules and capture/discovery controllers. The façade is retained
+focused `lib/server-*-remote.ts` modules and privacy, target, run, capture, and discovery
+controllers. The façade is retained
 because it coordinates reconnection order and platform preference restoration; new transport DTOs
 must not be added there.
 
-Large authoring and report components remain cohesive composition exceptions: `step-row.tsx` owns
-the discriminated step editor and `runs-workspace.tsx` owns the complete report tab lifecycle.
-Their pure presentation, URL construction, capture, and review calculations are already extracted
-and tested under `app/src/lib`; further splitting must follow responsibility boundaries rather than
-line-count-only moves.
+Authoring composes an 82-line `step-row.tsx` shell with target/assertion, interaction, flow/control,
+and device/observability editor families. `runs-workspace.tsx` owns the complete report-tab
+lifecycle. Pure presentation, URL construction, capture, orchestration, and review calculations
+remain extracted and tested under `app/src/lib`.

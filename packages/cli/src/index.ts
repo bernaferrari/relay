@@ -23,6 +23,7 @@ import {
   getActiveJob,
   isActionId,
   buildTargetProfiles,
+  buildSoakReport,
   createDiscoverySession,
   formatDiscoveryExport,
   listDiscoverySessions,
@@ -31,6 +32,7 @@ import {
   listRecipes,
   listTargets,
   loadRedactionPolicy,
+  loadEvidenceCollectionPolicy,
   saveBrowserTarget,
   deleteTarget,
   preflightTarget,
@@ -82,6 +84,7 @@ Usage:
   relay test validate [path...]      Validate tracked YAML test definitions
   relay test format [path...] [--check] Canonicalize YAML or fail when formatting is needed
   relay test run <id> [flags]        Run an editable test by id
+  relay soak <id> --matrix <id>      Repeat a test across a frozen target matrix
   relay test import <path> [--force] Import YAML; replacing an existing test requires --force
   relay test export <id> [--out p]   Print or write canonical YAML
   relay target list                  List phones, simulators, and browsers
@@ -116,6 +119,11 @@ run flags:
   --repeat <n>               Repeat an editable test (1–20, default 1)
   --matrix <id>              Run an editable test across a named compatibility matrix
   --retries <n>              Device op retries (default 3, env RELAY_RETRY_ATTEMPTS)
+
+soak flags:
+  --matrix <id>              Required compatibility matrix
+  --repeat <n>               Runs per target (1–100, default 10)
+  --json                     Print the aggregate soak report
 
 serve:
   --port <n>                 Listen port (default ${DEFAULT_SERVE_PORT})
@@ -421,6 +429,73 @@ async function runRecipeViaJob(recipeId: string, argv: string[]): Promise<void> 
   }
   if (asJson) process.stdout.write(formatJsonReport(reports));
   process.exit(reports.some((report) => !report.ok) ? 1 : 0);
+}
+
+async function cmdSoak(recipeId: string | undefined, argv: string[]): Promise<void> {
+  if (!recipeId) throw new Error("relay soak requires a test id");
+  const recipe = await readRecipe(recipeId);
+  if (!recipe) throw new Error(`Test not found: ${recipeId}`);
+  if (recipe.quarantined) throw new Error(`Test is quarantined: ${recipeId}`);
+  const matrixId = parseFlagValue(argv, "--matrix");
+  if (!matrixId) throw new Error("relay soak requires --matrix <id>");
+  const repetitions = parsePositiveInt(parseFlagValue(argv, "--repeat") ?? "10", "--repeat", 100);
+  const profiles = await resolveMatrixProfiles(matrixId);
+  const jobCount = repetitions * profiles.length;
+  if (jobCount > 500) {
+    throw new Error(`soak expands to ${jobCount} jobs; reduce targets or repetitions below 500`);
+  }
+  const matrix = await readCompatibilityMatrix("default", matrixId);
+  if (!matrix) throw new Error(`Compatibility matrix not found: ${matrixId}`);
+  const batchId = `soak-${matrixId}-${Date.now()}`;
+  const jobs: TestJob[] = [];
+  if (!hasFlag(argv, "--json")) {
+    console.log(
+      `→ soak ${recipe.id} · ${profiles.length} target${profiles.length === 1 ? "" : "s"} × ${repetitions} = ${jobCount} runs`,
+    );
+  }
+  for (const profile of profiles) {
+    const target = await resolveTarget(profile.targetId);
+    for (let index = 0; index < repetitions; index += 1) {
+      const job = await runJobSync({
+        recipe: recipe.id,
+        ...target,
+        targetProfile: profile,
+        batchId,
+        caseIndex: index,
+        caseCount: repetitions,
+        artifacts: [
+          {
+            kind: "compatibility-profile",
+            capturedAt: profile.observedAt,
+            data: { matrixId: matrix.id, matrixName: matrix.name, profile },
+          },
+          {
+            kind: "soak-campaign",
+            capturedAt: profile.observedAt,
+            data: { repetitions, totalJobs: jobCount },
+          },
+        ],
+      });
+      jobs.push(job);
+      if (!hasFlag(argv, "--json")) printReportHuman(toJobReport(job));
+    }
+  }
+  const report = buildSoakReport(jobs, batchId);
+  if (!report) throw new Error("soak completed without a report");
+  if (hasFlag(argv, "--json")) {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else {
+    console.log(
+      `\nsoak ${report.complete}/${report.total} complete · ${report.passed} passed · ${report.productFailures} product · ${report.harnessFailures} harness · ${report.uncertain} uncertain`,
+    );
+    for (const channel of report.evidence.filter((item) => item.expected > 0)) {
+      const rate = Math.round((channel.coverageRate ?? 0) * 100);
+      console.log(
+        `  ${channel.channel.padEnd(12)} ${String(rate).padStart(3)}% usable · ${channel.failed + channel.missing} failed/missing`,
+      );
+    }
+  }
+  process.exit(report.harnessFailures > 0 ? 1 : 0);
 }
 
 async function resolveMatrixProfiles(matrixId: string) {
@@ -834,7 +909,7 @@ async function runTui(argv: string[]): Promise<void> {
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
-  await loadRedactionPolicy();
+  await Promise.all([loadRedactionPolicy(), loadEvidenceCollectionPolicy()]);
   // OpenCode-style: bare launch in a TTY opens the testing workspace (TUI).
   // Use `interactive` / `i` for the classic readline picker.
   if (argv.length === 0) {
@@ -859,6 +934,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
   if (cmd === "test") {
     await cmdTest(argv.slice(1));
+    return;
+  }
+  if (cmd === "soak") {
+    await cmdSoak(argv[1], argv.slice(2));
     return;
   }
   if (cmd === "matrix") {
