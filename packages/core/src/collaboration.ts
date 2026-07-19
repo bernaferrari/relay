@@ -289,10 +289,18 @@ export async function leaseDevice(
   });
 }
 
-export async function releaseDeviceLease(id: string): Promise<DeviceLease> {
+export async function releaseDeviceLease(
+  id: string,
+  scope?: { projectId: string; ownerId?: string },
+): Promise<DeviceLease> {
   return mutate((state) => {
     const lease = state.leases.find((item) => item.id === id);
-    if (!lease) throw new Error("Device lease not found");
+    if (
+      !lease ||
+      (scope && lease.projectId !== scope.projectId) ||
+      (scope?.ownerId && lease.ownerId !== scope.ownerId)
+    )
+      throw new Error("Device lease not found");
     lease.status = "released";
     lease.releasedAt = now();
     emit({

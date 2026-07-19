@@ -153,6 +153,13 @@ export async function saveSuite(input: SaveSuiteInput): Promise<TestSuite> {
     ).catch((error: unknown) => {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
     });
+    const historyLimit = Math.max(1, Number(process.env.RELAY_SUITE_HISTORY_LIMIT ?? 100));
+    const historyFiles = (await readdir(historyRoot(id))).sort().reverse();
+    await Promise.all(
+      historyFiles
+        .slice(historyLimit)
+        .map((file) => unlink(join(historyRoot(id), file)).catch(() => undefined)),
+    );
   }
   await writeFile(suitePath(id), JSON.stringify(suite, null, 2), "utf8");
   return suite;

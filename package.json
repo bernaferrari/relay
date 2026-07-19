@@ -18,7 +18,9 @@
     "pack": "vp pack",
     "prepare": "vp config",
     "doctor": "pnpm --filter @relay/cli exec tsx src/index.ts doctor",
-    "test": "pnpm --filter @relay/core test"
+    "test": "pnpm run test:packages && vp test",
+    "test:packages": "pnpm -r --if-present run test",
+    "verify": "vp check && pnpm typecheck && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

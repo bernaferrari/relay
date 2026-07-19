@@ -871,13 +871,13 @@ export async function runRecipeStep(
         await clipboardWrite(device, step.text ?? "");
       } else {
         const value = await clipboardRead(device);
-        log(`clipboard: ${JSON.stringify(value)}`);
+        log(`clipboard: read ${value.length} character(s)`);
         if (step.expect !== undefined) {
           const ok =
             step.match === "contains" ? value.includes(step.expect) : value === step.expect;
           if (!ok)
             throw new Error(
-              `clipboard: expected ${step.match === "contains" ? "text containing" : "exactly"} ${JSON.stringify(step.expect)}, received ${JSON.stringify(value)}`,
+              `clipboard: ${step.match === "contains" ? "content" : "value"} did not match expectation`,
             );
         }
       }

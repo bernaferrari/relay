@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Video } from "playwright-core";
 import { chromium } from "playwright-core";
 import type { Device, SnapshotNode } from "./device.js";
-import { browserProfileDir, readTarget } from "./targets.js";
+import { browserExecutable, browserProfileDir, readTarget } from "./targets.js";
 
 type BrowserSession = {
   context: BrowserContext;
@@ -15,11 +15,14 @@ type BrowserSession = {
   recordingVideo?: Video | null;
   console: Array<{ level: string; text: string; at: number }>;
   network: Array<{ method: string; url: string; status?: number; at: number }>;
+  consoleDropped: number;
+  networkDropped: number;
 };
 
 const sessions = new Map<string, Promise<BrowserSession>>();
 const INTERACTIVE =
   'button, a[href], input, textarea, select, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+const MAX_EVIDENCE_ENTRIES = 1_000;
 
 async function createSession(
   targetId: string,
@@ -29,7 +32,7 @@ async function createSession(
   if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
   type ContextOptions = Parameters<typeof chromium.launchPersistentContext>[1];
   const baseOptions: ContextOptions = {
-    executablePath: target.browser.executablePath,
+    executablePath: browserExecutable(target),
     headless: options.headless ?? target.browser.headless ?? false,
     viewport: target.browser.viewport ?? { width: 1280, height: 800 },
     acceptDownloads: true,
@@ -61,6 +64,8 @@ async function createSession(
     ...(recordingUnavailable ? { recordingUnavailable } : {}),
     console: [],
     network: [],
+    consoleDropped: 0,
+    networkDropped: 0,
   };
   attachEvidence(session, page);
   if (page.url() === "about:blank") {
@@ -71,17 +76,44 @@ async function createSession(
 
 function attachEvidence(session: BrowserSession, page: Page): void {
   page.on("console", (message) => {
+    if (session.console.length >= MAX_EVIDENCE_ENTRIES) {
+      session.console.shift();
+      session.consoleDropped += 1;
+    }
     session.console.push({ level: message.type(), text: message.text(), at: Date.now() });
   });
   page.on("request", (request) => {
+    if (session.network.length >= MAX_EVIDENCE_ENTRIES) {
+      session.network.shift();
+      session.networkDropped += 1;
+    }
     session.network.push({ method: request.method(), url: request.url(), at: Date.now() });
   });
   page.on("response", (response) => {
-    const entry = [...session.network]
-      .reverse()
-      .find((item) => item.url === response.url() && item.status === undefined);
-    if (entry) entry.status = response.status();
+    for (let index = session.network.length - 1; index >= 0; index -= 1) {
+      const entry = session.network[index];
+      if (entry?.url === response.url() && entry.status === undefined) {
+        entry.status = response.status();
+        break;
+      }
+    }
   });
+}
+
+export async function performBrowserFind(
+  locator: { count: () => Promise<number>; click: () => Promise<unknown> },
+  query: string,
+  action?: string,
+): Promise<{ ok: true; exists?: true }> {
+  if (action === "exists") {
+    if ((await locator.count()) === 0) throw new Error(`No match for ${query}`);
+    return { ok: true, exists: true };
+  }
+  if (action === undefined || action === "press" || action === "click") {
+    await locator.click();
+    return { ok: true };
+  }
+  throw new Error(`unsupported browser find action: ${action}`);
 }
 
 async function sessionFor(
@@ -211,10 +243,18 @@ function unsupported(capability: string): never {
  */
 export async function getBrowserDevice(targetId: string): Promise<Device> {
   const session = await sessionFor(targetId);
-  const api = {
+  const identifiers = { serial: targetId, appPath: "managed-browser" };
+  const api: Device = {
     devices: {
       list: async () => [
-        { id: targetId, name: "Managed browser", identifiers: { serial: targetId } },
+        {
+          id: targetId,
+          name: "Managed browser",
+          platform: "web",
+          target: "desktop",
+          kind: "device",
+          identifiers,
+        },
       ],
     },
     apps: {
@@ -223,20 +263,28 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         if (input.url) await page.goto(input.url, { waitUntil: "domcontentloaded" });
         else if (input.app?.startsWith("http"))
           await page.goto(input.app, { waitUntil: "domcontentloaded" });
-        return { ok: true };
+        return { session: targetId, identifiers };
       },
       close: async () => {
         await (await activePage(session)).close();
-        return { ok: true };
+        return { session: targetId, identifiers };
       },
     },
     capture: {
-      snapshot: async () => ({ nodes: await snapshotPage(await activePage(session)) }),
-      screenshot: async (input: { path?: string }) => {
-        const path = input.path;
+      snapshot: async () => ({
+        nodes: await snapshotPage(await activePage(session)),
+        truncated: false,
+        identifiers,
+      }),
+      screenshot: async (input) => {
+        const path = input?.path;
         if (path) await mkdir(dirname(path), { recursive: true });
         const buffer = await (await activePage(session)).screenshot({ path, fullPage: false });
-        return { path, base64: path ? undefined : buffer.toString("base64") };
+        return {
+          path: path ?? "",
+          base64: path ? undefined : buffer.toString("base64"),
+          identifiers,
+        };
       },
     },
     interactions: {
@@ -280,8 +328,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
       find: async (input: { query: string; action?: string }) => {
         const page = await activePage(session);
         const locator = page.getByText(input.query, { exact: false }).first();
-        if ((input.action ?? "press") === "press") await locator.click();
-        return { ok: true };
+        return await performBrowserFind(locator, input.query, input.action);
       },
       scroll: async (input: { direction?: string; amount?: number }) => {
         const amount = input.amount ?? 600;
@@ -289,11 +336,11 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         await (await activePage(session)).mouse.wheel(0, y);
         return { ok: true };
       },
-      swipe: async (input: { startX?: number; startY?: number; endX?: number; endY?: number }) => {
+      swipe: async (input) => {
         const page = await activePage(session);
-        await page.mouse.move(input.startX ?? 640, input.startY ?? 650);
+        await page.mouse.move(input.from.x, input.from.y);
         await page.mouse.down();
-        await page.mouse.move(input.endX ?? 640, input.endY ?? 150, { steps: 12 });
+        await page.mouse.move(input.to.x, input.to.y, { steps: 12 });
         await page.mouse.up();
         return { ok: true };
       },
@@ -306,26 +353,29 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         else await page.waitForTimeout(input.durationMs ?? 0);
         return { ok: true };
       },
-      back: async () => ({ ok: await (await activePage(session)).goBack().then(() => true) }),
+      back: async () => {
+        await (await activePage(session)).goBack();
+        return { action: "back", mode: "global", message: "Back" };
+      },
       home: async () => {
         const target = await readTarget(targetId);
         if (!target?.browser) throw new Error("browser target no longer exists");
         await (await activePage(session)).goto(target.browser.startUrl);
-        return { ok: true };
+        return { action: "home", message: "Home" };
       },
       clipboard: async (input: { action: "read" | "write"; text?: string }) => {
         const page = await activePage(session);
         if (input.action === "write") {
           await page.evaluate((text) => navigator.clipboard.writeText(text), input.text ?? "");
-          return { action: "write" };
+          return { action: "write", textLength: (input.text ?? "").length, message: "Written" };
         }
         return { action: "read", text: await page.evaluate(() => navigator.clipboard.readText()) };
       },
-      keyboard: async (input: { action: string }) => {
+      keyboard: async (input) => {
         await (
           await activePage(session)
-        ).keyboard.press(input.action === "enter" ? "Enter" : "Escape");
-        return { ok: true };
+        ).keyboard.press(input?.action === "enter" ? "Enter" : "Escape");
+        return { platform: "android", action: input?.action ?? "dismiss" };
       },
       alert: async () => unsupported("native alerts"),
       appSwitcher: async () => unsupported("app switcher"),
@@ -342,17 +392,40 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
           resources: performance.getEntriesByType("resource").length,
         }));
       },
-      logs: async () => ({ entries: [...session.console] }),
-      network: async () => ({ entries: [...session.network] }),
+      logs: async (input) => {
+        if (input?.action === "start" || input?.action === "clear") {
+          session.console = [];
+          session.consoleDropped = 0;
+        }
+        return { entries: [...session.console], dropped: session.consoleDropped };
+      },
+      network: async () => ({
+        entries: [...session.network],
+        dropped: session.networkDropped,
+      }),
     },
     recording: {
       record: async (input: { action: "start" | "stop"; path?: string }) => {
         if (input.action === "start") {
           session.recordingPath = input.path;
+          session.console = [];
+          session.network = [];
+          session.consoleDropped = 0;
+          session.networkDropped = 0;
           if (session.recordingUnavailable) {
             return { started: false, warning: session.recordingUnavailable };
           }
-          session.recordingVideo = (await activePage(session)).video();
+          // Persistent cookies survive, but a fresh page creates a strict
+          // recording boundary so setup/login activity is excluded.
+          const previous = await activePage(session);
+          const returnUrl = previous.url();
+          await previous.close();
+          session.page = await session.context.newPage();
+          attachEvidence(session, session.page);
+          if (returnUrl && returnUrl !== "about:blank") {
+            await session.page.goto(returnUrl, { waitUntil: "domcontentloaded" });
+          }
+          session.recordingVideo = session.page.video();
           return { started: Boolean(session.recordingVideo) };
         }
         const page = await activePage(session);
@@ -373,7 +446,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
       },
     },
   };
-  return api as unknown as Device;
+  return api;
 }
 
 export async function closeBrowserTarget(targetId?: string): Promise<void> {

@@ -2,9 +2,9 @@
  * Live device workspace helpers for the testing shell:
  * snapshot UI tree, screenshot, basic interactions.
  */
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { promisify } from "node:util";
@@ -30,6 +30,13 @@ import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { readTarget } from "./targets.js";
+import {
+  configuredTargetContext,
+  currentTargetContext,
+  runWithTargetContext,
+  targetIdentity,
+  type TargetContext,
+} from "./target-context.js";
 
 /**
  * Recover from session binding conflicts by releasing the stale binding
@@ -53,8 +60,8 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
  * app is showing. Bypasses the SDK's session requirement entirely.
  * Used as a fallback when the SDK reports "No active session".
  */
-function rawScreenshot(path: string): void {
-  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+function rawScreenshot(path: string, serial?: string): void {
+  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
   const args = serial
     ? ["-s", serial, "exec-out", "screencap", "-p"]
     : ["exec-out", "screencap", "-p"];
@@ -63,8 +70,8 @@ function rawScreenshot(path: string): void {
 }
 
 /** Raw adb input tap — works without a session, on any app. */
-function rawTap(x: number, y: number): void {
-  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+function rawTap(x: number, y: number, serial?: string): void {
+  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
   const args = serial
     ? ["-s", serial, "shell", "input", "tap", String(x), String(y)]
     : ["shell", "input", "tap", String(x), String(y)];
@@ -75,8 +82,9 @@ function rawSwipe(
   from: { x: number; y: number },
   to: { x: number; y: number },
   durationMs: number,
+  serial?: string,
 ): void {
-  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
   const args = serial
     ? [
         "-s",
@@ -206,14 +214,30 @@ export function selectBrowserTarget(targetId: string | null): void {
   publish({ type: "device.selected", at: now(), serial: targetId?.trim() || null });
 }
 
-async function selectedClient(): Promise<Device> {
-  const targetId = process.env.RELAY_TARGET_ID?.trim();
-  return targetId ? await getBrowserDevice(targetId) : createDevice();
-}
-
-async function selectRuntimeTarget(serial: string): Promise<void> {
-  if (await readTarget(serial)) selectBrowserTarget(serial);
-  else selectDevice(serial, selectedPlatform());
+async function resolveRuntimeTarget(
+  serial?: string,
+  provided?: Device,
+): Promise<{ context: TargetContext; device: Device }> {
+  if (provided) return { context: currentTargetContext(), device: provided };
+  if (serial) {
+    if (await readTarget(serial)) {
+      return {
+        context: { kind: "browser", platform: "browser", targetId: serial },
+        device: await getBrowserDevice(serial),
+      };
+    }
+    const configured = configuredTargetContext();
+    const platform = configured.kind === "device" ? configured.platform : "android";
+    return {
+      context: { kind: "device", platform, serial },
+      device: createDevice(),
+    };
+  }
+  const context = currentTargetContext();
+  return {
+    context,
+    device: context.kind === "browser" ? await getBrowserDevice(context.targetId) : createDevice(),
+  };
 }
 
 export type SnapshotPayload = {
@@ -242,26 +266,17 @@ export async function captureSnapshot(opts?: {
   interactiveOnly?: boolean;
   device?: Device;
 }): Promise<SnapshotPayload> {
-  if (opts?.serial) await selectRuntimeTarget(opts.serial);
-  const device = opts?.device ?? (await selectedClient());
-  const nodes = await withSession(device, () =>
-    snapshot(device, { interactiveOnly: opts?.interactiveOnly ?? false }),
-  );
-  const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
-  const bounds = inferBounds(nodes);
-  publish({
-    type: "snapshot.captured",
-    at: now(),
-    serial: opts?.serial ?? process.env.AGENT_DEVICE_SERIAL,
-    nodeCount: nodes.length,
+  const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
+  return runWithTargetContext(target.context, async () => {
+    const nodes = await withSession(target.device, () =>
+      snapshot(target.device, { interactiveOnly: opts?.interactiveOnly ?? false }),
+    );
+    const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
+    const bounds = inferBounds(nodes);
+    const serial = targetIdentity();
+    publish({ type: "snapshot.captured", at: now(), serial, nodeCount: nodes.length });
+    return { serial, capturedAt: now(), nodes, interactive, bounds };
   });
-  return {
-    serial: process.env.RELAY_TARGET_ID ?? process.env.AGENT_DEVICE_SERIAL,
-    capturedAt: now(),
-    nodes,
-    interactive,
-    bounds,
-  };
 }
 
 export type ScreenshotPayload = {
@@ -283,57 +298,64 @@ export async function captureScreenshot(opts?: {
   /** skip attaching to job */
   ephemeral?: boolean;
 }): Promise<ScreenshotPayload> {
-  if (opts?.serial) await selectRuntimeTarget(opts.serial);
-  const device = opts?.device ?? (await selectedClient());
-  const dir = join(tmpdir(), "relay");
-  await mkdir(dir, { recursive: true });
-  const path = join(dir, `shot-${now()}.png`);
-  try {
-    await withSession(device, () => device.capture.screenshot({ ...base(), path }));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (/no active session/i.test(msg)) {
-      // No SDK session — fall back to raw adb screencap (works on any app)
-      if (process.env.RELAY_TARGET_ID || selectedPlatform() !== "android") throw err;
-      rawScreenshot(path);
-    } else {
-      throw err;
+  const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
+  return runWithTargetContext(target.context, async () => {
+    const parent = join(tmpdir(), "relay");
+    await mkdir(parent, { recursive: true, mode: 0o700 });
+    const dir = await mkdtemp(join(parent, "shot-"));
+    const path = join(dir, "capture.png");
+    try {
+      await withSession(target.device, () => target.device.capture.screenshot({ ...base(), path }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const context = currentTargetContext();
+      if (/no active session/i.test(msg)) {
+        // No SDK session — fall back to raw adb screencap (works on any app)
+        if (context.kind === "browser" || selectedPlatform() !== "android") throw err;
+        rawScreenshot(path, context.serial);
+      } else {
+        throw err;
+      }
     }
-  }
-  const buf = await readFile(path);
-  const base64 = buf.toString("base64");
-  publish({
-    type: "screenshot.captured",
-    at: now(),
-    serial: process.env.RELAY_TARGET_ID ?? process.env.AGENT_DEVICE_SERIAL,
-    bytes: buf.byteLength,
+    const buf = await readFile(path);
+    const base64 = buf.toString("base64");
+    const serial = targetIdentity();
+    publish({ type: "screenshot.captured", at: now(), serial, bytes: buf.byteLength });
+
+    let framePath: string | undefined;
+    let jobId = opts?.jobId;
+    if (!opts?.ephemeral) {
+      const active = opts?.jobId ? { id: opts.jobId } : getActiveJob();
+      if (active) {
+        const frame = await attachJobFrame({
+          jobId: active.id,
+          base64,
+          caption: opts?.caption ?? `screenshot · ${new Date().toISOString()}`,
+        });
+        framePath = frame?.path;
+        jobId = active.id;
+      }
+    }
+
+    return {
+      serial,
+      capturedAt: now(),
+      mime: "image/png",
+      base64,
+      path,
+      bytes: buf.byteLength,
+      jobId,
+      framePath,
+    };
   });
+}
 
-  let framePath: string | undefined;
-  let jobId = opts?.jobId;
-  if (!opts?.ephemeral) {
-    const active = opts?.jobId ? { id: opts.jobId } : getActiveJob();
-    if (active) {
-      const frame = await attachJobFrame({
-        jobId: active.id,
-        base64,
-        caption: opts?.caption ?? `screenshot · ${new Date().toISOString()}`,
-      });
-      framePath = frame?.path;
-      jobId = active.id;
-    }
-  }
-
-  return {
-    serial: process.env.RELAY_TARGET_ID ?? process.env.AGENT_DEVICE_SERIAL,
-    capturedAt: now(),
-    mime: "image/png",
-    base64,
-    path,
-    bytes: buf.byteLength,
-    jobId,
-    framePath,
-  };
+/** Remove only the private temporary directory produced by captureScreenshot. */
+export async function cleanupScreenshot(path: string): Promise<void> {
+  const root = resolve(tmpdir(), "relay");
+  const directory = resolve(dirname(path));
+  if (!directory.startsWith(`${root}/`) || !dirname(directory).startsWith(root)) return;
+  await rm(directory, { recursive: true, force: true });
 }
 
 export type InteractInput =
@@ -351,55 +373,59 @@ export type InteractInput =
   | { kind: "type"; text: string };
 
 export async function interact(input: InteractInput, opts?: { serial?: string }): Promise<void> {
-  if (opts?.serial) await selectRuntimeTarget(opts.serial);
-  const device = await selectedClient();
-  try {
-    await withSession(device, async () => {
-      switch (input.kind) {
-        case "label":
-          await pressLabel(device, input.label);
-          return;
-        case "point":
-          await pressPoint(device, input.x, input.y);
-          return;
-        case "ref":
-          await pressRef(device, input.ref);
-          return;
-        case "find":
-          await findClick(device, input.query);
-          return;
-        case "text-match":
-          await pressMatchingText(device, input.match);
-          return;
-        case "swipe":
-          await swipeGesture(device, input.from, input.to, input.durationMs ?? 250);
-          return;
-        case "type":
-          await typeText(device, input.text);
-          return;
+  const target = await resolveRuntimeTarget(opts?.serial);
+  await runWithTargetContext(target.context, async () => {
+    try {
+      await withSession(target.device, async () => {
+        switch (input.kind) {
+          case "label":
+            await pressLabel(target.device, input.label);
+            return;
+          case "point":
+            await pressPoint(target.device, input.x, input.y);
+            return;
+          case "ref":
+            await pressRef(target.device, input.ref);
+            return;
+          case "find":
+            await findClick(target.device, input.query);
+            return;
+          case "text-match":
+            await pressMatchingText(target.device, input.match);
+            return;
+          case "swipe":
+            await swipeGesture(target.device, input.from, input.to, input.durationMs ?? 250);
+            return;
+          case "type":
+            await typeText(target.device, input.text);
+            return;
+        }
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const context = currentTargetContext();
+      // No SDK session — raw adb works for coordinate interactions on any app.
+      if (
+        /no active session/i.test(msg) &&
+        context.kind === "device" &&
+        context.platform === "android" &&
+        input.kind === "point"
+      ) {
+        rawTap(input.x, input.y, context.serial);
+        return;
       }
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // No SDK session — raw adb works for coordinate interactions on any app.
-    if (
-      /no active session/i.test(msg) &&
-      selectedPlatform() === "android" &&
-      input.kind === "point"
-    ) {
-      rawTap(input.x, input.y);
-      return;
+      if (
+        /no active session/i.test(msg) &&
+        context.kind === "device" &&
+        context.platform === "android" &&
+        input.kind === "swipe"
+      ) {
+        rawSwipe(input.from, input.to, input.durationMs ?? 250, context.serial);
+        return;
+      }
+      throw err;
     }
-    if (
-      /no active session/i.test(msg) &&
-      selectedPlatform() === "android" &&
-      input.kind === "swipe"
-    ) {
-      rawSwipe(input.from, input.to, input.durationMs ?? 250);
-      return;
-    }
-    throw err;
-  }
+  });
 }
 
 export function formatSnapshotTree(nodes: SnapshotNode[], limit = 80): string {

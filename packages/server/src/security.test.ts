@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { assertSafeBinding, authorizationMatches, isLoopbackHost } from "./security.js";
+import {
+  assertSafeBinding,
+  authorizationMatches,
+  isLoopbackHost,
+  resolveRequestContext,
+} from "./security.js";
 
 describe("server security", () => {
   it("recognizes loopback hosts", () => {
@@ -22,5 +27,34 @@ describe("server security", () => {
     assert.equal(authorizationMatches(`Basic ${token}`, token), false);
     assert.equal(authorizationMatches("Bearer wrong", token), false);
     assert.equal(authorizationMatches(`Bearer ${token}`, token), true);
+  });
+
+  it("derives service scope from configuration and rejects header broadening", () => {
+    const previous = {
+      organization: process.env.RELAY_AUTH_ORGANIZATION_ID,
+      projects: process.env.RELAY_AUTH_PROJECT_IDS,
+    };
+    process.env.RELAY_AUTH_ORGANIZATION_ID = "org-a";
+    process.env.RELAY_AUTH_PROJECT_IDS = "project-a,project-b";
+    try {
+      const context = resolveRequestContext(
+        { "x-organization-id": "org-a", "x-project-id": "project-b" },
+        { authenticated: true, localTrusted: false },
+      );
+      assert.equal(context.projectId, "project-b");
+      assert.throws(
+        () =>
+          resolveRequestContext(
+            { "x-organization-id": "org-a", "x-project-id": "project-c" },
+            { authenticated: true, localTrusted: false },
+          ),
+        /not authorized/,
+      );
+    } finally {
+      if (previous.organization === undefined) delete process.env.RELAY_AUTH_ORGANIZATION_ID;
+      else process.env.RELAY_AUTH_ORGANIZATION_ID = previous.organization;
+      if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
+      else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
+    }
   });
 });

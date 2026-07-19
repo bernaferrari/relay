@@ -1456,6 +1456,13 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
     ).catch((error: unknown) => {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
     });
+    const historyLimit = Math.max(1, Number(process.env.RELAY_RECIPE_HISTORY_LIMIT ?? 100));
+    const historyFiles = (await readdir(historyDir)).sort().reverse();
+    await Promise.all(
+      historyFiles
+        .slice(historyLimit)
+        .map((file) => unlink(join(historyDir, file)).catch(() => undefined)),
+    );
   }
   await writeFile(recipeYamlPath(testsRoot(), id), formatRecipeYaml(recipe), "utf8");
   return recipe;

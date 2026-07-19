@@ -6,9 +6,18 @@ import http from "node:http";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { URL } from "node:url";
-import { assertSafeBinding, authorizationMatches } from "./security.js";
+import {
+  assertSafeBinding,
+  authorizationMatches,
+  isLoopbackHost,
+  listAuditEvents,
+  recordAudit,
+  resolveRequestContext,
+  type RequestContext,
+} from "./security.js";
 import {
   captureScreenshot,
+  cleanupScreenshot,
   captureSnapshot,
   createDevice,
   enqueueJob,
@@ -22,7 +31,9 @@ import {
   listActionsWithTrace,
   listDevices,
   listJobs,
+  summarizeJob,
   listRecipes,
+  listRunSummaries,
   readRecipe,
   readRecipeEvidenceImage,
   saveRecipe,
@@ -36,7 +47,6 @@ import {
   readFrameFile,
   runArtifactFile,
   readPersistedRun,
-  recentEvents,
   retryJob,
   cancelJob,
   pauseJob,
@@ -45,11 +55,9 @@ import {
   cancelActiveJob,
   runsRoot,
   selectDevice,
-  subscribe,
   runDoctor,
   toJobReport,
   toJunitXml,
-  type DeviceEvent,
   type InteractInput,
   type JobReport,
   generateValues,
@@ -77,8 +85,6 @@ import {
   listSchedules,
   saveSchedule,
   deleteSchedule,
-  markScheduleRun,
-  resolveScheduledTargetProfile,
   listTargets,
   readTarget,
   saveBrowserTarget,
@@ -112,7 +118,16 @@ import {
   restoreSuiteHistory,
   saveSuite,
   type SaveSuiteInput,
+  extractEvidenceMetrics,
+  compareEvidenceMetrics,
+  rebuildRunCatalog,
+  runStorageHealth,
+  applyRunRetention,
+  redactValue,
+  setRunPinned,
 } from "@relay/core";
+import { createSseHub } from "./sse.js";
+import { startScheduler } from "./scheduler.js";
 import { RevisionConflict } from "@relay/protocol";
 import type {
   Build,
@@ -158,7 +173,7 @@ class HttpError extends Error {
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body);
+  const payload = JSON.stringify(redactValue(body));
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(payload),
@@ -215,15 +230,52 @@ function parseLimit(raw: string | null, fallback: number, max = 200): number {
   return Math.min(Math.floor(n), max);
 }
 
-function requestScope(req: http.IncomingMessage): { organizationId: string; projectId: string } {
-  const header = (name: string) => {
-    const value = req.headers[name];
-    return Array.isArray(value) ? value[0] : value;
-  };
-  return {
-    organizationId: header("x-organization-id")?.trim() || "local",
-    projectId: header("x-project-id")?.trim() || "default",
-  };
+async function assertTargetControl(scope: RequestContext, targetId?: string): Promise<void> {
+  if (!targetId || scope.localTrusted) return;
+  const at = now();
+  const active = (await listDeviceLeases(scope.projectId)).find(
+    (lease) =>
+      lease.deviceSerial === targetId &&
+      lease.ownerId === scope.subject &&
+      lease.status === "leased" &&
+      lease.expiresAt > at,
+  );
+  if (!active) {
+    recordAudit(scope, {
+      action: "target.control",
+      resource: "lease",
+      target: targetId,
+      result: "deny",
+    });
+    throw new HttpError(403, "An active lease owned by this caller is required for target control");
+  }
+  recordAudit(scope, {
+    action: "target.control",
+    resource: "lease",
+    target: targetId,
+    result: "allow",
+  });
+}
+
+function assertJobAccess(scope: RequestContext, job: ReturnType<typeof getJob>): void {
+  if (!job) throw new HttpError(404, "Job not found");
+  if (scope.localTrusted) return;
+  if (job.projectId !== scope.projectId || job.ownerId !== scope.subject) {
+    recordAudit(scope, { action: "job.access", resource: job.id, result: "deny" });
+    throw new HttpError(404, "Job not found");
+  }
+}
+
+function assertRunAccess(
+  scope: RequestContext,
+  run: Awaited<ReturnType<typeof readPersistedRun>>,
+): void {
+  if (!run) throw new HttpError(404, "Run not found");
+  if (scope.localTrusted) return;
+  if (run.projectId !== scope.projectId || run.ownerId !== scope.subject) {
+    recordAudit(scope, { action: "run.access", resource: run.id, result: "deny" });
+    throw new HttpError(404, "Run not found");
+  }
 }
 
 /** In-memory job reports, newest first. Falls back empty when none. */
@@ -289,62 +341,15 @@ function matchPath(pathname: string, pattern: string): Record<string, string> | 
   return params;
 }
 
-type SseClient = { res: http.ServerResponse; id: number };
-const sseClients = new Set<SseClient>();
-let sseSeq = 0;
-
-function writeSse(res: http.ServerResponse, event: DeviceEvent): void {
-  res.write(`event: ${event.type}\n`);
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
-}
-
-function broadcast(event: DeviceEvent): void {
-  for (const client of sseClients) {
-    try {
-      writeSse(client.res, event);
-    } catch {
-      sseClients.delete(client);
-    }
-  }
-}
-
-subscribe((event) => broadcast(event));
-
 const serverStartedAt = Date.now();
 const PRODUCT_VERSION = "0.1.0";
-
-function attachSse(req: http.IncomingMessage, res: http.ServerResponse): void {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    ...CORS_HEADERS,
-  });
-  res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, at: now() })}\n\n`);
-  for (const ev of recentEvents(30)) writeSse(res, ev);
-
-  const client: SseClient = { res, id: ++sseSeq };
-  sseClients.add(client);
-  const heartbeat = setInterval(() => {
-    try {
-      res.write(`: ping ${now()}\n\n`);
-    } catch {
-      clearInterval(heartbeat);
-    }
-  }, 15_000);
-
-  const cleanup = () => {
-    clearInterval(heartbeat);
-    sseClients.delete(client);
-  };
-  req.on("close", cleanup);
-  req.on("error", cleanup);
-}
 
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   token?: string,
+  localTrusted = true,
+  sse = createSseHub(CORS_HEADERS),
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -364,7 +369,20 @@ async function handleRequest(
   }
 
   try {
-    const scope = requestScope(req);
+    let scope: RequestContext;
+    try {
+      scope = resolveRequestContext(req.headers, {
+        authenticated: Boolean(token),
+        localTrusted,
+      });
+    } catch (error) {
+      json(res, 403, { error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    if (method === "GET" && pathname === "/audit") {
+      json(res, 200, { events: listAuditEvents(parseLimit(url.searchParams.get("limit"), 100)) });
+      return;
+    }
     if (method === "GET" && pathname === "/health") {
       let deviceCount: number | null = null;
       try {
@@ -392,14 +410,14 @@ async function handleRequest(
           : null,
         jobs: listJobs(50).length,
         deviceCount,
-        sseClients: sseClients.size,
+        sseClients: sse.count(),
         runsDir: runsRoot(),
       });
       return;
     }
 
     if (method === "GET" && pathname === "/events") {
-      attachSse(req, res);
+      sse.attach(req, res);
       return;
     }
 
@@ -433,7 +451,6 @@ async function handleRequest(
         id?: string;
         name?: string;
         startUrl?: string;
-        executablePath?: string;
         headless?: boolean;
       };
       if (!body.name || !body.startUrl) throw new HttpError(400, "name and startUrl are required");
@@ -442,7 +459,6 @@ async function handleRequest(
           id: body.id,
           name: body.name,
           startUrl: body.startUrl,
-          executablePath: body.executablePath,
           headless: body.headless,
         }),
       });
@@ -615,6 +631,7 @@ async function handleRequest(
     if (method === "POST" && discoveryCaptureMatch) {
       const session = await readDiscoverySession(discoveryCaptureMatch.id!);
       if (!session) throw new HttpError(404, "Discovery session not found");
+      await assertTargetControl(scope, session.targetId);
       const snap = await captureSnapshot({ serial: session.targetId });
       const shot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
       const captured = await recordObservedScreen({
@@ -622,7 +639,7 @@ async function handleRequest(
         nodes: snap.nodes,
         screenshotPath: shot.path,
         makeCurrent: true,
-      });
+      }).finally(() => cleanupScreenshot(shot.path));
       json(res, 201, { screen: captured.screen, isNew: captured.isNew, session: captured.session });
       return;
     }
@@ -631,6 +648,7 @@ async function handleRequest(
     if (method === "POST" && discoveryInteractMatch) {
       const session = await readDiscoverySession(discoveryInteractMatch.id!);
       if (!session) throw new HttpError(404, "Discovery session not found");
+      await assertTargetControl(scope, session.targetId);
       if (session.status !== "running") {
         throw new HttpError(409, "Start or resume this Discovery Map before interacting");
       }
@@ -651,7 +669,7 @@ async function handleRequest(
         nodes: beforeSnapshot.nodes,
         screenshotPath: beforeShot.path,
         makeCurrent: true,
-      });
+      }).finally(() => cleanupScreenshot(beforeShot.path));
       await interact(input, { serial: session.targetId });
       const afterSnapshot = await captureSnapshot({ serial: session.targetId });
       const afterShot = await captureScreenshot({ serial: session.targetId, ephemeral: true });
@@ -660,7 +678,7 @@ async function handleRequest(
         nodes: afterSnapshot.nodes,
         screenshotPath: afterShot.path,
         makeCurrent: true,
-      });
+      }).finally(() => cleanupScreenshot(afterShot.path));
       const transition = await recordObservedTransition({
         sessionId: session.id,
         fromScreenId: before.screen.id,
@@ -851,13 +869,13 @@ async function handleRequest(
         ownerId?: string;
         expiresAt?: number;
       };
-      if (!body.poolId || !body.deviceSerial || !body.ownerId)
-        throw new HttpError(400, "poolId, deviceSerial, and ownerId are required");
+      if (!body.poolId || !body.deviceSerial)
+        throw new HttpError(400, "poolId and deviceSerial are required");
       const lease = await leaseDevice({
         projectId: scope.projectId,
         poolId: body.poolId,
         deviceSerial: body.deviceSerial,
-        ownerId: body.ownerId,
+        ownerId: scope.subject,
         expiresAt: body.expiresAt ?? now() + 15 * 60_000,
       });
       json(res, 201, { lease });
@@ -866,7 +884,12 @@ async function handleRequest(
 
     const releaseLeaseMatch = matchPath(pathname, "/device-leases/:id/release");
     if (method === "POST" && releaseLeaseMatch) {
-      json(res, 200, { lease: await releaseDeviceLease(releaseLeaseMatch.id!) });
+      json(res, 200, {
+        lease: await releaseDeviceLease(releaseLeaseMatch.id!, {
+          projectId: scope.projectId,
+          ownerId: scope.subject,
+        }),
+      });
       return;
     }
 
@@ -919,6 +942,7 @@ async function handleRequest(
         serial?: string | null;
         platform?: "android" | "ios" | "browser";
       };
+      await assertTargetControl(scope, body.serial ?? undefined);
       if (body.platform === "browser") selectBrowserTarget(body.serial ?? null);
       else selectDevice(body.serial ?? null, body.platform ?? "android");
       json(res, 200, {
@@ -931,9 +955,20 @@ async function handleRequest(
 
     if (method === "GET" && pathname === "/jobs") {
       const limit = parseLimit(url.searchParams.get("limit"), 50);
+      const full = url.searchParams.get("full") !== "0";
       json(res, 200, {
-        jobs: listJobs(limit),
-        active: getActiveJob(),
+        jobs: (scope.localTrusted
+          ? listJobs(limit)
+          : listJobs(limit).filter(
+              (job) => job.projectId === scope.projectId && job.ownerId === scope.subject,
+            )
+        ).map((job) => (full ? job : summarizeJob(job))),
+        active:
+          scope.localTrusted ||
+          (getActiveJob()?.projectId === scope.projectId &&
+            getActiveJob()?.ownerId === scope.subject)
+            ? getActiveJob()
+            : null,
       });
       return;
     }
@@ -941,13 +976,16 @@ async function handleRequest(
     const jobMatch = matchPath(pathname, "/jobs/:id");
     if (method === "GET" && jobMatch) {
       const job = getJob(jobMatch.id!);
-      if (!job) throw new HttpError(404, "Job not found");
+      assertJobAccess(scope, job);
       json(res, 200, { job });
       return;
     }
 
     const retryMatch = matchPath(pathname, "/jobs/:id/retry");
     if (method === "POST" && retryMatch) {
+      const previous = getJob(retryMatch.id!);
+      assertJobAccess(scope, previous);
+      await assertTargetControl(scope, previous?.browserTargetId ?? previous?.serial);
       const job = retryJob(retryMatch.id!);
       json(res, 202, { job });
       return;
@@ -962,6 +1000,7 @@ async function handleRequest(
 
     const pauseMatch = matchPath(pathname, "/jobs/:id/pause");
     if (method === "POST" && pauseMatch) {
+      assertJobAccess(scope, getJob(pauseMatch.id!));
       const job = pauseJob(pauseMatch.id!);
       json(res, 200, { job });
       return;
@@ -969,12 +1008,14 @@ async function handleRequest(
 
     const resumeMatch = matchPath(pathname, "/jobs/:id/resume");
     if (method === "POST" && resumeMatch) {
+      assertJobAccess(scope, getJob(resumeMatch.id!));
       const job = resumeJob(resumeMatch.id!);
       json(res, 200, { job });
       return;
     }
 
     if (method === "POST" && pathname === "/jobs/active/cancel") {
+      assertJobAccess(scope, getActiveJob() ?? undefined);
       const job = cancelActiveJob();
       if (!job) throw new HttpError(404, "No active job");
       json(res, 200, { job });
@@ -994,7 +1035,12 @@ async function handleRequest(
         projectId?: string;
       };
       if (!body.recipe) throw new HttpError(400, "recipe is required");
-      const definitions = await readProjectVariables(body.projectId?.trim() || "default");
+      await assertTargetControl(scope, body.browserTargetId ?? body.serial);
+      if (body.projectId?.trim() && body.projectId.trim() !== scope.projectId) {
+        recordAudit(scope, { action: "run.matrix", resource: "project", result: "deny" });
+        throw new HttpError(403, "Project is outside the authenticated scope");
+      }
+      const definitions = await readProjectVariables(scope.projectId);
       const matrix = await prepareRunMatrix({
         variables: definitions.value,
         repetitions: body.repetitions,
@@ -1026,6 +1072,8 @@ async function handleRequest(
               },
             },
           ],
+          projectId: scope.projectId,
+          ownerId: scope.subject,
         }),
       );
       json(res, 202, { matrix, jobs });
@@ -1056,6 +1104,9 @@ async function handleRequest(
           `Compatibility matrix “${matrix.name}” matched no targets${details ? ` (${details})` : ""}`,
         );
       }
+      for (const profile of expansion.profiles) {
+        await assertTargetControl(scope, profile.targetId);
+      }
       const repetitions = Math.min(Math.max(Math.floor(body.repetitions ?? 1), 1), 20);
       const batchId = `compatibility-${matrix.id}-${now()}`;
       const jobs = expansion.profiles.flatMap((profile) =>
@@ -1078,6 +1129,8 @@ async function handleRequest(
                 data: { matrixId: matrix.id, matrixName: matrix.name, profile },
               },
             ],
+            projectId: scope.projectId,
+            ownerId: scope.subject,
           }),
         ),
       );
@@ -1100,6 +1153,7 @@ async function handleRequest(
       if (!body.action && !body.recipe && !body.retryOf) {
         throw new HttpError(400, "action or recipe is required");
       }
+      await assertTargetControl(scope, body.browserTargetId ?? body.serial);
       let job;
       try {
         job = body.retryOf
@@ -1113,6 +1167,8 @@ async function handleRequest(
               browserTargetId: body.browserTargetId,
               prodAccountMatch: body.prodAccountMatch,
               variables: body.variables,
+              projectId: scope.projectId,
+              ownerId: scope.subject,
             });
       } catch (err) {
         // enqueueJob throws "Unknown action: <id>" for bad action ids — surface as 400, not 500.
@@ -1169,6 +1225,7 @@ async function handleRequest(
         targetKind?: "device" | "browser";
         browserTargetId?: string;
       };
+      await assertTargetControl(scope, body.browserTargetId ?? body.serial);
       const recipes = await listRecipes();
       let manifest;
       try {
@@ -1198,6 +1255,7 @@ async function handleRequest(
           targetKind: body.targetKind,
           browserTargetId: body.browserTargetId,
           variables: entry.inputs,
+          recipeSnapshot: structuredClone(recipe),
           batchId: manifest.id,
           caseIndex: index,
           caseCount: manifest.entries.length,
@@ -1208,6 +1266,8 @@ async function handleRequest(
               data: { manifest, entry },
             },
           ],
+          projectId: scope.projectId,
+          ownerId: scope.subject,
         });
       });
       json(res, 202, { manifest, jobs });
@@ -1491,11 +1551,14 @@ async function handleRequest(
         prodAccountMatch?: string;
         wait?: boolean;
       };
+      await assertTargetControl(scope, body.serial);
       const job = enqueueJob({
         action: runMatch.id!,
         serial: body.serial,
         platform: body.platform,
         prodAccountMatch: body.prodAccountMatch,
+        projectId: scope.projectId,
+        ownerId: scope.subject,
       });
       if (body.wait === false) {
         json(res, 202, { job });
@@ -1532,6 +1595,7 @@ async function handleRequest(
     if (method === "GET" && pathname === "/snapshot") {
       const serial = url.searchParams.get("serial") ?? undefined;
       const interactiveOnly = url.searchParams.get("interactiveOnly") === "1";
+      await assertTargetControl(scope, serial);
       const snap = await captureSnapshot({ serial, interactiveOnly });
       const tree = formatSnapshotTree(snap.nodes);
       json(res, 200, { ...snap, tree });
@@ -1543,6 +1607,7 @@ async function handleRequest(
       const caption = url.searchParams.get("caption") ?? undefined;
       const jobId = url.searchParams.get("jobId") ?? undefined;
       const ephemeral = url.searchParams.get("ephemeral") === "1";
+      await assertTargetControl(scope, serial);
       const shot = await captureScreenshot({
         serial,
         caption: caption ?? undefined,
@@ -1550,6 +1615,7 @@ async function handleRequest(
         ephemeral,
       });
       json(res, 200, shot);
+      if (ephemeral) await cleanupScreenshot(shot.path);
       return;
     }
 
@@ -1565,6 +1631,7 @@ async function handleRequest(
         );
       }
       const { serial, ...input } = body;
+      await assertTargetControl(scope, serial);
       await interact(input as InteractInput, { serial });
       json(res, 200, { ok: true });
       return;
@@ -1575,6 +1642,7 @@ async function handleRequest(
       if (!body || typeof body !== "object" || body.step === undefined) {
         throw new HttpError(400, "body.step is required");
       }
+      await assertTargetControl(scope, body.serial);
       let steps;
       try {
         steps = validateRecipeSteps([body.step]);
@@ -1630,8 +1698,92 @@ async function handleRequest(
     }
     if (method === "GET" && pathname === "/runs") {
       const limit = parseLimit(url.searchParams.get("limit"), 40);
-      const runs = await listPersistedRuns(limit);
+      const runs = scope.localTrusted
+        ? await listRunSummaries(limit)
+        : (await listPersistedRuns(Math.max(limit, 200)))
+            .filter((run) => run.projectId === scope.projectId && run.ownerId === scope.subject)
+            .slice(0, limit)
+            .map((run) => ({
+              id: run.id,
+              action: run.action,
+              title: run.title,
+              status: run.status,
+              queuedAt: run.queuedAt,
+              startedAt: run.startedAt,
+              finishedAt: run.finishedAt,
+              durationMs: run.durationMs,
+              platform: run.platform,
+              serial: run.serial,
+              outcome: run.outcome,
+              batchId: run.batchId,
+              frameCount: run.frameCount ?? run.frames.length,
+              evidenceComplete: Boolean(run.evidence?.finishedAt),
+              writtenAt: run.writtenAt,
+              artifactCount: run.artifacts.length,
+              artifactBytes: run.frames.reduce((sum, frame) => sum + (frame.bytes ?? 0), 0),
+              pinned: false,
+              retentionClass: "standard" as const,
+            }));
       json(res, 200, { runs, root: runsRoot() });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/runs/catalog/rebuild") {
+      json(res, 200, await rebuildRunCatalog(runsRoot()));
+      return;
+    }
+
+    if (method === "GET" && pathname === "/runs/storage") {
+      json(res, 200, { policy: "disabled", health: await runStorageHealth(runsRoot()) });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/runs/retention") {
+      const body = (await parseJsonBody(req)) as {
+        maxAgeDays?: number;
+        maxBytes?: number;
+        dryRun?: boolean;
+      };
+      json(res, 200, await applyRunRetention(runsRoot(), body));
+      return;
+    }
+
+    const signalsMatch = matchPath(pathname, "/runs/:id/signals");
+    if (method === "GET" && signalsMatch) {
+      const run = await readPersistedRun(signalsMatch.id!);
+      if (!run) throw new HttpError(404, "Run not found");
+      assertRunAccess(scope, run);
+      if (!run.evidence) {
+        json(res, 200, { metrics: [], signals: [], reason: "evidence manifest unavailable" });
+        return;
+      }
+      const context = { targetProfileId: run.targetProfile?.id, appVersion: run.appVersion };
+      const metrics = extractEvidenceMetrics(run.evidence, context);
+      const history = (await listPersistedRuns(100))
+        .filter((candidate) => candidate.id !== run.id && candidate.action === run.action)
+        .flatMap((candidate) =>
+          candidate.evidence
+            ? [
+                extractEvidenceMetrics(candidate.evidence, {
+                  targetProfileId: candidate.targetProfile?.id,
+                  appVersion: candidate.appVersion,
+                }),
+              ]
+            : [],
+        );
+      json(res, 200, { metrics, signals: compareEvidenceMetrics(metrics, history) });
+      return;
+    }
+
+    const pinMatch = matchPath(pathname, "/runs/:id/pin");
+    if (method === "POST" && pinMatch) {
+      const run = await readPersistedRun(pinMatch.id!);
+      assertRunAccess(scope, run);
+      const body = (await parseJsonBody(req)) as { pinned?: boolean };
+      if (!(await setRunPinned(runsRoot(), pinMatch.id!, body.pinned !== false))) {
+        throw new HttpError(404, "Run not found");
+      }
+      json(res, 200, { ok: true, pinned: body.pinned !== false });
       return;
     }
 
@@ -1639,6 +1791,7 @@ async function handleRequest(
     if (method === "GET" && persistedMatch) {
       const run = await readPersistedRun(persistedMatch.id!);
       if (!run) throw new HttpError(404, "Run not found");
+      assertRunAccess(scope, run);
       json(res, 200, { run });
       return;
     }
@@ -1648,6 +1801,7 @@ async function handleRequest(
     if (method === "GET" && frameMatch) {
       const run = await readPersistedRun(frameMatch.id!);
       if (!run) throw new HttpError(404, "Run not found");
+      assertRunAccess(scope, run);
       const buf = await readFrameFile(run.dir, frameMatch.file!);
       if (!buf) throw new HttpError(404, "Frame not found");
       res.writeHead(200, {
@@ -1665,6 +1819,7 @@ async function handleRequest(
     if (method === "GET" && videoMatch) {
       const run = await readPersistedRun(videoMatch.id!);
       if (!run) throw new HttpError(404, "Run not found");
+      assertRunAccess(scope, run);
       const file = runArtifactFile(run.dir, "video", videoMatch.file!);
       if (!file) throw new HttpError(404, "Video not found");
       await streamVideo(req, res, file);
@@ -1816,19 +1971,12 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
   assertSafeBinding(host, token);
+  const sse = createSseHub(CORS_HEADERS);
 
   const server = http.createServer((req, res) => {
-    void handleRequest(req, res, token);
+    void handleRequest(req, res, token, isLoopbackHost(host), sse);
   });
-  let checkingSchedules = false;
-  const scheduleTimer = setInterval(() => {
-    if (checkingSchedules) return;
-    checkingSchedules = true;
-    void runDueSchedules().finally(() => {
-      checkingSchedules = false;
-    });
-  }, 30_000);
-  scheduleTimer.unref?.();
+  const scheduler = startScheduler();
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -1847,73 +1995,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
     host,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        clearInterval(scheduleTimer);
-        for (const c of sseClients) {
-          try {
-            c.res.end();
-          } catch {
-            /* ignore */
-          }
-        }
-        sseClients.clear();
+        scheduler.close();
+        sse.close();
         server.close((err) => (err ? reject(err) : resolve()));
       }),
   };
-}
-
-async function runDueSchedules(at = Date.now()): Promise<void> {
-  const schedules = await listSchedules();
-  // Capture target facts once per tick. Each job/report keeps this immutable
-  // observation instead of resolving a potentially different target later.
-  const targetProfiles = buildTargetProfiles({
-    devices: await listDevices().catch(() => []),
-    targets: await listTargets(),
-    observedAt: at,
-  });
-  for (const schedule of schedules) {
-    if (!schedule.enabled || schedule.nextRunAt > at) continue;
-    const recipe = await readRecipe(schedule.recipeId);
-    // Mark first so a broken definition cannot hot-loop every scheduler tick.
-    await markScheduleRun(schedule.id, at);
-    if (!recipe || recipe.quarantined) continue;
-    const variables = await readProjectVariables(schedule.projectId);
-    const matrix = await prepareRunMatrix({
-      variables: variables.value,
-      repetitions: schedule.repetitions,
-      seed: at,
-    });
-    const targetProfile = resolveScheduledTargetProfile(schedule, targetProfiles);
-    for (const item of matrix.cases) {
-      enqueueJob({
-        recipe: schedule.recipeId,
-        ...(schedule.targetKind === "browser"
-          ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
-          : {
-              targetKind: "device" as const,
-              serial: schedule.targetId,
-              platform: schedule.platform === "ios" ? "ios" : "android",
-            }),
-        variables: item.values,
-        ...(targetProfile ? { targetProfile } : {}),
-        batchId: matrix.id,
-        caseIndex: item.index,
-        caseCount: matrix.cases.length,
-        artifacts: [
-          {
-            kind: "schedule",
-            capturedAt: at,
-            data: {
-              scheduleId: schedule.id,
-              matrixId: matrix.id,
-              provenance: item.provenance,
-              targetProfile: targetProfile ?? null,
-              targetProfileStatus: targetProfile ? "observed" : "unavailable",
-            },
-          },
-        ],
-      });
-    }
-  }
 }
 
 async function main(): Promise<void> {

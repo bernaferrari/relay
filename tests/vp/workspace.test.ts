@@ -1,20 +1,34 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { readFile } from "node:fs/promises";
 import { describe, it } from "vitest";
+import { expect } from "vitest";
 
-const exec = promisify(execFile);
-
-async function runPackageTests(name: string): Promise<void> {
-  await exec("pnpm", ["--filter", name, "test"], {
-    cwd: process.cwd(),
-    env: process.env,
-    maxBuffer: 8 * 1024 * 1024,
-  });
+async function packageJson(path = "package.json"): Promise<{
+  scripts?: Record<string, string>;
+}> {
+  return JSON.parse(await readFile(path, "utf8")) as {
+    scripts?: Record<string, string>;
+  };
 }
 
-describe.sequential("Relay workspace", () => {
-  it("passes client transport tests", () => runPackageTests("@relay/client"));
-  it("passes core domain tests", () => runPackageTests("@relay/core"));
-  it("passes server API and security tests", () => runPackageTests("@relay/server"));
-  it("passes app behavior tests", () => runPackageTests("@relay/app"));
+describe("Relay workspace verification", () => {
+  it("provides one root verification command", async () => {
+    const root = await packageJson();
+    expect(root.scripts?.verify).toContain("vp check");
+    expect(root.scripts?.verify).toContain("pnpm typecheck");
+    expect(root.scripts?.verify).toContain("pnpm run test:packages");
+    expect(root.scripts?.verify).toContain("vp test");
+    expect(root.scripts?.test).toBe("pnpm run test:packages && vp test");
+  });
+
+  it("discovers package tests recursively instead of listing files", async () => {
+    const app = await packageJson("packages/app/package.json");
+    expect(app.scripts?.test).toBe("tsx --test src/**/*.test.ts");
+    expect(app.scripts?.test).not.toContain("step-sentence.test.ts");
+  });
+
+  it("keeps package tests separate from Vite+ workspace tests", async () => {
+    const root = await packageJson();
+    expect(root.scripts?.["test:packages"]).toBe("pnpm -r --if-present run test");
+    expect(root.scripts?.["test:packages"]).not.toContain("vp test");
+  });
 });

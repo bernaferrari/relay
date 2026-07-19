@@ -7,6 +7,16 @@ import { findWorkspaceRoot } from "./runs.js";
 
 const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
+export function browserExecutable(target?: TargetDefinition): string {
+  const configured = process.env.RELAY_BROWSER_EXECUTABLE?.trim();
+  const allowed = new Set([DEFAULT_CHROME, ...(configured ? [configured] : [])]);
+  const requested = target?.browser?.executablePath || configured || DEFAULT_CHROME;
+  if (!allowed.has(requested)) {
+    throw new Error("Browser target references an executable outside the server allowlist");
+  }
+  return requested;
+}
+
 function targetFile(): string {
   return join(targetRoot(), ".relay", "targets.json");
 }
@@ -41,6 +51,7 @@ export async function saveBrowserTarget(input: {
   id?: string;
   name: string;
   startUrl: string;
+  /** @deprecated Host executable selection is server-owned and this value is ignored. */
   executablePath?: string;
   headless?: boolean;
   viewport?: { width: number; height: number };
@@ -71,7 +82,7 @@ export async function saveBrowserTarget(input: {
     updatedAt: now,
     browser: {
       startUrl: url.toString(),
-      executablePath: input.executablePath?.trim() || DEFAULT_CHROME,
+      executablePath: process.env.RELAY_BROWSER_EXECUTABLE?.trim() || DEFAULT_CHROME,
       // Visible by default: browser targets are black-box environments where
       // people often need to complete login or MFA before recording a test.
       headless: input.headless ?? false,
@@ -102,8 +113,25 @@ const BROWSER_CAPABILITIES: TargetCapability[] = [
 export async function preflightTarget(target: TargetDefinition): Promise<TargetPreflight> {
   if (target.kind !== "browser" || !target.browser)
     throw new Error("only managed browser targets use this preflight");
-  const executablePath = target.browser.executablePath || DEFAULT_CHROME;
+  let executablePath: string;
   const checks: TargetPreflight["checks"] = [];
+  try {
+    executablePath = browserExecutable(target);
+  } catch (error) {
+    checks.push({
+      id: "executable-policy",
+      label: "Browser executable policy",
+      status: "fail",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      targetId: target.id,
+      ok: false,
+      checkedAt: Date.now(),
+      capabilities: BROWSER_CAPABILITIES,
+      checks,
+    };
+  }
   try {
     await access(executablePath);
     checks.push({

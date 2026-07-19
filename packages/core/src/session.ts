@@ -2,6 +2,8 @@
  * Test-run sessions with action traces, heal retries, and disk persistence.
  */
 import { randomUUID } from "node:crypto";
+import { readFile, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { now, publish } from "./events.js";
 import {
   getAction,
@@ -10,7 +12,7 @@ import {
   type RunActionOptions,
   type RunActionResult,
 } from "./actions.js";
-import { createDevice, type Device, type DevicePlatform } from "./device.js";
+import { base, createDevice, type Device, type DevicePlatform } from "./device.js";
 import {
   glyphsFromLogLine,
   planForAction,
@@ -45,10 +47,18 @@ import {
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import { classifyRunOutcome } from "./outcomes.js";
-import { startRunEvidence, stopRunEvidence, type RunEvidenceHandle } from "./run-evidence.js";
+import {
+  initializeRunEvidence,
+  startRunEvidence,
+  stopRunEvidence,
+  type RunEvidenceHandle,
+} from "./run-evidence.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { preflightTarget, readTarget } from "./targets.js";
-import type { FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
+import { runWithTargetContext, type TargetContext } from "./target-context.js";
+import type { EvidenceManifest, FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
+import type { JobSummary } from "@relay/protocol";
+import { redactText } from "./redaction.js";
 
 function classifyError(message: string): JobErrorCode {
   return classifyJobError(message) as JobErrorCode;
@@ -87,6 +97,8 @@ export type JobErrorCode =
 
 export type TestJob = {
   id: string;
+  projectId?: string;
+  ownerId?: string;
   action: string;
   /** recipe id when this job runs a recipe (action == recipeId for naming) */
   recipeId?: string;
@@ -131,6 +143,8 @@ export type TestJob = {
   persisted?: boolean;
   /** Frozen authoring input and evidence payloads written once with the run. */
   recipeSnapshot?: Recipe;
+  /** Structured completeness and ordered evidence timeline for this run. */
+  evidence?: EvidenceManifest;
   /** Present while a recipe is deliberately waiting for a person to act. */
   waitingFor?: {
     kind: "human";
@@ -166,6 +180,28 @@ export function listJobs(limit = 50): TestJob[] {
     .slice(0, limit)
     .map((id) => jobs.get(id)!)
     .filter(Boolean);
+}
+
+export function summarizeJob(job: TestJob): JobSummary {
+  return {
+    id: job.id,
+    action: job.action,
+    title: job.title,
+    status: job.status,
+    queuedAt: job.queuedAt,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    durationMs:
+      job.finishedAt && (job.startedAt ?? job.queuedAt)
+        ? job.finishedAt - (job.startedAt ?? job.queuedAt)
+        : undefined,
+    platform: job.targetKind === "browser" ? "browser" : job.platform,
+    serial: job.browserTargetId ?? job.serial,
+    outcome: job.outcome,
+    batchId: job.batchId,
+    frameCount: job.frames.length,
+    evidenceComplete: Boolean(job.evidence?.finishedAt),
+  };
 }
 
 export function getJob(id: string): TestJob | undefined {
@@ -211,6 +247,10 @@ export type EnqueueJobInput = {
   caseIndex?: number;
   caseCount?: number;
   artifacts?: TestJob["artifacts"];
+  /** Frozen execution input. Suite and retry jobs must provide/reuse this snapshot. */
+  recipeSnapshot?: Recipe;
+  projectId?: string;
+  ownerId?: string;
 };
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
@@ -218,6 +258,8 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
   const id = randomUUID();
   const baseJob = {
     id,
+    projectId: input.projectId ?? parent?.projectId,
+    ownerId: input.ownerId ?? parent?.ownerId,
     serial: input.serial?.trim() || parent?.serial || undefined,
     deviceName: parent?.deviceName,
     platform: input.platform ?? parent?.platform ?? ("android" as const),
@@ -241,6 +283,7 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     caseIndex: input.caseIndex ?? parent?.caseIndex,
     caseCount: input.caseCount ?? parent?.caseCount,
     resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
+    recipeSnapshot: structuredClone(input.recipeSnapshot ?? parent?.recipeSnapshot),
     options: {
       prodAccountMatch: input.prodAccountMatch ?? parent?.options?.prodAccountMatch,
     },
@@ -310,6 +353,7 @@ export function retryJob(id: string): TestJob {
     retryOf: parent.id,
     title: parent.title,
     variables: parent.resolvedInputs,
+    recipeSnapshot: parent.recipeSnapshot,
     batchId: parent.batchId,
     caseIndex: parent.caseIndex,
     caseCount: parent.caseCount,
@@ -389,7 +433,15 @@ async function drainQueue(): Promise<void> {
       const job = jobs.get(id);
       // skipped if cancelled while still queued
       if (!job || job.status === "cancelled") continue;
-      await executeJob(id);
+      const context: TargetContext =
+        job.targetKind === "browser" && job.browserTargetId
+          ? { kind: "browser", platform: "browser", targetId: job.browserTargetId }
+          : {
+              kind: "device",
+              platform: job.platform,
+              ...(job.serial ? { serial: job.serial } : {}),
+            };
+      await runWithTargetContext(context, () => executeJob(id));
     }
   } finally {
     draining = false;
@@ -419,7 +471,6 @@ function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
     durationMs: job.finishedAt - (job.startedAt ?? job.queuedAt),
     cancelled: true,
   });
-  void persistRun(job).catch(() => undefined);
 }
 
 /**
@@ -450,6 +501,7 @@ export function cancelJob(id: string): TestJob {
     if (idx >= 0) queue.splice(idx, 1);
     job.startedAt = job.startedAt ?? now();
     finalizeCancelled(job);
+    void persistRun(job).catch(() => undefined);
     clearControl(id);
     return job;
   }
@@ -546,9 +598,9 @@ async function runRecipeSteps(
 ): Promise<void> {
   const recipeId = job.recipeId;
   if (!recipeId) throw new Error("recipe job has no recipeId");
-  const recipe = await readRecipe(recipeId);
+  const recipe = job.recipeSnapshot ?? (await readRecipe(recipeId));
   if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
-  job.recipeSnapshot = structuredClone(recipe);
+  if (!job.recipeSnapshot) job.recipeSnapshot = structuredClone(recipe);
   job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   for (const step of recipe.steps) {
@@ -565,18 +617,64 @@ async function runRecipeSteps(
       // The command is now being attempted. Record it here—not when the plan
       // was created—so the timeline distinguishes intent from observation.
       observeStepActions(ts, glyphsForStep(step));
-      await runRecipeStep(device, resolveRecipeStep(step, job.resolvedInputs), {
+      const resolvedStep = resolveRecipeStep(step, job.resolvedInputs);
+      job.artifacts.push({
+        kind: "command-attempt",
+        capturedAt: now(),
+        data: { stepId: ts.id, command: resolvedStep },
+      });
+      await captureAutomaticState(job, device, ts, "before", pushLog);
+      await runRecipeStep(device, resolvedStep, {
         log: pushLog,
         job,
       });
+      await captureAutomaticState(job, device, ts, "after", pushLog);
       finishStep(ts, "ok");
     } catch (err) {
+      await captureAutomaticState(job, device, ts, "after", pushLog);
       finishStep(ts, "error", `✗ ${err instanceof Error ? err.message : String(err)}`);
       setCurrentStep(undefined);
       throw err;
     }
   }
   setCurrentStep(undefined);
+}
+
+async function captureAutomaticState(
+  job: TestJob,
+  device: Device,
+  step: TraceStep,
+  phase: "before" | "after",
+  log: (line: string) => void,
+): Promise<void> {
+  if (process.env.RELAY_AUTO_VISUAL_EVIDENCE === "0") return;
+  try {
+    const snapshot = await device.capture.snapshot({ ...base(), interactiveOnly: false });
+    job.artifacts.push({
+      kind: "ui-tree",
+      capturedAt: now(),
+      data: { stepId: step.id, phase, nodes: snapshot.nodes ?? [] },
+    });
+  } catch (error) {
+    log(
+      `warn: ${phase} UI-tree capture failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const runDir = await ensureRunDir(job);
+  const temporary = join(runDir, "frames", `.capture-${randomUUID()}.png`);
+  try {
+    const result = await device.capture.screenshot({ ...base(), path: temporary });
+    const encoded = result.base64 ?? (await readFile(temporary)).toString("base64");
+    const frame = await writeFramePng(job, encoded, `${phase} · ${step.title}`);
+    step.frames.push({ ...frame, base64: undefined });
+  } catch (error) {
+    log(
+      `warn: ${phase} screenshot capture failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
 }
 
 async function executeJob(id: string): Promise<void> {
@@ -605,26 +703,9 @@ async function executeJob(id: string): Promise<void> {
     serial: job.serial,
   });
 
-  // Snapshot env so we can restore it in `finally` — the queue is strictly
-  // serial, so targeting never leaks across jobs. See plan 001, step 3.
-  const savedEnv = {
-    serial: process.env.AGENT_DEVICE_SERIAL,
-    androidSerial: process.env.ANDROID_SERIAL,
-    prodMatch: process.env.PROD_ACCOUNT_MATCH,
-    platform: process.env.AGENT_DEVICE_PLATFORM,
-    browserTarget: process.env.RELAY_TARGET_ID,
-  };
-  if (job.serial) {
-    process.env.AGENT_DEVICE_SERIAL = job.serial;
-    process.env.AGENT_DEVICE_PLATFORM = job.platform;
-    if (job.platform === "android") process.env.ANDROID_SERIAL = job.serial;
-    else delete process.env.ANDROID_SERIAL;
-  }
-  if (job.targetKind === "browser" && job.browserTargetId) {
-    process.env.RELAY_TARGET_ID = job.browserTargetId;
-  } else {
-    delete process.env.RELAY_TARGET_ID;
-  }
+  // Target identity is carried by AsyncLocalStorage through drainQueue. The
+  // account match remains a legacy action option and is restored below.
+  const savedProdMatch = process.env.PROD_ACCOUNT_MATCH;
   if (job.options?.prodAccountMatch?.trim()) {
     process.env.PROD_ACCOUNT_MATCH = job.options.prodAccountMatch.trim();
   }
@@ -665,33 +746,35 @@ async function executeJob(id: string): Promise<void> {
   const logTarget = () => (phaseSteps.length > 0 ? currentPhase() : currentRecipeStep);
 
   const pushLog = (line: string) => {
-    job.logs.push(line);
-    appendStepLog(logTarget(), line);
+    const safeLine = redactText(line);
+    job.logs.push(safeLine);
+    appendStepLog(logTarget(), safeLine);
     // Advance phase on major progress markers so pause has clearer boundaries (legacy only)
     if (
       phaseSteps.length > 0 &&
       phaseIdx < phaseSteps.length - 1 &&
-      (line.startsWith("==>") || /ensure|restore|update|install|login|sign out|chooser/i.test(line))
+      (safeLine.startsWith("==>") ||
+        /ensure|restore|update|install|login|sign out|chooser/i.test(safeLine))
     ) {
       const cur = phaseSteps[phaseIdx];
       if (cur && cur.status === "running") {
-        finishStep(cur, "ok", line);
+        finishStep(cur, "ok", safeLine);
         phaseIdx += 1;
         const next = phaseSteps[phaseIdx];
         if (next) next.status = "running";
       }
     }
-    const level = /FAIL|error|Error|cancel/i.test(line)
+    const level = /FAIL|error|Error|cancel/i.test(safeLine)
       ? ("error" as const)
-      : /DONE|success|resumed|paused/i.test(line)
+      : /DONE|success|resumed|paused/i.test(safeLine)
         ? ("success" as const)
         : ("info" as const);
-    publish({ type: "job.log", at: now(), jobId: job.id, line, level });
+    publish({ type: "job.log", at: now(), jobId: job.id, line: safeLine, level });
   };
 
   const primary = () => currentPhase() ?? currentRecipeStep ?? job.steps[job.steps.length - 1];
   let device: Device | undefined;
-  let evidence: RunEvidenceHandle | undefined;
+  let evidence: RunEvidenceHandle | undefined = initializeRunEvidence(job);
   const finishEvidence = async () => {
     await stopRunEvidence(evidence, job, device, pushLog);
   };
@@ -723,7 +806,7 @@ async function executeJob(id: string): Promise<void> {
       await hardStopDeviceSession();
       device = createDevice();
     }
-    evidence = await startRunEvidence(job, device, pushLog);
+    evidence = await startRunEvidence(job, device, pushLog, evidence);
 
     // Heartbeat: surface cancel even during long SDK calls; hard-stop session
     let pendingCancel: Error | null = null;
@@ -828,6 +911,11 @@ async function executeJob(id: string): Promise<void> {
         if (s.status === "running" || !s.finishedAt) finishStep(s, "error", "✗ cancelled");
       }
       finalizeCancelled(job, primary());
+      await persistRun(job).catch((persistError) =>
+        pushLog(
+          `warn: persist cancelled run failed: ${persistError instanceof Error ? persistError.message : String(persistError)}`,
+        ),
+      );
       return;
     }
     await finishEvidence();
@@ -858,16 +946,8 @@ async function executeJob(id: string): Promise<void> {
     setExecutingJobId(null);
     activeJobId = null;
     clearControl(id);
-    if (savedEnv.serial === undefined) delete process.env.AGENT_DEVICE_SERIAL;
-    else process.env.AGENT_DEVICE_SERIAL = savedEnv.serial;
-    if (savedEnv.androidSerial === undefined) delete process.env.ANDROID_SERIAL;
-    else process.env.ANDROID_SERIAL = savedEnv.androidSerial;
-    if (savedEnv.prodMatch === undefined) delete process.env.PROD_ACCOUNT_MATCH;
-    else process.env.PROD_ACCOUNT_MATCH = savedEnv.prodMatch;
-    if (savedEnv.platform === undefined) delete process.env.AGENT_DEVICE_PLATFORM;
-    else process.env.AGENT_DEVICE_PLATFORM = savedEnv.platform;
-    if (savedEnv.browserTarget === undefined) delete process.env.RELAY_TARGET_ID;
-    else process.env.RELAY_TARGET_ID = savedEnv.browserTarget;
+    if (savedProdMatch === undefined) delete process.env.PROD_ACCOUNT_MATCH;
+    else process.env.PROD_ACCOUNT_MATCH = savedProdMatch;
   }
 }
 
@@ -898,8 +978,6 @@ export async function attachJobFrame(opts: {
     jobId: job.id,
     frame: { ...frame },
   });
-  // update run.json opportunistically
-  void persistRun(job).catch(() => undefined);
   return frame;
 }
 

@@ -637,6 +637,42 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function loadRunDetail(id: string): Promise<void> {
+      try {
+        const live = await request<{ job: JobInfo }>(`/jobs/${encodeURIComponent(id)}`);
+        if (live.job) {
+          setJobs((current) => current.map((job) => (job.id === id ? live.job : job)));
+          return;
+        }
+      } catch {
+        /* completed jobs may only exist in persisted storage after restart */
+      }
+      try {
+        const data = await request<{ run: PersistedRun }>(`/runs/${encodeURIComponent(id)}`);
+        if (!data.run) return;
+        setPersistedRuns((current) => {
+          const index = current.findIndex((run) => run.id === id);
+          if (index < 0) return [data.run, ...current];
+          return current.map((run) => (run.id === id ? data.run : run));
+        });
+      } catch {
+        return;
+      }
+    }
+
+    async function loadRunSignals(
+      id: string,
+    ): Promise<import("@relay/protocol").RegressionSignal[]> {
+      try {
+        const data = await request<{ signals?: import("@relay/protocol").RegressionSignal[] }>(
+          `/runs/${encodeURIComponent(id)}/signals`,
+        );
+        return data.signals ?? [];
+      } catch {
+        return [];
+      }
+    }
+
     async function refreshProjectVariables() {
       if (!client || health() === "offline") return;
       try {
@@ -1367,6 +1403,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       openBrowserTarget,
       refreshJobs,
       refreshRuns,
+      loadRunDetail,
+      loadRunSignals,
       pollHealth,
       retryConnection,
       runRecipeRemote,

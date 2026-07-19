@@ -115,3 +115,28 @@ because it is nondeterministic and may expose unrelated browsing data.
 | Stage overlays         | `app/components/stage.tsx` → `.hit-rect`             |
 
 SSE events include `job.step`, `job.frame`, `job.healed` in addition to queue lifecycle events.
+
+## Evidence, storage, and transport ownership
+
+Every terminal schema-v5 run commits once: report files are written and synced, then `.complete` is
+renamed as the commit point. `core/run-catalog.ts` indexes only committed manifests in a rebuildable
+SQLite catalog; artifact files and manifests remain authoritative. Run/job list endpoints return
+protocol summaries, while detail and artifact routes resolve one exact run.
+
+`core/run-evidence.ts` owns the run-scoped evidence manifest. Input, screenshots, UI trees, logs,
+network summaries, performance, and video are automatic where supported. Audio and crash capture
+remain explicitly unsupported unless an adapter and consent policy implement them. Network bodies
+and audio are never enabled implicitly. Redaction runs before disk and HTTP serialization.
+
+`@relay/protocol` is canonical for summaries, traces, evidence, metrics, and endpoint contracts.
+`server/sse.ts` owns event-client lifecycle and `server/scheduler.ts` owns schedule timers. The app's
+`context/server.tsx` remains a compatibility composition façade; resource requests live in the
+focused `lib/server-*-remote.ts` modules and capture/discovery controllers. The façade is retained
+because it coordinates reconnection order and platform preference restoration; new transport DTOs
+must not be added there.
+
+Large authoring and report components remain cohesive composition exceptions: `step-row.tsx` owns
+the discriminated step editor and `runs-workspace.tsx` owns the complete report tab lifecycle.
+Their pure presentation, URL construction, capture, and review calculations are already extracted
+and tested under `app/src/lib`; further splitting must follow responsibility boundaries rather than
+line-count-only moves.

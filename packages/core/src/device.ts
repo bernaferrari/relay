@@ -8,17 +8,95 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry } from "./retry.js";
+import { currentTargetContext } from "./target-context.js";
 
 export type DevicePlatform = "android" | "ios";
 export const PLATFORM = "android" as const;
 export function selectedPlatform(): DevicePlatform {
-  return process.env.AGENT_DEVICE_PLATFORM === "ios" ? "ios" : "android";
+  const context = currentTargetContext();
+  return context.kind === "device" ? context.platform : "android";
 }
 export const GROK_PACKAGE = "ai.x.grok";
 export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
 
-export type Device = ReturnType<typeof createAgentDeviceClient>;
+type NativeDevice = ReturnType<typeof createAgentDeviceClient>;
+
+/** Canonical target-neutral capability surface consumed by core recipes. */
+export type Device = {
+  devices: {
+    list: (options?: Parameters<NativeDevice["devices"]["list"]>[0]) => Promise<
+      Array<{
+        id: string;
+        name: string;
+        platform: string;
+        target?: string;
+        kind?: string;
+        booted?: boolean;
+        identifiers?: { serial?: string; udid?: string };
+        android?: { serial: string };
+        ios?: { udid: string };
+      }>
+    >;
+  };
+  apps: {
+    open: (options: Parameters<NativeDevice["apps"]["open"]>[0]) => Promise<unknown>;
+    close: (options?: Parameters<NativeDevice["apps"]["close"]>[0]) => Promise<unknown>;
+  };
+  capture: {
+    snapshot: (
+      options?: Parameters<NativeDevice["capture"]["snapshot"]>[0],
+    ) => Promise<{ nodes?: SnapshotNode[] }>;
+    screenshot: (
+      options?: Parameters<NativeDevice["capture"]["screenshot"]>[0],
+    ) => Promise<{ path?: string; base64?: string }>;
+  };
+  interactions: {
+    press: (options: Parameters<NativeDevice["interactions"]["press"]>[0]) => Promise<unknown>;
+    longPress: (
+      options: Parameters<NativeDevice["interactions"]["longPress"]>[0],
+    ) => Promise<unknown>;
+    type: (options: Parameters<NativeDevice["interactions"]["type"]>[0]) => Promise<unknown>;
+    find: (options: Parameters<NativeDevice["interactions"]["find"]>[0]) => Promise<unknown>;
+    scroll: (options: Parameters<NativeDevice["interactions"]["scroll"]>[0]) => Promise<unknown>;
+    swipe: (options: Parameters<NativeDevice["interactions"]["swipe"]>[0]) => Promise<unknown>;
+  };
+  command: {
+    wait: (options: Parameters<NativeDevice["command"]["wait"]>[0]) => Promise<unknown>;
+    back: (options?: Parameters<NativeDevice["command"]["back"]>[0]) => Promise<unknown>;
+    home: (options?: Parameters<NativeDevice["command"]["home"]>[0]) => Promise<unknown>;
+    clipboard: (
+      options: Parameters<NativeDevice["command"]["clipboard"]>[0],
+    ) => Promise<
+      { action: "read"; text: string } | { action: "write"; textLength: number; message: string }
+    >;
+    keyboard: (options?: Parameters<NativeDevice["command"]["keyboard"]>[0]) => Promise<unknown>;
+    alert: (options: Parameters<NativeDevice["command"]["alert"]>[0]) => Promise<unknown>;
+    appSwitcher: (
+      options?: Parameters<NativeDevice["command"]["appSwitcher"]>[0],
+    ) => Promise<unknown>;
+    rotate: (options: Parameters<NativeDevice["command"]["rotate"]>[0]) => Promise<unknown>;
+  };
+  settings: {
+    update: (options: Parameters<NativeDevice["settings"]["update"]>[0]) => Promise<unknown>;
+  };
+  observability: {
+    perf: (options?: Parameters<NativeDevice["observability"]["perf"]>[0]) => Promise<unknown>;
+    logs: (options?: Parameters<NativeDevice["observability"]["logs"]>[0]) => Promise<unknown>;
+    network: (
+      options?: Parameters<NativeDevice["observability"]["network"]>[0],
+    ) => Promise<unknown>;
+  };
+  recording: {
+    record: (options: Parameters<NativeDevice["recording"]["record"]>[0]) => Promise<{
+      [key: string]: unknown;
+      started?: boolean;
+      stopped?: boolean;
+      warning?: string;
+      path?: string;
+    }>;
+  };
+};
 const execFileAsync = promisify(execFile);
 
 export type SnapshotNode = {
@@ -54,9 +132,9 @@ export function createDevice(): Device {
 }
 
 export function base() {
-  const platform = selectedPlatform();
-  const serial =
-    process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim() || undefined;
+  const context = currentTargetContext();
+  const platform = context.kind === "device" ? context.platform : "android";
+  const serial = context.kind === "device" ? context.serial : undefined;
   return platform === "ios"
     ? ({ platform, ...(serial ? { udid: serial, device: serial } : {}) } as const)
     : ({ platform, ...(serial ? { serial, device: serial } : {}) } as const);

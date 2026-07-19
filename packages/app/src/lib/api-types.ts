@@ -38,32 +38,8 @@ export type ActionInfo = {
   [key: string]: unknown;
 };
 
-export type TraceFrameRef = {
-  path: string;
-  caption: string;
-  capturedAt: number;
-  bytes?: number;
-  base64?: string;
-  mime?: string;
-};
-
-export type TraceStep = {
-  id: string;
-  index: number;
-  kind: string;
-  tone: string;
-  title: string;
-  glyphs: string[];
-  /** Ordered, repeated operations observed inside this readable step. */
-  actions?: { kind: string; at: number; label?: string }[];
-  startedAt: number;
-  finishedAt?: number;
-  durationMs?: number;
-  frames: TraceFrameRef[];
-  log: string;
-  heal?: string;
-  status?: string;
-};
+export type TraceFrameRef = import("@relay/protocol").TraceFrameDto;
+export type TraceStep = import("@relay/protocol").TraceStepDto;
 
 export type StepTarget = {
   ref?: string;
@@ -316,7 +292,8 @@ export type RecipeStability = {
   passRate: number | null;
 };
 
-export type JobInfo = {
+export type JobInfo = Omit<import("@relay/protocol").JobSummary, "status" | "frameCount"> & {
+  frameCount?: number;
   id: string;
   action: string;
   serial?: string;
@@ -373,9 +350,13 @@ export type JobInfo = {
   };
   /** Target facts frozen when this job was expanded from a compatibility matrix. */
   targetProfile?: import("@relay/protocol").TargetProfile;
+  evidence?: import("@relay/protocol").EvidenceManifest;
 };
 
-export type PersistedRun = {
+export type PersistedRun = Omit<
+  import("@relay/protocol").RunSummary,
+  "queuedAt" | "frameCount" | "artifactCount" | "artifactBytes" | "pinned" | "retentionClass"
+> & {
   schemaVersion?: number;
   id: string;
   action: string;
@@ -409,6 +390,7 @@ export type PersistedRun = {
   resolvedInputs?: Record<string, string>;
   /** Target facts frozen when this report was created. */
   targetProfile?: import("@relay/protocol").TargetProfile;
+  evidence?: import("@relay/protocol").EvidenceManifest;
 };
 
 export type CompatibilityReport = import("@relay/protocol").CompatibilityReport;

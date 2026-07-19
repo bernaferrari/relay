@@ -51,8 +51,12 @@ export function RunsWorkspace(props: {
   const [matrixReport, setMatrixReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
+  const [regressionSignals, setRegressionSignals] = createSignal<
+    import("@relay/protocol").RegressionSignal[]
+  >([]);
   const [refreshing, setRefreshing] = createSignal(false);
   const [runFilter, setRunFilter] = createSignal<"all" | "passed" | "attention" | "active">("all");
+  const requestedDetails = new Set<string>();
   async function refreshRuns(): Promise<void> {
     if (refreshing()) return;
     setRefreshing(true);
@@ -103,11 +107,24 @@ export function RunsWorkspace(props: {
     return formatReviewTime(durations[Math.floor(durations.length / 2)]!);
   });
   const selected = () => rows().find((row) => row.id === selectedId()) ?? null;
+  createEffect(() => {
+    const run = selected();
+    if (run && !run.steps?.length && !requestedDetails.has(run.id)) {
+      requestedDetails.add(run.id);
+      void server.loadRunDetail(run.id);
+    }
+    if (run?.evidence) void server.loadRunSignals(run.id).then(setRegressionSignals);
+    else setRegressionSignals([]);
+  });
   const openRun = (job: JobInfo) => {
     setSelectedId(job.id);
     server.setSelectedJobId(job.id);
     setSelectedRunStep(initialRunReviewStep(job));
     setTab("timeline");
+    if (!job.steps?.length && !requestedDetails.has(job.id)) {
+      requestedDetails.add(job.id);
+      void server.loadRunDetail(job.id);
+    }
   };
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
   const selectedRecipe = createMemo(() => {
@@ -507,6 +524,40 @@ export function RunsWorkspace(props: {
                     previous={baseline()}
                     onOpenRecipe={props.onOpenRecipe}
                   />
+                  <Show when={job().evidence}>
+                    {(manifest) => (
+                      <section class="mt-3 rounded-xl border border-border-weak-base p-3">
+                        <strong class="text-[11px] font-semibold text-text-strong">
+                          Evidence completeness
+                        </strong>
+                        <div class="mt-2 flex flex-wrap gap-1.5">
+                          {Object.values(manifest().channels).map((channel) => (
+                            <span class="rounded-full border border-border-weak-base px-2 py-1 text-[9px] text-text-weak">
+                              {channel.channel} · {channel.status}
+                            </span>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+                  </Show>
+                  <Show when={regressionSignals().some((signal) => signal.material)}>
+                    <section class="mt-3 rounded-xl border border-border-weak-base p-3">
+                      <strong class="text-[11px] font-semibold text-text-strong">
+                        Material regressions
+                      </strong>
+                      <div class="mt-2 grid gap-1.5">
+                        {regressionSignals()
+                          .filter((signal) => signal.material)
+                          .map((signal) => (
+                            <span class="text-[10px] text-text-weak">
+                              {signal.metric.id} · +{signal.delta?.toFixed(0)} {signal.metric.unit}{" "}
+                              · baseline {signal.baseline?.median.toFixed(0)} (
+                              {signal.baseline?.sampleCount})
+                            </span>
+                          ))}
+                      </div>
+                    </section>
+                  </Show>
                   <details class="group col-span-2 mt-2 border-t border-border-weak-base">
                     <summary class="flex min-h-10 cursor-pointer list-none items-center justify-between gap-2 text-[11px]/[1.25] text-text-weaker focus-visible:outline-1 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
                       <span>More details</span>
@@ -691,6 +742,8 @@ function persistedAsJob(run: PersistedRun): JobInfo {
     status,
     queuedAt: run.queuedAt ?? run.startedAt ?? run.writtenAt,
     logs: run.logs ?? [],
+    steps: run.steps ?? [],
+    frames: run.frames ?? [],
     attempts: run.attempts ?? 1,
   };
 }

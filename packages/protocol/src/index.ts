@@ -31,6 +31,238 @@ export type TargetCapability =
   | "lock-screen"
   | "app-switcher";
 
+export type EvidenceChannel =
+  | "input"
+  | "screenshot"
+  | "video"
+  | "ui-tree"
+  | "logs"
+  | "network"
+  | "performance"
+  | "crash"
+  | "audio";
+
+export type EvidenceChannelStatus =
+  | "captured"
+  | "partial"
+  | "unsupported"
+  | "denied"
+  | "failed"
+  | "redacted";
+
+export type EvidenceChannelRecord = {
+  channel: EvidenceChannel;
+  status: EvidenceChannelStatus;
+  startedAt?: number;
+  finishedAt?: number;
+  entries: number;
+  bytes: number;
+  dropped: number;
+  redactions: number;
+  message?: string;
+};
+
+export type EvidenceEvent = {
+  sequence: number;
+  at: number;
+  monotonicMs: number;
+  channel: EvidenceChannel;
+  kind: string;
+  stepId?: string;
+  actionId?: string;
+  artifact?: string;
+  data?: unknown;
+};
+
+/** Machine-readable evidence completeness for one bounded run. */
+export type EvidenceManifest = {
+  schemaVersion: 1;
+  runId: string;
+  target: {
+    kind: "device" | "browser";
+    platform: "android" | "ios" | "browser";
+    id?: string;
+    profileId?: string;
+  };
+  startedAt: number;
+  finishedAt?: number;
+  channels: Record<EvidenceChannel, EvidenceChannelRecord>;
+  events: EvidenceEvent[];
+};
+
+export type JobSummary = {
+  id: string;
+  action: string;
+  title?: string;
+  status: string;
+  queuedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  durationMs?: number;
+  platform?: string;
+  serial?: string;
+  outcome?: string;
+  batchId?: string;
+  frameCount: number;
+  evidenceComplete?: boolean;
+};
+
+export type TraceFrameDto = {
+  path: string;
+  caption: string;
+  capturedAt: number;
+  bytes?: number;
+  base64?: string;
+  mime?: string;
+  width?: number;
+  height?: number;
+};
+
+export type TraceStepDto = {
+  id: string;
+  index: number;
+  kind: string;
+  tone: string;
+  title: string;
+  glyphs: string[];
+  actions?: { kind: string; at: number; label?: string }[];
+  startedAt: number;
+  finishedAt?: number;
+  durationMs?: number;
+  frames: TraceFrameDto[];
+  log: string;
+  heal?: string;
+  status?: string;
+};
+
+export type RunSummary = JobSummary & {
+  writtenAt: number;
+  artifactCount: number;
+  artifactBytes: number;
+  pinned: boolean;
+  retentionClass: "standard" | "protected";
+};
+
+export type EvidenceMetricStatus = "available" | "insufficient-evidence";
+
+export type EvidenceMetric = {
+  schemaVersion: 1;
+  id:
+    | "completion.duration"
+    | "interaction.attempts"
+    | "interaction.rapid-repeat-clusters"
+    | "network.requests"
+    | "network.failures"
+    | "log.errors";
+  unit: "ms" | "count";
+  status: EvidenceMetricStatus;
+  value?: number;
+  reason?: string;
+  requiredChannels: EvidenceChannel[];
+  sourceSequences: number[];
+  targetProfileId?: string;
+  appVersion?: string;
+  confidence: "high" | "medium" | "low";
+};
+
+export type RegressionSignal = {
+  metric: EvidenceMetric;
+  baseline?: { median: number; sampleCount: number };
+  delta?: number;
+  budget?: number;
+  material: boolean;
+  direction: "regression" | "improvement" | "neutral" | "unknown";
+  reason?: string;
+};
+
+function objectValue(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value) throw new Error(`${label} must be a non-empty string`);
+  return value;
+}
+
+function numberValue(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value))
+    throw new Error(`${label} must be a finite number`);
+  return value;
+}
+
+export function parseRunSummary(value: unknown): RunSummary {
+  const input = objectValue(value, "run summary");
+  return {
+    ...(input as RunSummary),
+    id: stringValue(input.id, "run summary id"),
+    action: stringValue(input.action, "run summary action"),
+    status: stringValue(input.status, "run summary status"),
+    queuedAt: numberValue(input.queuedAt, "run summary queuedAt"),
+    writtenAt: numberValue(input.writtenAt, "run summary writtenAt"),
+    frameCount: numberValue(input.frameCount, "run summary frameCount"),
+    artifactCount: numberValue(input.artifactCount, "run summary artifactCount"),
+    artifactBytes: numberValue(input.artifactBytes, "run summary artifactBytes"),
+    pinned: Boolean(input.pinned),
+    retentionClass: input.retentionClass === "protected" ? "protected" : "standard",
+  };
+}
+
+export function parseJobSummary(value: unknown): JobSummary {
+  const input = objectValue(value, "job summary");
+  return {
+    ...(input as JobSummary),
+    id: stringValue(input.id, "job summary id"),
+    action: stringValue(input.action, "job summary action"),
+    status: stringValue(input.status, "job summary status"),
+    queuedAt: numberValue(input.queuedAt, "job summary queuedAt"),
+    frameCount: numberValue(input.frameCount, "job summary frameCount"),
+  };
+}
+
+export type RelayEndpointMap = {
+  "GET /jobs?full=0": { response: { jobs: JobSummary[] } };
+  "GET /runs": { response: { runs: RunSummary[] } };
+  "GET /runs/:id/signals": {
+    response: { metrics: EvidenceMetric[]; signals: RegressionSignal[]; reason?: string };
+  };
+  "POST /runs/:id/pin": { request: { pinned: boolean }; response: { ok: true; pinned: boolean } };
+};
+
+export function parseEvidenceManifest(value: unknown): EvidenceManifest {
+  const input = objectValue(value, "evidence manifest");
+  if (input.schemaVersion !== 1) throw new Error("unsupported evidence manifest schemaVersion");
+  const channels = objectValue(input.channels, "evidence channels");
+  const validStatuses: EvidenceChannelStatus[] = [
+    "captured",
+    "partial",
+    "unsupported",
+    "denied",
+    "failed",
+    "redacted",
+  ];
+  for (const name of [
+    "input",
+    "screenshot",
+    "video",
+    "ui-tree",
+    "logs",
+    "network",
+    "performance",
+    "crash",
+    "audio",
+  ] as EvidenceChannel[]) {
+    const channel = objectValue(channels[name], `evidence channel ${name}`);
+    if (!validStatuses.includes(channel.status as EvidenceChannelStatus)) {
+      throw new Error(`invalid evidence status for ${name}`);
+    }
+  }
+  if (!Array.isArray(input.events)) throw new Error("evidence events must be an array");
+  return input as EvidenceManifest;
+}
+
 export type TargetDefinition = {
   id: string;
   name: string;
@@ -272,6 +504,7 @@ export type TestVariable = {
   prompt?: string;
   values?: string[];
   fallback: string;
+  sensitive?: boolean;
 };
 
 export type JourneyNodePosition = { x: number; y: number };

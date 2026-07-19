@@ -11,6 +11,10 @@ import {
   type Revisioned,
   type ServerConnection,
   type TestVariable,
+  parseRunSummary,
+  parseJobSummary,
+  type JobSummary,
+  type RunSummary,
 } from "@relay/protocol";
 
 export class ApiError<T = unknown> extends Error {
@@ -84,6 +88,26 @@ export class RelayClient {
 
   health<T = unknown>(): Promise<T> {
     return this.request<T>("/health");
+  }
+  async jobs(): Promise<{ jobs: JobSummary[] }> {
+    const body = await this.request<{ jobs?: unknown }>("/jobs?full=0");
+    if (!body || !Array.isArray(body.jobs))
+      throw new ApiError(502, "Malformed jobs response", body);
+    try {
+      return { jobs: body.jobs.map(parseJobSummary) };
+    } catch (error) {
+      throw new ApiError(502, error instanceof Error ? error.message : String(error), body);
+    }
+  }
+  async runs(): Promise<{ runs: RunSummary[] }> {
+    const body = await this.request<{ runs?: unknown }>("/runs");
+    if (!body || !Array.isArray(body.runs))
+      throw new ApiError(502, "Malformed runs response", body);
+    try {
+      return { runs: body.runs.map(parseRunSummary) };
+    } catch (error) {
+      throw new ApiError(502, error instanceof Error ? error.message : String(error), body);
+    }
   }
   projects(): Promise<{ projects: Project[] }> {
     return this.request("/projects");
