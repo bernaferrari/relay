@@ -3,7 +3,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TargetCapability, TargetDefinition, TargetPreflight } from "@relay/protocol";
 import { chromium } from "playwright-core";
-import { findWorkspaceRoot } from "./runs.js";
+import { findWorkspaceRoot } from "./workspace-root.js";
 
 const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 

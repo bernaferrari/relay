@@ -3,8 +3,6 @@
  * Jobs, traces, heal retries, persisted runs/, live capture.
  */
 import http from "node:http";
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
 import { URL } from "node:url";
 import {
   assertSafeBinding,
@@ -33,7 +31,6 @@ import {
   listJobs,
   summarizeJob,
   listRecipes,
-  listRunSummaries,
   readRecipe,
   readRecipeEvidenceImage,
   saveRecipe,
@@ -41,12 +38,8 @@ import {
   deleteRecipe,
   runRecipeStep,
   validateRecipeSteps,
-  listPersistedRuns,
   now,
   publish,
-  readFrameFile,
-  runArtifactFile,
-  readPersistedRun,
   retryJob,
   cancelJob,
   pauseJob,
@@ -107,7 +100,6 @@ import {
   suggestDiscoveryControl,
   resolveCompatibilityMatrix,
   selectBrowserTarget,
-  buildCompatibilityReport,
   buildDiscoveryCoverage,
   type RecipeParameter,
   createSuiteRunManifest,
@@ -118,16 +110,24 @@ import {
   restoreSuiteHistory,
   saveSuite,
   type SaveSuiteInput,
-  extractEvidenceMetrics,
-  compareEvidenceMetrics,
-  rebuildRunCatalog,
-  runStorageHealth,
-  applyRunRetention,
-  redactValue,
-  setRunPinned,
+  getRedactionPolicy,
+  loadRedactionPolicy,
+  RedactionPolicyLockedError,
+  setRedactionEnabled,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
+import { handleRunRoute } from "./run-routes.js";
+import { assertJobAccess, assertTargetControl } from "./access-control.js";
+import {
+  CORS_HEADERS,
+  HttpError,
+  json,
+  matchPath,
+  parseJsonBody,
+  parseLimit,
+  text,
+} from "./http.js";
 import { RevisionConflict } from "@relay/protocol";
 import type {
   Build,
@@ -150,46 +150,6 @@ export type StartedServer = {
   host: string;
   close: () => Promise<void>;
 };
-
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  // PUT/DELETE are used by recipe CRUD; browsers preflight them.
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "Content-Type, Authorization, X-Organization-Id, X-Project-Id, Idempotency-Key",
-};
-
-/** Reject oversized bodies early — screenshots/recipe JSON stay well under this. */
-const MAX_BODY_BYTES = 2 * 1024 * 1024;
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "HttpError";
-  }
-}
-
-function json(res: http.ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(redactValue(body));
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Content-Length": Buffer.byteLength(payload),
-    ...CORS_HEADERS,
-  });
-  res.end(payload);
-}
-
-function text(res: http.ServerResponse, status: number, body: string, contentType: string): void {
-  res.writeHead(status, {
-    "Content-Type": contentType,
-    "Content-Length": Buffer.byteLength(body),
-    ...CORS_HEADERS,
-  });
-  res.end(body);
-}
 
 function discoveryInteraction(input: InteractInput): {
   kind: "tap" | "type" | "scroll" | "back" | "manual";
@@ -224,121 +184,9 @@ function discoveryInteraction(input: InteractInput): {
   }
 }
 
-function parseLimit(raw: string | null, fallback: number, max = 200): number {
-  const n = Number(raw ?? fallback);
-  if (!Number.isFinite(n) || n < 1) return fallback;
-  return Math.min(Math.floor(n), max);
-}
-
-async function assertTargetControl(scope: RequestContext, targetId?: string): Promise<void> {
-  if (!targetId || scope.localTrusted) return;
-  const at = now();
-  const active = (await listDeviceLeases(scope.projectId)).find(
-    (lease) =>
-      lease.deviceSerial === targetId &&
-      lease.ownerId === scope.subject &&
-      lease.status === "leased" &&
-      lease.expiresAt > at,
-  );
-  if (!active) {
-    recordAudit(scope, {
-      action: "target.control",
-      resource: "lease",
-      target: targetId,
-      result: "deny",
-    });
-    throw new HttpError(403, "An active lease owned by this caller is required for target control");
-  }
-  recordAudit(scope, {
-    action: "target.control",
-    resource: "lease",
-    target: targetId,
-    result: "allow",
-  });
-}
-
-function assertJobAccess(scope: RequestContext, job: ReturnType<typeof getJob>): void {
-  if (!job) throw new HttpError(404, "Job not found");
-  if (scope.localTrusted) return;
-  if (job.projectId !== scope.projectId || job.ownerId !== scope.subject) {
-    recordAudit(scope, { action: "job.access", resource: job.id, result: "deny" });
-    throw new HttpError(404, "Job not found");
-  }
-}
-
-function assertRunAccess(
-  scope: RequestContext,
-  run: Awaited<ReturnType<typeof readPersistedRun>>,
-): void {
-  if (!run) throw new HttpError(404, "Run not found");
-  if (scope.localTrusted) return;
-  if (run.projectId !== scope.projectId || run.ownerId !== scope.subject) {
-    recordAudit(scope, { action: "run.access", resource: run.id, result: "deny" });
-    throw new HttpError(404, "Run not found");
-  }
-}
-
 /** In-memory job reports, newest first. Falls back empty when none. */
 function collectReports(limit: number): JobReport[] {
   return listJobs(limit).map(toJobReport);
-}
-
-function readBody(req: http.IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const declared = Number(req.headers["content-length"] ?? 0);
-    if (Number.isFinite(declared) && declared > maxBytes) {
-      reject(new HttpError(413, `Request body too large (max ${maxBytes} bytes)`));
-      req.resume();
-      return;
-    }
-    const chunks: Buffer[] = [];
-    let total = 0;
-    let settled = false;
-    const settle = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      fn();
-    };
-    req.on("data", (chunk: Buffer) => {
-      if (settled) return;
-      total += chunk.byteLength;
-      if (total > maxBytes) {
-        settle(() => reject(new HttpError(413, `Request body too large (max ${maxBytes} bytes)`)));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on("end", () => settle(() => resolve(Buffer.concat(chunks).toString("utf8"))));
-    req.on("error", (err) => settle(() => reject(err)));
-  });
-}
-
-async function parseJsonBody(
-  req: http.IncomingMessage,
-  maxBytes = MAX_BODY_BYTES,
-): Promise<unknown> {
-  const raw = await readBody(req, maxBytes);
-  if (!raw.trim()) return {};
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    throw new HttpError(400, "Invalid JSON body");
-  }
-}
-
-function matchPath(pathname: string, pattern: string): Record<string, string> | null {
-  const pp = pattern.split("/").filter(Boolean);
-  const ap = pathname.split("/").filter(Boolean);
-  if (pp.length !== ap.length) return null;
-  const params: Record<string, string> = {};
-  for (let i = 0; i < pp.length; i++) {
-    const p = pp[i]!;
-    const a = ap[i]!;
-    if (p.startsWith(":")) params[p.slice(1)] = decodeURIComponent(a);
-    else if (p !== a) return null;
-  }
-  return params;
 }
 
 const serverStartedAt = Date.now();
@@ -377,6 +225,28 @@ async function handleRequest(
       });
     } catch (error) {
       json(res, 403, { error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    if (method === "GET" && pathname === "/settings/privacy") {
+      json(res, 200, { policy: getRedactionPolicy() });
+      return;
+    }
+    if (method === "PUT" && pathname === "/settings/privacy") {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Privacy settings can only be changed from a local Relay host");
+      }
+      const body = (await parseJsonBody(req)) as { enabled?: unknown };
+      if (typeof body.enabled !== "boolean") {
+        throw new HttpError(400, "enabled must be a boolean");
+      }
+      try {
+        json(res, 200, { policy: await setRedactionEnabled(body.enabled) });
+      } catch (error) {
+        if (error instanceof RedactionPolicyLockedError) {
+          throw new HttpError(409, error.message);
+        }
+        throw error;
+      }
       return;
     }
     if (method === "GET" && pathname === "/audit") {
@@ -1685,146 +1555,7 @@ async function handleRequest(
       return;
     }
 
-    // persisted runs
-    const matrixReportMatch = matchPath(pathname, "/reports/matrix/:batchId");
-    if (method === "GET" && matrixReportMatch) {
-      const persisted = await listPersistedRuns(500);
-      const live = listJobs(500);
-      const byId = new Map([...persisted, ...live].map((run) => [run.id, run]));
-      const report = buildCompatibilityReport([...byId.values()], matrixReportMatch.batchId!);
-      if (!report) throw new HttpError(404, "Compatibility matrix report not found");
-      json(res, 200, { report });
-      return;
-    }
-    if (method === "GET" && pathname === "/runs") {
-      const limit = parseLimit(url.searchParams.get("limit"), 40);
-      const runs = scope.localTrusted
-        ? await listRunSummaries(limit)
-        : (await listPersistedRuns(Math.max(limit, 200)))
-            .filter((run) => run.projectId === scope.projectId && run.ownerId === scope.subject)
-            .slice(0, limit)
-            .map((run) => ({
-              id: run.id,
-              action: run.action,
-              title: run.title,
-              status: run.status,
-              queuedAt: run.queuedAt,
-              startedAt: run.startedAt,
-              finishedAt: run.finishedAt,
-              durationMs: run.durationMs,
-              platform: run.platform,
-              serial: run.serial,
-              outcome: run.outcome,
-              batchId: run.batchId,
-              frameCount: run.frameCount ?? run.frames.length,
-              evidenceComplete: Boolean(run.evidence?.finishedAt),
-              writtenAt: run.writtenAt,
-              artifactCount: run.artifacts.length,
-              artifactBytes: run.frames.reduce((sum, frame) => sum + (frame.bytes ?? 0), 0),
-              pinned: false,
-              retentionClass: "standard" as const,
-            }));
-      json(res, 200, { runs, root: runsRoot() });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/runs/catalog/rebuild") {
-      json(res, 200, await rebuildRunCatalog(runsRoot()));
-      return;
-    }
-
-    if (method === "GET" && pathname === "/runs/storage") {
-      json(res, 200, { policy: "disabled", health: await runStorageHealth(runsRoot()) });
-      return;
-    }
-
-    if (method === "POST" && pathname === "/runs/retention") {
-      const body = (await parseJsonBody(req)) as {
-        maxAgeDays?: number;
-        maxBytes?: number;
-        dryRun?: boolean;
-      };
-      json(res, 200, await applyRunRetention(runsRoot(), body));
-      return;
-    }
-
-    const signalsMatch = matchPath(pathname, "/runs/:id/signals");
-    if (method === "GET" && signalsMatch) {
-      const run = await readPersistedRun(signalsMatch.id!);
-      if (!run) throw new HttpError(404, "Run not found");
-      assertRunAccess(scope, run);
-      if (!run.evidence) {
-        json(res, 200, { metrics: [], signals: [], reason: "evidence manifest unavailable" });
-        return;
-      }
-      const context = { targetProfileId: run.targetProfile?.id, appVersion: run.appVersion };
-      const metrics = extractEvidenceMetrics(run.evidence, context);
-      const history = (await listPersistedRuns(100))
-        .filter((candidate) => candidate.id !== run.id && candidate.action === run.action)
-        .flatMap((candidate) =>
-          candidate.evidence
-            ? [
-                extractEvidenceMetrics(candidate.evidence, {
-                  targetProfileId: candidate.targetProfile?.id,
-                  appVersion: candidate.appVersion,
-                }),
-              ]
-            : [],
-        );
-      json(res, 200, { metrics, signals: compareEvidenceMetrics(metrics, history) });
-      return;
-    }
-
-    const pinMatch = matchPath(pathname, "/runs/:id/pin");
-    if (method === "POST" && pinMatch) {
-      const run = await readPersistedRun(pinMatch.id!);
-      assertRunAccess(scope, run);
-      const body = (await parseJsonBody(req)) as { pinned?: boolean };
-      if (!(await setRunPinned(runsRoot(), pinMatch.id!, body.pinned !== false))) {
-        throw new HttpError(404, "Run not found");
-      }
-      json(res, 200, { ok: true, pinned: body.pinned !== false });
-      return;
-    }
-
-    const persistedMatch = matchPath(pathname, "/runs/:id");
-    if (method === "GET" && persistedMatch) {
-      const run = await readPersistedRun(persistedMatch.id!);
-      if (!run) throw new HttpError(404, "Run not found");
-      assertRunAccess(scope, run);
-      json(res, 200, { run });
-      return;
-    }
-
-    // GET /runs/:id/frames/:file
-    const frameMatch = matchPath(pathname, "/runs/:id/frames/:file");
-    if (method === "GET" && frameMatch) {
-      const run = await readPersistedRun(frameMatch.id!);
-      if (!run) throw new HttpError(404, "Run not found");
-      assertRunAccess(scope, run);
-      const buf = await readFrameFile(run.dir, frameMatch.file!);
-      if (!buf) throw new HttpError(404, "Frame not found");
-      res.writeHead(200, {
-        "Content-Type": "image/png",
-        "Content-Length": buf.byteLength,
-        "Cache-Control": "private, max-age=3600",
-        ...CORS_HEADERS,
-      });
-      res.end(buf);
-      return;
-    }
-
-    // GET /runs/:id/video/:file — byte ranges keep replay seeking instant.
-    const videoMatch = matchPath(pathname, "/runs/:id/video/:file");
-    if (method === "GET" && videoMatch) {
-      const run = await readPersistedRun(videoMatch.id!);
-      if (!run) throw new HttpError(404, "Run not found");
-      assertRunAccess(scope, run);
-      const file = runArtifactFile(run.dir, "video", videoMatch.file!);
-      if (!file) throw new HttpError(404, "Video not found");
-      await streamVideo(req, res, file);
-      return;
-    }
+    if (await handleRunRoute({ method, pathname, url, request: req, response: res, scope })) return;
 
     if (method === "GET" && pathname === "/doctor") {
       const result = await runDoctor();
@@ -1861,6 +1592,7 @@ async function handleRequest(
         runsDir: runsRoot(),
         endpoints: [
           "GET /health",
+          "GET/PUT /settings/privacy",
           "GET /doctor",
           "GET /report",
           "GET /report/:jobId",
@@ -1931,46 +1663,15 @@ async function handleRequest(
   }
 }
 
-async function streamVideo(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  file: string,
-): Promise<void> {
-  let info;
-  try {
-    info = await stat(file);
-  } catch {
-    throw new HttpError(404, "Video not found");
-  }
-  const total = info.size;
-  const range = req.headers.range?.match(/^bytes=(\d*)-(\d*)$/);
-  const requestedStart = range?.[1] ? Number(range[1]) : 0;
-  const requestedEnd = range?.[2] ? Number(range[2]) : total - 1;
-  const start = Math.max(0, Math.min(requestedStart, total - 1));
-  const end = Math.max(start, Math.min(requestedEnd, total - 1));
-  const partial = Boolean(range);
-
-  res.writeHead(partial ? 206 : 200, {
-    "Content-Type": file.toLowerCase().endsWith(".webm") ? "video/webm" : "video/mp4",
-    "Content-Length": end - start + 1,
-    "Accept-Ranges": "bytes",
-    ...(partial ? { "Content-Range": `bytes ${start}-${end}/${total}` } : {}),
-    "Cache-Control": "private, max-age=3600",
-    ...CORS_HEADERS,
-  });
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(file, { start, end });
-    stream.on("error", reject);
-    stream.on("end", resolve);
-    stream.pipe(res);
-  });
-}
-
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
+  const redaction = await loadRedactionPolicy();
   assertSafeBinding(host, token);
+  if (!isLoopbackHost(host) && !redaction.enabled) {
+    throw new Error("Refusing a non-local binding while evidence redaction is disabled");
+  }
   const sse = createSseHub(CORS_HEADERS);
 
   const server = http.createServer((req, res) => {

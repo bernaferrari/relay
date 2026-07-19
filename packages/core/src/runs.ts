@@ -3,7 +3,7 @@
  */
 import { existsSync } from "node:fs";
 import { mkdir, writeFile, readFile, readdir, stat, rename, unlink, open } from "node:fs/promises";
-import { join, basename, dirname } from "node:path";
+import { join, basename } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
@@ -17,6 +17,8 @@ import {
   rebuildRunCatalog,
 } from "./run-catalog.js";
 import type { RunSummary } from "@relay/protocol";
+import { findWorkspaceRoot } from "./workspace-root.js";
+export { findWorkspaceRoot } from "./workspace-root.js";
 
 export type PersistedRun = {
   schemaVersion: 2 | 3 | 4 | 5;
@@ -70,18 +72,6 @@ function slug(s: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 48);
-}
-
-export function findWorkspaceRoot(start = process.cwd()): string {
-  let dir = start;
-  for (;;) {
-    if (existsSync(join(dir, "pnpm-workspace.yaml")) || existsSync(join(dir, "pnpm-lock.yaml"))) {
-      return dir;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return start;
-    dir = parent;
-  }
 }
 
 export function runsRoot(): string {

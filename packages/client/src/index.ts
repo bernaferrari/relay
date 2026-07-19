@@ -14,6 +14,7 @@ import {
   parseRunSummary,
   parseJobSummary,
   type JobSummary,
+  type RedactionPolicy,
   type RunSummary,
 } from "@relay/protocol";
 
@@ -88,6 +89,15 @@ export class RelayClient {
 
   health<T = unknown>(): Promise<T> {
     return this.request<T>("/health");
+  }
+  redactionPolicy(): Promise<{ policy: RedactionPolicy }> {
+    return this.request("/settings/privacy");
+  }
+  setRedactionEnabled(enabled: boolean): Promise<{ policy: RedactionPolicy }> {
+    return this.request("/settings/privacy", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
   }
   async jobs(): Promise<{ jobs: JobSummary[] }> {
     const body = await this.request<{ jobs?: unknown }>("/jobs?full=0");

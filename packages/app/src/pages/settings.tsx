@@ -17,6 +17,7 @@ import { cn } from "../lib/cn";
 import { mono, modalPanel, modalScrim, seg, segBtnOn, segBtn } from "../lib/ui";
 import { platformLabel } from "../lib/target-presentation";
 import { EmptyState } from "../components/empty-state";
+import { PrivacySettingsPanel } from "../components/privacy-settings-panel";
 
 const rowCls =
   "flex items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-b-0";
@@ -268,6 +269,7 @@ export type SettingsSection =
   | "appearance"
   | "targets"
   | "matrices"
+  | "privacy"
   | "server"
   | "recipes"
   | "about";
@@ -650,6 +652,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
     ["targets", "Targets"],
     ["matrices", "Test environments"],
     ["recipes", "Providers & accounts"],
+    ["privacy", "Privacy & evidence"],
     ["server", "Connection"],
     ["appearance", "Appearance"],
     ["about", "About"],
@@ -1271,6 +1274,10 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                   </div>
                 </section>
               </Show>
+            </Show>
+
+            <Show when={section() === "privacy"}>
+              <PrivacySettingsPanel />
             </Show>
 
             <Show when={section() === "server"}>

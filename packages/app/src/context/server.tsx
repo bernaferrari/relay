@@ -12,6 +12,7 @@ import type {
   CompatibilityMatrix,
   MatrixExpansion,
   Revisioned,
+  RedactionPolicy,
   ServerConnection,
   TestVariable,
   TargetProfile,
@@ -63,6 +64,10 @@ import {
   restoreRecipeVersion as restoreRecipeVersionRemote,
   saveRecipe as saveRecipeRemoteRequest,
 } from "../lib/server-recipe-remote";
+import {
+  loadRedactionPolicy as loadRedactionPolicyRemote,
+  setRedactionEnabled as setRedactionEnabledRemote,
+} from "../lib/server-privacy-remote";
 import { enqueueMatrix, enqueueRecipe, loadMatrixReport, retryJob } from "../lib/server-run-remote";
 import {
   deleteSuite as deleteSuiteRequest,
@@ -161,6 +166,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
     const [schedules, setSchedules] = createSignal<LocalSchedule[]>([]);
     const [runsRoot, setRunsRoot] = createSignal("");
+    const [redactionPolicy, setRedactionPolicy] = createSignal<RedactionPolicy | null>(null);
     const [selectedDevice, setSelectedDevice] = createSignal<string | null>(null);
     const [selectedAction, setSelectedAction] = createSignal<string | null>(null);
     const [selectedJobId, setSelectedJobId] = createSignal<string | null>(null);
@@ -224,6 +230,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (!connection) await resolveConnection();
       connection = { ...(connection as ServerConnection), url: next };
       client = new RelayClient(connection, { fetch: fetcher() });
+      setRedactionPolicy(null);
       if (platform.setServerConnection) await platform.setServerConnection(connection);
       else await platform.setServerUrl?.(next);
       connectSse();
@@ -798,6 +805,18 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSchedules(data.schedules ?? []);
     }
 
+    async function refreshRedactionPolicy(): Promise<RedactionPolicy> {
+      const policy = await loadRedactionPolicyRemote(request);
+      setRedactionPolicy(policy);
+      return policy;
+    }
+
+    async function updateRedactionEnabled(enabled: boolean): Promise<RedactionPolicy> {
+      const policy = await setRedactionEnabledRemote(request, enabled);
+      setRedactionPolicy(policy);
+      return policy;
+    }
+
     async function deleteLocalSchedule(id: string): Promise<void> {
       await request(`/schedules/${encodeURIComponent(id)}`, { method: "DELETE" });
       setSchedules((items) => items.filter((item) => item.id !== id));
@@ -830,6 +849,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshRuns(),
         refreshSchedules(),
         refreshProjectVariables(),
+        refreshRedactionPolicy(),
       ]);
       connectSse();
     }
@@ -1220,6 +1240,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshRuns(),
           refreshSchedules(),
           refreshProjectVariables(),
+          refreshRedactionPolicy(),
         ]);
         connectSse();
       }
@@ -1239,6 +1260,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             void refreshRecipes();
             void refreshSuites();
             void refreshRuns();
+            void refreshRedactionPolicy();
             connectSse();
           }
         }
@@ -1358,6 +1380,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       persistedRuns,
       schedules,
       runsRoot,
+      redactionPolicy,
+      refreshRedactionPolicy,
+      setRedactionEnabled: updateRedactionEnabled,
       selectedDevice,
       setSelectedDevice: selectDeviceRemote,
       selectedAction,

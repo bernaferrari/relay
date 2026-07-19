@@ -56,6 +56,7 @@ connected mobile devices (not a coding agent).
 ## API surface
 
 - `GET /health` `/meta` `/events` (SSE)
+- `GET/PUT /settings/privacy` for the workspace redaction policy
 - `GET /devices` `/actions` `/jobs` `/jobs/:id`
 - `GET/POST /targets`, `DELETE /targets/:id`, `POST /targets/:id/open`, and
   `POST /targets/:id/preflight`
@@ -127,6 +128,10 @@ protocol summaries, while detail and artifact routes resolve one exact run.
 network summaries, performance, and video are automatic where supported. Audio and crash capture
 remain explicitly unsupported unless an adapter and consent policy implement them. Network bodies
 and audio are never enabled implicitly. Redaction runs before disk and HTTP serialization.
+
+The default-on policy is persisted at `.relay/privacy.json`, can be locked with
+`RELAY_REDACTION_MODE`, and cannot be disabled on a non-loopback server binding. CLI and in-process
+TUI hosts load the same policy before collecting evidence.
 
 `@relay/protocol` is canonical for summaries, traces, evidence, metrics, and endpoint contracts.
 `server/sse.ts` owns event-client lifecycle and `server/scheduler.ts` owns schedule timers. The app's

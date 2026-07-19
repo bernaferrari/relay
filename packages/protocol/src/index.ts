@@ -50,6 +50,16 @@ export type EvidenceChannelStatus =
   | "failed"
   | "redacted";
 
+export type RedactionPolicySource = "default" | "workspace" | "environment";
+
+/** Effective policy applied before evidence is exposed or persisted. */
+export type RedactionPolicy = {
+  enabled: boolean;
+  source: RedactionPolicySource;
+  locked: boolean;
+  updatedAt?: number;
+};
+
 export type EvidenceChannelRecord = {
   channel: EvidenceChannel;
   status: EvidenceChannelStatus;
@@ -223,6 +233,11 @@ export function parseJobSummary(value: unknown): JobSummary {
 }
 
 export type RelayEndpointMap = {
+  "GET /settings/privacy": { response: { policy: RedactionPolicy } };
+  "PUT /settings/privacy": {
+    request: { enabled: boolean };
+    response: { policy: RedactionPolicy };
+  };
   "GET /jobs?full=0": { response: { jobs: JobSummary[] } };
   "GET /runs": { response: { runs: RunSummary[] } };
   "GET /runs/:id/signals": {

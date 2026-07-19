@@ -10,6 +10,7 @@ import {
   getJob,
   listDevices,
   listJobs,
+  loadRedactionPolicy,
   pauseJob,
   resumeJob,
   selectDevice,
@@ -243,6 +244,7 @@ export async function createClient(serverUrl?: string): Promise<DeviceClient> {
   if (serverUrl || envUrl || (await probe(candidate))) {
     if (await probe(candidate)) return httpClient(candidate);
   }
+  await loadRedactionPolicy();
   // ensure device client constructable
   createDevice();
   return inProcessClient();

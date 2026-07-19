@@ -30,6 +30,7 @@ import {
   listDevices,
   listRecipes,
   listTargets,
+  loadRedactionPolicy,
   saveBrowserTarget,
   deleteTarget,
   preflightTarget,
@@ -833,6 +834,7 @@ async function runTui(argv: string[]): Promise<void> {
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
+  await loadRedactionPolicy();
   // OpenCode-style: bare launch in a TTY opens the testing workspace (TUI).
   // Use `interactive` / `i` for the classic readline picker.
   if (argv.length === 0) {

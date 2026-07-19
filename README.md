@@ -207,6 +207,7 @@ runs/<iso>_<action>_<device>_<id8>/
 
 ```
 GET  /health /doctor /meta /events
+GET/PUT /settings/privacy
 GET  /devices /actions /jobs /jobs/:id
 POST /jobs  POST /jobs/:id/retry
 GET/POST /projects /builds /device-pools /device-leases
@@ -233,6 +234,7 @@ GET  /runs /runs/:id /runs/:id/frames/:file
 | `RELAY_RUNS_DIR`          | `<repo>/runs`           | Evidence root                                                                            |
 | `RELAY_TESTS_DIR`         | `<repo>/tests`          | Git-tracked YAML test definition root                                                    |
 | `RELAY_AUTH_TOKEN`        | —                       | Bearer token required for non-loopback HTTP serving                                      |
+| `RELAY_REDACTION_MODE`    | workspace setting       | Lock evidence redaction `on` or `off` for this process                                   |
 | `RELAY_GITHUB_REPOSITORY` | —                       | `owner/repo` for public GitHub Releases through Electron's update service                |
 | `RELAY_UPDATE_FEED_URL`   | —                       | Custom signed update feed; supports `{platform}`, `{arch}`, and `{version}` placeholders |
 
@@ -242,6 +244,11 @@ The former `GROK_DEVICE_*` environment variables remain accepted as compatibilit
 The HTTP server refuses non-loopback bindings without a bearer token. For LAN or remote access,
 set a long random `RELAY_AUTH_TOKEN` (24+ characters) or pass `--token`. Keep the default
 loopback binding for local desktop development.
+
+Sensitive evidence redaction is on by default and can be changed in **Settings → Privacy &
+evidence**. The choice is stored in `.relay/privacy.json` and applies to future evidence and API
+responses; finalized runs are never rewritten. `RELAY_REDACTION_MODE=on|off` overrides and locks
+the UI setting. Relay refuses non-loopback bindings whenever redaction is disabled.
 
 ### Desktop update delivery
 

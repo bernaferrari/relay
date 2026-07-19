@@ -14,7 +14,7 @@ import {
   type TestVariable,
 } from "@relay/protocol";
 import { now, publish } from "./events.js";
-import { findWorkspaceRoot } from "./runs.js";
+import { findWorkspaceRoot } from "./workspace-root.js";
 
 type CollaborationState = {
   projects: Project[];

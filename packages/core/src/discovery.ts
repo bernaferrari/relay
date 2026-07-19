@@ -12,7 +12,7 @@ import type {
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { readRecipe, saveRecipe, type Recipe, type RecipeStep } from "./recipes.js";
-import { findWorkspaceRoot } from "./runs.js";
+import { findWorkspaceRoot } from "./workspace-root.js";
 
 const DEFAULT_SCOPE: DiscoveryScope = {
   maxScreens: 50,

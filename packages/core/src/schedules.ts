@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TargetProfile } from "@relay/protocol";
-import { findWorkspaceRoot } from "./runs.js";
+import { findWorkspaceRoot } from "./workspace-root.js";
 
 export type LocalSchedule = {
   id: string;

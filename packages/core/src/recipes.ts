@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile, unlink, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { ACTIONS, isActionId } from "./actions.js";
-import { findWorkspaceRoot } from "./runs.js";
+import { findWorkspaceRoot } from "./workspace-root.js";
 import { now } from "./events.js";
 import type { Glyph } from "./trace.js";
 import {

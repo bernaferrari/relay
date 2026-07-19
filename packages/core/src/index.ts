@@ -29,6 +29,7 @@ export * from "./target-context.js";
 export * from "./redaction.js";
 export * from "./run-catalog.js";
 export * from "./evidence-metrics.js";
+export * from "./workspace-root.js";
 export * from "./matrix.js";
 export * from "./matrix-yaml.js";
 export * from "./compatibility-report.js";

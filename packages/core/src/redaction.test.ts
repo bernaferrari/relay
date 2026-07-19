@@ -1,16 +1,61 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { REDACTED, redactResolvedInputs, redactValue } from "./redaction.js";
+import {
+  REDACTED,
+  getRedactionPolicy,
+  loadRedactionPolicy,
+  redactResolvedInputs,
+  redactValue,
+  setRedactionEnabled,
+} from "./redaction.js";
 
-test("redaction removes credentials, clipboard values, headers, and URL queries", () => {
-  const sentinel = "relay-secret-sentinel";
-  const redacted = redactValue({
-    authorization: `Bearer ${sentinel}`,
-    clipboard: sentinel,
-    url: `https://example.test/path?token=${sentinel}`,
-    nested: { cookie: sentinel },
-  });
-  assert.equal(JSON.stringify(redacted).includes(sentinel), false);
-  assert.equal((redacted as { clipboard: string }).clipboard, REDACTED);
-  assert.equal(redactResolvedInputs({ password: sentinel }).password?.includes(sentinel), false);
+test("redaction is safe by default, persisted, reversible, and environment-lockable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-redaction-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousMode = process.env.RELAY_REDACTION_MODE;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  delete process.env.RELAY_REDACTION_MODE;
+  try {
+    assert.deepEqual(await loadRedactionPolicy(), {
+      enabled: true,
+      source: "default",
+      locked: false,
+    });
+
+    const sentinel = "relay-secret-sentinel";
+    const evidence = {
+      authorization: `Bearer ${sentinel}`,
+      clipboard: sentinel,
+      url: `https://example.test/path?token=${sentinel}`,
+      nested: { cookie: sentinel },
+    };
+    const redacted = redactValue(evidence);
+    assert.equal(JSON.stringify(redacted).includes(sentinel), false);
+    assert.equal((redacted as { clipboard: string }).clipboard, REDACTED);
+    assert.equal(redactResolvedInputs({ password: sentinel }).password?.includes(sentinel), false);
+
+    await setRedactionEnabled(false);
+    assert.equal(redactValue(evidence), evidence);
+    assert.deepEqual(redactResolvedInputs({ password: sentinel }), { password: sentinel });
+    assert.equal((await loadRedactionPolicy()).enabled, false);
+    assert.equal(getRedactionPolicy().source, "workspace");
+
+    process.env.RELAY_REDACTION_MODE = "on";
+    assert.deepEqual(await loadRedactionPolicy(), {
+      enabled: true,
+      source: "environment",
+      locked: true,
+    });
+    await assert.rejects(setRedactionEnabled(false), /controls this setting/);
+  } finally {
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;
+    else process.env.RELAY_REDACTION_MODE = previousMode;
+    await loadRedactionPolicy();
+    await rm(root, { recursive: true, force: true });
+  }
 });
