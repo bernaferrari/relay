@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { dispatchCommand, resolveTargetDevice } from '../../core/dispatch.ts';
 import { isDeepLinkTarget } from '../../contracts/open-target.ts';
 import type { SessionSurface } from '../../contracts/session-surface.ts';
@@ -53,6 +54,12 @@ import {
   resolvePublicSessionName,
 } from '../session-routing.ts';
 import { resolveSessionLeaseForRequest } from '../lease-lifecycle.ts';
+import {
+  acquireAdvisoryDeviceClaim,
+  clearAdvisoryDeviceClaim,
+  isLocalDeviceClaimTarget,
+  type DeviceClaimSessionOwnership,
+} from '../device-claims.ts';
 
 const firstSessionOpenLocks = new Map<string, Promise<unknown>>();
 
@@ -68,6 +75,8 @@ type OpenTiming = {
   launchUrlDurationMs?: number;
   postOpenSettleDurationMs?: number;
 };
+
+type NewSessionOpenEffects = { mayHaveStarted: boolean };
 
 async function relaunchCloseApp(params: {
   device: DeviceInfo;
@@ -197,6 +206,7 @@ async function completeOpenCommand(params: {
   appBundleId?: string;
   runtime: SessionRuntimeHints | undefined;
   existingSession?: SessionState;
+  deviceClaim?: DeviceClaimSessionOwnership;
 }): Promise<DaemonResponse> {
   const {
     req,
@@ -211,6 +221,7 @@ async function completeOpenCommand(params: {
     appBundleId,
     runtime,
     existingSession,
+    deviceClaim,
   } = params;
   const shouldRelaunch = req.flags?.relaunch === true;
   const traceLogPath = existingSession?.trace?.outPath;
@@ -405,6 +416,7 @@ async function completeOpenCommand(params: {
     req,
     existingLease: existingSession?.lease,
   });
+  if (deviceClaim) nextSession.deviceClaim = deviceClaim;
   if (req.runtime !== undefined) {
     setSessionRuntimeHintsForOpen(sessionStore, sessionName, runtime);
   }
@@ -491,6 +503,126 @@ async function prepareOpenDispatchSession(params: {
     return { type: 'response', response: lifecycleResponse };
   }
   return { type: 'session', session: sessionStore.get(sessionName) ?? provisionalSession };
+}
+
+function findNewSessionDeviceConflict(params: {
+  req: DaemonRequest;
+  device: DeviceInfo;
+  sessionStore: SessionStore;
+}): DaemonResponse | undefined {
+  const { req, device, sessionStore } = params;
+  const inUse = sessionStore.toArray().find((session) => session.device.id === device.id);
+  if (!inUse) return undefined;
+  if (isImplicitSessionScopeConflict(req, inUse)) {
+    return errorResponse(
+      'DEVICE_IN_USE',
+      'Device is already in use by another workspace session.',
+      {
+        deviceId: device.id,
+        deviceName: device.name,
+        hint: 'Use a different device selector, wait for the other workspace to close its session, or run agent-device devices to choose another target.',
+      },
+    );
+  }
+  return errorResponse('DEVICE_IN_USE', `Device is already in use by session "${inUse.name}".`, {
+    session: inUse.name,
+    deviceId: device.id,
+    deviceName: device.name,
+    hint: buildSessionRecoveryHint(inUse, 'device-in-use'),
+  });
+}
+
+async function acquireLocalDeviceClaim(params: {
+  req: DaemonRequest;
+  device: DeviceInfo;
+  sessionName: string;
+  logPath: string;
+}): Promise<{ ownership?: DeviceClaimSessionOwnership }> {
+  const { req, device, sessionName, logPath } = params;
+  if (!isLocalDeviceClaimTarget(req.meta, isActiveProviderDevice(device))) return {};
+  return await acquireAdvisoryDeviceClaim({
+    device,
+    session: sessionName,
+    workspace: req.meta?.cwd ?? process.cwd(),
+    stateDir: path.dirname(logPath),
+  });
+}
+
+async function openNewSessionWithAdvisoryClaim(params: {
+  req: DaemonRequest;
+  sessionName: string;
+  logPath: string;
+  sessionStore: SessionStore;
+  device: DeviceInfo;
+  surface: SessionSurface;
+  openTarget: string | undefined;
+}): Promise<DaemonResponse> {
+  const { req, sessionName, logPath, sessionStore, device, surface, openTarget } = params;
+  const conflict = findNewSessionDeviceConflict({ req, device, sessionStore });
+  if (conflict) return conflict;
+
+  const localClaim = await acquireLocalDeviceClaim({ req, device, sessionName, logPath });
+  const effects: NewSessionOpenEffects = { mayHaveStarted: false };
+  try {
+    const details = await prepareOpenCommandDetails({
+      req,
+      sessionName,
+      sessionStore,
+      device,
+      surface,
+      openTarget,
+      onIosSimulatorColdBootStart: createAppleRunnerCacheColdBootPrewarmForOpen({
+        req,
+        logPath,
+        device,
+        surface,
+        openTarget,
+      }),
+    });
+    if (details.type === 'response') {
+      await rollbackNewSessionClaim(localClaim.ownership, effects);
+      return details.response;
+    }
+    // Preparation above is validation-only. `completeOpenCommand` can prewarm a runner,
+    // relaunch-close an app, or write runtime hints before its main open dispatch, so a
+    // failure from that point cannot prove the device is unchanged.
+    effects.mayHaveStarted = true;
+    const response = await completeOpenCommand({
+      req,
+      sessionName,
+      sessionStore,
+      logPath,
+      device,
+      openTarget,
+      openPositionals: req.positionals ?? [],
+      appBundleId: details.details.appBundleId,
+      appName: details.details.appName,
+      runtime: details.details.runtime,
+      surface,
+      deviceClaim: localClaim.ownership,
+    });
+    if (!response.ok) await rollbackNewSessionClaim(localClaim.ownership, effects);
+    return response;
+  } catch (error) {
+    await rollbackNewSessionClaim(localClaim.ownership, effects);
+    throw error;
+  }
+}
+
+async function rollbackNewSessionClaim(
+  ownership: DeviceClaimSessionOwnership | undefined,
+  effects: NewSessionOpenEffects,
+): Promise<void> {
+  if (!ownership) return;
+  if (effects.mayHaveStarted) {
+    emitDiagnostic({
+      level: 'warn',
+      phase: 'device_claim_open_effects_unconfirmed',
+      data: { deviceKey: ownership.deviceKey },
+    });
+    return;
+  }
+  await clearAdvisoryDeviceClaim(ownership);
 }
 
 // fallow-ignore-next-line complexity
@@ -605,65 +737,18 @@ export async function handleOpenCommand(params: {
     return validation;
   }
 
-  return await withKeyedLock(firstSessionOpenLocks, device.id, async () => {
-    const inUse = sessionStore
-      .toArray()
-      .find((activeSession) => activeSession.device.id === device.id);
-    if (inUse) {
-      if (isImplicitSessionScopeConflict(req, inUse)) {
-        return errorResponse(
-          'DEVICE_IN_USE',
-          'Device is already in use by another workspace session.',
-          {
-            deviceId: device.id,
-            deviceName: device.name,
-            hint: 'Use a different device selector, wait for the other workspace to close its session, or run agent-device devices to choose another target.',
-          },
-        );
-      }
-      return errorResponse(
-        'DEVICE_IN_USE',
-        `Device is already in use by session "${inUse.name}".`,
-        {
-          session: inUse.name,
-          deviceId: device.id,
-          deviceName: device.name,
-          hint: buildSessionRecoveryHint(inUse, 'device-in-use'),
-        },
-      );
-    }
-
-    const details = await prepareOpenCommandDetails({
-      req,
-      sessionName,
-      sessionStore,
-      device,
-      surface: surfaceResult,
-      openTarget,
-      onIosSimulatorColdBootStart: createAppleRunnerCacheColdBootPrewarmForOpen({
+  return await withKeyedLock(
+    firstSessionOpenLocks,
+    device.id,
+    async () =>
+      await openNewSessionWithAdvisoryClaim({
         req,
+        sessionName,
         logPath,
+        sessionStore,
         device,
         surface: surfaceResult,
         openTarget,
       }),
-    });
-    if (details.type === 'response') {
-      return details.response;
-    }
-
-    return await completeOpenCommand({
-      req,
-      sessionName,
-      sessionStore,
-      logPath,
-      device,
-      openTarget,
-      openPositionals: req.positionals ?? [],
-      appBundleId: details.details.appBundleId,
-      appName: details.details.appName,
-      runtime: details.details.runtime,
-      surface: surfaceResult,
-    });
-  });
+  );
 }
