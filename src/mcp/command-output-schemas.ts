@@ -27,7 +27,7 @@ import { DEVICE_TARGETS, PUBLIC_PLATFORMS } from '../kernel/device.ts';
  *    and discriminated-union branches mirror the source contract types.
  */
 
-const DEVICE_KINDS = ['simulator', 'emulator', 'device'] as const;
+export const DEVICE_KINDS = ['simulator', 'emulator', 'device'] as const;
 
 function numberSchema(description?: string): JsonSchema {
   return { type: 'number', ...(description ? { description } : {}) };
