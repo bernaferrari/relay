@@ -1,4 +1,6 @@
 import type { Point, SnapshotNode } from '../kernel/snapshot.ts';
+import type { ResponseCost } from '../kernel/contracts.ts';
+import type { ClickButton } from '../core/click-button.ts';
 
 export type SelectorTarget = {
   kind: 'selector';
@@ -228,6 +230,93 @@ export type SettleObservation = {
   hint?: string;
 };
 
+/**
+ * Public daemon response data shared by press/click/fill/longpress.
+ * `buildInteractionResponseData` emits this shape (ADR 0011 Layer 2):
+ * `targetKind` discriminates the resolved target, identity fields are FLAT
+ * (`ref`, `selector`, `x`, `y`), and per-command extras ride alongside.
+ */
+type TouchResponseDataBase = {
+  message?: string;
+  warning?: string;
+  x?: number;
+  y?: number;
+  referenceWidth?: number;
+  referenceHeight?: number;
+  evidence?: InteractionEvidence;
+  settle?: SettleObservation;
+  resolution?: ResolutionDisclosure;
+  cost?: ResponseCost;
+  /** Direct iOS Maestro coordinate-fallback signals. */
+  maestroNonHittableCoordinateFallbackAllowed?: boolean;
+  maestroNonHittableCoordinateFallbackUsed?: boolean;
+  maestroFallbackReason?: 'non-hittable-coordinate';
+};
+
+type TouchResponsePoint = TouchResponseDataBase & {
+  targetKind: 'point';
+  x: number;
+  y: number;
+};
+
+type TouchResponseRef = TouchResponseDataBase & {
+  targetKind: 'ref';
+  ref: string;
+  refLabel?: string;
+  selectorChain?: string[];
+  targetHittable?: boolean;
+  hint?: string;
+};
+
+type TouchResponseSelector = TouchResponseDataBase & {
+  targetKind: 'selector';
+  selector: string;
+  selectorChain?: string[];
+  refLabel?: string;
+  targetHittable?: boolean;
+  hint?: string;
+};
+
+type TouchPressExtras = {
+  button?: ClickButton;
+  count?: number;
+  intervalMs?: number;
+  holdMs?: number;
+  jitterPx?: number;
+  doubleTap?: boolean;
+};
+
+export type PressCommandResponseData =
+  | (TouchResponsePoint & TouchPressExtras)
+  | (TouchResponseRef & TouchPressExtras)
+  | (TouchResponseSelector & TouchPressExtras);
+
+export type ClickCommandResponseData = PressCommandResponseData;
+
+type TouchFillExtras = {
+  text: string;
+  delayMs?: number;
+};
+
+export type FillCommandResponseData =
+  | (TouchResponsePoint & TouchFillExtras)
+  | (TouchResponseRef & TouchFillExtras)
+  | (TouchResponseSelector & TouchFillExtras);
+
+type TouchLongPressExtras = {
+  durationMs?: number;
+  gesture: 'longpress';
+};
+
+export type LongPressCommandResponseData =
+  | (TouchResponsePoint & TouchLongPressExtras)
+  | (TouchResponseRef & TouchLongPressExtras)
+  | (TouchResponseSelector & TouchLongPressExtras);
+
+/**
+ * Internal runtime result for press/click. The daemon response layer turns
+ * this into `PressCommandResponseData` via `buildInteractionResponseData`.
+ */
 export type PressCommandResult = ResolvedInteractionTarget & {
   backendResult?: Record<string, unknown>;
   message?: string;
@@ -236,6 +325,10 @@ export type PressCommandResult = ResolvedInteractionTarget & {
   settle?: SettleObservation;
 };
 
+/**
+ * Internal runtime result for fill. The daemon response layer turns this into
+ * `FillCommandResponseData` via `buildInteractionResponseData`.
+ */
 export type FillCommandResult = ResolvedInteractionTarget & {
   text: string;
   warning?: string;
@@ -245,10 +338,38 @@ export type FillCommandResult = ResolvedInteractionTarget & {
   settle?: SettleObservation;
 };
 
+/**
+ * Internal runtime result for longpress. The daemon response layer turns this
+ * into `LongPressCommandResponseData` via `buildInteractionResponseData`.
+ */
 export type LongPressCommandResult = ResolvedInteractionTarget & {
   durationMs?: number;
   backendResult?: Record<string, unknown>;
   message?: string;
   warning?: string;
   settle?: SettleObservation;
+};
+
+/**
+ * Daemon response data for the `find` command. Read-only actions (`exists`,
+ * `wait`, `get_text`, `get_attrs`) may issue a pinnable ref with
+ * `refsGeneration`; mutating actions (`click`, `fill`, `focus`, `type`) carry
+ * `ref` as diagnostic pre-action identity and intentionally omit `refsGeneration`
+ * (ADR 0014). The shape is intentionally a flat, optional-field record because
+ * the action positional changes which fields are present.
+ */
+export type FindCommandResponseData = {
+  ref?: string;
+  refsGeneration?: number;
+  found?: true;
+  waitedMs?: number;
+  text?: string;
+  node?: SnapshotNode;
+  locator?: string;
+  query?: string;
+  x?: number;
+  y?: number;
+  message?: string;
+  settle?: SettleObservation;
+  cost?: ResponseCost;
 };
