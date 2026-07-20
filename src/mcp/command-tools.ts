@@ -1,20 +1,24 @@
 import type { AgentDeviceClient, AgentDeviceClientConfig } from '../client/client-types.ts';
 import type { JsonSchema } from '../commands/command-contract.ts';
+import type { CommandExecutionResult } from '../commands/command-surface.ts';
 import { RESPONSE_LEVELS, type ResponseLevel } from '../kernel/contracts.ts';
 import { formatCliOutput } from '../commands/cli-output.ts';
 import {
+  findCommandMetadata,
   isCommandName,
   listMcpCommandMetadata,
   type CommandName,
 } from '../commands/command-metadata.ts';
 import { resolveCommandRecordsSessionAction } from '../core/command-descriptor/registry.ts';
-import { COMMAND_OUTPUT_SCHEMAS } from './command-output-schemas.ts';
+import { MCP_COMMAND_OUTPUT_SCHEMAS } from './mcp-output-schemas.ts';
 import { AppError } from '../kernel/errors.ts';
 import { formatToolErrorText, normalizeToolError } from './tool-error.ts';
+import { resolveMcpConfigDefaults } from './tool-input-config.ts';
+import { projectStructuredContent } from './tool-result.ts';
 
 export type ToolResult = {
   isError: boolean;
-  structuredContent?: unknown;
+  structuredContent?: Record<string, unknown>;
   content: Array<{ type: 'text'; text: string }>;
 };
 
@@ -22,11 +26,15 @@ type CommandToolExecutorDeps = {
   createClient?: (
     config: AgentDeviceClientConfig,
   ) => AgentDeviceClient | Promise<AgentDeviceClient>;
-  runCommand?: (client: AgentDeviceClient, name: CommandName, input: unknown) => Promise<unknown>;
+  runCommand?: (
+    client: AgentDeviceClient,
+    name: CommandName,
+    input: Record<string, unknown>,
+  ) => Promise<CommandExecutionResult>;
 };
 
 type CommandToolExecutor = {
-  execute: (name: string, input: unknown) => Promise<ToolResult>;
+  execute: (name: string, input: Record<string, unknown>) => Promise<ToolResult>;
 };
 
 type McpOutputFormat = 'optimized' | 'json';
@@ -46,8 +54,8 @@ export function listCommandTools(): Array<{
     // The registry is keyed by the typed-result commands only (CommandResultMap),
     // so guard the lookup; untyped tools resolve to no outputSchema.
     const outputSchema =
-      definition.name in COMMAND_OUTPUT_SCHEMAS
-        ? COMMAND_OUTPUT_SCHEMAS[definition.name as keyof typeof COMMAND_OUTPUT_SCHEMAS]
+      definition.name in MCP_COMMAND_OUTPUT_SCHEMAS
+        ? MCP_COMMAND_OUTPUT_SCHEMAS[definition.name as keyof typeof MCP_COMMAND_OUTPUT_SCHEMAS]
         : undefined;
     return {
       name: definition.name,
@@ -69,8 +77,11 @@ export function createCommandToolExecutor(deps: CommandToolExecutorDeps = {}): C
       if (!isCommandName(name)) {
         throw new AppError('INVALID_ARGS', `Unknown command tool: ${name}`);
       }
-      const config = readMcpToolConfig(input);
-      const commandInput = stripMcpConfigFields(input);
+      const metadata = findCommandMetadata(name);
+      const supportedProperties = withMcpConfigSchema(name, metadata.inputSchema).properties;
+      const resolvedInput = resolveMcpConfigDefaults(name, input, supportedProperties);
+      const config = readMcpToolConfig(resolvedInput);
+      const commandInput = stripMcpConfigFields(resolvedInput);
       const scopeKey = readPinScopeKey(config, commandInput);
       const pinnedInput = pinPlainRefArguments(name, commandInput, refPinsByScope.get(scopeKey));
       const client = await createClient(deps, config.client);
@@ -79,7 +90,7 @@ export function createCommandToolExecutor(deps: CommandToolExecutorDeps = {}): C
         mergeIssuedRefPins(refPinsByScope, scopeKey, name, result);
         return {
           isError: false,
-          structuredContent: result,
+          structuredContent: projectStructuredContent(name, result),
           content: [
             {
               type: 'text',
@@ -191,9 +202,8 @@ const MAX_REF_PINS_PER_SCOPE = 1000;
  * state dirs — two same-named sessions there are different sessions and must
  * not cross-pollinate generations.
  */
-function readPinScopeKey(config: McpToolConfig, input: unknown): string {
-  const record = asOptionalRecord(input);
-  const session = record?.session;
+function readPinScopeKey(config: McpToolConfig, input: Record<string, unknown>): string {
+  const session = input.session;
   const sessionName = typeof session === 'string' && session.length > 0 ? session : 'default';
   // NUL separator: neither state-dir paths nor session names contain it.
   return `${config.client.stateDir ?? ''}\u0000${sessionName}`;
@@ -210,16 +220,16 @@ function mergeIssuedRefPins(
   refPinsByScope: Map<string, Map<string, number>>,
   scopeKey: string,
   name: CommandName,
-  result: unknown,
+  result: CommandExecutionResult,
 ): void {
   if (SETTLE_REF_ISSUING_TOOLS.has(name)) {
     mergeSettleIssuedRefPins(refPinsByScope, scopeKey, result);
     return;
   }
   if (!REF_ISSUING_TOOLS.has(name)) return;
-  const record = asOptionalRecord(result);
-  const refsGeneration = record?.refsGeneration;
-  if (record === undefined || typeof refsGeneration !== 'number') {
+  const record = result as CommandExecutionResult<'snapshot' | 'find'>;
+  const refsGeneration = record.refsGeneration;
+  if (typeof refsGeneration !== 'number') {
     // ADR 0014: a MUTATING find returns its acted ref as diagnostic pre-action
     // identity WITHOUT `refsGeneration` — it is explicitly non-issuing and must
     // leave remembered pins untouched (forwarding the old pin on a later ref is
@@ -243,13 +253,16 @@ function mergeIssuedRefPins(
 function mergeSettleIssuedRefPins(
   refPinsByScope: Map<string, Map<string, number>>,
   scopeKey: string,
-  result: unknown,
+  result: CommandExecutionResult,
 ): void {
-  const settle = asOptionalRecord(asOptionalRecord(result)?.settle);
+  const interactionResult = result as CommandExecutionResult<
+    'press' | 'click' | 'fill' | 'longpress'
+  >;
+  const settle = asOptionalRecord(interactionResult.settle);
   if (!settle) return;
-  const refsGeneration = settle?.refsGeneration;
+  const refsGeneration = settle.refsGeneration;
   if (typeof refsGeneration !== 'number') return;
-  const lines = asOptionalRecord(settle?.diff)?.lines;
+  const lines = asOptionalRecord(settle.diff)?.lines;
   const issuedRefs: string[] = [];
   collectRefBodies(lines, issuedRefs);
   collectRefBodies(settle.refs, issuedRefs);
@@ -281,9 +294,7 @@ function recordIssuedPins(
     pins.set(ref, refsGeneration);
   }
   while (pins.size > MAX_REF_PINS_PER_SCOPE) {
-    const oldest = pins.keys().next().value;
-    if (oldest === undefined) break;
-    pins.delete(oldest);
+    pins.delete(pins.keys().next().value!);
   }
 }
 
@@ -311,15 +322,13 @@ function collectRefBodies(entries: unknown, into: string[]): void {
 
 function pinPlainRefArguments(
   name: CommandName,
-  input: unknown,
+  input: Record<string, unknown>,
   pins: Map<string, number> | undefined,
-): unknown {
+): Record<string, unknown> {
   // No remembered pins for this scope → pass refs through unpinned.
   if (pins === undefined || pins.size === 0) return input;
-  const record = asOptionalRecord(input);
-  if (!record) return input;
-  if (name === 'wait') return pinWaitRef(record, pins) ?? input;
-  if (TARGET_REF_TOOLS.has(name)) return pinTargetRef(record, pins) ?? input;
+  if (name === 'wait') return pinWaitRef(input, pins) ?? input;
+  if (TARGET_REF_TOOLS.has(name)) return pinTargetRef(input, pins) ?? input;
   return input;
 }
 
@@ -371,17 +380,13 @@ async function createClient(
 async function runCommand(
   client: AgentDeviceClient,
   name: CommandName,
-  input: unknown,
-): Promise<unknown> {
+  input: Record<string, unknown>,
+): Promise<CommandExecutionResult> {
   const commandSurface = await import('../commands/command-surface.ts');
   return await commandSurface.runCommand(client, name, input);
 }
 
-function readMcpToolConfig(input: unknown): McpToolConfig {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return { client: {}, outputFormat: 'optimized' };
-  }
-  const record = input as Record<string, unknown>;
+function readMcpToolConfig(record: Record<string, unknown>): McpToolConfig {
   return {
     client: readClientConfig(record),
     outputFormat: readMcpOutputFormat(record.mcpOutputFormat),
@@ -393,16 +398,20 @@ function readClientConfig(record: Record<string, unknown>): AgentDeviceClientCon
   const includeCost = record.includeCost;
   const responseLevel = record.responseLevel;
   const client: AgentDeviceClientConfig = {};
-  if (stateDir !== undefined && (typeof stateDir !== 'string' || stateDir.length === 0)) {
-    throw new AppError('INVALID_ARGS', 'Expected stateDir to be a non-empty string.');
+  if (stateDir !== undefined) {
+    if (typeof stateDir !== 'string' || stateDir.length === 0) {
+      throw new AppError('INVALID_ARGS', 'Expected stateDir to be a non-empty string.');
+    }
+    client.stateDir = stateDir;
   }
-  if (typeof stateDir === 'string') client.stateDir = stateDir;
-  if (includeCost !== undefined && typeof includeCost !== 'boolean') {
-    throw new AppError('INVALID_ARGS', 'Expected includeCost to be a boolean.');
+  if (includeCost !== undefined) {
+    if (typeof includeCost !== 'boolean') {
+      throw new AppError('INVALID_ARGS', 'Expected includeCost to be a boolean.');
+    }
+    // Only set when explicitly true so the default request shape is untouched
+    // (cost rides on response.data → structuredContent only when opted in).
+    if (includeCost) client.cost = true;
   }
-  // Only set when explicitly true so the default request shape is untouched
-  // (cost rides on response.data → structuredContent only when opted in).
-  if (includeCost === true) client.cost = true;
   // Only set when it names a known level so the default request shape is
   // untouched (responseLevel rides on meta.responseLevel only when opted in).
   const level = readResponseLevel(responseLevel);
@@ -429,19 +438,21 @@ function readMcpOutputFormat(outputFormat: unknown): McpOutputFormat {
   return outputFormat;
 }
 
-function stripMcpConfigFields(input: unknown): unknown {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+function stripMcpConfigFields(input: Record<string, unknown>): Record<string, unknown> {
   const {
     stateDir: _stateDir,
     mcpOutputFormat: _mcpOutputFormat,
     includeCost: _includeCost,
     responseLevel: _responseLevel,
     ...commandInput
-  } = input as Record<string, unknown>;
+  } = input;
   return commandInput;
 }
 
-function withMcpConfigSchema(name: CommandName, schema: JsonSchema): JsonSchema {
+function withMcpConfigSchema(
+  name: CommandName,
+  schema: JsonSchema,
+): JsonSchema & { properties: Record<string, JsonSchema> } {
   const noRecord = resolveCommandRecordsSessionAction(name);
   return {
     ...schema,
@@ -479,8 +490,8 @@ function withMcpConfigSchema(name: CommandName, schema: JsonSchema): JsonSchema 
 
 function renderToolText(params: {
   name: CommandName;
-  input: unknown;
-  result: unknown;
+  input: Record<string, unknown>;
+  result: CommandExecutionResult;
   outputFormat: McpOutputFormat;
   responseLevel?: ResponseLevel;
 }): string {
