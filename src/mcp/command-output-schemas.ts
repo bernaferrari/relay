@@ -57,6 +57,20 @@ function objectSchema(
 }
 
 const stringArraySchema: JsonSchema = { type: 'array', items: { type: 'string' } };
+
+const responseCostSchema: JsonSchema = objectSchema(
+  {
+    wallClockMs: numberSchema('Total wall-clock time for the request in milliseconds.'),
+    runnerRoundTrips: numberSchema(
+      'Number of real runner round-trips made while serving the request.',
+    ),
+    nodeCount: numberSchema(
+      'Number of nodes in the original node tree when the response carries one.',
+    ),
+  },
+  ['wallClockMs', 'runnerRoundTrips'],
+);
+
 const artifactSchema = objectSchema(
   {
     field: stringSchema(),
@@ -101,6 +115,14 @@ function interactionResponseDataSchema(extra: InteractionExtra = {}): JsonSchema
       message: stringSchema(),
       evidence: interactionEvidenceSchema,
       resolution: resolutionDisclosureSchema,
+      cost: responseCostSchema,
+      maestroNonHittableCoordinateFallbackAllowed: booleanSchema(
+        'Whether the direct iOS Maestro coordinate fallback was allowed for this selector.',
+      ),
+      maestroNonHittableCoordinateFallbackUsed: booleanSchema(
+        'Whether the direct iOS Maestro coordinate fallback was actually used.',
+      ),
+      maestroFallbackReason: constSchema('non-hittable-coordinate'),
       ...extraProperties,
     },
     ['targetKind', ...extraRequired],
@@ -315,6 +337,25 @@ export const COMMAND_OUTPUT_SCHEMAS = {
       gesture: constSchema('longpress'),
     },
   }),
+  find: objectSchema(
+    {
+      ref: stringSchema('Snapshot ref without the @ prefix when the find action returns one.'),
+      refsGeneration: numberSchema('ADR 0014 ref frame epoch for read-only find actions.'),
+      found: booleanSchema('Whether a wait/exists/read-only find satisfied its condition.'),
+      waitedMs: numberSchema('Milliseconds waited for a read-only find condition.'),
+      text: stringSchema('Text value returned by find get_text.'),
+      node: looseObjectSchema('Snapshot node for find get_attrs/get_text.'),
+      locator: stringSchema('Locator kind used for the find action.'),
+      query: stringSchema('Query argument used for the find action.'),
+      x: numberSchema('Resolved x coordinate for mutating find actions.'),
+      y: numberSchema('Resolved y coordinate for mutating find actions.'),
+      message: stringSchema('Diagnostic message for mutating find actions.'),
+      settle: settleObservationSchema,
+      cost: responseCostSchema,
+    },
+    [],
+    'Daemon response data for the find command.',
+  ),
 
   // src/contracts/device.ts
   boot: objectSchema({ ...deviceHeaderProperties, booted: { type: 'boolean', const: true } }, [
