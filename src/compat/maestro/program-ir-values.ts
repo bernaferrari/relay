@@ -199,67 +199,124 @@ export function readOptionalBoolean(
   return value;
 }
 
-export function readOptionalNumber(
+const VARIABLE_PATTERN = /^\$\{[A-Za-z_][A-Za-z0-9_.]*\}$/;
+const NUMERIC_STRING_PATTERN = /^-?\d+(\.\d+)?$/;
+const INTEGER_STRING_PATTERN = /^-?\d+$/;
+
+export type NumericScalarConstraints = {
+  integer?: boolean;
+  nonNegative?: boolean;
+  positive?: boolean;
+};
+
+export const MAESTRO_NUMERIC_FIELD_CONSTRAINTS: Record<string, NumericScalarConstraints> = {
+  'tapOn.index': { integer: true, nonNegative: true },
+  'tapOn.repeat': { integer: true, positive: true },
+  'tapOn.delay': { integer: true, nonNegative: true },
+  'doubleTapOn.delay': { integer: true, nonNegative: true },
+  eraseText: { integer: true, positive: true },
+  'eraseText.charactersToErase': { integer: true, positive: true },
+  'extendedWaitUntil.timeout': { nonNegative: true },
+  'scrollUntilVisible.timeout': { nonNegative: true },
+  waitForAnimationToEnd: { nonNegative: true },
+  'waitForAnimationToEnd.timeout': { nonNegative: true },
+  'swipe.duration': { nonNegative: true },
+  'repeat.times': { integer: true, nonNegative: true },
+  'retry.maxRetries': { integer: true, nonNegative: true },
+};
+
+export function numericDescription(constraints: NumericScalarConstraints): string {
+  if (constraints.positive && constraints.integer) return 'a positive integer';
+  if (constraints.positive) return 'a positive number';
+  if (constraints.nonNegative && constraints.integer) return 'a non-negative integer';
+  if (constraints.nonNegative) return 'a non-negative finite number';
+  if (constraints.integer) return 'an integer';
+  return 'a finite number';
+}
+
+function validateNumericScalar(
+  value: number,
+  name: string,
+  node: Node | null | undefined,
+  context: MaestroProgramParseContext,
+  constraints: NumericScalarConstraints,
+): void {
+  const message = `Maestro ${name} expects ${numericDescription(constraints)} or a variable expression.`;
+  if (!Number.isFinite(value)) {
+    invalidAt(message, node, context);
+  }
+  if (Math.abs(value) > Number.MAX_SAFE_INTEGER) {
+    invalidAt(message, node, context);
+  }
+  if (constraints.integer && !Number.isSafeInteger(value)) {
+    invalidAt(message, node, context);
+  }
+  if (constraints.nonNegative && value < 0) {
+    invalidAt(message, node, context);
+  }
+  if (constraints.positive && value <= 0) {
+    invalidAt(message, node, context);
+  }
+}
+
+function readNumericScalar(
+  value: MaestroScalar,
+  name: string,
+  node: Node | null | undefined,
+  context: MaestroProgramParseContext,
+  constraints: NumericScalarConstraints,
+): number | string {
+  if (typeof value === 'number') {
+    validateNumericScalar(value, name, node, context, constraints);
+    return value;
+  }
+  if (typeof value === 'string') {
+    if (VARIABLE_PATTERN.test(value)) return value;
+    const pattern = constraints.integer ? INTEGER_STRING_PATTERN : NUMERIC_STRING_PATTERN;
+    if (pattern.test(value)) {
+      const num = Number(value);
+      validateNumericScalar(num, name, node, context, constraints);
+      return num;
+    }
+  }
+  invalidAt(
+    `Maestro ${name} expects ${numericDescription(constraints)} or a variable expression.`,
+    node,
+    context,
+  );
+}
+
+export function readOptionalNumeric(
   node: Node | null | undefined,
   name: string,
   context: MaestroProgramParseContext,
-): number | undefined {
+): number | string | undefined {
   const value = readScalarValue(node, name, context);
   if (value === null) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    invalidAt(`Maestro ${name} expects a finite number.`, node, context);
-  }
-  return value;
+  return readNumericScalar(
+    value,
+    name,
+    node,
+    context,
+    MAESTRO_NUMERIC_FIELD_CONSTRAINTS[name] ?? {},
+  );
 }
 
-export function readRequiredPositiveInteger(
-  node: Node | null | undefined,
-  name: string,
-  context: MaestroProgramParseContext,
-): number {
-  const value = readScalarValue(node, name, context);
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    invalidAt(`Maestro ${name} expects a positive integer.`, node, context);
-  }
-  return value;
-}
-
-export function readOptionalNonNegativeInteger(
-  node: Node | null | undefined,
-  name: string,
-  context: MaestroProgramParseContext,
-): number | undefined {
-  const value = readScalarValue(node, name, context);
-  if (value === null) return undefined;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    invalidAt(`Maestro ${name} expects a non-negative integer.`, node, context);
-  }
-  return value;
-}
-
-export function readIntegerValue(
+export function readRequiredNumeric(
   node: Node | null | undefined,
   name: string,
   context: MaestroProgramParseContext,
 ): number | string {
+  const constraints = MAESTRO_NUMERIC_FIELD_CONSTRAINTS[name] ?? {};
   const value = readScalarValue(node, name, context);
-  if (typeof value === 'number') {
-    if (!Number.isInteger(value) || value < 0) {
-      invalidAt(`Maestro ${name} expects a non-negative integer.`, node, context);
-    }
-    return value;
+  if (value === null) {
+    invalidAt(
+      `Maestro ${name} expects ${numericDescription(constraints)} or a variable expression.`,
+      node,
+      context,
+    );
   }
-  if (
-    typeof value === 'string' &&
-    (/^\d+$/.test(value) || /^\$\{[A-Za-z_][A-Za-z0-9_.]*\}$/.test(value))
-  ) {
-    return value;
-  }
-  invalidAt(
-    `Maestro ${name} expects a non-negative integer or a variable expression.`,
-    node,
-    context,
-  );
+  return readNumericScalar(value, name, node, context, constraints);
 }
 
 export function readScalarMap(

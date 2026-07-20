@@ -5,6 +5,7 @@ import {
   maestroScrollDurationFromSpeed,
   MAESTRO_COMPATIBILITY_PRESETS,
 } from './compatibility-policy.ts';
+import { resolveNumeric } from './engine-flow.ts';
 import type { MaestroGestureTarget } from './program-ir.ts';
 import type {
   MaestroObservation,
@@ -179,12 +180,12 @@ async function executeTargetCommand(
         request,
         operations,
       );
+      const delay =
+        resolveNumeric(command.delay, 'doubleTapOn.delay') ??
+        MAESTRO_COMPATIBILITY_PRESETS.command.repeatDelayMs;
       return await invokeOperation(
         operations.doubleTapOn,
-        {
-          target,
-          delay: command.delay ?? MAESTRO_COMPATIBILITY_PRESETS.command.repeatDelayMs,
-        },
+        { target, delay },
         context,
         'invalidate',
         target.resolution ? observationForTarget(target.resolution) : undefined,
@@ -235,7 +236,7 @@ async function resolveTapOnTarget(
   const query = {
     purpose: 'tap' as const,
     timeoutMs: targetLookupTimeout(command),
-    index: command.index,
+    index: resolveNumeric(command.index, 'tapOn.index'),
     childOf: command.childOf,
     allowAtomicSelectorDispatch: command.repeat === undefined && command.delay === undefined,
     ...(command.retryTapIfNoChange === true ? { includeSurfaceSignature: true } : {}),
@@ -250,15 +251,15 @@ function targetLookupTimeout(command: { readonly optional?: boolean }): number {
 }
 
 function tapOnInput(command: MaestroCommandOf<'tapOn'>, target: MaestroInputTarget) {
-  const delay =
-    command.repeat === undefined
-      ? command.delay
-      : (command.delay ?? MAESTRO_COMPATIBILITY_PRESETS.command.repeatDelayMs);
+  const repeat = resolveNumeric(command.repeat, 'tapOn.repeat');
+  const delay = resolveNumeric(command.delay, 'tapOn.delay');
+  const effectiveDelay =
+    repeat === undefined ? delay : (delay ?? MAESTRO_COMPATIBILITY_PRESETS.command.repeatDelayMs);
   return stripUndefined({
     target,
     retryTapIfNoChange: command.retryTapIfNoChange,
-    repeat: command.repeat,
-    delay,
+    repeat,
+    delay: effectiveDelay,
   });
 }
 
@@ -298,11 +299,12 @@ async function executeTextCommand(
     case 'eraseText':
       return await invokeOperation(
         operations.eraseText,
-        {
-          ...(command.charactersToErase === undefined
-            ? {}
-            : { charactersToErase: command.charactersToErase }),
-        },
+        stripUndefined({
+          charactersToErase: resolveNumeric(
+            command.charactersToErase,
+            'eraseText.charactersToErase',
+          ),
+        }),
         context,
         'invalidate',
       );
@@ -350,7 +352,9 @@ function scrollUntilVisibleInput(command: MaestroCommandOf<'scrollUntilVisible'>
   return {
     selector: command.element,
     direction: command.direction ?? 'down',
-    timeoutMs: command.timeout ?? MAESTRO_COMPATIBILITY_PRESETS.command.scrollUntilVisibleTimeoutMs,
+    timeoutMs:
+      resolveNumeric(command.timeout, 'scrollUntilVisible.timeout') ??
+      MAESTRO_COMPATIBILITY_PRESETS.command.scrollUntilVisibleTimeoutMs,
     durationMs: maestroScrollDurationFromSpeed(
       MAESTRO_COMPATIBILITY_PRESETS.command.scrollUntilVisibleSpeed,
     ),
@@ -358,7 +362,9 @@ function scrollUntilVisibleInput(command: MaestroCommandOf<'scrollUntilVisible'>
 }
 
 function waitForAnimationToEndInput(command: MaestroCommandOf<'waitForAnimationToEnd'>) {
-  return stripUndefined({ timeoutMs: command.timeout });
+  return stripUndefined({
+    timeoutMs: resolveNumeric(command.timeout, 'waitForAnimationToEnd.timeout'),
+  });
 }
 
 async function executeSupportCommand(
