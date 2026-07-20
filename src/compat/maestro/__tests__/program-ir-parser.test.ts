@@ -203,6 +203,83 @@ describe('parseMaestroProgram', () => {
     });
   });
 
+  test('parses optional on scrollUntilVisible and extendedWaitUntil element selectors', () => {
+    const program = parseMaestroProgram(
+      [
+        '---',
+        '- scrollUntilVisible:',
+        '    element:',
+        '      id: maybe-visible',
+        '      optional: true',
+        '- extendedWaitUntil:',
+        '    visible:',
+        '      text: Ready',
+        '      optional: true',
+        '    timeout: 1000',
+        '- extendedWaitUntil:',
+        '    notVisible:',
+        '      id: gone',
+        '      optional: true',
+      ].join('\n'),
+    );
+
+    assert.deepEqual(program.commands[0], {
+      kind: 'scrollUntilVisible',
+      source: { line: 2 },
+      element: { id: 'maybe-visible' },
+      optional: true,
+    });
+    assert.deepEqual(program.commands[1], {
+      kind: 'extendedWaitUntil',
+      source: { line: 6 },
+      visible: { text: 'Ready' },
+      timeout: 1000,
+      optional: true,
+    });
+    assert.deepEqual(program.commands[2], {
+      kind: 'extendedWaitUntil',
+      source: { line: 11 },
+      notVisible: { id: 'gone' },
+      optional: true,
+    });
+  });
+
+  test('rejects selectors that contain only optional and no matching criteria', () => {
+    assert.throws(
+      () =>
+        parseMaestroProgram(
+          ['---', '- scrollUntilVisible:', '    element:', '      optional: true'].join('\n'),
+        ),
+      /scrollUntilVisible\.element selector must contain a selector value/i,
+    );
+    assert.throws(
+      () =>
+        parseMaestroProgram(
+          ['---', '- extendedWaitUntil:', '    visible:', '      optional: true'].join('\n'),
+        ),
+      /extendedWaitUntil\.visible selector must contain a selector value/i,
+    );
+    assert.throws(
+      () =>
+        parseMaestroProgram(
+          ['---', '- extendedWaitUntil:', '    notVisible:', '      optional: true'].join('\n'),
+        ),
+      /extendedWaitUntil\.notVisible selector must contain a selector value/i,
+    );
+  });
+
+  test('rejects extendedWaitUntil with both visible and notVisible conditions', () => {
+    assert.throws(
+      () =>
+        parseMaestroProgram(
+          ['---', '- extendedWaitUntil:', '    visible: A', '    notVisible:', '      id: B'].join(
+            '\n',
+          ),
+        ),
+      /extendedWaitUntil cannot specify both visible and notVisible/i,
+    );
+  });
+
   test('preserves an include boundary and the authored include path', () => {
     const program = parseMaestroProgram(
       `appId: example.app
