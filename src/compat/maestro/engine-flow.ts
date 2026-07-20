@@ -1,6 +1,11 @@
 import path from 'node:path';
 import { AppError } from '../../kernel/errors.ts';
 import { createRequestCanceledError } from '../../request/cancel.ts';
+import {
+  MAESTRO_NUMERIC_FIELD_CONSTRAINTS,
+  numericDescription,
+  type NumericScalarConstraints,
+} from './program-ir-values.ts';
 import type {
   MaestroCommand,
   MaestroProgram,
@@ -21,17 +26,47 @@ export function resolveCommand<T extends { readonly source: MaestroCommand['sour
   };
 }
 
+export function resolveNumeric(
+  value: number | string | undefined,
+  name: string,
+  constraints?: NumericScalarConstraints,
+): number | undefined {
+  if (value === undefined) return undefined;
+  const effectiveConstraints = constraints ?? MAESTRO_NUMERIC_FIELD_CONSTRAINTS[name] ?? {};
+  const description = numericDescription(effectiveConstraints);
+  let num: number;
+  if (typeof value === 'number') {
+    num = value;
+  } else {
+    const trimmed = value.trim();
+    if (trimmed === '') {
+      throw new AppError('INVALID_ARGS', `Maestro ${name} must be ${description}.`);
+    }
+    num = Number(trimmed);
+  }
+  if (!Number.isFinite(num) || Math.abs(num) > Number.MAX_SAFE_INTEGER) {
+    throw new AppError('INVALID_ARGS', `Maestro ${name} must be ${description}.`);
+  }
+  if (effectiveConstraints.integer && !Number.isSafeInteger(num)) {
+    throw new AppError('INVALID_ARGS', `Maestro ${name} must be ${description}.`);
+  }
+  if (effectiveConstraints.nonNegative && num < 0) {
+    throw new AppError('INVALID_ARGS', `Maestro ${name} must be ${description}.`);
+  }
+  if (effectiveConstraints.positive && num <= 0) {
+    throw new AppError('INVALID_ARGS', `Maestro ${name} must be ${description}.`);
+  }
+  return num;
+}
+
 export function readIterationCount(
   value: number | string | undefined,
   fallback: number,
   context: MaestroExecutionContext,
   name: string,
 ): number {
-  const resolved = value === undefined ? fallback : Number(context.resolve(String(value)));
-  if (!Number.isInteger(resolved) || resolved < 0) {
-    throw new AppError('INVALID_ARGS', `Maestro ${name} must resolve to a non-negative integer.`);
-  }
-  return resolved;
+  const resolved = value === undefined ? fallback : context.resolve(String(value));
+  return resolveNumeric(resolved, name)!;
 }
 
 export function checkpointMaestroCancellation(signal: AbortSignal | undefined): void {

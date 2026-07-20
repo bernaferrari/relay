@@ -344,4 +344,171 @@ describe('MaestroRuntimePort', () => {
       }),
     ).rejects.toBe(failure);
   });
+
+  test('resolves ${VAR} numeric option fields to numbers at runtime', async () => {
+    const calls: RecordedCall[] = [];
+    const operations = makeOperations({
+      tapOn: vi.fn(async (input, context) => record(calls, 'tapOn', input, context)),
+      doubleTapOn: vi.fn(async (input, context) => record(calls, 'doubleTapOn', input, context)),
+      eraseText: vi.fn(async (input, context) => record(calls, 'eraseText', input, context)),
+      scrollUntilVisible: vi.fn(async (input, context) =>
+        record(calls, 'scrollUntilVisible', input, context),
+      ),
+      waitForAnimationToEnd: vi.fn(async (input, context) =>
+        record(calls, 'waitForAnimationToEnd', input, context),
+      ),
+      gesture: vi.fn(async (input, context) => record(calls, 'gesture', input, context)),
+    });
+    const program = parseMaestroProgram(
+      [
+        '---',
+        '- tapOn:',
+        '    id: button',
+        '    index: ${INDEX}',
+        '    repeat: ${REPEAT}',
+        '    delay: ${DELAY}',
+        '- doubleTapOn:',
+        '    id: button',
+        '    delay: ${DELAY}',
+        '- eraseText:',
+        '    charactersToErase: ${CHARS}',
+        '- scrollUntilVisible:',
+        '    element: Item',
+        '    timeout: ${SCROLL_TIMEOUT}',
+        '- waitForAnimationToEnd: ${ANIM_TIMEOUT}',
+        '- swipe:',
+        '    start: 90%, 50%',
+        '    end: 10%, 50%',
+        '    duration: ${DURATION}',
+      ].join('\n'),
+    );
+
+    await executeMaestroProgram(program, createMaestroRuntimePort(operations), {
+      env: {
+        INDEX: '2',
+        REPEAT: '3',
+        DELAY: '100',
+        CHARS: '4',
+        SCROLL_TIMEOUT: '5000',
+        ANIM_TIMEOUT: '2000',
+        DURATION: '250',
+      },
+    });
+
+    expect(calls).toHaveLength(6);
+    expect(calls[0]).toMatchObject({
+      kind: 'tapOn',
+      input: { target: expect.anything(), repeat: 3, delay: 100 },
+    });
+    expect(calls[1]).toMatchObject({
+      kind: 'doubleTapOn',
+      input: { target: expect.anything(), delay: 100 },
+    });
+    expect(calls[2]).toMatchObject({
+      kind: 'eraseText',
+      input: { charactersToErase: 4 },
+    });
+    expect(calls[3]).toMatchObject({
+      kind: 'scrollUntilVisible',
+      input: { timeoutMs: 5000 },
+    });
+    expect(calls[4]).toMatchObject({
+      kind: 'waitForAnimationToEnd',
+      input: { timeoutMs: 2000 },
+    });
+    expect(calls[5]).toMatchObject({
+      kind: 'gesture',
+      input: { durationMs: 250 },
+    });
+  });
+
+  test('rejects blank or whitespace resolved numeric option values with a clear error', async () => {
+    const operations = makeOperations();
+    const program = parseMaestroProgram(
+      '---\n- extendedWaitUntil:\n    visible: Ready\n    timeout: ${TIMEOUT}\n',
+    );
+
+    await expect(
+      executeMaestroProgram(program, createMaestroRuntimePort(operations), {
+        env: { TIMEOUT: '' },
+      }),
+    ).rejects.toThrow(/extendedWaitUntil\.timeout must be a non-negative finite number/);
+
+    await expect(
+      executeMaestroProgram(program, createMaestroRuntimePort(operations), {
+        env: { TIMEOUT: '   ' },
+      }),
+    ).rejects.toThrow(/extendedWaitUntil\.timeout must be a non-negative finite number/);
+  });
+
+  test('applies the default delay for doubleTapOn when none is specified', async () => {
+    const calls: RecordedCall[] = [];
+    const operations = makeOperations({
+      doubleTapOn: vi.fn(async (input, context) => record(calls, 'doubleTapOn', input, context)),
+    });
+    const program = parseMaestroProgram('---\n- doubleTapOn:\n    id: button\n');
+
+    await executeMaestroProgram(program, createMaestroRuntimePort(operations), {});
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ kind: 'doubleTapOn', input: { delay: 100 } });
+  });
+
+  test('resolves tapOn.index into the target query', async () => {
+    const resolveTarget = vi.fn(
+      async (_input: unknown, context: { generation: number }): Promise<MaestroTargetMatch> => ({
+        generation: context.generation,
+        matched: true,
+        visible: true,
+        candidateCount: 1,
+        rect: { x: 0, y: 0, width: 100, height: 50 },
+        viewport: { x: 0, y: 0, width: 400, height: 800 },
+        ref: 'button',
+      }),
+    );
+    const tapOn = vi.fn();
+    const operations = makeOperations({ resolveTarget, tapOn });
+    const program = parseMaestroProgram('---\n- tapOn:\n    id: button\n    index: ${INDEX}\n');
+
+    await executeMaestroProgram(program, createMaestroRuntimePort(operations), {
+      env: { INDEX: '2' },
+    });
+
+    expect(resolveTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ index: 2 }),
+      expect.anything(),
+    );
+    expect(tapOn).toHaveBeenCalled();
+  });
+
+  test('rejects negative, huge, and accepts whitespace-padded resolved numeric values', async () => {
+    const operations = makeOperations();
+    const negative = parseMaestroProgram(
+      '---\n- extendedWaitUntil:\n    visible: Ready\n    timeout: ${TIMEOUT}\n',
+    );
+
+    await expect(
+      executeMaestroProgram(negative, createMaestroRuntimePort(operations), {
+        env: { TIMEOUT: '-1' },
+      }),
+    ).rejects.toThrow(/extendedWaitUntil\.timeout must be a non-negative finite number/);
+
+    const huge = parseMaestroProgram(
+      '---\n- extendedWaitUntil:\n    visible: Ready\n    timeout: ${TIMEOUT}\n',
+    );
+
+    await expect(
+      executeMaestroProgram(huge, createMaestroRuntimePort(operations), {
+        env: { TIMEOUT: '99999999999999999' },
+      }),
+    ).rejects.toThrow(/extendedWaitUntil\.timeout must be a non-negative finite number/);
+
+    const padded = parseMaestroProgram('---\n- waitForAnimationToEnd: ${TIMEOUT}\n');
+
+    await expect(
+      executeMaestroProgram(padded, createMaestroRuntimePort(operations), {
+        env: { TIMEOUT: '  1000  ' },
+      }),
+    ).resolves.toBeDefined();
+  });
 });
