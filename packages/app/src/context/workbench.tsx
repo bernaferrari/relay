@@ -95,11 +95,11 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
      * flowing down the list, annotating each row, stopping on first failure,
      * on a pause step (human's turn), or on stop().
      */
-    async function runFrom(index: number): Promise<void> {
+    async function runFrom(index: number, options?: { continue?: boolean }): Promise<void> {
       if (running()) return;
       const steps = draft.steps();
       if (index < 0 || index >= steps.length) return;
-      const cont = autoContinue();
+      const cont = options?.continue ?? autoContinue();
       const token = ++runSeq;
       setSelectedChipId(null);
       setRunning(true);

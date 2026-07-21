@@ -109,6 +109,11 @@ const ACTION_GLYPH: Partial<Record<RecipeStep["kind"], string>> = {
   device: "tap",
 };
 
+/** Glyph code for a planned step kind — icon trails outside a live execution. */
+export function stepGlyph(kind: RecipeStep["kind"]): string {
+  return ACTION_GLYPH[kind] ?? "bolt";
+}
+
 function stateForTrace(
   job: JobInfo | undefined,
   trace: TraceStep | undefined,

@@ -28,6 +28,8 @@ import {
   interact,
   listActionsWithTrace,
   listDevices,
+  bootDevice,
+  requestAndroidAuthorization,
   listJobs,
   listRecipes,
   readRecipe,
@@ -126,6 +128,14 @@ import {
   text,
 } from "./http.js";
 import { RevisionConflict } from "@relay/protocol";
+import {
+  injectAndroidKey,
+  injectAndroidScroll,
+  injectAndroidTouch,
+  streamAndroidVideo,
+  type AndroidKeyboardInput,
+  type AndroidTouchAction,
+} from "./live-video.js";
 import type {
   Build,
   DevicePool,
@@ -188,6 +198,7 @@ function collectReports(limit: number): JobReport[] {
 }
 
 const serverStartedAt = Date.now();
+let lastKnownDeviceCount: number | null = null;
 const PRODUCT_VERSION = "0.1.0";
 
 async function handleRequest(
@@ -286,12 +297,6 @@ async function handleRequest(
       return;
     }
     if (method === "GET" && pathname === "/health") {
-      let deviceCount: number | null = null;
-      try {
-        deviceCount = (await listDevices()).length;
-      } catch {
-        deviceCount = null;
-      }
       const active = getActiveJob();
       json(res, 200, {
         ok: true,
@@ -311,7 +316,10 @@ async function handleRequest(
             }
           : null,
         jobs: listJobs(50).length,
-        deviceCount,
+        // Health is a liveness probe and must answer within Electron's short
+        // startup timeout. Device discovery can invoke adb/simctl and belongs
+        // on /devices; report its last completed value without blocking here.
+        deviceCount: lastKnownDeviceCount,
         sseClients: sse.count(),
         runsDir: runsRoot(),
       });
@@ -339,7 +347,9 @@ async function handleRequest(
         platform: "browser",
         targetKind: "browser",
       }));
-      json(res, 200, { devices: [...mobile, ...browsers] });
+      const devices = [...mobile, ...browsers];
+      lastKnownDeviceCount = mobile.length;
+      json(res, 200, { devices });
       return;
     }
 
@@ -855,6 +865,48 @@ async function handleRequest(
       return;
     }
 
+    if (method === "POST" && pathname === "/device/boot") {
+      const body = (await parseJsonBody(req)) as {
+        serial?: string;
+        platform?: "android" | "ios";
+      };
+      if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
+      await assertTargetControl(scope, body.serial);
+      const known = (await listDevices().catch(() => [])).find(
+        (device) => device.serial === body.serial,
+      );
+      if (known?.kind && !/simulator|emulator/i.test(known.kind)) {
+        throw new HttpError(400, "Only simulators and emulators can be booted from Relay");
+      }
+      try {
+        await bootDevice(body.serial.trim(), body.platform ?? known?.platform ?? "ios");
+      } catch (error) {
+        throw new HttpError(502, error instanceof Error ? error.message : String(error));
+      }
+      json(res, 200, { ok: true, serial: body.serial.trim() });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/device/authorize") {
+      const body = (await parseJsonBody(req)) as { serial?: string };
+      if (!body.serial?.trim()) throw new HttpError(400, "serial is required");
+      await assertTargetControl(scope, body.serial);
+      const known = (await listDevices().catch(() => [])).find(
+        (device) => device.serial === body.serial,
+      );
+      if (!known) throw new HttpError(404, "Android device is no longer attached");
+      if (known.platform !== "android" || known.kind !== "Physical device") {
+        throw new HttpError(400, "Only attached Android hardware can be authorized");
+      }
+      try {
+        await requestAndroidAuthorization(body.serial);
+      } catch (error) {
+        throw new HttpError(502, error instanceof Error ? error.message : String(error));
+      }
+      json(res, 200, { ok: true, serial: body.serial });
+      return;
+    }
+
     if (await handleJobRoute({ method, pathname, url, request: req, response: res, scope })) {
       return;
     }
@@ -1299,6 +1351,101 @@ async function handleRequest(
       return;
     }
 
+    if (method === "GET" && pathname === "/device/stream") {
+      const serial = url.searchParams.get("serial")?.trim();
+      if (!serial) throw new HttpError(400, "serial is required");
+      await assertTargetControl(scope, serial);
+      await streamAndroidVideo(res, serial);
+      return;
+    }
+
+    if (method === "POST" && pathname === "/device/touch") {
+      const body = (await parseJsonBody(req)) as {
+        serial?: unknown;
+        action?: unknown;
+        x?: unknown;
+        y?: unknown;
+      };
+      const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+      const action = body.action;
+      const x = body.x;
+      const y = body.y;
+      if (!serial) throw new HttpError(400, "serial is required");
+      if (!(["down", "move", "up", "cancel"] as unknown[]).includes(action)) {
+        throw new HttpError(400, "action must be down|move|up|cancel");
+      }
+      if (
+        typeof x !== "number" ||
+        !Number.isFinite(x) ||
+        typeof y !== "number" ||
+        !Number.isFinite(y)
+      ) {
+        throw new HttpError(400, "x and y must be finite normalized coordinates");
+      }
+      if (getActiveJob()?.status === "running") {
+        throw new HttpError(
+          409,
+          "A job is running — pause or cancel it before interacting manually",
+        );
+      }
+      await assertTargetControl(scope, serial);
+      await injectAndroidTouch(serial, action as AndroidTouchAction, x, y);
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/device/key") {
+      const body = (await parseJsonBody(req)) as Record<string, unknown>;
+      const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+      if (!serial) throw new HttpError(400, "serial is required");
+      if (getActiveJob()?.status === "running") {
+        throw new HttpError(
+          409,
+          "A job is running — pause or cancel it before interacting manually",
+        );
+      }
+
+      let input: AndroidKeyboardInput;
+      if (body.kind === "text" && typeof body.text === "string" && body.text.length > 0) {
+        input = { kind: "text", text: body.text };
+      } else if (body.kind === "key" && (body.key === "enter" || body.key === "backspace")) {
+        input = { kind: "key", key: body.key };
+      } else {
+        throw new HttpError(400, "kind must be text with text, or key with enter|backspace");
+      }
+
+      await assertTargetControl(scope, serial);
+      await injectAndroidKey(serial, input);
+      json(res, 200, { ok: true });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/device/scroll") {
+      const body = (await parseJsonBody(req)) as Record<string, unknown>;
+      const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+      const values = [body.x, body.y, body.scrollX, body.scrollY];
+      if (!serial) throw new HttpError(400, "serial is required");
+      if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) {
+        throw new HttpError(400, "x, y, scrollX, and scrollY must be finite numbers");
+      }
+      if (getActiveJob()?.status === "running") {
+        throw new HttpError(
+          409,
+          "A job is running — pause or cancel it before interacting manually",
+        );
+      }
+      await assertTargetControl(scope, serial);
+      await injectAndroidScroll(
+        serial,
+        body.x as number,
+        body.y as number,
+        body.scrollX as number,
+        body.scrollY as number,
+      );
+      json(res, 200, { ok: true });
+      return;
+    }
+
     if (method === "POST" && pathname === "/interact") {
       const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
       if (!body || typeof body !== "object" || !("kind" in body)) {
@@ -1425,6 +1572,8 @@ async function handleRequest(
           "GET/PUT /recipes/:id/journey",
           "POST /generate",
           "POST /device/select",
+          "POST /device/boot",
+          "POST /device/authorize",
           "GET /jobs",
           "GET /jobs/:id",
           "POST /jobs",
@@ -1449,6 +1598,10 @@ async function handleRequest(
           "POST /actions/:id/run",
           "GET /snapshot",
           "GET /screenshot",
+          "GET /device/stream",
+          "POST /device/touch",
+          "POST /device/key",
+          "POST /device/scroll",
           "POST /interact",
           "POST /step/run",
           "GET /runs",

@@ -25,7 +25,8 @@ import { toast } from "./toast";
 /**
  * Interactive recorder: click the device preview to tap the real device, and
  * record each tap at every available abstraction level — the full fallback
- * chain (ref · label · point) — so replays survive app updates. Recorded
+ * chain (ref · accessibility label · point) — so the selector can be changed
+ * after recording without losing the original tap. Recorded
  * sequences are saved as server recipes (POST /recipes) and replayed as jobs
  * (POST /jobs {recipe}); localStorage is only read once, to migrate legacy
  * recipes onto the server.
@@ -78,11 +79,26 @@ export function buildTapTarget(
   const h = bounds?.height ?? 1;
   const point = { x: Math.round(fx * w), y: Math.round(fy * h) };
   if (!node) return { point };
-  const label = (node.label ?? node.value ?? node.identifier ?? "").trim();
+  const label = (node.label ?? node.value ?? "").trim();
   const target: StepTarget = { point };
   if (node.ref) target.ref = node.ref.startsWith("@") ? node.ref : `@${node.ref}`;
   if (label) target.label = label;
   return target;
+}
+
+/** Use the exact tapped node when it has human semantics; otherwise walk to
+ * the closest labelled parent (common for icons inside an "Account" row).
+ * Resource identifiers remain evidence, never accessibility labels. */
+export function semanticTapNode(
+  snap: SnapshotState,
+  node: SnapshotNode | null,
+): SnapshotNode | null {
+  if (!snap || !node) return node;
+  return (
+    ancestryOf(snap, node).find((candidate) =>
+      Boolean((candidate.label ?? candidate.value ?? "").trim()),
+    ) ?? node
+  );
 }
 
 function evidenceId(): string {
@@ -245,10 +261,21 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     async function stopRecording(): Promise<void> {
       await flushType();
       setRecording(false);
+      // Stopping capture returns to live control. Interacting with the mirrored
+      // device and recording those interactions are separate concerns.
+      setInteracting(true);
     }
 
-    /** Execute a tap target on the device, preferring ref → label → point. */
+    /** Execute a mirrored tap at the exact pointer position. The richer ref and
+     * label stay on the recorded step for resilient replay, but direct control
+     * must not depend on a higher-level app session. */
     async function executeTap(target: StepTarget, caption?: string): Promise<boolean> {
+      if (target.point) {
+        return server.interactStep(
+          { kind: "point", x: target.point.x, y: target.point.y },
+          caption,
+        );
+      }
       if (target.ref) {
         const ok = await server.interactStep({ kind: "ref", ref: target.ref }, caption);
         if (ok) return true;
@@ -257,23 +284,17 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         const ok = await server.interactStep({ kind: "label", label: target.label }, caption);
         if (ok) return true;
       }
-      if (target.point) {
-        return server.interactStep(
-          { kind: "point", x: target.point.x, y: target.point.y },
-          caption,
-        );
-      }
       return false;
     }
 
     /**
-     * Drive a tap through the mirror: hit-test the current snapshot, build the
+     * Send a tap through the mirror: hit-test the current snapshot, build the
      * FULL target silently (ref · label · point — every known field), send the
      * interaction preferring ref → label → point exactly like the runner, and
      * if recording append a tap step. No strategy UI, no per-step toast — the
      * recorder bar is the single feedback surface (plan 010 step 3).
      */
-    async function driveTap(fx: number, fy: number): Promise<boolean> {
+    async function driveTap(fx: number, fy: number, alreadyApplied = false): Promise<boolean> {
       if (server.health() !== "online") {
         toast("Relay isn’t connected — can’t interact yet", "warning");
         return false;
@@ -283,11 +304,24 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       if (!server.snapshot()?.bounds) {
         await server.captureUiSnapshot().catch(() => undefined);
       }
-      const node = nodeAtPoint(server.snapshot(), fx, fy);
-      const target = buildTapTarget(server.snapshot()?.bounds, node, fx, fy);
-      const evidence = recordedEvidence(server.snapshot(), node, fx, fy, server.selectedDevice());
+      const hitNode = nodeAtPoint(server.snapshot(), fx, fy);
+      const targetNode = semanticTapNode(server.snapshot(), hitNode);
+      const target = buildTapTarget(server.snapshot()?.bounds, targetNode, fx, fy);
+      const evidence = recordedEvidence(
+        server.snapshot(),
+        hitNode,
+        fx,
+        fy,
+        server.selectedDevice(),
+      );
       const step: Extract<RecipeStep, { kind: "tap" }> = { kind: "tap", target };
-      const ok = await executeTap(target, describeStep(step));
+      const caption = describeStep(step);
+      const ok = alreadyApplied ? true : await executeTap(target, caption);
+      if (alreadyApplied && recording()) {
+        await server
+          .captureUiScreenshot(caption, undefined, undefined, true)
+          .catch(() => undefined);
+      }
       if (ok && recording()) {
         const id = await ensureRecordingTarget();
         if (id) {
@@ -299,7 +333,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     /**
-     * Drive a swipe through the mirror. `from`/`to` are fractional image
+     * Send a swipe through the mirror. `from`/`to` are fractional image
      * coords (0..1); converted to device coords via snapshot bounds. Sends the
      * interaction and, if recording, appends a swipe step.
      */
@@ -307,6 +341,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       from: { x: number; y: number },
       to: { x: number; y: number },
       durationMs: number,
+      alreadyApplied = false,
     ): Promise<boolean> {
       if (server.health() !== "online") {
         toast("Relay isn’t connected — can’t interact yet", "warning");
@@ -331,10 +366,18 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         to: devTo,
         durationMs,
       };
-      const ok = await server.interactStep(
-        { kind: "swipe", from: devFrom, to: devTo, durationMs },
-        describeStep(step),
-      );
+      const caption = describeStep(step);
+      const ok = alreadyApplied
+        ? true
+        : await server.interactStep(
+            { kind: "swipe", from: devFrom, to: devTo, durationMs },
+            caption,
+          );
+      if (alreadyApplied && recording()) {
+        await server
+          .captureUiScreenshot(caption, undefined, undefined, true)
+          .catch(() => undefined);
+      }
       if (ok && recording()) {
         const id = await ensureRecordingTarget();
         if (id) {
@@ -364,28 +407,68 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     // ── Typing capture (plan 010 step 3.3) ──────────────────────────────────
-    // Keystrokes are buffered while Drive/Record is active and no app input or
-    // modal has focus, then flushed as ONE type interaction + ONE recorded step
-    // after 800 ms idle or on Enter. The window keydown listener (in the stage,
-    // which can see the command context's modalOpen gate) calls feedTypeKey.
+    // Keystrokes reach the phone immediately over scrcpy. A parallel logical
+    // buffer groups them into ONE recorded type step after 800 ms idle or on
+    // Enter; it is no longer on the device-delivery critical path.
     const [typeBuffer, setTypeBuffer] = createSignal("");
     let typeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    type TypeDeliveryGroup = {
+      delivery: Promise<void>;
+      appliedAny: boolean;
+      batchFallback: boolean;
+    };
+    const createTypeDeliveryGroup = (): TypeDeliveryGroup => ({
+      delivery: Promise.resolve(),
+      appliedAny: false,
+      batchFallback: false,
+    });
+    let typeDelivery = createTypeDeliveryGroup();
+
+    function queueDeviceKey(
+      input: { kind: "text"; text: string } | { kind: "key"; key: "enter" | "backspace" },
+    ): void {
+      const group = typeDelivery;
+      group.delivery = group.delivery.then(async () => {
+        // If the first key missed the live control session, keep this whole
+        // group buffered so the legacy path can apply it once without partial
+        // duplication while the video controller reconnects.
+        if (group.batchFallback) return;
+        const applied = await server.keyDevice(input);
+        if (applied) {
+          group.appliedAny = true;
+          return;
+        }
+        if (!group.appliedAny) {
+          group.batchFallback = true;
+          return;
+        }
+        // A mid-group reconnect is rare. Retry once in order; printable text
+        // then falls back as only the missing suffix, never the applied prefix.
+        const retried = await server.keyDevice(input);
+        if (!retried && input.kind === "text") {
+          await server.interactStep({ kind: "type", text: input.text });
+        }
+      });
+    }
 
     function scheduleTypeFlush(): void {
       clearTimeout(typeTimer);
       typeTimer = setTimeout(() => void flushType(), 800);
     }
 
-    /** Send the buffered text to the device + record a type step. No-op if empty. */
+    /** Finalize the current delivery group and optionally record one type step. */
     async function flushType(): Promise<void> {
       if (typeTimer) {
         clearTimeout(typeTimer);
         typeTimer = undefined;
       }
       const text = typeBuffer();
-      if (!text) return;
+      const delivery = typeDelivery;
+      typeDelivery = createTypeDeliveryGroup();
       setTypeBuffer("");
-      if (server.health() !== "online") return;
+      await delivery.delivery;
+      if (!text || server.health() !== "online") return;
       const evidence = recordedEvidence(
         server.snapshot(),
         null,
@@ -394,8 +477,16 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         server.selectedDevice(),
       );
       const step: Extract<RecipeStep, { kind: "type" }> = { kind: "type", text };
-      const ok = await server.interactStep({ kind: "type", text }, describeStep(step));
+      const caption = describeStep(step);
+      const ok = delivery.batchFallback
+        ? await server.interactStep({ kind: "type", text }, caption)
+        : true;
       if (ok && recording()) {
+        if (!delivery.batchFallback) {
+          await server
+            .captureUiScreenshot(caption, undefined, undefined, true)
+            .catch(() => undefined);
+        }
         const id = await ensureRecordingTarget();
         if (id) {
           await attachEvidenceScreenshot(evidence, id, latestFrame(evidence.recordedAt));
@@ -405,27 +496,30 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     /**
-     * Buffer a keyboard event for the phone. Handles Escape (clear), Enter
-     * (flush + end), Backspace (delete last), and printable chars. Returns true
+     * Apply a keyboard event to the phone and mirror its logical text locally.
+     * Handles Escape (finish group), Enter, Backspace, and printable chars. Returns true
      * when the key was consumed (the caller may preventDefault). The caller is
      * responsible for the modal/focus/modifier gate so palette keys never reach
      * here.
      */
     function feedTypeKey(e: KeyboardEvent): boolean {
       if (e.key === "Escape") {
-        setTypeBuffer("");
+        void flushType();
         return true;
       }
       if (e.key === "Enter") {
+        queueDeviceKey({ kind: "key", key: "enter" });
         void flushType();
         return true;
       }
       if (e.key === "Backspace") {
-        setTypeBuffer((b) => b.slice(0, -1));
+        queueDeviceKey({ kind: "key", key: "backspace" });
+        setTypeBuffer((buffer) => Array.from(buffer).slice(0, -1).join(""));
         scheduleTypeFlush();
         return true;
       }
-      if (e.key.length === 1) {
+      if (Array.from(e.key).length === 1) {
+        queueDeviceKey({ kind: "text", text: e.key });
         setTypeBuffer((b) => b + e.key);
         scheduleTypeFlush();
         return true;

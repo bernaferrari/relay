@@ -4,14 +4,19 @@ import { createServerCapture, type CaptureServerDeps } from "./server-capture";
 
 function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
   const calls: string[] = [];
+  const requestBodies: unknown[] = [];
   const frames: Array<Record<string, unknown>> = [];
   let snapshot: unknown = null;
   let liveFrame: unknown = null;
   let busy = false;
   const logs: string[] = [];
 
-  const request: CaptureServerDeps["request"] = async <T>(path: string): Promise<T> => {
+  const request: CaptureServerDeps["request"] = async <T>(
+    path: string,
+    init?: RequestInit,
+  ): Promise<T> => {
     calls.push(path);
+    requestBodies.push(typeof init?.body === "string" ? JSON.parse(init.body) : undefined);
     if (path.startsWith("/screenshot")) {
       return {
         serial: "device-1",
@@ -63,6 +68,7 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
   return {
     capture,
     calls,
+    requestBodies,
     frames,
     logs,
     getSnapshot: () => snapshot,
@@ -113,4 +119,52 @@ test("interaction boundary keeps ordinary interactions outside discovery", async
   await harness.capture.interactStep({ kind: "point", x: 12, y: 18 });
 
   assert.equal(harness.calls[0], "/interact");
+});
+
+test("live touch sends the pointer lifecycle to the selected H.264 session", async () => {
+  const harness = createHarness();
+
+  const ok = await harness.capture.touchDevice("move", 0.25, 0.75);
+
+  assert.equal(ok, true);
+  assert.equal(harness.calls[0], "/device/touch");
+  assert.deepEqual(harness.requestBodies[0], {
+    serial: "device-1",
+    action: "move",
+    x: 0.25,
+    y: 0.75,
+  });
+});
+
+test("live keyboard preserves key order on the selected H.264 session", async () => {
+  const harness = createHarness();
+
+  await Promise.all([
+    harness.capture.keyDevice({ kind: "text", text: "a" }),
+    harness.capture.keyDevice({ kind: "text", text: "b" }),
+    harness.capture.keyDevice({ kind: "key", key: "enter" }),
+  ]);
+
+  assert.deepEqual(harness.calls, ["/device/key", "/device/key", "/device/key"]);
+  assert.deepEqual(harness.requestBodies, [
+    { serial: "device-1", kind: "text", text: "a" },
+    { serial: "device-1", kind: "text", text: "b" },
+    { serial: "device-1", kind: "key", key: "enter" },
+  ]);
+});
+
+test("live scroll sends coalesced wheel deltas to the selected H.264 session", async () => {
+  const harness = createHarness();
+
+  const ok = await harness.capture.scrollDevice(0.5, 0.4, -0.1, 0.75);
+
+  assert.equal(ok, true);
+  assert.equal(harness.calls[0], "/device/scroll");
+  assert.deepEqual(harness.requestBodies[0], {
+    serial: "device-1",
+    x: 0.5,
+    y: 0.4,
+    scrollX: -0.1,
+    scrollY: 0.75,
+  });
 });

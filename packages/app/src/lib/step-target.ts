@@ -49,9 +49,9 @@ export function detectedChain(
 ): { id: Strategy; label: string; value: string }[] {
   if (!t) return [];
   const out: { id: Strategy; label: string; value: string }[] = [];
-  if (t.ref) out.push({ id: "ref", label: "Element", value: t.ref });
-  if (t.label) out.push({ id: "label", label: "Label", value: `"${t.label}"` });
+  if (t.ref) out.push({ id: "ref", label: "Ref", value: t.ref });
+  if (t.label) out.push({ id: "label", label: "A11y label", value: `"${t.label}"` });
   if (t.text) out.push({ id: "text", label: "Text", value: `"${t.text}"` });
-  if (t.point) out.push({ id: "point", label: "Point", value: fmtPoint(t.point) });
+  if (t.point) out.push({ id: "point", label: "X, Y", value: fmtPoint(t.point) });
   return out;
 }

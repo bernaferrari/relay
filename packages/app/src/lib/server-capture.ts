@@ -45,6 +45,11 @@ type ScreenshotResponse = {
   framePath?: string;
 };
 
+export type LiveTouchAction = "down" | "move" | "up" | "cancel";
+export type LiveKeyboardInput =
+  | { kind: "text"; text: string }
+  | { kind: "key"; key: "enter" | "backspace" };
+
 function activeDiscoveryId(deps: CaptureServerDeps): string | undefined {
   // An explicit selection is authoritative, even when it is paused: the
   // server can then explain why the interaction is unavailable instead of
@@ -59,6 +64,75 @@ function serialFor(deps: CaptureServerDeps): string | undefined {
 }
 
 export function createServerCapture(deps: CaptureServerDeps) {
+  let keyboardChain = Promise.resolve(true);
+
+  async function touchDevice(action: LiveTouchAction, x: number, y: number): Promise<boolean> {
+    const serial = deps.selectedDevice();
+    if (!serial) return false;
+    try {
+      await deps.request(
+        "/device/touch",
+        {
+          method: "POST",
+          body: JSON.stringify({ serial, action, x, y }),
+        },
+        2000,
+      );
+      return true;
+    } catch {
+      // The H.264 control stream is optional. The stage falls back to the
+      // existing one-shot ADB tap/swipe path when it isn't ready.
+      return false;
+    }
+  }
+
+  async function scrollDevice(
+    x: number,
+    y: number,
+    scrollX: number,
+    scrollY: number,
+  ): Promise<boolean> {
+    const serial = deps.selectedDevice();
+    if (!serial) return false;
+    try {
+      await deps.request(
+        "/device/scroll",
+        {
+          method: "POST",
+          body: JSON.stringify({ serial, x, y, scrollX, scrollY }),
+        },
+        2000,
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function keyDevice(input: LiveKeyboardInput): Promise<boolean> {
+    const send = async () => {
+      const serial = deps.selectedDevice();
+      if (!serial) return false;
+      try {
+        await deps.request(
+          "/device/key",
+          {
+            method: "POST",
+            body: JSON.stringify({ serial, ...input }),
+          },
+          2000,
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // HTTP requests may resolve out of order under fast key repeat. Keep the
+    // scrcpy control messages in exactly the same order as DOM keydown events.
+    keyboardChain = keyboardChain.then(send, send);
+    return keyboardChain;
+  }
+
   async function captureUiSnapshot(): Promise<void> {
     deps.setBusyCapture(true);
     try {
@@ -203,9 +277,12 @@ export function createServerCapture(deps: CaptureServerDeps) {
 
       if (discoveryId) await deps.refreshDiscoverySessions();
       else {
-        await captureUiScreenshot(node.label ? `after tap · ${node.label}` : "after tap").catch(
-          () => undefined,
-        );
+        await captureUiScreenshot(
+          node.label ? `after tap · ${node.label}` : "after tap",
+          undefined,
+          undefined,
+          true,
+        ).catch(() => undefined);
       }
       void captureUiSnapshot().catch(() => undefined);
     } catch (error) {
@@ -226,7 +303,13 @@ export function createServerCapture(deps: CaptureServerDeps) {
       );
       deps.appendLog(`interact ${step.kind}`, "success");
       if (discoveryId) await deps.refreshDiscoverySessions();
-      else await captureUiScreenshot(caption ?? `interact · ${step.kind}`).catch(() => undefined);
+      else
+        await captureUiScreenshot(
+          caption ?? `interact · ${step.kind}`,
+          undefined,
+          undefined,
+          true,
+        ).catch(() => undefined);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -256,6 +339,9 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   return {
+    touchDevice,
+    keyDevice,
+    scrollDevice,
     captureUiSnapshot,
     captureUiScreenshot,
     persistRecordingEvidence,

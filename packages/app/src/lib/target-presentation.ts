@@ -17,7 +17,17 @@ export function platformLabel(platform: DeviceInfo["platform"]): string {
  * selected target reports itself as booted/ready. Keep this shared so maps,
  * recording, and the first-test guide cannot disagree about readiness. */
 export function targetIsReady(target: DeviceInfo | null | undefined, online: boolean): boolean {
-  return online && Boolean(target) && target?.booted !== false;
+  return (
+    online &&
+    Boolean(target) &&
+    target?.booted !== false &&
+    target?.connectionState !== "unauthorized" &&
+    target?.connectionState !== "offline"
+  );
+}
+
+export function preferredTargetSerial(targets: readonly DeviceInfo[]): string | null {
+  return targets.find((target) => targetIsReady(target, true))?.serial ?? null;
 }
 
 function cleaned(value: unknown): string | undefined {
@@ -37,13 +47,17 @@ export function presentTarget(target: DeviceInfo): TargetPresentation {
   const kindLabel =
     cleaned(target.kind) ?? (target.platform === "browser" ? "Managed browser" : platformName);
   const statusLabel =
-    target.booted === false
-      ? "Unavailable"
-      : target.platform === "browser"
-        ? "Ready"
-        : target.kind?.toLowerCase().includes("simulator")
-          ? "Simulator ready"
-          : "Connected";
+    target.connectionState === "unauthorized"
+      ? "Authorize on phone"
+      : target.connectionState === "offline"
+        ? "Reconnect device"
+        : target.booted === false
+          ? "Unavailable"
+          : target.platform === "browser"
+            ? "Ready"
+            : target.kind?.toLowerCase().includes("simulator")
+              ? "Simulator ready"
+              : "Connected";
 
   return {
     displayName: cleaned(target.name) ?? defaultName,
@@ -61,7 +75,14 @@ export function presentTarget(target: DeviceInfo): TargetPresentation {
 
 export function targetSearchText(target: DeviceInfo): string {
   const presented = presentTarget(target);
-  return [presented.displayName, presented.kindLabel, presented.platformLabel, target.serial]
+  return [
+    presented.displayName,
+    presented.kindLabel,
+    presented.platformLabel,
+    presented.statusLabel,
+    target.osVersion,
+    target.serial,
+  ]
     .join(" ")
     .toLowerCase();
 }

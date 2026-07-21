@@ -21,6 +21,21 @@
         "--strictPort"
       ],
       "port": 5199
+    },
+    {
+      "name": "app-preview-alt",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@relay/app",
+        "exec",
+        "vp",
+        "dev",
+        "--port",
+        "5299",
+        "--strictPort"
+      ],
+      "port": 5299
     }
   ]
 }

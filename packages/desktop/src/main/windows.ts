@@ -1,4 +1,5 @@
 import { BrowserWindow, nativeTheme } from "electron";
+import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,19 @@ export function defaultBackgroundColor(): string {
   return nativeTheme.shouldUseDarkColors ? DARK_BG : LIGHT_BG;
 }
 
+export function resolveAppIconPath(): string | undefined {
+  const resourceRoots = [
+    process.env.RELAY_DESKTOP_ROOT ? join(process.env.RELAY_DESKTOP_ROOT, "resources") : undefined,
+    join(root, "../../resources"),
+    process.resourcesPath,
+  ];
+  const candidates = resourceRoots.flatMap((resourceRoot) =>
+    resourceRoot ? [join(resourceRoot, "relay-icon.png")] : [],
+  );
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 export function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1100,
@@ -22,7 +36,8 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 800,
     minHeight: 560,
     show: false,
-    title: "Stage",
+    title: "Relay",
+    icon: resolveAppIconPath(),
     backgroundColor: defaultBackgroundColor(),
     autoHideMenuBar: true,
     ...(process.platform === "darwin"

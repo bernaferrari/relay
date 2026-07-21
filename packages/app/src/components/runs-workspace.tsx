@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon, type IconName } from "./icon";
@@ -26,9 +26,11 @@ import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-p
 import {
   executionMoments,
   executionStateLabel,
+  stepGlyph,
   type ExecutionMomentState,
 } from "../lib/execution-moments";
 import { ExecutionTimeline } from "./execution-timeline";
+import { RunGraph } from "./run-graph";
 import {
   formatReviewTime,
   initialRunReviewStep,
@@ -36,6 +38,7 @@ import {
   runElapsedAtStep,
   runReviewCounts,
 } from "../lib/run-review-model";
+import { seg, segBtn, segBtnOn } from "../lib/ui";
 
 export function RunsWorkspace(props: {
   onOpenRecipe: (id: string) => void;
@@ -106,12 +109,33 @@ export function RunsWorkspace(props: {
     if (durations.length === 0) return "—";
     return formatReviewTime(durations[Math.floor(durations.length / 2)]!);
   });
-  const selected = () => rows().find((row) => row.id === selectedId()) ?? null;
+  // Custom equality: `rows()` re-spreads every persisted run into a fresh
+  // object on every background poll (persistedAsJob), even when nothing
+  // about the run changed. A plain memo would treat each of those as a
+  // "new" value, and the <Show when={selected()}>{(job) => ...} panels
+  // below would remount from scratch every poll tick — resetting local
+  // state like the replay stage's play/pause signal mid-playback. Comparing
+  // by the fields that actually indicate a meaningful change keeps the
+  // selected run's identity stable across churn while still updating when
+  // the run truly changes (e.g. a live run progressing).
+  const selected = createMemo(() => rows().find((row) => row.id === selectedId()) ?? null, null, {
+    equals: (a, b) =>
+      a === b ||
+      (a !== null &&
+        b !== null &&
+        a.id === b.id &&
+        a.status === b.status &&
+        (a.finishedAt ?? 0) === (b.finishedAt ?? 0) &&
+        ((a as { writtenAt?: number }).writtenAt ?? 0) ===
+          ((b as { writtenAt?: number }).writtenAt ?? 0) &&
+        (a.artifacts?.length ?? 0) === (b.artifacts?.length ?? 0) &&
+        (a.frames?.length ?? 0) === (b.frames?.length ?? 0)),
+  });
   createEffect(() => {
     const run = selected();
     if (run && !run.steps?.length && !requestedDetails.has(run.id)) {
       requestedDetails.add(run.id);
-      void server.loadRunDetail(run.id);
+      void server.loadRunDetail(run.id).finally(() => requestedDetails.delete(run.id));
     }
     if (run?.evidence) void server.loadRunSignals(run.id).then(setRegressionSignals);
     else setRegressionSignals([]);
@@ -123,7 +147,7 @@ export function RunsWorkspace(props: {
     setTab("timeline");
     if (!job.steps?.length && !requestedDetails.has(job.id)) {
       requestedDetails.add(job.id);
-      void server.loadRunDetail(job.id);
+      void server.loadRunDetail(job.id).finally(() => requestedDetails.delete(job.id));
     }
   };
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
@@ -424,7 +448,7 @@ export function RunsWorkspace(props: {
                     </span>
                   </Show>
                   <span class="inline-flex min-w-0 items-baseline gap-2">
-                    <span class="shrink-0 text-text-weaker">Target</span>
+                    <span class="shrink-0 text-text-weaker">Device</span>
                     <span class="truncate text-text-base">
                       {job().targetProfile?.name ?? job().serial ?? "Not recorded"}
                     </span>
@@ -585,7 +609,7 @@ export function RunsWorkspace(props: {
                       <Show when={job().serial}>
                         <div class="grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2.5">
                           <dt class="min-w-0 text-[10px]/[1.25] text-text-weaker">
-                            Target identifier
+                            Device identifier
                           </dt>
                           <dd class="m-0 flex min-w-0 items-center gap-1.5">
                             <code class="truncate text-[10px]/[1.25] text-text-weak">
@@ -594,7 +618,7 @@ export function RunsWorkspace(props: {
                             <button
                               type="button"
                               class="grid size-10 shrink-0 place-items-center rounded-lg text-text-weaker hover:bg-surface-base-hover hover:text-text-base"
-                              aria-label="Copy target identifier"
+                              aria-label="Copy device identifier"
                               onClick={() => void navigator.clipboard?.writeText(job().serial!)}
                             >
                               <Icon name="copy" size={12} />
@@ -709,7 +733,7 @@ function RunBrowser(props: {
                 />
                 <span class="min-w-0">
                   <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
-                    {recipe()?.title ?? job.title ?? job.action}
+                    {recipe()?.title ?? job.title ?? titleize(job.action)}
                   </strong>
                   <small class="mt-1 flex items-center gap-1.5 text-[9.5px] text-[var(--text-weak)]">
                     <span>{status().label}</span>
@@ -731,7 +755,7 @@ function RunBrowser(props: {
   );
 }
 
-function persistedAsJob(run: PersistedRun): JobInfo {
+export function persistedAsJob(run: PersistedRun): JobInfo {
   const status = ["queued", "running", "paused", "ok", "error", "healed", "cancelled"].includes(
     run.status,
   )
@@ -875,6 +899,14 @@ function runStateDot(state: ExecutionMomentState): string {
   return "bg-[var(--icon-success-base)]";
 }
 
+type VideoArtifactData = {
+  startedAt?: number;
+  stoppedAt?: number;
+  durationMs?: number;
+  files?: { path: string; bytes?: number }[];
+  result?: unknown;
+};
+
 /** Left half of a run report: the captured evidence, framed like a device,
  * with a step timeline scrubber underneath. */
 function RunReplayStage(props: {
@@ -885,7 +917,10 @@ function RunReplayStage(props: {
   onBack: () => void;
 }) {
   const server = useServer();
+  const [stageMode, setStageMode] = createSignal<"replay" | "map">("replay");
   const [playing, setPlaying] = createSignal(false);
+  const [speed, setSpeed] = createSignal(1);
+  const cycleSpeed = () => setSpeed((current) => (current >= 8 ? 1 : current * 2));
   const snapshot = () =>
     props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
   const nodes = createMemo(() =>
@@ -925,7 +960,130 @@ function RunReplayStage(props: {
     if (index() === count() - 1) props.onSelect(0);
     setPlaying(true);
   };
+
+  // Leaving replay for the graph shouldn't leave a video/frame-stepper
+  // running invisibly behind it.
   createEffect(() => {
+    if (stageMode() !== "replay") setPlaying(false);
+  });
+
+  /* Video replay — when the run persisted a captured video, it becomes the
+   * time source (step selection derives from currentTime instead of the
+   * setTimeout-paced frame stepper below). */
+  let videoRef: HTMLVideoElement | undefined;
+  const [videoElapsedMs, setVideoElapsedMs] = createSignal(0);
+  const [videoDurationMs, setVideoDurationMs] = createSignal<number | null>(null);
+  // Distinguishes a timeupdate-driven step change (don't re-seek, it would
+  // fight the currently-playing video) from a user/keyboard-driven one.
+  let seekingFromVideo = false;
+  // `props.job` gets a fresh object reference on every background poll tick
+  // (rows() re-spreads persisted runs each refresh) even though the run's
+  // own data hasn't changed. Deriving these from raw `props.job` reads would
+  // let a poll land mid-render and transiently null out the video fields —
+  // unmounting the <video> element via the Show gate below and silently
+  // killing playback. Keying on job.id (stable for the run being viewed)
+  // makes these compute once per run, immune to that churn.
+  const videoData = createMemo(
+    on(
+      () => props.job.id,
+      () =>
+        props.job.artifacts?.find((item) => item.kind === "video")?.data as
+          | VideoArtifactData
+          | undefined,
+    ),
+  );
+  const videoFilePath = createMemo(() => videoData()?.files?.[0]?.path);
+  // Disk runs arrive as PersistedRun (`dir`), live jobs as JobInfo (`runDir`) —
+  // either proves the file exists on disk for the /runs/:id/video route.
+  const hasVideo = createMemo(
+    on(
+      () => props.job.id,
+      () =>
+        Boolean(videoFilePath()) &&
+        Boolean(props.job.persisted || props.job.runDir || (props.job as { dir?: string }).dir),
+    ),
+  );
+  const videoSrc = createMemo(() =>
+    hasVideo() ? server.videoUrlForRun(props.job.id, videoFilePath()!) : null,
+  );
+  const videoStart = createMemo(() => videoData()?.startedAt ?? props.job.startedAt ?? 0);
+  const stepOffsetsMs = createMemo(() => {
+    const steps = props.job.steps ?? [];
+    const start = videoStart();
+    let cumulative = 0;
+    return steps.map((step) => {
+      const offset = step.startedAt != null ? Math.max(0, step.startedAt - start) : cumulative;
+      cumulative += Math.max(0, step.durationMs ?? 0);
+      return offset;
+    });
+  });
+  const deriveStepIndex = (elapsedMs: number): number => {
+    const offsets = stepOffsetsMs();
+    let best = 0;
+    for (let i = 0; i < offsets.length; i++) {
+      if (offsets[i]! <= elapsedMs) best = i;
+    }
+    return best;
+  };
+  const videoTotalDurationMs = createMemo(
+    () => videoData()?.durationMs ?? videoDurationMs() ?? totalDuration(),
+  );
+  const seekVideoTo = (idx: number) => {
+    const video = videoRef;
+    if (!video) return;
+    const target = (stepOffsetsMs()[idx] ?? 0) / 1000;
+    if (!Number.isFinite(target)) return;
+    if (Math.abs(video.currentTime - target) > 0.15) video.currentTime = target;
+    setVideoElapsedMs(target * 1000);
+  };
+  const onVideoTimeUpdate = (event: Event) => {
+    const video = event.currentTarget as HTMLVideoElement;
+    const elapsedMs = video.currentTime * 1000;
+    setVideoElapsedMs(elapsedMs);
+    const derived = deriveStepIndex(elapsedMs);
+    if (derived !== index()) {
+      seekingFromVideo = true;
+      props.onSelect(derived);
+    }
+  };
+  const onVideoLoadedMetadata = (event: Event) => {
+    const video = event.currentTarget as HTMLVideoElement;
+    if (Number.isFinite(video.duration)) setVideoDurationMs(video.duration * 1000);
+    seekVideoTo(index());
+  };
+  const timelineElapsedMs = () => (hasVideo() ? videoElapsedMs() : elapsed());
+  const timelineTotalMs = () => (hasVideo() ? videoTotalDurationMs() : totalDuration());
+  // Seeking effect: fires whenever the selected step changes from anywhere
+  // (timeline chip, step list, arrow keys) except when the change originated
+  // from the video's own timeupdate — that direction is already in sync.
+  createEffect(() => {
+    if (!hasVideo()) return;
+    const idx = index();
+    if (seekingFromVideo) {
+      seekingFromVideo = false;
+      return;
+    }
+    seekVideoTo(idx);
+  });
+  createEffect(() => {
+    if (!hasVideo()) return;
+    const video = videoRef;
+    if (!video) return;
+    if (playing()) {
+      if (video.ended) video.currentTime = 0;
+      void video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  });
+  createEffect(() => {
+    if (!hasVideo()) return;
+    if (videoRef) videoRef.playbackRate = speed();
+  });
+  createEffect(() => {
+    // Frame-per-step fallback pacing — only drives playback when there is no
+    // video to scrub against.
+    if (hasVideo()) return;
     if (!playing()) return;
     const current = index();
     if (current >= count() - 1) {
@@ -933,9 +1091,10 @@ function RunReplayStage(props: {
       return;
     }
     const rawDuration = props.job.steps?.[current]?.durationMs ?? 700;
+    const baseDelay = Math.max(650, Math.min(rawDuration, 2_200));
     const timer = window.setTimeout(
       () => props.onSelect(Math.min(current + 1, count() - 1)),
-      Math.max(650, Math.min(rawDuration, 2_200)),
+      Math.max(80, Math.round(baseDelay / speed())),
     );
     onCleanup(() => window.clearTimeout(timer));
   });
@@ -966,84 +1125,153 @@ function RunReplayStage(props: {
       <header class="relative z-[1] flex shrink-0 items-center justify-between gap-3 px-4 pt-3.5">
         <button
           type="button"
-          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-white/[0.06] hover:text-[var(--text-strong)]"
+          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-[var(--text-base)] transition-colors hover:bg-surface-base-hover hover:text-[var(--text-strong)]"
           onClick={props.onBack}
         >
           <Icon name="chevron-left" size={14} /> All runs
         </button>
+        <Show when={nodes().length > 0}>
+          <div class={seg} role="group" aria-label="Run report view">
+            <button
+              type="button"
+              class={cn(segBtn, stageMode() === "replay" && segBtnOn)}
+              aria-pressed={stageMode() === "replay"}
+              onClick={() => setStageMode("replay")}
+            >
+              <Icon name="play" size={12} /> Replay
+            </button>
+            <button
+              type="button"
+              class={cn(segBtn, stageMode() === "map" && segBtnOn)}
+              aria-pressed={stageMode() === "map"}
+              onClick={() => setStageMode("map")}
+            >
+              <Icon name="move" size={12} /> Map
+            </button>
+          </div>
+        </Show>
       </header>
-      <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
-        {/* Phone bezel — always renders; only the interior swaps between the
+      <Show when={nodes().length === 0}>
+        <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
+          <EmptyState
+            icon="camera"
+            title="Nothing to replay"
+            description="This run recorded no steps, so there is no evidence to walk through."
+          />
+        </div>
+      </Show>
+      <Show when={nodes().length > 0 && stageMode() === "map"}>
+        <div class="relative z-[1] min-h-0 flex-1 overflow-hidden">
+          <RunGraph
+            moments={nodes()}
+            items={props.items}
+            selectedIndex={index()}
+            onSelect={props.onSelect}
+          />
+        </div>
+      </Show>
+      <Show when={nodes().length > 0 && stageMode() === "replay"}>
+        <div class="relative z-[1] grid min-h-0 flex-1 place-items-center px-8 py-5">
+          {/* Phone bezel — always renders; only the interior swaps between the
             captured frame and a calm inline note when evidence is missing. */}
-        <div class="relative flex h-full max-h-[560px] w-full max-w-[300px] items-center justify-center">
-          <span class="absolute top-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] px-2.5 py-1 font-mono text-[9.5px] tracking-[0.05em] text-[var(--text-weak)] uppercase shadow-[0_6px_16px_rgb(0_0_0/30%)] backdrop-blur">
-            <i class={cn("size-1.5 rounded-full", runStateDot(node()?.state ?? "planned"))} />
-            Step {String(index() + 1).padStart(2, "0")} ·{" "}
-            {executionStateLabel(node()?.state ?? "planned", "step")}
-          </span>
-          {/* Bezel border stays neutral regardless of run state — the floating
+          <div class="relative flex h-full max-h-[560px] w-full max-w-[300px] items-center justify-center">
+            <span class="absolute top-2 left-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] px-2.5 py-1 font-mono text-[9.5px] tracking-[0.05em] text-[var(--text-weak)] uppercase shadow-[0_6px_16px_rgb(0_0_0/30%)] backdrop-blur">
+              <i class={cn("size-1.5 rounded-full", runStateDot(node()?.state ?? "planned"))} />
+              Step {String(index() + 1).padStart(2, "0")} ·{" "}
+              {executionStateLabel(node()?.state ?? "planned", "step")}
+            </span>
+            {/* Bezel border stays neutral regardless of run state — the floating
               step badge's dot is the accent that carries pass/fail, per the
               rule that alarm colors never tint a large chrome surface. */}
-          <div class="relative flex aspect-[9/19] h-full max-h-full w-full items-center justify-center overflow-hidden rounded-[32px] border-[6px] border-[var(--v2-background-bg-layer-02)] bg-[var(--v2-background-bg-base)] shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]">
-            <span
-              class="absolute top-0 left-1/2 z-[1] h-4 w-24 -translate-x-1/2 rounded-b-xl bg-[var(--v2-background-bg-layer-02)]"
-              aria-hidden="true"
-            />
-            <Show
-              when={frameSrc()}
-              fallback={
-                <div class="grid justify-items-center gap-1.5 px-6 text-center">
-                  <Icon
-                    name={node()?.state === "failed" ? "alert" : "camera"}
-                    size={16}
-                    class="text-text-weaker"
-                  />
-                  <span class="text-[11px]/[1.4] text-text-weaker">
-                    {node()?.observed ? "No screenshot captured here" : "Step not reached"}
-                  </span>
-                </div>
-              }
-            >
-              {(src) => (
-                <img
-                  src={src()}
-                  alt={`Step ${index() + 1} evidence`}
+            <div class="relative flex aspect-[9/19] h-full max-h-full w-full items-center justify-center overflow-hidden rounded-[32px] border-[6px] border-[var(--v2-background-bg-layer-02)] bg-[var(--v2-background-bg-base)] shadow-[0_36px_90px_rgb(0_0_0/50%),0_0_0_1px_rgb(255_255_255/5%)]">
+              <span
+                class="absolute top-0 left-1/2 z-[1] h-4 w-24 -translate-x-1/2 rounded-b-xl bg-[var(--v2-background-bg-layer-02)]"
+                aria-hidden="true"
+              />
+              <Show
+                when={hasVideo()}
+                fallback={
+                  <Show
+                    when={frameSrc()}
+                    fallback={
+                      <div class="grid justify-items-center gap-1.5 px-6 text-center">
+                        <Icon
+                          name={node()?.state === "failed" ? "alert" : "camera"}
+                          size={16}
+                          class="text-text-weaker"
+                        />
+                        <span class="text-[11px]/[1.4] text-text-weaker">
+                          {node()?.observed ? "No screenshot captured here" : "Step not reached"}
+                        </span>
+                      </div>
+                    }
+                  >
+                    {(src) => (
+                      <img
+                        src={src()}
+                        alt={`Step ${index() + 1} evidence`}
+                        class="h-full w-full object-contain"
+                      />
+                    )}
+                  </Show>
+                }
+              >
+                <video
+                  ref={(element) => {
+                    videoRef = element;
+                  }}
+                  src={videoSrc() ?? undefined}
+                  muted
+                  playsinline
+                  preload="metadata"
                   class="h-full w-full object-contain"
+                  onTimeUpdate={onVideoTimeUpdate}
+                  onLoadedMetadata={onVideoLoadedMetadata}
+                  onEnded={() => setPlaying(false)}
                 />
-              )}
-            </Show>
+              </Show>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="relative z-[1] mx-auto mb-2 flex max-w-[78%] items-center justify-center gap-2 px-4 text-center">
-        <Icon
-          name={glyphFor(index())}
-          size={12}
-          class={node()?.state === "failed" ? "text-icon-critical-base" : "text-text-weaker"}
+        <div class="relative z-[1] mx-auto mb-2 flex max-w-[78%] items-center justify-center gap-2 px-4 text-center">
+          <Icon
+            name={glyphFor(index())}
+            size={12}
+            class={node()?.state === "failed" ? "text-icon-critical-base" : "text-text-weaker"}
+          />
+          <p class="m-0 truncate text-[12.5px] font-medium text-text-base">{node()?.title}</p>
+        </div>
+        <ExecutionTimeline
+          moments={nodes()}
+          selectedIndex={index()}
+          onSelect={(nextIndex) => {
+            setPlaying(false);
+            props.onSelect(nextIndex);
+          }}
+          mode="replay"
+          playing={playing()}
+          onTogglePlayback={togglePlayback}
+          onPrevious={() => {
+            setPlaying(false);
+            move(-1);
+          }}
+          onNext={() => {
+            setPlaying(false);
+            move(1);
+          }}
+          elapsedMs={timelineElapsedMs()}
+          totalDurationMs={timelineTotalMs()}
+          speed={speed()}
+          onCycleSpeed={cycleSpeed}
+          onScrub={(fraction) => {
+            const video = videoRef;
+            if (!hasVideo() || !video) return;
+            const target = fraction * (videoTotalDurationMs() / 1000);
+            video.currentTime = Math.max(0, Math.min(target, video.duration || target));
+            setVideoElapsedMs(target * 1000);
+          }}
         />
-        <p class="m-0 truncate text-[12.5px] font-medium text-text-base">{node()?.title}</p>
-      </div>
-      <ExecutionTimeline
-        moments={nodes()}
-        selectedIndex={index()}
-        onSelect={(nextIndex) => {
-          setPlaying(false);
-          props.onSelect(nextIndex);
-        }}
-        mode="replay"
-        playing={playing()}
-        onTogglePlayback={togglePlayback}
-        onPrevious={() => {
-          setPlaying(false);
-          move(-1);
-        }}
-        onNext={() => {
-          setPlaying(false);
-          move(1);
-        }}
-        elapsedMs={elapsed()}
-        totalDurationMs={totalDuration()}
-      />
+      </Show>
     </section>
   );
 }
@@ -1118,7 +1346,7 @@ function RunStepList(props: {
                       {(actions) => (
                         <>
                           <span class="shrink-0 text-text-weaker/70">·</span>
-                          <ActionIconTrail glyphs={actions()} max={6} />
+                          <ActionIconTrail glyphs={actions()} max={8} />
                         </>
                       )}
                     </Show>
@@ -1247,11 +1475,9 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
   const targetName = () => {
     if (props.job.targetProfile?.name) return props.job.targetProfile.name;
     const target = server.devices().find((device) => device.serial === props.job.serial);
-    return target
-      ? presentTarget(target).displayName
-      : props.job.serial
-        ? "Unavailable target"
-        : "—";
+    // A finished run's device may no longer be connected — that's not a
+    // problem to report, so fall back to the recorded identifier as-is.
+    return target ? presentTarget(target).displayName : (props.job.serial ?? null);
   };
   const status = () =>
     props.job.outcome === "passed"
@@ -1296,7 +1522,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
   });
   const rowLabel = () =>
     [
-      recipe()?.title ?? props.job.action,
+      recipe()?.title ?? titleize(props.job.action),
       status(),
       fmtDur(props.job, server.clock()),
       fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "just now",
@@ -1327,7 +1553,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
       </span>
       <span class="min-w-0">
         <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
-          {recipe()?.title ?? props.job.action}
+          {recipe()?.title ?? titleize(props.job.action)}
         </strong>
         <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-weaker">
           <span
@@ -1339,12 +1565,18 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
           >
             {status()}
           </span>
-          <span class="opacity-50">·</span>
-          <span class="text-[11px]">
-            {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
-          </span>
-          <span class="opacity-50">·</span>
-          <span class="max-w-[220px] truncate">{targetName()}</span>
+          <Show when={glyphSteps().length > 0}>
+            <span class="opacity-50">·</span>
+            <span class="text-[11px]">
+              {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
+            </span>
+            <span class="opacity-50">·</span>
+            <ActionIconTrail glyphs={glyphSteps().map((step) => stepGlyph(step.kind))} max={8} />
+          </Show>
+          <Show when={targetName()}>
+            <span class="opacity-50">·</span>
+            <span class="max-w-[220px] truncate">{targetName()}</span>
+          </Show>
           <Show when={props.job.appVersion}>
             <i class="font-mono text-[11px] not-italic">· build {props.job.appVersion}</i>
           </Show>

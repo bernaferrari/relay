@@ -18,22 +18,18 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
   return (
     <div class="h-full overflow-y-auto">
       <div class="mx-auto grid w-full max-w-[1180px] content-start gap-5 px-5 py-5 max-[760px]:px-3">
-        <header class="flex items-center justify-between gap-4">
-          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.02em] text-text-strong">Atlas</h2>
-          <div class="flex items-center gap-2">
-            <AtlasStat value={tests()} label="tests" />
-            <AtlasStat value={props.atlas?.coverage.length ?? 0} label="capabilities" />
-            <AtlasStat value={savings()} label="steps to save" tone="brand" />
-          </div>
-        </header>
-
         <div class="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-[900px]:grid-cols-1">
           <section class="overflow-hidden rounded-[18px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
             <header class="flex items-center justify-between gap-4 border-b border-[var(--v2-border-border-muted)] px-5 py-3.5">
               <h3 class="m-0 text-[13px] font-semibold text-text-strong">Coverage</h3>
-              <span class="rounded-full bg-surface-base-active px-2.5 py-1 font-mono text-[10px] text-text-weak">
-                {props.atlas?.coverage.length ?? 0} tracked
-              </span>
+              <div class="flex items-center gap-2">
+                <AtlasStat value={tests()} label="tests" />
+                <AtlasStat value={props.atlas?.coverage.length ?? 0} label="capabilities" />
+                <AtlasStat value={savings()} label="steps to save" tone="brand" />
+                <span class="rounded-full bg-surface-base-active px-2.5 py-1 font-mono text-[10px] text-text-weak">
+                  {props.atlas?.coverage.length ?? 0} tracked
+                </span>
+              </div>
             </header>
             <div class="grid gap-1.5 p-3">
               <For
@@ -107,7 +103,7 @@ export function AtlasWorkspace(props: { atlas: TestAtlas | null; onOpen: (id: st
                     class="group grid min-h-[78px] w-full grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-3 rounded-[13px] border border-transparent bg-white/[0.025] px-3 text-left transition-[background-color,border-color,transform] duration-150 hover:border-[var(--v2-border-border-muted)] hover:bg-white/[0.045] active:scale-[0.99]"
                     onClick={() => props.onOpen(cluster.recipeIds[0]!)}
                   >
-                    <span class="relative grid size-10 place-items-center">
+                    <span class="relative grid size-10 place-items-center" aria-hidden="true">
                       <i class="absolute top-1 left-0 grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] text-text-weak ring-1 ring-[var(--v2-border-border-muted)]">
                         <Icon name="bolt" size={12} />
                       </i>

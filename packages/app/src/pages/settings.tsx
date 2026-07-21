@@ -336,7 +336,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
         excluded: expansion.excluded.map((item) => `${item.profile.name}: ${item.reason}`),
       });
     } catch (error) {
-      setMatrixError(error instanceof Error ? error.message : "Could not preview these targets.");
+      setMatrixError(error instanceof Error ? error.message : "Could not preview these devices.");
     }
   }
 
@@ -394,7 +394,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
   };
 
   const SECTIONS = [
-    ["targets", "Targets"],
+    ["targets", "Browser targets"],
     ["matrices", "Test environments"],
     ["recipes", "Providers & accounts"],
     ["privacy", "Privacy & evidence"],
@@ -468,7 +468,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
             <Show when={section() === "targets" || section() === "matrices"}>
               <Show when={section() === "targets"}>
                 <div class="mb-4">
-                  <h3 class="m-0 text-14-medium text-text-strong">Managed targets</h3>
+                  <h3 class="m-0 text-14-medium text-text-strong">Browser targets</h3>
                   <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
                     Give each website a private browser. Sign in once, then record and replay the
                     same tests you use on iOS and Android.
@@ -673,7 +673,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                       <div
                         class="grid grid-cols-2 gap-1 rounded-lg bg-surface-raised-stronger-non-alpha p-1"
                         role="group"
-                        aria-label="How this environment finds targets"
+                        aria-label="How this environment finds devices"
                       >
                         <button
                           type="button"
@@ -881,7 +881,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                                   size="sm"
                                   onClick={() => void previewMatrix(matrix.id)}
                                 >
-                                  Preview targets
+                                  Preview devices
                                 </Button>
                                 <Button
                                   variant="ghost"

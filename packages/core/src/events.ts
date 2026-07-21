@@ -10,6 +10,8 @@ export type DeviceEvent =
   | { type: "server.ready"; at: number; host: string; port: number }
   | { type: "device.list"; at: number; count: number }
   | { type: "device.selected"; at: number; serial: string | null }
+  | { type: "device.booted"; at: number; serial: string }
+  | { type: "device.authorization-requested"; at: number; serial: string }
   | { type: "job.queued"; at: number; jobId: string; action: string; serial?: string }
   | { type: "job.started"; at: number; jobId: string; action: string; serial?: string }
   | {

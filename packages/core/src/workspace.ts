@@ -9,7 +9,6 @@ import { execFile, execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import {
-  selectedPlatform,
   type DevicePlatform,
   base,
   center,
@@ -31,12 +30,18 @@ import { attachJobFrame, getActiveJob } from "./session.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { readTarget } from "./targets.js";
 import {
+  listAdbDevices,
+  type AndroidConnectionState,
+  type AdbDeviceObservation,
+} from "./adb-devices.js";
+import {
   configuredTargetContext,
   currentTargetContext,
   runWithTargetContext,
   targetIdentity,
   type TargetContext,
 } from "./target-context.js";
+import { adbSwipeInputArgs } from "./adb-input.js";
 
 /**
  * Recover from session binding conflicts by releasing the stale binding
@@ -85,29 +90,18 @@ function rawSwipe(
   serial?: string,
 ): void {
   serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  const inputArgs = adbSwipeInputArgs(from, to, durationMs);
+  const args = serial ? ["-s", serial, "shell", ...inputArgs] : ["shell", ...inputArgs];
+  execFileSync("adb", args, { timeout: 8000 });
+}
+
+/** Raw adb text input — keeps manual mirroring alive without an SDK app session. */
+function rawType(text: string, serial?: string): void {
+  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  const encoded = text.replaceAll(" ", "%s");
   const args = serial
-    ? [
-        "-s",
-        serial,
-        "shell",
-        "input",
-        "swipe",
-        String(from.x),
-        String(from.y),
-        String(to.x),
-        String(to.y),
-        String(durationMs),
-      ]
-    : [
-        "shell",
-        "input",
-        "swipe",
-        String(from.x),
-        String(from.y),
-        String(to.x),
-        String(to.y),
-        String(durationMs),
-      ];
+    ? ["-s", serial, "shell", "input", "text", encoded]
+    : ["shell", "input", "text", encoded];
   execFileSync("adb", args, { timeout: 8000 });
 }
 
@@ -118,6 +112,8 @@ export type ListedDevice = {
   kind: string | null;
   booted: boolean | null;
   platform: DevicePlatform;
+  /** Direct platform-tool state, used to explain why attached hardware is not selectable. */
+  connectionState?: AndroidConnectionState;
   /** Observed by the adapter or the platform tool; omitted when unavailable. */
   osVersion?: string;
 };
@@ -164,8 +160,17 @@ async function observedAndroidVersion(serial: string): Promise<string | undefine
 
 export async function listDevices(): Promise<ListedDevice[]> {
   const client = createDevice();
-  const devices = await client.devices.list();
-  const listed = await Promise.all(
+  const [adapterResult, adbDevices] = await Promise.all([
+    client.devices.list().then(
+      (devices) => ({ devices, error: null }),
+      (error: unknown) => ({ devices: [], error }),
+    ),
+    listAdbDevices(),
+  ]);
+  if (adapterResult.error && adbDevices.length === 0) throw adapterResult.error;
+
+  const devices = adapterResult.devices;
+  const listed: ListedDevice[] = await Promise.all(
     devices
       .filter((device) => device.platform === "android" || device.platform === "ios")
       .map(async (d) => {
@@ -182,12 +187,77 @@ export async function listDevices(): Promise<ListedDevice[]> {
           kind: d.kind ?? null,
           booted: d.booted ?? null,
           platform,
+          ...(platform === "android" ? { connectionState: "connected" as const } : {}),
           ...(osVersion ? { osVersion } : {}),
         };
       }),
   );
-  publish({ type: "device.list", at: now(), count: listed.length });
-  return listed;
+
+  const bySerial = new Map(listed.map((device) => [device.serial, device]));
+  for (const observed of adbDevices) {
+    const existing = bySerial.get(observed.serial);
+    bySerial.set(observed.serial, mergeAdbObservation(existing, observed));
+  }
+
+  const merged = [...bySerial.values()].sort((left, right) => {
+    const rank = (device: ListedDevice) =>
+      device.kind === "Physical device" ? 0 : device.booted !== false ? 1 : 2;
+    return rank(left) - rank(right);
+  });
+  publish({ type: "device.list", at: now(), count: merged.length });
+  return merged;
+}
+
+function mergeAdbObservation(
+  existing: ListedDevice | undefined,
+  observed: AdbDeviceObservation,
+): ListedDevice {
+  const connected = observed.connectionState === "connected";
+  if (!existing) {
+    return {
+      id: observed.serial,
+      serial: observed.serial,
+      name: observed.name,
+      kind: observed.kind,
+      booted: connected,
+      platform: "android",
+      connectionState: observed.connectionState,
+    };
+  }
+
+  return {
+    ...existing,
+    name: existing.name || observed.name,
+    kind: existing.kind ?? observed.kind,
+    booted: connected ? true : false,
+    connectionState: observed.connectionState,
+  };
+}
+
+/**
+ * Boot a not-running simulator/emulator so tests and recording can start
+ * without leaving the app. Physical devices reject this server-side.
+ */
+export async function bootDevice(serial: string, platform: DevicePlatform): Promise<void> {
+  const client = createDevice();
+  await client.devices.boot(platform === "ios" ? { platform, udid: serial } : { platform, serial });
+  publish({ type: "device.booted", at: now(), serial });
+}
+
+/** Retry the host-to-device ADB handshake. Android still requires the user to
+ * approve the RSA key on the phone; this only makes that system prompt appear. */
+export async function requestAndroidAuthorization(serial: string): Promise<void> {
+  const target = serial.trim();
+  if (!target) throw new Error("serial is required");
+  const attached = (await listAdbDevices()).find((device) => device.serial === target);
+  if (!attached) throw new Error("Android device is no longer attached");
+  if (attached.connectionState === "connected") return;
+
+  await execFileAsync("adb", ["-s", target, "reconnect"], {
+    timeout: 8_000,
+    maxBuffer: 16 * 1024,
+  });
+  publish({ type: "device.authorization-requested", at: now(), serial: target });
 }
 
 export function selectDevice(serial: string | null, platform: DevicePlatform = "android"): void {
@@ -304,18 +374,13 @@ export async function captureScreenshot(opts?: {
     await mkdir(parent, { recursive: true, mode: 0o700 });
     const dir = await mkdtemp(join(parent, "shot-"));
     const path = join(dir, "capture.png");
-    try {
+    const context = currentTargetContext();
+    if (context.kind === "device" && context.platform === "android") {
+      // Mirroring is device-scoped, not app-scoped. Going directly through adb
+      // avoids the SDK's long retry path when its optional app session expires.
+      rawScreenshot(path, context.serial);
+    } else {
       await withSession(target.device, () => target.device.capture.screenshot({ ...base(), path }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const context = currentTargetContext();
-      if (/no active session/i.test(msg)) {
-        // No SDK session — fall back to raw adb screencap (works on any app)
-        if (context.kind === "browser" || selectedPlatform() !== "android") throw err;
-        rawScreenshot(path, context.serial);
-      } else {
-        throw err;
-      }
     }
     const buf = await readFile(path);
     const base64 = buf.toString("base64");
@@ -375,6 +440,23 @@ export type InteractInput =
 export async function interact(input: InteractInput, opts?: { serial?: string }): Promise<void> {
   const target = await resolveRuntimeTarget(opts?.serial);
   await runWithTargetContext(target.context, async () => {
+    const context = currentTargetContext();
+    if (context.kind === "device" && context.platform === "android") {
+      // Direct manipulation should survive app/session changes. Semantic refs
+      // still use the SDK below, but mirror gestures never need an active app.
+      if (input.kind === "point") {
+        rawTap(input.x, input.y, context.serial);
+        return;
+      }
+      if (input.kind === "swipe") {
+        rawSwipe(input.from, input.to, input.durationMs ?? 250, context.serial);
+        return;
+      }
+      if (input.kind === "type") {
+        rawType(input.text, context.serial);
+        return;
+      }
+    }
     try {
       await withSession(target.device, async () => {
         switch (input.kind) {

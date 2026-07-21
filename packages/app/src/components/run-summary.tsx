@@ -41,7 +41,9 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
             <strong class="font-semibold">{outcome()}</strong>
           </div>
         </div>
-        <span class={productStatus(String(job().status))}>{readableStatus(job().status)}</span>
+        <Show when={readableStatus(job().status) !== outcome()}>
+          <span class={productStatus(String(job().status))}>{readableStatus(job().status)}</span>
+        </Show>
       </div>
       <Show when={job().error && job().status === "error"}>
         <p class="m-0 overflow-wrap-anywhere px-0.5 py-2.5 text-[12.5px]/[1.5] text-text-weak">
@@ -56,7 +58,7 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
           <Fact label="Why it stopped" value={readableFailure(job().failureCategory!)} />
         </Show>
         <Fact label="Duration" value={fmtDur(job(), props.clock) || "—"} />
-        <Fact label="Target" value={job().targetProfile?.name ?? job().serial ?? "—"} />
+        <Fact label="Device" value={job().targetProfile?.name ?? job().serial ?? "Not recorded"} />
         <Show when={job().appVersion}>
           <Fact label="App version" value={`v${job().appVersion}`} />
         </Show>
@@ -108,16 +110,18 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
           </For>
         </div>
       </Show>
-      <div class="mt-3.5 mb-px flex items-center justify-end gap-2">
-        <button
-          type="button"
-          class={productSecondary}
-          onClick={() => props.onOpenRecipe(job().action)}
-        >
-          <span>Fix in test</span>
-          <Icon name="arrow-right" size={13} />
-        </button>
-      </div>
+      <Show when={job().status === "error" || job().status === "cancelled"}>
+        <div class="mt-3.5 mb-px flex items-center justify-end gap-2">
+          <button
+            type="button"
+            class={productSecondary}
+            onClick={() => props.onOpenRecipe(job().action)}
+          >
+            <span>Fix in test</span>
+            <Icon name="arrow-right" size={13} />
+          </button>
+        </div>
+      </Show>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import type { JourneyMetadata, Revisioned } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer, type RecipeStep } from "../context/server";
@@ -45,12 +45,32 @@ function PlannedJourney(props: { onLive: () => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
-  const fittedView = (): Viewport => ({
-    x: window.innerWidth < 1500 ? 48 : 64,
-    y: 64,
-    scale: window.innerWidth < 1500 ? 0.86 : 0.94,
-  });
-  const [view, setView] = createSignal<Viewport>(fittedView());
+  // Fit measures the actual board and content instead of guessing from the
+  // window width — otherwise the last node hides behind the inspector column.
+  const fittedView = (): Viewport => {
+    const count = Math.max(1, draft.steps().length);
+    const contentWidth = count * (JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP) - JOURNEY_NODE_GAP;
+    const boardWidth = board?.clientWidth ?? Math.max(620, window.innerWidth - 700);
+    const boardHeight = board?.clientHeight ?? 640;
+    const contentHeight =
+      board?.querySelector<HTMLElement>("[data-journey-node]")?.offsetHeight ?? 430;
+    const pad = 56;
+    const scale = Math.min(
+      1,
+      Math.max(
+        0.3,
+        Math.min((boardWidth - pad * 2) / contentWidth, (boardHeight - pad * 2) / contentHeight),
+      ),
+    );
+    return {
+      x: Math.max(pad, (boardWidth - contentWidth * scale) / 2),
+      y: Math.max(32, (boardHeight - contentHeight * scale) / 2),
+      scale,
+    };
+  };
+  // `board` is not bound yet at signal-init time; the mount refit measures it.
+  const [view, setView] = createSignal<Viewport>({ x: 48, y: 64, scale: 0.9 });
+  onMount(() => queueMicrotask(() => setView(fittedView())));
   const [selectedEdge, setSelectedEdge] = createSignal<number | null>(null);
   const [addMenu, setAddMenu] = createSignal<{
     at: number;
@@ -403,6 +423,7 @@ function PlannedJourney(props: { onLive: () => void }) {
                 <div
                   role="button"
                   tabIndex={0}
+                  data-journey-node
                   class="group absolute top-0 left-0 w-[220px] origin-top-left cursor-pointer select-none rounded-[18px] p-0 text-left outline-none"
                   style={{
                     transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
@@ -493,7 +514,7 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
     if (annotation().status === "pass") return "Passed";
     if (annotation().status === "fail") return "Failed";
     if (annotation().status === "running") return "Running";
-    return screenshot() ? "Captured on device" : "Not captured";
+    return screenshot() ? "Captured on device" : "Not run yet";
   });
   return (
     <div
@@ -560,7 +581,9 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
               annotation().status === "running" &&
                 "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]",
               annotation().status === "idle" &&
-                (screenshot() ? "bg-[var(--icon-success-base)]" : "bg-[var(--icon-warning-base)]"),
+                (screenshot()
+                  ? "bg-[var(--icon-success-base)]"
+                  : "bg-[var(--v2-border-border-strong)]"),
             )}
           />
           {statusLabel()}

@@ -8,10 +8,11 @@ function targetFrom(text: string): { label: string } {
   const match = text.match(quoted)?.[1]?.trim();
   const fallback = text
     .replace(
-      /^(tap|click|press|select|choose|open|wait for|verify|check|assert|see|expect)\s+/i,
+      /^(tap|click|press|select|choose|open|wait for|verify|check|assert|see|expect)\s+(that\s+)?/i,
       "",
     )
-    .replace(/\s+(is|to be)\s+(visible|shown|gone|hidden).*$/i, "")
+    .replace(/\s+(is|to be)\s+(visible|shown|displayed|gone|hidden).*$/i, "")
+    .replace(/\s+(appears?|shows? up|is displayed|disappears?|vanishe?s)\s*$/i, "")
     .replace(/[,.!]$/, "")
     .trim();
   return { label: match || fallback || "Element" };
@@ -23,6 +24,9 @@ function textValue(text: string): string {
 
 function instructionToStep(instruction: string): RecipeStep {
   const text = instruction.trim();
+  // “Open/launch the app” means launching the app under test, not tapping a
+  // visible element called “the app”.
+  if (/^(open|launch|start)\s+(the\s+)?app\s*$/i.test(text)) return { kind: "app", action: "open" };
   // “Open Settings” is how people speak; only “open app …” is a distinct
   // device command. Everything else is a visible target interaction.
   if (/^(tap|click|press|select|choose|open(?!\s+app\b))\b/i.test(text))
@@ -32,7 +36,9 @@ function instructionToStep(instruction: string): RecipeStep {
     return {
       kind: "expect",
       target: targetFrom(text),
-      condition: /\b(gone|hidden|not visible|disappears?)\b/i.test(text) ? "gone" : "visible",
+      condition: /\b(gone|hidden|not visible|disappears?|vanishe?s)\b/i.test(text)
+        ? "gone"
+        : "visible",
     };
   }
   if (/^wait\b/i.test(text)) {
@@ -59,11 +65,19 @@ function instructionToStep(instruction: string): RecipeStep {
   return { kind: "pause", message: text, note: "Generated from a natural-language instruction" };
 }
 
+const CLAUSE_VERBS =
+  "tap|click|press|select|choose|open|launch|type|enter|input|verify|check|assert|see|expect|wait|scroll|copy|paste";
+
 export function planTestPrompt(prompt: string): PlannedInstruction[] {
+  // Split on newlines, connectors, and commas/“and” only when the next clause
+  // starts with a known verb — otherwise “check that an error message appears”
+  // is swallowed into the previous step’s text.
+  const splitter = new RegExp(
+    `\\s*(?:\\n+|;|→|\\bthen\\b|(?:,\\s*)?\\band\\b(?=\\s*(?:${CLAUSE_VERBS})\\b)|,(?=\\s*(?:${CLAUSE_VERBS})\\b))\\s*`,
+    "i",
+  );
   return prompt
-    .split(
-      /\s*(?:\n+|\bthen\b|;|→|,(?=\s*(?:tap|click|press|select|choose|open|type|enter|input|verify|check|assert|see|expect|wait|scroll|copy|paste)\b))\s*/i,
-    )
+    .split(new RegExp(splitter, "gi"))
     .map((part) => part.trim())
     .filter(Boolean)
     .map((source) => ({ source, step: instructionToStep(source) }));

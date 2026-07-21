@@ -1,12 +1,12 @@
 import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy } from "solid-js";
-import { useServer, type RecipeInfo } from "../context/server";
+import { useServer, type RecipeInfo, type RecipeStep } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { JourneyWorkspace } from "./journey-workspace";
 import { JourneyInspector, JourneyOutline } from "./journey-chrome";
 import { DevicePicker } from "./device-picker";
 import { LibraryPanel } from "./studio-library";
-import { NewTestDialog, TestWelcome } from "./test-onboarding";
+import { TestWelcome } from "./test-onboarding";
 import { RunsWorkspace } from "./runs-workspace";
 import { TestWorkbench } from "./test-workbench";
 import { TestDetailsPanel } from "./test-details-panel";
@@ -15,6 +15,7 @@ import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
 import { toast } from "../context/toast";
+import { confirmAction } from "./confirm-dialog";
 import {
   modalPanel,
   modalScrim,
@@ -36,9 +37,6 @@ import {
   shellTopbarContext,
   shellTopbarActions,
   shellBreadcrumb,
-  shellRecordDot,
-  shellCapture,
-  shellCaptureActive,
   shellStudio,
   shellStudioBar,
   shellViewTabs,
@@ -47,10 +45,11 @@ import {
   shellSaveState,
   shellStudioBodyJourney,
   shellStageWrap,
+  shellStageDrawerClearance,
   shellDragStrip,
 } from "../lib/shell-layout";
 import { planTestPrompt } from "../lib/natural-language-plan";
-import { testRunBlocker } from "../lib/test-run-readiness";
+import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "suites" | "runs" | "map" | "data";
@@ -84,7 +83,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [query, setQuery] = createSignal("");
   const [libraryOpen, setLibraryOpen] = createSignal(true);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
-  const [newTestOpen, setNewTestOpen] = createSignal(false);
   const [importReview, setImportReview] = createSignal<{
     yaml: string;
     recipe: RecipeInfo;
@@ -116,28 +114,23 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setDetailsOpen(false);
     defaultedViewForId = id;
   });
-  const recordBlockedReason = () => {
-    if (server.health() !== "online") return "Start Relay before recording";
-    if (server.isEmptyDevices() || !server.selectedDevice()) {
-      return "Choose a phone or browser before recording";
-    }
-    const target = server.devices().find((device) => device.serial === server.selectedDevice());
-    if (!target || target.booted === false) return "Start or connect this target before recording";
-    return "";
-  };
-  const testBlockedReason = () =>
-    testRunBlocker({
-      health: server.health(),
-      selectedDevice: server.selectedDevice(),
-      devices: server.devices(),
-      stepCount: draft.steps().length,
-      invalidCount: draft.invalidCount(),
-    });
+  const readinessState = () => ({
+    health: server.health(),
+    selectedDevice: server.selectedDevice(),
+    devices: server.devices(),
+    stepCount: draft.steps().length,
+    invalidCount: draft.invalidCount(),
+  });
+  const testBlockedReason = () => testRunBlocker(readinessState());
   const runSelectedTest = () => {
     const blocker = testBlockedReason();
     if (blocker) {
       toast(blocker, "warning");
-      if (!server.selectedDevice() || server.isEmptyDevices()) props.onOpenSettings("targets");
+      if (server.isEmptyDevices()) props.onOpenSettings("targets");
+      else if (readinessState() && blockerIsDeviceRelated(readinessState())) {
+        // A selected-but-stopped device is fixed in the picker, not in settings.
+        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+      }
       return;
     }
     const recipe = selected();
@@ -159,14 +152,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       : [];
     const saved = await server.saveRecipeRemote({
       title: description
-        ? titleFromPrompt(description, server.recipes())
+        ? titleFromPrompt(description, server.recipes(), plannedSteps)
         : nextUntitledTitle(server.recipes()),
       description,
       steps: plannedSteps,
     });
     if (!saved) return null;
     server.setSelectedRecipeId(saved.id);
-    setNewTestOpen(false);
     setArea("tests");
     setStudioView("workbench");
     setDetailsOpen(false);
@@ -218,19 +210,31 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   async function duplicateSelected(): Promise<void> {
     const recipe = selected();
     if (!recipe) return;
+    // Copies of copies get "(copy 2)", never "… (copy) copy".
+    const base = displayTitle(recipe.title).replace(/\s*\((copy)(?:\s+\d+)?\)\s*$/i, "");
+    const titles = new Set(server.recipes().map((item) => displayTitle(item.title)));
+    let title = `${base} (copy)`;
+    for (let index = 2; titles.has(title); index++) title = `${base} (copy ${index})`;
     const saved = await server.saveRecipeRemote({
-      title: `${displayTitle(recipe.title)} copy`,
+      title,
       description: recipe.description,
       steps: draft.steps(),
     });
     if (saved) server.setSelectedRecipeId(saved.id);
   }
 
-  async function deleteSelected(): Promise<void> {
+  function deleteSelected(): void {
     const recipe = selected();
     if (!recipe) return;
-    if (!window.confirm(`Delete “${displayTitle(recipe.title)}”? This cannot be undone.`)) return;
-    await server.deleteRecipeRemote(recipe.id);
+    confirmAction({
+      title: "Delete test?",
+      body: `“${displayTitle(recipe.title)}” and its version history will be removed. This cannot be undone.`,
+      confirmLabel: "Delete test",
+      onConfirm: async () => {
+        await server.deleteRecipeRemote(recipe.id);
+        toast("Test deleted", "info");
+      },
+    });
   }
 
   function openRecipe(id: string): void {
@@ -240,6 +244,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     // Opening a test transitions from the file browser to the canvas, like
     // Figma. The library stays one click away in the top-left toolbar.
     setLibraryOpen(false);
+  }
+
+  function openNewTestComposer(): void {
+    setArea("tests");
+    server.setSelectedRecipeId(null);
+    setLibraryOpen(true);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLTextAreaElement>("[data-new-test-prompt]")?.focus();
+    });
   }
 
   return (
@@ -270,6 +283,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <button
                   type="button"
                   class={cn(shellRailItem, active() && shellRailItemActive)}
+                  aria-label={item.label}
                   aria-current={active() ? "page" : undefined}
                   onClick={() => {
                     const wasActive = active();
@@ -308,7 +322,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           items={filteredRecipes()}
           selectedId={server.selectedRecipeId()}
           onSelect={openRecipe}
-          onCreate={() => setNewTestOpen(true)}
+          onCreate={openNewTestComposer}
           onImport={importTestYaml}
         />
       </Show>
@@ -327,82 +341,50 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               </button>
             </Show>
             <div class={shellBreadcrumb}>
-              <strong>
-                {area() === "runs"
-                  ? "Run history"
-                  : area() === "suites"
-                    ? "Suites"
-                    : area() === "map"
-                      ? "Atlas"
-                      : area() === "data"
-                        ? "Test data"
-                        : "Tests"}
-              </strong>
-              <Show when={area() === "tests" && selected()}>
+              <Show
+                when={area() === "tests" && selected()}
+                fallback={
+                  <strong>
+                    {area() === "runs"
+                      ? "Run history"
+                      : area() === "suites"
+                        ? "Suites"
+                        : area() === "map"
+                          ? "Atlas"
+                          : area() === "data"
+                            ? "Test data"
+                            : "Tests"}
+                  </strong>
+                }
+              >
+                <button
+                  type="button"
+                  class="rounded font-medium text-[var(--text-weak)] transition-colors hover:text-[var(--text-strong)]"
+                  onClick={() => {
+                    server.setSelectedRecipeId(null);
+                    setLibraryOpen(true);
+                  }}
+                >
+                  Tests
+                </button>
                 <Icon name="chevron-right" size={13} />
-                <span class="max-w-[min(32vw,360px)] truncate text-[var(--text-base)]">
+                <span class="max-w-[min(32vw,360px)] truncate font-medium text-[var(--text-base)]">
                   {displayTitle(selected()!.title)}
                 </span>
               </Show>
             </div>
           </div>
           <div class={shellTopbarActions}>
-            <Show when={area() === "tests" || area() === "suites"}>
+            <Show when={area() === "tests" || area() === "suites" || area() === "map"}>
               <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
             </Show>
-            <Show when={area() === "tests" && selected() && studioView() === "workbench"}>
-              <button
-                type="button"
-                class={cn(shellCapture, recorder.recording() && shellCaptureActive)}
-                data-blocked={
-                  !recorder.recording() && Boolean(recordBlockedReason()) ? "" : undefined
-                }
-                data-tip={
-                  recorder.recording()
-                    ? "Stop recording"
-                    : recordBlockedReason() || "Record interactions"
-                }
-                aria-label={
-                  recorder.recording() ? "Stop recording" : recordBlockedReason() || "Record test"
-                }
-                onClick={() => {
-                  if (recorder.recording()) {
-                    void recorder.stopRecording();
-                    return;
-                  }
-                  if (recordBlockedReason()) {
-                    toast(recordBlockedReason(), "warning");
-                    props.onOpenSettings("targets");
-                    return;
-                  }
-                  if (server.health() !== "online") {
-                    toast("Start Relay before recording.", "warning");
-                    return;
-                  }
-                  if (server.isEmptyDevices() || !server.selectedDevice()) {
-                    toast("Choose a phone or browser before recording.", "warning");
-                    return;
-                  }
-                  if (!selected()) void createTest(true);
-                  else {
-                    setStudioView("workbench");
-                    recorder.enterRecordMode();
-                  }
-                }}
-              >
-                <span
-                  class={cn(
-                    shellRecordDot,
-                    recorder.recording() ? "bg-current" : "bg-[var(--icon-critical-base)]",
-                  )}
-                  aria-hidden="true"
-                />
-                {recorder.recording() ? "Stop" : "Record"}
-              </button>
+            <Show when={area() === "tests" && selected()}>
               <button
                 type="button"
                 class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
+                data-blocked={testBlockedReason() ? "" : undefined}
                 data-tip={testBlockedReason() || "Run this test"}
+                aria-label={testBlockedReason() || "Run this test"}
                 onClick={runSelectedTest}
               >
                 <Icon name="play" size={13} /> Run
@@ -508,7 +490,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </div>
               </div>
             </Show>
-            <div class={shellStudioBodyJourney}>
+            <div
+              class={
+                selected() ? shellStudioBodyJourney : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
+              }
+            >
               <Show
                 when={selected()}
                 fallback={
@@ -540,7 +526,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </Show>
                 <Show when={studioView() === "map"}>
                   <JourneyOutline />
-                  <div class={cn(shellStageWrap, "flex-1")}>
+                  <div class={cn(shellStageWrap, shellStageDrawerClearance, "flex-1")}>
                     <JourneyWorkspace
                       onLive={() => {
                         setStudioView("workbench");
@@ -590,20 +576,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               </div>
             }
           >
-            <MapsWorkspace onOpenRecipe={openRecipe} />
+            <MapsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
           </Suspense>
         </Show>
         <Show when={area() === "data"}>
           <DataWorkspace onConfigureProvider={props.onOpenSettings} />
         </Show>
       </main>
-      <Show when={newTestOpen()}>
-        <NewTestDialog
-          onClose={() => setNewTestOpen(false)}
-          onDescribe={(description) => void createTest(false, description)}
-          onRecord={() => void createTest(true)}
-        />
-      </Show>
       <Show when={importReview()}>
         {(review) => (
           <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>
@@ -702,9 +681,24 @@ function nextUntitledTitle(recipes: RecipeInfo[]): string {
   return `Untitled test ${index}`;
 }
 
-function titleFromPrompt(description: string, recipes: RecipeInfo[]): string {
+function titleFromPrompt(
+  description: string,
+  recipes: RecipeInfo[],
+  steps: RecipeStep[] = [],
+): string {
   const sentence = description.split(/[.!?\n]/, 1)[0]?.trim() || "New test";
-  const base = sentence.length > 52 ? `${sentence.slice(0, 49).trimEnd()}…` : sentence;
+  // Long prompts make unreadable truncated titles; the check clause (the point
+  // of the test) makes a better name than the first 49 characters.
+  const check = steps.find(
+    (step): step is Extract<RecipeStep, { kind: "expect" }> => step.kind === "expect",
+  );
+  const checkLabel = check && "target" in check ? check.target?.label?.trim() : "";
+  const base =
+    sentence.length > 52 && checkLabel
+      ? `${checkLabel} ${check?.condition === "gone" ? "disappears" : "appears"}`
+      : sentence.length > 52
+        ? `${sentence.slice(0, 49).trimEnd()}…`
+        : sentence;
   const normalized = base.charAt(0).toUpperCase() + base.slice(1);
   if (!recipes.some((recipe) => recipe.title === normalized)) return normalized;
   let index = 2;

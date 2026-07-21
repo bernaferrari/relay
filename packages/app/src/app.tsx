@@ -11,6 +11,7 @@ import { Layout } from "./components/layout";
 import { HomePage } from "./pages/home";
 import { SettingsPage, type SettingsSection } from "./pages/settings";
 import { DesktopUpdateDialog } from "./components/desktop-update";
+import { ConfirmDialogHost } from "./components/confirm-dialog";
 /* Product chrome — must load for every host (web + desktop Electron). */
 import "./styles/app.css";
 
@@ -62,6 +63,7 @@ export function AppInterface() {
         <SettingsPage initialSection={settingsSection()} onClose={() => setSettingsOpen(false)} />
       </Show>
       <DesktopUpdateDialog />
+      <ConfirmDialogHost />
     </Layout>
   );
 }

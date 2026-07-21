@@ -37,8 +37,11 @@ import {
 import {
   listActions,
   listDevices,
+  bootDevice as bootDeviceRequest,
+  authorizeDevice as authorizeDeviceRequest,
   selectDevice as selectDeviceRequest,
 } from "../lib/server-target-remote";
+import { preferredTargetSerial } from "../lib/target-presentation";
 import {
   deleteRecipe,
   importRecipeYaml as importRecipeYamlRemote,
@@ -342,6 +345,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const isOffline = () => health() === "offline";
     const isEmptyDevices = () => devices().length === 0;
 
+    let selectedDeviceAvailable = false;
     async function refreshDevices() {
       if (health() === "offline") return;
       try {
@@ -350,7 +354,18 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           serial: String(d.serial ?? d.id ?? ""),
         }));
         setDevices(list);
-        if (!selectedDevice() && list[0]) void selectDeviceRemote(list[0].serial);
+        // Preserve an explicit selection across a transient USB/Wi-Fi drop.
+        // When the same serial reappears, the stage recovers without silently
+        // switching the user to a simulator or another phone.
+        const selected = selectedDevice();
+        const selectedTarget = list.find((device) => device.serial === selected);
+        if (!selected) {
+          void selectDeviceRemote(preferredTargetSerial(list));
+        } else if (selectedTarget && !selectedDeviceAvailable) {
+          // Rebind the returning target on the server as well as in the UI.
+          void selectDeviceRequest(request, selected, selectedTarget.platform ?? "android");
+        }
+        selectedDeviceAvailable = Boolean(selectedTarget);
         // clear only network-ish noise; keep explicit action errors
         if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
       } catch (err) {
@@ -562,7 +577,26 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const data = await request<{ runs: PersistedRun[]; root: string }>("/runs");
         const list = asArray<PersistedRun>(data, "runs");
-        setPersistedRuns(list);
+        // /runs returns lightweight catalog summaries with no steps/frames.
+        // A run already enriched via loadRunDetail (full steps + frames) must
+        // keep that detail across this refresh, or an open run report would
+        // silently revert to "not reached" the next time this poll fires.
+        setPersistedRuns((current) => {
+          const detailed = new Map(
+            current.filter((run) => run.steps?.length).map((run) => [run.id, run]),
+          );
+          return list.map((incoming) => {
+            const richer = detailed.get(incoming.id);
+            return richer && !incoming.steps?.length
+              ? {
+                  ...incoming,
+                  steps: richer.steps,
+                  frames: richer.frames,
+                  artifacts: richer.artifacts,
+                }
+              : incoming;
+          });
+        });
         setRunsRoot(data.root ?? "");
       } catch {
         /* ignore */
@@ -826,6 +860,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             ev.ok || ev.healed ? `${ev.action} · done` : `${ev.action} · failed`,
             ev.jobId as string,
             ev.action as string,
+            true,
           ).catch(() => undefined);
           break;
         case "job.step": {
@@ -882,8 +917,50 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         });
     }
 
+    const [bootingSerial, setBootingSerial] = createSignal<string | null>(null);
+    const [authorizingSerial, setAuthorizingSerial] = createSignal<string | null>(null);
+    async function bootDeviceRemote(serial: string): Promise<boolean> {
+      const device = devices().find((item) => item.serial === serial);
+      if (!device || bootingSerial()) return false;
+      setBootingSerial(serial);
+      try {
+        await bootDeviceRequest(request, serial, device.platform ?? "ios");
+        await refreshDevices();
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return false;
+      } finally {
+        setBootingSerial(null);
+      }
+    }
+
+    async function authorizeDeviceRemote(serial: string): Promise<boolean> {
+      if (authorizingSerial()) return false;
+      setAuthorizingSerial(serial);
+      try {
+        await authorizeDeviceRequest(request, serial);
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          await refreshDevices();
+          const current = devices().find((device) => device.serial === serial);
+          if (current?.connectionState === "connected") return true;
+        }
+        return false;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return false;
+      } finally {
+        setAuthorizingSerial(null);
+      }
+    }
+
     async function selectDeviceRemote(serial: string | null) {
       setSelectedDevice(serial);
+      selectedDeviceAvailable = devices().some((device) => device.serial === serial);
+      void Promise.resolve(platform.storage.set("selectedDevice", serial ?? "")).catch(
+        () => undefined,
+      );
       const targetPlatform =
         devices().find((device) => device.serial === serial)?.platform ?? "android";
       try {
@@ -986,6 +1063,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       recordingEvidenceUrl,
       pollLiveFrame,
       pollLiveSnapshot,
+      touchDevice,
+      keyDevice,
+      scrollDevice,
       pressNode,
       interactStep,
       runStep,
@@ -1024,6 +1104,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const saved = await platform.storage.get("prodAccountMatch");
         if (saved) setProdAccountMatchState(saved);
+      } catch {
+        /* ignore */
+      }
+      // Keep the user's phone authoritative across a transient disconnect or
+      // app reload. refreshDevices will rebind it when the serial returns.
+      try {
+        const savedDevice = await platform.storage.get("selectedDevice");
+        if (savedDevice) setSelectedDevice(savedDevice);
       } catch {
         /* ignore */
       }
@@ -1164,7 +1252,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       projectId: () => connection?.projectId ?? "default",
       activeJob,
       queuedJobs,
-      captureBeforeRun: (label, actionId) => captureUiScreenshot(label, undefined, actionId),
+      captureBeforeRun: (label, actionId) => captureUiScreenshot(label, undefined, actionId, true),
       appendLog,
       setSelectedJobId,
       setSelectedAction,
@@ -1223,6 +1311,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSensitiveEvidenceConsent: updateSensitiveEvidenceConsent,
       selectedDevice,
       setSelectedDevice: selectDeviceRemote,
+      bootDevice: bootDeviceRemote,
+      bootingSerial,
+      authorizeDevice: authorizeDeviceRemote,
+      authorizingSerial,
       selectedAction,
       setSelectedAction,
       selectedJobId,
@@ -1313,6 +1405,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       liveFrame,
       pollLiveFrame,
       pollLiveSnapshot,
+      touchDevice,
+      keyDevice,
+      scrollDevice,
       frameUrlForPersisted,
       videoUrlForRun,
     };

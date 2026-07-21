@@ -111,7 +111,7 @@ export function StepRow(props: {
     <div
       class={cn(
         "group/session relative w-full min-w-0 overflow-hidden rounded-[11px] transition-[background-color,box-shadow] duration-150",
-        "hover:bg-white/[0.03] [&:has(:focus-visible)]:bg-white/[0.03]",
+        "hover:bg-surface-base-hover [&:has(:focus-visible)]:bg-surface-base-hover",
         selected() &&
           "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_8%,var(--v2-background-bg-base))] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_14%,var(--v2-border-border-muted))] hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_10%,var(--v2-background-bg-base))]",
         !selected() &&

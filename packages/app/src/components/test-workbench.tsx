@@ -4,7 +4,7 @@ import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { eyebrow } from "../lib/ui";
-import { shellStageWrap } from "../lib/shell-layout";
+import { shellStageDrawerClearance, shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
 import { JourneyInspector, JourneyOutline } from "./journey-chrome";
 import { ExecutionInspector } from "./execution-inspector";
@@ -71,7 +71,7 @@ export function TestWorkbench(props: {
   return (
     <>
       <JourneyOutline compact onAdvancedAdd={props.onOpenAdvanced} />
-      <div class={cn(shellStageWrap, "flex min-h-0 flex-1 flex-col")}>
+      <div class={cn(shellStageWrap, shellStageDrawerClearance, "flex min-h-0 flex-1 flex-col")}>
         <div class="min-h-0 flex-1">
           <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
         </div>

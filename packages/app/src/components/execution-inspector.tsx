@@ -2,6 +2,7 @@ import { Show, createEffect, createMemo } from "solid-js";
 import { useServer, type JobInfo } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
+import { shellAsideDrawer } from "../lib/shell-layout";
 import { fmtDur } from "../lib/job";
 import { sentenceForStep } from "../lib/step-sentence";
 import {
@@ -80,7 +81,10 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
 
   return (
     <aside
-      class="flex min-h-0 min-w-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]"
+      class={cn(
+        "flex min-h-0 min-w-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
+        shellAsideDrawer,
+      )}
       aria-label="Execution progress"
       aria-live="polite"
     >

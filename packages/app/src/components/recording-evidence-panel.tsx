@@ -39,6 +39,13 @@ function candidateValue(candidate: RecordedSelectorCandidate): string {
   return candidate.label;
 }
 
+function strategyLabel(strategy: RecordedSelectorCandidate["strategy"]): string {
+  if (strategy === "ref") return "Ref";
+  if (strategy === "label") return "A11y label";
+  if (strategy === "point") return "X, Y";
+  return "Text";
+}
+
 export function RecordingEvidencePanel(props: {
   evidence: RecordedStepEvidence;
   target?: StepTarget;
@@ -96,7 +103,7 @@ export function RecordingEvidencePanel(props: {
                   {node().role ?? node().type ?? "Element"}
                 </span>
                 <strong class="overflow-hidden text-[10px] font-semibold text-ellipsis whitespace-nowrap text-[var(--text-strong)]">
-                  {node().label ?? node().value ?? node().identifier ?? "Unlabelled"}
+                  {node().label ?? node().value ?? "Unlabelled"}
                 </strong>
               </div>
             )}
@@ -123,8 +130,8 @@ export function RecordingEvidencePanel(props: {
                       onClick={() => props.onApply?.(candidate)}
                       disabled={!props.onApply}
                     >
-                      <span class="text-[9px] text-[var(--text-weak)] capitalize">
-                        {candidate.strategy}
+                      <span class="text-[9px] text-[var(--text-weak)]">
+                        {strategyLabel(candidate.strategy)}
                       </span>
                       <strong class="overflow-hidden font-mono text-[9px] font-medium text-ellipsis whitespace-nowrap text-[var(--text-base)]">
                         {candidateValue(candidate)}

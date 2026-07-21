@@ -2,7 +2,6 @@ import { createSignal, type JSX } from "solid-js";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
-import { productPrimary, productSecondary } from "../lib/ui";
 
 /**
  * Compact, calm "no device" note — deliberately the same size whether the
@@ -27,45 +26,42 @@ export function DeviceConnectState(props: {
   }
 
   return (
-    <div class="grid max-w-[320px] justify-items-center gap-3 text-center">
-      <span class="grid size-10 place-items-center rounded-xl bg-surface-base-active text-text-weaker">
-        <Icon name="smartphone" size={18} />
+    <div
+      class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center gap-1 text-12-medium text-text-base"
+      role="status"
+      aria-label={props.offline ? "Connection unavailable" : "No device connected"}
+    >
+      <span class="inline-flex min-w-0 items-center gap-1.5 px-1.5 text-text-weak">
+        <Icon name={props.offline ? "server" : "smartphone"} size={13} class="shrink-0" />
+        <span class="truncate">{props.offline ? "Relay offline" : "No device"}</span>
       </span>
-      <div>
-        <p class="m-0 text-[13px] font-medium text-[var(--text-strong)]">
-          {props.offline ? "Connection unavailable" : "No device connected"}
-        </p>
-        <p class="mt-1 text-[12px]/[1.5] text-[var(--text-weak)]">
-          Plug in over USB or join over Wi‑Fi to record and inspect on the real app.
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center justify-center gap-2">
+      <span class="mx-0.5 h-4 w-px bg-border-weak-base" aria-hidden="true" />
+      <span class="flex shrink-0 items-center gap-0.5">
         <button
           type="button"
-          class={cn(productPrimary, "min-h-[34px] px-[11px]")}
+          class="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-text-strong transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:text-text-weaker"
           disabled={refreshing()}
           aria-busy={refreshing()}
           onClick={() => void refresh()}
         >
           <Icon
             name="refresh"
-            size={14}
+            size={12}
             class={cn(
               refreshing() &&
                 "animate-spin origin-center motion-reduce:animate-none motion-reduce:opacity-70",
             )}
           />
-          Refresh
+          {props.offline ? "Retry" : "Refresh"}
         </button>
         <button
           type="button"
-          class={cn(productSecondary, "min-h-[34px] px-[11px]")}
+          class="h-8 rounded-lg px-2.5 text-text-base transition-colors hover:bg-surface-base-hover hover:text-text-strong"
           onClick={props.onSetup}
         >
-          <Icon name="sliders" size={14} />
-          Device setup
+          Set up
         </button>
-      </div>
+      </span>
     </div>
   );
 }

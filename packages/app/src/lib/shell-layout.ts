@@ -41,7 +41,7 @@ export const shellRailItem = cn(
   "flex min-h-11 w-full flex-col items-center justify-center gap-0.5 rounded-lg",
   "text-[10px] font-medium tracking-[0.01em] text-[var(--text-weak)]",
   "transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97]",
-  "hover:bg-white/[0.06] hover:text-[var(--text-strong)]",
+  "hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]",
 );
 
 export const shellRailItemActive = cn(
@@ -67,7 +67,7 @@ export const shellMain =
 
 export const shellTopbar = cn(
   "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--v2-border-border-muted)]",
-  "bg-[rgb(9_11_16/94%)] px-4",
+  "bg-[var(--v2-background-bg-deep)] px-4",
 );
 
 export const shellTopbarContext = "flex min-w-0 items-center gap-2";
@@ -77,18 +77,6 @@ export const shellBreadcrumb = cn(
   "flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--text-weak)]",
   "[&_strong]:min-w-0 [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap",
   "[&_strong]:font-medium [&_strong]:text-[var(--text-base)]",
-);
-
-export const shellRecord = cn(
-  "inline-flex min-h-[38px] items-center justify-center gap-[7px] rounded-[10px] px-3.5",
-  "text-[13px] font-semibold text-white select-none",
-  "border border-[#7e70ed] bg-[#705ff0] shadow-none",
-  "transition-[color,background-color,box-shadow,transform] duration-150",
-  "hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.97]",
-  "disabled:cursor-not-allowed disabled:bg-[var(--v2-background-bg-layer-01)] disabled:text-[var(--text-weak)]",
-  "disabled:border-[var(--v2-border-border-muted)] disabled:shadow-none",
-  "data-[blocked]:cursor-not-allowed data-[blocked]:bg-[var(--v2-background-bg-layer-01)] data-[blocked]:text-[var(--text-weak)]",
-  "data-[blocked]:border-[var(--v2-border-border-strong)] data-[blocked]:shadow-none",
 );
 
 export const shellRecordDot = "size-[7px] shrink-0 rounded-full bg-current";
@@ -121,7 +109,7 @@ export const shellViewTabs = "flex items-center gap-1";
 export const shellViewTab = cn(
   "inline-flex min-h-[30px] items-center gap-[7px] rounded-lg px-2.5",
   "text-[12px] font-medium text-[var(--text-weak)] transition-colors",
-  "hover:enabled:bg-white/[0.06] hover:enabled:text-[var(--text-strong)]",
+  "hover:enabled:bg-[var(--v2-background-bg-layer-01)] hover:enabled:text-[var(--text-strong)]",
   "disabled:cursor-not-allowed disabled:opacity-40",
 );
 
@@ -131,7 +119,7 @@ export const shellViewTabActive = cn(
 );
 
 export const shellCount = cn(
-  "grid h-[18px] min-w-[18px] place-items-center rounded-[5px] bg-white/[0.05]",
+  "grid h-[18px] min-w-[18px] place-items-center rounded-[5px] bg-[var(--v2-background-bg-layer-01)]",
   "font-mono text-[9px] text-[var(--text-weak)]",
 );
 
@@ -157,6 +145,20 @@ export const shellStudioBodyJourney = cn(
 );
 
 export const shellStudioBodyMap = "block overflow-hidden";
+
+/**
+ * Below 900px the right-hand panel floats over the stage as a drawer. The
+ * stage must reserve that width, or the drawer hides the stage's own actions
+ * (e.g. the device card's Start/Choose buttons).
+ */
+export const shellStageDrawerClearance = "max-[900px]:pr-[min(340px,calc(100vw-64px))]";
+
+/** Right-hand panel behavior below 900px — one drawer treatment for all. */
+export const shellAsideDrawer = cn(
+  "max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6]",
+  "max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))]",
+  "max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
+);
 
 export const shellStageWrap = cn(
   "relative min-h-0 min-w-0 overflow-hidden",

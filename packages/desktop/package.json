@@ -24,5 +24,6 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-solid": "^2.11.6"
-  }
+  },
+  "productName": "Relay"
 }

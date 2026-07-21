@@ -6,6 +6,45 @@ describe("sentenceForStep", () => {
   it("formats tap with label", () => {
     assert.equal(sentenceForStep({ kind: "tap", target: { label: "Sign in" } }), 'Tap "Sign in"');
   });
+  it("hides a recorded element ref behind its accessibility name", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "tap",
+        target: { ref: "@e94", point: { x: 181, y: 1450 } },
+        evidence: {
+          id: "evidence-1",
+          recordedAt: 1,
+          node: { ref: "@e94", label: "Ask anything" },
+        },
+      }),
+      'Tap "Ask anything"',
+    );
+  });
+  it("uses the recorded position when an element has no accessibility name", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "tap",
+        target: { ref: "@e53", point: { x: 489, y: 1053 } },
+        evidence: { id: "evidence-2", recordedAt: 1, node: { ref: "@e53" } },
+      }),
+      "Tap at 489, 1053",
+    );
+  });
+  it("uses the selected parent accessibility name instead of the captured child", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "tap",
+        target: { ref: "@parent", point: { x: 50, y: 100 } },
+        evidence: {
+          id: "evidence-3",
+          recordedAt: 1,
+          node: { ref: "@child", label: "Child" },
+          ancestors: [{ ref: "@parent", label: "Account row" }],
+        },
+      }),
+      'Tap "Account row"',
+    );
+  });
   it("formats empty type", () => {
     assert.equal(sentenceForStep({ kind: "type", text: "" }), "Type text");
   });

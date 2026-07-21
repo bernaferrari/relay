@@ -17,6 +17,21 @@ function targetPhrase(t: StepTarget | undefined): string {
   return "an element";
 }
 
+function recordedTargetPhrase(step: Extract<RecipeStep, { kind: "tap" }>): string {
+  const recordedNode = [step.evidence?.node, ...(step.evidence?.ancestors ?? [])].find(
+    (node) => node && step.target.ref && node.ref === step.target.ref,
+  );
+  const visibleName = (recordedNode?.label ?? recordedNode?.value ?? "").trim();
+  // Element references are useful to the runner but meaningless in the plan.
+  // Keep the ref as the selector and use its captured accessibility name only
+  // for the sentence people scan in the UI.
+  if (step.target.ref && visibleName) return `"${visibleName}"`;
+  if (step.target.ref && step.target.point)
+    return `at ${step.target.point.x}, ${step.target.point.y}`;
+  if (step.target.ref) return "the recorded element";
+  return targetPhrase(step.target);
+}
+
 function fmtSeconds(ms: number): string {
   const s = ms / 1000;
   return `${Number.isInteger(s) ? s : s.toFixed(1)}s`;
@@ -36,7 +51,7 @@ function cap(s: string): string {
 export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>): string {
   switch (step.kind) {
     case "tap":
-      return `Tap ${targetPhrase(step.target)}`;
+      return `Tap ${recordedTargetPhrase(step)}`;
     case "long-press":
       return `Long press ${targetPhrase(step.target)}`;
     case "type":

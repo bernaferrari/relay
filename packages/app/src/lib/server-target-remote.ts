@@ -33,6 +33,26 @@ export async function selectDevice(
   });
 }
 
+export async function bootDevice(
+  request: ServerRequest,
+  serial: string,
+  platform: string,
+): Promise<void> {
+  // Simulator boot is slow; give it more headroom than the default timeout.
+  await request(
+    "/device/boot",
+    { method: "POST", body: JSON.stringify({ serial, platform }) },
+    120_000,
+  );
+}
+
+export async function authorizeDevice(request: ServerRequest, serial: string): Promise<void> {
+  await request("/device/authorize", {
+    method: "POST",
+    body: JSON.stringify({ serial }),
+  });
+}
+
 export async function saveBrowserTarget(
   request: ServerRequest,
   input: {

@@ -24,6 +24,19 @@
     outline: none;
   }
 
+  /* One designed keyboard focus ring instead of the UA default blue. */
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="option"]:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--border-interactive-base, var(--v2-background-bg-accent, #6454e9));
+    outline-offset: 1px;
+  }
+
   /*
    * Device frame — abstract viewport only (no speaker / island).
    * High-contrast ink on always-dark chassis (fixed v2 greys).
@@ -83,7 +96,8 @@
   [data-device-chrome].phone-bezel {
     background: var(--phone-bezel);
     box-shadow:
-      0 0 0 1px var(--phone-rim-soft),
+      0 0 0 6px var(--phone-bezel),
+      0 0 0 7px var(--phone-rim-soft),
       0 24px 48px -18px color-mix(in srgb, var(--phone-screen) 70%, transparent),
       0 10px 24px -10px color-mix(in srgb, var(--text-strong) 16%, transparent);
   }

@@ -1,14 +1,21 @@
 import { app, BrowserWindow } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
 import { DesktopUpdater } from "./updates.js";
-import { createMainWindow, loadRenderer } from "./windows.js";
+import { createMainWindow, loadRenderer, resolveAppIconPath } from "./windows.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
 const HEALTH_TIMEOUT_MS = 800;
+const PRODUCT_NAME = "Relay";
+
+app.setName(PRODUCT_NAME);
+process.title = PRODUCT_NAME;
+if (process.platform === "win32") app.setAppUserModelId("com.relay.desktop");
 
 let serverUrl =
   (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim() || DEFAULT_SERVER_URL;
@@ -16,18 +23,23 @@ let serverChild: ChildProcess | null = null;
 const updates = new DesktopUpdater();
 
 async function isServerHealthy(url: string): Promise<boolean> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${url.replace(/\/+$/, "")}/health`, {
-      signal: controller.signal,
+  const healthUrl = new URL(`${url.replace(/\/+$/, "")}/health`);
+  const request = healthUrl.protocol === "https:" ? httpsRequest : httpRequest;
+
+  return await new Promise((resolveHealthy) => {
+    const req = request(healthUrl, { method: "GET" }, (response) => {
+      response.resume();
+      resolveHealthy(
+        Boolean(response.statusCode && response.statusCode >= 200 && response.statusCode < 300),
+      );
     });
-    return res.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
+    req.setTimeout(HEALTH_TIMEOUT_MS, () => {
+      req.destroy();
+      resolveHealthy(false);
+    });
+    req.on("error", () => resolveHealthy(false));
+    req.end();
+  });
 }
 
 function resolveServerEntry(): string | null {
@@ -92,7 +104,12 @@ async function ensureServer(): Promise<string> {
 
   serverChild = spawn(runner.cmd, [...runner.args, "--port", port, "--host", host], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      ...(runner.cmd === process.execPath && process.versions.electron
+        ? { ELECTRON_RUN_AS_NODE: "1" }
+        : {}),
+    },
     detached: false,
   });
 
@@ -107,14 +124,15 @@ async function ensureServer(): Promise<string> {
     serverChild = null;
   });
 
-  const ok = await waitForHealthy(preferred);
-  if (!ok) {
-    console.warn(
-      `[desktop] server did not become healthy at ${preferred} — connect manually with RELAY_URL or \`pnpm dev:serve\``,
-    );
-  } else {
+  void waitForHealthy(preferred).then((ok) => {
+    if (!ok) {
+      console.warn(
+        `[desktop] server did not become healthy at ${preferred} — connect manually with RELAY_URL or \`pnpm dev:serve\``,
+      );
+      return;
+    }
     console.log(`[desktop] server ready at ${preferred}`);
-  }
+  });
   return preferred;
 }
 
@@ -146,6 +164,15 @@ async function bootstrap(): Promise<void> {
 
   await app.whenReady();
 
+  const iconPath = resolveAppIconPath();
+  if (iconPath && process.platform === "darwin") {
+    try {
+      app.dock?.setIcon(iconPath);
+    } catch (error) {
+      console.warn(`[desktop] could not set Dock icon from ${iconPath}`, error);
+    }
+  }
+
   serverUrl = await ensureServer();
 
   registerIpcHandlers({
@@ -155,7 +182,9 @@ async function bootstrap(): Promise<void> {
   updates.start();
 
   const win = createMainWindow();
+  console.log("[desktop] window created");
   await loadRenderer(win);
+  console.log("[desktop] renderer loaded");
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

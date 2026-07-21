@@ -171,7 +171,10 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
   async function start(): Promise<void> {
     const targetId = selectedTarget();
     if (!targetId || !targetReady()) {
-      toast("Connect or start the selected target before mapping.", "warning");
+      toast(
+        "Start the selected device first — open the device menu in the top bar to boot it.",
+        "warning",
+      );
       return;
     }
     const session = await server.createDiscoverySession({
@@ -355,7 +358,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
             name={selectedTarget()?.platform === "browser" ? "server" : "smartphone"}
             size={14}
           />
-          <span>{selectedTarget()?.name ?? "No target selected"}</span>
+          <span>{selectedTarget()?.name ?? "No device selected"}</span>
           <small>
             {targetReady()
               ? "Ready"
@@ -364,23 +367,25 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                 : "Unavailable"}
           </small>
         </div>
-        <button
-          type="button"
-          class={productPrimary}
-          data-blocked={!targetReady() ? "" : undefined}
-          data-tip={
-            targetReady() ? "Start mapping this app" : "Choose a ready target from the top bar"
-          }
-          onClick={() => {
-            if (!targetReady()) {
-              toast("Choose or start a target from the top bar before mapping.", "warning");
-              return;
+        <Show when={server.discoverySessions().length > 0}>
+          <button
+            type="button"
+            class={productPrimary}
+            data-blocked={!targetReady() ? "" : undefined}
+            data-tip={
+              targetReady() ? "Start mapping this app" : "Choose a ready device from the top bar"
             }
-            void start();
-          }}
-        >
-          <Icon name="plus" size={14} /> Start mapping
-        </button>
+            onClick={() => {
+              if (!targetReady()) {
+                toast("Choose or start a device from the top bar before mapping.", "warning");
+                return;
+              }
+              void start();
+            }}
+          >
+            <Icon name="plus" size={14} /> Start mapping
+          </button>
+        </Show>
         <div class="min-h-0 flex-1 overflow-y-auto">
           <For
             each={server.discoverySessions()}
@@ -901,7 +906,7 @@ function DiscoveryCoveragePanel(props: {
             <header>
               <span class={eyebrow}>Across profiles</span>
               <strong>
-                {report().profiles.length || "No"} observed target
+                {report().profiles.length || "No"} observed device
                 {report().profiles.length === 1 ? "" : "s"}
               </strong>
             </header>

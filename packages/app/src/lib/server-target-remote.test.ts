@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  authorizeDevice,
   listDevices,
   listTargets,
   openBrowserTarget,
@@ -22,12 +23,14 @@ test("keeps target operations behind typed endpoints", async () => {
   assert.equal((await listDevices(request))[0]?.serial, "pixel-1");
   await listTargets(request);
   await selectDevice(request, "pixel-1");
+  await authorizeDevice(request, "pixel-1");
   await preflightTarget(request, "browser");
   await openBrowserTarget(request, "browser");
   assert.deepEqual(calls, [
     "GET /devices",
     "GET /targets",
     "POST /device/select",
+    "POST /device/authorize",
     "POST /targets/browser/preflight",
     "POST /targets/browser/open",
   ]);

@@ -245,7 +245,7 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   tokens["text-on-brand-weaker"] = on(brandb);
   tokens["text-on-brand-strong"] = on(brandh);
 
-  tokens["button-primary-base"] = neutral[11];
+  tokens["button-primary-base"] = primary[8];
   tokens["button-secondary-base"] = isDark ? neutral[2] : neutral[0];
   tokens["button-secondary-hover"] = isDark ? neutral[3] : neutral[1];
   tokens["button-ghost-hover"] = neutralAlpha[1];

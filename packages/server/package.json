@@ -8,13 +8,20 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
+    "postinstall": "fetch-scrcpy-server 2.5",
     "start": "tsx src/index.ts",
     "test": "tsx --test src/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@relay/core": "workspace:*",
-    "@relay/protocol": "workspace:*"
+    "@relay/protocol": "workspace:*",
+    "@yume-chan/adb": "2.6.0",
+    "@yume-chan/adb-scrcpy": "2.3.2",
+    "@yume-chan/adb-server-node-tcp": "2.5.2",
+    "@yume-chan/fetch-scrcpy-server": "1.0.0",
+    "@yume-chan/scrcpy": "2.3.0",
+    "@yume-chan/stream-extra": "2.6.1"
   },
   "devDependencies": {
     "@relay/client": "workspace:*",

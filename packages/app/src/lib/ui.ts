@@ -150,7 +150,7 @@ export const seg = cn(
 );
 
 export const segBtn = cn(
-  "h-7 rounded-md px-2.5 text-12-medium text-text-base select-none",
+  "inline-flex h-7 items-center justify-center gap-1 rounded-md px-2.5 text-12-medium text-text-base select-none",
   tColor,
   "hover:bg-surface-raised-base-hover hover:text-text-strong",
 );
@@ -268,7 +268,7 @@ export const productSecondary = cn(
 export const productIconButton = cn(
   "inline-grid size-[34px] shrink-0 place-items-center rounded-[9px] text-text-base select-none",
   "transition-[color,background-color,transform] duration-150",
-  "hover:enabled:bg-white/[0.06] hover:enabled:text-text-strong",
+  "hover:enabled:bg-surface-base-hover hover:enabled:text-text-strong",
   "active:enabled:scale-[0.97]",
   "disabled:cursor-not-allowed disabled:opacity-35",
 );

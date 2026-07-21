@@ -1,8 +1,10 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useServer, type SuiteSection, type TestSuite } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import {
+  listPanel,
+  popover,
   productIconButton,
   productIconButtonDanger,
   productPrimary,
@@ -16,6 +18,42 @@ import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
 import { SelectableRow } from "./selectable-row";
 import { executionDuration, executionElapsedAt, executionMoments } from "../lib/execution-moments";
+import { displayTitle } from "../lib/job";
+import { confirmAction } from "./confirm-dialog";
+
+/**
+ * Static, non-interactive illustration of a populated suite section — no
+ * real data, just the checklist shape so the empty state reads like a real
+ * product screen instead of a blank placeholder.
+ */
+function SuiteChecklistPreview() {
+  return (
+    <div class={cn(listPanel, "w-full select-none p-3")} aria-hidden="true">
+      <div class="flex items-center justify-between px-1 pb-2">
+        <span class="text-[10px] font-semibold tracking-[0.1em] text-text-weaker uppercase">
+          Smoke tests
+        </span>
+        <span class="text-[10px] tabular-nums text-text-weaker">3</span>
+      </div>
+      <div class="grid gap-1">
+        <div class="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-[8px] px-1.5 py-1.5">
+          <span class="grid size-4 place-items-center rounded-full bg-surface-success-weak text-icon-success-base ring-1 ring-inset ring-border-success-base/40">
+            <Icon name="check" size={10} />
+          </span>
+          <span class="h-2 w-[62%] rounded-full bg-surface-weak" />
+        </div>
+        <div class="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-[8px] px-1.5 py-1.5">
+          <span class="size-4 rounded-full ring-1 ring-inset ring-border-weak-base" />
+          <span class="h-2 w-[78%] rounded-full bg-surface-weak" />
+        </div>
+        <div class="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-[8px] px-1.5 py-1.5">
+          <span class="size-4 rounded-full ring-1 ring-inset ring-border-weak-base" />
+          <span class="h-2 w-[45%] rounded-full bg-surface-weak" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function SuitesWorkspace(props: {
   onOpenTest: (id: string) => void;
@@ -26,9 +64,38 @@ export function SuitesWorkspace(props: {
   const server = useServer();
   const workbench = useWorkbench();
   const [selectedEntryId, setSelectedEntryId] = createSignal<string | null>(null);
-  const [addingTest, setAddingTest] = createSignal<Record<string, string>>({});
+  const [addPopoverSection, setAddPopoverSection] = createSignal<string | null>(null);
+  const [addQuery, setAddQuery] = createSignal("");
   const [history, setHistory] = createSignal<TestSuite[] | null>(null);
   const [historyOpen, setHistoryOpen] = createSignal(false);
+  let suiteTitleInput: HTMLInputElement | undefined;
+  let addSearchInput: HTMLInputElement | undefined;
+  const sectionTitleInputs = new Map<string, HTMLInputElement>();
+
+  const closeAddPopover = () => {
+    setAddPopoverSection(null);
+    setAddQuery("");
+  };
+
+  onMount(() => {
+    const onPointer = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement)?.closest?.("[data-add-test-popover]")) closeAddPopover();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && addPopoverSection()) closeAddPopover();
+    };
+    document.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    });
+  });
+
+  createEffect(() => {
+    if (!addPopoverSection()) return;
+    queueMicrotask(() => addSearchInput?.focus());
+  });
 
   const selectedSuite = createMemo(() =>
     server.suites().find((suite) => suite.id === server.selectedSuiteId()),
@@ -79,7 +146,12 @@ export function SuitesWorkspace(props: {
       title: `Suite ${server.suites().length + 1}`,
       sections: [{ title: "Tests", entries: [] }],
     });
-    if (suite) server.setSelectedSuiteId(suite.id);
+    if (!suite) return;
+    server.setSelectedSuiteId(suite.id);
+    queueMicrotask(() => {
+      suiteTitleInput?.focus();
+      suiteTitleInput?.select();
+    });
   };
 
   const selectEntry = (entryId: string, testId: string) => {
@@ -120,6 +192,32 @@ export function SuitesWorkspace(props: {
         suite.sections.some((section) => section.entries.some((entry) => entry.testId === testId)),
       ).length;
 
+  const libraryTests = createMemo(() => server.recipes().filter((test) => test.steps.length > 0));
+  const libraryTitleCounts = createMemo(() => {
+    const counts = new Map<string, number>();
+    for (const test of libraryTests()) {
+      const title = displayTitle(test.title);
+      counts.set(title, (counts.get(title) ?? 0) + 1);
+    }
+    return counts;
+  });
+  const filteredLibraryTests = createMemo(() => {
+    const needle = addQuery().trim().toLowerCase();
+    if (!needle) return libraryTests();
+    return libraryTests().filter((test) => displayTitle(test.title).toLowerCase().includes(needle));
+  });
+
+  const addTestToSection = (suite: TestSuite, section: SuiteSection, testId: string) => {
+    patchSection(suite, section.id, {
+      ...section,
+      entries: [
+        ...section.entries,
+        { id: crypto.randomUUID(), testId, enabled: true, version: "latest" },
+      ],
+    });
+    closeAddPopover();
+  };
+
   return (
     <section
       class={cn(
@@ -143,6 +241,7 @@ export function SuitesWorkspace(props: {
             type="button"
             class={productIconButton}
             aria-label="New suite"
+            data-tip="Create a new suite"
             onClick={() => void createSuite()}
           >
             <Icon name="plus" size={14} />
@@ -196,15 +295,19 @@ export function SuitesWorkspace(props: {
         <Show
           when={selectedSuite()}
           fallback={
-            <EmptyState
-              size="lg"
-              icon="check"
-              title="Create a release suite"
-              description="Group existing tests into a checklist your team can edit, reuse, and run together."
-              actionLabel="Create a suite"
-              onAction={() => void createSuite()}
-              class="h-full justify-center"
-            />
+            <div class="flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto px-6 py-10">
+              <div class="grid w-full max-w-[380px] justify-items-center gap-6">
+                <SuiteChecklistPreview />
+                <EmptyState
+                  size="lg"
+                  icon="check"
+                  title="Create a release suite"
+                  description="Group existing tests into a checklist your team can edit, reuse, and run together."
+                  actionLabel="Create a suite"
+                  onAction={() => void createSuite()}
+                />
+              </div>
+            </div>
           }
         >
           <Show
@@ -260,18 +363,35 @@ export function SuitesWorkspace(props: {
             </Show>
             <header class="border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
               <div class="flex items-center gap-2">
-                <input
-                  aria-label="Suite name"
-                  class="min-w-0 flex-1 rounded-md bg-transparent text-[16px] font-semibold tracking-[-0.015em] text-[var(--text-strong)] outline-none focus:bg-[var(--v2-background-bg-layer-01)] focus:px-2"
-                  value={suite().title}
-                  onChange={(event) =>
-                    void save(suite(), suite().sections, event.currentTarget.value)
-                  }
-                />
+                <div class="group/title relative flex min-w-0 flex-1 items-center">
+                  <input
+                    ref={(element) => (suiteTitleInput = element)}
+                    aria-label="Suite name"
+                    class="min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-[16px] font-semibold tracking-[-0.015em] text-[var(--text-strong)] outline-none transition hover:shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:bg-[var(--v2-background-bg-layer-01)] focus:shadow-[inset_0_0_0_1px_var(--border-interactive-base)]"
+                    value={suite().title}
+                    onChange={(event) =>
+                      void save(suite(), suite().sections, event.currentTarget.value)
+                    }
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] opacity-0 transition-opacity hover:text-[var(--text-strong)] group-hover/title:opacity-100 group-focus-within/title:opacity-100"
+                    aria-label="Rename suite"
+                    data-tip="Rename suite"
+                    onClick={() => {
+                      suiteTitleInput?.focus();
+                      suiteTitleInput?.select();
+                    }}
+                  >
+                    <Icon name="edit" size={13} />
+                  </button>
+                </div>
                 <button
                   type="button"
                   class={productIconButton}
                   aria-label="Suite history"
+                  data-tip="View version history"
                   aria-expanded={historyOpen()}
                   onClick={() => {
                     const open = !historyOpen();
@@ -285,12 +405,14 @@ export function SuitesWorkspace(props: {
                   type="button"
                   class={productIconButtonDanger}
                   aria-label="Delete suite"
+                  data-tip="Delete this suite"
                   onClick={() => {
-                    if (
-                      window.confirm(`Delete “${suite().title}”? The library tests will remain.`)
-                    ) {
-                      void server.deleteSuite(suite().id);
-                    }
+                    confirmAction({
+                      title: "Delete suite?",
+                      body: `"${suite().title}" and its checklist will be removed. Tests inside it are not deleted.`,
+                      confirmLabel: "Delete suite",
+                      onConfirm: () => void server.deleteSuite(suite().id),
+                    });
                   }}
                 >
                   <Icon name="trash" size={14} />
@@ -328,6 +450,7 @@ export function SuitesWorkspace(props: {
                     type="button"
                     class={productIconButton}
                     aria-label="Close history"
+                    data-tip="Close version history"
                     onClick={() => setHistoryOpen(false)}
                   >
                     <Icon name="x" size={13} />
@@ -371,17 +494,34 @@ export function SuitesWorkspace(props: {
                 {(section, sectionIndex) => (
                   <section class="mb-4">
                     <div class="flex min-h-9 items-center gap-2 px-1">
-                      <input
-                        aria-label={`Section ${sectionIndex() + 1} name`}
-                        class="min-w-0 flex-1 bg-transparent text-[10px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase outline-none focus:text-[var(--text-strong)] max-[900px]:text-[16px]"
-                        value={section.title}
-                        onChange={(event) =>
-                          patchSection(suite(), section.id, {
-                            ...section,
-                            title: event.currentTarget.value,
-                          })
-                        }
-                      />
+                      <div class="group/title relative flex min-w-0 flex-1 items-center">
+                        <input
+                          ref={(element) => sectionTitleInputs.set(section.id, element)}
+                          aria-label={`Section ${sectionIndex() + 1} name`}
+                          class="min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-[10px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase outline-none transition hover:shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--border-interactive-base)] max-[900px]:text-[16px]"
+                          value={section.title}
+                          onChange={(event) =>
+                            patchSection(suite(), section.id, {
+                              ...section,
+                              title: event.currentTarget.value,
+                            })
+                          }
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          class="grid size-5 shrink-0 place-items-center rounded-md text-[var(--text-weak)] opacity-0 transition-opacity hover:text-[var(--text-strong)] group-hover/title:opacity-100 group-focus-within/title:opacity-100"
+                          aria-label="Rename section"
+                          data-tip="Rename section"
+                          onClick={() => {
+                            const input = sectionTitleInputs.get(section.id);
+                            input?.focus();
+                            input?.select();
+                          }}
+                        >
+                          <Icon name="edit" size={11} />
+                        </button>
+                      </div>
                       <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
                         {section.entries.length}
                       </span>
@@ -389,17 +529,20 @@ export function SuitesWorkspace(props: {
                         type="button"
                         class={productIconButtonDanger}
                         aria-label={`Remove ${section.title} section`}
+                        data-tip="Remove this section"
                         onClick={() => {
-                          const remove =
-                            section.entries.length === 0 ||
-                            window.confirm(
-                              `Remove “${section.title}” and its ${section.entries.length} suite ${section.entries.length === 1 ? "entry" : "entries"}? Library tests will remain.`,
+                          const removeSection = () =>
+                            void save(
+                              suite(),
+                              suite().sections.filter((item) => item.id !== section.id),
                             );
-                          if (!remove) return;
-                          void save(
-                            suite(),
-                            suite().sections.filter((item) => item.id !== section.id),
-                          );
+                          if (section.entries.length === 0) return removeSection();
+                          confirmAction({
+                            title: "Remove section?",
+                            body: `“${section.title}” and its ${section.entries.length} suite ${section.entries.length === 1 ? "entry" : "entries"} will be removed. Library tests will remain.`,
+                            confirmLabel: "Remove section",
+                            onConfirm: removeSection,
+                          });
                         }}
                       >
                         <Icon name="trash" size={12} />
@@ -471,6 +614,7 @@ export function SuitesWorkspace(props: {
                                   type="button"
                                   class={productIconButton}
                                   aria-label="Move test up"
+                                  data-tip="Move up"
                                   disabled={entryIndex() === 0}
                                   onClick={() => {
                                     const entries = [...section.entries];
@@ -487,6 +631,7 @@ export function SuitesWorkspace(props: {
                                   type="button"
                                   class={productIconButton}
                                   aria-label="Move test down"
+                                  data-tip="Move down"
                                   disabled={entryIndex() === section.entries.length - 1}
                                   onClick={() => {
                                     const entries = [...section.entries];
@@ -503,6 +648,7 @@ export function SuitesWorkspace(props: {
                                   type="button"
                                   class={productIconButtonDanger}
                                   aria-label="Remove from suite"
+                                  data-tip="Remove from suite"
                                   onClick={() =>
                                     patchSection(suite(), section.id, {
                                       ...section,
@@ -520,51 +666,102 @@ export function SuitesWorkspace(props: {
                         }}
                       </For>
                     </div>
-                    <div class="mt-2 flex items-center gap-1.5">
-                      <select
-                        aria-label={`Test to add to ${section.title}`}
-                        class="min-h-9 min-w-0 flex-1 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-2 text-[11px] text-[var(--text-strong)] outline-none focus:border-[var(--v2-border-border-strong)] max-[900px]:text-[16px]"
-                        value={addingTest()[section.id] ?? ""}
-                        onChange={(event) =>
-                          setAddingTest((items) => ({
-                            ...items,
-                            [section.id]: event.currentTarget.value,
-                          }))
-                        }
-                      >
-                        <option value="">Add from library…</option>
-                        <For each={server.recipes()}>
-                          {(test) => <option value={test.id}>{test.title}</option>}
-                        </For>
-                      </select>
+                    <div class="relative mt-2 flex items-center gap-1.5" data-add-test-popover>
                       <button
                         type="button"
-                        class={productIconButton}
+                        class="flex min-h-9 min-w-0 flex-1 items-center justify-between gap-1.5 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-2 text-left text-[11px] text-[var(--text-weak)] outline-none focus:border-[var(--v2-border-border-strong)] max-[900px]:text-[16px]"
+                        aria-haspopup="dialog"
+                        aria-expanded={addPopoverSection() === section.id}
                         aria-label={`Add test to ${section.title}`}
-                        disabled={!addingTest()[section.id]}
+                        data-tip="Add a test from your library"
                         onClick={() => {
-                          const testId = addingTest()[section.id];
-                          if (!testId) return;
-                          patchSection(suite(), section.id, {
-                            ...section,
-                            entries: [
-                              ...section.entries,
-                              { id: crypto.randomUUID(), testId, enabled: true, version: "latest" },
-                            ],
-                          });
-                          setAddingTest((items) => ({ ...items, [section.id]: "" }));
+                          setAddQuery("");
+                          setAddPopoverSection((current) =>
+                            current === section.id ? null : section.id,
+                          );
                         }}
                       >
-                        <Icon name="plus" size={13} />
+                        <span class="truncate">Add from library…</span>
+                        <Icon
+                          name="chevron-down"
+                          size={12}
+                          class="shrink-0 text-[var(--text-weak)]"
+                        />
                       </button>
                       <button
                         type="button"
                         class={productIconButton}
                         aria-label={`Record a new test in ${section.title}`}
+                        data-tip="Record a new test into this section"
                         onClick={() => props.onRecordTest(suite().id, section.id)}
                       >
                         <span class="size-2 rounded-full bg-[var(--icon-critical-base)]" />
                       </button>
+                      <Show when={addPopoverSection() === section.id}>
+                        <div
+                          class={cn(
+                            popover,
+                            "absolute left-0 top-[calc(100%+6px)] z-30 flex max-h-72 w-[300px] flex-col p-0",
+                          )}
+                          role="dialog"
+                          aria-label={`Add test to ${section.title}`}
+                        >
+                          <div class="border-b border-[var(--v2-border-border-muted)] p-1.5">
+                            <label class="flex h-8 items-center gap-2 rounded-md bg-[var(--v2-background-bg-deep)] px-2 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base)]">
+                              <Icon name="search" size={13} />
+                              <span class="sr-only">Search tests</span>
+                              <input
+                                ref={(element) => (addSearchInput = element)}
+                                class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+                                type="search"
+                                value={addQuery()}
+                                placeholder="Search tests"
+                                autocomplete="off"
+                                spellcheck={false}
+                                onInput={(event) => setAddQuery(event.currentTarget.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key !== "Escape") return;
+                                  event.stopPropagation();
+                                  closeAddPopover();
+                                }}
+                              />
+                            </label>
+                          </div>
+                          <div class="min-h-0 flex-1 overflow-y-auto p-1">
+                            <For
+                              each={filteredLibraryTests()}
+                              fallback={
+                                <p class="m-0 px-2 py-4 text-center text-[11px] text-[var(--text-weak)]">
+                                  No tests match.
+                                </p>
+                              }
+                            >
+                              {(test) => {
+                                const title = () => displayTitle(test.title);
+                                const duplicate = () =>
+                                  (libraryTitleCounts().get(title()) ?? 0) > 1;
+                                return (
+                                  <button
+                                    type="button"
+                                    class="flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-[var(--v2-background-bg-layer-01)]"
+                                    onClick={() => addTestToSection(suite(), section, test.id)}
+                                  >
+                                    <span class="min-w-0 flex-1">
+                                      <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+                                        {title()}
+                                      </strong>
+                                      <small class="block truncate text-[10px] text-[var(--text-weak)]">
+                                        {test.steps.length} step{test.steps.length === 1 ? "" : "s"}
+                                        {duplicate() ? ` · ${test.id.slice(0, 8)}` : ""}
+                                      </small>
+                                    </span>
+                                  </button>
+                                );
+                              }}
+                            </For>
+                          </div>
+                        </div>
+                      </Show>
                     </div>
                   </section>
                 )}

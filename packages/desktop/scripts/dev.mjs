@@ -8,6 +8,7 @@ import { createServer } from "vite";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleElectron } from "./bundle-electron.mjs";
+import { prepareMacOSDevApp } from "./macos-dev-app.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,14 +34,23 @@ async function main() {
 
   const server = await createServer({
     configFile: resolve(root, "vite.config.ts"),
+    server: {
+      strictPort: false,
+    },
   });
   await server.listen();
   const urls = server.resolvedUrls?.local ?? [];
   const rendererUrl = urls[0] ?? "http://127.0.0.1:5173/";
   console.log(`[desktop] renderer ${rendererUrl}`);
 
-  const electronPath = resolveElectronCli();
-  const child = spawn(process.execPath, [electronPath, "."], {
+  const electronCliPath = resolveElectronCli();
+  const executable =
+    process.platform === "darwin" ? prepareMacOSDevApp(electronCliPath, root) : process.execPath;
+  const args = process.platform === "darwin" ? ["."] : [electronCliPath, "."];
+  if (process.platform === "darwin") {
+    console.log(`[desktop] macOS app ${resolve(root, "out/Relay.app")}`);
+  }
+  const child = spawn(executable, args, {
     cwd: root,
     env: {
       ...process.env,
@@ -58,7 +68,8 @@ async function main() {
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 
-  child.on("exit", (code) => {
+  child.on("exit", (code, signal) => {
+    console.log(`[desktop] app exited code=${code ?? "none"} signal=${signal ?? "none"}`);
     void server.close().finally(() => process.exit(code ?? 0));
   });
 }

@@ -317,6 +317,9 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
           identifiers,
         },
       ],
+      boot: async () => {
+        throw new Error("Browser targets open on demand; there is nothing to boot");
+      },
     },
     apps: {
       open: async (input: { url?: string; app?: string; relaunch?: boolean }) => {

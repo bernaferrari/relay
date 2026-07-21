@@ -197,7 +197,12 @@
   --text-on-brand-weak: rgba(0, 0, 0, 0.453);
   --text-on-brand-weaker: rgba(0, 0, 0, 0.232);
   --text-on-brand-strong: rgba(0, 0, 0, 0.915);
-  --button-primary-base: #171717;
+  /* Product primary is the brand indigo everywhere; a monochrome primary next
+     to the indigo Run/Create buttons reads as a second design system. */
+  --button-primary-base: #6454e9;
+  --button-primary-hover: #705ff0;
+  --button-primary-active: #5949d6;
+  --button-primary-foreground: #ffffff;
   --button-secondary-base: #fcfcfc;
   --button-secondary-hover: #f8f8f8;
   --button-ghost-hover: rgba(0, 0, 0, 0.031);
@@ -457,7 +462,10 @@
     --text-on-brand-weak: rgba(255, 255, 255, 0.404);
     --text-on-brand-weaker: rgba(255, 255, 255, 0.266);
     --text-on-brand-strong: rgba(255, 255, 255, 0.928);
-    --button-primary-base: #ededed;
+    --button-primary-base: #6454e9;
+    --button-primary-hover: #705ff0;
+    --button-primary-active: #5949d6;
+    --button-primary-foreground: #ffffff;
     --button-secondary-base: #1c1c1c;
     --button-secondary-hover: rgba(255, 255, 255, 0.039);
     --button-ghost-hover: rgba(255, 255, 255, 0.031);

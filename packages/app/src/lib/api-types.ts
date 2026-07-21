@@ -21,6 +21,8 @@ export type DeviceInfo = {
   booted?: boolean | null;
   /** Reported by the device adapter when the platform exposes it. */
   osVersion?: string;
+  /** Android platform-tool state; unauthorized/offline hardware stays visible but cannot run. */
+  connectionState?: "connected" | "unauthorized" | "offline";
   platform?: "android" | "ios" | "browser";
   targetKind?: "device" | "browser";
   [key: string]: unknown;

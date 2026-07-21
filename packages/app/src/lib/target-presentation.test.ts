@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   platformLabel,
+  preferredTargetSerial,
   presentTarget,
   targetGroupMatchesQuery,
   targetIsReady,
@@ -34,6 +35,26 @@ test("uses a human fallback while retaining technical identity for search and de
   assert.equal(target.displayName, "Android device");
   assert.equal(target.statusLabel, "Connected");
   assert.match(targetSearchText(device), /emulator-5554/);
+});
+
+test("explains attached Android hardware that still needs authorization", () => {
+  const target = presentTarget({
+    serial: "RQCY104BG8X",
+    name: "Android device",
+    platform: "android",
+    kind: "Physical device",
+    booted: false,
+    connectionState: "unauthorized",
+  });
+  assert.equal(target.statusLabel, "Authorize on phone");
+  assert.match(
+    targetSearchText({
+      serial: "RQCY104BG8X",
+      platform: "android",
+      connectionState: "unauthorized",
+    }),
+    /authorize on phone/,
+  );
 });
 
 test("presents managed browsers as their own target group", () => {
@@ -71,5 +92,34 @@ test("shares one readiness rule across recording and discovery", () => {
   assert.equal(targetIsReady(target, true), true);
   assert.equal(targetIsReady(target, false), false);
   assert.equal(targetIsReady({ ...target, booted: false }, true), false);
+  assert.equal(targetIsReady({ ...target, connectionState: "unauthorized" }, true), false);
   assert.equal(targetIsReady(null, true), false);
+});
+
+test("prefers a controllable target instead of selecting the first stopped simulator", () => {
+  assert.equal(
+    preferredTargetSerial([
+      { serial: "iphone-stopped", platform: "ios", booted: false },
+      {
+        serial: "phone-attached",
+        platform: "android",
+        booted: false,
+        connectionState: "unauthorized",
+      },
+      { serial: "phone-ready", platform: "android", booted: true, connectionState: "connected" },
+    ]),
+    "phone-ready",
+  );
+  assert.equal(
+    preferredTargetSerial([
+      { serial: "iphone-stopped", platform: "ios", booted: false },
+      {
+        serial: "phone-attached",
+        platform: "android",
+        booted: false,
+        connectionState: "unauthorized",
+      },
+    ]),
+    null,
+  );
 });

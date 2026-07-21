@@ -39,6 +39,7 @@ export type Device = {
         ios?: { udid: string };
       }>
     >;
+    boot: (options?: Parameters<NativeDevice["devices"]["boot"]>[0]) => Promise<unknown>;
   };
   apps: {
     open: (options: Parameters<NativeDevice["apps"]["open"]>[0]) => Promise<unknown>;

@@ -197,7 +197,7 @@ export const GLYPH_META: Record<string, { icon: IconName; label: string }> = {
   wait: { icon: "clock", label: "wait" },
   shot: { icon: "camera", label: "screenshot" },
   swipe: { icon: "move", label: "swipe" },
-  ok: { icon: "check", label: "ok" },
+  ok: { icon: "check", label: "check" },
   fail: { icon: "x", label: "fail" },
   ai: { icon: "sparkle", label: "AI heal" },
   dl: { icon: "download", label: "download" },

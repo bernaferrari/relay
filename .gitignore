@@ -20,6 +20,7 @@ packages/*/node_modules/
 *.tsbuildinfo
 runs/
 recipes/.history/
+recipes/.evidence/
 vendor/
 
 *.legacy.css.bak

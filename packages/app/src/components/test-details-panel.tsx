@@ -3,7 +3,7 @@ import { useServer } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { cn } from "../lib/cn";
 import { productIconButton, tabUnderline, tabUnderlineActive } from "../lib/ui";
-import { shellSteps, shellStepsBody, shellStepsHead } from "../lib/shell-layout";
+import { shellAsideDrawer, shellSteps, shellStepsBody, shellStepsHead } from "../lib/shell-layout";
 import { AgentTestComposer } from "./agent-test-composer";
 import { FlowParametersEditor } from "./flow-parameters-editor";
 import { Icon } from "./icon";
@@ -71,7 +71,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
   };
 
   return (
-    <aside class={shellSteps} aria-label="Advanced test editor">
+    <aside class={cn(shellSteps, shellAsideDrawer)} aria-label="Advanced test editor">
       <div class={shellStepsHead}>
         <div class="flex min-h-9 items-center justify-between gap-3">
           <div class="min-w-0">
