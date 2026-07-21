@@ -1,18 +1,156 @@
 import { AppError } from '../../kernel/errors.ts';
 import { buildInPageSwipeGesturePlan } from '../../contracts/scroll-gesture.ts';
+import { isPositiveFiniteRect } from '../../kernel/rect.ts';
+import type { Rect, SnapshotState } from '../../kernel/snapshot.ts';
+import {
+  findLargestViewportRect,
+  findNearestScrollableContainer,
+  isScrollableSnapshotType,
+} from '../../daemon/snapshot-presentation/tree.ts';
 import { pointInsideRect } from '../../utils/rect-center.ts';
 import { MAESTRO_COMPATIBILITY_PRESETS } from './compatibility-policy.ts';
 import { resolveNumeric } from './engine-flow.ts';
 import type { MaestroRuntimeRequest } from './engine-types.ts';
-import type { MaestroCoordinate, MaestroDirection, MaestroSwipeGesture } from './program-ir.ts';
+import type {
+  MaestroCoordinate,
+  MaestroDirection,
+  MaestroSelector,
+  MaestroSwipeGesture,
+} from './program-ir.ts';
 import { operationContext } from './runtime-port-context.ts';
 import { resolveMaestroTarget } from './runtime-port-observation.ts';
+import {
+  filterVisibleMaestroMatches,
+  matchesMaestroTypedSelector,
+  type MaestroPlatform,
+} from './runtime-target-policy.ts';
 import type {
   MaestroRuntimeOperations,
   MaestroSinglePointerGestureInput,
   MaestroSwipeOperation,
   MaestroTargetResolution,
 } from './runtime-port-types.ts';
+
+/**
+ * Builds a Maestro-compatible scroll gesture inside a visible scrollable
+ * viewport. Prefer the nearest eligible scrollable ancestor of a matching
+ * target; otherwise use the largest eligible visible container. This avoids
+ * beginning a screen-centred swipe in an unrelated nested gesture surface.
+ */
+export function resolveMaestroScrollableGesture(
+  snapshot: SnapshotState,
+  selector: MaestroSelector,
+  direction: MaestroDirection,
+  durationMs: number,
+  platform: MaestroPlatform,
+): { gesture: MaestroSinglePointerGestureInput; viewport: Rect } | undefined {
+  const viewport = selectMaestroScrollableViewport(snapshot, selector, direction, platform);
+  if (!viewport) return undefined;
+  const { start, end } = maestroScrollUntilVisibleEndpoints(viewport, direction);
+  return {
+    gesture: {
+      from: start,
+      to: end,
+      durationMs,
+    },
+    viewport,
+  };
+}
+
+function selectMaestroScrollableViewport(
+  snapshot: SnapshotState,
+  selector: MaestroSelector,
+  direction: MaestroDirection,
+  platform: MaestroPlatform,
+): Rect | undefined {
+  const vertical = direction === 'up' || direction === 'down';
+  const scrollable = filterVisibleMaestroMatches({
+    nodes: snapshot.nodes,
+    matches: snapshot.nodes.filter((node) => isScrollableSnapshotType(node.type)),
+    platform,
+  });
+  const applicationViewport =
+    findLargestViewportRect(snapshot.nodes) ?? findLargestPositiveRect(scrollable);
+  if (!applicationViewport || !isPositiveFiniteRect(applicationViewport)) return undefined;
+  const candidates = scrollable.flatMap((node) => {
+    if (!isPositiveFiniteRect(node.rect)) return [];
+    const viewport = intersectRects(node.rect, applicationViewport);
+    if (
+      !viewport ||
+      (vertical ? viewport.height <= viewport.width : viewport.width < viewport.height)
+    ) {
+      return [];
+    }
+    return [{ node, viewport }];
+  });
+  const byIndex = new Map(snapshot.nodes.map((node) => [node.index, node]));
+  const candidateByIndex = new Map(
+    candidates.map((candidate) => [candidate.node.index, candidate]),
+  );
+  for (const target of snapshot.nodes.filter((node) =>
+    matchesMaestroTypedSelector(node, selector),
+  )) {
+    const container = findNearestScrollableContainer(target, byIndex, { includeSelf: true });
+    const candidate = container ? candidateByIndex.get(container.index) : undefined;
+    if (candidate) return candidate.viewport;
+  }
+  return candidates.sort(compareViewportAreaDescending)[0]?.viewport;
+}
+
+function findLargestPositiveRect(
+  nodes: readonly SnapshotState['nodes'][number][],
+): Rect | undefined {
+  let largest: Rect | undefined;
+  for (const node of nodes) {
+    if (
+      isPositiveFiniteRect(node.rect) &&
+      (!largest || node.rect.width * node.rect.height > largest.width * largest.height)
+    ) {
+      largest = node.rect;
+    }
+  }
+  return largest;
+}
+
+function intersectRects(left: Rect, right: Rect): Rect | undefined {
+  const x = Math.max(left.x, right.x);
+  const y = Math.max(left.y, right.y);
+  const width = Math.min(left.x + left.width, right.x + right.width) - x;
+  const height = Math.min(left.y + left.height, right.y + right.height) - y;
+  return width > 0 && height > 0 ? { x, y, width, height } : undefined;
+}
+
+function compareViewportAreaDescending(
+  left: { readonly viewport: Rect },
+  right: { readonly viewport: Rect },
+): number {
+  return right.viewport.width * right.viewport.height - left.viewport.width * left.viewport.height;
+}
+
+function maestroScrollUntilVisibleEndpoints(
+  viewport: Rect,
+  direction: MaestroDirection,
+): { start: { x: number; y: number }; end: { x: number; y: number } } {
+  // Maestro 2.5.1 Orchestra converts ScrollDirection to the opposite
+  // SwipeDirection, then calls Maestro.swipeFromCenter. The iOS and Android
+  // drivers start at that center and end at 10% or 90% of the active axis. For
+  // a screen-sized viewport this is the exact upstream gesture. A selected
+  // scroll container keeps the same semantics while ensuring the origin belongs
+  // to the scroll target.
+  const center = pointInViewport(viewport, 0.5, 0.5);
+  const near = MAESTRO_COMPATIBILITY_PRESETS.scrollUntilVisibleSwipe.nearEdgeFraction;
+  const far = MAESTRO_COMPATIBILITY_PRESETS.scrollUntilVisibleSwipe.farEdgeFraction;
+  switch (direction) {
+    case 'up':
+      return { start: center, end: pointInViewport(viewport, 0.5, far) };
+    case 'down':
+      return { start: center, end: pointInViewport(viewport, 0.5, near) };
+    case 'left':
+      return { start: center, end: pointInViewport(viewport, far, 0.5) };
+    case 'right':
+      return { start: center, end: pointInViewport(viewport, near, 0.5) };
+  }
+}
 
 export async function resolveMaestroSwipeOperation(
   authored: MaestroSwipeGesture,
