@@ -284,7 +284,7 @@ function createDaemonMaestroRuntimeParts(options: CreateDaemonMaestroRuntimeOper
       await invokeMutation({ kind: 'pressKey', key: 'dismiss' }, context, 'deferred');
     },
     waitForAnimationToEnd: async (input, context) => {
-      await waitForMaestroAnimationToEnd({
+      const visualStabilityReached = await waitForMaestroAnimationToEnd({
         timeoutMs:
           input.timeoutMs ?? MAESTRO_COMPATIBILITY_PRESETS.command.waitForAnimationToEndTimeoutMs,
         now: options.dependencies.now,
@@ -298,6 +298,7 @@ function createDaemonMaestroRuntimeParts(options: CreateDaemonMaestroRuntimeOper
           });
         },
       });
+      return { visualStabilityReached };
     },
     takeScreenshot: async (input) => ({
       artifactPaths: artifactPathsFromData(await invoke({ kind: 'screenshot', path: input.path })),
@@ -373,10 +374,17 @@ export function createDaemonMaestroRuntimePort(
   const { operations, snapshots, readMetrics } = createDaemonMaestroRuntimeParts(options);
   return {
     execute: async (request: MaestroRuntimeRequest): Promise<MaestroRuntimeResult> => {
-      if (maestroCommandRequiresSettledPredecessor(request.command)) {
-        await snapshots.settlePending(operationContext(request, request.command));
+      const context = operationContext(request, request.command);
+      const visualStabilityBarrier = request.command.kind === 'waitForAnimationToEnd';
+      if (maestroCommandRequiresSettledPredecessor(request.command) && !visualStabilityBarrier) {
+        await snapshots.settlePending(context);
       }
-      return await executeMaestroRuntimeCommand(request, operations);
+      const result = await executeMaestroRuntimeCommand(request, operations);
+      if (visualStabilityBarrier && result.visualStabilityReached === true) {
+        snapshots.consumeStabilityFromVisualWait(context);
+      }
+      delete result.visualStabilityReached;
+      return result;
     },
     observe: async (request) => {
       const observation = await observeMaestroCondition(request, operations);
