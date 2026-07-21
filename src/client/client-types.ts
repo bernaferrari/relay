@@ -261,6 +261,19 @@ export type SessionCloseResult = {
   identifiers: AgentDeviceIdentifiers;
 };
 
+export type SessionSaveScriptOptions = AgentDeviceRequestOverrides & {
+  path?: string;
+  /** Atomically replace an existing target instead of refusing publication. */
+  force?: boolean;
+};
+
+export type SessionSaveScriptResult = {
+  session: string;
+  savedScript: string;
+  actionCount: number;
+  identifiers: AgentDeviceIdentifiers;
+};
+
 export type CloudArtifactsOptions = AgentDeviceRequestOverrides & {
   provider?: string;
   providerSessionId?: string;
@@ -308,6 +321,7 @@ export type AppOpenOptions = AgentDeviceRequestOverrides &
 
 export type AppOpenResult = {
   session: string;
+  warnings?: string[];
   sessionStateDir?: string;
   runnerLogPath?: string;
   requestLogPath?: string;
@@ -1162,6 +1176,7 @@ export type AgentDeviceClient = {
         force?: boolean;
       },
     ) => Promise<SessionCloseResult>;
+    saveScript: (options?: SessionSaveScriptOptions) => Promise<SessionSaveScriptResult>;
     artifacts: (options?: CloudArtifactsOptions) => Promise<AgentArtifactsResult>;
   };
   apps: {

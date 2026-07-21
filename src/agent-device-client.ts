@@ -60,6 +60,8 @@ import type {
   SwipeGestureOptions,
   PinchOptions,
   RotateGestureOptions,
+  SessionSaveScriptOptions,
+  SessionSaveScriptResult,
   TransformGestureOptions,
 } from './client/client-types.ts';
 import type { CommandResult } from './core/command-descriptor/command-result.ts';
@@ -195,6 +197,30 @@ export function createAgentDeviceClient(
           clearMetroSessionHintsQuietly(config, options);
         }
       },
+      saveScript: async (
+        options: SessionSaveScriptOptions = {},
+      ): Promise<SessionSaveScriptResult> => {
+        const data = await execute(
+          INTERNAL_COMMANDS.sessionSaveScript,
+          options.path !== undefined ? [options.path] : [],
+          options,
+          { force: options.force },
+        );
+        const actionCount = data.actionCount;
+        if (typeof actionCount !== 'number' || !Number.isInteger(actionCount) || actionCount < 0) {
+          throw new AppError(
+            'COMMAND_FAILED',
+            'Daemon returned an invalid saved-script action count.',
+          );
+        }
+        const publishedSession = readRequiredString(data, 'session');
+        return {
+          session: publishedSession,
+          savedScript: readRequiredString(data, 'savedScript'),
+          actionCount,
+          identifiers: { session: publishedSession },
+        };
+      },
       artifacts: async (options = {}) =>
         await executeCommand<AgentArtifactsResult>('artifacts', options),
     },
@@ -232,8 +258,12 @@ export function createAgentDeviceClient(
         const device = normalizeOpenDevice(data);
         const appBundleId = readOptionalString(data, 'appBundleId');
         const appId = appBundleId;
+        const warnings = Array.isArray(data.warnings)
+          ? data.warnings.filter((warning): warning is string => typeof warning === 'string')
+          : [];
         return {
           session,
+          ...(warnings.length > 0 ? { warnings } : {}),
           sessionStateDir: readOptionalString(data, 'sessionStateDir'),
           eventLogPath: readOptionalString(data, 'eventLogPath'),
           appName: readOptionalString(data, 'appName'),
