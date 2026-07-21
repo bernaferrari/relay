@@ -221,3 +221,7 @@ test('clampGestureCoordinate rounds values and clamps them into the safe gesture
   assert.equal(clampGestureCoordinate(2.6, 8, 100), 8);
   assert.equal(clampGestureCoordinate(97.6, 8, 100), 92);
 });
+
+test('clampGestureCoordinate returns the lower bound for non-finite coordinates', () => {
+  assert.equal(clampGestureCoordinate(Number.POSITIVE_INFINITY, 8, 100), 8);
+});
