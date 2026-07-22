@@ -700,15 +700,15 @@ function androidStatusBarNodes(startIndex: number, clockLabel = '12:23') {
   const root = startIndex;
   return [
     {
+      // The outermost status-bar node a real capture starts with.
       index: root,
       depth: 0,
       type: 'android.widget.FrameLayout',
+      identifier: 'com.android.systemui:id/status_bar_launch_animation_container',
       bundleId: ANDROID_SYSTEM_UI_BUNDLE_ID,
       rect: { x: 0, y: 0, width: 1344, height: 159 },
     },
     {
-      // The marker every real status-bar capture carries; the window-run
-      // drops as a whole because this member matches the status_bar* prefix.
       index: root + 1,
       depth: 1,
       parentIndex: root,

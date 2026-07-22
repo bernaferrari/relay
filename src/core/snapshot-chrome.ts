@@ -1,6 +1,7 @@
 import {
   ANDROID_SYSTEM_CHROME_PACKAGE,
-  isAndroidSystemChromeResourceId,
+  hasAndroidSystemChromeProvenance,
+  isAndroidSystemChromeWindowResourceId,
 } from '../contracts/android-system-chrome.ts';
 import type { SnapshotNode } from '../kernel/snapshot.ts';
 import { isAndroidInputMethodSnapshotNode } from '../snapshot/android-input-method-overlays.ts';
@@ -202,18 +203,23 @@ function collectSubtreeIndexes(
   return indexes;
 }
 
-// SystemUI hosts BOTH persistent chrome and actionable overlays (volume
-// panel, media/output pickers), so chrome is never a package-level fact.
-// Within `com.android.systemui`, only window-runs carrying a status-bar or
-// navigation-bar marker resource-id drop; every other systemui surface is
-// kept. Marker set live-verified on the emulator: the status-bar window
-// carries `status_bar*` ids throughout while the VolumeDialog window carries
-// only `volume_dialog*` ids (`input_method_nav*` bars are IME-owned and
-// handled by the IME tier). The marker constants and the resource-id-level
-// predicate live in `contracts/android-system-chrome.ts` so the Android
-// helper content classifier reuses the same classification.
-function hasAndroidSystemChromeMarker(node: SnapshotNode): boolean {
-  return isAndroidSystemChromeResourceId(node.identifier ?? '');
+// A node is chrome when it sits in the status-bar/nav-bar container's subtree,
+// read from whichever source still has the container: the tree when it survived
+// the walk, else the `systemChrome` the walk stamped before dropping it.
+function isAndroidSystemChromeNode(
+  node: SnapshotNode,
+  byIndex: Map<number, SnapshotNode>,
+): boolean {
+  if (node.bundleId !== ANDROID_SYSTEM_CHROME_PACKAGE) return false;
+  if (hasAndroidSystemChromeProvenance(node)) return true;
+  const seen = new Set<number>();
+  let current: SnapshotNode | undefined = node;
+  while (current?.bundleId === ANDROID_SYSTEM_CHROME_PACKAGE && !seen.has(current.index)) {
+    if (isAndroidSystemChromeWindowResourceId(current.identifier)) return true;
+    seen.add(current.index);
+    current = current.parentIndex === undefined ? undefined : byIndex.get(current.parentIndex);
+  }
+  return false;
 }
 
 /**
@@ -249,7 +255,7 @@ function collectAndroidSettleChrome(
   const systemChromeIndexes =
     appBundleId === ANDROID_SYSTEM_CHROME_PACKAGE
       ? new Set<number>()
-      : collectAndroidSystemChromeRunIndexes(nodes, byIndex, imeIndexes);
+      : collectAndroidSystemChromeIndexes(nodes, byIndex, imeIndexes);
   // The one surviving container line per IME run; the rest of the run and all
   // status/nav-bar chrome never spend diff/tail budget.
   const strippedIndexes = new Set(
@@ -268,47 +274,21 @@ function collectAndroidSettleChrome(
 }
 
 /**
- * Systemui window-runs (contiguous same-package parent chains) that contain a
- * status/nav-bar marker anywhere in the run. The whole marked run drops —
- * unmarked wrappers above `status_bar_container` churn with the bar itself —
- * while unmarked runs (volume panel, media pickers) are kept whole.
+ * Systemui nodes belonging to the status-bar / navigation-bar window. Chrome
+ * identity is per node and intrinsic, so an actionable systemui surface sharing
+ * a window with the status bar (an expanded quick-settings shade hosts both,
+ * #1318/#1319) keeps its own nodes.
  */
-function collectAndroidSystemChromeRunIndexes(
+function collectAndroidSystemChromeIndexes(
   nodes: SnapshotNode[],
   byIndex: Map<number, SnapshotNode>,
   imeIndexes: ReadonlySet<number>,
 ): Set<number> {
-  const systemUiIndexes = new Set(
+  return new Set(
     nodes
-      .filter(
-        (node) => node.bundleId === ANDROID_SYSTEM_CHROME_PACKAGE && !imeIndexes.has(node.index),
-      )
+      .filter((node) => !imeIndexes.has(node.index) && isAndroidSystemChromeNode(node, byIndex))
       .map((node) => node.index),
   );
-  if (systemUiIndexes.size === 0) return new Set();
-  // Union-find-lite: each systemui node resolves to its run root (the nearest
-  // ancestor chain member whose parent is absent or not systemui).
-  const runRootByIndex = new Map<number, number>();
-  const resolveRunRoot = (index: number): number => {
-    const cached = runRootByIndex.get(index);
-    if (cached !== undefined) return cached;
-    const parentIndex = byIndex.get(index)?.parentIndex;
-    const root =
-      parentIndex !== undefined && systemUiIndexes.has(parentIndex)
-        ? resolveRunRoot(parentIndex)
-        : index;
-    runRootByIndex.set(index, root);
-    return root;
-  };
-  const markedRunRoots = new Set(
-    [...systemUiIndexes]
-      .filter((index) => {
-        const node = byIndex.get(index);
-        return node !== undefined && hasAndroidSystemChromeMarker(node);
-      })
-      .map((index) => resolveRunRoot(index)),
-  );
-  return new Set([...systemUiIndexes].filter((index) => markedRunRoots.has(resolveRunRoot(index))));
 }
 
 /** iOS keyboard-window chrome unioned with Android IME/system chrome. */

@@ -2,12 +2,19 @@ import type { RawSnapshotNode, Rect, SnapshotOptions } from '../../kernel/snapsh
 import { parseBounds } from '../../utils/bounds.ts';
 import { isScrollableType } from '../../utils/scrollable.ts';
 import { intersectArea } from '../../utils/screenshot-geometry.ts';
+import {
+  type AndroidSystemChromeProvenance,
+  isAndroidSystemChromeWindowResourceId,
+} from '../../contracts/android-system-chrome.ts';
+
+type AndroidRawSnapshotNode = RawSnapshotNode & AndroidSystemChromeProvenance;
 
 export type AndroidSnapshotAnalysis = {
   rawNodeCount: number;
   maxDepth: number;
 };
 
+/** Parsed node metadata plus status/navigation subtree provenance when present. */
 export type AndroidUiNodeMetadata = {
   text: string | null;
   desc: string | null;
@@ -32,14 +39,45 @@ export type AndroidUiNodeMetadata = {
   windowActive?: boolean;
   windowFocused?: boolean;
   windowRect?: Rect;
-};
+} & AndroidSystemChromeProvenance;
 
+/**
+ * Membership of the status-bar/nav-bar subtree over a `<node>` token stream: the
+ * container id is the only chrome signal in the tree, its clock/battery/wifi
+ * leaves carrying no marker of their own.
+ */
+function createAndroidChromeSubtreeTracker() {
+  const openElements: boolean[] = [];
+  const inChromeNow = (): boolean => openElements[openElements.length - 1] === true;
+  return {
+    /** Enters an opening tag; returns whether that node is inside the chrome subtree. */
+    open(resourceId: string | null | undefined, selfClosing: boolean): boolean {
+      const inChrome = inChromeNow() || isAndroidSystemChromeWindowResourceId(resourceId);
+      if (!selfClosing) openElements.push(inChrome);
+      return inChrome;
+    },
+    /** Handles `</node>`. */
+    close(): void {
+      openElements.pop();
+    },
+  };
+}
+
+/** Streams `<node>` metadata in document order, carrying status-bar/nav-bar provenance. */
 export function* androidUiNodes(xml: string): IterableIterator<AndroidUiNodeMetadata> {
-  const nodeRegex = /<node\b[^>]*>/g;
-  let match = nodeRegex.exec(xml);
+  const tokenRegex = /<node\b[^>]*>|<\/node>/g;
+  const chrome = createAndroidChromeSubtreeTracker();
+  let match = tokenRegex.exec(xml);
   while (match) {
-    yield readAndroidUiNodeMetadata(match[0]);
-    match = nodeRegex.exec(xml);
+    const token = match[0];
+    if (token.startsWith('</node')) {
+      chrome.close();
+    } else {
+      const metadata = readAndroidUiNodeMetadata(token);
+      const inChrome = chrome.open(metadata.resourceId, token.endsWith('/>'));
+      yield inChrome ? { ...metadata, systemChrome: true } : metadata;
+    }
+    match = tokenRegex.exec(xml);
   }
 }
 
@@ -67,14 +105,14 @@ export function parseUiHierarchy(
 }
 
 export type AndroidBuiltSnapshot = {
-  nodes: RawSnapshotNode[];
+  nodes: AndroidRawSnapshotNode[];
   sourceNodes: AndroidUiHierarchy[];
   truncated?: boolean;
   analysis: AndroidSnapshotAnalysis;
 };
 
 type AndroidSnapshotBuildState = {
-  nodes: RawSnapshotNode[];
+  nodes: AndroidRawSnapshotNode[];
   sourceNodes: AndroidUiHierarchy[];
   maxNodes?: number;
   maxDepth: number;
@@ -115,6 +153,16 @@ export function buildUiHierarchySnapshot(
   return state.truncated ? { ...snapshot, truncated: true } : snapshot;
 }
 
+/**
+ * Chrome provenance is stamped HERE, while the tree still has the wrapper that
+ * carries it. `shouldIncludeAndroidNode` drops `status_bar*`/`navigation_bar*`
+ * wrappers and re-parents their children upward, so downstream classifiers see
+ * a clock/battery/wifi leaf sitting next to real content with nothing left to
+ * say which region it came from. Recording it on the way down (like
+ * `ancestorHittable`) means the answer is identical in every capture shape —
+ * `--raw` keeps the wrapper, a default capture drops it, both stamp the same
+ * descendants.
+ */
 function walkUiHierarchyNode(
   state: AndroidSnapshotBuildState,
   node: AndroidNode,
@@ -122,6 +170,7 @@ function walkUiHierarchyNode(
   parentIndex?: number,
   ancestorHittable: boolean = false,
   ancestorCollection: boolean = false,
+  ancestorSystemChrome: boolean = false,
 ): void {
   if (state.maxNodes !== undefined && state.nodes.length >= state.maxNodes) {
     state.truncated = true;
@@ -138,8 +187,10 @@ function walkUiHierarchyNode(
         hasInteractiveDescendant(state, node),
         ancestorCollection,
       );
+  const systemChrome =
+    ancestorSystemChrome || isAndroidSystemChromeWindowResourceId(node.identifier);
   const currentIndex = include
-    ? appendAndroidSnapshotNode(state, node, depth, parentIndex)
+    ? appendAndroidSnapshotNode(state, node, depth, parentIndex, systemChrome)
     : parentIndex;
   const nextAncestorHittable = ancestorHittable || Boolean(node.hittable);
   const nextAncestorCollection = ancestorCollection || isCollectionContainerType(node.type);
@@ -151,6 +202,7 @@ function walkUiHierarchyNode(
       currentIndex,
       nextAncestorHittable,
       nextAncestorCollection,
+      systemChrome,
     );
     if (state.truncated) return;
   }
@@ -160,7 +212,8 @@ function appendAndroidSnapshotNode(
   state: AndroidSnapshotBuildState,
   node: AndroidNode,
   depth: number,
-  parentIndex?: number,
+  parentIndex: number | undefined,
+  systemChrome: boolean,
 ): number {
   const currentIndex = state.nodes.length;
   state.sourceNodes.push(node);
@@ -180,6 +233,7 @@ function appendAndroidSnapshotNode(
     parentIndex,
     ...(node.hiddenContentAbove ? { hiddenContentAbove: true } : {}),
     ...(node.hiddenContentBelow ? { hiddenContentBelow: true } : {}),
+    ...(systemChrome ? { systemChrome: true } : {}),
   });
   return currentIndex;
 }

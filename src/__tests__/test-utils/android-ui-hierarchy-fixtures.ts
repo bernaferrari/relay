@@ -73,6 +73,16 @@ export function walkNonRawAndroidFixture(rawNodes: RawSnapshotNode[]): RawSnapsh
 }
 
 /**
+ * Runs a fixture through the REAL interactive-only walk — the shape `--settle`
+ * and `wait stable` consume, since their loop captures with
+ * `interactiveOnly: true` (`stable-capture.ts`).
+ */
+export function walkInteractiveOnlyAndroidFixture(rawNodes: RawSnapshotNode[]): RawSnapshotNode[] {
+  const tree = rawFixtureToAndroidTree(rawNodes);
+  return buildUiHierarchySnapshot(tree, undefined, { raw: false, interactiveOnly: true }).nodes;
+}
+
+/**
  * Real device capture (checkout-form fixture app, Gboard open, status bar
  * visible) archived at `~/.agent-device-bench/replay-runs/android-ime/raw-ime2.json`
  * (#1251). This is the `--raw` tree: `--raw` keeps every structural wrapper
