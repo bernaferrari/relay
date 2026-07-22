@@ -279,7 +279,7 @@ export async function longPressTarget(
       }),
     );
   } else {
-    throw new Error("long-press requires a target");
+    throw new Error("hold requires a target");
   }
 }
 

@@ -77,7 +77,12 @@ export function buildTapTarget(
 ): StepTarget {
   const w = bounds?.width ?? 1;
   const h = bounds?.height ?? 1;
-  const point = { x: Math.round(fx * w), y: Math.round(fy * h) };
+  const point = {
+    x: Math.round(fx * w),
+    y: Math.round(fy * h),
+    anchor: { horizontal: "left", vertical: "top" } as const,
+    ...(bounds ? { referenceBounds: { ...bounds } } : {}),
+  };
   if (!node) return { point };
   const label = (node.label ?? node.value ?? "").trim();
   const target: StepTarget = { point };
@@ -116,6 +121,7 @@ function recordedNode(node: SnapshotNode): RecordedNodeEvidence {
     ...(node.type ? { type: node.type } : {}),
     ...(node.ref ? { ref: node.ref.startsWith("@") ? node.ref : `@${node.ref}` } : {}),
     ...(node.index !== undefined ? { index: node.index } : {}),
+    ...(node.parentIndex !== undefined ? { parentIndex: node.parentIndex } : {}),
     ...(node.rect ? { rect: { ...node.rect } } : {}),
   };
 }
@@ -187,6 +193,20 @@ function recordedEvidence(
       : {}),
     ...(node ? { node: recordedNode(node) } : {}),
     ...(node && snap ? { ancestors: ancestryOf(snap, node).slice(1, 9).map(recordedNode) } : {}),
+    ...(snap
+      ? {
+          nodes: snap.nodes
+            .filter(
+              (candidate) =>
+                candidate.rect &&
+                (candidate.hittable ||
+                  candidate.ref ||
+                  Boolean((candidate.label ?? candidate.value ?? "").trim())),
+            )
+            .slice(0, 256)
+            .map(recordedNode),
+        }
+      : {}),
     ...(hasPointer ? { candidates: recordedCandidates(snap, node, fx, fy) } : {}),
   };
 }
@@ -394,8 +414,16 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
      * as the emergency fallback); the runner's ref → label → text → point order
      * must not silently override the user's intent.
      */
-    async function recordPick(strategy: PickStrategy, fx: number, fy: number): Promise<void> {
-      const target = targetFromStrategy(strategy, fx, fy, server.snapshot()?.bounds);
+    async function recordPick(
+      strategy: PickStrategy,
+      fx: number,
+      fy: number,
+      anchor: {
+        horizontal: "left" | "center" | "right";
+        vertical: "top" | "center" | "bottom";
+      } = { horizontal: "left", vertical: "top" },
+    ): Promise<void> {
+      const target = targetFromStrategy(strategy, fx, fy, server.snapshot()?.bounds, anchor);
       const id = await ensureRecordingTarget();
       if (!id) return;
       const frame = latestFrame();

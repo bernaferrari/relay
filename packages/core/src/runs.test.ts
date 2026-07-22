@@ -94,3 +94,19 @@ test("non-terminal and incomplete schema-v5 runs are not exposed", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("persisted browser runs retain browser identity instead of becoming Android", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-browser-run-"));
+  const run = {
+    ...job(join(root, "run")),
+    targetKind: "browser" as const,
+    browserTargetId: "browser-chat",
+  };
+  try {
+    const persisted = await persistRun(run);
+    assert.equal(persisted.platform, "browser");
+    assert.equal(persisted.serial, "browser-chat");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

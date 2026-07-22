@@ -2,10 +2,10 @@ import type http from "node:http";
 import { redactValue } from "@relay/core";
 
 export const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
     "Content-Type, Authorization, X-Organization-Id, X-Project-Id, Idempotency-Key",
+  "Access-Control-Max-Age": "600",
 };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;

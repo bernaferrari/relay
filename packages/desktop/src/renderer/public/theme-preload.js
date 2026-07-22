@@ -1,4 +1,4 @@
-/* AgentBoard FOUC preload — namespaced for relay */
+/* Apply the saved theme before Solid mounts, avoiding a bright first frame. */
 (function () {
   try {
     var key = "relay-theme-id";
@@ -19,18 +19,12 @@
       scheme === "dark" ||
       (scheme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     var mode = isDark ? "dark" : "light";
-
     document.documentElement.dataset.theme = themeId;
     document.documentElement.dataset.colorScheme = mode;
-    // AgentBoard hard plate
     document.documentElement.style.backgroundColor = isDark ? "#080808" : "#fafafa";
-
-    var metas = document.querySelectorAll("meta[name='theme-color']");
-    if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#080808" : "#fafafa");
-
-    // Static theme.css FOUC is OC-2; skip cache only when default plate matches
+    var meta = document.querySelector("meta[name='theme-color']");
+    if (meta) meta.setAttribute("content", isDark ? "#080808" : "#fafafa");
     if (themeId === "oc-2") return;
-
     var css =
       localStorage.getItem("relay-theme-css-" + mode) ||
       localStorage.getItem("grok-device-theme-css-" + mode);
@@ -46,12 +40,10 @@
       css +
       "}";
     document.head.appendChild(style);
-
     var bg = (css.match(/--background-base:\s*([^;]+);/) || [])[1];
     if (bg) {
-      bg = bg.trim();
-      document.documentElement.style.backgroundColor = bg;
-      if (metas.length > 0) metas[0].setAttribute("content", bg);
+      document.documentElement.style.backgroundColor = bg.trim();
+      if (meta) meta.setAttribute("content", bg.trim());
     }
   } catch {}
 })();

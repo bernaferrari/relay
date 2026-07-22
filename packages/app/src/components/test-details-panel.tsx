@@ -4,17 +4,15 @@ import { useRecipeDraft } from "../context/recipe-draft";
 import { cn } from "../lib/cn";
 import { productIconButton, tabUnderline, tabUnderlineActive } from "../lib/ui";
 import { shellAsideDrawer, shellSteps, shellStepsBody, shellStepsHead } from "../lib/shell-layout";
-import { AgentTestComposer } from "./agent-test-composer";
 import { FlowParametersEditor } from "./flow-parameters-editor";
 import { Icon } from "./icon";
-import { RecipeStepsEditor } from "./step-list";
 
-type DetailsTab = "steps" | "inputs" | "yaml";
+type DetailsTab = "properties" | "source";
 
-export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () => void }) {
+export function TestSettingsPanel(props: { onClose: () => void; onOpenData: () => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
-  const [tab, setTab] = createSignal<DetailsTab>("steps");
+  const [tab, setTab] = createSignal<DetailsTab>("properties");
   const [yamlSource, setYamlSource] = createSignal<string | null>(null);
   const [yamlDraft, setYamlDraft] = createSignal("");
   const [yamlEditing, setYamlEditing] = createSignal(false);
@@ -28,7 +26,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
   createEffect(() => {
     const recipe = server.selectedRecipe();
     const updatedAt = recipe?.updatedAt;
-    if (tab() !== "yaml" || !recipe) return;
+    if (tab() !== "source" || !recipe) return;
     const request = ++yamlRequest;
     setYamlSource(null);
     setYamlDraft("");
@@ -71,12 +69,12 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
   };
 
   return (
-    <aside class={cn(shellSteps, shellAsideDrawer)} aria-label="Advanced test editor">
+    <aside class={cn(shellSteps, shellAsideDrawer)} aria-label="Test details">
       <div class={shellStepsHead}>
         <div class="flex min-h-9 items-center justify-between gap-3">
           <div class="min-w-0">
             <span class="block text-[10px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
-              Advanced editor
+              Test
             </span>
             <strong class="mt-0.5 block truncate text-[13px] font-semibold text-[var(--text-strong)]">
               {draft.title() || "Untitled test"}
@@ -85,14 +83,14 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
           <button
             type="button"
             class={productIconButton}
-            aria-label="Close advanced editor"
+            aria-label="Close test details"
             onClick={props.onClose}
           >
             <Icon name="x" size={14} />
           </button>
         </div>
-        <div class="mt-2 flex items-center" role="tablist" aria-label="Advanced test panels">
-          <For each={["steps", "inputs", "yaml"] as const}>
+        <div class="mt-2 flex items-center" role="tablist" aria-label="Test detail panels">
+          <For each={["properties", "source"] as const}>
             {(item) => (
               <button
                 type="button"
@@ -101,12 +99,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
                 class={cn(tabUnderline, tab() === item && tabUnderlineActive)}
                 onClick={() => setTab(item)}
               >
-                {item === "steps" ? "All steps" : item === "inputs" ? "Inputs" : "YAML"}
-                <Show when={item === "steps"}>
-                  <span class="min-w-4 rounded-full bg-surface-weak px-1 text-center text-[11px]/4 text-text-weak">
-                    {draft.steps().length}
-                  </span>
-                </Show>
+                {item === "properties" ? "Properties" : "Source"}
               </button>
             )}
           </For>
@@ -114,15 +107,30 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
       </div>
 
       <div class={shellStepsBody} data-editor-tab={tab()}>
-        <Show when={tab() === "steps"}>
-          <div class="flex h-full min-h-0 flex-col">
-            <AgentTestComposer />
-            <RecipeStepsEditor />
-          </div>
-        </Show>
-
-        <Show when={tab() === "inputs"}>
-          <div class="grid content-start gap-4 p-4">
+        <Show when={tab() === "properties"}>
+          <div class="grid content-start gap-5 p-4">
+            <section class="grid gap-3">
+              <label class="grid gap-1.5">
+                <span class="text-[10.5px] font-medium text-[var(--text-weak)]">Name</span>
+                <input
+                  class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors duration-150 focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
+                  value={draft.title()}
+                  placeholder="Untitled test"
+                  spellcheck={false}
+                  onInput={(event) => draft.setTitle(event.currentTarget.value)}
+                />
+              </label>
+              <label class="grid gap-1.5">
+                <span class="text-[10.5px] font-medium text-[var(--text-weak)]">Description</span>
+                <textarea
+                  class="min-h-[76px] w-full resize-none rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-colors duration-150 focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
+                  value={draft.description()}
+                  placeholder="What this test verifies"
+                  onInput={(event) => draft.setDescription(event.currentTarget.value)}
+                />
+              </label>
+            </section>
+            <div class="h-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
             <FlowParametersEditor />
             <div class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] pt-3.5">
               <div class="flex min-w-0 items-center gap-2.5">
@@ -151,7 +159,7 @@ export function TestDetailsPanel(props: { onClose: () => void; onOpenData: () =>
           </div>
         </Show>
 
-        <Show when={tab() === "yaml"}>
+        <Show when={tab() === "source"}>
           <div class="flex h-full min-h-0 flex-col overflow-hidden">
             <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
               <span class="text-[11px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">

@@ -6,6 +6,21 @@ describe("sentenceForStep", () => {
   it("formats tap with label", () => {
     assert.equal(sentenceForStep({ kind: "tap", target: { label: "Sign in" } }), 'Tap "Sign in"');
   });
+  it("describes multi-tap and hold gestures without changing the target", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "tap",
+        gesture: "multi",
+        tapCount: 4,
+        target: { label: "Like" },
+      }),
+      '4 taps "Like"',
+    );
+    assert.equal(
+      sentenceForStep({ kind: "tap", gesture: "hold", target: { label: "Message" } }),
+      'Hold "Message"',
+    );
+  });
   it("hides a recorded element ref behind its accessibility name", () => {
     assert.equal(
       sentenceForStep({

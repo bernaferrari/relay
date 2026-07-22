@@ -121,8 +121,9 @@
   --rail-top-pad: 16px;
 }
 .qa--desktop {
-  --traffic-pad: 12px;
-  --rail-top-pad: 16px;
+  /* Keep app chrome clear of the native macOS traffic lights. */
+  --traffic-pad: 78px;
+  --rail-top-pad: 46px;
 }
 
 .btn-primary-ink {

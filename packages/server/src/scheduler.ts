@@ -1,6 +1,7 @@
 import {
   buildTargetProfiles,
   enqueueJob,
+  freezeRecipeGraph,
   listDevices,
   listSchedules,
   listTargets,
@@ -23,6 +24,7 @@ export async function runDueSchedules(at = Date.now()): Promise<void> {
     const recipe = await readRecipe(schedule.recipeId);
     await markScheduleRun(schedule.id, at);
     if (!recipe || recipe.quarantined) continue;
+    const recipeGraph = await freezeRecipeGraph(recipe);
     const variables = await readProjectVariables(schedule.projectId);
     const matrix = await prepareRunMatrix({
       variables: variables.value,
@@ -33,6 +35,8 @@ export async function runDueSchedules(at = Date.now()): Promise<void> {
     for (const item of matrix.cases) {
       enqueueJob({
         recipe: schedule.recipeId,
+        recipeSnapshot: recipe,
+        recipeGraph,
         ...(schedule.targetKind === "browser"
           ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
           : {

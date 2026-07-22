@@ -3,7 +3,6 @@ import { useServer, type RecipeStep } from "../context/server";
 import { titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { fieldInput, fieldLabel, mono, propRow } from "../lib/ui";
-import { ManualTarget } from "./step-list-controls";
 import type { StepEditorFamilyProps } from "./step-editor-types";
 
 const valueCls = cn(fieldInput, "min-w-0 flex-1");
@@ -13,10 +12,6 @@ export function FlowStepEditors(props: StepEditorFamilyProps): JSX.Element {
   const server = useServer();
   const kind = () => props.step().kind;
   const onEdit = (next: RecipeStep) => props.onChange(next);
-  const target = props.target;
-  const strategy = props.strategy;
-  const setStrategy = props.onStrategy;
-  const setTarget = props.onPatchTarget;
   return (
     <>
       <Show when={kind() === "flow"}>
@@ -38,37 +33,6 @@ export function FlowStepEditors(props: StepEditorFamilyProps): JSX.Element {
                 </Show>
                 <For each={flows}>{(f) => <option value={f.id}>{f.title}</option>}</For>
               </select>
-            </div>
-          );
-        })()}
-      </Show>
-
-      <Show when={kind() === "long-press"}>
-        <ManualTarget
-          target={target}
-          strategy={strategy}
-          onStrategy={setStrategy}
-          onPatch={setTarget}
-          autofocus={props.autofocus}
-          onAutofocused={props.onAutofocused}
-        />
-        {(() => {
-          const s = props.step();
-          if (s.kind !== "long-press") return null;
-          return (
-            <div class={propRow}>
-              <span class={fieldLabel}>Duration</span>
-              <span class="inline-flex items-center gap-1.5">
-                <input
-                  class={cn(valueTimeoutCls, mono)}
-                  type="number"
-                  min={100}
-                  max={10000}
-                  value={s.durationMs ?? 700}
-                  onInput={(e) => onEdit({ ...s, durationMs: Number(e.currentTarget.value) })}
-                />
-                <span class="text-12-regular text-text-weak">ms</span>
-              </span>
             </div>
           );
         })()}

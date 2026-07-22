@@ -46,12 +46,54 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     /** Selection changes we caused ourselves (auto-fork) must not reseed the
      *  draft — the user may have kept editing while the fork was in flight. */
     let skipReseedFor: string | null = null;
+    const draftCache = new Map<
+      string,
+      {
+        title: string;
+        description: string;
+        parameters: RecipeParameter[];
+        steps: RecipeStep[];
+        source: "custom" | "builtin" | null;
+        expandedFromFlow: string | null;
+        dirty: boolean;
+      }
+    >();
 
     /** Original packaged flow id when draft rows were expanded from planned[]. */
     let expandedFromFlow: string | null = null;
 
     function seedFrom(r: RecipeInfo | null): void {
+      // Selection can change from the library, suites, command palette, or a
+      // completed save. Start the previous valid save before replacing the
+      // signals it reads so rapid navigation never discards the last edit.
+      if (dirty && currentId && currentId !== r?.id) {
+        draftCache.set(currentId, {
+          title: title(),
+          description: description(),
+          parameters: parameters().map((parameter) => ({ ...parameter })),
+          steps: steps().map((step) => structuredClone(step)),
+          source: source(),
+          expandedFromFlow,
+          dirty: true,
+        });
+        if (invalidCount() === 0) void flush();
+      }
       currentId = r?.id ?? null;
+      const cached = r ? draftCache.get(r.id) : undefined;
+      if (cached) {
+        setSource(cached.source);
+        setTitleState(cached.title);
+        setDescriptionState(cached.description);
+        setParametersState(cached.parameters.map((parameter) => ({ ...parameter })));
+        setStepsState(cached.steps.map((step) => structuredClone(step)));
+        setExpandedStep(null);
+        expandedFromFlow = cached.expandedFromFlow;
+        dirty = cached.dirty;
+        setSaveState(invalidCount() > 0 ? "invalid" : "saving");
+        clearTimeout(saveTimer);
+        if (invalidCount() === 0) saveTimer = setTimeout(() => void flush(), 0);
+        return;
+      }
       setSource(r?.source ?? null);
       setTitleState(r?.title ?? "");
       setDescriptionState(r?.description ?? "");
@@ -166,6 +208,8 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       const overridingPackaged = source() === "builtin";
       const saved = await server.saveRecipeRemote({ id, ...body });
 
+      if (saved) draftCache.delete(id);
+
       // The selection (or a newer save) moved on while this was in flight.
       if (currentId !== id || mySeq !== saveSeq) return;
       if (!saved) {
@@ -185,7 +229,10 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       }
     }
 
-    onCleanup(() => clearTimeout(saveTimer));
+    onCleanup(() => {
+      if (dirty && invalidCount() === 0) void flush();
+      clearTimeout(saveTimer);
+    });
 
     function setTitle(v: string): void {
       setTitleState(v);
@@ -227,6 +274,19 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         const tmp = next[index]!;
         next[index] = next[j]!;
         next[j] = tmp;
+        return next;
+      });
+      scheduleSave();
+    }
+
+    function moveStepTo(from: number, to: number): void {
+      if (from === to) return;
+      setStepsState((steps) => {
+        if (from < 0 || from >= steps.length || to < 0 || to >= steps.length) return steps;
+        const next = [...steps];
+        const [step] = next.splice(from, 1);
+        if (!step) return steps;
+        next.splice(to, 0, step);
         return next;
       });
       scheduleSave();
@@ -305,6 +365,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       removeStep,
       duplicateStep,
       moveStep,
+      moveStepTo,
       appendSteps,
       ensureRecordingDraft,
     };

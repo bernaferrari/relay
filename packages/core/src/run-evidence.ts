@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { EvidenceChannel, EvidenceChannelRecord, EvidenceManifest } from "@relay/protocol";
 import { base, type Device } from "./device.js";
 import { now } from "./events.js";
-import { redactValue } from "./redaction.js";
+import { redactValue, visualEvidenceAllowed } from "./redaction.js";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
@@ -50,6 +50,15 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
   channel(handle, "screenshot").startedAt = startedAt;
   channel(handle, "ui-tree").status = "partial";
   channel(handle, "ui-tree").startedAt = startedAt;
+  if (!visualEvidenceAllowed()) {
+    for (const name of ["screenshot", "video", "ui-tree"] as const) {
+      const record = channel(handle, name);
+      record.status = "redacted";
+      record.startedAt = startedAt;
+      record.redactions = 1;
+      record.message = "disabled because visual content cannot be safely redacted";
+    }
+  }
   const crash = channel(handle, "crash");
   crash.status = "denied";
   crash.message = "crash diagnostics require an explicit workspace consent grant";
@@ -175,6 +184,9 @@ export async function startRunEvidence(
       device.observability.logs({ ...base(), action: "start" }),
       5_000,
       "log capture start",
+      async () => {
+        await device.observability.logs({ ...base(), action: "stop" });
+      },
     );
     const record = channel(handle, "logs");
     record.status = "captured";
@@ -209,6 +221,9 @@ export async function startRunEvidence(
         device.observability.crashes({ action: "start", since: startedAt }),
         5_000,
         "crash diagnostics start",
+        async () => {
+          await device.observability.crashes({ action: "dump", since: startedAt });
+        },
       );
       const record = channel(handle, "crash");
       record.status = "captured";
@@ -232,6 +247,9 @@ export async function startRunEvidence(
         }),
         5_000,
         "audio probe start",
+        async () => {
+          await device.observability.audio({ ...base(), action: "probe", probeAction: "stop" });
+        },
       );
       const record = channel(handle, "audio");
       record.status = "captured";
@@ -245,45 +263,50 @@ export async function startRunEvidence(
     }
   }
 
-  try {
-    const runDir = await ensureRunDir(job);
-    const path = join(runDir, "video", "run.mp4");
-    const result = await withTimeout(
-      device.recording.record({
-        ...base(),
-        action: "start",
-        path,
-        fps: 30,
-        quality: "high",
-        hideTouches: true,
-      }),
-      10_000,
-      "video recorder start",
-    );
-    if (result && typeof result === "object" && "started" in result && result.started === false) {
-      const warning =
-        "warning" in result && typeof result.warning === "string"
-          ? result.warning
-          : "Video recording is unavailable";
-      const record = channel(handle, "video");
-      record.status = "unsupported";
-      record.message = warning;
-      log(`warn: ${warning}`);
-    } else {
-      handle.recordingStarted = true;
-      const record = channel(handle, "video");
-      record.status = "captured";
-      record.startedAt = startedAt;
-      addArtifact(job, {
-        kind: "video-start",
-        capturedAt: startedAt,
-        data: { path: "video/run.mp4", result: redactValue(result) },
-      });
-      event(handle, "video", "capture.started", { path: "video/run.mp4" });
-      log("evidence: video recording started");
+  if (visualEvidenceAllowed()) {
+    try {
+      const runDir = await ensureRunDir(job);
+      const path = join(runDir, "video", "run.mp4");
+      const result = await withTimeout(
+        device.recording.record({
+          ...base(),
+          action: "start",
+          path,
+          fps: 30,
+          quality: "high",
+          hideTouches: true,
+        }),
+        10_000,
+        "video recorder start",
+        async () => {
+          await device.recording.record({ ...base(), action: "stop" });
+        },
+      );
+      if (result && typeof result === "object" && "started" in result && result.started === false) {
+        const warning =
+          "warning" in result && typeof result.warning === "string"
+            ? result.warning
+            : "Video recording is unavailable";
+        const record = channel(handle, "video");
+        record.status = "unsupported";
+        record.message = warning;
+        log(`warn: ${warning}`);
+      } else {
+        handle.recordingStarted = true;
+        const record = channel(handle, "video");
+        record.status = "captured";
+        record.startedAt = startedAt;
+        addArtifact(job, {
+          kind: "video-start",
+          capturedAt: startedAt,
+          data: { path: "video/run.mp4", result: redactValue(result) },
+        });
+        event(handle, "video", "capture.started", { path: "video/run.mp4" });
+        log("evidence: video recording started");
+      }
+    } catch (error) {
+      failed(handle, "video", error, log);
     }
-  } catch (error) {
-    failed(handle, "video", error, log);
   }
 
   return handle;
@@ -452,7 +475,10 @@ export async function stopRunEvidence(
     }
   } else {
     for (const name of ["performance", "logs", "network", "video", "crash", "audio"] as const) {
-      if (channel(handle, name).status !== "unsupported") {
+      if (
+        channel(handle, name).status !== "unsupported" &&
+        channel(handle, name).status !== "redacted"
+      ) {
         channel(handle, name).status = "partial";
         channel(handle, name).message = "target adapter became unavailable before finalization";
       }
@@ -485,7 +511,9 @@ export async function stopRunEvidence(
   const screenshots = channel(handle, "screenshot");
   screenshots.entries = job.frames.length;
   screenshots.bytes = job.frames.reduce((sum, frame) => sum + (frame.bytes ?? 0), 0);
-  screenshots.status = screenshots.entries > 0 ? "captured" : "partial";
+  if (screenshots.status !== "redacted") {
+    screenshots.status = screenshots.entries > 0 ? "captured" : "partial";
+  }
   screenshots.finishedAt = now();
   const input = channel(handle, "input");
   input.entries = handle.manifest.events.filter((item) => item.channel === "input").length;
@@ -493,7 +521,9 @@ export async function stopRunEvidence(
   const trees = channel(handle, "ui-tree");
   trees.entries = treeArtifacts.length;
   trees.bytes = byteCount(treeArtifacts.map((artifact) => artifact.data));
-  trees.status = treeArtifacts.length > 0 ? "captured" : "partial";
+  if (trees.status !== "redacted") {
+    trees.status = treeArtifacts.length > 0 ? "captured" : "partial";
+  }
   trees.finishedAt = now();
   handle.manifest.finishedAt = now();
   event(handle, "input", "run.finished");
@@ -543,13 +573,26 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+  onLateResolve?: (value: T) => void | Promise<void>,
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
+  let timedOut = false;
+  const tracked = promise.then(async (value) => {
+    if (timedOut && onLateResolve) await onLateResolve(value);
+    return value;
+  });
   try {
     return await Promise.race([
-      promise,
+      tracked,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new Error(`${label} timed out`));
+        }, ms);
         timer.unref?.();
       }),
     ]);

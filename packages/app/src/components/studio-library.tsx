@@ -265,6 +265,6 @@ function recipeIcon(recipe: RecipeInfo): IconName {
     return "check";
   if (kind === "type" || kind === "clipboard") return "keyboard";
   if (kind === "screenshot") return "camera";
-  if (kind === "tap" || kind === "long-press") return "pointer";
+  if (kind === "tap") return "pointer";
   return recipe.steps.length === 0 ? "circle" : "bolt";
 }

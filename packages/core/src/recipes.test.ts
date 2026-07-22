@@ -16,6 +16,7 @@ import {
   readRecipeEvidenceImage,
   saveRecipeEvidenceImage,
   testsRoot,
+  freezeRecipeExecution,
 } from "./recipes.js";
 import { formatRecipeYaml, parseRecipeYaml, recipeYamlPath } from "./recipe-yaml.js";
 
@@ -128,6 +129,24 @@ describe("recipe store roundtrip", () => {
     assert.equal(history[0]?.title, "First draft");
     assert.equal(history[0]?.steps[0]?.kind, "sleep");
     await deleteRecipe(first.id);
+  });
+});
+
+describe("frozen recipe execution", () => {
+  it("captures transitive reusable flows before queueing", async () => {
+    const child = await saveRecipe({
+      id: "custom-frozen-child",
+      title: "Frozen child",
+      steps: [{ kind: "sleep", ms: 10 }],
+    });
+    const root = await saveRecipe({
+      id: "custom-frozen-root",
+      title: "Frozen root",
+      steps: [{ kind: "module", recipeId: child.id }],
+    });
+    const frozen = await freezeRecipeExecution(root.id);
+    await saveRecipe({ ...child, steps: [{ kind: "sleep", ms: 999 }] });
+    assert.deepEqual(frozen.recipeGraph[child.id]?.steps, [{ kind: "sleep", ms: 10 }]);
   });
 });
 
@@ -299,7 +318,15 @@ describe("validateRecipeSteps", () => {
     const [step] = validateRecipeSteps([
       {
         kind: "tap",
-        target: { ref: "@e1", point: { x: 10, y: 20 } },
+        target: {
+          ref: "@e1",
+          point: {
+            x: 10,
+            y: 20,
+            anchor: { horizontal: "right", vertical: "bottom" },
+            referenceBounds: { width: 1080, height: 2400 },
+          },
+        },
         evidence: {
           id: "ev-1",
           recordedAt: 123,
@@ -307,6 +334,16 @@ describe("validateRecipeSteps", () => {
           deviceBounds: { width: 1080, height: 2400 },
           pointer: { x: 10, y: 20 },
           node: { label: "Sign in", role: "button", ref: "@e1" },
+          nodes: [
+            {
+              label: "Sign in",
+              role: "button",
+              ref: "@e1",
+              index: 2,
+              parentIndex: 1,
+              rect: { x: 8, y: 16, width: 120, height: 48 },
+            },
+          ],
           candidates: [
             {
               strategy: "label",
@@ -326,7 +363,13 @@ describe("validateRecipeSteps", () => {
       },
     ]);
     assert.equal(step?.kind, "tap");
+    assert.deepEqual(step?.kind === "tap" ? step.target.point?.anchor : undefined, {
+      horizontal: "right",
+      vertical: "bottom",
+    });
     assert.equal(step?.kind === "tap" ? step.evidence?.node?.label : undefined, "Sign in");
+    assert.equal(step?.kind === "tap" ? step.evidence?.nodes?.length : undefined, 1);
+    assert.equal(step?.kind === "tap" ? step.evidence?.nodes?.[0]?.parentIndex : undefined, 1);
     assert.equal(
       step?.kind === "tap" ? step.evidence?.candidates?.[0]?.strategy : undefined,
       "label",
@@ -494,9 +537,48 @@ describe("validateRecipeSteps", () => {
     assert.equal(out[0]!.kind, "swipe");
   });
 
+  it("keeps evidence and timing on every tap gesture", () => {
+    const evidence = {
+      id: "tap-evidence",
+      recordedAt: 123,
+      pointer: { x: 10, y: 20 },
+    };
+    const out = validateRecipeSteps([
+      {
+        kind: "tap",
+        gesture: "multi",
+        tapCount: 4,
+        intervalMs: 140,
+        target: { ref: "@e2" },
+        evidence,
+      },
+      {
+        kind: "tap",
+        gesture: "hold",
+        target: { point: { x: 10, y: 20 } },
+        durationMs: 900,
+        evidence,
+      },
+    ]);
+    assert.deepEqual(out[0], {
+      kind: "tap",
+      gesture: "multi",
+      tapCount: 4,
+      intervalMs: 140,
+      target: { ref: "@e2" },
+      evidence,
+    });
+    assert.deepEqual(out[1], {
+      kind: "tap",
+      gesture: "hold",
+      target: { point: { x: 10, y: 20 } },
+      durationMs: 900,
+      evidence,
+    });
+  });
+
   it("accepts device, clipboard, observability, and reusable test steps", () => {
     const out = validateRecipeSteps([
-      { kind: "long-press", target: { label: "Copy" }, durationMs: 700 },
       { kind: "clipboard", action: "write", text: "hello" },
       { kind: "clipboard", action: "read", expect: "hello", match: "exact" },
       { kind: "app", action: "switcher" },
@@ -511,7 +593,7 @@ describe("validateRecipeSteps", () => {
       { kind: "logs", action: "mark", message: "after sign in" },
       { kind: "module", recipeId: "custom-login" },
     ]);
-    assert.equal(out.length, 14);
+    assert.equal(out.length, 13);
     assert.equal(out.at(-1)?.kind, "module");
   });
 

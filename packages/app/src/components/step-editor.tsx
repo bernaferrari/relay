@@ -23,11 +23,10 @@ function isTargetKind(
   step: RecipeStep,
 ): step is Extract<
   RecipeStep,
-  { kind: "tap" | "long-press" | "wait-for" | "wait-response" | "expect" | "extract" }
+  { kind: "tap" | "wait-for" | "wait-response" | "expect" | "extract" }
 > {
   return (
     step.kind === "tap" ||
-    step.kind === "long-press" ||
     step.kind === "wait-for" ||
     step.kind === "wait-response" ||
     step.kind === "expect" ||
@@ -41,6 +40,7 @@ export function StepEditor(props: {
   autofocus: Accessor<boolean>;
   onAutofocused: () => void;
   onChange: (next: RecipeStep) => void;
+  showEvidence?: boolean;
 }): JSX.Element {
   const wb = useWorkbench();
   const initialStep = props.step();
@@ -64,7 +64,7 @@ export function StepEditor(props: {
   const setTarget = (patch: Partial<StepTarget>) => {
     const step = props.step() as Extract<
       RecipeStep,
-      { kind: "tap" | "long-press" | "wait-for" | "wait-response" | "expect" | "extract" }
+      { kind: "tap" | "wait-for" | "wait-response" | "expect" | "extract" }
     >;
     props.onChange({ ...step, target: { ...step.target, ...patch } } as RecipeStep);
   };
@@ -98,7 +98,7 @@ export function StepEditor(props: {
   };
   return (
     <div class={editorPanel}>
-      <Show when={evidence()}>
+      <Show when={props.showEvidence !== false && evidence()}>
         {(captured) => (
           <RecordingEvidencePanel
             evidence={captured()}

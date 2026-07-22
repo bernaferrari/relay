@@ -30,7 +30,7 @@ function resolveElectronCli() {
 async function main() {
   process.chdir(root);
 
-  await bundleElectron({ watch: true });
+  const watchers = await bundleElectron({ watch: true });
 
   const server = await createServer({
     configFile: resolve(root, "vite.config.ts"),
@@ -60,17 +60,36 @@ async function main() {
     stdio: "inherit",
   });
 
+  let shuttingDown = false;
+  const waitForExit = (timeoutMs) =>
+    new Promise((resolveExit) => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        resolveExit();
+        return;
+      }
+      const timer = setTimeout(resolveExit, timeoutMs);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolveExit();
+      });
+    });
   const shutdown = async () => {
-    if (!child.killed) child.kill("SIGTERM");
-    await server.close();
-    process.exit(0);
+    if (shuttingDown) return;
+    shuttingDown = true;
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    await waitForExit(3_000);
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await waitForExit(1_000);
+    }
+    await Promise.all([server.close(), watchers.mainCtx.dispose(), watchers.preloadCtx.dispose()]);
   };
-  process.on("SIGINT", () => void shutdown());
-  process.on("SIGTERM", () => void shutdown());
+  process.on("SIGINT", () => void shutdown().finally(() => process.exit(0)));
+  process.on("SIGTERM", () => void shutdown().finally(() => process.exit(0)));
 
   child.on("exit", (code, signal) => {
     console.log(`[desktop] app exited code=${code ?? "none"} signal=${signal ?? "none"}`);
-    void server.close().finally(() => process.exit(code ?? 0));
+    if (!shuttingDown) void shutdown().finally(() => process.exit(code ?? 0));
   });
 }
 

@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { BrowserContext, Page, Video } from "playwright-core";
+import type { BrowserContext, Page, Request, Video } from "playwright-core";
 import { chromium } from "playwright-core";
 import type { Device, SnapshotNode } from "./device.js";
 import { browserExecutable, browserProfileDir, readTarget } from "./targets.js";
@@ -15,6 +15,7 @@ type BrowserSession = {
   recordingVideo?: Video | null;
   console: Array<{ level: string; text: string; at: number }>;
   network: BrowserNetworkEntry[];
+  networkByRequest: WeakMap<Request, BrowserNetworkEntry>;
   networkInclude: "summary" | "headers" | "body" | "all";
   networkPending: Set<Promise<void>>;
   crashes: Array<{ at: number; source: string; message: string }>;
@@ -82,6 +83,7 @@ async function createSession(
     ...(recordingUnavailable ? { recordingUnavailable } : {}),
     console: [],
     network: [],
+    networkByRequest: new WeakMap(),
     networkInclude: "summary",
     networkPending: new Set(),
     crashes: [],
@@ -116,29 +118,27 @@ function attachEvidence(session: BrowserSession, page: Page): void {
     }
     const includeHeaders = session.networkInclude === "headers" || session.networkInclude === "all";
     const includeBody = session.networkInclude === "body" || session.networkInclude === "all";
-    session.network.push({
+    const entry: BrowserNetworkEntry = {
       method: request.method(),
       url: request.url(),
       at: Date.now(),
       ...(includeHeaders ? { requestHeaders: request.headers() } : {}),
       ...(includeBody && request.postData() ? { requestBody: request.postData()! } : {}),
-    });
+    };
+    session.network.push(entry);
+    session.networkByRequest.set(request, entry);
   });
   page.on("response", (response) => {
-    for (let index = session.network.length - 1; index >= 0; index -= 1) {
-      const entry = session.network[index];
-      if (entry?.url === response.url() && entry.status === undefined) {
-        entry.status = response.status();
-        if (session.networkInclude === "headers" || session.networkInclude === "all") {
-          entry.responseHeaders = response.headers();
-        }
-        if (session.networkInclude === "body" || session.networkInclude === "all") {
-          const pending = captureResponseBody(response, entry);
-          session.networkPending.add(pending);
-          void pending.finally(() => session.networkPending.delete(pending));
-        }
-        break;
-      }
+    const entry = session.networkByRequest.get(response.request());
+    if (!entry) return;
+    entry.status = response.status();
+    if (session.networkInclude === "headers" || session.networkInclude === "all") {
+      entry.responseHeaders = response.headers();
+    }
+    if (session.networkInclude === "body" || session.networkInclude === "all") {
+      const pending = captureResponseBody(response, entry);
+      session.networkPending.add(pending);
+      void pending.finally(() => session.networkPending.delete(pending));
     }
   });
 }

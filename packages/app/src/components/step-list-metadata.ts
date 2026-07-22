@@ -9,7 +9,6 @@ export type AddGroup = { label: string; items: AddOption[] };
 export function kindLabel(kind: string): string {
   const labels: Record<string, string> = {
     tap: "Tap",
-    "long-press": "Hold",
     type: "Type",
     expect: "Check",
     extract: "Extract",
@@ -43,7 +42,7 @@ export function kindLabel(kind: string): string {
 }
 
 export function kindIcon(kind: RecipeStep["kind"]): IconName {
-  if (["tap", "long-press"].includes(kind)) return "pointer";
+  if (kind === "tap") return "pointer";
   if (["type", "key", "clipboard"].includes(kind)) return "keyboard";
   if (["expect", "assert-content", "evaluate-semantic"].includes(kind)) return "check";
   if (["wait-for", "wait-response", "sleep", "pause"].includes(kind)) return "clock";
@@ -59,7 +58,6 @@ export function stepDetail(step: RecipeStep, recipes: Iterable<TitledId>): strin
   const sentence = sentenceForStep(step, recipes);
   const prefixes: Partial<Record<RecipeStep["kind"], string[]>> = {
     tap: ["Tap "],
-    "long-press": ["Long press "],
     type: ["Type "],
     expect: ["Check "],
     extract: ["Extract "],
@@ -99,10 +97,6 @@ export const ADD_GROUPS: AddGroup[] = [
     label: "Act",
     items: [
       { label: "Tap element", make: () => ({ kind: "tap", target: {} }) },
-      {
-        label: "Long press element",
-        make: () => ({ kind: "long-press", target: {}, durationMs: 700 }),
-      },
       { label: "Type text", make: () => ({ kind: "type", text: "" }) },
       { label: "Scroll", make: () => ({ kind: "scroll", direction: "down" }) },
       { label: "Press Back", make: () => ({ kind: "key", key: "back" }) },

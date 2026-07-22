@@ -9,7 +9,7 @@ import { LibraryPanel } from "./studio-library";
 import { TestWelcome } from "./test-onboarding";
 import { RunsWorkspace } from "./runs-workspace";
 import { TestWorkbench } from "./test-workbench";
-import { TestDetailsPanel } from "./test-details-panel";
+import { TestSettingsPanel } from "./test-details-panel";
 import { SuitesWorkspace } from "./suites-workspace";
 import { Icon, type IconName } from "./icon";
 import { cn } from "../lib/cn";
@@ -79,7 +79,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   // device, and the selected step's properties. Map and source-level settings
   // are deliberate power-user destinations, never competing default tabs.
   const [studioView, setStudioView] = createSignal<StudioView>("workbench");
-  const [detailsOpen, setDetailsOpen] = createSignal(false);
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [libraryOpen, setLibraryOpen] = createSignal(true);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
@@ -98,8 +98,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (!server.selectedRecipeId()) setLibraryOpen(true);
     previousReadyRecipeId = readyId;
   });
-  // Every test opens on the device-first workbench. Remembering an advanced
-  // surface across tests makes a new selection feel broken or unpredictable.
+  // Every test opens on the device-first workbench. Remembering a settings
+  // drawer across tests makes a new selection feel broken or unpredictable.
   let defaultedViewForId: string | null = null;
   createEffect(() => {
     const id = server.selectedRecipeId();
@@ -111,7 +111,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     const recipe = server.recipes().find((item) => item.id === id);
     if (!recipe) return;
     setStudioView("workbench");
-    setDetailsOpen(false);
+    setSettingsOpen(false);
     defaultedViewForId = id;
   });
   const readinessState = () => ({
@@ -161,7 +161,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.setSelectedRecipeId(saved.id);
     setArea("tests");
     setStudioView("workbench");
-    setDetailsOpen(false);
+    setSettingsOpen(false);
     if (record) recorder.enterRecordMode();
     return saved;
   }
@@ -411,7 +411,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     aria-pressed={studioView() === "map"}
                     class={cn(shellViewTab, studioView() === "map" && shellViewTabActive)}
                     onClick={() => {
-                      setDetailsOpen(false);
+                      setSettingsOpen(false);
                       setStudioView("map");
                     }}
                   >
@@ -453,10 +453,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                           onClick={() => {
                             setStudioActionsOpen(false);
                             setStudioView("workbench");
-                            setDetailsOpen(true);
+                            setSettingsOpen(true);
                           }}
                         >
-                          <Icon name="sliders" size={14} /> Advanced editor
+                          <Icon name="sliders" size={14} /> Test details
                         </button>
                         <div
                           class="my-0.5 h-px bg-[var(--v2-border-border-muted)]"
@@ -508,16 +508,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <Show when={studioView() === "workbench"}>
                   <TestWorkbench
                     onOpenMap={() => setStudioView("map")}
-                    onOpenAdvanced={() => setDetailsOpen(true)}
                     onOpenTargets={() => props.onOpenSettings("targets")}
                     onOpenRun={(id) => {
                       server.setSelectedJobId(id);
                       setArea("runs");
                     }}
                     details={
-                      detailsOpen() ? (
-                        <TestDetailsPanel
-                          onClose={() => setDetailsOpen(false)}
+                      settingsOpen() ? (
+                        <TestSettingsPanel
+                          onClose={() => setSettingsOpen(false)}
                           onOpenData={() => setArea("data")}
                         />
                       ) : undefined
@@ -535,13 +534,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     />
                   </div>
                   <Show when={draft.steps().length > 0}>
-                    <JourneyInspector
-                      onEdit={() => {
-                        setStudioView("workbench");
-                        setDetailsOpen(true);
-                      }}
-                      onOpenTargets={() => props.onOpenSettings("matrices")}
-                    />
+                    <JourneyInspector onOpenTargets={() => props.onOpenSettings("matrices")} />
                   </Show>
                 </Show>
               </Show>

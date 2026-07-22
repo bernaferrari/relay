@@ -1,4 +1,5 @@
 export * from "./suites.js";
+export * from "./recipes.js";
 
 export type ConnectionAuth =
   | { type: "none" }

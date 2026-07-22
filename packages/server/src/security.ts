@@ -40,6 +40,43 @@ export function authorizationMatches(
   return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
+/**
+ * Browsers can reach loopback services from arbitrary web pages. Only Relay's
+ * own loopback renderer origins may use the unauthenticated local API. Native
+ * clients do not send Origin and continue to use the local trust path.
+ */
+export function allowedBrowserOrigin(origin: string | undefined): string | null {
+  if (!origin) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return isLoopbackHost(parsed.hostname) ? parsed.origin : null;
+}
+
+/** Workspace assets do not carry project ownership yet. Keep them on the local
+ * control plane until their stores can enforce ownership instead of pretending
+ * a bearer token makes a global recipe, suite, target, or discovery project-safe. */
+export function isLocalWorkspacePath(pathname: string): boolean {
+  return [
+    "/actions",
+    "/audit",
+    "/devices",
+    "/targets",
+    "/target-profiles",
+    "/recipes",
+    "/suites",
+    "/atlas",
+    "/discoveries",
+    "/journeys",
+    "/settings/privacy",
+    "/settings/evidence",
+  ].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 export type RequestContext = {
   subject: string;
   organizationId: string;

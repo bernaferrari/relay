@@ -288,6 +288,66 @@ export function InteractionStepEditors(props: StepEditorFamilyProps): JSX.Elemen
         })()}
       </Show>
 
+      <Show when={kind() === "swipe"}>
+        {(() => {
+          const s = props.step();
+          if (s.kind !== "swipe") return null;
+          const coordinate = (
+            label: string,
+            point: { x: number; y: number },
+            onPoint: (point: { x: number; y: number }) => void,
+          ) => (
+            <label class={propRow}>
+              <span class={fieldLabel}>{label}</span>
+              <span class="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+                <input
+                  class={cn(fieldInput, mono, "!w-[72px] flex-none px-2 text-right")}
+                  type="number"
+                  aria-label={`${label} X`}
+                  value={point.x}
+                  onInput={(event) =>
+                    onPoint({ x: Number(event.currentTarget.value) || 0, y: point.y })
+                  }
+                />
+                <span class="text-12-regular text-text-weak">×</span>
+                <input
+                  class={cn(fieldInput, mono, "!w-[72px] flex-none px-2 text-right")}
+                  type="number"
+                  aria-label={`${label} Y`}
+                  value={point.y}
+                  onInput={(event) =>
+                    onPoint({ x: point.x, y: Number(event.currentTarget.value) || 0 })
+                  }
+                />
+              </span>
+            </label>
+          );
+          return (
+            <div class="grid gap-2">
+              {coordinate("From", s.from, (from) => onEdit({ ...s, from }))}
+              {coordinate("To", s.to, (to) => onEdit({ ...s, to }))}
+              <div class={propRow}>
+                <span class={fieldLabel}>Duration</span>
+                <span class="inline-flex items-center gap-1.5">
+                  <input
+                    class={cn(fieldInput, mono, "!w-[72px] flex-none px-2 text-right")}
+                    type="number"
+                    min="50"
+                    max="10000"
+                    step="50"
+                    value={s.durationMs ?? 300}
+                    onInput={(event) =>
+                      onEdit({ ...s, durationMs: Number(event.currentTarget.value) || 300 })
+                    }
+                  />
+                  <span class="text-12-regular text-text-weak">ms</span>
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+      </Show>
+
       <Show when={kind() === "screenshot"}>
         {(() => {
           const s = props.step();

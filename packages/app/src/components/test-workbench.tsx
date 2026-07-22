@@ -1,6 +1,6 @@
 import { Show, createMemo, type JSX } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { useServer, type JobInfo, type PersistedRun } from "../context/server";
+import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { eyebrow } from "../lib/ui";
@@ -8,23 +8,6 @@ import { shellStageDrawerClearance, shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
 import { JourneyInspector, JourneyOutline } from "./journey-chrome";
 import { ExecutionInspector } from "./execution-inspector";
-import { ExecutionTimeline } from "./execution-timeline";
-import { executionDuration, executionElapsedAt, executionMoments } from "../lib/execution-moments";
-
-function persistedAsExecution(run: PersistedRun): JobInfo {
-  const status = ["queued", "running", "paused", "ok", "error", "healed", "cancelled"].includes(
-    run.status,
-  )
-    ? (run.status as JobInfo["status"])
-    : "error";
-  return {
-    ...run,
-    status,
-    queuedAt: run.queuedAt ?? run.startedAt ?? run.writtenAt,
-    logs: run.logs ?? [],
-    attempts: run.attempts ?? 1,
-  };
-}
 
 /**
  * The default test surface. Its three regions intentionally share one step
@@ -33,7 +16,6 @@ function persistedAsExecution(run: PersistedRun): JobInfo {
  */
 export function TestWorkbench(props: {
   onOpenMap: () => void;
-  onOpenAdvanced: () => void;
   onOpenTargets: () => void;
   onOpenRun: (id: string) => void;
   details?: JSX.Element;
@@ -44,47 +26,25 @@ export function TestWorkbench(props: {
   const execution = createMemo(() => {
     const recipe = server.selectedRecipe();
     if (!recipe) return null;
-    const selected =
-      server.jobs().find((job) => job.id === server.selectedJobId()) ??
-      (server.persistedRuns().find((run) => run.id === server.selectedJobId())
-        ? persistedAsExecution(
-            server.persistedRuns().find((run) => run.id === server.selectedJobId())!,
-          )
-        : null);
+    const selected = server.jobs().find((job) => job.id === server.selectedJobId());
+    const live =
+      selected &&
+      (selected.status === "queued" ||
+        selected.status === "running" ||
+        selected.status === "paused");
     if (
+      live &&
       selected?.action === recipe.id &&
       (!selected.recipeSnapshot || selected.recipeSnapshot.updatedAt === recipe.updatedAt)
     )
       return selected;
     return workbench.activeLiveJob();
   });
-  const moments = createMemo(() =>
-    executionMoments({
-      steps: draft.steps(),
-      recipe: server.selectedRecipe(),
-      job: execution(),
-      recipes: server.recipes(),
-    }),
-  );
-  const selectedMoment = createMemo(() => workbench.focusedIndex() ?? 0);
-
   return (
     <>
-      <JourneyOutline compact onAdvancedAdd={props.onOpenAdvanced} />
-      <div class={cn(shellStageWrap, shellStageDrawerClearance, "flex min-h-0 flex-1 flex-col")}>
-        <div class="min-h-0 flex-1">
-          <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
-        </div>
-        <Show when={moments().length > 0}>
-          <ExecutionTimeline
-            moments={moments()}
-            selectedIndex={selectedMoment()}
-            onSelect={workbench.focusStep}
-            mode={execution() ? "live" : "plan"}
-            elapsedMs={executionElapsedAt(moments(), selectedMoment())}
-            totalDurationMs={executionDuration(moments())}
-          />
-        </Show>
+      <JourneyOutline compact />
+      <div class={cn(shellStageWrap, shellStageDrawerClearance, "min-h-0 flex-1")}>
+        <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
       </div>
       <Show
         when={props.details}
@@ -106,11 +66,7 @@ export function TestWorkbench(props: {
                   </aside>
                 }
               >
-                <JourneyInspector
-                  compact
-                  onEdit={props.onOpenAdvanced}
-                  onOpenTargets={props.onOpenTargets}
-                />
+                <JourneyInspector compact onOpenTargets={props.onOpenTargets} />
               </Show>
             }
           >

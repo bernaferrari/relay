@@ -4,6 +4,7 @@
 import { For, Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { cn } from "../lib/cn";
+import { trapFocus } from "../lib/modal";
 
 export type Command = {
   id: string;
@@ -264,15 +265,24 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
 
 export function CommandPalette(): JSX.Element {
   const cmd = useCommand();
-  let inputRef: HTMLInputElement | undefined;
   let listRef: HTMLDivElement | undefined;
+  let dialogRef: HTMLDivElement | undefined;
+  let releaseFocus: (() => void) | undefined;
 
   createEffect(() => {
     if (cmd.open()) {
       cmd.setActive(0);
-      queueMicrotask(() => inputRef?.focus());
+      queueMicrotask(() => {
+        if (!cmd.open() || !dialogRef) return;
+        releaseFocus?.();
+        releaseFocus = trapFocus(dialogRef);
+      });
+    } else {
+      releaseFocus?.();
+      releaseFocus = undefined;
     }
   });
+  onCleanup(() => releaseFocus?.());
 
   // reset active when filter changes
   createEffect(() => {
@@ -311,6 +321,7 @@ export function CommandPalette(): JSX.Element {
         }}
       >
         <div
+          ref={(element) => (dialogRef = element)}
           class="ui-instant flex max-h-[60vh] w-[min(560px,calc(100vw-48px))] flex-col overflow-hidden rounded-xl bg-surface-raised-stronger-non-alpha text-12-regular text-text-strong shadow-lg-border-base"
           role="dialog"
           aria-label="Command palette"
@@ -318,9 +329,6 @@ export function CommandPalette(): JSX.Element {
         >
           <div class="border-b border-border-weak-base p-1">
             <input
-              ref={(el) => {
-                inputRef = el;
-              }}
               class="h-[46px] w-full rounded-lg border-0 bg-transparent px-3.5 text-14-regular text-text-strong placeholder:text-text-weak focus:outline-none"
               placeholder="Search commands, tests…"
               value={cmd.query()}

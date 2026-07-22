@@ -32,7 +32,7 @@ export function actionForStep(step: RecipeStep): string {
   if (step.kind === "extract") return "Extract";
   if (step.kind === "assert-content" || step.kind === "evaluate-semantic") return "Evaluate";
   if (step.kind === "type") return "Type value";
-  if (step.kind === "tap" || step.kind === "long-press") return "Interact";
+  if (step.kind === "tap") return "Interact";
   if (step.kind === "scroll" || step.kind === "swipe" || step.kind === "key") return "Navigate";
   if (step.kind === "screenshot") return "Capture";
   if (step.kind === "sleep" || step.kind === "wait-for" || step.kind === "wait-response")

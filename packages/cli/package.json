@@ -20,8 +20,8 @@
     "@relay/tui": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.15.0",
+    "@types/node": "^26.1.1",
     "tsx": "^4.20.0",
-    "typescript": "^5.8.0"
+    "typescript": "catalog:"
   }
 }

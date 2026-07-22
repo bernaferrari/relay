@@ -8,6 +8,7 @@
  * (resumeJob) unblocks the checkpoint.
  */
 import type { Device } from "./device.js";
+import { resolveStepPoint, type StepPoint } from "@relay/protocol";
 import {
   pressRef,
   pressLabel,
@@ -51,7 +52,13 @@ import {
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
 import { captureScreenshot } from "./workspace.js";
-import { describeTarget, readRecipe, type RecipeStep, type StepTarget } from "./recipes.js";
+import {
+  describeTarget,
+  readRecipe,
+  type Recipe,
+  type RecipeStep,
+  type StepTarget,
+} from "./recipes.js";
 import type { TestJob } from "./session.js";
 import { evaluateSemantic } from "./evaluation.js";
 
@@ -75,6 +82,43 @@ function textForTarget(nodes: SnapshotNode[], target: StepTarget): string {
   return [
     ...new Set(nodes.filter((node) => nodeMatchesTarget(node, target)).flatMap(nodeText)),
   ].join("\n");
+}
+
+function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
+  let width = 0;
+  let height = 0;
+  for (const node of nodes) {
+    if (!node.rect) continue;
+    width = Math.max(width, node.rect.x + node.rect.width);
+    height = Math.max(height, node.rect.y + node.rect.height);
+  }
+  return width > 0 && height > 0
+    ? { width: Math.round(width), height: Math.round(height) }
+    : undefined;
+}
+
+const runtimeBoundsCache = new WeakMap<
+  Device,
+  Promise<{ width: number; height: number } | undefined>
+>();
+
+function runtimeBounds(device: Device): Promise<{ width: number; height: number } | undefined> {
+  const cached = runtimeBoundsCache.get(device);
+  if (cached) return cached;
+  const pending = snapshot(device)
+    .then(snapshotBounds)
+    .catch(() => undefined);
+  runtimeBoundsCache.set(device, pending);
+  return pending;
+}
+
+async function resolvePointForDevice(
+  device: Device,
+  point: StepPoint,
+): Promise<{ x: number; y: number }> {
+  if (!point.anchor || !point.referenceBounds) return { x: point.x, y: point.y };
+  const bounds = await runtimeBounds(device);
+  return bounds ? resolveStepPoint(point, bounds) : { x: point.x, y: point.y };
 }
 
 async function waitForResponseCompletion(
@@ -180,6 +224,7 @@ export type RecipeStepContext = {
    */
   job?: TestJob;
   moduleStack?: string[];
+  recipeGraph?: Readonly<Record<string, Recipe>>;
 };
 
 async function runReusableRecipe(
@@ -192,7 +237,7 @@ async function runReusableRecipe(
   if (stack.includes(recipeId))
     throw new Error(`reusable test cycle: ${[...stack, recipeId].join(" → ")}`);
   if (stack.length >= 12) throw new Error("reusable test nesting is limited to 12 levels");
-  const recipe = await readRecipe(recipeId);
+  const recipe = ctx.recipeGraph?.[recipeId] ?? (await readRecipe(recipeId));
   if (!recipe) throw new Error(`reusable test not found: ${recipeId}`);
   const current = ctx.job?.resolvedInputs;
   const parameters = recipe.parameters ?? [];
@@ -338,6 +383,8 @@ async function tapTarget(
   device: Device,
   target: StepTarget,
   log: (line: string) => void,
+  repetitions = 1,
+  intervalMs = 90,
 ): Promise<string> {
   const attempts: { strategy: string; run: () => Promise<void> }[] = [];
   if (target.ref) attempts.push({ strategy: "ref", run: () => pressRef(device, target.ref!) });
@@ -345,13 +392,16 @@ async function tapTarget(
     attempts.push({ strategy: "label", run: () => pressLabel(device, target.label!) });
   if (target.text) attempts.push({ strategy: "text", run: () => findClick(device, target.text!) });
   if (target.point) {
-    const p = target.point;
+    const p = await resolvePointForDevice(device, target.point);
     attempts.push({ strategy: "point", run: () => pressPoint(device, p.x, p.y) });
   }
   for (let i = 0; i < attempts.length; i++) {
     const a = attempts[i]!;
     try {
-      await a.run();
+      for (let repetition = 0; repetition < repetitions; repetition++) {
+        await a.run();
+        if (repetition < repetitions - 1) await sleep(intervalMs, device);
+      }
       return a.strategy;
     } catch (err) {
       if (isCancel(err)) throw err;
@@ -372,6 +422,8 @@ async function tapRecordedTarget(
     evidence?: Extract<RecipeStep, { kind: "tap" | "type" }>["evidence"];
   },
   ctx: RecipeStepContext,
+  repetitions = 1,
+  intervalMs = 90,
 ): Promise<void> {
   const candidates = [
     input.target,
@@ -385,7 +437,7 @@ async function tapRecordedTarget(
   const failures: string[] = [];
   for (const [index, candidate] of unique.entries()) {
     try {
-      const strategy = await tapTarget(device, candidate, ctx.log);
+      const strategy = await tapTarget(device, candidate, ctx.log, repetitions, intervalMs);
       if (index > 0) {
         ctx.job?.artifacts.push({
           kind: "locator-heal",
@@ -407,6 +459,47 @@ async function tapRecordedTarget(
     }
   }
   throw new Error(`tap failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
+}
+
+async function longPressRecordedTarget(
+  device: Device,
+  input: {
+    target: StepTarget;
+    evidence?: Extract<RecipeStep, { kind: "tap" }>["evidence"];
+    durationMs?: number;
+  },
+  ctx: RecipeStepContext,
+): Promise<void> {
+  const candidates = [
+    input.target,
+    ...(input.evidence?.candidates?.map((candidate) => candidate.target) ?? []),
+  ];
+  const attempts = (
+    await Promise.all(
+      candidates.map(async (target) => [
+        ...(target.ref ? [{ ref: target.ref }] : []),
+        ...(target.label ? [{ label: target.label }] : []),
+        ...(target.text ? [{ text: target.text }] : []),
+        ...(target.point ? [{ point: await resolvePointForDevice(device, target.point) }] : []),
+      ]),
+    )
+  ).flat();
+  const unique = attempts.filter(
+    (candidate, index) =>
+      attempts.findIndex((other) => JSON.stringify(other) === JSON.stringify(candidate)) === index,
+  );
+  const failures: string[] = [];
+  for (const [index, candidate] of unique.entries()) {
+    try {
+      await longPressTarget(device, candidate, input.durationMs);
+      if (index > 0) ctx.log(`locator: used recorded hold fallback ${index + 1}/${unique.length}`);
+      return;
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+  throw new Error(`hold failed: ${failures.at(-1) ?? "no locator candidate matched"}`);
 }
 
 /** Scroll up — mirrors scrollDown but via the SDK's direction field. */
@@ -465,11 +558,18 @@ export async function runRecipeStep(
   const { log, job } = ctx;
   switch (step.kind) {
     case "tap":
-      await tapRecordedTarget(device, step, ctx);
-      break;
-
-    case "long-press":
-      await longPressTarget(device, step.target, step.durationMs);
+      if (step.gesture === "hold") {
+        await longPressRecordedTarget(device, step, ctx);
+      } else {
+        const multi = step.gesture === "multi";
+        await tapRecordedTarget(
+          device,
+          step,
+          ctx,
+          multi ? (step.tapCount ?? 2) : 1,
+          multi ? (step.intervalMs ?? 100) : 0,
+        );
+      }
       break;
 
     case "type": {
@@ -964,6 +1064,7 @@ export async function runRecipeStep(
 
     case "rotate":
       await rotateDevice(device, step.orientation);
+      runtimeBoundsCache.delete(device);
       break;
 
     case "settings": {

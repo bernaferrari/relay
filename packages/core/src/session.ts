@@ -39,6 +39,7 @@ import {
 } from "./control.js";
 import {
   readRecipe,
+  freezeRecipeExecution,
   describeRecipeStep,
   glyphsForStep,
   type HumanCheckpointReason,
@@ -64,7 +65,7 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import type { JobSummary } from "@relay/protocol";
-import { redactText } from "./redaction.js";
+import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { getEvidenceCollectionPolicy } from "./evidence-policy.js";
 
 function classifyError(message: string): JobErrorCode {
@@ -150,6 +151,8 @@ export type TestJob = {
   persisted?: boolean;
   /** Frozen authoring input and evidence payloads written once with the run. */
   recipeSnapshot?: Recipe;
+  /** Complete immutable graph used by module, branch, and repeat steps. */
+  recipeGraph?: Record<string, Recipe>;
   /** Structured completeness and ordered evidence timeline for this run. */
   evidence?: EvidenceManifest;
   /** Consent grants frozen before collectors start. */
@@ -258,6 +261,7 @@ export type EnqueueJobInput = {
   artifacts?: TestJob["artifacts"];
   /** Frozen execution input. Suite and retry jobs must provide/reuse this snapshot. */
   recipeSnapshot?: Recipe;
+  recipeGraph?: Record<string, Recipe>;
   projectId?: string;
   ownerId?: string;
   evidencePolicy?: EvidenceCollectionPolicy;
@@ -294,6 +298,7 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     caseCount: input.caseCount ?? parent?.caseCount,
     resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
     recipeSnapshot: structuredClone(input.recipeSnapshot ?? parent?.recipeSnapshot),
+    recipeGraph: structuredClone(input.recipeGraph ?? parent?.recipeGraph),
     evidencePolicy: structuredClone(
       input.evidencePolicy ?? parent?.evidencePolicy ?? getEvidenceCollectionPolicy(),
     ),
@@ -367,6 +372,7 @@ export function retryJob(id: string): TestJob {
     title: parent.title,
     variables: parent.resolvedInputs,
     recipeSnapshot: parent.recipeSnapshot,
+    recipeGraph: parent.recipeGraph,
     batchId: parent.batchId,
     caseIndex: parent.caseIndex,
     caseCount: parent.caseCount,
@@ -640,6 +646,7 @@ async function runRecipeSteps(
       await runRecipeStep(device, resolvedStep, {
         log: pushLog,
         job,
+        recipeGraph: job.recipeGraph,
       });
       await captureAutomaticState(job, device, ts, "after", pushLog);
       finishStep(ts, "ok");
@@ -661,6 +668,7 @@ async function captureAutomaticState(
   log: (line: string) => void,
 ): Promise<void> {
   if (process.env.RELAY_AUTO_VISUAL_EVIDENCE === "0") return;
+  if (!visualEvidenceAllowed()) return;
   try {
     const snapshot = await device.capture.snapshot({ ...base(), interactiveOnly: false });
     job.artifacts.push({
@@ -971,6 +979,7 @@ export async function attachJobFrame(opts: {
   caption: string;
   mime?: string;
 }): Promise<TraceFrameRef | null> {
+  if (!visualEvidenceAllowed()) return null;
   const job = opts.jobId ? jobs.get(opts.jobId) : getActiveJob();
   if (!job) return null;
   const frame = await writeFramePng(job, opts.base64, opts.caption);
@@ -995,7 +1004,11 @@ export async function attachJobFrame(opts: {
 }
 
 export async function runJobSync(input: EnqueueJobInput): Promise<TestJob> {
-  const job = enqueueJob(input);
+  const frozen =
+    input.recipe && (!input.recipeSnapshot || !input.recipeGraph)
+      ? await freezeRecipeExecution(input.recipe)
+      : undefined;
+  const job = enqueueJob({ ...input, ...frozen });
   for (;;) {
     const current = getJob(job.id);
     if (!current) throw new Error("job vanished");

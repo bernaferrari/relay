@@ -10,7 +10,10 @@ import {
   redactResolvedInputs,
   redactValue,
   setRedactionEnabled,
+  visualEvidenceAllowed,
 } from "./redaction.js";
+import { initializeRunEvidence } from "./run-evidence.js";
+import type { TestJob } from "./session.js";
 
 test("redaction defaults off, persists changes, and can be environment-locked", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-redaction-"));
@@ -36,12 +39,25 @@ test("redaction defaults off, persists changes, and can be environment-locked", 
     assert.deepEqual(redactResolvedInputs({ password: sentinel }), { password: sentinel });
 
     await setRedactionEnabled(true);
+    assert.equal(visualEvidenceAllowed(), false);
     const redacted = redactValue(evidence);
     assert.equal(JSON.stringify(redacted).includes(sentinel), false);
     assert.equal((redacted as { clipboard: string }).clipboard, REDACTED);
     assert.equal(redactResolvedInputs({ password: sentinel }).password?.includes(sentinel), false);
+    const job = {
+      id: "redacted-run",
+      targetKind: "device",
+      platform: "android",
+      evidencePolicy: { schemaVersion: 1, sensitive: {} },
+    } as TestJob;
+    const manifest = initializeRunEvidence(job).manifest;
+    for (const channel of ["screenshot", "video", "ui-tree"] as const) {
+      assert.equal(manifest.channels[channel].status, "redacted");
+      assert.equal(manifest.channels[channel].redactions, 1);
+    }
 
     await setRedactionEnabled(false);
+    assert.equal(visualEvidenceAllowed(), true);
     assert.equal(redactValue(evidence), evidence);
     assert.deepEqual(redactResolvedInputs({ password: sentinel }), { password: sentinel });
     assert.equal((await loadRedactionPolicy()).enabled, false);

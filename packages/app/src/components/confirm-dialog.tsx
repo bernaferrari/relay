@@ -1,6 +1,7 @@
-import { Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { cn } from "../lib/cn";
 import { modalPanel, modalScrim, productSecondary } from "../lib/ui";
+import { trapFocus } from "../lib/modal";
 
 export type ConfirmRequest = {
   title: string;
@@ -24,7 +25,8 @@ export function confirmAction(next: ConfirmRequest): void {
 }
 
 export function ConfirmDialogHost(): JSX.Element {
-  let confirmButton: HTMLButtonElement | undefined;
+  let dialog: HTMLElement | undefined;
+  let releaseFocus: (() => void) | undefined;
   const close = () => setRequest(null);
   const confirm = () => {
     const active = request();
@@ -42,10 +44,20 @@ export function ConfirmDialogHost(): JSX.Element {
     window.addEventListener("keydown", onKeyDown, true);
     onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
   });
+  createEffect(() => {
+    if (!request()) {
+      releaseFocus?.();
+      releaseFocus = undefined;
+      return;
+    }
+    queueMicrotask(() => {
+      if (request() && dialog) releaseFocus = trapFocus(dialog);
+    });
+  });
+  onCleanup(() => releaseFocus?.());
   return (
     <Show when={request()}>
       {(active) => {
-        queueMicrotask(() => confirmButton?.focus());
         return (
           <div
             class={cn(modalScrim, "z-[160] flex items-center justify-center p-5")}
@@ -54,6 +66,7 @@ export function ConfirmDialogHost(): JSX.Element {
             }}
           >
             <section
+              ref={(element) => (dialog = element)}
               class={cn(modalPanel, "w-[min(100%,400px)] rounded-xl p-4")}
               role="alertdialog"
               aria-modal="true"
@@ -74,7 +87,6 @@ export function ConfirmDialogHost(): JSX.Element {
                   Cancel
                 </button>
                 <button
-                  ref={(element) => (confirmButton = element)}
                   type="button"
                   class={cn(
                     productSecondary,

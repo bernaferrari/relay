@@ -9,7 +9,12 @@ import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import type { EvidenceManifest, FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
 import { now } from "./events.js";
-import { redactResolvedInputs, redactText, redactValue } from "./redaction.js";
+import {
+  redactResolvedInputs,
+  redactText,
+  redactValue,
+  visualEvidenceAllowed,
+} from "./redaction.js";
 import {
   catalogRunDirectory,
   catalogSummaries,
@@ -55,6 +60,7 @@ export type PersistedRun = {
   dir: string;
   writtenAt: number;
   recipeSnapshot?: TestJob["recipeSnapshot"];
+  recipeGraph?: TestJob["recipeGraph"];
   artifacts: TestJob["artifacts"];
   inputDigest: string;
   resolvedInputs: Record<string, string>;
@@ -114,6 +120,9 @@ export async function writeFramePng(
   base64: string,
   caption: string,
 ): Promise<TraceFrameRef> {
+  if (!visualEvidenceAllowed()) {
+    throw new Error("Visual evidence is disabled while redaction is enabled");
+  }
   const dir = await ensureRunDir(job);
   const idx = String(job.frames.length + 1).padStart(3, "0");
   const rel = `frames/${idx}.png`;
@@ -151,8 +160,13 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
 
   const frozenInput = JSON.stringify({
     action: job.action,
-    serial: job.serial,
+    target: {
+      kind: job.targetKind ?? "device",
+      id: job.browserTargetId ?? job.serial,
+      platform: job.targetKind === "browser" ? "browser" : (job.platform ?? "android"),
+    },
     recipe: job.recipeSnapshot ?? null,
+    recipeGraph: job.recipeGraph ?? null,
     variables: job.resolvedInputs,
   });
   return {
@@ -162,9 +176,9 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     ownerId: job.ownerId,
     action: job.action,
     title: job.title,
-    serial: job.serial,
+    serial: job.browserTargetId ?? job.serial,
     deviceName: job.deviceName,
-    platform: job.platform ?? "android",
+    platform: job.targetKind === "browser" ? "browser" : (job.platform ?? "android"),
     targetProfile: job.targetProfile,
     status: job.status,
     healed: job.healed,
@@ -190,6 +204,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     dir,
     writtenAt,
     recipeSnapshot: redactValue(job.recipeSnapshot) as TestJob["recipeSnapshot"],
+    recipeGraph: redactValue(job.recipeGraph) as TestJob["recipeGraph"],
     artifacts: redactValue(job.artifacts) as TestJob["artifacts"],
     inputDigest: createHash("sha256").update(frozenInput).digest("hex"),
     resolvedInputs: redactResolvedInputs(job.resolvedInputs),

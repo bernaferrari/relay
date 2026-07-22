@@ -5,6 +5,8 @@
 import http from "node:http";
 import { URL } from "node:url";
 import {
+  allowedBrowserOrigin,
+  isLocalWorkspacePath,
   assertSafeBinding,
   authorizationMatches,
   isLoopbackHost,
@@ -19,6 +21,7 @@ import {
   captureSnapshot,
   createDevice,
   enqueueJob,
+  freezeRecipeGraph,
   formatSnapshotTree,
   formatRecipeYaml,
   formatMatrixYaml,
@@ -193,8 +196,16 @@ function discoveryInteraction(input: InteractInput): {
 }
 
 /** In-memory job reports, newest first. Falls back empty when none. */
-function collectReports(limit: number): JobReport[] {
-  return listJobs(limit).map(toJobReport);
+function collectReports(limit: number, scope?: RequestContext): JobReport[] {
+  return listJobs(Math.max(limit, 200))
+    .filter(
+      (job) =>
+        !scope ||
+        scope.localTrusted ||
+        (job.projectId === scope.projectId && job.ownerId === scope.subject),
+    )
+    .slice(0, limit)
+    .map(toJobReport);
 }
 
 const serverStartedAt = Date.now();
@@ -212,6 +223,17 @@ async function handleRequest(
   const host = req.headers.host ?? "localhost";
   const url = new URL(req.url ?? "/", `http://${host}`);
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
+
+  const requestOrigin = req.headers.origin;
+  const corsOrigin = allowedBrowserOrigin(requestOrigin);
+  if (requestOrigin && !corsOrigin) {
+    json(res, 403, { error: "This browser origin is not allowed to access Relay" });
+    return;
+  }
+  if (corsOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", corsOrigin);
+    res.setHeader("Vary", "Origin");
+  }
 
   if (method === "OPTIONS") {
     res.writeHead(204, CORS_HEADERS);
@@ -235,6 +257,10 @@ async function handleRequest(
     } catch (error) {
       json(res, 403, { error: error instanceof Error ? error.message : String(error) });
       return;
+    }
+    if (!scope.localTrusted && isLocalWorkspacePath(pathname)) {
+      recordAudit(scope, { action: "workspace.access", resource: pathname, result: "deny" });
+      throw new HttpError(403, "This workspace asset is available only from the local Relay host");
     }
     if (method === "GET" && pathname === "/settings/privacy") {
       json(res, 200, { policy: getRedactionPolicy() });
@@ -297,7 +323,18 @@ async function handleRequest(
       return;
     }
     if (method === "GET" && pathname === "/health") {
-      const active = getActiveJob();
+      const currentActive = getActiveJob();
+      const active =
+        currentActive &&
+        (scope.localTrusted ||
+          (currentActive.projectId === scope.projectId && currentActive.ownerId === scope.subject))
+          ? currentActive
+          : undefined;
+      const visibleJobCount = scope.localTrusted
+        ? listJobs(50).length
+        : listJobs(50).filter(
+            (job) => job.projectId === scope.projectId && job.ownerId === scope.subject,
+          ).length;
       json(res, 200, {
         ok: true,
         product: "relay",
@@ -315,7 +352,7 @@ async function handleRequest(
               startedAt: active.startedAt ?? null,
             }
           : null,
-        jobs: listJobs(50).length,
+        jobs: visibleJobCount,
         // Health is a liveness probe and must answer within Electron's short
         // startup timeout. Device discovery can invoke adb/simctl and belongs
         // on /devices; report its last completed value without blocking here.
@@ -327,7 +364,12 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/events") {
-      sse.attach(req, res);
+      sse.attach(req, res, (event) => {
+        if (scope.localTrusted) return true;
+        if (!("jobId" in event) || typeof event.jobId !== "string") return false;
+        const job = getJob(event.jobId);
+        return job?.projectId === scope.projectId && job.ownerId === scope.subject;
+      });
       return;
     }
 
@@ -977,6 +1019,14 @@ async function handleRequest(
           );
         }
       }
+      const recipeGraphs = new Map(
+        await Promise.all(
+          manifest.entries.map(async (entry) => {
+            const recipe = recipesById.get(entry.testId)!;
+            return [entry.testId, await freezeRecipeGraph(recipe)] as const;
+          }),
+        ),
+      );
       const jobs = manifest.entries.map((entry, index) => {
         const recipe = recipesById.get(entry.testId)!;
         return enqueueJob({
@@ -988,6 +1038,7 @@ async function handleRequest(
           browserTargetId: body.browserTargetId,
           variables: entry.inputs,
           recipeSnapshot: structuredClone(recipe),
+          recipeGraph: recipeGraphs.get(entry.testId),
           batchId: manifest.id,
           caseIndex: index,
           caseCount: manifest.entries.length,
@@ -1044,9 +1095,15 @@ async function handleRequest(
       return;
     }
     if (method === "POST" && pathname === "/schedules") {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Schedules can only be changed from a local Relay host");
+      }
       try {
         const body = (await parseJsonBody(req)) as Parameters<typeof saveSchedule>[0];
-        json(res, 201, { schedule: await saveSchedule(body) });
+        await assertTargetControl(scope, body.targetId);
+        json(res, 201, {
+          schedule: await saveSchedule({ ...body, projectId: scope.projectId }),
+        });
       } catch (error) {
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
       }
@@ -1054,6 +1111,9 @@ async function handleRequest(
     }
     const scheduleMatch = matchPath(pathname, "/schedules/:id");
     if (method === "DELETE" && scheduleMatch) {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Schedules can only be changed from a local Relay host");
+      }
       await deleteSchedule(scheduleMatch.id!);
       json(res, 200, { ok: true });
       return;
@@ -1523,13 +1583,13 @@ async function handleRequest(
     // Must be registered before /report/:jobId so "junit" is not treated as an id.
     if (method === "GET" && pathname === "/report/junit") {
       const limit = parseLimit(url.searchParams.get("limit"), 50);
-      text(res, 200, toJunitXml(collectReports(limit)), "text/xml; charset=utf-8");
+      text(res, 200, toJunitXml(collectReports(limit, scope)), "text/xml; charset=utf-8");
       return;
     }
 
     if (method === "GET" && pathname === "/report") {
       const limit = parseLimit(url.searchParams.get("limit"), 20);
-      json(res, 200, { reports: collectReports(limit) });
+      json(res, 200, { reports: collectReports(limit, scope) });
       return;
     }
 
@@ -1537,6 +1597,12 @@ async function handleRequest(
     if (method === "GET" && reportMatch) {
       const job = getJob(reportMatch.jobId!);
       if (!job) throw new HttpError(404, "Job not found");
+      if (
+        !scope.localTrusted &&
+        (job.projectId !== scope.projectId || job.ownerId !== scope.subject)
+      ) {
+        throw new HttpError(404, "Job not found");
+      }
       json(res, 200, toJobReport(job));
       return;
     }
@@ -1689,6 +1755,8 @@ async function main(): Promise<void> {
 const invokedDirectly =
   process.argv[1]?.endsWith("/server/src/index.ts") ||
   process.argv[1]?.endsWith("\\server\\src\\index.ts") ||
+  process.argv[1]?.endsWith("/server/index.cjs") ||
+  process.argv[1]?.endsWith("\\server\\index.cjs") ||
   process.argv[1]?.includes("@relay/server");
 
 if (invokedDirectly) {

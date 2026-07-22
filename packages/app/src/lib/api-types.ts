@@ -2,8 +2,16 @@
  * Client-side shapes matching the HTTP/SSE API from @relay/server.
  * Kept in the app package (no core import) so the UI stays host-agnostic.
  */
+import type { RecipeParameter, RecipeStep, StepTarget } from "@relay/protocol";
 
 export type {
+  HumanCheckpointReason,
+  HorizontalCoordinateAnchor,
+  RecipeParameter,
+  RecipeStep,
+  RecordedNodeEvidence,
+  RecordedSelectorCandidate,
+  RecordedStepEvidence,
   SaveSuiteInput,
   SuiteEntry,
   SuiteRunManifest,
@@ -11,6 +19,9 @@ export type {
   SuiteSection,
   SuiteVersion,
   TestSuite,
+  StepTarget,
+  StepPoint,
+  VerticalCoordinateAnchor,
 } from "@relay/protocol";
 
 export type DeviceInfo = {
@@ -42,234 +53,6 @@ export type ActionInfo = {
 
 export type TraceFrameRef = import("@relay/protocol").TraceFrameDto;
 export type TraceStep = import("@relay/protocol").TraceStepDto;
-
-export type StepTarget = {
-  ref?: string;
-  label?: string;
-  text?: string;
-  point?: { x: number; y: number };
-};
-
-export type RecordedSelectorCandidate = {
-  strategy: "ref" | "label" | "text" | "point";
-  label: string;
-  source: "element" | "ancestor" | "coordinate";
-  confidence: "high" | "medium" | "fallback";
-  target: StepTarget;
-};
-
-export type RecordedNodeEvidence = {
-  label?: string;
-  value?: string;
-  identifier?: string;
-  role?: string;
-  type?: string;
-  ref?: string;
-  index?: number;
-  rect?: { x: number; y: number; width: number; height: number };
-};
-
-/** Durable context captured while a manual desktop interaction is recorded. */
-export type RecordedStepEvidence = {
-  id: string;
-  recordedAt: number;
-  serial?: string;
-  deviceBounds?: { width: number; height: number };
-  pointer?: { x: number; y: number };
-  node?: RecordedNodeEvidence;
-  ancestors?: RecordedNodeEvidence[];
-  candidates?: RecordedSelectorCandidate[];
-  screenshot?: {
-    recipeId: string;
-    id: string;
-    capturedAt: number;
-    mime: "image/png";
-  };
-};
-
-export type RecipeParameter = {
-  name: string;
-  label?: string;
-  description?: string;
-  default?: string;
-  required?: boolean;
-};
-
-export type RecipeStep =
-  | { kind: "tap"; target: StepTarget; evidence?: RecordedStepEvidence; note?: string }
-  | { kind: "long-press"; target: StepTarget; durationMs?: number; note?: string }
-  | {
-      kind: "type";
-      text: string;
-      target?: StepTarget;
-      evidence?: RecordedStepEvidence;
-      note?: string;
-    }
-  | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
-  | {
-      kind: "swipe";
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-      durationMs?: number;
-      evidence?: RecordedStepEvidence;
-      note?: string;
-    }
-  | { kind: "key"; key: "back" | "home"; note?: string }
-  | { kind: "sleep"; ms: number; note?: string }
-  | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
-  | {
-      kind: "wait-response";
-      target: StepTarget;
-      busyTarget?: StepTarget;
-      idleTarget?: StepTarget;
-      timeoutMs?: number;
-      stableForMs?: number;
-      note?: string;
-    }
-  | {
-      kind: "expect";
-      target: StepTarget;
-      condition: "visible" | "gone";
-      timeoutMs?: number;
-      note?: string;
-    }
-  | {
-      kind: "extract";
-      as: string;
-      target: StepTarget;
-      role?: "user" | "assistant" | "system";
-      note?: string;
-    }
-  | {
-      kind: "assert-content";
-      input: string;
-      expected: string;
-      match: "exact" | "contains" | "not-contains";
-      note?: string;
-    }
-  | {
-      kind: "evaluate-semantic";
-      input: string;
-      criteria: string[];
-      threshold?: number;
-      provider?: string;
-      model?: string;
-      requireAgreement?: boolean;
-      secondProvider?: string;
-      secondModel?: string;
-      note?: string;
-    }
-  | {
-      kind: "pause";
-      message: string;
-      reason?:
-        | "authentication"
-        | "consent"
-        | "verification"
-        | "captcha"
-        | "permission"
-        | "review"
-        | "other";
-      resumeLabel?: string;
-      timeoutMs?: number;
-      verifyAfter?: {
-        target: StepTarget;
-        condition?: "visible" | "gone";
-        timeoutMs?: number;
-      };
-      note?: string;
-    }
-  | { kind: "screenshot"; caption?: string; note?: string }
-  | { kind: "flow"; flow: string; note?: string }
-  | { kind: "module"; recipeId: string; bindings?: Record<string, string>; note?: string }
-  | {
-      kind: "branch";
-      input: string;
-      operator: "exists" | "equals" | "not-equals" | "contains";
-      expected?: string;
-      thenRecipeId: string;
-      elseRecipeId?: string;
-      note?: string;
-    }
-  | { kind: "repeat"; count: number; recipeId: string; note?: string }
-  | { kind: "script"; source: string; note?: string }
-  | {
-      kind: "clipboard";
-      action: "write" | "read";
-      text?: string;
-      expect?: string;
-      match?: "exact" | "contains";
-      note?: string;
-    }
-  | {
-      kind: "app";
-      action:
-        | "open"
-        | "close"
-        | "switcher"
-        | "inspect"
-        | "assert-installed"
-        | "assert-not-installed"
-        | "install"
-        | "update"
-        | "uninstall";
-      app?: string;
-      url?: string;
-      artifact?: string;
-      as?: string;
-      version?: string;
-      versionMatch?: "exact" | "contains";
-      note?: string;
-    }
-  | {
-      kind: "device";
-      action: "lock" | "unlock" | "keyboard-dismiss" | "keyboard-enter";
-      note?: string;
-    }
-  | {
-      kind: "rotate";
-      orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right";
-      note?: string;
-    }
-  | {
-      kind: "settings";
-      setting: "wifi" | "airplane" | "location" | "animations" | "appearance";
-      state: "on" | "off" | "light" | "dark" | "toggle";
-      note?: string;
-    }
-  | { kind: "location"; latitude: number; longitude: number; note?: string }
-  | {
-      kind: "permission";
-      action: "grant" | "deny" | "reset";
-      permission:
-        | "camera"
-        | "microphone"
-        | "photos"
-        | "contacts"
-        | "notifications"
-        | "calendar"
-        | "location"
-        | "location-always"
-        | "media-library"
-        | "motion"
-        | "reminders"
-        | "siri";
-      note?: string;
-    }
-  | {
-      kind: "alert";
-      action: "get" | "accept" | "dismiss" | "wait";
-      timeoutMs?: number;
-      note?: string;
-    }
-  | {
-      kind: "network";
-      action: "dump" | "log";
-      include?: "summary" | "headers" | "body" | "all";
-      limit?: number;
-      note?: string;
-    }
-  | { kind: "logs"; action: "start" | "stop" | "mark" | "clear"; message?: string; note?: string };
 
 export type RecipeInfo = {
   id: string;

@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
 import {
   useServer,
@@ -12,18 +12,26 @@ import { cn } from "../lib/cn";
 import { sentenceForStep, stepValid } from "../lib/step-sentence";
 import { defaultStrategy, fmtPoint, type Strategy } from "../lib/step-target";
 import {
-  TARGET_ANCHORS,
+  anchoredPoint,
+  coordinateAnchor,
   pointForAnchor,
-  recordedNodeName,
   targetHierarchy,
-  targetHighlight,
   targetNodeIndex,
-  type TargetAnchor,
+  type HorizontalConstraint,
+  type VerticalConstraint,
 } from "../lib/target-inspector";
 import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { fmtAgo, fmtDur } from "../lib/job";
+import {
+  convertStepAction,
+  convertTapGesture,
+  isTapAction,
+  tapGesture,
+  type EditableActionKind,
+  type TapGesture,
+} from "../lib/journey-action-conversion";
 import { testRunBlocker } from "../lib/test-run-readiness";
-import { Icon } from "./icon";
+import { Icon, type IconName } from "./icon";
 import {
   accentForStep,
   actionForStep,
@@ -31,7 +39,11 @@ import {
   iconForStep,
 } from "./journey-step-presentation";
 import { kindLabel } from "./step-list-metadata";
-import { eyebrow, productPrimary, productSecondary } from "../lib/ui";
+import { kindIcon } from "./step-list-metadata";
+import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
+import { MaterialDiscreteSlider } from "./material-discrete-slider";
+import { StepEditor } from "./step-editor";
+import { eyebrow, productPrimary } from "../lib/ui";
 
 const chromePanel =
   "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,var(--v2-background-bg-deep))]";
@@ -56,13 +68,12 @@ const statusDot = (status: string) =>
 
 type TargetStep = Extract<
   RecipeStep,
-  { kind: "tap" | "long-press" | "wait-for" | "wait-response" | "expect" | "extract" }
+  { kind: "tap" | "wait-for" | "wait-response" | "expect" | "extract" }
 >;
 
 function hasEditableTarget(step: RecipeStep): step is TargetStep {
   return (
     step.kind === "tap" ||
-    step.kind === "long-press" ||
     step.kind === "wait-for" ||
     step.kind === "wait-response" ||
     step.kind === "expect" ||
@@ -93,7 +104,6 @@ type TargetChoice = {
   strategy: Strategy;
   title: string;
   value: string;
-  detail: string;
   target: StepTarget;
 };
 
@@ -119,14 +129,9 @@ function choicesForTargetStep(
   const title: Record<Exclude<Strategy, "point">, string> = {
     label: "Accessibility label",
     text: "Visible text",
-    ref: "Element reference",
+    ref: "UI element",
   };
-  const detail: Record<Exclude<Strategy, "point">, string> = {
-    label: "Best across screen changes",
-    text: "Matches text containing this value",
-    ref: "Exact element from the captured screen",
-  };
-  const fallbackPoint = (node ? pointForAnchor(node, "center") : undefined) ?? step.target.point;
+  const fallbackPoint = step.target.point ?? (node ? pointForAnchor(node, "center") : undefined);
   const choices: TargetChoice[] = [];
   const push = (strategy: Exclude<Strategy, "point">, target: StepTarget) => {
     if (!targetValue(strategy, target)) return;
@@ -134,7 +139,6 @@ function choicesForTargetStep(
       strategy,
       title: title[strategy],
       value: targetValue(strategy, target),
-      detail: detail[strategy],
       target,
     });
   };
@@ -156,12 +160,11 @@ function choicesForTargetStep(
   return choices;
 }
 
-function anchorGridPosition(anchor: TargetAnchor): string {
-  if (anchor === "top-left") return "top-0 left-0";
-  if (anchor === "top-right") return "top-0 right-0";
-  if (anchor === "center") return "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2";
-  if (anchor === "bottom-left") return "bottom-0 left-0";
-  return "right-0 bottom-0";
+function elementName(node: RecordedNodeEvidence | undefined): string {
+  const human = (node?.label ?? node?.value ?? node?.identifier ?? "").trim();
+  if (human) return human;
+  const technical = node?.role ?? node?.type ?? "";
+  return technical.split(/[.$]/).filter(Boolean).at(-1) ?? "Element";
 }
 
 function simpleField(step: RecipeStep): {
@@ -193,7 +196,81 @@ const QUICK_STEPS: {
   { label: "Take screenshot", icon: "camera", make: () => ({ kind: "screenshot" }) },
 ];
 
-export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () => void } = {}) {
+const ACTION_KINDS: RecipeStep["kind"][] = [
+  "tap",
+  "type",
+  "expect",
+  "wait-for",
+  "scroll",
+  "swipe",
+  "key",
+  "sleep",
+  "screenshot",
+  "pause",
+  "wait-response",
+  "extract",
+  "assert-content",
+  "evaluate-semantic",
+  "flow",
+  "module",
+  "branch",
+  "repeat",
+  "script",
+  "clipboard",
+  "app",
+  "device",
+  "rotate",
+  "settings",
+  "location",
+  "permission",
+  "alert",
+  "network",
+  "logs",
+];
+
+const ACTION_LABELS: Partial<Record<RecipeStep["kind"], string>> = {
+  expect: "Check element",
+  "wait-for": "Wait for element",
+  "wait-response": "Wait for response",
+  sleep: "Wait a duration",
+  screenshot: "Take screenshot",
+  pause: "Pause for person",
+  extract: "Extract content",
+  "assert-content": "Check content",
+  "evaluate-semantic": "Evaluate response",
+  module: "Reuse test",
+  settings: "Change setting",
+  logs: "Device logs",
+};
+
+const ACTION_OPTIONS: {
+  kind: EditableActionKind;
+  label: string;
+  icon: IconName;
+}[] = ACTION_KINDS.map((kind) => ({
+  kind,
+  label: ACTION_LABELS[kind] ?? kindLabel(kind),
+  icon: kindIcon(kind),
+}));
+
+function usesCompactInspector(step: RecipeStep): boolean {
+  return [
+    "tap",
+    "type",
+    "expect",
+    "wait-for",
+    "sleep",
+    "screenshot",
+    "pause",
+    "assert-content",
+  ].includes(step.kind);
+}
+
+function actionLabel(kind: RecipeStep["kind"]): string {
+  return ACTION_OPTIONS.find((option) => option.kind === kind)?.label ?? kindLabel(kind);
+}
+
+export function JourneyOutline(props: { compact?: boolean } = {}) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
@@ -362,19 +439,6 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
                   </button>
                 )}
               </For>
-              <Show when={props.onAdvancedAdd}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="mt-0.5 flex min-h-9 items-center gap-2 border-t border-[var(--v2-border-border-muted)] px-2.5 pt-1 text-left text-[11px] text-[var(--text-weak)] hover:text-[var(--text-strong)]"
-                  onClick={() => {
-                    setAddOpen(false);
-                    props.onAdvancedAdd?.();
-                  }}
-                >
-                  <Icon name="more" size={14} /> More actions…
-                </button>
-              </Show>
             </div>
           </Show>
         </footer>
@@ -383,11 +447,7 @@ export function JourneyOutline(props: { compact?: boolean; onAdvancedAdd?: () =>
   );
 }
 
-export function JourneyInspector(props: {
-  onEdit: () => void;
-  onOpenTargets: () => void;
-  compact?: boolean;
-}) {
+export function JourneyInspector(props: { onOpenTargets: () => void; compact?: boolean }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
@@ -395,37 +455,93 @@ export function JourneyInspector(props: {
     Math.max(0, Math.min(workbench.focusedIndex() ?? 0, draft.steps().length - 1)),
   );
   const step = createMemo(() => draft.steps()[index()]);
+  const holdStep = createMemo(() => {
+    const current = step();
+    return current && isTapAction(current) && tapGesture(current) === "hold" ? current : undefined;
+  });
+  const multiTapStep = createMemo(() => {
+    const current = step();
+    return current && isTapAction(current) && tapGesture(current) === "multi" ? current : undefined;
+  });
+  const multiTapCount = createMemo(() => {
+    const current = multiTapStep();
+    return current?.kind === "tap" ? (current.tapCount ?? 2) : 2;
+  });
+  const multiTapInterval = createMemo(() => {
+    const current = multiTapStep();
+    return current?.kind === "tap" ? (current.intervalMs ?? 100) : 100;
+  });
   const tapEvidence = createMemo(() => {
     const current = step();
-    return current?.kind === "tap" ? current.evidence : undefined;
+    return current && isTapAction(current) ? current.evidence : undefined;
   });
   const hierarchy = createMemo(() => targetHierarchy(tapEvidence()));
   const [targetDepth, setTargetDepth] = createSignal(0);
-  createEffect(
-    on(index, () => {
-      const current = step();
-      setTargetDepth(
-        current?.kind === "tap" ? targetNodeIndex(current.evidence, current.target) : 0,
-      );
-    }),
-  );
+  createEffect(() => {
+    const current = step();
+    setTargetDepth(
+      current && isTapAction(current) ? targetNodeIndex(current.evidence, current.target) : 0,
+    );
+  });
   const previewNode = createMemo(() => {
     const nodes = hierarchy();
     return nodes[Math.max(0, Math.min(targetDepth(), nodes.length - 1))];
   });
-  const previewSrc = createMemo(() => {
-    const shot = tapEvidence()?.screenshot;
-    return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
+  const [horizontalConstraint, setHorizontalConstraint] =
+    createSignal<HorizontalConstraint>("left");
+  const [verticalConstraint, setVerticalConstraint] = createSignal<VerticalConstraint>("top");
+  const [actionMenuOpen, setActionMenuOpen] = createSignal(false);
+  const [stepMenuOpen, setStepMenuOpen] = createSignal(false);
+  const [actionQuery, setActionQuery] = createSignal("");
+  const filteredActions = createMemo(() => {
+    const query = actionQuery().trim().toLocaleLowerCase();
+    return query
+      ? ACTION_OPTIONS.filter((option) => option.label.toLocaleLowerCase().includes(query))
+      : ACTION_OPTIONS;
   });
-  const previewHighlight = createMemo(() =>
-    targetHighlight(previewNode(), tapEvidence()?.deviceBounds),
-  );
-  const anchorChoices = createMemo(() =>
-    TARGET_ANCHORS.flatMap((anchor) => {
-      const point = previewNode() ? pointForAnchor(previewNode()!, anchor.id) : undefined;
-      return point ? [{ ...anchor, point }] : [];
-    }),
-  );
+  const actionMemory = new Map<string, RecipeStep>();
+  let actionMenuRoot: HTMLDivElement | undefined;
+  let stepMenuRoot: HTMLDivElement | undefined;
+  let actionSearch: HTMLInputElement | undefined;
+  createEffect(() => {
+    if (!actionMenuOpen()) return;
+    const close = (event: PointerEvent) => {
+      if (!actionMenuRoot?.contains(event.target as Node)) setActionMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", close, true);
+    onCleanup(() => window.removeEventListener("pointerdown", close, true));
+  });
+  createEffect(() => {
+    if (!stepMenuOpen()) return;
+    const close = (event: PointerEvent) => {
+      if (!stepMenuRoot?.contains(event.target as Node)) setStepMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", close, true);
+    onCleanup(() => window.removeEventListener("pointerdown", close, true));
+  });
+  const constraintPoint = createMemo(() => {
+    const current = step();
+    if (!current || !isTapAction(current)) return undefined;
+    if (current.target.point) return current.target.point;
+    const bounds = current.evidence?.deviceBounds;
+    const fallback =
+      current.evidence?.pointer ??
+      (previewNode() ? pointForAnchor(previewNode()!, "center") : undefined);
+    return fallback
+      ? {
+          ...fallback,
+          anchor: { horizontal: horizontalConstraint(), vertical: verticalConstraint() },
+          ...(bounds ? { referenceBounds: { ...bounds } } : {}),
+        }
+      : undefined;
+  });
+  createEffect(() => {
+    const current = step();
+    const point = current && isTapAction(current) ? current.target.point : undefined;
+    const anchor = coordinateAnchor(point);
+    setHorizontalConstraint(anchor.horizontal);
+    setVerticalConstraint(anchor.vertical);
+  });
   const sentence = createMemo(() => {
     const current = step();
     return current ? sentenceForStep(current, server.recipes()) : "No state selected";
@@ -503,6 +619,55 @@ export function JourneyInspector(props: {
     draft.updateStep(index(), { ...current, target } as RecipeStep);
   }
 
+  function chooseConstraints(
+    horizontal = horizontalConstraint(),
+    vertical = verticalConstraint(),
+  ): void {
+    const point = constraintPoint();
+    if (!point) return;
+    const current = step();
+    if (current && isTapAction(current) && current.target.point) {
+      workbench.rememberCoordinate(index(), current.target.point);
+    }
+    chooseTarget({
+      point: anchoredPoint(point, horizontal, vertical, tapEvidence()?.deviceBounds),
+    });
+  }
+
+  function updateCoordinatePoint(value: { x: number; y: number }): void {
+    const point = constraintPoint();
+    if (!point) return;
+    const current = step();
+    if (current && isTapAction(current) && current.target.point) {
+      workbench.rememberCoordinate(index(), current.target.point);
+    }
+    chooseTarget({
+      point: anchoredPoint(
+        { ...point, ...value },
+        horizontalConstraint(),
+        verticalConstraint(),
+        tapEvidence()?.deviceBounds,
+      ),
+    });
+  }
+
+  function selectElementDepth(nextDepth: number): void {
+    const current = step();
+    const nodes = hierarchy();
+    if (!current || !isTapAction(current) || nodes.length === 0) return;
+    const depth = Math.max(0, Math.min(nextDepth, nodes.length - 1));
+    const node = nodes[depth];
+    if (!node) return;
+    setTargetDepth(depth);
+    if (defaultStrategy(current.target) === "point") {
+      return;
+    }
+    const currentStrategy = defaultStrategy(current.target);
+    const choices = choicesForTargetStep(current, node);
+    const next = choices.find((choice) => choice.strategy === currentStrategy) ?? choices[0];
+    if (next) chooseTarget(next.target);
+  }
+
   const targetChoices = createMemo(() => {
     const current = step();
     return current && hasEditableTarget(current)
@@ -524,6 +689,71 @@ export function JourneyInspector(props: {
     else draft.updateStep(index(), { ...current, note: value || undefined } as RecipeStep);
   }
 
+  function changeAction(kind: EditableActionKind): void {
+    const current = step();
+    if (!current) return;
+    const memoryKey = `${server.selectedRecipeId() ?? "draft"}:${index()}`;
+    actionMemory.set(`${memoryKey}:${current.kind}`, current);
+    const remembered = actionMemory.get(`${memoryKey}:${kind}`);
+    draft.updateStep(index(), remembered ?? convertStepAction(current, kind));
+    setActionMenuOpen(false);
+  }
+
+  function duplicateSelectedStep(): void {
+    const currentIndex = index();
+    draft.duplicateStep(currentIndex);
+    workbench.focusStep(currentIndex + 1);
+    setStepMenuOpen(false);
+  }
+
+  function deleteSelectedStep(): void {
+    const currentIndex = index();
+    const remaining = draft.steps().length - 1;
+    draft.removeStep(currentIndex);
+    workbench.focusStep(remaining > 0 ? Math.min(currentIndex, remaining - 1) : null);
+    setStepMenuOpen(false);
+  }
+
+  function changeTapGesture(gesture: TapGesture): void {
+    const current = step();
+    if (!current || !isTapAction(current)) return;
+    draft.updateStep(index(), convertTapGesture(current, gesture));
+  }
+
+  function updateHoldDuration(value: string): void {
+    const current = step();
+    if (!current || !isTapAction(current) || tapGesture(current) !== "hold") return;
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds)) return;
+    const held = convertTapGesture(current, "hold");
+    draft.updateStep(index(), {
+      ...held,
+      durationMs: Math.min(10_000, Math.max(100, Math.round(seconds * 1_000))),
+    });
+  }
+
+  function updateMultiTapCount(value: string): void {
+    const current = step();
+    if (!current || !isTapAction(current) || tapGesture(current) !== "multi") return;
+    const count = Number(value);
+    if (!Number.isFinite(count)) return;
+    draft.updateStep(index(), {
+      ...convertTapGesture(current, "multi"),
+      tapCount: Math.min(10, Math.max(2, Math.round(count))),
+    });
+  }
+
+  function updateMultiTapInterval(value: string): void {
+    const current = step();
+    if (!current || !isTapAction(current) || tapGesture(current) !== "multi") return;
+    const intervalMs = Number(value);
+    if (!Number.isFinite(intervalMs)) return;
+    draft.updateStep(index(), {
+      ...convertTapGesture(current, "multi"),
+      intervalMs: Math.min(2_000, Math.max(20, Math.round(intervalMs))),
+    });
+  }
+
   const navBtn =
     "grid size-8 place-items-center rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] disabled:opacity-35";
 
@@ -534,6 +764,13 @@ export function JourneyInspector(props: {
         "border-l border-[var(--v2-border-border-muted)] max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6] max-[900px]:flex max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))] max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
       )}
       aria-label="Selected journey step"
+      onKeyDown={(event) => {
+        if (event.key !== "Backspace" && event.key !== "Delete") return;
+        const target = event.target as HTMLElement;
+        if (target.matches("input, textarea, select, [contenteditable='true']")) return;
+        event.preventDefault();
+        deleteSelectedStep();
+      }}
     >
       <header class="flex min-h-[67px] shrink-0 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-[15px]">
         <div class="min-w-0">
@@ -634,262 +871,415 @@ export function JourneyInspector(props: {
         <Show when={step()}>
           {(current) => (
             <section class="border-t border-[var(--v2-border-border-muted)] px-[15px] py-[16px]">
-              <header class="mb-3 flex items-center justify-between">
+              <header class="mb-3 flex items-center justify-between gap-3">
                 <span class="text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-base)] uppercase">
-                  Properties
+                  Action
                 </span>
-                <span class="rounded-md bg-[var(--v2-background-bg-layer-01)] px-2 py-1 text-[9.5px] font-medium text-[var(--text-weak)] capitalize">
-                  {kindLabel(current().kind)}
-                </span>
-              </header>
-              <Show
-                when={editableTarget(current())}
-                fallback={
-                  <label class="grid gap-1.5">
-                    <span class="text-[10.5px] text-[var(--text-weak)]">
-                      {simpleField(current()).label}
-                    </span>
-                    <input
-                      class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
-                      type={simpleField(current()).number ? "number" : "text"}
-                      min={simpleField(current()).number ? 0 : undefined}
-                      step={simpleField(current()).number ? 0.5 : undefined}
-                      value={simpleField(current()).value}
-                      placeholder="Optional"
-                      onInput={(event) => updateSimpleValue(event.currentTarget.value)}
-                    />
-                  </label>
-                }
-              >
-                {(target) => (
-                  <Show
-                    when={
-                      current().kind === "tap" &&
-                      (targetChoices().length > 0 || anchorChoices().length > 0)
-                    }
-                    fallback={
-                      <label class="grid gap-1.5">
-                        <span class="text-[10.5px] text-[var(--text-weak)]">Target</span>
-                        <input
-                          class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
-                          value={targetText(target())}
-                          placeholder="What should Relay find?"
-                          onInput={(event) => updateTarget(event.currentTarget.value)}
-                        />
-                        <small class="text-[10px]/[1.45] text-[var(--text-weak)]">
-                          Use the words someone can see on the screen.
-                        </small>
-                      </label>
-                    }
+                <div class="flex items-center gap-1">
+                  <div
+                    ref={(element) => (actionMenuRoot = element)}
+                    class="relative"
+                    onKeyDown={(event) => {
+                      if (event.key !== "Escape" || !actionMenuOpen()) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setActionMenuOpen(false);
+                    }}
                   >
-                    <div class="grid gap-2">
-                      <Show when={previewSrc() && previewNode() && tapEvidence()?.deviceBounds}>
-                        <section class="rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] p-2.5">
-                          <header class="mb-2 flex items-center justify-between gap-2">
-                            <div class="min-w-0">
-                              <span class="block text-[10.5px] font-medium text-[var(--text-strong)]">
-                                Target preview
-                              </span>
-                              <small class="mt-0.5 block truncate text-[9.5px] text-[var(--text-weak)]">
-                                {targetDepth() === 0
-                                  ? "Captured element"
-                                  : `Parent ${targetDepth()}`}{" "}
-                                · {targetDepth() + 1} of {hierarchy().length}
-                              </small>
-                            </div>
-                            <div class="flex shrink-0 gap-1">
-                              <button
-                                type="button"
-                                class={walkStepBtn}
-                                aria-label="Preview child element"
-                                data-tip="Child"
-                                disabled={targetDepth() <= 0}
-                                onClick={() => setTargetDepth((depth) => Math.max(0, depth - 1))}
-                              >
-                                <Icon name="chevron-down" size={12} />
-                              </button>
-                              <button
-                                type="button"
-                                class={walkStepBtn}
-                                aria-label="Preview parent element"
-                                data-tip="Parent"
-                                disabled={targetDepth() >= hierarchy().length - 1}
-                                onClick={() =>
-                                  setTargetDepth((depth) =>
-                                    Math.min(hierarchy().length - 1, depth + 1),
-                                  )
-                                }
-                              >
-                                <Icon name="chevron-up" size={12} />
-                              </button>
-                            </div>
-                          </header>
-                          <div class="grid grid-cols-[78px_minmax(0,1fr)] items-center gap-3">
-                            <div
-                              class="relative mx-auto h-[150px] max-w-full overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-deep)] shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
-                              style={{
-                                "aspect-ratio": `${tapEvidence()!.deviceBounds!.width} / ${tapEvidence()!.deviceBounds!.height}`,
-                              }}
-                            >
-                              <img
-                                src={previewSrc()}
-                                alt="Captured screen with target bounds"
-                                class="absolute inset-0 size-full object-fill"
-                              />
-                              <Show when={previewHighlight()}>
-                                {(highlight) => (
-                                  <span
-                                    class="pointer-events-none absolute z-[2] rounded-[2px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/48%)]"
-                                    style={highlight()}
-                                    aria-hidden="true"
-                                  />
-                                )}
-                              </Show>
-                              <Show
-                                when={
-                                  defaultStrategy(target()) === "point" &&
-                                  target().point &&
-                                  tapEvidence()?.deviceBounds
-                                }
-                              >
-                                <span
-                                  class="pointer-events-none absolute z-[3] size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_2px_rgb(5_8_15/45%)]"
-                                  style={{
-                                    left: `${(target().point!.x / tapEvidence()!.deviceBounds!.width) * 100}%`,
-                                    top: `${(target().point!.y / tapEvidence()!.deviceBounds!.height) * 100}%`,
-                                  }}
-                                  aria-hidden="true"
-                                />
-                              </Show>
-                            </div>
-                            <div class="min-w-0">
-                              <strong class="block line-clamp-2 text-[11px]/[1.35] font-medium text-[var(--text-strong)]">
-                                {recordedNodeName(previewNode())}
-                              </strong>
-                              <code class="mt-1 block truncate font-mono text-[9px] text-[var(--text-weak)]">
-                                {previewNode()?.role ?? previewNode()?.type ?? "Element"}
-                                {previewNode()?.ref ? ` · ${previewNode()!.ref}` : ""}
-                              </code>
-                              <p class="mt-2 text-[9.5px]/[1.45] text-[var(--text-weak)]">
-                                Parent and child buttons only change this preview. Choose a method
-                                below to update the step.
-                              </p>
-                            </div>
-                          </div>
-                        </section>
-                      </Show>
-                      <div>
-                        <span class="block text-[10.5px] text-[var(--text-weak)]">Find by</span>
-                        <small class="mt-0.5 block text-[10px]/[1.45] text-[var(--text-weak)]">
-                          Choose how Relay should find this tap target.
-                        </small>
-                      </div>
-                      <div class="grid gap-1" role="radiogroup" aria-label="Tap target method">
-                        <For each={targetChoices()}>
-                          {(choice) => {
+                    <button
+                      type="button"
+                      class="grid h-7 min-w-[112px] grid-cols-[18px_minmax(0,1fr)_14px] items-center gap-1.5 rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,border-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.98]"
+                      aria-haspopup="menu"
+                      aria-expanded={actionMenuOpen()}
+                      onClick={() => {
+                        setStepMenuOpen(false);
+                        setActionMenuOpen((open) => {
+                          if (open) setActionQuery("");
+                          else queueMicrotask(() => actionSearch?.focus());
+                          return !open;
+                        });
+                      }}
+                    >
+                      <Icon name={iconForStep(current())} size={12} />
+                      <span class="truncate">{actionLabel(current().kind)}</span>
+                      <Icon name="chevron-down" size={11} />
+                    </button>
+                    <Show when={actionMenuOpen()}>
+                      <div
+                        class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid max-h-[min(420px,calc(100vh-180px))] min-w-[210px] origin-top-right gap-0.5 overflow-y-auto rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 pt-0 shadow-[var(--v2-elevation-overlay)]"
+                        role="menu"
+                        aria-label="Change action"
+                      >
+                        <label class="sticky top-0 z-10 flex h-9 items-center gap-2 border-b border-[var(--v2-border-border-muted)] bg-surface-raised-stronger-non-alpha px-2">
+                          <Icon name="search" size={12} />
+                          <input
+                            ref={(element) => (actionSearch = element)}
+                            class="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+                            value={actionQuery()}
+                            placeholder="Find an action"
+                            aria-label="Find an action"
+                            onInput={(event) => setActionQuery(event.currentTarget.value)}
+                          />
+                        </label>
+                        <For each={filteredActions()}>
+                          {(option) => {
                             const selected = () =>
-                              targetMatches(choice.strategy, target(), choice.target);
+                              option.kind === "tap"
+                                ? isTapAction(current())
+                                : current().kind === option.kind;
                             return (
                               <button
                                 type="button"
-                                role="radio"
+                                role="menuitemradio"
                                 aria-checked={selected()}
                                 class={cn(
-                                  "group grid min-h-[54px] grid-cols-[16px_minmax(0,1fr)] items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.985]",
+                                  "grid h-8 grid-cols-[22px_minmax(0,1fr)_16px] items-center gap-1.5 rounded-md px-2 text-left text-[10.5px] font-medium transition-[background-color,color,transform] duration-100 ease-out active:scale-[0.985]",
                                   selected()
-                                    ? "border-[color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,var(--v2-background-bg-layer-01))]"
-                                    : "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)]",
+                                    ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
+                                    : "text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
                                 )}
-                                onClick={() => chooseTarget(choice.target)}
+                                onClick={() => changeAction(option.kind)}
                               >
-                                <span
-                                  class={cn(
-                                    "mt-0.5 grid size-3.5 place-items-center rounded-full border",
-                                    selected()
-                                      ? "border-[var(--v2-background-bg-accent)]"
-                                      : "border-[var(--v2-border-border-strong)]",
-                                  )}
-                                  aria-hidden="true"
-                                >
-                                  <i
-                                    class={cn(
-                                      "size-1.5 rounded-full",
-                                      selected() && "bg-[var(--v2-background-bg-accent)]",
-                                    )}
-                                  />
+                                <span class="grid size-[22px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]">
+                                  <Icon name={option.icon} size={12} />
                                 </span>
-                                <span class="min-w-0">
-                                  <span class="flex min-w-0 items-baseline justify-between gap-2">
-                                    <strong class="text-[11px] font-medium text-[var(--text-strong)]">
-                                      {choice.title}
-                                    </strong>
-                                    <code class="max-w-[54%] truncate font-mono text-[9.5px] text-[var(--text-base)]">
-                                      {choice.value}
-                                    </code>
-                                  </span>
-                                  <small class="mt-1 block text-[9.5px]/[1.35] text-[var(--text-weak)]">
-                                    {choice.detail}
-                                  </small>
-                                </span>
+                                <span>{option.label}</span>
+                                <Show when={selected()}>
+                                  <Icon name="check" size={12} />
+                                </Show>
                               </button>
                             );
                           }}
                         </For>
-                        <Show when={anchorChoices().length > 0}>
-                          <section class="grid min-h-[64px] grid-cols-[minmax(0,1fr)_48px] items-center gap-3 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 py-2">
-                            <div class="min-w-0">
-                              <strong class="text-[11px] font-medium text-[var(--text-strong)]">
-                                Coordinates
-                              </strong>
-                              <small class="mt-1 block truncate text-[9.5px]/[1.35] text-[var(--text-weak)]">
-                                {activeAnchor()?.label ?? "Choose anchor"}
-                                <Show when={activeAnchor()}>
-                                  {(anchor) => ` · ${fmtPoint(anchor().point)}`}
-                                </Show>
-                              </small>
-                            </div>
-                            <div class="relative size-11" aria-label="Coordinate anchor">
-                              <span
-                                class="pointer-events-none absolute inset-[7px] rounded-[3px] border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-deep)]"
-                                aria-hidden="true"
-                              />
-                              <For each={anchorChoices()}>
-                                {(anchor) => {
-                                  const anchorTarget = () => ({ point: anchor.point });
-                                  const selected = () =>
-                                    targetMatches("point", target(), anchorTarget());
-                                  return (
-                                    <button
-                                      type="button"
-                                      role="radio"
-                                      aria-label={`${anchor.label}: ${fmtPoint(anchor.point)}`}
-                                      aria-checked={selected()}
-                                      data-tip={anchor.label}
-                                      class={cn(
-                                        "absolute z-[1] grid size-4 place-items-center rounded-sm outline-none transition-transform duration-150 ease-out focus-visible:ring-2 focus-visible:ring-[var(--v2-background-bg-accent)] active:scale-[0.85]",
-                                        anchorGridPosition(anchor.id),
-                                      )}
-                                      onClick={() => chooseTarget(anchorTarget())}
-                                    >
-                                      <i
-                                        class={cn(
-                                          "rounded-[1px] transition-[background-color,box-shadow] duration-150 ease-out",
-                                          selected()
-                                            ? "size-2 bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_2px_var(--v2-background-bg-layer-01)]"
-                                            : "size-1.5 bg-[var(--text-weak)] hover:bg-[var(--text-base)]",
-                                        )}
-                                      />
-                                    </button>
-                                  );
-                                }}
-                              </For>
-                            </div>
-                          </section>
+                        <Show when={filteredActions().length === 0}>
+                          <span class="px-3 py-4 text-center text-[10.5px] text-[var(--text-weak)]">
+                            No matching action
+                          </span>
                         </Show>
                       </div>
-                    </div>
+                    </Show>
+                  </div>
+                  <div
+                    ref={(element) => (stepMenuRoot = element)}
+                    class="relative"
+                    onKeyDown={(event) => {
+                      if (event.key !== "Escape" || !stepMenuOpen()) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setStepMenuOpen(false);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      class="grid size-7 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+                      aria-label="Step actions"
+                      aria-haspopup="menu"
+                      aria-expanded={stepMenuOpen()}
+                      onClick={() => {
+                        setActionMenuOpen(false);
+                        setStepMenuOpen((open) => !open);
+                      }}
+                    >
+                      <Icon name="more" size={14} />
+                    </button>
+                    <Show when={stepMenuOpen()}>
+                      <div
+                        class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid min-w-[174px] gap-0.5 rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+                        role="menu"
+                        aria-label="Step actions"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          class="grid h-8 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                          onClick={duplicateSelectedStep}
+                        >
+                          <Icon name="copy" size={12} />
+                          Duplicate step
+                        </button>
+                        <div class="mx-2 h-px bg-[var(--v2-border-border-muted)]" />
+                        <button
+                          type="button"
+                          role="menuitem"
+                          class="grid h-8 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--icon-critical-base)] transition-colors duration-100 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)]"
+                          onClick={deleteSelectedStep}
+                        >
+                          <Icon name="trash" size={12} />
+                          <span>Delete step</span>
+                          <kbd class="font-mono text-[9px] font-normal opacity-65">⌫</kbd>
+                        </button>
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+              </header>
+              <Show when={isTapAction(current())}>
+                <div class="mb-3 grid gap-1.5">
+                  <span class="text-[10.5px] text-[var(--text-weak)]">Gesture</span>
+                  <div
+                    class="grid grid-cols-3 rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]"
+                    role="radiogroup"
+                    aria-label="Tap gesture"
+                  >
+                    <For
+                      each={
+                        [
+                          ["single", "Single"],
+                          ["multi", "Multi"],
+                          ["hold", "Hold"],
+                        ] as const
+                      }
+                    >
+                      {([value, label]) => {
+                        const selected = () => tapGesture(current()) === value;
+                        return (
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={selected()}
+                            class={cn(
+                              "h-7 rounded-md text-[10.5px] font-medium transition-[background-color,color,box-shadow,transform] duration-100 ease-out active:scale-[0.98]",
+                              selected()
+                                ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_3px_rgb(0_0_0/24%)]"
+                                : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                            )}
+                            onClick={() => changeTapGesture(value)}
+                          >
+                            {label}
+                          </button>
+                        );
+                      }}
+                    </For>
+                  </div>
+                  <Show when={multiTapStep()}>
+                    {(_) => (
+                      <div class="mt-0.5 grid h-8 grid-cols-2 divide-x divide-[var(--v2-border-border-muted)] rounded-lg ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                        <label class="flex min-w-0 items-center justify-between gap-2 px-2.5">
+                          <span class="text-[10.5px] text-[var(--text-base)]">Taps</span>
+                          <input
+                            type="number"
+                            min="2"
+                            max="10"
+                            step="1"
+                            class="w-7 bg-transparent text-right font-mono text-[10.5px] text-[var(--text-strong)] outline-none"
+                            value={multiTapCount()}
+                            onInput={(event) => updateMultiTapCount(event.currentTarget.value)}
+                          />
+                        </label>
+                        <label class="flex min-w-0 items-center justify-between gap-1 px-2.5">
+                          <span class="text-[10.5px] text-[var(--text-base)]">Interval</span>
+                          <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
+                            <input
+                              type="number"
+                              min="20"
+                              max="2000"
+                              step="10"
+                              class="w-9 bg-transparent text-right text-[var(--text-strong)] outline-none"
+                              value={multiTapInterval()}
+                              onInput={(event) => updateMultiTapInterval(event.currentTarget.value)}
+                            />
+                            ms
+                          </span>
+                        </label>
+                      </div>
+                    )}
                   </Show>
-                )}
+                  <Show when={holdStep()}>
+                    {(held) => (
+                      <label class="mt-0.5 flex h-8 items-center justify-between gap-3 rounded-lg px-2.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                        <span class="text-[10.5px] text-[var(--text-base)]">Hold duration</span>
+                        <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
+                          <input
+                            type="number"
+                            min="0.1"
+                            max="10"
+                            step="0.1"
+                            class="w-10 bg-transparent text-right text-[var(--text-strong)] outline-none"
+                            value={(held().durationMs ?? 700) / 1_000}
+                            onInput={(event) => updateHoldDuration(event.currentTarget.value)}
+                          />
+                          s
+                        </span>
+                      </label>
+                    )}
+                  </Show>
+                </div>
+              </Show>
+              <Show
+                when={usesCompactInspector(current())}
+                fallback={
+                  <div class="-mx-[15px] -mb-[16px]">
+                    <StepEditor
+                      step={() => step()!}
+                      index={index()}
+                      autofocus={() => false}
+                      onAutofocused={() => undefined}
+                      onChange={(next) => draft.updateStep(index(), next)}
+                      showEvidence={false}
+                    />
+                  </div>
+                }
+              >
+                <Show
+                  when={editableTarget(current())}
+                  fallback={
+                    <label class="grid gap-1.5">
+                      <span class="text-[10.5px] text-[var(--text-weak)]">
+                        {simpleField(current()).label}
+                      </span>
+                      <input
+                        class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                        type={simpleField(current()).number ? "number" : "text"}
+                        min={simpleField(current()).number ? 0 : undefined}
+                        step={simpleField(current()).number ? 0.5 : undefined}
+                        value={simpleField(current()).value}
+                        placeholder="Optional"
+                        onInput={(event) => updateSimpleValue(event.currentTarget.value)}
+                      />
+                    </label>
+                  }
+                >
+                  {(target) => (
+                    <Show
+                      when={
+                        isTapAction(current()) &&
+                        (targetChoices().length > 0 || Boolean(constraintPoint()))
+                      }
+                      fallback={
+                        <label class="grid gap-1.5">
+                          <span class="text-[10.5px] text-[var(--text-weak)]">Target</span>
+                          <input
+                            class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+                            value={targetText(target())}
+                            placeholder="What should Relay find?"
+                            onInput={(event) => updateTarget(event.currentTarget.value)}
+                          />
+                          <small class="text-[10px]/[1.45] text-[var(--text-weak)]">
+                            Use the words someone can see on the screen.
+                          </small>
+                        </label>
+                      }
+                    >
+                      <div class="grid gap-2">
+                        <Show when={defaultStrategy(target()) !== "point" && previewNode()}>
+                          <section class="grid gap-1 border-b border-[var(--v2-border-border-muted)] px-0.5 pb-2">
+                            <header class="grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                              <span class="text-[10px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+                                Target scope
+                              </span>
+                              <span class="flex min-w-0 items-baseline gap-1.5">
+                                <strong
+                                  class="truncate text-[11px] font-medium text-[var(--text-strong)]"
+                                  title={previewNode()?.role ?? previewNode()?.type ?? undefined}
+                                >
+                                  {elementName(previewNode())}
+                                </strong>
+                                <code class="shrink-0 font-mono text-[9px] text-[var(--text-weak)]">
+                                  {previewNode()?.ref ?? "No reference"}
+                                </code>
+                              </span>
+                              <span class="font-mono text-[9px] tabular-nums text-[var(--text-base)]">
+                                {targetDepth() === 0 ? "This element" : `Parent ${targetDepth()}`}
+                              </span>
+                            </header>
+                            <Show when={hierarchy().length > 1}>
+                              <div class="grid gap-1 pt-0.5">
+                                <MaterialDiscreteSlider
+                                  value={targetDepth()}
+                                  count={hierarchy().length}
+                                  label="Element scope"
+                                  valueText={
+                                    targetDepth() === 0 ? "This element" : `Parent ${targetDepth()}`
+                                  }
+                                  onInput={selectElementDepth}
+                                />
+                                <div class="flex items-center justify-between text-[8.5px] text-[var(--text-weak)]">
+                                  <span>Element</span>
+                                  <span>Parent</span>
+                                </div>
+                              </div>
+                            </Show>
+                          </section>
+                        </Show>
+                        <div class="grid gap-1" role="radiogroup" aria-label="Tap target method">
+                          <For each={targetChoices()}>
+                            {(choice) => {
+                              const selected = () =>
+                                targetMatches(choice.strategy, target(), choice.target);
+                              return (
+                                <button
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={selected()}
+                                  class={cn(
+                                    "group grid min-h-10 grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.985]",
+                                    selected()
+                                      ? "border-[color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,var(--v2-background-bg-layer-01))]"
+                                      : "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)]",
+                                  )}
+                                  onClick={() => chooseTarget(choice.target)}
+                                >
+                                  <span
+                                    class={cn(
+                                      "grid size-3.5 place-items-center rounded-full border",
+                                      selected()
+                                        ? "border-[var(--v2-background-bg-accent)]"
+                                        : "border-[var(--v2-border-border-strong)]",
+                                    )}
+                                    aria-hidden="true"
+                                  >
+                                    <i
+                                      class={cn(
+                                        "size-1.5 rounded-full",
+                                        selected() && "bg-[var(--v2-background-bg-accent)]",
+                                      )}
+                                    />
+                                  </span>
+                                  <strong class="truncate text-[11px] font-medium text-[var(--text-strong)]">
+                                    {choice.title}
+                                  </strong>
+                                  <code class="max-w-[92px] truncate font-mono text-[9.5px] text-[var(--text-base)]">
+                                    {choice.strategy === "ref"
+                                      ? targetDepth() === 0
+                                        ? "This element"
+                                        : `Parent ${targetDepth()}`
+                                      : choice.value}
+                                  </code>
+                                </button>
+                              );
+                            }}
+                          </For>
+                          <Show when={constraintPoint()}>
+                            {(point) => (
+                              <CoordinateConstraintPicker
+                                horizontal={horizontalConstraint()}
+                                vertical={verticalConstraint()}
+                                point={
+                                  defaultStrategy(target()) === "point" && target().point
+                                    ? target().point!
+                                    : point()
+                                }
+                                active={defaultStrategy(target()) === "point"}
+                                onHorizontal={(value) => {
+                                  setHorizontalConstraint(value);
+                                  chooseConstraints(value, verticalConstraint());
+                                }}
+                                onVertical={(value) => {
+                                  setVerticalConstraint(value);
+                                  chooseConstraints(horizontalConstraint(), value);
+                                }}
+                                onPoint={updateCoordinatePoint}
+                                onActivate={() => chooseConstraints()}
+                                canUndo={workbench.coordinateUndo()?.index === index()}
+                                onUndo={workbench.undoCoordinate}
+                              />
+                            )}
+                          </Show>
+                        </div>
+                      </div>
+                    </Show>
+                  )}
+                </Show>
               </Show>
             </section>
           )}
@@ -965,17 +1355,9 @@ export function JourneyInspector(props: {
             <Icon name="chevron-right" size={14} />
           </button>
         </div>
-        <button
-          type="button"
-          class={productSecondary}
-          onClick={() => {
-            const selected = index();
-            props.onEdit();
-            queueMicrotask(() => draft.setExpandedStep(selected));
-          }}
-        >
-          <Icon name="sliders" size={13} /> Advanced editor
-        </button>
+        <span class="font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
+          {index() + 1} / {draft.steps().length}
+        </span>
       </footer>
     </aside>
   );

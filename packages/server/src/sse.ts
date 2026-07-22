@@ -1,10 +1,18 @@
 import type http from "node:http";
 import { now, recentEvents, subscribe, type DeviceEvent } from "@relay/core";
 
-type Client = { res: http.ServerResponse; heartbeat: NodeJS.Timeout };
+type Client = {
+  res: http.ServerResponse;
+  heartbeat: NodeJS.Timeout;
+  visible: (event: DeviceEvent) => boolean;
+};
 
 export function createSseHub(headers: Record<string, string>): {
-  attach: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+  attach: (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    visible?: (event: DeviceEvent) => boolean,
+  ) => void;
   count: () => number;
   close: () => void;
 } {
@@ -16,6 +24,7 @@ export function createSseHub(headers: Record<string, string>): {
   };
   const unsubscribe = subscribe((event) => {
     for (const client of clients) {
+      if (!client.visible(event)) continue;
       try {
         write(client.res, event);
       } catch {
@@ -26,7 +35,7 @@ export function createSseHub(headers: Record<string, string>): {
   });
 
   return {
-    attach(req, res) {
+    attach(req, res, visible = () => true) {
       res.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
@@ -34,10 +43,13 @@ export function createSseHub(headers: Record<string, string>): {
         ...headers,
       });
       res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, at: now() })}\n\n`);
-      for (const event of recentEvents(30)) write(res, event);
+      for (const event of recentEvents(30)) {
+        if (visible(event)) write(res, event);
+      }
 
       const client: Client = {
         res,
+        visible,
         heartbeat: setInterval(() => {
           try {
             res.write(`: ping ${now()}\n\n`);

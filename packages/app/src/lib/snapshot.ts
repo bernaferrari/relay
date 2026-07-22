@@ -236,10 +236,19 @@ export function targetFromStrategy(
   fx: number,
   fy: number,
   bounds: { width: number; height: number } | undefined,
+  anchor: {
+    horizontal: "left" | "center" | "right";
+    vertical: "top" | "center" | "bottom";
+  } = { horizontal: "left", vertical: "top" },
 ): StepTarget {
   const w = bounds?.width ?? 1;
   const h = bounds?.height ?? 1;
-  const point = { x: Math.round(fx * w), y: Math.round(fy * h) };
+  const point = {
+    x: strategy.kind === "point" ? strategy.x : Math.round(fx * w),
+    y: strategy.kind === "point" ? strategy.y : Math.round(fy * h),
+    anchor,
+    ...(bounds ? { referenceBounds: { ...bounds } } : {}),
+  };
   switch (strategy.kind) {
     case "ref":
       return { ref: strategy.ref, point };

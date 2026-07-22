@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Device } from "./device.js";
-import { startRunEvidence, stopRunEvidence } from "./run-evidence.js";
+import { startRunEvidence, stopRunEvidence, withTimeout } from "./run-evidence.js";
 import type { TestJob } from "./session.js";
 
 test("run evidence records video and performance without affecting the run", async () => {
@@ -201,4 +201,21 @@ test("consent grants activate audio, crash, and network-body collectors", async 
   assert.equal(job.evidence?.channels.audio.status, "captured");
   assert.equal(job.evidence?.channels.crash.status, "captured");
   assert.equal(job.evidence?.collectionPolicy?.sensitive["network-body"]?.grantedBy, "tester");
+});
+
+test("timed-out collectors compensate when they start late", async () => {
+  let resolveStart: ((value: { started: true }) => void) | undefined;
+  const start = new Promise<{ started: true }>((resolve) => {
+    resolveStart = resolve;
+  });
+  let cleaned = false;
+  await assert.rejects(
+    withTimeout(start, 5, "late collector", async () => {
+      cleaned = true;
+    }),
+    /timed out/,
+  );
+  resolveStart?.({ started: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(cleaned, true);
 });

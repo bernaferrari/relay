@@ -12,6 +12,7 @@ import { createMainWindow, loadRenderer, resolveAppIconPath } from "./windows.js
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
 const HEALTH_TIMEOUT_MS = 800;
 const PRODUCT_NAME = "Relay";
+const PRODUCT_VERSION = "0.1.0";
 
 app.setName(PRODUCT_NAME);
 process.title = PRODUCT_NAME;
@@ -22,16 +23,33 @@ let serverUrl =
 let serverChild: ChildProcess | null = null;
 const updates = new DesktopUpdater();
 
-async function isServerHealthy(url: string): Promise<boolean> {
+async function isServerCompatible(url: string): Promise<boolean> {
   const healthUrl = new URL(`${url.replace(/\/+$/, "")}/health`);
   const request = healthUrl.protocol === "https:" ? httpsRequest : httpRequest;
 
   return await new Promise((resolveHealthy) => {
     const req = request(healthUrl, { method: "GET" }, (response) => {
-      response.resume();
-      resolveHealthy(
-        Boolean(response.statusCode && response.statusCode >= 200 && response.statusCode < 300),
-      );
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      response.on("data", (chunk: Buffer) => {
+        bytes += chunk.byteLength;
+        if (bytes <= 64 * 1024) chunks.push(chunk);
+      });
+      response.on("end", () => {
+        if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+          resolveHealthy(false);
+          return;
+        }
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+            product?: unknown;
+            version?: unknown;
+          };
+          resolveHealthy(body.product === "relay" && body.version === PRODUCT_VERSION);
+        } catch {
+          resolveHealthy(false);
+        }
+      });
     });
     req.setTimeout(HEALTH_TIMEOUT_MS, () => {
       req.destroy();
@@ -47,6 +65,8 @@ function resolveServerEntry(): string | null {
   // monorepo: packages/desktop/out/main → packages/server/src/index.ts
   // or packages/desktop/src/main during unbundled runs
   const candidates = [
+    join(process.resourcesPath, "server/index.cjs"),
+    resolve(here, "../server/index.cjs"),
     resolve(here, "../../../server/src/index.ts"),
     resolve(here, "../../server/src/index.ts"),
     resolve(process.cwd(), "packages/server/src/index.ts"),
@@ -60,7 +80,7 @@ function resolveServerEntry(): string | null {
 
 async function waitForHealthy(url: string, attempts = 30, delayMs = 200): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
-    if (await isServerHealthy(url)) return true;
+    if (await isServerCompatible(url)) return true;
     await new Promise((r) => setTimeout(r, delayMs));
   }
   return false;
@@ -74,7 +94,7 @@ async function ensureServer(): Promise<string> {
   const preferred =
     (process.env.RELAY_URL ?? process.env.GROK_DEVICE_URL)?.trim() || DEFAULT_SERVER_URL;
 
-  if (await isServerHealthy(preferred)) {
+  if (await isServerCompatible(preferred)) {
     console.log(`[desktop] using existing server at ${preferred}`);
     return preferred;
   }
@@ -91,14 +111,20 @@ async function ensureServer(): Promise<string> {
   const host = url.hostname || "127.0.0.1";
   const port = url.port || "8787";
 
-  const runner = existsSync(join(process.cwd(), "node_modules/tsx/dist/cli.mjs"))
-    ? { cmd: process.execPath, args: [join(process.cwd(), "node_modules/tsx/dist/cli.mjs"), entry] }
-    : existsSync(join(dirname(entry), "../../node_modules/tsx/dist/cli.mjs"))
-      ? {
-          cmd: process.execPath,
-          args: [resolve(dirname(entry), "../../node_modules/tsx/dist/cli.mjs"), entry],
-        }
-      : { cmd: "npx", args: ["tsx", entry] };
+  const runner =
+    app.isPackaged && entry.endsWith(".cjs")
+      ? { cmd: process.execPath, args: [entry] }
+      : existsSync(join(process.cwd(), "node_modules/tsx/dist/cli.mjs"))
+        ? {
+            cmd: process.execPath,
+            args: [join(process.cwd(), "node_modules/tsx/dist/cli.mjs"), entry],
+          }
+        : existsSync(join(dirname(entry), "../../node_modules/tsx/dist/cli.mjs"))
+          ? {
+              cmd: process.execPath,
+              args: [resolve(dirname(entry), "../../node_modules/tsx/dist/cli.mjs"), entry],
+            }
+          : { cmd: "npx", args: ["tsx", entry] };
 
   console.log(`[desktop] spawning server: ${runner.cmd} ${runner.args.join(" ")} --port ${port}`);
 

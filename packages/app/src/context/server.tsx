@@ -100,6 +100,7 @@ export type {
   RecipeStep,
   SnapshotNode,
   SnapshotState,
+  StepPoint,
   StepTarget,
   TraceFrameRef,
   TraceStep,

@@ -42,7 +42,8 @@ export function createMainWindow(): BrowserWindow {
     autoHideMenuBar: true,
     ...(process.platform === "darwin"
       ? {
-          titleBarStyle: "hidden" as const,
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 12, y: 18 },
         }
       : {}),
     webPreferences: {
@@ -52,11 +53,6 @@ export function createMainWindow(): BrowserWindow {
       sandbox: true,
     },
   });
-
-  // Relay owns its compact title/drag region. Hiding the native traffic lights
-  // removes a second visual hierarchy from the navigation rail; standard macOS
-  // window shortcuts and the application menu remain available.
-  if (process.platform === "darwin") win.setWindowButtonVisibility(false);
 
   const fallbackShow = setTimeout(() => win.show(), 8000);
   const reveal = () => {

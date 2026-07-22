@@ -1,6 +1,7 @@
 import {
   buildTargetProfiles,
   enqueueJob,
+  freezeRecipeExecution,
   listDevices,
   listTargets,
   now,
@@ -37,6 +38,7 @@ export async function enqueueCompatibilityBatch(
     targets: await listTargets(),
   });
   const expansion = resolveCompatibilityMatrix(matrix, profiles);
+  const frozenRecipe = await freezeRecipeExecution(body.recipe);
   if (expansion.profiles.length === 0) {
     const details = expansion.excluded.map((item) => item.reason).join("; ");
     throw new HttpError(
@@ -61,6 +63,7 @@ export async function enqueueCompatibilityBatch(
     Array.from({ length: repetitions }, (_, repetition) =>
       enqueueJob({
         recipe: body.recipe,
+        ...frozenRecipe,
         serial: profile.targetId,
         platform: profile.platform === "ios" ? "ios" : "android",
         targetKind: profile.source === "browser" ? "browser" : "device",

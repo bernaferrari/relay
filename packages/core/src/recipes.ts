@@ -12,6 +12,30 @@ import { ACTIONS, isActionId } from "./actions.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { now } from "./events.js";
 import type { Glyph } from "./trace.js";
+import type {
+  HumanCheckpointReason,
+  HorizontalCoordinateAnchor,
+  RecipeParameter,
+  RecipeStep,
+  RecordedNodeEvidence,
+  RecordedSelectorCandidate,
+  RecordedStepEvidence,
+  StepPoint,
+  StepTarget,
+  VerticalCoordinateAnchor,
+} from "@relay/protocol";
+export type {
+  HumanCheckpointReason,
+  HorizontalCoordinateAnchor,
+  RecipeParameter,
+  RecipeStep,
+  RecordedNodeEvidence,
+  RecordedSelectorCandidate,
+  RecordedStepEvidence,
+  StepPoint,
+  StepTarget,
+  VerticalCoordinateAnchor,
+} from "@relay/protocol";
 import {
   formatRecipeYaml,
   listYamlRecipeFiles,
@@ -19,255 +43,6 @@ import {
   recipeYamlPath,
   validateRecipeVariables,
 } from "./recipe-yaml.js";
-
-/** How to find a target on screen — ordered fallbacks, most robust first. */
-export type StepTarget = {
-  /** a11y ref, e.g. "@e26" (most robust within one screen) */
-  ref?: string;
-  /** exact accessibility label */
-  label?: string;
-  /** text-contains match (device find query) */
-  text?: string;
-  /** raw coordinates (always works, least robust) */
-  point?: { x: number; y: number };
-};
-
-export type RecordedSelectorCandidate = {
-  strategy: "ref" | "label" | "text" | "point";
-  label: string;
-  source: "element" | "ancestor" | "coordinate";
-  confidence: "high" | "medium" | "fallback";
-  target: StepTarget;
-};
-
-export type RecordedNodeEvidence = {
-  label?: string;
-  value?: string;
-  identifier?: string;
-  role?: string;
-  type?: string;
-  ref?: string;
-  index?: number;
-  rect?: { x: number; y: number; width: number; height: number };
-};
-
-export type RecordedStepEvidence = {
-  id: string;
-  recordedAt: number;
-  serial?: string;
-  deviceBounds?: { width: number; height: number };
-  pointer?: { x: number; y: number };
-  node?: RecordedNodeEvidence;
-  ancestors?: RecordedNodeEvidence[];
-  candidates?: RecordedSelectorCandidate[];
-  screenshot?: {
-    recipeId: string;
-    id: string;
-    capturedAt: number;
-    mime: "image/png";
-  };
-};
-
-/** A declared input turns an ordinary recorded recipe into a reusable,
- * parameterized flow. Inputs are plain, reviewable test data—not a place for
- * passwords or tokens. Sensitive values belong in a future host credential
- * store and must never be committed to YAML or immutable run evidence. */
-export type RecipeParameter = {
-  name: string;
-  label?: string;
-  description?: string;
-  default?: string;
-  required?: boolean;
-};
-
-/** Why a run is intentionally waiting for a person to act on the target. */
-export type HumanCheckpointReason =
-  | "authentication"
-  | "consent"
-  | "verification"
-  | "captcha"
-  | "permission"
-  | "review"
-  | "other";
-
-export type RecipeStep =
-  | { kind: "tap"; target: StepTarget; evidence?: RecordedStepEvidence; note?: string }
-  | { kind: "long-press"; target: StepTarget; durationMs?: number; note?: string }
-  | {
-      kind: "type";
-      text: string;
-      target?: StepTarget;
-      evidence?: RecordedStepEvidence;
-      note?: string;
-    }
-  | { kind: "scroll"; direction: "down" | "up"; amount?: number; note?: string }
-  | { kind: "key"; key: "back" | "home"; note?: string }
-  | {
-      kind: "swipe";
-      from: { x: number; y: number };
-      to: { x: number; y: number };
-      durationMs?: number;
-      evidence?: RecordedStepEvidence;
-      note?: string;
-    }
-  | { kind: "sleep"; ms: number; note?: string }
-  | { kind: "wait-for"; target: StepTarget; timeoutMs?: number; note?: string }
-  | {
-      kind: "wait-response";
-      target: StepTarget;
-      busyTarget?: StepTarget;
-      idleTarget?: StepTarget;
-      timeoutMs?: number;
-      stableForMs?: number;
-      note?: string;
-    }
-  | {
-      kind: "expect";
-      target: StepTarget;
-      condition: "visible" | "gone";
-      timeoutMs?: number;
-      note?: string;
-    }
-  | {
-      kind: "extract";
-      as: string;
-      target: StepTarget;
-      role?: "user" | "assistant" | "system";
-      note?: string;
-    }
-  | {
-      kind: "assert-content";
-      input: string;
-      expected: string;
-      match: "exact" | "contains" | "not-contains";
-      note?: string;
-    }
-  | {
-      kind: "evaluate-semantic";
-      input: string;
-      criteria: string[];
-      threshold?: number;
-      provider?: string;
-      model?: string;
-      requireAgreement?: boolean;
-      secondProvider?: string;
-      secondModel?: string;
-      note?: string;
-    }
-  | {
-      kind: "pause";
-      message: string;
-      reason?: HumanCheckpointReason;
-      resumeLabel?: string;
-      timeoutMs?: number;
-      /** State Relay must observe after the operator resumes the run. */
-      verifyAfter?: {
-        target: StepTarget;
-        condition?: "visible" | "gone";
-        timeoutMs?: number;
-      };
-      note?: string;
-    }
-  | { kind: "screenshot"; caption?: string; note?: string }
-  | { kind: "flow"; flow: string; note?: string }
-  | {
-      kind: "module";
-      recipeId: string;
-      /** Explicit values passed into declared parameters of the attached flow. */
-      bindings?: Record<string, string>;
-      note?: string;
-    }
-  | {
-      kind: "branch";
-      input: string;
-      operator: "exists" | "equals" | "not-equals" | "contains";
-      expected?: string;
-      thenRecipeId: string;
-      elseRecipeId?: string;
-      note?: string;
-    }
-  | { kind: "repeat"; count: number; recipeId: string; note?: string }
-  | { kind: "script"; source: string; note?: string }
-  | {
-      kind: "clipboard";
-      action: "write" | "read";
-      text?: string;
-      expect?: string;
-      match?: "exact" | "contains";
-      note?: string;
-    }
-  | {
-      kind: "app";
-      action:
-        | "open"
-        | "close"
-        | "switcher"
-        | "inspect"
-        | "assert-installed"
-        | "assert-not-installed"
-        | "install"
-        | "update"
-        | "uninstall";
-      app?: string;
-      url?: string;
-      /** Local APK used only by Android install/update. Never uploaded by Relay. */
-      artifact?: string;
-      /** Capture the observed version into a frozen run variable. */
-      as?: string;
-      /** Optional expected version for inspect/assert-installed. */
-      version?: string;
-      versionMatch?: "exact" | "contains";
-      note?: string;
-    }
-  | {
-      kind: "device";
-      action: "lock" | "unlock" | "keyboard-dismiss" | "keyboard-enter";
-      note?: string;
-    }
-  | {
-      kind: "rotate";
-      orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right";
-      note?: string;
-    }
-  | {
-      kind: "settings";
-      setting: "wifi" | "airplane" | "location" | "animations" | "appearance";
-      state: "on" | "off" | "light" | "dark" | "toggle";
-      note?: string;
-    }
-  | { kind: "location"; latitude: number; longitude: number; note?: string }
-  | {
-      kind: "permission";
-      action: "grant" | "deny" | "reset";
-      permission:
-        | "camera"
-        | "microphone"
-        | "photos"
-        | "contacts"
-        | "notifications"
-        | "calendar"
-        | "location"
-        | "location-always"
-        | "media-library"
-        | "motion"
-        | "reminders"
-        | "siri";
-      note?: string;
-    }
-  | {
-      kind: "alert";
-      action: "get" | "accept" | "dismiss" | "wait";
-      timeoutMs?: number;
-      note?: string;
-    }
-  | {
-      kind: "network";
-      action: "dump" | "log";
-      include?: "summary" | "headers" | "body" | "all";
-      limit?: number;
-      note?: string;
-    }
-  | { kind: "logs"; action: "start" | "stop" | "mark" | "clear"; message?: string; note?: string };
 
 export type Recipe = {
   /** slug, unique; custom ones are "custom-<slug>" */
@@ -433,7 +208,36 @@ function parseTarget(raw: unknown, index: number, field: string): StepTarget {
     if (!isObject(p) || !isNumber(p.x) || !isNumber(p.y)) {
       throw stepErr(index, `${field}.point must be { x: number, y: number }`);
     }
-    t.point = { x: p.x, y: p.y };
+    const point: StepPoint = { x: p.x, y: p.y };
+    if (p.anchor !== undefined) {
+      if (
+        !isObject(p.anchor) ||
+        !["left", "center", "right"].includes(String(p.anchor.horizontal)) ||
+        !["top", "center", "bottom"].includes(String(p.anchor.vertical))
+      ) {
+        throw stepErr(index, `${field}.point.anchor must contain horizontal and vertical anchors`);
+      }
+      point.anchor = {
+        horizontal: p.anchor.horizontal as HorizontalCoordinateAnchor,
+        vertical: p.anchor.vertical as VerticalCoordinateAnchor,
+      };
+    }
+    if (p.referenceBounds !== undefined) {
+      if (
+        !isObject(p.referenceBounds) ||
+        !isNumber(p.referenceBounds.width) ||
+        !isNumber(p.referenceBounds.height) ||
+        p.referenceBounds.width <= 0 ||
+        p.referenceBounds.height <= 0
+      ) {
+        throw stepErr(index, `${field}.point.referenceBounds must be { width, height }`);
+      }
+      point.referenceBounds = {
+        width: p.referenceBounds.width,
+        height: p.referenceBounds.height,
+      };
+    }
+    t.point = point;
   }
   return t;
 }
@@ -456,6 +260,12 @@ function parseRecordedNode(raw: unknown, index: number, field: string): Recorded
   if (raw.index !== undefined) {
     if (!isNumber(raw.index)) throw stepErr(index, `${field}.index must be a number`);
     node.index = raw.index;
+  }
+  if (raw.parentIndex !== undefined) {
+    if (!isNumber(raw.parentIndex)) {
+      throw stepErr(index, `${field}.parentIndex must be a number`);
+    }
+    node.parentIndex = raw.parentIndex;
   }
   if (raw.rect !== undefined) {
     if (
@@ -509,6 +319,14 @@ function parseRecordedEvidence(raw: unknown, index: number): RecordedStepEvidenc
     }
     evidence.ancestors = raw.ancestors.map((node, i) =>
       parseRecordedNode(node, index, `evidence.ancestors[${i}]`),
+    );
+  }
+  if (raw.nodes !== undefined) {
+    if (!Array.isArray(raw.nodes) || raw.nodes.length > 256) {
+      throw stepErr(index, "evidence.nodes must be an array with at most 256 nodes");
+    }
+    evidence.nodes = raw.nodes.map((node, i) =>
+      parseRecordedNode(node, index, `evidence.nodes[${i}]`),
     );
   }
   if (raw.candidates !== undefined) {
@@ -578,32 +396,49 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         if (!targetHasStrategy(target)) {
           throw stepErr(index, "tap requires target with at least one of ref/label/text/point");
         }
+        if (
+          raw.gesture !== undefined &&
+          raw.gesture !== "single" &&
+          raw.gesture !== "multi" &&
+          raw.gesture !== "hold"
+        ) {
+          throw stepErr(index, 'tap.gesture must be "single", "multi", or "hold"');
+        }
+        if (
+          raw.tapCount !== undefined &&
+          (!Number.isInteger(raw.tapCount) ||
+            (raw.tapCount as number) < 2 ||
+            (raw.tapCount as number) > 10)
+        ) {
+          throw stepErr(index, "tap.tapCount must be an integer between 2 and 10");
+        }
+        if (
+          raw.intervalMs !== undefined &&
+          (!isNumber(raw.intervalMs) || raw.intervalMs < 20 || raw.intervalMs > 2_000)
+        ) {
+          throw stepErr(index, "tap.intervalMs must be between 20 and 2000");
+        }
+        if (
+          raw.durationMs !== undefined &&
+          (!isNumber(raw.durationMs) || raw.durationMs < 100 || raw.durationMs > 10_000)
+        ) {
+          throw stepErr(index, "tap.durationMs must be between 100 and 10000");
+        }
         const step: Extract<RecipeStep, { kind: "tap" }> = {
           kind: "tap",
           target,
+          ...(raw.gesture !== undefined
+            ? { gesture: raw.gesture as "single" | "multi" | "hold" }
+            : {}),
+          ...(raw.tapCount !== undefined ? { tapCount: raw.tapCount as number } : {}),
+          ...(raw.intervalMs !== undefined ? { intervalMs: raw.intervalMs as number } : {}),
+          ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs as number } : {}),
           ...(raw.evidence !== undefined
             ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
             : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
-        break;
-      }
-      case "long-press": {
-        const target = parseTarget(raw.target, index, "target");
-        if (!targetHasStrategy(target)) throw stepErr(index, "long-press requires a target");
-        if (
-          raw.durationMs !== undefined &&
-          (!isNumber(raw.durationMs) || raw.durationMs < 100 || raw.durationMs > 10_000)
-        ) {
-          throw stepErr(index, "long-press.durationMs must be between 100 and 10000");
-        }
-        out.push({
-          kind: "long-press",
-          target,
-          ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs as number } : {}),
-          ...(note ? { note } : {}),
-        });
         break;
       }
       case "type": {
@@ -710,6 +545,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           kind: "wait-for",
           target,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          ...(raw.evidence !== undefined
+            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
+            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -781,6 +619,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           target,
           condition: raw.condition,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          ...(raw.evidence !== undefined
+            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
+            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -1368,6 +1209,55 @@ export async function readRecipe(id: string): Promise<Recipe | null> {
   return null;
 }
 
+export type FrozenRecipeGraph = Record<string, Recipe>;
+
+/** Resolve every reusable-flow dependency before a job enters the queue. */
+export async function freezeRecipeGraph(root: Recipe): Promise<FrozenRecipeGraph> {
+  const graph: FrozenRecipeGraph = { [root.id]: structuredClone(root) };
+  const visiting = new Set<string>();
+
+  const dependencies = (recipe: Recipe): string[] =>
+    recipe.steps.flatMap((step) => {
+      if (step.kind === "module" || step.kind === "repeat") return [step.recipeId];
+      if (step.kind === "branch") {
+        return [step.thenRecipeId, ...(step.elseRecipeId ? [step.elseRecipeId] : [])];
+      }
+      return [];
+    });
+
+  async function visit(recipe: Recipe, path: string[]): Promise<void> {
+    if (visiting.has(recipe.id)) {
+      throw new Error(`reusable test cycle: ${[...path, recipe.id].join(" → ")}`);
+    }
+    visiting.add(recipe.id);
+    for (const dependencyId of dependencies(recipe)) {
+      const existing = graph[dependencyId];
+      const dependency = existing ?? (await readRecipe(dependencyId));
+      if (!dependency) {
+        throw new Error(`reusable test not found: ${dependencyId}`);
+      }
+      if (!existing) graph[dependencyId] = structuredClone(dependency);
+      await visit(dependency, [...path, recipe.id]);
+    }
+    visiting.delete(recipe.id);
+  }
+
+  await visit(root, []);
+  return graph;
+}
+
+export async function freezeRecipeExecution(recipeId: string): Promise<{
+  recipeSnapshot: Recipe;
+  recipeGraph: FrozenRecipeGraph;
+}> {
+  const recipeSnapshot = await readRecipe(recipeId);
+  if (!recipeSnapshot) throw new Error(`recipe not found: ${recipeId}`);
+  return {
+    recipeSnapshot: structuredClone(recipeSnapshot),
+    recipeGraph: await freezeRecipeGraph(recipeSnapshot),
+  };
+}
+
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -1546,9 +1436,7 @@ function arrowForSwipe(from: { x: number; y: number }, to: { x: number; y: numbe
 export function describeRecipeStep(step: RecipeStep): string {
   switch (step.kind) {
     case "tap":
-      return `Tap ${describeTarget(step.target)}`;
-    case "long-press":
-      return `Long press ${describeTarget(step.target)}`;
+      return `${step.gesture === "multi" ? `${step.tapCount ?? 2} taps` : step.gesture === "hold" ? "Hold" : "Tap"} ${describeTarget(step.target)}`;
     case "type":
       return step.target ? `Type into ${describeTarget(step.target)}` : "Type text";
     case "scroll":
@@ -1632,8 +1520,6 @@ export function describeRecipeStep(step: RecipeStep): string {
 export function glyphsForStep(step: RecipeStep): Glyph[] {
   switch (step.kind) {
     case "tap":
-      return ["tap"];
-    case "long-press":
       return ["tap"];
     case "type":
       return ["type"];

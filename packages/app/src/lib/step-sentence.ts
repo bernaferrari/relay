@@ -51,9 +51,7 @@ function cap(s: string): string {
 export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>): string {
   switch (step.kind) {
     case "tap":
-      return `Tap ${recordedTargetPhrase(step)}`;
-    case "long-press":
-      return `Long press ${targetPhrase(step.target)}`;
+      return `${step.gesture === "multi" ? `${step.tapCount ?? 2} taps` : step.gesture === "hold" ? "Hold" : "Tap"} ${recordedTargetPhrase(step)}`;
     case "type":
       return step.text.trim() ? `Type "${step.text}"` : "Type text";
     case "wait-for": {
@@ -146,7 +144,6 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
 export function stepValid(step: RecipeStep): boolean {
   switch (step.kind) {
     case "tap":
-    case "long-press":
     case "wait-for":
     case "wait-response":
     case "expect":
@@ -209,7 +206,6 @@ export function stepIssue(step: RecipeStep): string | null {
   if (stepValid(step)) return null;
   switch (step.kind) {
     case "tap":
-    case "long-press":
     case "wait-for":
     case "wait-response":
     case "expect":

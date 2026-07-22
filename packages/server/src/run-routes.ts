@@ -42,13 +42,30 @@ function assertRunAccess(
   }
 }
 
+function runVisibleToScope(
+  scope: RequestContext,
+  run: { projectId?: string; ownerId?: string },
+): boolean {
+  return scope.localTrusted || (run.projectId === scope.projectId && run.ownerId === scope.subject);
+}
+
+function assertLocalMaintenance(scope: RequestContext): void {
+  if (!scope.localTrusted) {
+    throw new HttpError(403, "Run storage maintenance is available only on the local Relay host");
+  }
+}
+
 export async function handleRunRoute(context: RunRouteContext): Promise<boolean> {
   const { method, pathname, url, request, response, scope } = context;
   const matrixReportMatch = matchPath(pathname, "/reports/matrix/:batchId");
   if (method === "GET" && matrixReportMatch) {
     const persisted = await listPersistedRuns(500);
     const live = listJobs(500);
-    const byId = new Map([...persisted, ...live].map((run) => [run.id, run]));
+    const byId = new Map(
+      [...persisted, ...live]
+        .filter((run) => runVisibleToScope(scope, run))
+        .map((run) => [run.id, run]),
+    );
     const report = buildCompatibilityReport([...byId.values()], matrixReportMatch.batchId!);
     if (!report) throw new HttpError(404, "Compatibility matrix report not found");
     json(response, 200, { report });
@@ -59,7 +76,11 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   if (method === "GET" && soakReportMatch) {
     const persisted = await listPersistedRuns(1_000);
     const live = listJobs(1_000);
-    const byId = new Map([...persisted, ...live].map((run) => [run.id, run]));
+    const byId = new Map(
+      [...persisted, ...live]
+        .filter((run) => runVisibleToScope(scope, run))
+        .map((run) => [run.id, run]),
+    );
     const report = buildSoakReport([...byId.values()], soakReportMatch.batchId!);
     if (!report) throw new HttpError(404, "Soak report not found");
     json(response, 200, { report });
@@ -99,16 +120,19 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   }
 
   if (method === "POST" && pathname === "/runs/catalog/rebuild") {
+    assertLocalMaintenance(scope);
     json(response, 200, await rebuildRunCatalog(runsRoot()));
     return true;
   }
 
   if (method === "GET" && pathname === "/runs/storage") {
+    assertLocalMaintenance(scope);
     json(response, 200, { policy: "disabled", health: await runStorageHealth(runsRoot()) });
     return true;
   }
 
   if (method === "POST" && pathname === "/runs/retention") {
+    assertLocalMaintenance(scope);
     const body = (await parseJsonBody(request)) as {
       maxAgeDays?: number;
       maxBytes?: number;
@@ -131,7 +155,12 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       appVersion: run.appVersion,
     });
     const history = (await listPersistedRuns(100))
-      .filter((candidate) => candidate.id !== run.id && candidate.action === run.action)
+      .filter(
+        (candidate) =>
+          candidate.id !== run.id &&
+          candidate.action === run.action &&
+          runVisibleToScope(scope, candidate),
+      )
       .flatMap((candidate) =>
         candidate.evidence
           ? [

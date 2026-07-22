@@ -203,7 +203,10 @@ function applyThemeCss(
 
   // Cache non-default themes for FOUC preload (AgentBoard skips oc-2)
   if (themeId !== "oc-2") {
-    write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, `${css}\n  ${v2}`);
+    write(
+      mode === "dark" ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT,
+      `${css}\n  ${v2}`,
+    );
   }
 
   const fullCss = `:root {
@@ -358,11 +361,12 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       setStore("colorScheme", savedScheme);
       setStore("mode", savedScheme === "system" ? getSystemMode() : savedScheme);
 
-      void loadThemes().then(() => setStore("ready", true));
-      void load(savedTheme).then((theme) => {
-        if (!theme) return;
-        cacheThemeVariants(theme, savedTheme);
-      });
+      void load(savedTheme)
+        .then((theme) => {
+          if (!theme) return;
+          cacheThemeVariants(theme, savedTheme);
+        })
+        .finally(() => setStore("ready", true));
 
       return () => {
         mq.removeEventListener("change", onMedia);

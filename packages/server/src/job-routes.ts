@@ -3,6 +3,7 @@ import {
   cancelActiveJob,
   cancelJob,
   enqueueJob,
+  freezeRecipeExecution,
   getActiveJob,
   getJob,
   listJobs,
@@ -111,12 +112,16 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       projectId?: string;
     };
     if (!body.recipe) throw new HttpError(400, "recipe is required");
+    if (!scope.localTrusted) {
+      throw new HttpError(403, "Recipe jobs require a project-owned recipe store");
+    }
     await assertTargetControl(scope, body.browserTargetId ?? body.serial);
     if (body.projectId?.trim() && body.projectId.trim() !== scope.projectId) {
       recordAudit(scope, { action: "run.matrix", resource: "project", result: "deny" });
       throw new HttpError(403, "Project is outside the authenticated scope");
     }
     const definitions = await readProjectVariables(scope.projectId);
+    const frozenRecipe = await freezeRecipeExecution(body.recipe);
     const matrix = await prepareRunMatrix({
       variables: definitions.value,
       repetitions: body.repetitions,
@@ -125,6 +130,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     const jobs = matrix.cases.map((item) =>
       enqueueJob({
         recipe: body.recipe,
+        ...frozenRecipe,
         serial: body.serial,
         platform: body.platform,
         targetKind: body.targetKind,
@@ -197,6 +203,9 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     if (!body.action && !body.recipe && !body.retryOf) {
       throw new HttpError(400, "action or recipe is required");
     }
+    if (body.recipe && !scope.localTrusted) {
+      throw new HttpError(403, "Recipe jobs require a project-owned recipe store");
+    }
     await assertTargetControl(scope, body.browserTargetId ?? body.serial);
     let job;
     try {
@@ -205,11 +214,13 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         assertJobAccess(scope, previous);
         await assertTargetControl(scope, previous?.browserTargetId ?? previous?.serial);
       }
+      const frozenRecipe = body.recipe ? await freezeRecipeExecution(body.recipe) : undefined;
       job = body.retryOf
         ? retryJob(body.retryOf)
         : enqueueJob({
             action: body.action,
             recipe: body.recipe,
+            ...frozenRecipe,
             serial: body.serial,
             platform: body.platform,
             targetKind: body.targetKind,

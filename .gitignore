@@ -16,6 +16,7 @@ vendor/opencode/
 .vite-hooks/
 packages/*/dist/
 packages/*/out/
+packages/*/release/
 packages/*/node_modules/
 *.tsbuildinfo
 runs/

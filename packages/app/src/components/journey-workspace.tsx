@@ -8,12 +8,7 @@ import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { AgentTestComposer } from "./agent-test-composer";
-import {
-  accentForStep,
-  actionForStep,
-  evidenceForStep,
-  iconForStep,
-} from "./journey-step-presentation";
+import { accentForStep, evidenceForStep, iconForStep } from "./journey-step-presentation";
 import { AddMenu } from "./step-list-controls";
 import { kindLabel } from "./step-list-metadata";
 import { eyebrow } from "../lib/ui";
@@ -23,8 +18,10 @@ type EdgeStyle = "flow" | "branch" | "failure";
 type EdgeConfig = { label: string; style: EdgeStyle };
 
 const JOURNEY_NODE_WIDTH = 220;
-const JOURNEY_NODE_PORT_Y = 200;
+const JOURNEY_NODE_HEIGHT = 468;
+const JOURNEY_NODE_PORT_Y = JOURNEY_NODE_HEIGHT / 2;
 const JOURNEY_NODE_GAP = 96;
+const JOURNEY_NODE_STEP = JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP;
 
 const boardChrome =
   "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
@@ -77,6 +74,13 @@ function PlannedJourney(props: { onLive: () => void }) {
     anchor: { left: number; top: number; bottom: number; width: number };
   } | null>(null);
   const [edgeConfig, setEdgeConfig] = createSignal<Record<number, EdgeConfig>>({});
+  const [stepDrag, setStepDrag] = createSignal<{
+    pointerId: number;
+    from: number;
+    over: number;
+    startClientX: number;
+    deltaX: number;
+  } | null>(null);
   const [journeyRevision, setJourneyRevision] = createSignal<Revisioned<JourneyMetadata>>({
     revision: 0,
     value: { positions: {}, edgeLabels: {}, edgeKinds: {} },
@@ -90,7 +94,7 @@ function PlannedJourney(props: { onLive: () => void }) {
     draft.steps().map((step, index) => ({
       step,
       index,
-      x: index * (JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP),
+      x: index * JOURNEY_NODE_STEP,
       y: 0,
     })),
   );
@@ -180,6 +184,36 @@ function PlannedJourney(props: { onLive: () => void }) {
 
   function zoom(delta: number): void {
     setView((current) => ({ ...current, scale: clamp(current.scale + delta, 0.48, 1.18) }));
+  }
+
+  function focusAfterMove(from: number, to: number): void {
+    const selected = workbench.focusedIndex();
+    if (selected == null) return;
+    if (selected === from) workbench.focusStep(to);
+    else if (from < to && selected > from && selected <= to) workbench.focusStep(selected - 1);
+    else if (to < from && selected >= to && selected < from) workbench.focusStep(selected + 1);
+  }
+
+  function commitStepDrag(): void {
+    const current = stepDrag();
+    setStepDrag(null);
+    if (!current || current.from === current.over) return;
+    draft.moveStepTo(current.from, current.over);
+    focusAfterMove(current.from, current.over);
+    setSelectedEdge(null);
+    setAddMenu(null);
+  }
+
+  function moveStepByKeyboard(index: number, direction: -1 | 1): void {
+    const next = clamp(index + direction, 0, nodes().length - 1);
+    if (next === index) return;
+    draft.moveStepTo(index, next);
+    focusAfterMove(index, next);
+    queueMicrotask(() =>
+      board
+        ?.querySelector<HTMLButtonElement>(`[data-reorder-step="${next}"]`)
+        ?.focus({ preventScroll: true }),
+    );
   }
 
   // Layers, canvas, and inspector share one selection. If a step is chosen in
@@ -349,6 +383,15 @@ function PlannedJourney(props: { onLive: () => void }) {
             width: `${width()}px`,
           }}
         >
+          <Show when={stepDrag()}>
+            {(dragging) => (
+              <i
+                class="pointer-events-none absolute top-[-10px] z-[8] h-[488px] w-px bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_14%,transparent)]"
+                style={{ left: `${dragging().over * JOURNEY_NODE_STEP - JOURNEY_NODE_GAP / 2}px` }}
+                aria-hidden="true"
+              />
+            )}
+          </Show>
           <svg
             class="pointer-events-auto absolute inset-0 overflow-visible"
             width={width()}
@@ -393,10 +436,18 @@ function PlannedJourney(props: { onLive: () => void }) {
                 return (
                   <g>
                     <path
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Edit connection after step ${node.index + 1}`}
                       class="cursor-pointer fill-none stroke-transparent [stroke-width:18]"
                       d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={() => setSelectedEdge(node.index)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        setSelectedEdge(node.index);
+                      }}
                     />
                     <path
                       class={lineClass()}
@@ -421,35 +472,89 @@ function PlannedJourney(props: { onLive: () => void }) {
               const active = () => workbench.focusedIndex() === node.index;
               return (
                 <div
-                  role="button"
-                  tabIndex={0}
                   data-journey-node
-                  class="group absolute top-0 left-0 w-[220px] origin-top-left cursor-pointer select-none rounded-[18px] p-0 text-left outline-none"
+                  class={cn(
+                    "group absolute top-0 left-0 w-[220px] origin-top-left select-none rounded-[18px] p-0 text-left outline-none",
+                    stepDrag()?.from === node.index &&
+                      "z-[9] cursor-grabbing opacity-95 drop-shadow-[0_18px_22px_rgb(0_0_0/30%)]",
+                  )}
                   style={{
-                    transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
+                    transform: `translate3d(${node.x + (stepDrag()?.from === node.index ? stepDrag()!.deltaX : 0)}px, ${node.y}px, 0)`,
                     "--journey-node-accent": accentForStep(node.step),
                   }}
-                  onClick={() => workbench.focusStep(node.index)}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    workbench.focusStep(node.index);
-                  }}
                 >
-                  <JourneyPlanCard step={node.step} index={node.index} active={active()} />
-                  <Show when={node.index > 0}>
-                    <div
-                      class="absolute top-[195px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
-                      aria-hidden="true"
-                    />
-                  </Show>
-                  <Show when={node.index < nodes().length - 1}>
-                    <div
-                      class="absolute top-[195px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
-                      aria-hidden="true"
-                    />
-                  </Show>
-                  <div class="pointer-events-none absolute top-[167px] right-[-76px] z-[4] flex h-[66px] w-[86px] items-center justify-end opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                  <button
+                    type="button"
+                    class="block w-full cursor-pointer rounded-[18px] text-left outline-none"
+                    onClick={() => workbench.focusStep(node.index)}
+                  >
+                    <JourneyPlanCard step={node.step} index={node.index} active={active()} />
+                    <Show when={node.index > 0}>
+                      <span
+                        class="absolute top-[229px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
+                        aria-hidden="true"
+                      />
+                    </Show>
+                    <Show when={node.index < nodes().length - 1}>
+                      <span
+                        class="absolute top-[229px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
+                        aria-hidden="true"
+                      />
+                    </Show>
+                  </button>
+                  <button
+                    type="button"
+                    data-reorder-step={node.index}
+                    class="absolute top-0 right-0 z-[5] grid h-[34px] w-10 cursor-grab place-items-center rounded-tr-[18px] text-[var(--text-weak)] outline-none transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/70"
+                    aria-label={`Reorder step ${node.index + 1}. Use left and right arrow keys.`}
+                    aria-grabbed={stepDrag()?.from === node.index}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      workbench.focusStep(node.index);
+                      setStepDrag({
+                        pointerId: event.pointerId,
+                        from: node.index,
+                        over: node.index,
+                        startClientX: event.clientX,
+                        deltaX: 0,
+                      });
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                    }}
+                    onPointerMove={(event) => {
+                      const current = stepDrag();
+                      if (!current || current.pointerId !== event.pointerId) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const deltaX = (event.clientX - current.startClientX) / view().scale;
+                      const over = clamp(
+                        Math.round((node.x + deltaX) / JOURNEY_NODE_STEP),
+                        0,
+                        nodes().length - 1,
+                      );
+                      setStepDrag({ ...current, deltaX, over });
+                    }}
+                    onPointerUp={(event) => {
+                      if (stepDrag()?.pointerId !== event.pointerId) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      commitStepDrag();
+                    }}
+                    onPointerCancel={() => setStepDrag(null)}
+                    onLostPointerCapture={(event) => {
+                      if (stepDrag()?.pointerId === event.pointerId) setStepDrag(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      moveStepByKeyboard(node.index, event.key === "ArrowLeft" ? -1 : 1);
+                    }}
+                  >
+                    <Icon name="move" size={13} />
+                  </button>
+                  <div class="pointer-events-none absolute top-[201px] right-[-76px] z-[4] flex h-[66px] w-[86px] items-center justify-end opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                     <span
                       class="absolute inset-0 [clip-path:polygon(0_28%,100%_0,100%_100%,0_72%)]"
                       aria-hidden="true"
@@ -514,12 +619,16 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
     if (annotation().status === "pass") return "Passed";
     if (annotation().status === "fail") return "Failed";
     if (annotation().status === "running") return "Running";
-    return screenshot() ? "Captured on device" : "Not run yet";
+    return "";
+  });
+  const deviceAspect = createMemo(() => {
+    const bounds = evidence()?.deviceBounds;
+    return bounds?.width && bounds.height ? bounds.width / bounds.height : 9 / 19.5;
   });
   return (
     <div
       class={cn(
-        "relative grid h-[400px] grid-rows-[34px_minmax(0,1fr)_36px] overflow-hidden rounded-[18px] border border-[var(--v2-border-border-strong)] shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
+        "relative grid h-[468px] grid-rows-[34px_minmax(0,1fr)_44px] overflow-hidden rounded-[18px] border border-[var(--v2-border-border-strong)] shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
         "bg-surface-raised-stronger-non-alpha",
         "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
         props.active &&
@@ -529,13 +638,27 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
       )}
       style={{ "--journey-node-accent": accentForStep(props.step) }}
     >
-      <header class="grid grid-cols-[auto_1fr] items-center gap-2 border-b border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
+      <header class="grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] pr-11 pl-3 text-[var(--text-weak)]">
         <span class="font-mono text-[11px] leading-none text-[var(--text-base)]">
           {String(props.index + 1).padStart(2, "0")}
         </span>
         <span class="text-[10px] font-semibold tracking-[0.09em] uppercase">
           {kindLabel(props.step.kind)}
         </span>
+        <Show when={statusLabel()}>
+          <span class="inline-flex items-center gap-1.5 text-[9px] font-medium">
+            <i
+              class={cn(
+                "size-1.5 rounded-full",
+                annotation().status === "pass" && "bg-[var(--icon-success-base)]",
+                annotation().status === "fail" && "bg-[var(--icon-critical-base)]",
+                annotation().status === "running" &&
+                  "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]",
+              )}
+            />
+            {statusLabel()}
+          </span>
+        </Show>
       </header>
       <Show
         when={screenshot()}
@@ -553,44 +676,41 @@ export function JourneyPlanCard(props: { step: RecipeStep; index: number; active
         }
       >
         {(src) => (
-          <div class="relative min-h-0 overflow-hidden bg-[#080a0f]">
-            <img
-              src={src()}
-              alt={`Device evidence for step ${props.index + 1}`}
-              draggable={false}
-              class="size-full select-none object-contain object-top"
-            />
-            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pt-8 pb-2.5">
-              <small class="mb-0.5 block text-[9px] font-semibold tracking-[0.08em] text-white/65 uppercase">
-                {actionForStep(props.step)}
-              </small>
-              <strong class="line-clamp-1 block text-[13px] font-semibold text-white">
-                {sentenceForStep(props.step, server.recipes())}
-              </strong>
+          <div class="grid min-h-0 place-items-center overflow-hidden bg-[var(--v2-background-bg-deep)] p-2.5">
+            <div
+              class="h-full max-h-[369px] max-w-full overflow-hidden rounded-[20px] bg-[#080a0f] shadow-[0_0_0_1px_rgb(255_255_255/10%),0_8px_22px_rgb(0_0_0/32%)]"
+              style={{ "aspect-ratio": String(deviceAspect()) }}
+            >
+              <img
+                src={src()}
+                alt={`Device evidence for step ${props.index + 1}`}
+                draggable={false}
+                class="size-full select-none object-contain object-top"
+              />
             </div>
           </div>
         )}
       </Show>
-      <footer class="flex items-center justify-between border-t border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
-        <span class="inline-flex items-center gap-1.5 text-[10px]">
-          <i
-            class={cn(
-              "size-1.5 rounded-full",
-              annotation().status === "pass" && "bg-[var(--icon-success-base)]",
-              annotation().status === "fail" && "bg-[var(--icon-critical-base)]",
-              annotation().status === "running" &&
-                "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]",
-              annotation().status === "idle" &&
-                (screenshot()
-                  ? "bg-[var(--icon-success-base)]"
-                  : "bg-[var(--v2-border-border-strong)]"),
-            )}
-          />
-          {statusLabel()}
-          <Show when={annotation().durationMs}>
-            {(duration) => <b class="font-mono font-normal">· {Math.round(duration())}ms</b>}
-          </Show>
-        </span>
+      <footer class="flex min-w-0 items-center justify-between gap-2 border-t border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
+        <Show
+          when={screenshot()}
+          fallback={
+            <span class="inline-flex items-center gap-1.5 text-[10px]">
+              <i class="size-1.5 rounded-full bg-[var(--v2-border-border-strong)]" /> Planned
+            </span>
+          }
+        >
+          <strong class="min-w-0 truncate text-[11px] font-medium text-[var(--text-base)]">
+            {sentenceForStep(props.step, server.recipes())}
+          </strong>
+        </Show>
+        <Show when={annotation().durationMs}>
+          {(duration) => (
+            <b class="shrink-0 font-mono text-[9px] font-normal tabular-nums">
+              {Math.round(duration())}ms
+            </b>
+          )}
+        </Show>
         <Icon name="chevron-right" size={13} />
       </footer>
     </div>

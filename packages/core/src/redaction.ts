@@ -100,6 +100,11 @@ function isRedactionEnabled(): boolean {
   return activePolicy.enabled;
 }
 
+/** Visual pixels and accessibility text cannot currently be safely masked. */
+export function visualEvidenceAllowed(): boolean {
+  return !isRedactionEnabled();
+}
+
 export function digestValue(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }

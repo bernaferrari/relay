@@ -6,7 +6,6 @@ import {
   candidateAtPoint,
   nodeAtPoint,
   overlayCandidates,
-  shortLabel,
   strategiesFor,
   type PickStrategy,
 } from "../lib/snapshot";
@@ -20,6 +19,19 @@ import { IconButton } from "@relay/ui/icon-button";
 import { Switch } from "@relay/ui/switch";
 import { useCommand } from "../context/command";
 import { sentenceForStep } from "../lib/step-sentence";
+import { defaultStrategy } from "../lib/step-target";
+import {
+  targetHierarchy,
+  targetHighlight,
+  targetNodeIndex,
+  targetPointGuide,
+  pointForAnchor,
+  recordedTargetNodes,
+  recordedNodeHierarchy,
+  recordedNodeMatches,
+  type HorizontalConstraint,
+  type VerticalConstraint,
+} from "../lib/target-inspector";
 import { cn } from "../lib/cn";
 import { accentForStep, evidenceForStep, iconForStep } from "./journey-step-presentation";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
@@ -29,6 +41,7 @@ import {
   liveInspectionPolicy,
 } from "../lib/live-inspection-policy";
 import { DeviceVideoStream } from "./device-video-stream";
+import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import {
   deviceCaption,
   deviceIconWell,
@@ -83,20 +96,17 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   });
   const frameDataUrl = (value: { mime: string; base64: string }) =>
     `data:${value.mime};base64,${value.base64}`;
+  const [stageView, setStageView] = createSignal<"recorded" | "live">("live");
+  const liveControlActive = () => rec.interacting() && stageView() === "live";
   const frame = () =>
-    rec.interacting() ? (server.liveFrame() ?? server.currentFrame()) : server.currentFrame();
+    liveControlActive() ? (server.liveFrame() ?? server.currentFrame()) : undefined;
   const recordedEvidenceSrc = createMemo(() => {
-    const index = wb.focusedIndex();
-    const step = index == null ? undefined : draft.steps()[index];
+    const index = wb.focusedIndex() ?? 0;
+    const step = draft.steps()[index];
     const shot = step ? evidenceForStep(step)?.screenshot : undefined;
     return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
   });
   const displayImageSrc = createMemo(() => {
-    if (rec.interacting()) {
-      const live = server.liveFrame() ?? server.currentFrame();
-      return live ? frameDataUrl(live) : "";
-    }
-
     const traceFrame = wb.focusedTraceStep()?.frames.at(-1);
     if (traceFrame) {
       if (traceFrame.base64) {
@@ -115,18 +125,193 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     }
 
     const recorded = recordedEvidenceSrc();
+    if (stageView() === "recorded" && recorded) return recorded;
+    if (liveControlActive()) {
+      const live = server.liveFrame() ?? server.currentFrame();
+      if (live) return frameDataUrl(live);
+    }
     if (recorded) return recorded;
     if (wb.focusedIndex() != null) return "";
     const current = server.currentFrame();
     return current ? frameDataUrl(current) : "";
   });
   const displayCaption = createMemo(() => {
-    if (rec.interacting()) return frame()?.caption ?? "Live device";
     const traceCaption = wb.focusedTraceStep()?.frames.at(-1)?.caption;
     if (traceCaption) return traceCaption;
+    if (stageView() === "recorded" && recordedEvidenceSrc())
+      return focusedStep()?.title ?? "Recorded device evidence";
+    if (liveControlActive() && frame()) return frame()!.caption ?? "Live device";
     if (recordedEvidenceSrc()) return focusedStep()?.title ?? "Recorded device evidence";
     return wb.focusedIndex() == null ? (server.currentFrame()?.caption ?? "") : "";
   });
+  let previewKey = "";
+  createEffect(() => {
+    const index = wb.focusedIndex();
+    const recorded = recordedEvidenceSrc();
+    const nextKey = `${index ?? "none"}:${recorded}`;
+    if (nextKey !== previewKey) {
+      previewKey = nextKey;
+      setStageView(index != null && recorded ? "recorded" : "live");
+    }
+  });
+  createEffect(() => {
+    if (rec.recording()) setStageView("live");
+  });
+  const focusedEvidenceHighlight = createMemo(() => {
+    if (!recordedEvidenceSrc() || displayImageSrc() !== recordedEvidenceSrc()) return undefined;
+    const index = wb.focusedIndex() ?? 0;
+    const step = draft.steps()[index];
+    if (step?.kind !== "tap" || !step.evidence) return undefined;
+    if (defaultStrategy(step.target) === "point") return undefined;
+    const node = targetHierarchy(step.evidence)[targetNodeIndex(step.evidence, step.target)];
+    return targetHighlight(node, step.evidence.deviceBounds);
+  });
+  const focusedCoordinateGuide = createMemo(() => {
+    const step = focusedPlanStep();
+    if (step?.kind !== "tap" || defaultStrategy(step.target) !== "point") return undefined;
+    return targetPointGuide(
+      step.target.point,
+      step.evidence?.deviceBounds ?? server.snapshot()?.bounds,
+    );
+  });
+  const recordedCoordinateEditable = createMemo(() => {
+    const step = focusedPlanStep();
+    return (
+      stageView() === "recorded" &&
+      Boolean(recordedEvidenceSrc()) &&
+      step?.kind === "tap" &&
+      defaultStrategy(step.target) === "point"
+    );
+  });
+  const [recordedScreenHovered, setRecordedScreenHovered] = createSignal(false);
+  const [recordedHoverNode, setRecordedHoverNode] = createSignal<
+    ReturnType<typeof recordedTargetNodes>[number] | null
+  >(null);
+  const recordedNodes = createMemo(() => {
+    const step = focusedPlanStep();
+    return step?.kind === "tap" ? recordedTargetNodes(step.evidence) : [];
+  });
+  const recordedNodeOutlines = createMemo(() => {
+    if (recordedCoordinateEditable()) return [];
+    const step = focusedPlanStep();
+    const bounds = step?.kind === "tap" ? step.evidence?.deviceBounds : undefined;
+    return recordedNodes()
+      .map((node) => targetHighlight(node, bounds))
+      .filter((value): value is NonNullable<typeof value> => Boolean(value));
+  });
+  const recordedHoverHighlight = createMemo(() => {
+    if (recordedCoordinateEditable()) return undefined;
+    const step = focusedPlanStep();
+    return step?.kind === "tap"
+      ? targetHighlight(recordedHoverNode() ?? undefined, step.evidence?.deviceBounds)
+      : undefined;
+  });
+  function updateRecordedNodeHover(
+    element: HTMLImageElement,
+    clientX: number,
+    clientY: number,
+  ): void {
+    if (stageView() !== "recorded" || recordedCoordinateEditable()) return;
+    const step = focusedPlanStep();
+    const bounds = step?.kind === "tap" ? step.evidence?.deviceBounds : undefined;
+    if (!bounds) return;
+    const rect = element.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * bounds.width;
+    const y = ((clientY - rect.top) / rect.height) * bounds.height;
+    setRecordedHoverNode(
+      recordedNodes().find((node) => {
+        const nodeRect = node.rect;
+        return (
+          nodeRect &&
+          x >= nodeRect.x &&
+          x <= nodeRect.x + nodeRect.width &&
+          y >= nodeRect.y &&
+          y <= nodeRect.y + nodeRect.height
+        );
+      }) ?? null,
+    );
+  }
+  function chooseRecordedNode(): void {
+    const index = wb.focusedIndex();
+    const step = index == null ? undefined : draft.steps()[index];
+    const node = recordedHoverNode();
+    if (index == null || step?.kind !== "tap" || !node) return;
+    // A coordinate target makes the recorded screen a point picker. Pointer
+    // events above already move that point; the trailing click must not switch
+    // the step back to an element-based target.
+    if (defaultStrategy(step.target) === "point") return;
+    const point = step.target.point;
+    const nodePoint = pointForAnchor(node, "center");
+    const strategy = defaultStrategy(step.target);
+    const target =
+      strategy === "ref" && node.ref
+        ? { ref: node.ref, ...(point ? { point } : {}) }
+        : strategy === "label" && (node.label || node.value)
+          ? { label: node.label ?? node.value!, ...(point ? { point } : {}) }
+          : strategy === "text" && (node.value || node.label)
+            ? { text: node.value ?? node.label!, ...(point ? { point } : {}) }
+            : node.ref
+              ? { ref: node.ref, ...(point ? { point } : {}) }
+              : node.label || node.value
+                ? { label: node.label ?? node.value!, ...(point ? { point } : {}) }
+                : nodePoint
+                  ? { point: nodePoint }
+                  : undefined;
+    if (!target || !step.evidence) return;
+
+    const currentHierarchy = targetHierarchy(step.evidence);
+    const alreadyInScope = currentHierarchy.some((candidate) =>
+      recordedNodeMatches(candidate, node),
+    );
+    if (alreadyInScope) {
+      draft.updateStep(index, { ...step, target });
+      return;
+    }
+
+    const [selected, ...ancestors] = recordedNodeHierarchy(step.evidence, node);
+    draft.updateStep(index, {
+      ...step,
+      target,
+      evidence: {
+        ...step.evidence,
+        node: selected ?? node,
+        ancestors: ancestors.slice(0, 8),
+      },
+    });
+  }
+  let recordedCoordinateDrag: { pointerId: number } | null = null;
+  function moveRecordedCoordinate(element: HTMLImageElement, clientX: number, clientY: number) {
+    const index = wb.focusedIndex();
+    const step = index == null ? undefined : draft.steps()[index];
+    if (
+      index == null ||
+      !recordedCoordinateEditable() ||
+      step?.kind !== "tap" ||
+      !step.target.point
+    )
+      return;
+    const bounds = step.evidence?.deviceBounds;
+    if (!bounds?.width || !bounds.height) return;
+    const rect = element.getBoundingClientRect();
+    const x = Math.round(
+      Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * bounds.width,
+    );
+    const y = Math.round(
+      Math.max(0, Math.min(1, (clientY - rect.top) / rect.height)) * bounds.height,
+    );
+    draft.updateStep(index, {
+      ...step,
+      target: {
+        ...step.target,
+        point: {
+          ...step.target.point,
+          x,
+          y,
+          referenceBounds: { ...bounds },
+        },
+      },
+    });
+  }
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
   const [videoReady, setVideoReady] = createSignal(false);
   const [videoFailed, setVideoFailed] = createSignal(false);
@@ -137,21 +322,26 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
 
   let stageEl: HTMLElement | undefined;
   let deviceScreenEl: HTMLImageElement | undefined;
+  let pickerEl: HTMLDivElement | undefined;
 
   /** Element picker: devtools-style — choose how to address the hit element,
    *  walk up to its parent, and optionally record a step WITHOUT tapping. */
-  type PickMode = "tap" | "select";
   const [picker, setPicker] = createSignal<{
     fx: number;
     fy: number;
     vx: number;
     vy: number;
+    placement: "above" | "below";
     /** ancestry[0] = hit node, up to root (geometric fallback when no parentIndex). */
     ancestry: SnapshotNode[];
     /** current target index into `ancestry` (ArrowUp/Down + breadcrumb walk it). */
     index: number;
   } | null>(null);
-  const [pickMode, setPickMode] = createSignal<PickMode>("tap");
+  const [strategyId, setStrategyId] = createSignal<PickStrategy["id"]>("point");
+  const [horizontalConstraint, setHorizontalConstraint] =
+    createSignal<HorizontalConstraint>("left");
+  const [verticalConstraint, setVerticalConstraint] = createSignal<VerticalConstraint>("top");
+  const [manualPoint, setManualPoint] = createSignal<{ x: number; y: number } | null>(null);
 
   const ancestry = () => picker()?.ancestry ?? [];
   const pickerNode = () => {
@@ -162,6 +352,32 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     const p = picker();
     if (!p) return [] as PickStrategy[];
     return strategiesFor(pickerNode(), server.snapshot(), p.fx, p.fy);
+  });
+  const constrainedPoint = createMemo(
+    () =>
+      manualPoint() ??
+      strategies().find(
+        (strategy): strategy is Extract<PickStrategy, { kind: "point" }> =>
+          strategy.kind === "point",
+      ),
+  );
+  const constrainedStrategy = createMemo<PickStrategy | undefined>(() => {
+    const point = constrainedPoint();
+    return point
+      ? {
+          id: "point",
+          kind: "point",
+          x: point.x,
+          y: point.y,
+          describe: `${point.x}, ${point.y}`,
+        }
+      : undefined;
+  });
+  const selectedStrategy = createMemo(() => {
+    if (strategyId() === "point") {
+      return constrainedStrategy() ?? strategies().find((strategy) => strategy.id === "point");
+    }
+    return strategies().find((strategy) => strategy.id === strategyId()) ?? strategies()[0];
   });
   /** Bounds-relative rect of the currently-targeted node, for the stage highlight. */
   const pickedHighlight = createMemo(() => {
@@ -178,26 +394,63 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
 
   const nodeLabel = () => {
     const n = pickerNode();
-    return (n?.label ?? n?.value ?? n?.identifier ?? "").trim() || "No element";
+    const visible = (n?.label ?? n?.value ?? n?.identifier ?? "").trim();
+    if (visible) return visible;
+    const kind = n?.role ?? n?.type?.split(".").pop();
+    return kind ? `Unnamed ${kind}` : "Screen position";
   };
-  /** Header meta: role · @ref · W×H — helps judge whether to re-target. */
+  /** Compact human metadata; implementation references live in strategy rows. */
   const metaLine = () => {
     const n = pickerNode();
     if (!n) return "";
     const parts: string[] = [];
-    if (n.role) parts.push(n.role);
-    if (n.ref) parts.push(n.ref.startsWith("@") ? n.ref : `@${n.ref}`);
+    const kind = n.role ?? n.type?.split(".").pop();
+    if (kind) parts.push(kind);
     if (n.rect) parts.push(`${Math.round(n.rect.width)}×${Math.round(n.rect.height)}`);
     return parts.join(" · ");
   };
 
+  function strategyLabel(strategy: PickStrategy): string {
+    if (strategy.kind === "ref") return "Element reference";
+    if (strategy.kind === "label") return "Accessibility label";
+    if (strategy.kind === "text") return "Visible text";
+    return "Coordinates";
+  }
+
+  function strategyValue(strategy: PickStrategy): string {
+    if (strategy.kind === "ref") return strategy.ref;
+    if (strategy.kind === "label") return strategy.label;
+    if (strategy.kind === "text") return strategy.text;
+    return `${strategy.x}, ${strategy.y}`;
+  }
+
+  function strategyIcon(strategy: PickStrategy): "pointer" | "edit" | "scan" {
+    if (strategy.kind === "point") return "scan";
+    if (strategy.kind === "ref") return "pointer";
+    return "edit";
+  }
+
+  function resetCoordinateAnchor(): void {
+    setManualPoint(null);
+    setHorizontalConstraint("left");
+    setVerticalConstraint("top");
+  }
+
   /** Re-target the picker to an ancestry index (breadcrumb click or arrows). */
   function retarget(i: number) {
+    setManualPoint(null);
     setPicker((p) => (p ? { ...p, index: Math.max(0, Math.min(i, p.ancestry.length - 1)) } : p));
+    const next = picker();
+    if (next) {
+      resetCoordinateAnchor();
+      setStrategyId(
+        strategiesFor(pickerNode(), server.snapshot(), next.fx, next.fy)[0]?.id ?? "point",
+      );
+    }
   }
 
   /** Execute (Tap mode) or just record (Select-only mode) the chosen strategy. */
-  async function pick(strategy: PickStrategy): Promise<void> {
+  async function pick(strategy: PickStrategy, mode: "tap" | "select"): Promise<void> {
     const p = picker();
     if (!p) return;
     // Preserve the recorded order when a picker tap follows buffered typing.
@@ -208,9 +461,12 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     if (feedbackTimer) clearTimeout(feedbackTimer);
     feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
 
-    if (pickMode() === "select") {
+    if (mode === "select") {
       // Select-only: record the chosen-strategy step WITHOUT tapping.
-      void rec.recordPick(strategy, p.fx, p.fy);
+      void rec.recordPick(strategy, p.fx, p.fy, {
+        horizontal: horizontalConstraint(),
+        vertical: verticalConstraint(),
+      });
       return;
     }
     const body =
@@ -229,7 +485,11 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
       const fy = Math.round(p.fy * (b?.height ?? 1));
       ok = await server.interactStep({ kind: "point", x: fx, y: fy }, `tap ${fx},${fy}`);
     }
-    if (ok && rec.recording()) void rec.recordPick(strategy, p.fx, p.fy);
+    if (ok && rec.recording())
+      void rec.recordPick(strategy, p.fx, p.fy, {
+        horizontal: horizontalConstraint(),
+        vertical: verticalConstraint(),
+      });
     // Refresh the fallback image only when needed; let the device UI settle
     // briefly before refreshing accessibility targets.
     if (ok && rec.interacting()) {
@@ -241,6 +501,8 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   const onStageKey = (e: KeyboardEvent) => {
     if (!picker()) return;
     if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
       setPicker(null);
       return;
     }
@@ -259,12 +521,23 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   window.addEventListener("keydown", onStageKey);
   onCleanup(() => window.removeEventListener("keydown", onStageKey));
 
+  const onPickerPointerDown = (event: PointerEvent) => {
+    if (!picker() || pickerEl?.contains(event.target as Node)) return;
+    // The first outside click dismisses the inspector without also tapping the
+    // mirrored phone or activating an unrelated control underneath it.
+    event.preventDefault();
+    event.stopPropagation();
+    setPicker(null);
+  };
+  window.addEventListener("pointerdown", onPickerPointerDown, true);
+  onCleanup(() => window.removeEventListener("pointerdown", onPickerPointerDown, true));
+
   // ── Typing capture (plan 010 step 3.3): route printable keys + Backspace +
   //    Enter to the phone while Record is active. The modal/focus/modifier
   //    gate here keeps palette/dialog/input keys (⌘K included) from leaking to
   //    the device; the recorder owns the buffer + flush.
   const onDriveKey = (e: KeyboardEvent) => {
-    if (!rec.interacting()) return;
+    if (!liveControlActive()) return;
     if (cmd.modalOpen()) return;
     // Modifier chords belong to the app / command palette, never the phone.
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -305,7 +578,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   let snapRefreshTimer: number | undefined;
 
   const livePaused = () =>
-    !rec.interacting() || !tabVisible() || server.health() !== "online" || picker() !== null;
+    !liveControlActive() || !tabVisible() || server.health() !== "online" || picker() !== null;
 
   async function tickLiveFrame(): Promise<void> {
     const concurrency = !videoReady() && videoFailed() ? 2 : 1;
@@ -360,7 +633,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   }
 
   createEffect(() => {
-    const policy = liveInspectionPolicy(rec.interacting(), videoFailed());
+    const policy = liveInspectionPolicy(liveControlActive(), videoFailed());
     if (!policy.pollSnapshot && !policy.pollFallbackFrame) return;
 
     // H.264 owns pixels whenever it is healthy. Accessibility inspection is
@@ -463,7 +736,10 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   function toggleRecording(): void {
     setPicker(null);
     if (rec.recording()) void rec.stopRecording();
-    else rec.enterRecordMode();
+    else {
+      setStageView("live");
+      rec.enterRecordMode();
+    }
   }
 
   // ── Mirror gestures: stream the full touch lifecycle over scrcpy control.
@@ -554,11 +830,18 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     const s = stageEl?.getBoundingClientRect();
     const snap = server.snapshot();
     const anc = node && snap ? ancestryOf(snap, node) : node ? [node] : [];
+    const rawX = s ? clientX - s.left : clientX - r.left;
+    const rawY = s ? clientY - s.top : clientY - r.top;
+    const vx = s ? Math.max(12, Math.min(rawX, Math.max(12, s.width - 264))) : rawX;
+    const availableStrategies = strategiesFor(node, snap, fx, fy);
+    resetCoordinateAnchor();
+    setStrategyId(availableStrategies[0]?.id ?? "point");
     setPicker({
       fx,
       fy,
-      vx: s ? clientX - s.left : clientX - r.left,
-      vy: s ? clientY - s.top : clientY - r.top,
+      vx,
+      vy: rawY,
+      placement: rawY < 300 ? "below" : "above",
       ancestry: anc,
       index: 0,
     });
@@ -582,7 +865,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   });
   const liveVideoSrc = createMemo(() => {
     const identity = videoIdentity();
-    if (!identity || !rec.interacting()) return "";
+    if (!identity || !liveControlActive()) return "";
     const separator = identity.lastIndexOf("|");
     const base = identity.slice(0, separator);
     const serial = identity.slice(separator + 1);
@@ -628,6 +911,89 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
       aria-label="Device stage"
       class="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-5"
     >
+      <Show when={targetReady() || recordedEvidenceSrc()}>
+        <div class="absolute top-4 z-[4] flex h-8 items-center justify-center text-text-base">
+          <Show
+            when={recordedEvidenceSrc()}
+            fallback={
+              <span
+                class="inline-flex min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium"
+                role="status"
+                aria-live="polite"
+                data-tip={
+                  videoReady()
+                    ? "Live device preview"
+                    : videoFailed()
+                      ? "Using screenshot preview while video reconnects"
+                      : "Connecting to the device"
+                }
+              >
+                <i
+                  class={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    videoReady()
+                      ? "bg-[var(--icon-success-base)]"
+                      : videoFailed()
+                        ? "bg-[var(--icon-warning-base)]"
+                        : "animate-pulse bg-icon-base motion-reduce:animate-none",
+                  )}
+                  aria-hidden="true"
+                />
+                <span>{videoReady() ? "Live" : videoFailed() ? "Preview" : "Connecting"}</span>
+              </span>
+            }
+          >
+            <div
+              class="inline-flex h-8 items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5 shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
+              role="group"
+              aria-label="Device view"
+            >
+              <button
+                type="button"
+                class={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
+                  stageView() === "recorded"
+                    ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
+                    : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                )}
+                aria-pressed={stageView() === "recorded"}
+                disabled={rec.recording()}
+                onClick={() => setStageView("recorded")}
+              >
+                <Icon name="clock" size={12} /> Recorded
+              </button>
+              <button
+                type="button"
+                class={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
+                  stageView() === "live"
+                    ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
+                    : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                )}
+                aria-pressed={stageView() === "live"}
+                disabled={!targetReady()}
+                data-tip={!targetReady() ? "Connect a device to use Live view" : undefined}
+                onClick={() => setStageView("live")}
+              >
+                <i
+                  class={cn(
+                    "size-1.5 rounded-full",
+                    stageView() !== "live"
+                      ? "bg-[var(--text-weak)]"
+                      : videoReady()
+                        ? "bg-[var(--icon-success-base)]"
+                        : videoFailed()
+                          ? "bg-[var(--icon-warning-base)]"
+                          : "animate-pulse bg-icon-base motion-reduce:animate-none",
+                  )}
+                  aria-hidden="true"
+                />
+                Live
+              </button>
+            </div>
+          </Show>
+        </div>
+      </Show>
       <div
         data-device-chrome
         class={cn(
@@ -737,7 +1103,8 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
             <img
               class={cn(
                 "block h-full w-full touch-none overscroll-contain select-none object-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus",
-                rec.recording() ? "cursor-crosshair" : rec.interacting() && "cursor-pointer",
+                rec.recording() ? "cursor-crosshair" : liveControlActive() && "cursor-pointer",
+                recordedCoordinateEditable() && "cursor-crosshair",
               )}
               ref={(element) => {
                 deviceScreenEl = element;
@@ -747,6 +1114,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
               src={displayImageSrc()}
               draggable={false}
               tabindex={0}
+              onClick={chooseRecordedNode}
               onLoad={(e) => {
                 const img = e.currentTarget;
                 if (img.naturalWidth && img.naturalHeight) {
@@ -754,7 +1122,20 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                 }
               }}
               onPointerDown={(e) => {
-                if (!frame() || !rec.interacting() || e.button !== 0) return;
+                if (recordedCoordinateEditable() && e.button === 0) {
+                  const index = wb.focusedIndex();
+                  const step = index == null ? undefined : draft.steps()[index];
+                  if (index != null && step?.kind === "tap" && step.target.point) {
+                    e.preventDefault();
+                    e.currentTarget.focus({ preventScroll: true });
+                    wb.rememberCoordinate(index, step.target.point);
+                    recordedCoordinateDrag = { pointerId: e.pointerId };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
+                  }
+                  return;
+                }
+                if (!frame() || !liveControlActive() || e.button !== 0) return;
                 e.currentTarget.focus({ preventScroll: true });
                 const r = e.currentTarget.getBoundingClientRect();
                 down = {
@@ -767,6 +1148,10 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                 void queueTouch("down", down.fx, down.fy);
               }}
               onPointerMove={(e) => {
+                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                  moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
+                  return;
+                }
                 const start = down;
                 if (!start || start.pointerId !== e.pointerId) return;
                 const r = e.currentTarget.getBoundingClientRect();
@@ -787,7 +1172,15 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                 }
               }}
               onPointerUp={(e) => {
-                if (!frame() || !rec.interacting()) return;
+                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                  moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
+                  recordedCoordinateDrag = null;
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                  return;
+                }
+                if (!frame() || !liveControlActive()) return;
                 const start = down;
                 if (!start || start.pointerId !== e.pointerId || e.button !== 0) return;
                 const r = e.currentTarget.getBoundingClientRect();
@@ -822,10 +1215,22 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                   );
                 }
               }}
-              onPointerCancel={(e) => cancelGesture(e.pointerId)}
-              onLostPointerCapture={(e) => cancelGesture(e.pointerId)}
+              onPointerCancel={(e) => {
+                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                  recordedCoordinateDrag = null;
+                  return;
+                }
+                cancelGesture(e.pointerId);
+              }}
+              onLostPointerCapture={(e) => {
+                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                  recordedCoordinateDrag = null;
+                  return;
+                }
+                cancelGesture(e.pointerId);
+              }}
               onWheel={(e) => {
-                if (!frame() || !rec.interacting() || down) return;
+                if (!frame() || !liveControlActive() || down) return;
                 e.preventDefault();
                 e.currentTarget.focus({ preventScroll: true });
                 const r = e.currentTarget.getBoundingClientRect();
@@ -856,15 +1261,101 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
               }}
               onContextMenu={(e) => {
                 // Right-click = deliberate inspection / strategy selection.
-                if (!frame() || !rec.interacting()) return;
+                if (!frame() || !liveControlActive()) return;
                 e.preventDefault();
                 openPickerAt(e.currentTarget, e.clientX, e.clientY);
               }}
               onMouseMove={(e) => {
-                if (frame()) scheduleHover(e.currentTarget, e.clientX, e.clientY);
+                if (stageView() === "recorded") {
+                  setRecordedScreenHovered(true);
+                  updateRecordedNodeHover(e.currentTarget, e.clientX, e.clientY);
+                } else if (frame()) scheduleHover(e.currentTarget, e.clientX, e.clientY);
               }}
-              onMouseLeave={() => clearHover()}
+              onMouseLeave={() => {
+                setRecordedScreenHovered(false);
+                setRecordedHoverNode(null);
+                clearHover();
+              }}
             />
+            <Show when={stageView() === "recorded" && recordedScreenHovered()}>
+              <For each={recordedNodeOutlines()}>
+                {(highlight) => (
+                  <i
+                    class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--v2-background-bg-accent)_34%,transparent)]"
+                    style={highlight}
+                    data-recorded-node-outline
+                    aria-hidden="true"
+                  />
+                )}
+              </For>
+            </Show>
+            <Show when={recordedHoverHighlight()}>
+              {(highlight) => (
+                <i
+                  class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
+                  style={highlight()}
+                  aria-hidden="true"
+                />
+              )}
+            </Show>
+            <Show when={focusedEvidenceHighlight()}>
+              {(highlight) => (
+                <div
+                  class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/30%)]"
+                  style={highlight()}
+                  aria-hidden="true"
+                />
+              )}
+            </Show>
+            <Show when={focusedCoordinateGuide()}>
+              {(guide) => (
+                <div
+                  class="pointer-events-none absolute inset-0 z-[3] overflow-hidden"
+                  aria-hidden="true"
+                >
+                  <i
+                    class="absolute top-0 border-l border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_82%,white)]"
+                    data-coordinate-guide="vertical"
+                    style={{
+                      left: guide().left,
+                      top: guide().verticalGuide.top,
+                      height: guide().verticalGuide.height,
+                    }}
+                  />
+                  <i
+                    class="absolute left-0 border-t border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_82%,white)]"
+                    data-coordinate-guide="horizontal"
+                    style={{
+                      left: guide().horizontalGuide.left,
+                      top: guide().top,
+                      width: guide().horizontalGuide.width,
+                    }}
+                  />
+                  <i
+                    class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_74%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
+                    style={{ left: guide().horizontalOrigin, top: guide().top }}
+                  />
+                  <i
+                    class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_74%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
+                    style={{ left: guide().left, top: guide().verticalOrigin }}
+                  />
+                  <i
+                    class="absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_22%,transparent)] shadow-[0_2px_8px_rgb(0_0_0/52%)] after:absolute after:inset-[5px] after:rounded-full after:bg-[var(--v2-background-bg-accent)] after:shadow-[0_0_0_1.5px_white] after:content-['']"
+                    style={{ left: guide().left, top: guide().top }}
+                    data-coordinate-point
+                  />
+                  <code
+                    class="absolute -translate-y-[calc(100%+8px)] rounded-md bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_92%,black)] px-1.5 py-0.5 font-mono text-[8px] font-medium tabular-nums text-white shadow-[0_2px_8px_rgb(0_0_0/45%),inset_0_0_0_1px_rgb(255_255_255/14%)]"
+                    style={{
+                      left: `clamp(6px, calc(${guide().left} + 8px), calc(100% - 58px))`,
+                      top: `clamp(20px, ${guide().top}, calc(100% - 4px))`,
+                    }}
+                  >
+                    {guide().x}, {guide().y}
+                  </code>
+                </div>
+              )}
+            </Show>
             <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
               {(h) => (
                 <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
@@ -916,102 +1407,202 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
         </div>
       </div>
 
-      <Show when={picker() && rec.interacting() && (pickerNode() || rec.recording())}>
+      <Show when={picker() && liveControlActive() && (pickerNode() || rec.recording())}>
         <div
+          ref={(element) => {
+            pickerEl = element;
+          }}
           class={cn(
-            popover,
-            "absolute z-50 mt-[-8px] min-w-[196px] max-w-[260px] origin-bottom -translate-y-full",
-            "bg-surface-raised-stronger-non-alpha p-1.5 shadow-xl ring-1 ring-border-weak-base",
+            "absolute z-50 w-[252px]",
+            picker()!.placement === "above"
+              ? "-translate-y-[calc(100%+10px)]"
+              : "translate-y-[10px]",
           )}
           style={{ left: `${picker()!.vx}px`, top: `${picker()!.vy}px` }}
         >
-          <div class="mb-1 flex max-w-[240px] flex-col gap-0.5 border-b border-border-weak-base px-2 pt-1 pb-1.5">
-            <span class="truncate text-12-medium text-text-strong">{nodeLabel()}</span>
-            <Show when={metaLine()}>
-              <span class={cn(mono, "truncate text-12-regular text-text-weak")}>{metaLine()}</span>
+          <div
+            class={cn(
+              popover,
+              "!overflow-visible border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-0 shadow-[var(--v2-elevation-overlay)]",
+            )}
+            style={{
+              "--ui-pop-origin": picker()!.placement === "above" ? "bottom left" : "top left",
+            }}
+            role="dialog"
+            aria-label="Choose target"
+          >
+            <header class="flex items-start justify-between gap-3 px-3 pt-3 pb-2.5">
+              <span class="min-w-0">
+                <small class="block text-[9px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
+                  Target
+                </small>
+                <strong class="mt-0.5 block truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
+                  {nodeLabel()}
+                </strong>
+                <Show when={metaLine()}>
+                  <span
+                    class={cn(mono, "mt-0.5 block truncate text-[9.5px] text-[var(--text-weak)]")}
+                  >
+                    {metaLine()}
+                  </span>
+                </Show>
+              </span>
+              <button
+                type="button"
+                class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+                aria-label="Close target picker"
+                onClick={() => setPicker(null)}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            </header>
+
+            <Show when={ancestry().length > 1}>
+              <div class="mx-2.5 flex h-8 items-center justify-between rounded-lg bg-[var(--v2-background-bg-layer-01)] px-1">
+                <button
+                  type="button"
+                  class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+                  disabled={picker()!.index <= 0}
+                  onClick={() => retarget(picker()!.index - 1)}
+                >
+                  <Icon name="chevron-down" size={12} /> Child
+                </button>
+                <span class={cn(mono, "text-[9px] tabular-nums text-[var(--text-weak)]")}>
+                  {picker()!.index + 1} / {ancestry().length}
+                </span>
+                <button
+                  type="button"
+                  class="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-medium text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:opacity-30"
+                  disabled={picker()!.index >= ancestry().length - 1}
+                  onClick={() => retarget(picker()!.index + 1)}
+                >
+                  Parent <Icon name="chevron-up" size={12} />
+                </button>
+              </div>
             </Show>
-          </div>
-          <Show when={ancestry().length > 1}>
-            <div
-              class="flex flex-wrap items-center gap-0.5 px-0.5 pb-1"
-              role="group"
-              aria-label="Element ancestry"
-            >
-              <For each={ancestry().slice(0, 4)}>
-                {(n, i) => (
+
+            <div class="grid gap-1 px-2.5 py-2.5" role="group" aria-label="Target method">
+              <For each={strategies().filter((strategy) => strategy.kind !== "point")}>
+                {(strategy) => {
+                  const selected = () => selectedStrategy()?.id === strategy.id;
+                  return (
+                    <button
+                      type="button"
+                      aria-pressed={selected()}
+                      class={cn(
+                        "grid min-h-10 w-full grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 text-left",
+                        "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.985]",
+                        selected() &&
+                          "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]",
+                      )}
+                      onClick={() => {
+                        setStrategyId(strategy.id);
+                      }}
+                    >
+                      <span
+                        class={cn(
+                          "grid size-[26px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]",
+                          selected() && "text-[var(--text-interactive-base)]",
+                        )}
+                      >
+                        <Icon name={strategyIcon(strategy)} size={13} />
+                      </span>
+                      <span class="min-w-0">
+                        <strong class="block truncate text-[10.5px] font-medium text-[var(--text-base)]">
+                          {strategyLabel(strategy)}
+                        </strong>
+                        <code class="mt-0.5 block truncate font-mono text-[9px] text-[var(--text-weak)]">
+                          {strategyValue(strategy)}
+                        </code>
+                      </span>
+                      <span
+                        class={cn(
+                          "size-3.5 rounded-full border border-[var(--v2-border-border-strong)]",
+                          selected() &&
+                            "border-[4px] border-[var(--v2-background-bg-accent)] bg-white",
+                        )}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  );
+                }}
+              </For>
+
+              <Show
+                when={pickerNode()?.rect && constrainedPoint()}
+                fallback={
                   <button
                     type="button"
                     class={cn(
-                      "max-w-[120px] cursor-pointer truncate rounded-full border-0 bg-transparent px-1.5 py-0.5 text-12-regular text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong",
-                      i() === picker()!.index &&
-                        "bg-surface-base-active font-medium text-text-strong",
+                      "grid min-h-11 w-full grid-cols-[26px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 text-left",
+                      "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.985]",
+                      strategyId() === "point" &&
+                        "bg-[var(--product-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_28%,transparent)]",
                     )}
-                    data-tip={shortLabel(n) || n.role || "node"}
-                    onClick={() => retarget(i())}
+                    aria-pressed={strategyId() === "point"}
+                    onClick={() => setStrategyId("point")}
                   >
-                    {shortLabel(n) || n.role || "node"}
+                    <span class="grid size-[26px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-interactive-base)]">
+                      <Icon name="scan" size={13} />
+                    </span>
+                    <span class="min-w-0">
+                      <strong class="block text-[10.5px] font-medium text-[var(--text-base)]">
+                        Coordinates
+                      </strong>
+                      <span class="mt-1 flex gap-1.5">
+                        <code class="rounded bg-[var(--v2-background-bg-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
+                          X {strategies().find((strategy) => strategy.kind === "point")?.x ?? 0}
+                        </code>
+                        <code class="rounded bg-[var(--v2-background-bg-deep)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
+                          Y {strategies().find((strategy) => strategy.kind === "point")?.y ?? 0}
+                        </code>
+                      </span>
+                    </span>
                   </button>
-                )}
-              </For>
+                }
+              >
+                <CoordinateConstraintPicker
+                  horizontal={horizontalConstraint()}
+                  vertical={verticalConstraint()}
+                  point={constrainedPoint()!}
+                  active={strategyId() === "point"}
+                  onHorizontal={(value) => {
+                    setHorizontalConstraint(value);
+                  }}
+                  onVertical={(value) => {
+                    setVerticalConstraint(value);
+                  }}
+                  onPoint={setManualPoint}
+                  onActivate={() => setStrategyId("point")}
+                />
+              </Show>
             </div>
-          </Show>
-          <div
-            class="mx-0.5 mb-1 flex gap-0.5 rounded-md bg-surface-base p-0.5 ring-1 ring-inset ring-border-weak-base"
-            role="group"
-            aria-label="Picker mode"
-          >
-            <button
-              type="button"
-              class={cn(
-                "flex-1 cursor-pointer rounded-[5px] border-0 bg-transparent px-1.5 py-0.5 text-12-medium text-text-weak transition-colors hover:text-text-strong",
-                pickMode() === "tap" &&
-                  "bg-surface-raised-stronger-non-alpha text-text-strong shadow-sm ring-1 ring-border-weak-base/60",
-              )}
-              onClick={() => setPickMode("tap")}
-            >
-              Tap
-            </button>
-            <button
-              type="button"
-              class={cn(
-                "flex-1 cursor-pointer rounded-[5px] border-0 bg-transparent px-1.5 py-0.5 text-12-medium text-text-weak transition-colors hover:text-text-strong",
-                pickMode() === "select" &&
-                  "bg-surface-raised-stronger-non-alpha text-text-strong shadow-sm ring-1 ring-border-weak-base/60",
-              )}
-              onClick={() => setPickMode("select")}
-            >
-              Select only
-            </button>
-          </div>
-          <div class="flex flex-col gap-0.5">
-            <For each={strategies()}>
-              {(s) => (
-                <button
-                  type="button"
-                  class="cursor-pointer rounded-md px-2 py-1.5 text-left font-mono text-12-regular text-text-strong transition-colors hover:bg-surface-raised-base-hover"
-                  onClick={() => void pick(s)}
-                >
-                  {s.describe}
-                </button>
-              )}
-            </For>
-          </div>
-          <Show when={ancestry().length > 1}>
-            <div class={cn(mono, "px-2 pt-1.5 pb-0.5 text-center text-12-regular text-text-weak")}>
-              ↑ parent · ↓ child · esc to close
-            </div>
-          </Show>
-        </div>
-      </Show>
 
-      <Show when={displayCaption() && !rec.interacting()}>
-        <div
-          class={cn(
-            mono,
-            "z-[2] mt-2.5 max-w-[420px] truncate text-center text-12-regular text-text-weak",
-          )}
-        >
-          {displayCaption()}
+            <footer class="flex items-center justify-end gap-1.5 border-t border-[var(--v2-border-border-muted)] px-2.5 py-2.5">
+              <button
+                type="button"
+                class="inline-flex h-8 items-center justify-center rounded-lg px-2.5 text-[10.5px] font-semibold text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.97] disabled:opacity-40"
+                disabled={!selectedStrategy()}
+                onClick={() => {
+                  const strategy = selectedStrategy();
+                  if (strategy) void pick(strategy, "select");
+                }}
+              >
+                Add step
+              </button>
+              <button
+                type="button"
+                class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[var(--button-primary-base)] px-3 text-[10.5px] font-semibold text-[var(--text-on-brand-base)] transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--icon-strong-hover,var(--button-primary-base))] active:enabled:scale-[0.97] disabled:opacity-40"
+                disabled={!selectedStrategy()}
+                onClick={() => {
+                  const strategy = selectedStrategy();
+                  if (strategy) void pick(strategy, "tap");
+                }}
+              >
+                <Icon name="pointer" size={12} /> Tap device
+              </button>
+            </footer>
+          </div>
         </div>
       </Show>
 
@@ -1053,42 +1644,9 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
         />
       </Show>
 
-      {/* One quiet toolbar: transport is status, recording is optional. */}
-      <Show when={targetReady()}>
-        <div class="z-[2] mt-3 flex h-9 items-center justify-center gap-1 text-text-base">
-          <span
-            class="inline-flex min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium"
-            role="status"
-            aria-live="polite"
-            data-tip={
-              videoReady()
-                ? "Live device preview. Screenshots and UI details are captured when needed."
-                : videoFailed()
-                  ? "Using screenshot preview while live video reconnects."
-                  : "Connecting to the live device preview."
-            }
-            aria-label={
-              videoReady()
-                ? "Device preview live"
-                : videoFailed()
-                  ? "Device preview reconnecting"
-                  : "Device preview connecting"
-            }
-          >
-            <i
-              class={cn(
-                "size-1.5 shrink-0 rounded-full",
-                videoReady()
-                  ? "bg-[var(--icon-success-base)]"
-                  : videoFailed()
-                    ? "bg-[var(--icon-warning-base)]"
-                    : "animate-pulse bg-icon-base motion-reduce:animate-none",
-              )}
-              aria-hidden="true"
-            />
-            <span>{videoReady() ? "Live" : videoFailed() ? "Preview" : "Connecting"}</span>
-          </span>
-          <span class="mx-0.5 h-4 w-px bg-border-weak-base" aria-hidden="true" />
+      {/* Recording and capture actions only apply to the live device. */}
+      <Show when={targetReady() && stageView() === "live"}>
+        <div class="z-[2] mt-3 flex h-9 items-center justify-center gap-1.5 text-text-base">
           <label
             class={cn(
               "inline-flex h-8 cursor-pointer items-center justify-center gap-2.5 px-1.5 text-12-medium select-none",

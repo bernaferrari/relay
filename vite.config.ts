@@ -31,6 +31,11 @@ export default defineConfig({
       "pnpm-lock.yaml",
       "vendor/**",
       "packages/*/dist/**",
+      "packages/*/out/**",
+      "packages/*/release/**",
+      // Relay owns the canonical, Git-stable serializer for executable tests.
+      // A general source formatter must not rewrite that domain format.
+      "tests/**/*.relay.yaml",
     ],
   },
   lint: {
@@ -38,6 +43,13 @@ export default defineConfig({
       typeAware: false,
       typeCheck: false,
     },
-    ignorePatterns: ["dist/**", "node_modules/**", "vendor/**", "packages/*/dist/**"],
+    ignorePatterns: [
+      "dist/**",
+      "node_modules/**",
+      "vendor/**",
+      "packages/*/dist/**",
+      "packages/*/out/**",
+      "packages/*/release/**",
+    ],
   },
 });

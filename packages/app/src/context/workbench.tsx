@@ -1,6 +1,12 @@
 import { createSignal, createEffect, createMemo, on } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
-import { useServer, type JobInfo, type PersistedRun, type TraceStep } from "./server";
+import {
+  useServer,
+  type JobInfo,
+  type PersistedRun,
+  type StepPoint,
+  type TraceStep,
+} from "./server";
 import { useRecipeDraft } from "./recipe-draft";
 
 /**
@@ -254,10 +260,32 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
 
     // ── Step ↔ frame focus (Figma selection: one index lights both sides) ─
     const [focusedIndex, setFocusedIndex] = createSignal<number | null>(null);
+    const [coordinateUndo, setCoordinateUndo] = createSignal<{
+      index: number;
+      point: StepPoint;
+    } | null>(null);
+
+    function rememberCoordinate(index: number, point: StepPoint): void {
+      setCoordinateUndo({ index, point: structuredClone(point) });
+    }
+
+    function undoCoordinate(): void {
+      const undo = coordinateUndo();
+      if (!undo) return;
+      const step = draft.steps()[undo.index];
+      if (step?.kind === "tap") {
+        draft.updateStep(undo.index, {
+          ...step,
+          target: { ...step.target, point: structuredClone(undo.point) },
+        });
+      }
+      setCoordinateUndo(null);
+    }
 
     // New test selected → focus first step so the artboard always shows *something*.
     createEffect(
       on(server.selectedRecipeId, (id) => {
+        setCoordinateUndo(null);
         if (!id) {
           setFocusedIndex(null);
           return;
@@ -276,6 +304,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
      * expand is a separate affordance so users never “lose” the list context.
      */
     function focusStep(i: number | null): void {
+      if (i !== focusedIndex()) setCoordinateUndo(null);
       setFocusedIndex(i);
       if (i != null) server.stopPlayback();
     }
@@ -314,6 +343,9 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
       focusedIndex,
       focusStep,
       focusFrame,
+      coordinateUndo,
+      rememberCoordinate,
+      undoCoordinate,
     };
   },
 });

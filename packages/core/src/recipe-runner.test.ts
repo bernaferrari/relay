@@ -25,6 +25,7 @@ after(() => {
 function stubDevice(impl: {
   find?: () => Promise<unknown>;
   press?: (options: unknown) => Promise<unknown>;
+  longPress?: (options: unknown) => Promise<unknown>;
   type?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
   snapshot?: () => Promise<unknown>;
@@ -33,6 +34,7 @@ function stubDevice(impl: {
     interactions: {
       find: impl.find ?? (() => Promise.resolve({})),
       press: impl.press ?? (() => Promise.resolve({})),
+      longPress: impl.longPress ?? (() => Promise.resolve({})),
       type: impl.type ?? (() => Promise.resolve({})),
     },
     command: { wait: impl.wait ?? (() => Promise.resolve({})) },
@@ -41,6 +43,78 @@ function stubDevice(impl: {
 }
 
 const noLog = { log: () => {} };
+
+describe("runRecipeStep tap gestures", () => {
+  it("multi-taps the same resolved target the requested number of times", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    });
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        gesture: "multi",
+        tapCount: 4,
+        intervalMs: 140,
+        target: { point: { x: 120, y: 240 } },
+      },
+      noLog,
+    );
+    assert.equal(presses.length, 4);
+    assert.ok(presses.every((press) => JSON.stringify(press) === JSON.stringify(presses[0])));
+  });
+
+  it("preserves right and bottom offsets when the runtime device is larger", async () => {
+    const presses: unknown[] = [];
+    const device = stubDevice({
+      press: (options) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+      snapshot: () =>
+        Promise.resolve({ nodes: [{ rect: { x: 0, y: 0, width: 200, height: 400 } }] }),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: {
+          point: {
+            x: 90,
+            y: 180,
+            anchor: { horizontal: "right", vertical: "bottom" },
+            referenceBounds: { width: 100, height: 200 },
+          },
+        },
+      },
+      noLog,
+    );
+
+    assert.deepEqual(presses, [{ platform: "android", x: 190, y: 380 }]);
+  });
+
+  it("holds the same target for the configured duration", async () => {
+    const holds: unknown[] = [];
+    const device = stubDevice({
+      longPress: (options) => {
+        holds.push(options);
+        return Promise.resolve({});
+      },
+    });
+    await runRecipeStep(
+      device,
+      { kind: "tap", gesture: "hold", durationMs: 900, target: { ref: "@e53" } },
+      noLog,
+    );
+    assert.equal(holds.length, 1);
+    assert.deepEqual(holds[0], { platform: "android", ref: "@e53", durationMs: 900 });
+  });
+});
 
 describe("resolveRecipeStep", () => {
   it("substitutes variables in nested targets and action text", () => {

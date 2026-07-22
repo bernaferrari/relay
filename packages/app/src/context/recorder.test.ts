@@ -11,7 +11,15 @@ test("resource identifiers are not recorded as accessibility labels", () => {
       0.25,
       0.5,
     ),
-    { ref: "@e9", point: { x: 25, y: 100 } },
+    {
+      ref: "@e9",
+      point: {
+        x: 25,
+        y: 100,
+        anchor: { horizontal: "left", vertical: "top" },
+        referenceBounds: { width: 100, height: 200 },
+      },
+    },
   );
 });
 
@@ -41,6 +49,11 @@ test("an unlabeled tapped child inherits the closest accessibility label", () =>
   assert.deepEqual(buildTapTarget(snapshot.bounds, semantic, 0.2, 0.1), {
     ref: "@e1",
     label: "Account",
-    point: { x: 20, y: 20 },
+    point: {
+      x: 20,
+      y: 20,
+      anchor: { horizontal: "left", vertical: "top" },
+      referenceBounds: { width: 100, height: 200 },
+    },
   });
 });

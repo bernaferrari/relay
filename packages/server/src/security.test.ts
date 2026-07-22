@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  allowedBrowserOrigin,
   assertSafeBinding,
   authorizationMatches,
   isLoopbackHost,
+  isLocalWorkspacePath,
   resolveRequestContext,
 } from "./security.js";
 
@@ -27,6 +29,22 @@ describe("server security", () => {
     assert.equal(authorizationMatches(`Basic ${token}`, token), false);
     assert.equal(authorizationMatches("Bearer wrong", token), false);
     assert.equal(authorizationMatches(`Bearer ${token}`, token), true);
+  });
+
+  it("allows only loopback browser origins for the local API", () => {
+    assert.equal(allowedBrowserOrigin(undefined), null);
+    assert.equal(allowedBrowserOrigin("http://localhost:5173"), "http://localhost:5173");
+    assert.equal(allowedBrowserOrigin("http://127.0.0.1:4173"), "http://127.0.0.1:4173");
+    assert.equal(allowedBrowserOrigin("https://relay.example"), null);
+    assert.equal(allowedBrowserOrigin("null"), null);
+  });
+
+  it("keeps unowned workspace assets on the local control plane", () => {
+    assert.equal(isLocalWorkspacePath("/recipes"), true);
+    assert.equal(isLocalWorkspacePath("/recipes/custom-login"), true);
+    assert.equal(isLocalWorkspacePath("/suites/smoke/run"), true);
+    assert.equal(isLocalWorkspacePath("/runs"), false);
+    assert.equal(isLocalWorkspacePath("/jobs/123"), false);
   });
 
   it("derives service scope from configuration and rejects header broadening", () => {
