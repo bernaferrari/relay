@@ -8,9 +8,11 @@ import { createRequestId, emitDiagnostic, withDiagnosticTimer } from '../../util
 import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import { prepareRemoteRequestArtifacts } from '../../remote/daemon-artifacts.ts';
 import {
+  attachActiveSessionAddressHint,
   attachRepairSessionAddressHint,
   cleanupDaemonAfterRequest,
   ensureDaemon,
+  isActiveReplaySessionResponse,
   isHeldRepairDivergence,
   resolveClientSettings,
   type DaemonClientSettings,
@@ -94,7 +96,11 @@ export async function sendToDaemon(
         ),
       { requestId, command: req.command },
     );
-    return withRepairSessionAddressHintIfOwned(response, settings);
+    return withActiveSessionAddressHint(
+      withRepairSessionAddressHintIfOwned(response, settings),
+      req,
+      settings,
+    );
   });
 }
 
@@ -151,6 +157,32 @@ function withRepairSessionAddressHintIfOwned(
     return response;
   }
   return attachRepairSessionAddressHint(response, settings.paths.baseDir);
+}
+
+/**
+ * ADR 0016 counterpart to `withRepairSessionAddressHintIfOwned` — but unlike
+ * that one, NOT gated on `settings.ownedStateDir`. An owned ephemeral state
+ * dir is unaddressable by a later invocation either way, so it's included
+ * when owned; an explicit `--state-dir`/`AGENT_DEVICE_STATE_DIR` caller
+ * already knows their own dir, so it's omitted then. But the session's own
+ * name is cwd-qualified and, per #1394, `session list` cannot rediscover it
+ * either — so `--session` is still worth hinting even at an explicit state
+ * dir, which is why this runs for every active-session response regardless
+ * of `ownedStateDir` (`attachActiveSessionAddressHint` itself decides what,
+ * if anything, is worth attaching).
+ */
+function withActiveSessionAddressHint(
+  response: DaemonResponse,
+  req: Omit<DaemonRequest, 'token'>,
+  settings: DaemonClientSettings,
+): DaemonResponse {
+  if (!response.ok || !isActiveReplaySessionResponse(req, response)) {
+    return response;
+  }
+  return attachActiveSessionAddressHint(
+    response,
+    settings.ownedStateDir ? settings.paths.baseDir : undefined,
+  );
 }
 
 function writeInstallInProgressNotice(command: string | undefined): void {

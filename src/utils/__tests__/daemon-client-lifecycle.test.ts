@@ -23,7 +23,12 @@ vi.mock('../timeouts.ts', async (importOriginal) => {
 });
 
 import { resolveDaemonPaths, type DaemonPaths } from '../../daemon/config.ts';
-import { sendToDaemon, type DaemonRequest } from '../../daemon/client/daemon-client.ts';
+import {
+  sendToDaemon,
+  type DaemonRequest,
+  type DaemonResponse,
+} from '../../daemon/client/daemon-client.ts';
+import { attachActiveSessionAddressHint } from '../../daemon/client/daemon-client-lifecycle.ts';
 import { computeDaemonCodeSignature } from '../../daemon/code-signature.ts';
 import { sendRequest } from '../../daemon/client/daemon-client-transport.ts';
 import {
@@ -34,6 +39,7 @@ import {
 import { AppError } from '../../kernel/errors.ts';
 import { runCmdDetachedMonitored, runCmdSync } from '../exec.ts';
 import { readProcessStartTime } from '../host-process.ts';
+import { shellQuoteIfNeeded } from '../shell-quote.ts';
 import { sleep } from '../timeouts.ts';
 import { findProjectRoot, readVersion } from '../version.ts';
 
@@ -1076,6 +1082,331 @@ test('continuation: sendToDaemon keeps the daemon alive on a held divergence eve
     if (response.ok) return;
     assert.ok(ownedStateDir.length > 0);
     assert.equal(fs.existsSync(ownedStateDir), true);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+// --- ADR 0016: on consumption, a `replay` whose script had no terminal
+// `close` reports its session as still active (`ReplayCommandResult.
+// sessionActive: true`) by design — the named session stays active and the
+// caller binds subsequent commands to the returned id. Tearing down the
+// owning daemon here (issue #1384) makes that contract unaddressable the
+// instant the response is sent. This mirrors the repair-divergence keep-alive
+// above, but for a SUCCESSFUL response instead of a held divergence, and has
+// no bounded reap of its own (unlike a held repair): an unattended close-less
+// replay leaves a live daemon+app session until ordinary idle-reap or an
+// explicit `close` ends it — the same lifetime an interactively opened
+// session already has. ---
+
+function activeReplaySuccessData(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    replayed: 1,
+    healed: 0,
+    session: 'default',
+    sessionActive: true,
+    artifactPaths: [],
+    message: 'Replayed 1 step in 0.1s',
+    ...overrides,
+  };
+}
+
+test('attachActiveSessionAddressHint shell-quotes a --state-dir/--session value containing spaces or shell metacharacters', () => {
+  const unsafeStateDir = '/tmp/state dir with $(danger)';
+  const unsafeSession = 'cwd:abc123:my session; rm -rf /';
+  const response: Extract<DaemonResponse, { ok: true }> = {
+    ok: true,
+    data: activeReplaySuccessData({ session: unsafeSession }),
+  };
+
+  const hinted = attachActiveSessionAddressHint(response, unsafeStateDir);
+
+  assert.equal(
+    hinted.data?.hint,
+    "This session's daemon was kept alive because its script left the session active; " +
+      `pass --state-dir ${shellQuoteIfNeeded(unsafeStateDir)} ` +
+      `--session ${shellQuoteIfNeeded(unsafeSession)} on your next command to reach it.`,
+  );
+  // Both values actually needed quoting — this test would pass vacuously
+  // (raw interpolation indistinguishable from quoted) if they didn't.
+  assert.notEqual(shellQuoteIfNeeded(unsafeStateDir), unsafeStateDir);
+  assert.notEqual(shellQuoteIfNeeded(unsafeSession), unsafeSession);
+});
+
+test('attachActiveSessionAddressHint omits --state-dir but still quotes an unsafe --session-only value', () => {
+  const unsafeSession = "cwd:abc123:it's mine";
+  const response: Extract<DaemonResponse, { ok: true }> = {
+    ok: true,
+    data: activeReplaySuccessData({ session: unsafeSession }),
+  };
+
+  const hinted = attachActiveSessionAddressHint(response, undefined);
+
+  assert.equal(
+    hinted.data?.hint,
+    "This session's daemon was kept alive because its script left the session active; " +
+      `pass --session ${shellQuoteIfNeeded(unsafeSession)} on your next command to reach it.`,
+  );
+  assert.doesNotMatch(String(hinted.data?.hint), /--state-dir/);
+});
+
+/** Issues a close-less `replay` against an owned ephemeral daemon spawned at `daemonPort`. */
+async function replayLeavingSessionActive(
+  daemonPort: number,
+  requestId: string,
+): Promise<{ response: Awaited<ReturnType<typeof sendToDaemon>>; ownedStateDir: string }> {
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemonPort, (dir) => {
+    ownedStateDir = dir;
+  });
+  const response = await sendToDaemon({
+    session: 'default',
+    command: 'replay',
+    positionals: ['open-only.ad'],
+    flags: { daemonTransport: 'http' },
+    meta: { requestId },
+  });
+  return { response, ownedStateDir };
+}
+
+/** Parses a `--state-dir <dir> --session <name>` pair out of an address hint. */
+function parseAddressHint(hint: string): { stateDir: string; session: string } {
+  const match = hint.match(/--state-dir (\S+) --session (\S+)/);
+  assert.ok(match, `hint did not contain a parseable --state-dir/--session pair: ${hint}`);
+  return { stateDir: match[1] ?? '', session: match[2] ?? '' };
+}
+
+test('sendToDaemon keeps an owned ephemeral daemon alive and hints its --state-dir when a close-less replay leaves the session active', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const daemon = await startHttpDaemonFixture(activeReplaySuccessData());
+  let ownedStateDir = '';
+  try {
+    const result = await replayLeavingSessionActive(daemon.port, 'req-active-session-keep-alive');
+    ownedStateDir = result.ownedStateDir;
+    assert.equal(result.response.ok, true);
+    if (!result.response.ok) return;
+    const data = result.response.data;
+    assert.ok(data);
+    assert.equal(data.session, 'default');
+    assert.equal(data.sessionActive, true);
+    assert.ok(ownedStateDir.length > 0);
+    const hint = String(data.hint);
+    assert.match(hint, /--state-dir/);
+    assert.ok(hint.includes(ownedStateDir));
+    // Names the session verbatim (not just --state-dir): an explicit
+    // --session <value> is used as-is by resolveEffectiveSessionName, so the
+    // hint must be copy-pasteable into a follow-up command from any cwd.
+    assert.match(hint, /--session default/);
+    assert.match(String(data.message), /--state-dir/);
+
+    // The daemon was NOT torn down: metadata and the owned state dir itself
+    // are still on disk, addressable by a follow-up command's --state-dir.
+    const ownedPaths = resolveDaemonPaths(ownedStateDir);
+    assert.equal(fs.existsSync(ownedPaths.infoPath), true);
+    assert.equal(fs.existsSync(ownedPaths.lockPath), true);
+    assert.equal(fs.existsSync(ownedStateDir), true);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+test('closes the loop: a follow-up sendToDaemon using the hinted --state-dir/--session reaches the SAME kept-alive daemon, without spawning a new one', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const daemon = await startHttpDaemonFixture(activeReplaySuccessData());
+  let ownedStateDir = '';
+  try {
+    const result = await replayLeavingSessionActive(daemon.port, 'req-active-session-hint-source');
+    ownedStateDir = result.ownedStateDir;
+    assert.equal(result.response.ok, true);
+    if (!result.response.ok) return;
+    const hinted = parseAddressHint(String(result.response.data?.hint));
+    assert.equal(hinted.stateDir, ownedStateDir);
+
+    const spawnCallsBeforeFollowUp = mockRunCmdDetached.mock.calls.length;
+    const followUp = await sendToDaemon({
+      session: hinted.session,
+      command: 'press',
+      positionals: [],
+      flags: { stateDir: hinted.stateDir, daemonTransport: 'http' },
+      meta: { requestId: 'req-active-session-followup', sessionExplicit: true },
+    });
+
+    // Reached the SAME kept-alive daemon fixture — no new one was spawned to
+    // serve the follow-up — and the request actually carried the hinted
+    // session name, closing the loop on the promise the hint makes.
+    assert.equal(mockRunCmdDetached.mock.calls.length, spawnCallsBeforeFollowUp);
+    assert.equal(followUp.ok, true);
+    assert.equal(daemon.rpcRequests.length, 2);
+    assert.equal(daemon.rpcRequests[1]?.params?.session, hinted.session);
+    assert.equal(daemon.rpcRequests[1]?.params?.command, 'press');
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+test('sendToDaemon tears down an owned ephemeral daemon when replay reports the session was closed (sessionActive: false)', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  const daemon = await startHttpDaemonFixture(activeReplaySuccessData({ sessionActive: false }));
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['closed.ad'],
+      flags: { daemonTransport: 'http' },
+      meta: { requestId: 'req-closed-session-teardown' },
+    });
+
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal(response.data?.hint, undefined);
+    assert.ok(ownedStateDir.length > 0);
+    assert.equal(fs.existsSync(ownedStateDir), false);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+test('ADR 0012 R7 x ADR 0016: a completed --save-script repair also keeps its owning daemon alive (its terminal source close is always skipped)', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  // A repair-armed replay that completes with NO divergence always skips its
+  // terminal source `close` (ADR 0012, "the terminal source close ... is
+  // SKIPPED — not dispatched"), so the session survives every such run and
+  // `sessionActive` is always true here — this falls out of the SAME guard as
+  // the plain #1384 case above, but is pinned separately because it changes
+  // when the healed `.ad` commit (gated on teardown, not on this response)
+  // actually lands: previously immediate (the one-shot client tore the daemon
+  // down right after this response), now deferred to an explicit close or
+  // idle-reap.
+  const daemon = await startHttpDaemonFixture(activeReplaySuccessData({ healed: 1 }));
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['flow.ad'],
+      flags: { saveScript: true, daemonTransport: 'http' },
+      meta: { requestId: 'req-repair-complete-keep-alive' },
+    });
+
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal(response.data?.sessionActive, true);
+    assert.match(String(response.data?.hint), /--state-dir/);
+
+    // No immediate teardown means no immediate commit trigger either: the
+    // owned daemon and its state dir are still on disk, exactly like the
+    // plain (non-repair) active-session case.
+    assert.ok(ownedStateDir.length > 0);
+    assert.equal(fs.existsSync(ownedStateDir), true);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
+  }
+});
+
+test('issue #1384: sendToDaemon does not stop a client-started daemon at an explicit --state-dir when replay leaves the session active', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  // The literal #1384 repro: an explicit AGENT_DEVICE_STATE_DIR/--state-dir
+  // means `ownedStateDir` is false, but this client still STARTS the daemon
+  // fresh at that fixed dir (`daemon.startedByClient`) since nothing was
+  // running there yet — the teardown branch this guards is reached
+  // regardless of `ownedStateDir`.
+  const stateDir = makeTempStateDir('agent-device-active-session-explicit-dir-');
+  const paths = resolveDaemonPaths(stateDir);
+  const daemon = await startHttpDaemonFixture(activeReplaySuccessData());
+  installSpawnedHttpDaemon(paths, daemon.port);
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'replay',
+      positionals: ['open-only.ad'],
+      flags: { stateDir, daemonTransport: 'http' },
+      meta: { requestId: 'req-explicit-dir-active-session' },
+    });
+
+    assert.equal(response.ok, true);
+    if (!response.ok) return;
+    assert.equal(response.data?.sessionActive, true);
+    // The hint still names --session (the caller can't rediscover a
+    // cwd-qualified session name any other way, per #1394) but omits
+    // --state-dir — the caller already knows this explicit dir, it passed it
+    // itself, so only an OWNED (randomly generated) state dir needs one.
+    assert.equal(
+      response.data?.hint,
+      "This session's daemon was kept alive because its script left the session active; " +
+        'pass --session default on your next command to reach it.',
+    );
+    assert.doesNotMatch(String(response.data?.hint), /--state-dir/);
+    assert.equal(fs.existsSync(paths.infoPath), true);
+    assert.equal(fs.existsSync(paths.lockPath), true);
+  } finally {
+    await closeLoopbackServer(daemon.server);
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('sendToDaemon still tears down a `test` command owned ephemeral daemon even if its response data carried sessionActive:true', async (t) => {
+  if (!(await supportsLoopbackBind())) {
+    t.skip('loopback listeners are not permitted in this environment');
+    return;
+  }
+
+  // `test` never actually sets this field in practice (its own per-file
+  // runner always closes each session before the suite summary is built) —
+  // this proves the carve-out is an explicit command check, not an accident
+  // of the response shape, should a future response ever carry it by mistake.
+  const daemon = await startHttpDaemonFixture(activeReplaySuccessData({ total: 1 }));
+  let ownedStateDir = '';
+  installSpawnedHttpDaemonAtOwnedStateDir(daemon.port, (dir) => {
+    ownedStateDir = dir;
+  });
+
+  try {
+    const response = await sendToDaemon({
+      session: 'default',
+      command: 'test',
+      positionals: ['suite.ad'],
+      flags: { daemonTransport: 'http' },
+      meta: { requestId: 'req-test-command-teardown' },
+    });
+
+    assert.equal(response.ok, true);
+    assert.ok(ownedStateDir.length > 0);
+    assert.equal(fs.existsSync(ownedStateDir), false);
   } finally {
     await closeLoopbackServer(daemon.server);
     if (ownedStateDir) fs.rmSync(ownedStateDir, { recursive: true, force: true });
