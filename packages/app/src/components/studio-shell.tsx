@@ -100,6 +100,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   } | null>(null);
 
   const selected = createMemo(() => server.selectedRecipe());
+  const hasAuthoredJourneys = createMemo(() =>
+    server.recipes().some((recipe) => recipe.source === "custom" && recipe.steps.length > 0),
+  );
   let titleBeforeEdit = "";
   let variablesDialog: HTMLElement | undefined;
   createEffect(() => {
@@ -115,7 +118,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   createEffect(() => {
     const readyId = selected()?.id ?? null;
     if (readyId && readyId !== previousReadyRecipeId) setLibraryOpen(false);
-    if (!server.selectedRecipeId()) setLibraryOpen(true);
+    if (!server.selectedRecipeId()) setLibraryOpen(hasAuthoredJourneys());
     previousReadyRecipeId = readyId;
   });
   // Every test opens on the device-first workbench. Remembering a settings
@@ -159,7 +162,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   };
   const filteredRecipes = createMemo(() => {
     const needle = query().trim().toLowerCase();
-    const rows = [...server.recipes()];
+    // Journeys are the work people create and review. Built-in operational
+    // commands remain available to the runner, but do not belong in this
+    // library beside authored work.
+    const rows = server.recipes().filter((recipe) => recipe.source === "custom");
     rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
     return needle
       ? rows.filter((recipe) =>
@@ -351,7 +357,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       <main class={shellMain}>
         <header class={shellTopbar}>
           <div class={shellTopbarContext}>
-            <Show when={area() === "tests"}>
+            <Show when={area() === "tests" && (selected() || hasAuthoredJourneys())}>
               <button
                 type="button"
                 class={productIconButton}
@@ -418,7 +424,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             </div>
           </div>
           <div class={shellTopbarActions}>
-            <Show when={area() === "tests" || area() === "suites" || area() === "map"}>
+            <Show
+              when={
+                area() === "suites" ||
+                area() === "map" ||
+                (area() === "tests" && Boolean(selected()))
+              }
+            >
               <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
             </Show>
             <Show when={area() === "tests" && selected()}>
