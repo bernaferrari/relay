@@ -7,7 +7,11 @@ import {
   resolveReplayAction,
   type ReplayVarScope,
 } from '../../replay/vars.ts';
-import type { LocalIdentity, TargetAnnotationV1 } from '../../replay/target-identity.ts';
+import {
+  annotationLocalIdentity,
+  type LocalIdentity,
+  type TargetAnnotationV1,
+} from '../../replay/target-identity.ts';
 import {
   createReplayDivergenceSanitizer,
   type ReplayDivergence,
@@ -18,8 +22,11 @@ import {
 import {
   readNodeStructuralDenotation,
   REPLAY_TARGET_GUARD_MISMATCH_REASON,
+  WAIT_LANDMARK_MISMATCH_REASON,
   type ReplayTargetGuardDenotation,
 } from '../../replay/target-identity-node.ts';
+import { resolveTargetIdentityVerification } from '../../core/command-descriptor/registry.ts';
+import { parseWaitPositionals } from '../../core/wait-positionals.ts';
 import type { DaemonResponse, SessionAction } from '../types.ts';
 import { SessionStore } from '../session-store.ts';
 import { boundedLocalIdentity } from '../session-target-evidence.ts';
@@ -39,6 +46,7 @@ import { buildReplayDivergenceFailureResponse } from './session-replay-runtime-f
 import { buildAndPersistReplayDivergenceResume } from './session-replay-resume.ts';
 import {
   classifyReplayTarget,
+  firstAncestryMismatch,
   identityFieldMismatches,
 } from './session-replay-target-classification.ts';
 import { extractReplayTargetToken, readRefLabel } from './session-replay-target-token.ts';
@@ -62,7 +70,19 @@ export type ReplayVerifiedTargetGuard = {
 };
 
 export type ReplayTargetVerificationOutcome =
-  | { verified: true; guard?: ReplayVerifiedTargetGuard }
+  | {
+      verified: true;
+      guard?: ReplayVerifiedTargetGuard;
+      /**
+       * #1349 post-resolution phase (`wait`): the recorded landmark to thread
+       * into the command's own resolution (`internal.replayLandmarkGuard`).
+       * `verified: true` here means only "nothing to refuse pre-dispatch" —
+       * the identity check runs inside the wait's polling loop, and the step
+       * loop converts its timeout refusal into an identity-mismatch
+       * divergence (`buildWaitLandmarkMismatchResponse`).
+       */
+      deferredLandmark?: TargetAnnotationV1;
+    }
   | { verified: false; response: DaemonResponse };
 
 type TargetBindingDivergenceContext = {
@@ -120,7 +140,7 @@ function buildTargetBindingDivergenceResponse(
   const targetBinding = {
     classification: built.kind,
     ...(built.matchCount !== undefined ? { matchCount: built.matchCount } : {}),
-    recorded: sanitizeIdentity(identityFromAnnotation(recorded), sanitize),
+    recorded: sanitizeIdentity(annotationLocalIdentity(recorded), sanitize),
     ...(built.observed ? { observed: sanitizeIdentity(built.observed, sanitize) } : {}),
     mismatches: built.mismatches.slice(0, 5).map((entry) => sanitize(entry)),
     candidates: built.candidateNodes.slice(0, 5).map((node) => describeCandidate(node, sanitize)),
@@ -226,14 +246,6 @@ export async function verifyReplayActionTarget(params: {
   // every other replay divergence, so an expanded `${VAR}` never leaks
   // through an un-scrubbed positional).
   const resolvedAction = resolveReplayAction(action, scope, { file: sourcePath, line: sourceLine });
-  const token = extractReplayTargetToken(resolvedAction);
-  if (token === undefined) return { verified: true };
-  if (!token.startsWith('@') && !tryParseSelectorChain(token)) {
-    // A malformed recorded selector is not this module's concern — the real
-    // dispatch will parse (and fail) it the same way an unannotated action
-    // would.
-    return { verified: true };
-  }
 
   const scrubVars = collectReplayScrubbableVarValues(scope);
   const sanitize = createReplayDivergenceSanitizer(scrubVars);
@@ -252,10 +264,9 @@ export async function verifyReplayActionTarget(params: {
     planActions,
     planDigest,
   };
-
-  // Decision 3 path 1: a recorded-`unverifiable` annotation fires before any
-  // resolution — matchCount is omitted (never computed).
-  if (recorded.verification === 'unverifiable') {
+  const buildRecordedUnverifiableResponse = async (): Promise<DaemonResponse> => {
+    // Decision 3 path 1: a recorded-`unverifiable` annotation fires before
+    // any resolution — matchCount is omitted (never computed).
     const observation = await captureDivergenceObservation({
       session,
       sessionName,
@@ -263,21 +274,47 @@ export async function verifyReplayActionTarget(params: {
       logPath,
       action,
     });
-    return {
-      verified: false,
-      response: buildTargetBindingDivergenceResponse(context, {
-        kind: 'identity-unverifiable',
-        matchCount: undefined,
-        observed: undefined,
-        candidateNodes: [],
-        mismatches: [],
-        causeCode: 'IDENTITY_UNVERIFIABLE',
-        causeMessage:
-          'The recorded target evidence could not verify itself when it was captured (a structural capture anomaly), so replay cannot trust it before acting.',
-        screen: buildDivergenceScreen(observation, sanitize),
-        repairCapture: toReplayRepairHintCapture(observation),
-      }),
-    };
+    return buildTargetBindingDivergenceResponse(context, {
+      kind: 'identity-unverifiable',
+      matchCount: undefined,
+      observed: undefined,
+      candidateNodes: [],
+      mismatches: [],
+      causeCode: 'IDENTITY_UNVERIFIABLE',
+      causeMessage:
+        'The recorded target evidence could not verify itself when it was captured (a structural capture anomaly), so replay cannot trust it before acting.',
+      screen: buildDivergenceScreen(observation, sanitize),
+      repairCapture: toReplayRepairHintCapture(observation),
+    });
+  };
+
+  // #1349 post-resolution phase (`wait`): NEVER the generic pre-dispatch
+  // resolution below — an absent landmark is a wait's expected starting
+  // condition, so refusing on the current screen would break polling. Only
+  // path 1 (recorded-`unverifiable`, no resolution involved) refuses up
+  // front; a verifiable landmark is deferred into the wait's own loop.
+  if (resolveTargetIdentityVerification(action.command) === 'post-resolution') {
+    const parsed = parseWaitPositionals(resolvedAction.positionals ?? []);
+    // Only a selector wait names a landmark; an annotation on any other wait
+    // form is inert, like an old reader.
+    if (parsed?.kind !== 'selector') return { verified: true };
+    if (recorded.verification === 'unverifiable') {
+      return { verified: false, response: await buildRecordedUnverifiableResponse() };
+    }
+    return { verified: true, deferredLandmark: recorded };
+  }
+
+  const token = extractReplayTargetToken(resolvedAction);
+  if (token === undefined) return { verified: true };
+  if (!token.startsWith('@') && !tryParseSelectorChain(token)) {
+    // A malformed recorded selector is not this module's concern — the real
+    // dispatch will parse (and fail) it the same way an unannotated action
+    // would.
+    return { verified: true };
+  }
+
+  if (recorded.verification === 'unverifiable') {
+    return { verified: false, response: await buildRecordedUnverifiableResponse() };
   }
 
   const observation = await captureDivergenceObservation({
@@ -365,10 +402,9 @@ export function isReplayTargetGuardMismatchResponse(response: DaemonResponse): b
   return !response.ok && response.error.details?.reason === REPLAY_TARGET_GUARD_MISMATCH_REASON;
 }
 
-export async function buildReplayTargetGuardMismatchResponse(params: {
+type PostDispatchMismatchParams = {
   action: SessionAction;
   scope: ReplayVarScope;
-  guard: ReplayVerifiedTargetGuard;
   failedResponse: DaemonResponse;
   sourcePath: string;
   sourceLine: number;
@@ -381,40 +417,38 @@ export async function buildReplayTargetGuardMismatchResponse(params: {
   responseLevel: ResponseLevel | undefined;
   planActions: SessionAction[];
   planDigest: string;
-}): Promise<DaemonResponse> {
-  const {
-    action,
-    scope,
-    guard,
-    failedResponse,
-    sourcePath,
-    sourceLine,
-    replayPath,
-    step,
-    sessionName,
-    sessionStore,
-    logPath,
-    artifactPaths,
-    responseLevel,
-    planActions,
-    planDigest,
-  } = params;
-  // The guard is only ever attached to an annotated action; fall back to the
-  // original failure if the invariant is somehow violated.
+};
+
+type PostDispatchMismatchEvidence = {
+  matchCount: number | undefined;
+  observed: LocalIdentity | undefined;
+  mismatches: string[];
+  causeMessage: string;
+};
+
+/**
+ * The shared post-dispatch identity-mismatch shaping: both refusal markers —
+ * the guard mismatch and wait's landmark refusal — arrive as a failed dispatch
+ * response whose details carry the observed evidence, and both become the same
+ * bounded identity-mismatch divergence around their marker-specific evidence.
+ */
+async function buildPostDispatchIdentityMismatchResponse(
+  params: PostDispatchMismatchParams,
+  deriveEvidence: (
+    recorded: TargetAnnotationV1,
+    details: Record<string, unknown> | undefined,
+  ) => PostDispatchMismatchEvidence,
+): Promise<DaemonResponse> {
+  const { action, scope, failedResponse, sessionName, sessionStore, logPath } = params;
+  // The refusal markers are only ever attached to an annotated action; fall
+  // back to the original failure if the invariant is somehow violated.
   const recorded = action.targetEvidence;
   if (!recorded) return failedResponse;
 
   const scrubVars = collectReplayScrubbableVarValues(scope);
   const sanitize = createReplayDivergenceSanitizer(scrubVars);
   const details = failedResponse.ok ? undefined : failedResponse.error.details;
-  const observed = readGuardMismatchObservedIdentity(details?.observed);
-  // The guard fires even when local identity is identical (a same-identity
-  // duplicate resolved by structural position) — surface the structural
-  // difference so `mismatches` is never empty on a real divergence.
-  const structuralMismatch = describeStructuralMismatch(
-    details?.expectedStructural,
-    details?.observedStructural,
-  );
+  const evidence = deriveEvidence(recorded, details);
 
   const session = sessionStore.get(sessionName);
   const observation = session
@@ -429,34 +463,106 @@ export async function buildReplayTargetGuardMismatchResponse(params: {
     {
       recorded,
       action,
-      step,
-      sourcePath,
-      sourceLine,
-      replayPath,
-      artifactPaths,
+      step: params.step,
+      sourcePath: params.sourcePath,
+      sourceLine: params.sourceLine,
+      replayPath: params.replayPath,
+      artifactPaths: params.artifactPaths,
       sessionName,
       sessionStore,
-      responseLevel,
+      responseLevel: params.responseLevel,
       scrubVars,
-      planActions,
-      planDigest,
+      planActions: params.planActions,
+      planDigest: params.planDigest,
     },
     {
       kind: 'identity-mismatch',
-      matchCount: guard.matchCount,
-      observed,
+      matchCount: evidence.matchCount,
+      observed: evidence.observed,
       candidateNodes: [],
-      mismatches: [
-        ...(observed ? identityFieldMismatches(recorded, observed) : []),
-        ...(structuralMismatch ? [structuralMismatch] : []),
-      ],
+      mismatches: evidence.mismatches,
       causeCode: 'IDENTITY_MISMATCH',
-      causeMessage:
-        'Dispatch resolution (with occlusion/visibility guards) resolved a different element than pre-action verification isolated; the action was not sent.',
+      causeMessage: evidence.causeMessage,
       screen: buildDivergenceScreen(observation, sanitize),
       repairCapture: toReplayRepairHintCapture(observation),
     },
   );
+}
+
+export async function buildReplayTargetGuardMismatchResponse(
+  params: PostDispatchMismatchParams & { guard: ReplayVerifiedTargetGuard },
+): Promise<DaemonResponse> {
+  return await buildPostDispatchIdentityMismatchResponse(params, (recorded, details) => {
+    const observed = readGuardMismatchObservedIdentity(details?.observed);
+    // The guard fires even when local identity is identical (a same-identity
+    // duplicate resolved by structural position) — surface the structural
+    // difference so `mismatches` is never empty on a real divergence.
+    const structuralMismatch = describeStructuralMismatch(
+      details?.expectedStructural,
+      details?.observedStructural,
+    );
+    return {
+      matchCount: params.guard.matchCount,
+      observed,
+      mismatches: [
+        ...(observed ? identityFieldMismatches(recorded, observed) : []),
+        ...(structuralMismatch ? [structuralMismatch] : []),
+      ],
+      causeMessage:
+        'Dispatch resolution (with occlusion/visibility guards) resolved a different element than pre-action verification isolated; the action was not sent.',
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// #1349 deferred (post-resolution) landmark verification for `wait`: the
+// polling loop refuses at its deadline when selector candidates appeared but
+// none carried the recorded landmark identity; the replay loop converts that
+// refusal into an identity-mismatch target-binding divergence here. A plain
+// wait timeout (the selector never matched at all) is NOT this marker — it
+// stays an ordinary action-failure divergence, because "the landmark never
+// appeared" needs a state repair, not an identity repair.
+// ---------------------------------------------------------------------------
+
+export function isWaitLandmarkMismatchResponse(response: DaemonResponse): boolean {
+  return !response.ok && response.error.details?.reason === WAIT_LANDMARK_MISMATCH_REASON;
+}
+
+export async function buildWaitLandmarkMismatchResponse(
+  params: PostDispatchMismatchParams,
+): Promise<DaemonResponse> {
+  return await buildPostDispatchIdentityMismatchResponse(params, (recorded, details) => {
+    const observed = readGuardMismatchObservedIdentity(details?.observed);
+    const observedAncestry = readAncestryEntries(details?.observedAncestry);
+    return {
+      matchCount: typeof details?.matchCount === 'number' ? details.matchCount : undefined,
+      observed,
+      mismatches: observed
+        ? [
+            ...identityFieldMismatches(recorded, observed),
+            ...firstAncestryMismatch(recorded.ancestry, observedAncestry),
+          ]
+        : [],
+      causeMessage:
+        'Candidates matched the recorded wait selector during polling, but none carried the recorded landmark identity before the timeout; the wait did not report success.',
+    };
+  });
+}
+
+/** The wait refusal's `observedAncestry` entries, defensively re-read off error details. */
+function readAncestryEntries(value: unknown): { role: string; label?: string }[] {
+  if (!Array.isArray(value)) return [];
+  const entries: { role: string; label?: string }[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    if (typeof record.role !== 'string') return [];
+    entries.push({
+      role: record.role,
+      ...(typeof record.label === 'string' ? { label: record.label } : {}),
+    });
+  }
+  return entries;
 }
 
 function readGuardMismatchObservedIdentity(value: unknown): LocalIdentity | undefined {
@@ -488,14 +594,6 @@ function readStructuralDenotation(
     return undefined;
   }
   return { documentOrder: record.documentOrder, sibling: record.sibling };
-}
-
-function identityFromAnnotation(recorded: TargetAnnotationV1): ReplayDivergenceTargetIdentity {
-  return {
-    ...(recorded.id !== undefined ? { id: recorded.id } : {}),
-    role: recorded.role,
-    ...(recorded.label !== undefined ? { label: recorded.label } : {}),
-  };
 }
 
 function sanitizeIdentity(

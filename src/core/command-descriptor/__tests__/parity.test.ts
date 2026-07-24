@@ -21,6 +21,7 @@ import {
   listMcpExposedCommandNames,
   resolveCommandRecordsSessionAction,
   resolveCommandRecordingEffect,
+  resolveTargetIdentityVerification,
   RAW_COMMAND_DESCRIPTORS,
 } from '../registry.ts';
 
@@ -386,5 +387,28 @@ test('recordingEffect resolves request-sensitive observation and mutation subcom
       flags: {},
     }),
     'mutates-app',
+  );
+});
+
+test('targetIdentityVerification pins exactly the evidence-carrying command set (ADR 0012 / #1349)', () => {
+  const declared = RAW_COMMAND_DESCRIPTORS.flatMap((descriptor) => {
+    const phase = resolveTargetIdentityVerification(descriptor.name);
+    return phase ? [[descriptor.name, phase] as const] : [];
+  });
+  // A new evidence-carrying command must choose its replay verification phase
+  // here explicitly instead of silently entering the generic pre-dispatch
+  // path — wait is the only command whose target may legitimately be absent
+  // when its step starts.
+  assert.deepEqual(
+    [...declared].sort(([a], [b]) => a.localeCompare(b)),
+    [
+      ['click', 'pre-dispatch'],
+      ['fill', 'pre-dispatch'],
+      ['get', 'pre-dispatch'],
+      ['is', 'pre-dispatch'],
+      ['longpress', 'pre-dispatch'],
+      ['press', 'pre-dispatch'],
+      ['wait', 'post-resolution'],
+    ],
   );
 });
