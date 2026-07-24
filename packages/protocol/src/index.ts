@@ -588,7 +588,13 @@ export type TestVariable = {
 };
 
 export type JourneyNodePosition = { x: number; y: number };
+/**
+ * Layout metadata is deliberately separate from a recipe's executable steps.
+ * It lets the graph evolve (and be rearranged) without making a recorded
+ * journey impossible to run on an older Relay host.
+ */
 export type JourneyMetadata = {
+  schemaVersion?: 1 | 2;
   positions: Record<string, JourneyNodePosition>;
   edgeLabels: Record<string, string>;
   edgeKinds: Record<string, string>;

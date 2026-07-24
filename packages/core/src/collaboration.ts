@@ -27,7 +27,12 @@ type CollaborationState = {
   idempotency: Record<string, number>;
 };
 
-const EMPTY_JOURNEY: JourneyMetadata = { positions: {}, edgeLabels: {}, edgeKinds: {} };
+const EMPTY_JOURNEY: JourneyMetadata = {
+  schemaVersion: 2,
+  positions: {},
+  edgeLabels: {},
+  edgeKinds: {},
+};
 let queue = Promise.resolve();
 
 function stateRoot(): string {

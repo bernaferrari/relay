@@ -1,5 +1,5 @@
 import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js";
-import { useServer, type RecipeInfo, type RecipeStep } from "../context/server";
+import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { JourneyWorkspace } from "./journey-workspace";
@@ -40,7 +40,6 @@ import {
   shellStageWrap,
   shellDragStrip,
 } from "../lib/shell-layout";
-import { planTestPrompt } from "../lib/natural-language-plan";
 import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
@@ -60,10 +59,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [area, setArea] = createSignal<ProductArea>(
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
   );
-  // A test always opens on one continuous workbench: ordered steps, the real
-  // device, and the selected step's properties. Map and source-level settings
-  // are deliberate power-user destinations, never competing default tabs.
-  const [studioView, setStudioView] = createSignal<StudioView>("workbench");
+  // The graph is the journey's source of truth. Device remains one click away
+  // for direct editing, while the graph keeps each captured screen and its
+  // outgoing actions visible as the journey grows.
+  const [studioView, setStudioView] = createSignal<StudioView>("map");
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
@@ -108,7 +107,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (defaultedViewForId === id) return;
     const recipe = server.recipes().find((item) => item.id === id);
     if (!recipe) return;
-    setStudioView("workbench");
+    setStudioView("map");
     setSettingsOpen(false);
     setVariablesOpen(false);
     defaultedViewForId = id;
@@ -148,21 +147,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         )
       : rows;
   });
-  async function createTest(record = false, description = ""): Promise<RecipeInfo | null> {
-    const plannedSteps = description.trim()
-      ? planTestPrompt(description).map((instruction) => instruction.step)
-      : [];
+  async function createTest(record = false): Promise<RecipeInfo | null> {
     const saved = await server.saveRecipeRemote({
-      title: description
-        ? titleFromPrompt(description, server.recipes(), plannedSteps)
-        : nextUntitledTitle(server.recipes()),
-      description,
-      steps: plannedSteps,
+      title: nextUntitledTitle(server.recipes()),
+      steps: [],
     });
     if (!saved) return null;
     server.setSelectedRecipeId(saved.id);
     setArea("tests");
-    setStudioView("workbench");
+    setStudioView("map");
     setSettingsOpen(false);
     if (record) recorder.enterRecordMode();
     return saved;
@@ -386,7 +379,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     setStudioView("map");
                   }}
                 >
-                  <Icon name="move" size={13} /> Map
+                  <Icon name="move" size={13} /> Graph
                 </button>
               </div>
             </Show>
@@ -493,7 +486,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 when={selected()}
                 fallback={
                   <TestWelcome
-                    onDescribe={(description) => void createTest(false, description)}
                     onRecord={() => void createTest(true)}
                     onOpenTargets={() => props.onOpenSettings("targets")}
                   />
@@ -519,7 +511,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </Show>
                 <Show when={studioView() === "map"}>
                   <div class={cn(shellStageWrap, "flex flex-1")}>
-                    <JourneyWorkspace onLive={() => setStudioView("workbench")} />
+                    <JourneyWorkspace
+                      onLive={() => setStudioView("workbench")}
+                      onOpenTargets={() => props.onOpenSettings("targets")}
+                    />
                   </div>
                 </Show>
               </Show>
@@ -690,29 +685,4 @@ function nextUntitledTitle(recipes: RecipeInfo[]): string {
   let index = 2;
   while (used.has(`Untitled journey ${index}`)) index++;
   return `Untitled journey ${index}`;
-}
-
-function titleFromPrompt(
-  description: string,
-  recipes: RecipeInfo[],
-  steps: RecipeStep[] = [],
-): string {
-  const sentence = description.split(/[.!?\n]/, 1)[0]?.trim() || "New journey";
-  // Long prompts make unreadable truncated titles; the check clause (the point
-  // of the test) makes a better name than the first 49 characters.
-  const check = steps.find(
-    (step): step is Extract<RecipeStep, { kind: "expect" }> => step.kind === "expect",
-  );
-  const checkLabel = check && "target" in check ? check.target?.label?.trim() : "";
-  const base =
-    sentence.length > 52 && checkLabel
-      ? `${checkLabel} ${check?.condition === "gone" ? "disappears" : "appears"}`
-      : sentence.length > 52
-        ? `${sentence.slice(0, 49).trimEnd()}…`
-        : sentence;
-  const normalized = base.charAt(0).toUpperCase() + base.slice(1);
-  if (!recipes.some((recipe) => recipe.title === normalized)) return normalized;
-  let index = 2;
-  while (recipes.some((recipe) => recipe.title === `${normalized} ${index}`)) index++;
-  return `${normalized} ${index}`;
 }
