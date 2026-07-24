@@ -1084,6 +1084,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const {
       captureUiSnapshot,
       captureUiScreenshot,
+      copyUiScreenshot,
       persistRecordingEvidence,
       recordingEvidenceUrl,
       pollLiveFrame,
@@ -1107,6 +1108,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setShowOverlays,
       setLiveFrame,
       pushFrame,
+      copyImage: platform.copyImage,
       appendLog,
       refreshDiscoverySessions,
     });
@@ -1424,6 +1426,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       busyCapture,
       captureUiSnapshot,
       captureUiScreenshot,
+      copyUiScreenshot,
       persistRecordingEvidence,
       recordingEvidenceUrl,
       jumpToJob,

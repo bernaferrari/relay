@@ -1,6 +1,8 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
+  nativeImage,
   Notification,
   ipcMain,
   shell,
@@ -112,6 +114,18 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       new Notification({ title, body }).show();
     }
   });
+
+  ipcMain.handle(
+    "clipboard-write-image",
+    (_event: IpcMainInvokeEvent, base64: string, mime: string) => {
+      if (typeof base64 !== "string" || !base64.length || !/^image\/(png|jpeg)$/i.test(mime)) {
+        throw new Error("Relay received an invalid image for the clipboard");
+      }
+      const image = nativeImage.createFromDataURL(`data:${mime};base64,${base64}`);
+      if (image.isEmpty()) throw new Error("Relay could not decode the captured image");
+      clipboard.writeImage(image);
+    },
+  );
 
   ipcMain.handle("get-server-url", () => deps.getServerUrl());
 

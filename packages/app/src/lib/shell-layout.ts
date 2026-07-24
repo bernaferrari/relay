@@ -5,66 +5,44 @@
 import { cn } from "./cn";
 
 /**
- * Root app grid: rail | library | main.
- * The library track collapses via the --shell-lib var, which the shell sets
- * with an INLINE STYLE (`shellRootLibraryVar`) — never via competing utility
+ * Root app grid: navigator | main.
+ * The navigator track collapses via the --shell-nav var, which the shell sets
+ * with an INLINE STYLE (`shellRootNavVar`) — never via competing utility
  * classes: cn() does not merge, and two classes setting the same property
  * resolve by stylesheet order, not class-list order.
  */
 export const shellRoot = cn(
   "grid h-full w-full min-h-0 overflow-hidden text-[var(--text-strong)] bg-[var(--v2-background-bg-deep)] isolation-isolate",
-  "grid-cols-[58px_var(--shell-lib,var(--shell-library-width))_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
-  "max-[900px]:grid-cols-[58px_0_minmax(0,1fr)]",
+  "grid-cols-[var(--shell-nav,var(--shell-nav-width))_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
+  "max-[900px]:grid-cols-[0_minmax(0,1fr)]",
   "transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
 );
 
 /** Inline-style value for the root: pass to `style` so it always wins. */
-export function shellRootLibraryVar(open: boolean): Record<string, string> {
-  return { "--shell-lib": open ? "var(--shell-library-width)" : "0px" };
+export function shellRootNavVar(open: boolean): Record<string, string> {
+  return { "--shell-nav": open ? "var(--shell-nav-width)" : "0px" };
 }
 
-export const shellRail = cn(
-  "relative z-[3] col-start-1 row-start-1 flex min-h-0 flex-col items-center gap-4",
-  "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_97%,black)] px-1.5 pt-[var(--rail-top-pad,14px)] pb-2.5",
-  "after:pointer-events-none after:absolute after:top-[calc(var(--rail-top-pad,14px)+32px)] after:right-0 after:bottom-0 after:w-px after:bg-[var(--v2-border-border-muted)] after:content-['']",
-);
-
-/** Brand mark — the one place a flat brand color is allowed to stand alone
- *  without matching app chrome tones (product logo, not a UI surface). */
-export const shellMark = cn(
-  "relative size-8 shrink-0 rounded-[10px] bg-[#6454e9] text-white",
-  "active:scale-[0.97]",
-);
-
-export const shellRailNav = "flex w-full flex-1 flex-col gap-1.5 pt-2";
-
-export const shellRailItem = cn(
-  "flex min-h-11 w-full flex-col items-center justify-center gap-0.5 rounded-lg",
-  "text-[10px] font-medium tracking-[0.01em] text-[var(--text-weak)]",
-  "transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97]",
-  "hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]",
-);
-
-export const shellRailItemActive = cn(
-  "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
-  "[&_svg]:text-[var(--text-interactive-base)]",
-);
-
-export const shellLibrary = cn(
-  "relative z-[2] col-start-2 row-start-1 flex min-h-0 flex-col overflow-hidden",
+/**
+ * The single navigator: areas, journeys, and the open journey's steps. It
+ * replaces the old 58px rail + library + outline triple. Keeping one panel
+ * means one selection model and one place to look for anything nameable.
+ */
+export const shellNav = cn(
+  "relative z-[2] col-start-1 row-start-1 flex min-h-0 flex-col overflow-hidden",
   "border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
   "transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
   "will-change-transform",
-  "max-[900px]:fixed max-[900px]:top-0 max-[900px]:bottom-0 max-[900px]:left-[58px] max-[900px]:z-[60] max-[900px]:w-[var(--shell-library-width)] max-[900px]:shadow-[24px_0_60px_rgb(0_0_0/42%)]",
+  "max-[900px]:fixed max-[900px]:top-0 max-[900px]:bottom-0 max-[900px]:left-0 max-[900px]:z-[60] max-[900px]:w-[var(--shell-nav-width)] max-[900px]:shadow-[24px_0_60px_rgb(0_0_0/42%)]",
   // Inner content keeps its width during the collapse so text does not reflow.
-  "[&>*]:w-[var(--shell-library-width)]",
+  "[&>*]:w-[var(--shell-nav-width)]",
 );
 
-export const shellLibraryClosed =
+export const shellNavClosed =
   "pointer-events-none -translate-x-3.5 opacity-0 border-r-0 max-[900px]:-translate-x-full";
 
 export const shellMain =
-  "col-start-3 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--v2-background-bg-deep)]";
+  "col-start-2 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--v2-background-bg-deep)]";
 
 export const shellTopbar = cn(
   "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--v2-border-border-muted)]",
@@ -80,30 +58,7 @@ export const shellBreadcrumb = cn(
   "[&_strong]:font-medium [&_strong]:text-[var(--text-base)]",
 );
 
-export const shellRecordDot = "size-[7px] shrink-0 rounded-full bg-current";
-
-/** Recording creates a test; it should not compete with the primary Run action. */
-export const shellCapture = cn(
-  "inline-flex min-h-[36px] items-center justify-center gap-[7px] rounded-[9px] px-3",
-  "text-[12.5px] font-semibold text-[var(--text-base)] select-none",
-  "bg-[var(--v2-background-bg-layer-01)] shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]",
-  "transition-[color,background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]",
-  "hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97]",
-  "disabled:cursor-not-allowed disabled:text-[var(--text-weak)]",
-  "data-[blocked]:cursor-not-allowed data-[blocked]:text-[var(--text-weak)]",
-);
-
-export const shellCaptureActive = cn(
-  "bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,var(--v2-background-bg-layer-01))] text-[var(--icon-critical-base)]",
-  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--icon-critical-base)_38%,transparent)]",
-);
-
 export const shellStudio = "relative z-0 flex min-h-0 min-w-0 flex-1 flex-col";
-
-export const shellStudioBar = cn(
-  "shell-drag flex min-h-11 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3.5",
-  "bg-[color-mix(in_srgb,var(--v2-background-bg-base)_72%,var(--v2-background-bg-deep))]",
-);
 
 export const shellViewTabs = "flex items-center gap-1";
 
@@ -119,11 +74,6 @@ export const shellViewTabActive = cn(
   "shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]",
 );
 
-export const shellCount = cn(
-  "grid h-[18px] min-w-[18px] place-items-center rounded-[5px] bg-[var(--v2-background-bg-layer-01)]",
-  "font-mono text-[9px] text-[var(--text-weak)]",
-);
-
 export const shellSaveState = "mr-1.5 text-[11px] text-[var(--text-weak)]";
 
 export const shellStudioBody = cn(
@@ -137,11 +87,14 @@ export const shellStudioBody = cn(
  * Journey cannot be composed with `shellStudioBody`: both recipes set
  * grid-template-columns, and utility stylesheet order would decide which one
  * wins. Keep this as a complete grid recipe and select it directly.
+ *
+ * Two tracks, not three — the step outline lives in the navigator now, so the
+ * body is exactly the device and the properties for the selected step.
  */
 export const shellStudioBodyJourney = cn(
   "grid min-h-0 min-w-0 flex-1",
-  "grid-cols-[252px_minmax(420px,1fr)_372px]",
-  "max-[1380px]:min-[901px]:grid-cols-[238px_minmax(360px,1fr)_340px]",
+  "grid-cols-[minmax(420px,1fr)_336px]",
+  "max-[1380px]:min-[901px]:grid-cols-[minmax(360px,1fr)_312px]",
   "max-[900px]:grid-cols-1",
 );
 
@@ -172,9 +125,6 @@ export const shellStageWrap = cn(
 export const shellSteps = cn(
   "flex min-h-0 min-w-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
 );
-
-export const shellStepsHead =
-  "relative shrink-0 border-b border-[var(--v2-border-border-muted)] px-[18px] pt-[18px] pb-3.5";
 
 export const shellStepsBody = "min-h-0 min-w-0 flex-1 overflow-hidden";
 

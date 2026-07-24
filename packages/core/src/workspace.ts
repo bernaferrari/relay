@@ -35,6 +35,10 @@ import {
   type AdbDeviceObservation,
 } from "./adb-devices.js";
 import {
+  captureAndroidUiSnapshotWithState,
+  type AndroidInspectionState,
+} from "./android-ui-snapshot.js";
+import {
   configuredTargetContext,
   currentTargetContext,
   runWithTargetContext,
@@ -160,13 +164,24 @@ async function observedAndroidVersion(serial: string): Promise<string | undefine
 
 export async function listDevices(): Promise<ListedDevice[]> {
   const client = createDevice();
-  const [adapterResult, adbDevices] = await Promise.all([
+  // USB/ADB is the source of truth for attached Android hardware. The optional
+  // SDK adapter can occasionally wait on an app session, so never let its
+  // discovery call freeze the device picker or hide a phone ADB can see.
+  const adapterList = Promise.race([
     client.devices.list().then(
       (devices) => ({ devices, error: null }),
       (error: unknown) => ({ devices: [], error }),
     ),
-    listAdbDevices(),
+    new Promise<{ devices: []; error: Error }>((resolve) => {
+      setTimeout(() => {
+        resolve({
+          devices: [],
+          error: new Error("Relay device adapter did not respond in time"),
+        });
+      }, 2_000);
+    }),
   ]);
+  const [adapterResult, adbDevices] = await Promise.all([adapterList, listAdbDevices()]);
   if (adapterResult.error && adbDevices.length === 0) throw adapterResult.error;
 
   const devices = adapterResult.devices;
@@ -317,6 +332,11 @@ export type SnapshotPayload = {
   interactive: SnapshotNode[];
   /** rough screen bounds from max rect extents (for overlay scaling) */
   bounds?: { width: number; height: number };
+  /** False when Android's hierarchy cannot be safely aligned with mirrored pixels. */
+  inspectable: boolean;
+  /** Capture implementation, useful for diagnostics without leaking host details to UI logic. */
+  source: "sdk" | "android-system";
+  inspectionState?: AndroidInspectionState;
 };
 
 function inferBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
@@ -331,6 +351,45 @@ function inferBounds(nodes: SnapshotNode[]): { width: number; height: number } |
   return { width: Math.round(maxX), height: Math.round(maxY) };
 }
 
+async function snapshotThroughSdk(
+  device: Device,
+  interactiveOnly: boolean,
+): Promise<SnapshotNode[]> {
+  return await withSession(device, () => snapshot(device, { interactiveOnly }));
+}
+
+type SnapshotCapture = Pick<
+  SnapshotPayload,
+  "nodes" | "inspectable" | "source" | "inspectionState"
+>;
+
+async function snapshotForTarget(
+  target: Awaited<ReturnType<typeof resolveRuntimeTarget>>,
+  interactiveOnly: boolean,
+): Promise<SnapshotCapture> {
+  if (
+    target.context.kind !== "device" ||
+    target.context.platform !== "android" ||
+    !target.context.serial
+  ) {
+    return {
+      nodes: await snapshotThroughSdk(target.device, interactiveOnly),
+      inspectable: true,
+      source: "sdk",
+    };
+  }
+
+  // An app-bound SDK snapshot can retain Always-On Display or app content while
+  // the lock screen owns the pixels. This system provider exposes that state
+  // explicitly so the renderer clears inspection instead of guessing.
+  const snapshot = await captureAndroidUiSnapshotWithState(target.context.serial);
+  return {
+    ...snapshot,
+    inspectable: snapshot.inspectionState === "active",
+    source: "android-system",
+  };
+}
+
 export async function captureSnapshot(opts?: {
   serial?: string;
   interactiveOnly?: boolean;
@@ -338,14 +397,13 @@ export async function captureSnapshot(opts?: {
 }): Promise<SnapshotPayload> {
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
-    const nodes = await withSession(target.device, () =>
-      snapshot(target.device, { interactiveOnly: opts?.interactiveOnly ?? false }),
-    );
+    const snapshot = await snapshotForTarget(target, opts?.interactiveOnly ?? false);
+    const { nodes, ...capture } = snapshot;
     const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
     const bounds = inferBounds(nodes);
     const serial = targetIdentity();
     publish({ type: "snapshot.captured", at: now(), serial, nodeCount: nodes.length });
-    return { serial, capturedAt: now(), nodes, interactive, bounds };
+    return { serial, capturedAt: now(), nodes, interactive, bounds, ...capture };
   });
 }
 

@@ -14,6 +14,8 @@ const api: ElectronAPI = {
     void ipcRenderer.invoke("notify", title, body);
   },
 
+  copyImage: (base64, mime) => ipcRenderer.invoke("clipboard-write-image", base64, mime),
+
   getServerUrl: () => ipcRenderer.invoke("get-server-url"),
 
   getWindowFocused: () => ipcRenderer.invoke("get-window-focused"),

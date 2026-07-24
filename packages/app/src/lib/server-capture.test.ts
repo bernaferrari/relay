@@ -10,6 +10,7 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
   let liveFrame: unknown = null;
   let busy = false;
   const logs: string[] = [];
+  const copied: Array<{ base64: string; mime: string }> = [];
 
   const request: CaptureServerDeps["request"] = async <T>(
     path: string,
@@ -61,6 +62,9 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
       frames.push(full);
       return full as never;
     },
+    copyImage: async (base64, mime) => {
+      copied.push({ base64, mime });
+    },
     appendLog: (text) => logs.push(text),
     refreshDiscoverySessions: async () => undefined,
   });
@@ -71,6 +75,7 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
     requestBodies,
     frames,
     logs,
+    copied,
     getSnapshot: () => snapshot,
     getLiveFrame: () => liveFrame,
     isBusy: () => busy,
@@ -98,6 +103,18 @@ test("capture boundary keeps screenshot and snapshot transport details out of th
   assert.equal((harness.getLiveFrame() as { id: string }).id, "live-123");
   assert.equal(harness.isBusy(), false);
   assert.ok(harness.logs.some((line) => line.startsWith("snapshot ")));
+});
+
+test("copy screenshot is ephemeral and does not create a Relay frame or log", async () => {
+  const harness = createHarness();
+
+  await harness.capture.copyUiScreenshot();
+
+  assert.equal(harness.calls[0], "/screenshot?ephemeral=1&serial=device-1");
+  assert.deepEqual(harness.copied, [{ base64: "encoded", mime: "image/png" }]);
+  assert.deepEqual(harness.frames, []);
+  assert.deepEqual(harness.logs, []);
+  assert.equal(harness.isBusy(), false);
 });
 
 test("step execution returns the typed backend result and includes the selected device", async () => {

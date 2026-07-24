@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
 import {
   useServer,
@@ -32,34 +32,15 @@ import {
 } from "../lib/journey-action-conversion";
 import { testRunBlocker } from "../lib/test-run-readiness";
 import { Icon } from "./icon";
-import {
-  accentForStep,
-  actionForStep,
-  evidenceForStep,
-  iconForStep,
-} from "./journey-step-presentation";
+import { actionForStep, evidenceForStep } from "./journey-step-presentation";
 import { ActionPicker } from "./action-picker";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { MaterialDiscreteSlider } from "./material-discrete-slider";
 import { StepEditor } from "./step-editor";
-import { AddMenu } from "./step-list-controls";
-import {
-  eyebrow,
-  productPrimary,
-  propertySeg,
-  propertySegBtn,
-  propertySegBtnOn,
-  propertySegIndicator,
-} from "../lib/ui";
+import { productPrimary, propertySeg, propertySegBtn, propertySegBtnOn } from "../lib/ui";
 
 const chromePanel =
   "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,var(--v2-background-bg-deep))]";
-
-const walkStepBtn = cn(
-  "grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-colors duration-150",
-  "hover:enabled:bg-[var(--v2-background-bg-layer-01)] hover:enabled:text-[var(--text-strong)]",
-  "disabled:cursor-not-allowed disabled:opacity-35",
-);
 
 const statusDot = (status: string) =>
   cn(
@@ -187,6 +168,45 @@ function simpleField(step: RecipeStep): {
   return { label: "Note", value: step.note ?? "" };
 }
 
+/**
+ * A named group that stays shut until asked for, showing its current value on
+ * the closed row. Matching strategy and gesture are answers people need once
+ * and then stop reading — they should not compete with the step's sentence.
+ */
+function Disclosure(props: {
+  label: string;
+  value?: string;
+  open: boolean;
+  onToggle: () => void;
+  children: JSX.Element;
+}) {
+  return (
+    <section class="border-t border-[var(--v2-border-border-muted)]">
+      <button
+        type="button"
+        class="grid min-h-10 w-full grid-cols-[13px_minmax(0,1fr)_auto] items-center gap-2 px-[15px] text-left transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-01)]"
+        aria-expanded={props.open}
+        onClick={props.onToggle}
+      >
+        <Icon
+          name={props.open ? "chevron-down" : "chevron-right"}
+          size={12}
+          class="text-[var(--text-weak)]"
+        />
+        <span class="truncate text-[11.5px] font-medium text-[var(--text-base)]">
+          {props.label}
+        </span>
+        <Show when={!props.open && props.value}>
+          <span class="truncate pl-2 text-[10.5px] text-[var(--text-weak)]">{props.value}</span>
+        </Show>
+      </button>
+      <Show when={props.open}>
+        <div class="px-[15px] pt-0.5 pb-3">{props.children}</div>
+      </Show>
+    </section>
+  );
+}
+
 function usesCompactInspector(step: RecipeStep): boolean {
   return [
     "tap",
@@ -200,260 +220,6 @@ function usesCompactInspector(step: RecipeStep): boolean {
   ].includes(step.kind);
 }
 
-export function JourneyOutline(props: { compact?: boolean } = {}) {
-  const server = useServer();
-  const draft = useRecipeDraft();
-  const workbench = useWorkbench();
-  const active = () => workbench.focusedIndex() ?? 0;
-  const [addAnchor, setAddAnchor] = createSignal<
-    { left: number; top: number; bottom: number; width: number } | undefined
-  >();
-  let addButton: HTMLButtonElement | undefined;
-  let stepList: HTMLElement | undefined;
-  let previousActive = active();
-
-  createEffect(() => {
-    const current = active();
-    if (current === previousActive) return;
-    previousActive = current;
-
-    queueMicrotask(() => {
-      const container = stepList;
-      const row = container?.querySelector<HTMLElement>(`[data-step-row="${current}"]`);
-      if (!container || !row) return;
-
-      const top = row.offsetTop - container.offsetTop;
-      const bottom = top + row.offsetHeight;
-      const visibleTop = container.scrollTop;
-      const visibleBottom = visibleTop + container.clientHeight;
-      if (top >= visibleTop && bottom <= visibleBottom) return;
-
-      container.scrollTo({
-        top: top < visibleTop ? top : bottom - container.clientHeight,
-        behavior: "smooth",
-      });
-    });
-  });
-
-  const appendStep = (step: RecipeStep) => {
-    const index = draft.steps().length;
-    draft.insertStep(index, step);
-    workbench.focusStep(index);
-    setAddAnchor(undefined);
-  };
-
-  return (
-    <aside
-      class={cn(chromePanel, "border-r border-[var(--v2-border-border-muted)] max-[900px]:!hidden")}
-      aria-label="Journey actions"
-    >
-      <header class="border-b border-[var(--v2-border-border-muted)] px-[15px] pt-[17px] pb-[15px]">
-        <Show
-          when={props.compact}
-          fallback={
-            <>
-              <span class={eyebrow}>Journey</span>
-              <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--text-strong)]">
-                {draft.title()}
-              </h2>
-              <Show when={draft.description()}>
-                <p class="mt-1.5 mb-[15px] line-clamp-2 text-[12px]/[1.5] text-[var(--text-weak)]">
-                  {draft.description()}
-                </p>
-              </Show>
-              <div
-                class={cn(
-                  "grid grid-cols-[repeat(auto-fit,minmax(8px,1fr))] gap-1",
-                  !draft.description() && "mt-[15px]",
-                )}
-                aria-label={`Action ${active() + 1} of ${draft.steps().length}`}
-              >
-                <For each={draft.steps()}>
-                  {(_, index) => (
-                    <i
-                      class={cn(
-                        "h-0.5 rounded-full bg-[var(--v2-border-border-strong)]",
-                        index() <= active() && "bg-[var(--v2-background-bg-accent)]",
-                      )}
-                    />
-                  )}
-                </For>
-              </div>
-              <div class="mt-2 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  class={walkStepBtn}
-                  aria-label="Previous action"
-                  disabled={active() <= 0}
-                  onClick={() => workbench.focusStep(Math.max(0, active() - 1))}
-                >
-                  <Icon name="chevron-left" size={12} />
-                </button>
-                <small class="block font-mono text-[10.5px]/[1.2] tabular-nums text-[var(--text-weak)]">
-                  Action {Math.min(active() + 1, draft.steps().length)} of {draft.steps().length}
-                </small>
-                <button
-                  type="button"
-                  class={walkStepBtn}
-                  aria-label="Next action"
-                  disabled={active() >= draft.steps().length - 1}
-                  onClick={() =>
-                    workbench.focusStep(Math.min(draft.steps().length - 1, active() + 1))
-                  }
-                >
-                  <Icon name="chevron-right" size={12} />
-                </button>
-              </div>
-            </>
-          }
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <span class={eyebrow}>Journey</span>
-              <strong class="mt-1 block truncate text-[14px] font-semibold tracking-[-0.015em] text-[var(--text-strong)]">
-                {draft.title() || "Untitled journey"}
-              </strong>
-            </div>
-            <span class="shrink-0 pt-0.5 font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]">
-              {draft.steps().length} actions
-            </span>
-          </div>
-          <Show when={draft.description()}>
-            <p class="mt-1.5 line-clamp-1 text-[12px] text-[var(--text-base)]">
-              {draft.description()}
-            </p>
-          </Show>
-        </Show>
-      </header>
-      <nav
-        ref={(element) => {
-          stepList = element;
-        }}
-        class="min-h-0 flex-1 overflow-y-auto p-2"
-      >
-        <For each={draft.steps()}>
-          {(step, index) => {
-            const annotation = () => workbench.rowAnno(index());
-            const isActive = () => active() === index();
-            const nestedCount = () => {
-              const id =
-                step.kind === "module" ? step.recipeId : step.kind === "flow" ? step.flow : null;
-              return id
-                ? (server.recipes().find((recipe) => recipe.id === id)?.steps.length ?? 0)
-                : 0;
-            };
-            return (
-              <button
-                type="button"
-                data-step-row={index()}
-                class={cn(
-                  "relative grid min-h-[56px] w-full grid-cols-[32px_minmax(0,1fr)_7px] items-center gap-2.5 rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[var(--text-weak)] transition-colors duration-150",
-                  "hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-base)]",
-                  isActive() &&
-                    "border-[rgb(139_114_255/30%)] bg-[rgb(116_92_242/13%)] text-[var(--text-strong)] hover:bg-[rgb(116_92_242/13%)] hover:text-[var(--text-strong)]",
-                )}
-                onClick={() => workbench.focusStep(index())}
-              >
-                <span
-                  class="grid size-8 place-items-center rounded-[9px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--v2-background-bg-layer-01))] text-[color-mix(in_srgb,var(--journey-node-accent)_75%,white)]"
-                  style={{ "--journey-node-accent": accentForStep(step) }}
-                >
-                  <Icon name={iconForStep(step)} size={15} />
-                </span>
-                <span class="min-w-0">
-                  <small class="mb-1 flex items-center gap-1.5 font-mono text-[10px]/[1.2] tracking-[0.08em] text-[var(--text-weak)] uppercase">
-                    <span>{String(index() + 1).padStart(2, "0")}</span>
-                    <Show when={nestedCount() > 0}>
-                      <span aria-hidden="true">·</span>
-                      <span>
-                        {nestedCount()} action{nestedCount() === 1 ? "" : "s"}
-                      </span>
-                    </Show>
-                  </small>
-                  <strong class="block overflow-hidden text-[13px] font-medium leading-[1.35] text-ellipsis whitespace-nowrap text-inherit">
-                    {sentenceForStep(step, server.recipes())}
-                  </strong>
-                </span>
-                <Show when={annotation().status !== "idle"}>
-                  <i class={statusDot(annotation().status)} />
-                </Show>
-              </button>
-            );
-          }}
-        </For>
-      </nav>
-      <Show when={props.compact}>
-        <footer class="relative shrink-0 border-t border-[var(--v2-border-border-muted)] p-2.5">
-          <div class="flex h-8 items-center justify-between px-0.5">
-            <button
-              type="button"
-              class={walkStepBtn}
-              aria-label="Previous action"
-              disabled={draft.steps().length === 0 || active() <= 0}
-              onClick={() => workbench.focusStep(Math.max(0, active() - 1))}
-            >
-              <Icon name="chevron-left" size={12} />
-            </button>
-            <span
-              class="font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]"
-              aria-live="polite"
-            >
-              {draft.steps().length
-                ? `Action ${active() + 1} of ${draft.steps().length}`
-                : "No actions"}
-            </span>
-            <button
-              type="button"
-              class={walkStepBtn}
-              aria-label="Next action"
-              disabled={draft.steps().length === 0 || active() >= draft.steps().length - 1}
-              onClick={() => workbench.focusStep(Math.min(draft.steps().length - 1, active() + 1))}
-            >
-              <Icon name="chevron-right" size={12} />
-            </button>
-          </div>
-          <div class="mt-1 border-t border-[var(--v2-border-border-muted)] pt-1">
-            <button
-              ref={(element) => {
-                addButton = element;
-              }}
-              type="button"
-              class="flex min-h-9 w-full items-center justify-center gap-2 rounded-lg text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] active:scale-[0.98]"
-              aria-expanded={Boolean(addAnchor())}
-              onClick={() => {
-                if (addAnchor()) {
-                  setAddAnchor(undefined);
-                  return;
-                }
-                const rect = addButton?.getBoundingClientRect();
-                if (!rect) return;
-                setAddAnchor({
-                  left: rect.left,
-                  top: rect.top,
-                  bottom: rect.bottom,
-                  width: rect.width,
-                });
-              }}
-            >
-              <Icon name="plus" size={14} /> Add action
-            </button>
-          </div>
-          <Show when={addAnchor()}>
-            {(anchor) => (
-              <AddMenu
-                anchor={anchor()}
-                placement="above"
-                onClose={() => setAddAnchor(undefined)}
-                onPick={appendStep}
-              />
-            )}
-          </Show>
-        </footer>
-      </Show>
-    </aside>
-  );
-}
-
 export function JourneyInspector(props: { onOpenTargets: () => void; compact?: boolean }) {
   const server = useServer();
   const draft = useRecipeDraft();
@@ -465,11 +231,6 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
   const holdStep = createMemo(() => {
     const current = step();
     return current && isTapAction(current) && tapGesture(current) === "hold" ? current : undefined;
-  });
-  const gestureIndex = createMemo(() => {
-    const current = step();
-    const gesture = current && isTapAction(current) ? tapGesture(current) : "single";
-    return gesture === "multi" ? 1 : gesture === "hold" ? 2 : 0;
   });
   const multiTapStep = createMemo(() => {
     const current = step();
@@ -751,6 +512,44 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
   const navBtn =
     "grid size-8 place-items-center rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] disabled:opacity-35";
 
+  // Disclosure state is per-panel, not per-step: someone who opened "Match by"
+  // is working on matching and wants it open on the next step too.
+  const [openSections, setOpenSections] = createSignal<Record<string, boolean>>({});
+  const isOpen = (key: string) => openSections()[key] ?? false;
+  const toggle = (key: string) =>
+    setOpenSections((current) => ({ ...current, [key]: !current[key] }));
+
+  const strategyLabel = createMemo(() => {
+    const current = step();
+    const target = current ? editableTarget(current) : undefined;
+    if (!target) return "";
+    const strategy = defaultStrategy(target);
+    if (strategy === "label") return "Accessibility label";
+    if (strategy === "text") return "Visible text";
+    if (strategy === "ref") return "UI element";
+    return fmtPoint(target.point);
+  });
+
+  /** One plain line saying how this step finds what it acts on. */
+  const matchSummary = createMemo(() => {
+    const current = step();
+    if (!current) return "";
+    const target = editableTarget(current);
+    if (!target) return actionForStep(current);
+    const strategy = defaultStrategy(target);
+    if (strategy === "point") return `Found at a fixed position · ${fmtPoint(target.point)}`;
+    if (strategy === "text") return "Found by the text shown on screen";
+    if (strategy === "ref") return "Found by its element reference";
+    return "Found by its accessibility label";
+  });
+
+  /** True when the target can be chosen from recorded evidence, not just typed. */
+  const richTarget = createMemo(() => {
+    const current = step();
+    if (!current || !isTapAction(current) || !hasEditableTarget(current)) return false;
+    return targetChoices().length > 0 || Boolean(constraintPoint());
+  });
+
   return (
     <aside
       class={cn(
@@ -769,13 +568,13 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
     >
       <header class="flex min-h-12 shrink-0 items-center justify-between gap-2.5 border-b border-[var(--v2-border-border-muted)] px-[15px]">
         <span class="font-mono text-[10.5px] font-medium tracking-[0.04em] text-[var(--text-weak)] uppercase">
-          Action {String(index() + 1).padStart(2, "0")}
+          Step {String(index() + 1).padStart(2, "0")}
         </span>
         <div class="flex items-center gap-1">
           <button
             type="button"
             class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-35"
-            aria-label={`Preview action ${index() + 1} on its recorded screen`}
+            aria-label={`Preview step ${index() + 1} on its recorded screen`}
             data-tip={
               canPreview()
                 ? "Preview on the recorded screen — does not touch the device"
@@ -789,7 +588,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
           <button
             type="button"
             class={cn(productPrimary, "h-7 !min-h-7 shrink-0 px-2.5 text-[10.5px]")}
-            aria-label={`Run action ${index() + 1}`}
+            aria-label={`Run step ${index() + 1}`}
             disabled={workbench.running()}
             onClick={runSelected}
           >
@@ -809,7 +608,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
             <button
               type="button"
               class="grid size-7 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
-              aria-label="Action options"
+              aria-label="Step options"
               aria-haspopup="menu"
               aria-expanded={stepMenuOpen()}
               onClick={() => setStepMenuOpen((open) => !open)}
@@ -820,7 +619,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
               <div
                 class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid min-w-[174px] gap-0.5 rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
                 role="menu"
-                aria-label="Action options"
+                aria-label="Step options"
               >
                 <button
                   type="button"
@@ -829,7 +628,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                   onClick={duplicateSelectedStep}
                 >
                   <Icon name="copy" size={12} />
-                  Duplicate action
+                  Duplicate step
                 </button>
                 <div class="mx-2 h-px bg-[var(--v2-border-border-muted)]" />
                 <button
@@ -839,7 +638,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                   onClick={deleteSelectedStep}
                 >
                   <Icon name="trash" size={12} />
-                  <span>Delete action</span>
+                  <span>Delete step</span>
                   <kbd class="font-mono text-[9px] font-normal opacity-65">⌫</kbd>
                 </button>
               </div>
@@ -848,35 +647,11 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
         </div>
       </header>
       <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        {/* Only the captured screen goes above the sentence. Without one there
+            is nothing to show here — the sentence block below already names
+            the step, and repeating it read as two different headings. */}
         <Show when={!props.compact}>
-          <Show
-            when={capturedFrame()}
-            fallback={
-              <section class="grid grid-cols-[42px_minmax(0,1fr)] gap-3 border-b border-[var(--v2-border-border-muted)] bg-[radial-gradient(circle_at_20%_20%,rgb(126_101_255/9%),transparent_38%),var(--v2-background-bg-deep)] px-[15px] py-[18px]">
-                <Show when={step()}>
-                  {(current) => (
-                    <span
-                      class="grid size-[42px] place-items-center rounded-[11px] border border-[color-mix(in_srgb,var(--journey-node-accent)_32%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--journey-node-accent)_12%,var(--v2-background-bg-layer-01))] text-[color-mix(in_srgb,var(--journey-node-accent)_80%,white)]"
-                      style={{ "--journey-node-accent": accentForStep(current()) }}
-                    >
-                      <Icon name={iconForStep(current())} size={22} />
-                    </span>
-                  )}
-                </Show>
-                <div class="min-w-0">
-                  <small class="block text-[10.5px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
-                    {step() ? actionForStep(step()!) : "Planned action"}
-                  </small>
-                  <strong class="mt-1 block text-[15px]/[1.35] font-semibold tracking-[-0.01em] text-[var(--text-strong)]">
-                    {sentence()}
-                  </strong>
-                  <p class="mt-1.5 text-[12px]/[1.55] text-[var(--text-weak)]">
-                    Run once to add the device screenshot and result.
-                  </p>
-                </div>
-              </section>
-            }
-          >
+          <Show when={capturedFrame()}>
             {(src) => (
               <div class="grid h-80 min-h-80 place-items-center overflow-hidden bg-[radial-gradient(circle_at_50%_35%,rgb(126_101_255/12%),transparent_48%),radial-gradient(circle_at_1px_1px,rgb(255_255_255/5%)_1px,transparent_0)] bg-size-[auto,18px_18px] px-7 py-[22px] max-[1380px]:min-[901px]:p-[18px]">
                 <img
@@ -890,13 +665,28 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
         </Show>
         <Show when={step()}>
           {(current) => (
-            <section
-              class={cn(
-                "px-[15px] py-3",
-                !props.compact && "border-t border-[var(--v2-border-border-muted)]",
-              )}
-            >
-              <header class="mb-1.5 grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2">
+            <>
+              {/* The sentence is the step. Everything below is how it works. */}
+              <section
+                class={cn(
+                  "px-[15px] pt-3.5 pb-3",
+                  !props.compact && "border-t border-[var(--v2-border-border-muted)]",
+                )}
+              >
+                <strong class="block text-[15px]/[1.35] font-semibold tracking-[-0.01em] text-[var(--text-strong)]">
+                  {sentence()}
+                </strong>
+                <p class="mt-1 text-[11px]/[1.5] text-[var(--text-weak)]">{matchSummary()}</p>
+                <Show when={!props.compact && !capturedFrame()}>
+                  <p class="mt-1.5 text-[11px]/[1.5] text-[var(--text-weaker)]">
+                    Run once to add the device screenshot and result.
+                  </p>
+                </Show>
+              </section>
+              {/* Action is one value, always present. A disclosure around a
+                  single always-relevant control costs a click and saves no
+                  space, so it stays open as a plain labelled row. */}
+              <section class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2 border-t border-[var(--v2-border-border-muted)] px-[15px] py-2.5">
                 <span class="text-[11px] text-[var(--text-base)]">Action</span>
                 <div class="flex h-8 min-w-0 items-center rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]">
                   <ActionPicker
@@ -905,20 +695,12 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                     onOpen={() => setStepMenuOpen(false)}
                   />
                 </div>
-              </header>
+              </section>
               <Show when={isTapAction(current())}>
-                <div class="mb-2.5 grid grid-cols-[64px_minmax(0,1fr)] items-start gap-2">
-                  <span class="pt-2 text-[11px] text-[var(--text-base)]">Gesture</span>
-                  <div class="grid gap-1.5">
+                <section class="grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-[15px] py-2.5">
+                  <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
+                    <span class="text-[11px] text-[var(--text-base)]">Gesture</span>
                     <div class={propertySeg} role="radiogroup" aria-label="Tap gesture">
-                      <span
-                        aria-hidden="true"
-                        class={propertySegIndicator}
-                        style={{
-                          width: "calc((100% - 4px) / 3)",
-                          transform: `translateX(${gestureIndex() * 100}%)`,
-                        }}
-                      />
                       <For
                         each={
                           [
@@ -944,67 +726,80 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                         }}
                       </For>
                     </div>
-                    <Show when={multiTapStep()}>
-                      {(_) => (
-                        <div class="grid h-8 grid-cols-2 divide-x divide-[var(--v2-border-border-muted)] rounded-lg ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
-                          <label class="flex min-w-0 items-center justify-between gap-2 px-2.5">
-                            <span class="text-[10.5px] text-[var(--text-base)]">Taps</span>
-                            <input
-                              type="number"
-                              min="2"
-                              max="10"
-                              step="1"
-                              class="w-7 bg-transparent text-right font-mono text-[10.5px] text-[var(--text-strong)] outline-none"
-                              value={multiTapCount()}
-                              onInput={(event) => updateMultiTapCount(event.currentTarget.value)}
-                            />
-                          </label>
-                          <label class="flex min-w-0 items-center justify-between gap-1 px-2.5">
-                            <span class="text-[10.5px] text-[var(--text-base)]">Interval</span>
-                            <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
-                              <input
-                                type="number"
-                                min="20"
-                                max="2000"
-                                step="10"
-                                class="w-9 bg-transparent text-right text-[var(--text-strong)] outline-none"
-                                value={multiTapInterval()}
-                                onInput={(event) =>
-                                  updateMultiTapInterval(event.currentTarget.value)
-                                }
-                              />
-                              ms
-                            </span>
-                          </label>
-                        </div>
-                      )}
-                    </Show>
-                    <Show when={holdStep()}>
-                      {(held) => (
-                        <label class="flex h-8 items-center justify-between gap-3 rounded-lg px-2.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
-                          <span class="text-[10.5px] text-[var(--text-base)]">Hold duration</span>
-                          <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
-                            <input
-                              type="number"
-                              min="0.1"
-                              max="10"
-                              step="0.1"
-                              class="w-10 bg-transparent text-right text-[var(--text-strong)] outline-none"
-                              value={(held().durationMs ?? 700) / 1_000}
-                              onInput={(event) => updateHoldDuration(event.currentTarget.value)}
-                            />
-                            s
-                          </span>
-                        </label>
-                      )}
-                    </Show>
                   </div>
-                </div>
+                  <Show when={multiTapStep() || holdStep()}>
+                    <div class="grid grid-cols-[52px_minmax(0,1fr)] items-center gap-2">
+                      <span class="text-[11px] text-[var(--text-base)]">
+                        {multiTapStep() ? "Repeat" : "Duration"}
+                      </span>
+                      <div>
+                        <Show when={multiTapStep()}>
+                          {(_) => (
+                            <div class="grid h-8 grid-cols-2 divide-x divide-[var(--v2-border-border-muted)] rounded-lg ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                              <label class="flex min-w-0 items-center justify-between gap-2 px-2.5">
+                                <span class="text-[10.5px] text-[var(--text-base)]">Taps</span>
+                                <input
+                                  type="number"
+                                  min="2"
+                                  max="10"
+                                  step="1"
+                                  class="w-7 bg-transparent text-right font-mono text-[10.5px] text-[var(--text-strong)] outline-none"
+                                  value={multiTapCount()}
+                                  onInput={(event) =>
+                                    updateMultiTapCount(event.currentTarget.value)
+                                  }
+                                />
+                              </label>
+                              <label class="flex min-w-0 items-center justify-between gap-1 px-2.5">
+                                <span class="text-[10.5px] text-[var(--text-base)]">Interval</span>
+                                <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
+                                  <input
+                                    type="number"
+                                    min="20"
+                                    max="2000"
+                                    step="10"
+                                    class="w-9 bg-transparent text-right text-[var(--text-strong)] outline-none"
+                                    value={multiTapInterval()}
+                                    onInput={(event) =>
+                                      updateMultiTapInterval(event.currentTarget.value)
+                                    }
+                                  />
+                                  ms
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </Show>
+                        <Show when={holdStep()}>
+                          {(held) => (
+                            <label class="flex h-8 items-center justify-between gap-3 rounded-lg px-2.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                              <span class="text-[10.5px] text-[var(--text-base)]">
+                                Hold duration
+                              </span>
+                              <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
+                                <input
+                                  type="number"
+                                  min="0.1"
+                                  max="10"
+                                  step="0.1"
+                                  class="w-10 bg-transparent text-right text-[var(--text-strong)] outline-none"
+                                  value={(held().durationMs ?? 700) / 1_000}
+                                  onInput={(event) => updateHoldDuration(event.currentTarget.value)}
+                                />
+                                s
+                              </span>
+                            </label>
+                          )}
+                        </Show>
+                      </div>
+                    </div>
+                  </Show>
+                </section>
               </Show>
               <Show
                 when={usesCompactInspector(current())}
                 fallback={
-                  <div>
+                  <section class="border-t border-[var(--v2-border-border-muted)] px-[15px] py-3">
                     <StepEditor
                       step={() => step()!}
                       index={index()}
@@ -1014,13 +809,13 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                       showEvidence={false}
                       embedded
                     />
-                  </div>
+                  </section>
                 }
               >
                 <Show
                   when={editableTarget(current())}
                   fallback={
-                    <label class="grid gap-1.5">
+                    <label class="grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-[15px] py-3">
                       <span class="text-[10.5px] text-[var(--text-weak)]">
                         {simpleField(current()).label}
                       </span>
@@ -1038,12 +833,9 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                 >
                   {(target) => (
                     <Show
-                      when={
-                        isTapAction(current()) &&
-                        (targetChoices().length > 0 || Boolean(constraintPoint()))
-                      }
+                      when={richTarget()}
                       fallback={
-                        <label class="grid gap-1.5">
+                        <label class="grid gap-1.5 border-t border-[var(--v2-border-border-muted)] px-[15px] py-3">
                           <span class="text-[10.5px] text-[var(--text-weak)]">Target</span>
                           <input
                             class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
@@ -1057,7 +849,12 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                         </label>
                       }
                     >
-                      <div class="grid gap-2">
+                      <Disclosure
+                        label="Match by"
+                        value={strategyLabel()}
+                        open={isOpen("match")}
+                        onToggle={() => toggle("match")}
+                      >
                         <Show when={defaultStrategy(target()) !== "point" && previewNode()}>
                           <section class="grid gap-1 border-b border-[var(--v2-border-border-muted)] px-0.5 pb-2">
                             <header class="grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
@@ -1168,12 +965,12 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                             )}
                           </Show>
                         </div>
-                      </div>
+                      </Disclosure>
                     </Show>
                   )}
                 </Show>
               </Show>
-            </section>
+            </>
           )}
         </Show>
         <Show

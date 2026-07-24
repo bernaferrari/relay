@@ -44,7 +44,7 @@
 
 /* Product-only layout and derived tokens. Theme colors come directly from @relay/ui. */
 :root {
-  --shell-library-width: 248px;
+  --shell-nav-width: 262px;
   --product-accent-soft: color-mix(in srgb, var(--v2-background-bg-accent) 12%, transparent);
 }
 

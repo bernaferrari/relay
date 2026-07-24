@@ -27,6 +27,7 @@ export type CaptureServerDeps = {
   setShowOverlays: (value: boolean) => void;
   setLiveFrame: (value: Frame | null) => void;
   pushFrame: (frame: Omit<Frame, "id">) => Frame;
+  copyImage?: (base64: string, mime: string) => void | Promise<void>;
   appendLog: (
     text: string,
     level?: "info" | "success" | "error" | "default",
@@ -194,6 +195,31 @@ export function createServerCapture(deps: CaptureServerDeps) {
     }
   }
 
+  /**
+   * Capture a current device image for sharing. This intentionally bypasses
+   * Relay's frame library, logs, evidence, and recorded steps.
+   */
+  async function copyUiScreenshot(): Promise<void> {
+    if (!deps.copyImage) {
+      toast("Image clipboard is unavailable in this host", "warning");
+      return;
+    }
+    deps.setBusyCapture(true);
+    try {
+      const serial = serialFor(deps);
+      const params = new URLSearchParams({ ephemeral: "1" });
+      if (serial) params.set("serial", serial);
+      const query = `?${params}`;
+      const data = await deps.request<ScreenshotResponse>(`/screenshot${query}`);
+      await deps.copyImage(data.base64, data.mime);
+      toast("Screenshot copied", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      deps.setBusyCapture(false);
+    }
+  }
+
   async function persistRecordingEvidence(
     recipeId: string,
     evidenceId: string,
@@ -349,6 +375,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
     scrollDevice,
     captureUiSnapshot,
     captureUiScreenshot,
+    copyUiScreenshot,
     persistRecordingEvidence,
     recordingEvidenceUrl: (recipeId: string, evidenceId: string) =>
       buildRecordingEvidenceUrl(deps.serverUrl(), recipeId, evidenceId),

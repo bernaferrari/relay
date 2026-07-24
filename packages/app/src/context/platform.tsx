@@ -37,6 +37,8 @@ export type Platform = {
   openExternal?(url: string): void | Promise<void>;
   /** System notification */
   notify?(title: string, body?: string): void | Promise<void>;
+  /** Copy a captured image without adding it to a journey or run. */
+  copyImage?(base64: string, mime: string): void | Promise<void>;
   /** Current server base URL (no trailing slash) */
   getServerUrl(): string | Promise<string>;
   /** Canonical authenticated, project-scoped server connection. */
@@ -117,6 +119,14 @@ export function createWebPlatform(opts?: {
           : Notification.permission;
       if (permission !== "granted") return;
       new Notification(title, { body: body ?? "" });
+    },
+    async copyImage(base64, mime) {
+      if (!("clipboard" in navigator) || typeof ClipboardItem === "undefined") {
+        throw new Error("Image clipboard is unavailable in this browser");
+      }
+      const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+      const image = new Blob([bytes], { type: mime });
+      await navigator.clipboard.write([new ClipboardItem({ [mime]: image })]);
     },
     getServerUrl() {
       const stored = storage.get("serverUrl");

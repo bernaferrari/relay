@@ -62,18 +62,21 @@ export function ActionPicker(props: {
       </button>
 
       <Show when={open()}>
+        {/* One line per action. The descriptions doubled every row's height
+            for words nobody reads twice, and the search field is a sibling of
+            the scroller so rows cannot slide under it. */}
         <div
-          class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid max-h-[min(500px,calc(100vh-180px))] w-[252px] origin-top-right overflow-y-auto rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 pt-0 shadow-[var(--v2-elevation-overlay)]"
+          class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 flex max-h-[min(340px,calc(100vh-220px))] w-[224px] origin-top-right flex-col overflow-hidden rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha shadow-[var(--v2-elevation-overlay)]"
           role="menu"
           aria-label="Change action"
         >
-          <label class="sticky top-0 z-10 flex h-9 items-center gap-2 border-b border-[var(--v2-border-border-muted)] bg-surface-raised-stronger-non-alpha px-2">
+          <label class="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-2.5 text-[var(--text-weak)]">
             <Icon name="search" size={12} />
             <input
               ref={(element) => {
                 search = element;
               }}
-              class="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+              class="min-w-0 flex-1 bg-transparent text-[11.5px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
               value={query()}
               placeholder="Find an action"
               aria-label="Find an action"
@@ -81,63 +84,50 @@ export function ActionPicker(props: {
             />
           </label>
 
-          <For each={groups()}>
-            {(group, groupIndex) => (
-              <section
-                class={cn(
-                  "grid gap-0.5 py-1",
-                  groupIndex() > 0 && "border-t border-[var(--v2-border-border-muted)]",
-                )}
-                role="group"
-                aria-label={group.label}
-              >
-                <span class="px-2 pt-1 pb-0.5 text-[8.5px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase">
-                  {group.label}
-                </span>
-                <For each={group.actions}>
-                  {(action) => (
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={selected(action.kind)}
-                      class={cn(
-                        "grid min-h-10 grid-cols-[22px_minmax(0,1fr)_16px] items-center gap-1.5 rounded-md px-2 py-1 text-left transition-[background-color,color,transform] duration-100 ease-out active:scale-[0.985]",
-                        selected(action.kind)
-                          ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
-                          : "text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
-                      )}
-                      onClick={() => {
-                        props.onSelect(action.kind);
-                        setOpen(false);
-                        setQuery("");
-                      }}
-                    >
-                      <span class="grid size-[22px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]">
-                        <Icon name={action.icon} size={12} />
-                      </span>
-                      <span class="flex min-w-0 flex-col justify-center gap-0.5">
-                        <strong class="block truncate text-[10.5px] leading-[1.15] font-medium">
-                          {action.label}
-                        </strong>
-                        <small class="block truncate text-[8.5px] leading-[1.15] font-normal text-[var(--text-weak)]">
-                          {action.description}
-                        </small>
-                      </span>
-                      <Show when={selected(action.kind)}>
-                        <Icon name="check" size={12} />
-                      </Show>
-                    </button>
-                  )}
-                </For>
-              </section>
-            )}
-          </For>
+          <div class="min-h-0 flex-1 overflow-y-auto p-1">
+            <For each={groups()}>
+              {(group) => (
+                <section class="grid gap-px" role="group" aria-label={group.label}>
+                  <span class="sticky top-0 z-[1] bg-surface-raised-stronger-non-alpha px-2 pt-2 pb-1 text-[9px] font-semibold tracking-[0.1em] text-[var(--text-weaker)] uppercase">
+                    {group.label}
+                  </span>
+                  <For each={group.actions}>
+                    {(action) => (
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected(action.kind)}
+                        title={action.description}
+                        class={cn(
+                          "grid min-h-8 grid-cols-[18px_minmax(0,1fr)_14px] items-center gap-2 rounded-md px-2 text-left text-[11.5px] font-medium transition-colors duration-100",
+                          selected(action.kind)
+                            ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
+                            : "text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
+                        )}
+                        onClick={() => {
+                          props.onSelect(action.kind);
+                          setOpen(false);
+                          setQuery("");
+                        }}
+                      >
+                        <Icon name={action.icon} size={13} class="justify-self-center" />
+                        <span class="truncate">{action.label}</span>
+                        <Show when={selected(action.kind)}>
+                          <Icon name="check" size={12} class="justify-self-end" />
+                        </Show>
+                      </button>
+                    )}
+                  </For>
+                </section>
+              )}
+            </For>
 
-          <Show when={groups().length === 0}>
-            <span class="px-3 py-5 text-center text-[10.5px] text-[var(--text-weak)]">
-              No matching action
-            </span>
-          </Show>
+            <Show when={groups().length === 0}>
+              <p class="px-3 py-5 text-center text-[11px] text-[var(--text-weak)]">
+                No matching action
+              </p>
+            </Show>
+          </div>
         </div>
       </Show>
     </div>

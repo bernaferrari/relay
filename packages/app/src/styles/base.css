@@ -119,11 +119,14 @@
   --top-h: 36px;
   --traffic-pad: 12px;
   --rail-top-pad: 16px;
+  --nav-top-pad: 14px;
 }
 .qa--desktop {
-  /* Keep app chrome clear of the native macOS traffic lights. */
+  /* Keep app chrome clear of the native macOS traffic lights. The navigator is
+     now the leftmost panel, so it — not a rail — owns that clearance. */
   --traffic-pad: 78px;
   --rail-top-pad: 46px;
+  --nav-top-pad: 52px;
 }
 
 .btn-primary-ink {

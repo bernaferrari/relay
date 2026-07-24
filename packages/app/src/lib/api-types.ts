@@ -263,6 +263,10 @@ export type SnapshotState = {
   interactive: SnapshotNode[];
   tree?: string;
   bounds?: { width: number; height: number };
+  /** False when the device hierarchy cannot be reliably mapped onto its pixels. */
+  inspectable?: boolean;
+  source?: "sdk" | "android-system";
+  inspectionState?: "active" | "keyguard" | "asleep" | "unknown";
 } | null;
 
 export type Frame = {

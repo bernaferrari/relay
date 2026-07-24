@@ -168,24 +168,12 @@ export const segBtnRec = cn(
 
 /** Full-width segmented control for dense property inspectors. */
 export const propertySeg = cn(
-  "relative isolate inline-flex h-8 w-full items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5",
+  "inline-flex h-8 w-full items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5",
   "ring-1 ring-inset ring-[var(--v2-border-border-muted)]",
 );
 
-/**
- * Shared, sliding selection surface for the inspector's small segmented
- * controls. The value moves independently of the labels, so changing a
- * gesture retains its spatial continuity instead of flashing between states.
- */
-export const propertySegIndicator = cn(
-  "pointer-events-none absolute inset-y-0.5 left-0.5 z-0 rounded-md",
-  "bg-[var(--v2-background-bg-layer-03)] shadow-[0_1px_3px_rgb(0_0_0/24%)]",
-  "transition-transform duration-[180ms] [transition-timing-function:cubic-bezier(.2,.8,.2,1)] will-change-transform",
-  "motion-reduce:transition-none",
-);
-
 const propertySegBtnBase = cn(
-  "relative z-[1] inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-md px-2",
+  "inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-md px-2",
   "text-[10.5px] font-medium text-[var(--text-weak)] select-none",
   "transition-[background-color,color,box-shadow,transform] duration-100 ease-out",
   "active:enabled:scale-[0.98]",
@@ -198,7 +186,8 @@ export const propertySegBtn = cn(
 
 export const propertySegBtnOn = cn(
   propertySegBtnBase,
-  "text-[var(--text-strong)] hover:enabled:bg-transparent",
+  "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)]",
+  "shadow-[0_1px_3px_rgb(0_0_0/24%)] hover:enabled:bg-[var(--v2-background-bg-layer-03)]",
 );
 
 export const mono = "font-mono tabular-nums";

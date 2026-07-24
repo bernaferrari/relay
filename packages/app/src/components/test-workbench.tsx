@@ -6,13 +6,14 @@ import { cn } from "../lib/cn";
 import { eyebrow } from "../lib/ui";
 import { shellStageDrawerClearance, shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
-import { JourneyInspector, JourneyOutline } from "./journey-chrome";
+import { JourneyInspector } from "./journey-chrome";
 import { ExecutionInspector } from "./execution-inspector";
 
 /**
- * The default test surface. Its three regions intentionally share one step
- * selection: navigator → real device evidence → readable properties.
- * Recording, editing, and reviewing therefore never switch mental models.
+ * The default test surface: real device evidence beside the selected step's
+ * properties. The step list itself lives in the navigator, so one selection
+ * drives all three regions and recording, editing, and reviewing never switch
+ * mental models.
  */
 export function TestWorkbench(props: {
   onOpenMap: () => void;
@@ -42,7 +43,6 @@ export function TestWorkbench(props: {
   });
   return (
     <>
-      <JourneyOutline compact />
       <div class={cn(shellStageWrap, shellStageDrawerClearance, "min-h-0 flex-1")}>
         <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
       </div>

@@ -325,12 +325,29 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     }
 
     let lastMissingContextNotice = 0;
-    function noteMissingRecordingContext(): void {
+    function noteMissingScreenContext(recordingGesture: boolean): void {
       const now = Date.now();
-      if (now - lastMissingContextNotice < 3_000) return;
+      // One quiet, actionable notice is enough while Android changes windows
+      // or the phone is locked. Repeating a toast for every pointer event
+      // makes a temporary capture gap feel like a broken recorder.
+      if (now - lastMissingContextNotice < 10_000) return;
       lastMissingContextNotice = now;
-      toast("Recording paused until Relay can read the device screen", "warning");
-      server.appendLog("recording skipped · no valid UI snapshot/device bounds", "error");
+      toast(
+        recordingGesture
+          ? "Recording is waiting for the device screen"
+          : "Relay needs the device screen to map this gesture",
+        "warning",
+      );
+      server.appendLog(
+        recordingGesture
+          ? "recording skipped · no valid UI snapshot/device bounds"
+          : "interaction skipped · no valid UI snapshot/device bounds",
+        "error",
+      );
+    }
+
+    function noteMissingRecordingContext(): void {
+      noteMissingScreenContext(true);
     }
 
     async function exactEvidenceFrame(caption: string): Promise<Frame | undefined> {
@@ -367,17 +384,34 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       void server.captureUiSnapshot();
     }
 
+    // H.264 control reaches the phone before its parallel accessibility tree
+    // response. Keep the last sound geometry as a short-lived safety net so a
+    // harmless capture race never drops an action the user just performed.
+    let lastUsableSnapshot: SnapshotState = null;
+
     async function snapshotForRecording(waitForCapture: boolean): Promise<SnapshotState> {
       const current = server.snapshot();
-      if (hasUsableDeviceBounds(current)) return current;
-      if (!waitForCapture) return null;
-      const captured = await server.captureUiSnapshot();
-      return hasUsableDeviceBounds(captured) ? captured : null;
+      if (hasUsableDeviceBounds(current)) {
+        lastUsableSnapshot = current;
+        return current;
+      }
+      if (!waitForCapture) return lastUsableSnapshot;
+
+      // First capture can race stream setup. This happens after direct
+      // control has already completed, so the retry never slows the phone.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const captured = await server.captureUiSnapshot();
+        if (hasUsableDeviceBounds(captured)) {
+          lastUsableSnapshot = captured;
+          return captured;
+        }
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 90));
+      }
+      return lastUsableSnapshot;
     }
 
     function noteMissingInteractionContext(): void {
-      toast("Relay can’t map this gesture until the device screen is available", "warning");
-      server.appendLog("interaction skipped · no valid UI snapshot/device bounds", "error");
+      noteMissingScreenContext(false);
     }
 
     /** Enter Record mode: arm the flag + make sure the stage has something
@@ -440,8 +474,17 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       // Flush any buffered typing first so order stays tap → type, not interleaved.
       await flushType();
-      const snapshot = await snapshotForRecording(!alreadyApplied);
+      // H.264 may already have applied the tap. Recording still waits for its
+      // evidence snapshot rather than treating that normal race as a pause.
+      const snapshot = await snapshotForRecording(recording() || !alreadyApplied);
       if (!hasUsableDeviceBounds(snapshot)) {
+        // The mirror has already delivered this first gesture. A just-connected
+        // device commonly needs one more beat before Android exposes its tree;
+        // that is a loading state, not an interaction failure.
+        if (alreadyApplied && !recording()) {
+          void server.captureUiSnapshot();
+          return true;
+        }
         if (recording()) noteMissingRecordingContext();
         else noteMissingInteractionContext();
         return alreadyApplied;
@@ -475,8 +518,12 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         return false;
       }
       await flushType();
-      const snapshot = await snapshotForRecording(!alreadyApplied);
+      const snapshot = await snapshotForRecording(recording() || !alreadyApplied);
       if (!hasUsableDeviceBounds(snapshot)) {
+        if (alreadyApplied && !recording()) {
+          void server.captureUiSnapshot();
+          return true;
+        }
         // The gesture has already reached the phone over H.264, but storing
         // fake 0/1 coordinates would make a future run actively misleading.
         if (recording()) noteMissingRecordingContext();

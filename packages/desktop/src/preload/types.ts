@@ -10,6 +10,9 @@ export type ElectronAPI = {
   /** Show a native OS notification. */
   notify: (title: string, body?: string) => void;
 
+  /** Copy a PNG/JPEG payload to the native system clipboard. */
+  copyImage: (base64: string, mime: string) => Promise<void>;
+
   /** URL of the local @relay/server HTTP API. */
   getServerUrl: () => Promise<string>;
 

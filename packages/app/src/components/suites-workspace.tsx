@@ -2,96 +2,16 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount }
 import { useServer, type SuiteSection, type TestSuite } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
-import {
-  listPanel,
-  popover,
-  productIconButton,
-  productIconButtonDanger,
-  productPrimary,
-  productSecondary,
-} from "../lib/ui";
+import { productIconButton, productIconButtonDanger, productPrimary } from "../lib/ui";
 import { shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
 import { ExecutionInspector } from "./execution-inspector";
 import { ExecutionTimeline } from "./execution-timeline";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
-import { SelectableRow } from "./selectable-row";
 import { executionDuration, executionElapsedAt, executionMoments } from "../lib/execution-moments";
 import { displayTitle } from "../lib/job";
 import { confirmAction } from "./confirm-dialog";
-
-/**
- * Static, non-interactive illustration of a populated suite section — no
- * real data, just the checklist shape so the empty state reads like a real
- * product screen instead of a blank placeholder.
- */
-function SuiteChecklistPreview() {
-  return (
-    <div class={cn(listPanel, "w-full select-none p-3")} aria-hidden="true">
-      <div class="flex items-center justify-between px-1 pb-2">
-        <span class="text-[10px] font-semibold tracking-[0.1em] text-text-weaker uppercase">
-          Example journeys
-        </span>
-        <span class="text-[10px] tabular-nums text-text-weaker">3</span>
-      </div>
-      <div class="grid gap-1">
-        <div class="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-[8px] px-1.5 py-1.5">
-          <span class="grid size-4 place-items-center rounded-full bg-surface-success-weak text-icon-success-base ring-1 ring-inset ring-border-success-base/40">
-            <Icon name="check" size={10} />
-          </span>
-          <span class="h-2 w-[62%] rounded-full bg-surface-weak" />
-        </div>
-        <div class="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-[8px] px-1.5 py-1.5">
-          <span class="size-4 rounded-full ring-1 ring-inset ring-border-weak-base" />
-          <span class="h-2 w-[78%] rounded-full bg-surface-weak" />
-        </div>
-        <div class="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-[8px] px-1.5 py-1.5">
-          <span class="size-4 rounded-full ring-1 ring-inset ring-border-weak-base" />
-          <span class="h-2 w-[45%] rounded-full bg-surface-weak" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * A small, always-visible mental-model cue. A flow only orchestrates named
- * journeys: each journey owns its own return path and the flow has one clear
- * beginning and end. We do not make people reason about a generic graph.
- */
-function FlowPathGuide(props: { suite: TestSuite; titleForTest: (testId: string) => string }) {
-  const entries = () => props.suite.sections.flatMap((section) => section.entries);
-  const enabled = () => entries().filter((entry) => entry.enabled);
-  const first = () => enabled()[0];
-  const remaining = () => Math.max(0, enabled().length - 1);
-
-  return (
-    <div class="border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-4 py-2.5">
-      <div class="flex items-center justify-between gap-3">
-        <span class="text-[10px] font-semibold tracking-[0.09em] text-[var(--text-weak)] uppercase">
-          This flow
-        </span>
-        <span class="text-[10px] text-[var(--text-weak)]">Runs in order</span>
-      </div>
-      <div class="mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--text-base)]">
-        <span class="shrink-0 font-medium text-[var(--text-strong)]">Start</span>
-        <Icon name="chevron-right" size={12} class="shrink-0 text-[var(--text-weak)]" />
-        <span class="min-w-0 truncate rounded-md bg-[var(--v2-background-bg-layer-02)] px-1.5 py-0.5 font-medium text-[var(--text-strong)]">
-          {first() ? props.titleForTest(first()!.testId) : "Add the first test"}
-        </span>
-        <Show when={remaining() > 0}>
-          <span class="shrink-0 text-[var(--text-weak)]">+{remaining()}</span>
-        </Show>
-        <Icon name="chevron-right" size={12} class="shrink-0 text-[var(--text-weak)]" />
-        <span class="shrink-0 font-medium text-[var(--text-strong)]">Finish</span>
-      </div>
-      <p class="mt-1.5 text-[10px]/[1.35] text-[var(--text-weak)]">
-        Every journey starts from its recorded state and leaves the device ready for the next one.
-      </p>
-    </div>
-  );
-}
 
 export function SuitesWorkspace(props: {
   onOpenTest: (id: string) => void;
@@ -239,16 +159,7 @@ export function SuitesWorkspace(props: {
           ? "bg-[var(--text-interactive-base)]"
           : "bg-[var(--text-weak)]";
 
-  const usedIn = (testId: string) =>
-    server
-      .suites()
-      .filter((suite) =>
-        suite.sections.some((section) => section.entries.some((entry) => entry.testId === testId)),
-      ).length;
-
   const libraryTests = createMemo(() => server.recipes().filter((test) => test.steps.length > 0));
-  const titleForTest = (testId: string) =>
-    displayTitle(server.recipes().find((test) => test.id === testId)?.title ?? "Missing test");
   const libraryTitleCounts = createMemo(() => {
     const counts = new Map<string, number>();
     for (const test of libraryTests()) {
@@ -311,101 +222,29 @@ export function SuitesWorkspace(props: {
     <section
       class={cn(
         "grid min-h-0 min-w-0 flex-1 overflow-hidden max-[900px]:grid-cols-1",
+        // The flow list lives in the navigator, so this pane only ever shows
+        // the open flow: its ordered journeys and the selected entry.
         selectedSuite()
-          ? "grid-cols-[minmax(280px,300px)_minmax(420px,1fr)_224px] max-[1160px]:grid-cols-[minmax(248px,280px)_minmax(360px,1fr)_200px]"
-          : "grid-cols-[224px_minmax(0,1fr)] max-[1160px]:grid-cols-[200px_minmax(0,1fr)]",
+          ? "grid-cols-[minmax(420px,1fr)_336px] max-[1160px]:grid-cols-[minmax(360px,1fr)_300px]"
+          : "grid-cols-1",
       )}
     >
-      <aside
-        class={cn(
-          "flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
-          selectedSuite() && "col-start-3 row-start-1 border-r-0 border-l",
-        )}
-      >
-        <header class="flex min-h-14 items-center justify-between gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
-          <div>
-            <strong class="block text-[13px] font-semibold text-[var(--text-strong)]">Flows</strong>
-            <small class="text-[10px] text-[var(--text-weak)]">
-              {server.suites().length} saved flow{server.suites().length === 1 ? "" : "s"}
-            </small>
-          </div>
-          <button
-            type="button"
-            class={productIconButton}
-            aria-label="New flow"
-            data-tip="Create a new flow"
-            onClick={() => void createSuite()}
-          >
-            <Icon name="plus" size={14} />
-          </button>
-        </header>
-        <div class="min-h-0 flex-1 overflow-y-auto p-2">
-          <For
-            each={server.suites()}
-            fallback={
-              <EmptyState
-                size="sm"
-                icon="check"
-                title="No flows yet"
-                description="Arrange named journeys into one ordered run."
-                class="min-h-48 justify-center"
-              />
-            }
-          >
-            {(suite) => {
-              const count = () =>
-                suite.sections.reduce((sum, section) => sum + section.entries.length, 0);
-              return (
-                <SelectableRow
-                  selected={selectedSuite()?.id === suite.id}
-                  class="flex min-h-12 items-center gap-2 px-2.5"
-                  onClick={() => {
-                    server.setSelectedSuiteId(suite.id);
-                    setSelectedEntryId(null);
-                    setHistoryOpen(false);
-                  }}
-                >
-                  <span class="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]">
-                    <Icon name="check" size={14} />
-                  </span>
-                  <span class="min-w-0">
-                    <strong class="block truncate text-[12px] font-medium text-[var(--text-strong)]">
-                      {suite.title}
-                    </strong>
-                    <small class="text-[10px] text-[var(--text-weak)]">
-                      {count()} {count() === 1 ? "journey" : "journeys"}
-                    </small>
-                  </span>
-                </SelectableRow>
-              );
-            }}
-          </For>
-        </div>
-      </aside>
-
-      <div
-        class={cn(
-          shellStageWrap,
-          "flex min-h-0 flex-col",
-          selectedSuite() && "col-start-2 row-start-1",
-        )}
-      >
+      <div class={cn(shellStageWrap, "flex min-h-0 flex-col")}>
         <Show
           when={selectedSuite()}
           fallback={
-            <div class="flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto px-6 py-10">
-              <div class="grid w-full max-w-[380px] justify-items-center gap-6">
-                <SuiteChecklistPreview />
-                <EmptyState
-                  size="lg"
-                  icon="check"
-                  title="Create a flow"
-                  description="Arrange existing journeys into one reusable sequence."
-                  actionLabel="Create a flow"
-                  onAction={() => void createSuite()}
-                />
-              </div>
-            </div>
+            // The navigator already lists flows and offers "New flow", so this
+            // is a one-line hint, not a second front door.
+            <EmptyState
+              size="lg"
+              icon="check"
+              title={server.suites().length ? "Select a flow" : "Create a flow"}
+              description="A flow runs named journeys in order, one after another."
+              {...(server.suites().length
+                ? {}
+                : { actionLabel: "Create a flow", onAction: () => void createSuite() })}
+              class="h-full justify-center"
+            />
           }
         >
           <Show
@@ -459,88 +298,71 @@ export function SuitesWorkspace(props: {
                 </div>
               )}
             </Show>
-            <header class="border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
-              <div class="flex items-center gap-2">
-                <div class="group/title relative flex min-w-0 flex-1 items-center">
-                  <input
-                    ref={(element) => (suiteTitleInput = element)}
-                    aria-label="Flow name"
-                    class="min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-[16px] font-semibold tracking-[-0.015em] text-[var(--text-strong)] outline-none transition hover:shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:bg-[var(--v2-background-bg-layer-01)] focus:shadow-[inset_0_0_0_1px_var(--border-interactive-base)]"
-                    value={suite().title}
-                    onChange={(event) =>
-                      void save(suite(), suite().sections, event.currentTarget.value)
-                    }
-                  />
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] opacity-0 transition-opacity hover:text-[var(--text-strong)] group-hover/title:opacity-100 group-focus-within/title:opacity-100"
-                    aria-label="Rename flow"
-                    data-tip="Rename flow"
-                    onClick={() => {
-                      suiteTitleInput?.focus();
-                      suiteTitleInput?.select();
-                    }}
-                  >
-                    <Icon name="edit" size={13} />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  class={productIconButton}
-                  aria-label="Flow history"
-                  data-tip="View version history"
-                  aria-expanded={historyOpen()}
-                  onClick={() => {
-                    const open = !historyOpen();
-                    setHistoryOpen(open);
-                    if (open) void server.loadSuiteHistory(suite().id).then(setHistory);
-                  }}
-                >
-                  <Icon name="clock" size={14} />
-                </button>
-                <button
-                  type="button"
-                  class={productIconButtonDanger}
-                  aria-label="Delete flow"
-                  data-tip="Delete this flow"
-                  onClick={() => {
-                    confirmAction({
-                      title: "Delete flow?",
-                      body: `“${suite().title}” will be removed. Journeys inside it are not deleted.`,
-                      confirmLabel: "Delete flow",
-                      onConfirm: () => void server.deleteSuite(suite().id),
-                    });
-                  }}
-                >
-                  <Icon name="trash" size={14} />
-                </button>
-              </div>
-              <div class="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  class={cn(productPrimary, "flex-1")}
-                  disabled={
-                    Boolean(
-                      suiteExecutionJob() &&
-                      ["queued", "running", "paused"].includes(suiteExecutionJob()!.status),
-                    ) ||
-                    !suite().sections.some((section) =>
-                      section.entries.some((entry) => entry.enabled),
-                    )
-                  }
-                  onClick={() => void server.runSuiteRemote(suite().id)}
-                >
-                  <Icon
-                    name={suiteExecutionJob()?.status === "running" ? "wave" : "play"}
-                    size={13}
-                  />
-                  {suiteExecutionJob()?.status === "running" ? "Running flow" : "Run flow"}
-                </button>
-              </div>
+            {/* One header row. A flow is an ordered list of journeys — the
+                list itself says so, so it needs no diagram above it and no
+                full-width call to action shouting at an empty list. */}
+            <header class="flex min-h-[52px] shrink-0 items-center gap-1.5 border-b border-[var(--v2-border-border-muted)] px-3">
+              <input
+                ref={(element) => (suiteTitleInput = element)}
+                aria-label="Flow name"
+                data-tip="Rename flow"
+                class="min-w-0 flex-1 rounded-md bg-transparent px-1.5 py-1 text-[14px] font-semibold tracking-[-0.015em] text-[var(--text-strong)] outline-none transition hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
+                value={suite().title}
+                onChange={(event) =>
+                  void save(suite(), suite().sections, event.currentTarget.value)
+                }
+              />
+              <button
+                type="button"
+                class={productIconButton}
+                aria-label="Flow history"
+                data-tip="Version history"
+                aria-expanded={historyOpen()}
+                onClick={() => {
+                  const open = !historyOpen();
+                  setHistoryOpen(open);
+                  if (open) void server.loadSuiteHistory(suite().id).then(setHistory);
+                }}
+              >
+                <Icon name="clock" size={15} />
+              </button>
+              <button
+                type="button"
+                class={productIconButtonDanger}
+                aria-label="Delete flow"
+                data-tip="Delete this flow"
+                onClick={() => {
+                  confirmAction({
+                    title: "Delete flow?",
+                    body: `“${suite().title}” will be removed. Journeys inside it are not deleted.`,
+                    confirmLabel: "Delete flow",
+                    onConfirm: () => void server.deleteSuite(suite().id),
+                  });
+                }}
+              >
+                <Icon name="trash" size={15} />
+              </button>
+              <button
+                type="button"
+                class={cn(productPrimary, "min-h-8 shrink-0 px-3 text-[12px]")}
+                disabled={
+                  Boolean(
+                    suiteExecutionJob() &&
+                    ["queued", "running", "paused"].includes(suiteExecutionJob()!.status),
+                  ) ||
+                  !suite().sections.some((section) =>
+                    section.entries.some((entry) => entry.enabled),
+                  )
+                }
+                onClick={() => void server.runSuiteRemote(suite().id)}
+              >
+                <Icon
+                  name={suiteExecutionJob()?.status === "running" ? "wave" : "play"}
+                  size={12}
+                />
+                {suiteExecutionJob()?.status === "running" ? "Running" : "Run"}
+              </button>
             </header>
-
-            <FlowPathGuide suite={suite()} titleForTest={titleForTest} />
 
             <Show when={historyOpen()}>
               <div class="max-h-52 overflow-y-auto border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] p-2">
@@ -589,16 +411,23 @@ export function SuitesWorkspace(props: {
               </div>
             </Show>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
+            <div class="min-h-0 flex-1 overflow-y-auto px-2 py-2">
               <For each={suite().sections}>
-                {(section, sectionIndex) => (
-                  <section class="mb-4">
-                    <div class="flex min-h-9 items-center gap-2 px-1">
-                      <div class="group/title relative flex min-w-0 flex-1 items-center">
+                {(section, sectionIndex) => {
+                  // Journeys are numbered across the whole flow: the number is
+                  // run order, and stages are only a way to name a span of it.
+                  const offset = () =>
+                    suite()
+                      .sections.slice(0, sectionIndex())
+                      .reduce((sum, item) => sum + item.entries.length, 0);
+                  return (
+                    <section class="mb-3">
+                      <div class="group/stage flex min-h-8 items-center gap-1 px-1">
                         <input
                           ref={(element) => sectionTitleInputs.set(section.id, element)}
                           aria-label={`Stage ${sectionIndex() + 1} name`}
-                          class="min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-[10px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase outline-none transition hover:shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--border-interactive-base)] max-[900px]:text-[16px]"
+                          data-tip="Rename stage"
+                          class="min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-[10px] font-semibold tracking-[0.09em] text-[var(--text-weaker)] uppercase outline-none transition hover:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:bg-[var(--v2-background-bg-layer-01)] max-[900px]:text-[16px]"
                           value={section.title}
                           onChange={(event) =>
                             patchSection(suite(), section.id, {
@@ -609,55 +438,33 @@ export function SuitesWorkspace(props: {
                         />
                         <button
                           type="button"
-                          tabIndex={-1}
-                          class="grid size-5 shrink-0 place-items-center rounded-md text-[var(--text-weak)] opacity-0 transition-opacity hover:text-[var(--text-strong)] group-hover/title:opacity-100 group-focus-within/title:opacity-100"
-                          aria-label="Rename stage"
-                          data-tip="Rename stage"
+                          class={cn(
+                            productIconButtonDanger,
+                            "size-6 opacity-0 group-hover/stage:opacity-100 group-focus-within/stage:opacity-100",
+                          )}
+                          aria-label={`Remove ${section.title} stage`}
+                          data-tip="Remove this stage"
                           onClick={() => {
-                            const input = sectionTitleInputs.get(section.id);
-                            input?.focus();
-                            input?.select();
+                            const removeSection = () =>
+                              void save(
+                                suite(),
+                                suite().sections.filter((item) => item.id !== section.id),
+                              );
+                            if (section.entries.length === 0) return removeSection();
+                            confirmAction({
+                              title: "Remove stage?",
+                              body: `“${section.title}” and its ${section.entries.length} ${section.entries.length === 1 ? "journey" : "journeys"} will be removed from this flow.`,
+                              confirmLabel: "Remove stage",
+                              onConfirm: removeSection,
+                            });
                           }}
                         >
-                          <Icon name="edit" size={11} />
+                          <Icon name="trash" size={12} />
                         </button>
                       </div>
-                      <span class="text-[10px] tabular-nums text-[var(--text-weak)]">
-                        {section.entries.length}
-                      </span>
-                      <button
-                        type="button"
-                        class={productIconButtonDanger}
-                        aria-label={`Remove ${section.title} stage`}
-                        data-tip="Remove this stage"
-                        onClick={() => {
-                          const removeSection = () =>
-                            void save(
-                              suite(),
-                              suite().sections.filter((item) => item.id !== section.id),
-                            );
-                          if (section.entries.length === 0) return removeSection();
-                          confirmAction({
-                            title: "Remove stage?",
-                            body: `“${section.title}” and its ${section.entries.length} ${section.entries.length === 1 ? "journey" : "journeys"} will be removed from this flow.`,
-                            confirmLabel: "Remove stage",
-                            onConfirm: removeSection,
-                          });
-                        }}
-                      >
-                        <Icon name="trash" size={12} />
-                      </button>
-                    </div>
-                    <div class="grid gap-1">
-                      <For
-                        each={section.entries}
-                        fallback={
-                          <p class="m-0 rounded-lg border border-dashed border-[var(--v2-border-border-muted)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
-                            Add an existing test or record a new one.
-                          </p>
-                        }
-                      >
-                        {(entry) => {
+
+                      <For each={section.entries}>
+                        {(entry, entryIndex) => {
                           const test = () =>
                             server.recipes().find((item) => item.id === entry.testId);
                           const job = () => latestJob(entry.testId);
@@ -665,21 +472,24 @@ export function SuitesWorkspace(props: {
                             suite().sections.flatMap((item) => item.entries);
                           const flowIndex = () =>
                             flowEntries().findIndex((item) => item.id === entry.id);
+                          const steps = () => test()?.steps.length ?? 0;
                           return (
                             <div
                               class={cn(
-                                "group grid min-h-14 grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2 rounded-[10px] px-2 outline-none hover:bg-[var(--v2-background-bg-layer-01)]",
-                                selectedEntryId() === entry.id &&
-                                  "bg-[var(--v2-background-bg-layer-02)]",
+                                "group grid min-h-9 grid-cols-[26px_16px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg pr-1 pl-1 transition-colors",
+                                selectedEntryId() === entry.id
+                                  ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_15%,transparent)]"
+                                  : "hover:bg-[var(--v2-background-bg-layer-01)]",
+                                !entry.enabled && "opacity-45",
                               )}
                             >
                               <label
-                                class="grid size-11 -m-2 cursor-pointer place-items-center"
+                                class="grid h-9 cursor-pointer grid-cols-[auto_auto] items-center gap-1.5 pl-1"
                                 aria-label={`${entry.enabled ? "Skip" : "Include"} ${test()?.title ?? entry.testId}`}
                               >
                                 <input
                                   type="checkbox"
-                                  class="size-3.5 accent-[var(--text-interactive-base)]"
+                                  class="size-3 accent-[var(--text-interactive-base)]"
                                   checked={entry.enabled}
                                   onChange={(event) => {
                                     const entries = section.entries.map((item) =>
@@ -690,119 +500,115 @@ export function SuitesWorkspace(props: {
                                     patchSection(suite(), section.id, { ...section, entries });
                                   }}
                                 />
+                                <small class="font-mono text-[9.5px] tabular-nums text-[var(--text-weaker)]">
+                                  {String(offset() + entryIndex() + 1).padStart(2, "0")}
+                                </small>
                               </label>
+                              <span
+                                class={cn(
+                                  "justify-self-center size-1.5 rounded-full",
+                                  statusTone(job()?.status),
+                                )}
+                                aria-hidden="true"
+                              />
                               <button
                                 type="button"
-                                class="min-w-0 py-2 text-left"
+                                class="min-w-0 py-1.5 text-left"
+                                title={test()?.title ?? "Missing journey"}
                                 onClick={() => selectEntry(entry.id, entry.testId)}
+                                onDblClick={() => props.onOpenTest(entry.testId)}
                               >
-                                <span class="flex items-center gap-1.5">
-                                  <span
-                                    class={cn(
-                                      "size-1.5 shrink-0 rounded-full",
-                                      statusTone(job()?.status),
-                                    )}
-                                  />
-                                  <strong class="truncate text-[12px] font-medium text-[var(--text-strong)]">
-                                    {test()?.title ?? "Missing test"}
-                                  </strong>
+                                <span class="block truncate text-[12px] font-medium text-[var(--text-strong)]">
+                                  {test()?.title ?? "Missing journey"}
                                 </span>
-                                <small class="mt-1 block truncate text-[10px] text-[var(--text-weak)]">
-                                  {usedIn(entry.testId)}{" "}
-                                  {usedIn(entry.testId) === 1 ? "flow" : "flows"} ·{" "}
-                                  {entry.version === "latest" ? "Follows latest" : "Pinned"}
-                                </small>
                               </button>
-                              <div class="flex opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
-                                <button
-                                  type="button"
-                                  class={productIconButton}
-                                  aria-label="Move test earlier in flow"
-                                  data-tip="Move earlier"
-                                  disabled={flowIndex() === 0}
-                                  onClick={() => moveEntry(suite(), entry.id, -1)}
-                                >
-                                  <Icon name="chevron-up" size={12} />
-                                </button>
-                                <button
-                                  type="button"
-                                  class={productIconButton}
-                                  aria-label="Move test later in flow"
-                                  data-tip="Move later"
-                                  disabled={flowIndex() === flowEntries().length - 1}
-                                  onClick={() => moveEntry(suite(), entry.id, 1)}
-                                >
-                                  <Icon name="chevron-down" size={12} />
-                                </button>
-                                <button
-                                  type="button"
-                                  class={productIconButtonDanger}
-                                  aria-label="Remove from flow"
-                                  data-tip="Remove from flow"
-                                  onClick={() =>
-                                    patchSection(suite(), section.id, {
-                                      ...section,
-                                      entries: section.entries.filter(
-                                        (item) => item.id !== entry.id,
-                                      ),
-                                    })
-                                  }
-                                >
-                                  <Icon name="x" size={12} />
-                                </button>
+                              <div class="flex items-center gap-0.5">
+                                <small class="mr-1 font-mono text-[9.5px] tabular-nums text-[var(--text-weaker)] group-hover:hidden">
+                                  {steps() || "—"}
+                                </small>
+                                <div class="hidden items-center group-hover:flex group-focus-within:flex [@media(hover:none)]:flex">
+                                  <button
+                                    type="button"
+                                    class={cn(productIconButton, "size-6")}
+                                    aria-label="Open this journey"
+                                    data-tip="Open journey"
+                                    onClick={() => props.onOpenTest(entry.testId)}
+                                  >
+                                    <Icon name="chevron-right" size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class={cn(productIconButton, "size-6")}
+                                    aria-label="Move journey earlier in flow"
+                                    data-tip="Move earlier"
+                                    disabled={flowIndex() === 0}
+                                    onClick={() => moveEntry(suite(), entry.id, -1)}
+                                  >
+                                    <Icon name="chevron-up" size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class={cn(productIconButton, "size-6")}
+                                    aria-label="Move journey later in flow"
+                                    data-tip="Move later"
+                                    disabled={flowIndex() === flowEntries().length - 1}
+                                    onClick={() => moveEntry(suite(), entry.id, 1)}
+                                  >
+                                    <Icon name="chevron-down" size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class={cn(productIconButtonDanger, "size-6")}
+                                    aria-label="Remove from flow"
+                                    data-tip="Remove from flow"
+                                    onClick={() =>
+                                      patchSection(suite(), section.id, {
+                                        ...section,
+                                        entries: section.entries.filter(
+                                          (item) => item.id !== entry.id,
+                                        ),
+                                      })
+                                    }
+                                  >
+                                    <Icon name="x" size={12} />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           );
                         }}
                       </For>
-                    </div>
-                    <div class="relative mt-2 flex items-center gap-1.5" data-add-test-popover>
-                      <button
-                        type="button"
-                        class="flex min-h-9 min-w-0 flex-1 items-center justify-between gap-1.5 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-2 text-left text-[11px] text-[var(--text-weak)] outline-none focus:border-[var(--v2-border-border-strong)] max-[900px]:text-[16px]"
-                        aria-haspopup="dialog"
-                        aria-expanded={addPopoverSection() === section.id}
-                        aria-label={`Add test to ${section.title}`}
-                        data-tip="Add a test from your library"
-                        onClick={() => {
-                          setAddQuery("");
-                          setAddPopoverSection((current) =>
-                            current === section.id ? null : section.id,
-                          );
-                        }}
-                      >
-                        <span class="truncate">Add from library…</span>
-                        <Icon
-                          name="chevron-down"
-                          size={12}
-                          class="shrink-0 text-[var(--text-weak)]"
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        class={productIconButton}
-                        aria-label={`Record a new test in ${section.title}`}
-                        data-tip="Record a new test into this stage"
-                        onClick={() => props.onRecordTest(suite().id, section.id)}
-                      >
-                        <span class="size-2 rounded-full bg-[var(--icon-critical-base)]" />
-                      </button>
-                      <Show when={addPopoverSection() === section.id}>
-                        <div
-                          class={cn(
-                            popover,
-                            "absolute left-0 top-[calc(100%+6px)] z-30 flex max-h-72 w-[300px] flex-col p-0",
-                          )}
-                          role="dialog"
-                          aria-label={`Add test to ${section.title}`}
+
+                      {/* One way in. The dropzone, the combobox, and the bare
+                          red dot were three affordances for the same act. */}
+                      <div class="relative" data-add-test-popover>
+                        <button
+                          type="button"
+                          class="grid min-h-8 w-full grid-cols-[26px_minmax(0,1fr)] items-center gap-1.5 rounded-lg pl-1 text-left text-[11.5px] font-medium text-[var(--text-weaker)] transition-colors hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-base)]"
+                          aria-haspopup="dialog"
+                          aria-expanded={addPopoverSection() === section.id}
+                          onClick={() => {
+                            setAddQuery("");
+                            setAddPopoverSection((current) =>
+                              current === section.id ? null : section.id,
+                            );
+                          }}
                         >
-                          <div class="border-b border-[var(--v2-border-border-muted)] p-1.5">
-                            <label class="flex h-8 items-center gap-2 rounded-md bg-[var(--v2-background-bg-deep)] px-2 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base)]">
+                          <Icon name="plus" size={13} class="justify-self-center" />
+                          <span>Add journey</span>
+                        </button>
+                        <Show when={addPopoverSection() === section.id}>
+                          <div
+                            class="ui-pop absolute top-[calc(100%+4px)] left-0 z-30 flex max-h-[300px] w-[268px] flex-col overflow-hidden rounded-xl border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha shadow-[var(--v2-elevation-overlay)]"
+                            role="dialog"
+                            aria-label={`Add journey to ${section.title}`}
+                          >
+                            <label class="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-2.5 text-[var(--text-weaker)]">
                               <Icon name="search" size={13} />
                               <span class="sr-only">Search journeys</span>
                               <input
                                 ref={(element) => (addSearchInput = element)}
-                                class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+                                class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weaker)]"
                                 type="search"
                                 value={addQuery()}
                                 placeholder="Search journeys"
@@ -816,49 +622,62 @@ export function SuitesWorkspace(props: {
                                 }}
                               />
                             </label>
-                          </div>
-                          <div class="min-h-0 flex-1 overflow-y-auto p-1">
-                            <For
-                              each={filteredLibraryTests()}
-                              fallback={
-                                <p class="m-0 px-2 py-4 text-center text-[11px] text-[var(--text-weak)]">
-                                  No journeys match.
-                                </p>
-                              }
-                            >
-                              {(test) => {
-                                const title = () => displayTitle(test.title);
-                                const duplicate = () =>
-                                  (libraryTitleCounts().get(title()) ?? 0) > 1;
-                                return (
-                                  <button
-                                    type="button"
-                                    class="flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-[var(--v2-background-bg-layer-01)]"
-                                    onClick={() => addTestToSection(suite(), section, test.id)}
-                                  >
-                                    <span class="min-w-0 flex-1">
-                                      <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
+                            <div class="min-h-0 flex-1 overflow-y-auto p-1">
+                              <button
+                                type="button"
+                                class="grid min-h-8 w-full grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-md px-2 text-left text-[11.5px] font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                                onClick={() => {
+                                  closeAddPopover();
+                                  props.onRecordTest(suite().id, section.id);
+                                }}
+                              >
+                                <span
+                                  class="size-2 justify-self-center rounded-full bg-[var(--icon-critical-base)]"
+                                  aria-hidden="true"
+                                />
+                                <span>Record a new journey</span>
+                              </button>
+                              <div class="my-1 h-px bg-[var(--v2-border-border-muted)]" />
+                              <For
+                                each={filteredLibraryTests()}
+                                fallback={
+                                  <p class="px-2 py-4 text-center text-[11px] text-[var(--text-weak)]">
+                                    No journeys match.
+                                  </p>
+                                }
+                              >
+                                {(test) => {
+                                  const title = () => displayTitle(test.title);
+                                  const duplicate = () =>
+                                    (libraryTitleCounts().get(title()) ?? 0) > 1;
+                                  return (
+                                    <button
+                                      type="button"
+                                      class="grid min-h-8 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left hover:bg-[var(--v2-background-bg-layer-02)]"
+                                      onClick={() => addTestToSection(suite(), section, test.id)}
+                                    >
+                                      <span class="truncate text-[11.5px] font-medium text-[var(--text-strong)]">
                                         {title()}
-                                      </strong>
-                                      <small class="block truncate text-[10px] text-[var(--text-weak)]">
-                                        {test.steps.length} step{test.steps.length === 1 ? "" : "s"}
                                         {duplicate() ? ` · ${test.id.slice(0, 8)}` : ""}
+                                      </span>
+                                      <small class="font-mono text-[9.5px] tabular-nums text-[var(--text-weaker)]">
+                                        {test.steps.length}
                                       </small>
-                                    </span>
-                                  </button>
-                                );
-                              }}
-                            </For>
+                                    </button>
+                                  );
+                                }}
+                              </For>
+                            </div>
                           </div>
-                        </div>
-                      </Show>
-                    </div>
-                  </section>
-                )}
+                        </Show>
+                      </div>
+                    </section>
+                  );
+                }}
               </For>
               <button
                 type="button"
-                class={cn(productSecondary, "w-full")}
+                class="grid min-h-8 w-full grid-cols-[26px_minmax(0,1fr)] items-center gap-1.5 rounded-lg pl-1 text-left text-[11.5px] font-medium text-[var(--text-weaker)] transition-colors hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-base)]"
                 onClick={() =>
                   void save(suite(), [
                     ...suite().sections,
@@ -870,22 +689,10 @@ export function SuitesWorkspace(props: {
                   ])
                 }
               >
-                <Icon name="plus" size={13} /> Add stage
+                <Icon name="plus" size={13} class="justify-self-center" />
+                <span>Add stage</span>
               </button>
             </div>
-            <Show when={selectedTest()}>
-              {(test) => (
-                <footer class="border-t border-[var(--v2-border-border-muted)] p-3">
-                  <button
-                    type="button"
-                    class={cn(productSecondary, "w-full")}
-                    onClick={() => props.onOpenTest(test().id)}
-                  >
-                    Open “{test().title}”
-                  </button>
-                </footer>
-              )}
-            </Show>
           </aside>
         )}
       </Show>

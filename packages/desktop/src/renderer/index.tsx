@@ -32,6 +32,7 @@ function createDesktopPlatform(): Platform {
     notify: (title, body) => {
       api.notify(title, body);
     },
+    copyImage: (base64, mime) => api.copyImage(base64, mime),
     async getServerUrl() {
       const stored = await storage.get("serverUrl");
       if (stored?.trim()) return stored.replace(/\/+$/, "");

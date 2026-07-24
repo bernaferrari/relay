@@ -14,17 +14,21 @@ import type { RecipeStep, StepTarget } from "../context/server";
 import { STRATEGIES, fmtPoint, parsePoint, type Strategy } from "../lib/step-target";
 import { cn } from "../lib/cn";
 import { ADD_GROUPS } from "./step-list-metadata";
+import { accentForStep, iconForStep } from "./journey-step-presentation";
 import { Icon } from "./icon";
-import { fieldInput, fieldLabel, mono, popover, propRow, seg, segBtn, segBtnOn } from "../lib/ui";
+import { fieldInput, fieldLabel, mono, propRow, seg, segBtn, segBtnOn } from "../lib/ui";
 
 const valueCls = cn(fieldInput, "min-w-0 flex-1");
 const menuItemCls = cn(
-  "block w-full rounded-md px-2.5 py-[7px] text-left text-12-medium text-text-strong",
+  "grid min-h-8 w-full grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-md px-2",
+  "text-left text-[12px] font-medium text-text-weak",
   "transition-colors duration-100 ease-out",
-  "hover:bg-surface-raised-base-hover",
+  "hover:bg-surface-raised-base-hover hover:text-text-strong",
 );
-const menuSectionCls =
-  "px-2.5 pt-1.5 pb-1 text-12-medium tracking-[0.06em] text-text-weak uppercase";
+const menuSectionCls = cn(
+  "sticky top-0 z-[1] bg-surface-raised-stronger-non-alpha px-2 pt-2 pb-1",
+  "text-[10px] font-semibold tracking-[0.08em] text-text-weaker uppercase",
+);
 
 export function ManualTarget(props: {
   target: Accessor<StepTarget>;
@@ -104,6 +108,8 @@ export function AddMenu(props: {
   onClose: () => void;
   anchor: { left: number; top: number; bottom: number; width: number };
   placement?: "below" | "above";
+  /** Record on the device — the default way to add a step. */
+  onRecord?: () => void;
 }): JSX.Element {
   const [query, setQuery] = createSignal("");
   const groups = createMemo(() => {
@@ -159,13 +165,17 @@ export function AddMenu(props: {
   });
   return (
     <Portal>
+      {/* The search field is a sibling of the scroller, not a sticky child of
+          it. Sticky inside a padded scroll container leaves a gap at the top
+          that rows visibly scroll through. */}
       <div
         ref={(el) => {
           menuEl = el;
         }}
         class={cn(
-          popover,
-          "fixed z-[200] flex w-[288px] flex-col overflow-y-auto",
+          "ui-pop fixed z-[200] flex w-[288px] flex-col overflow-hidden rounded-xl",
+          "border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha",
+          "text-text-strong shadow-[var(--v2-elevation-overlay)]",
           pos().openAbove ? "origin-bottom" : "origin-top",
         )}
         style={{
@@ -177,13 +187,13 @@ export function AddMenu(props: {
         role="menu"
         aria-label="Add step"
       >
-        <label class="sticky top-0 z-10 flex h-9 shrink-0 items-center gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5">
-          <Icon name="search" size={13} />
+        <label class="flex h-10 shrink-0 items-center gap-2 border-b border-border-weak-base px-3 text-text-weaker">
+          <Icon name="search" size={14} />
           <input
             ref={(element) => {
               search = element;
             }}
-            class="min-w-0 flex-1 bg-transparent text-12-regular text-text-strong outline-none placeholder:text-text-weak"
+            class="min-w-0 flex-1 bg-transparent text-[12.5px] text-text-strong outline-none placeholder:text-text-weaker"
             type="search"
             value={query()}
             placeholder="Find a step"
@@ -191,33 +201,60 @@ export function AddMenu(props: {
             onInput={(event) => setQuery(event.currentTarget.value)}
           />
         </label>
-        <For each={groups()}>
-          {(g, gi) => (
-            <div
-              class={cn(
-                "flex flex-col gap-px",
-                gi() > 0 && "mt-1 border-t border-border-weak-base pt-1",
-              )}
+        <div class="min-h-0 flex-1 overflow-y-auto p-1">
+          {/* Recording on the device is the default. The catalog below is for
+              the things you cannot demonstrate — waits, checks, reuse. */}
+          <Show when={props.onRecord && !query().trim()}>
+            <button
+              type="button"
+              role="menuitem"
+              class={cn(menuItemCls, "text-text-strong")}
+              onClick={() => {
+                props.onClose();
+                props.onRecord?.();
+              }}
             >
-              <div class={menuSectionCls}>{g.label}</div>
-              <For each={g.items}>
-                {(o) => (
-                  <button
-                    type="button"
-                    class={menuItemCls}
-                    role="menuitem"
-                    onClick={() => props.onPick(o.make())}
-                  >
-                    {o.label}
-                  </button>
-                )}
-              </For>
-            </div>
-          )}
-        </For>
-        <Show when={groups().length === 0}>
-          <span class="px-3 py-6 text-center text-12-regular text-text-weak">No matching step</span>
-        </Show>
+              <span
+                class="size-2 justify-self-center rounded-full bg-[var(--icon-critical-base)]"
+                aria-hidden="true"
+              />
+              <span class="truncate">Record on device</span>
+            </button>
+            <div class="my-1 h-px bg-border-weak-base" />
+          </Show>
+          <For each={groups()}>
+            {(g) => (
+              <div class="flex flex-col gap-px">
+                <div class={menuSectionCls}>{g.label}</div>
+                <For each={g.items}>
+                  {(o) => {
+                    const step = createMemo(() => o.make());
+                    return (
+                      <button
+                        type="button"
+                        class={menuItemCls}
+                        role="menuitem"
+                        onClick={() => props.onPick(o.make())}
+                      >
+                        <span
+                          class="justify-self-center text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]"
+                          style={{ "--journey-node-accent": accentForStep(step()) }}
+                          aria-hidden="true"
+                        >
+                          <Icon name={iconForStep(step())} size={13} />
+                        </span>
+                        <span class="truncate">{o.label}</span>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            )}
+          </For>
+          <Show when={groups().length === 0}>
+            <p class="px-3 py-6 text-center text-[12px] text-text-weak">No matching step</p>
+          </Show>
+        </div>
       </div>
     </Portal>
   );

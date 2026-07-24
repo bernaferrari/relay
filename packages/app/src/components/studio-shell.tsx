@@ -1,26 +1,16 @@
-import {
-  For,
-  Show,
-  Suspense,
-  createEffect,
-  createMemo,
-  createSignal,
-  lazy,
-  onCleanup,
-} from "solid-js";
+import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js";
 import { useServer, type RecipeInfo, type RecipeStep } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { JourneyWorkspace } from "./journey-workspace";
-import { JourneyInspector, JourneyOutline } from "./journey-chrome";
 import { DevicePicker } from "./device-picker";
-import { LibraryPanel } from "./studio-library";
+import { JourneyNavigator, type NavigatorArea } from "./journey-navigator";
 import { TestWelcome } from "./test-onboarding";
 import { RunsWorkspace } from "./runs-workspace";
 import { TestWorkbench } from "./test-workbench";
 import { TestSettingsPanel } from "./test-details-panel";
 import { SuitesWorkspace } from "./suites-workspace";
-import { Icon, type IconName } from "./icon";
+import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
 import { toast } from "../context/toast";
@@ -35,26 +25,19 @@ import {
 } from "../lib/ui";
 import {
   shellRoot,
-  shellRootLibraryVar,
-  shellRail,
-  shellMark,
-  shellRailNav,
-  shellRailItem,
-  shellRailItemActive,
+  shellRootNavVar,
   shellMain,
   shellTopbar,
   shellTopbarContext,
   shellTopbarActions,
   shellBreadcrumb,
   shellStudio,
-  shellStudioBar,
   shellViewTabs,
   shellViewTab,
   shellViewTabActive,
   shellSaveState,
   shellStudioBodyJourney,
   shellStageWrap,
-  shellStageDrawerClearance,
   shellDragStrip,
 } from "../lib/shell-layout";
 import { planTestPrompt } from "../lib/natural-language-plan";
@@ -70,12 +53,6 @@ const DataWorkspace = lazy(() =>
 const MapsWorkspace = lazy(() =>
   import("./workspaces/maps-workspace").then((module) => ({ default: module.MapsWorkspace })),
 );
-const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
-  { id: "tests", label: "Journeys", icon: "grid" },
-  { id: "suites", label: "Flows", icon: "check" },
-  { id: "runs", label: "Runs", icon: "wave" },
-];
-
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
@@ -90,7 +67,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
-  const [libraryOpen, setLibraryOpen] = createSignal(true);
+  const [navOpen, setNavOpen] = createSignal(true);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
   const [importReview, setImportReview] = createSignal<{
     yaml: string;
@@ -100,9 +77,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   } | null>(null);
 
   const selected = createMemo(() => server.selectedRecipe());
-  const hasAuthoredJourneys = createMemo(() =>
-    server.recipes().some((recipe) => recipe.source === "custom" && recipe.steps.length > 0),
-  );
+  // Atlas is reached from a journey's own menu, not the navigator tabs, so it
+  // shows as Journeys rather than leaving every tab unselected.
+  const navigatorArea = createMemo<NavigatorArea>(() => {
+    const current = area();
+    return current === "map" ? "tests" : current;
+  });
   let titleBeforeEdit = "";
   let variablesDialog: HTMLElement | undefined;
   createEffect(() => {
@@ -114,13 +94,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     requestAnimationFrame(() => variablesDialog?.focus({ preventScroll: true }));
     onCleanup(() => window.removeEventListener("keydown", close));
   });
-  let previousReadyRecipeId: string | null = null;
-  createEffect(() => {
-    const readyId = selected()?.id ?? null;
-    if (readyId && readyId !== previousReadyRecipeId) setLibraryOpen(false);
-    if (!server.selectedRecipeId()) setLibraryOpen(hasAuthoredJourneys());
-    previousReadyRecipeId = readyId;
-  });
+  // The navigator now holds the open journey's steps, so it must not auto-close
+  // when a journey is selected — that would hide the very list being edited.
   // Every test opens on the device-first workbench. Remembering a settings
   // drawer across tests makes a new selection feel broken or unpredictable.
   let defaultedViewForId: string | null = null;
@@ -250,123 +225,95 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (saved) server.setSelectedRecipeId(saved.id);
   }
 
-  function deleteSelected(): void {
-    const recipe = selected();
-    if (!recipe) return;
+  function confirmDeleteJourney(recipe: RecipeInfo): void {
     confirmAction({
       title: "Delete journey?",
       body: `“${displayTitle(recipe.title)}” and its version history will be removed. This cannot be undone.`,
       confirmLabel: "Delete journey",
       onConfirm: async () => {
         await server.deleteRecipeRemote(recipe.id);
-        toast("Journey deleted", "info");
       },
     });
+  }
+
+  function deleteSelected(): void {
+    const recipe = selected();
+    if (recipe) confirmDeleteJourney(recipe);
+  }
+
+  function deleteJourney(id: string): void {
+    const recipe = server.recipes().find((item) => item.id === id);
+    if (recipe) confirmDeleteJourney(recipe);
   }
 
   function openRecipe(id: string): void {
     server.setSelectedRecipeId(id);
     setArea("tests");
-    // Default view is decided per-test by the effect above (content vs. empty).
-    // Opening a test transitions from the file browser to the canvas, like
-    // Figma. The library stays one click away in the top-left toolbar.
-    setLibraryOpen(false);
+    // Selecting a journey unfolds it in place in the navigator, so the panel
+    // stays open — its steps are the thing being opened.
+    setNavOpen(true);
   }
 
-  function openNewTestComposer(): void {
-    setArea("tests");
-    server.setSelectedRecipeId(null);
-    setLibraryOpen(true);
-    requestAnimationFrame(() => {
-      document.querySelector<HTMLTextAreaElement>("[data-new-test-prompt]")?.focus();
+  async function createFlow(): Promise<void> {
+    const suite = await server.saveSuiteRemote({
+      title: `Flow ${server.suites().length + 1}`,
+      sections: [{ title: "Main path", entries: [] }],
     });
+    if (!suite) return;
+    setArea("suites");
+    server.setSelectedSuiteId(suite.id);
+  }
+
+  /**
+   * A new journey starts on the device, recording. Describing one in words is
+   * a refinement you reach for *with* the device in front of you — never a
+   * separate screen you fill in before the device is involved.
+   */
+  function startNewJourney(): void {
+    setArea("tests");
+    setNavOpen(true);
+    void createTest(true);
   }
 
   return (
     <div
       class={shellRoot}
-      style={shellRootLibraryVar(area() === "tests" && libraryOpen())}
+      style={shellRootNavVar(navOpen())}
       data-selected-recipe-id={server.selectedRecipeId() ?? ""}
     >
       <div class={shellDragStrip} aria-hidden="true" />
-      <aside class={shellRail} aria-label="Product navigation">
-        <button
-          class={shellMark}
-          type="button"
-          aria-label="Relay home"
-          onClick={() => setArea("tests")}
-        >
-          <span
-            class="absolute inset-[10px_8px] -rotate-[32deg] rounded-full border-[1.5px] border-white/80"
-            aria-hidden="true"
-          />
-          <span class="absolute top-2 right-2 size-1.5 rounded-full bg-white" aria-hidden="true" />
-        </button>
-        <nav class={shellRailNav}>
-          <For each={AREA_ITEMS}>
-            {(item) => {
-              const active = () => area() === item.id;
-              return (
-                <button
-                  type="button"
-                  class={cn(shellRailItem, active() && shellRailItemActive)}
-                  aria-label={item.label}
-                  aria-current={active() ? "page" : undefined}
-                  onClick={() => {
-                    const wasActive = active();
-                    setArea(item.id);
-                    if (item.id === "tests") {
-                      if (wasActive) setLibraryOpen((open) => !open);
-                      else setLibraryOpen(!selected());
-                    } else setLibraryOpen(false);
-                  }}
-                >
-                  <Icon name={item.icon} size={18} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            }}
-          </For>
-        </nav>
-        <div class="flex w-full flex-col items-center">
-          <button
-            type="button"
-            class={cn(shellRailItem, "min-h-[52px]")}
-            aria-label="Open settings"
-            onClick={() => props.onOpenSettings()}
-          >
-            <Icon name="sliders" size={18} />
-            <span>Settings</span>
-          </button>
-        </div>
-      </aside>
 
-      <Show when={area() === "tests"}>
-        <LibraryPanel
-          open={libraryOpen()}
-          query={query()}
-          onQuery={setQuery}
-          items={filteredRecipes()}
-          selectedId={server.selectedRecipeId()}
-          onSelect={openRecipe}
-          onCreate={openNewTestComposer}
-          onImport={importTestYaml}
-        />
-      </Show>
+      <JourneyNavigator
+        open={navOpen()}
+        area={navigatorArea()}
+        onArea={setArea}
+        query={query()}
+        onQuery={setQuery}
+        items={filteredRecipes()}
+        selectedId={server.selectedRecipeId()}
+        onSelect={openRecipe}
+        onDelete={deleteJourney}
+        onCreate={startNewJourney}
+        onCreateFlow={() => void createFlow()}
+        onOpenRun={(id) => server.setSelectedJobId(id)}
+        onImport={importTestYaml}
+        onOpenSettings={() => props.onOpenSettings()}
+      />
 
       <main class={shellMain}>
+        {/* One toolbar. The journey's name, its view, and its actions used to
+            be split across two stacked bars for no reason a user could name. */}
         <header class={shellTopbar}>
           <div class={shellTopbarContext}>
-            <Show when={area() === "tests" && (selected() || hasAuthoredJourneys())}>
-              <button
-                type="button"
-                class={productIconButton}
-                aria-label={libraryOpen() ? "Hide journey library" : "Show journey library"}
-                onClick={() => setLibraryOpen((value) => !value)}
-              >
-                <Icon name="panel-left" size={17} />
-              </button>
-            </Show>
+            <button
+              type="button"
+              class={productIconButton}
+              aria-label={navOpen() ? "Hide navigator" : "Show navigator"}
+              data-tip={navOpen() ? "Hide navigator" : "Show navigator"}
+              onClick={() => setNavOpen((value) => !value)}
+            >
+              <Icon name="panel-left" size={17} />
+            </button>
             <div class={shellBreadcrumb}>
               <Show
                 when={area() === "tests" && selected()}
@@ -382,17 +329,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </strong>
                 }
               >
-                <button
-                  type="button"
-                  class="rounded font-medium text-[var(--text-weak)] transition-colors hover:text-[var(--text-strong)]"
-                  onClick={() => {
-                    server.setSelectedRecipeId(null);
-                    setLibraryOpen(true);
-                  }}
-                >
-                  Journeys
-                </button>
-                <Icon name="chevron-right" size={13} />
                 <input
                   type="text"
                   size={Math.max(
@@ -424,16 +360,110 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             </div>
           </div>
           <div class={shellTopbarActions}>
+            <Show when={area() === "tests" && selected()}>
+              <Show when={draft.saveState() === "saving" || draft.saveState() === "invalid"}>
+                <span class={shellSaveState}>
+                  {draft.saveState() === "saving"
+                    ? "Saving…"
+                    : `${draft.invalidCount()} incomplete`}
+                </span>
+              </Show>
+              <div class={shellViewTabs} role="group" aria-label="Journey view">
+                <button
+                  type="button"
+                  aria-pressed={studioView() === "workbench"}
+                  class={cn(shellViewTab, studioView() === "workbench" && shellViewTabActive)}
+                  onClick={() => setStudioView("workbench")}
+                >
+                  <Icon name="grid" size={13} /> Device
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={studioView() === "map"}
+                  class={cn(shellViewTab, studioView() === "map" && shellViewTabActive)}
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setStudioView("map");
+                  }}
+                >
+                  <Icon name="move" size={13} /> Map
+                </button>
+              </div>
+            </Show>
             <Show
               when={
                 area() === "suites" ||
                 area() === "map" ||
-                (area() === "tests" && Boolean(selected()))
+                (area() === "tests" && Boolean(selected()) && studioView() === "workbench")
               }
             >
               <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
             </Show>
             <Show when={area() === "tests" && selected()}>
+              <div class="relative flex items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-pressed={settingsOpen()}
+                  class={cn(productIconButton, settingsOpen() && "bg-surface-base-active")}
+                  aria-label="Journey properties"
+                  data-tip="Journey properties"
+                  onClick={() => {
+                    setStudioView("workbench");
+                    setSettingsOpen((open) => !open);
+                  }}
+                >
+                  <Icon name="sliders" size={16} />
+                </button>
+                <button
+                  class={productIconButton}
+                  type="button"
+                  aria-label="More journey options"
+                  aria-expanded={studioActionsOpen()}
+                  onClick={() => setStudioActionsOpen((open) => !open)}
+                >
+                  <Icon name="more" size={16} />
+                </button>
+                <Show when={studioActionsOpen()}>
+                  <div
+                    class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+                    role="menu"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        void duplicateSelected();
+                      }}
+                    >
+                      <Icon name="copy" size={14} /> Duplicate journey
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        setArea("map");
+                      }}
+                    >
+                      <Icon name="move" size={14} /> Explore in Atlas
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        void deleteSelected();
+                      }}
+                    >
+                      <Icon name="trash" size={14} /> Delete journey
+                    </button>
+                  </div>
+                </Show>
+              </div>
               <button
                 type="button"
                 class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
@@ -450,110 +480,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
         <Show when={area() === "tests"}>
           <section class={shellStudio}>
-            <Show when={selected()}>
-              <div class={shellStudioBar}>
-                <div class={shellViewTabs} role="group" aria-label="Journey view">
-                  <button
-                    type="button"
-                    aria-pressed={studioView() === "workbench"}
-                    class={cn(shellViewTab, studioView() === "workbench" && shellViewTabActive)}
-                    onClick={() => setStudioView("workbench")}
-                  >
-                    <Icon name="grid" size={13} /> Journey
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={studioView() === "map"}
-                    class={cn(shellViewTab, studioView() === "map" && shellViewTabActive)}
-                    onClick={() => {
-                      setSettingsOpen(false);
-                      setStudioView("map");
-                    }}
-                  >
-                    <Icon name="move" size={13} /> Screens
-                  </button>
-                </div>
-                <div class="relative flex items-center gap-2">
-                  <Show
-                    when={
-                      selected() &&
-                      (draft.saveState() === "saving" || draft.saveState() === "invalid")
-                    }
-                  >
-                    <span class={shellSaveState}>
-                      {draft.saveState() === "saving"
-                        ? "Saving…"
-                        : `${draft.invalidCount()} incomplete`}
-                    </span>
-                  </Show>
-                  <Show when={selected()}>
-                    <button
-                      type="button"
-                      aria-pressed={settingsOpen()}
-                      class={cn(shellViewTab, settingsOpen() && shellViewTabActive)}
-                      onClick={() => {
-                        setStudioView("workbench");
-                        setSettingsOpen((open) => !open);
-                      }}
-                    >
-                      <Icon name="sliders" size={13} /> Properties
-                    </button>
-                    <button
-                      class={productIconButton}
-                      type="button"
-                      aria-label="More journey options"
-                      aria-expanded={studioActionsOpen()}
-                      onClick={() => setStudioActionsOpen((open) => !open)}
-                    >
-                      <Icon name="more" size={16} />
-                    </button>
-                    <Show when={studioActionsOpen()}>
-                      <div
-                        class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
-                        role="menu"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                          onClick={() => {
-                            setStudioActionsOpen(false);
-                            void duplicateSelected();
-                          }}
-                        >
-                          <Icon name="copy" size={14} /> Duplicate journey
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                          onClick={() => {
-                            setStudioActionsOpen(false);
-                            setArea("map");
-                          }}
-                        >
-                          <Icon name="move" size={14} /> Explore in Atlas
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
-                          onClick={() => {
-                            setStudioActionsOpen(false);
-                            void deleteSelected();
-                          }}
-                        >
-                          <Icon name="trash" size={14} /> Delete journey
-                        </button>
-                      </div>
-                    </Show>
-                  </Show>
-                </div>
-              </div>
-            </Show>
             <div
               class={
-                selected() ? shellStudioBodyJourney : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
+                selected()
+                  ? studioView() === "map"
+                    ? "relative flex min-h-0 min-w-0 flex-1"
+                    : shellStudioBodyJourney
+                  : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
               }
             >
               <Show
@@ -585,18 +518,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   />
                 </Show>
                 <Show when={studioView() === "map"}>
-                  <JourneyOutline />
-                  <div class={cn(shellStageWrap, shellStageDrawerClearance, "flex-1")}>
-                    <JourneyWorkspace
-                      onLive={() => {
-                        setStudioView("workbench");
-                        setLibraryOpen(false);
-                      }}
-                    />
+                  <div class={cn(shellStageWrap, "flex flex-1")}>
+                    <JourneyWorkspace onLive={() => setStudioView("workbench")} />
                   </div>
-                  <Show when={draft.steps().length > 0}>
-                    <JourneyInspector onOpenTargets={() => props.onOpenSettings("matrices")} />
-                  </Show>
                 </Show>
               </Show>
             </div>

@@ -867,7 +867,9 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   //    containers and pure wrappers never become candidates).
   const candidates = createMemo(() => {
     const snap = server.snapshot();
-    if (!snap?.nodes?.length || !snap.bounds) return [] as SnapshotNode[];
+    if (!snap?.nodes?.length || !snap.bounds || snap.inspectable === false) {
+      return [] as SnapshotNode[];
+    }
     return overlayCandidates(snap.nodes, snap.bounds);
   });
 
@@ -911,7 +913,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   /** rAF-throttled hit-test against the candidate list. Captures the image rect
    *  at event time so the deferred frame reads stable geometry. */
   function scheduleHover(img: HTMLElement, cx: number, cy: number): void {
-    if (!server.showOverlays() || hoverRaf) return;
+    if (!server.showOverlays() || server.snapshot()?.inspectable === false || hoverRaf) return;
     const rect = img.getBoundingClientRect();
     hoverRaf = requestAnimationFrame(() => {
       hoverRaf = 0;
@@ -1065,6 +1067,12 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     const device = currentDevice();
     return server.health() === "online" && Boolean(device) && device?.booted !== false;
   };
+  const screenMapReady = createMemo(() => {
+    const snapshot = server.snapshot();
+    return Boolean(
+      snapshot?.inspectable !== false && snapshot?.bounds && snapshot.nodes.length > 0,
+    );
+  });
   const videoIdentity = createMemo(() => {
     const serial = currentDevice()?.serial;
     const base = server.serverUrl().replace(/\/+$/, "");
@@ -1131,17 +1139,17 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                     role="status"
                     aria-live="polite"
                     data-tip={
-                      videoReady()
+                      videoReady() && screenMapReady()
                         ? "Live device preview"
                         : videoFailed()
                           ? "Using screenshot preview while video reconnects"
-                          : "Connecting to the device"
+                          : "Preparing the device"
                     }
                   >
                     <i
                       class={cn(
                         "size-1.5 shrink-0 rounded-full",
-                        videoReady()
+                        videoReady() && screenMapReady()
                           ? "bg-[var(--icon-success-base)]"
                           : videoFailed()
                             ? "bg-[var(--icon-warning-base)]"
@@ -1149,7 +1157,13 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                       )}
                       aria-hidden="true"
                     />
-                    <span>{videoReady() ? "Live" : videoFailed() ? "Preview" : "Connecting"}</span>
+                    <span>
+                      {videoReady() && screenMapReady()
+                        ? "Live"
+                        : videoFailed()
+                          ? "Preview"
+                          : "Preparing"}
+                    </span>
                   </span>
                 }
               >
@@ -1479,7 +1493,13 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                   } else {
                     setRecordedHoverNode(null);
                   }
-                } else if (frame()) scheduleHover(e.currentTarget, e.clientX, e.clientY);
+                  // Overlay inspection follows the accessibility snapshot, not
+                  // the PNG fallback. Healthy H.264 deliberately stops PNG
+                  // polling, which previously made hover disappear when live
+                  // streaming was working best.
+                } else if (liveControlActive()) {
+                  scheduleHover(e.currentTarget, e.clientX, e.clientY);
+                }
               }}
               onMouseLeave={() => {
                 setRecordedScreenHovered(false);
@@ -1877,6 +1897,17 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                     aria-hidden="true"
                   />
                 </Show>
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                size="normal"
+                class="rounded-md"
+                data-tip="Copy screenshot"
+                aria-label="Copy screenshot to clipboard"
+                disabled={server.busyCapture()}
+                onClick={() => void server.copyUiScreenshot()}
+              >
+                <Icon name="copy" size={14} />
               </IconButton>
               <Show when={server.frames().length > 0}>
                 <IconButton
