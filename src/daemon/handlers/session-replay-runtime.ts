@@ -18,6 +18,7 @@ import { SessionStore } from '../session-store.ts';
 import { expandSessionPath } from '../session-paths.ts';
 import { applySaveScriptRetarget } from '../session-action-recorder.ts';
 import { computeReplayPlanDigest } from '../../replay/plan-digest.ts';
+import type { TargetAnnotationV1 } from '../../replay/target-identity.ts';
 import { errorResponse, noActiveSessionError } from './response.ts';
 import { invokeReplayAction } from './session-replay-action-runtime.ts';
 import { tryParseSelectorChain } from '../../selectors/index.ts';
@@ -46,8 +47,11 @@ import {
 } from './session-replay-runtime-plan.ts';
 import {
   buildReplayTargetGuardMismatchResponse,
+  buildWaitLandmarkMismatchResponse,
   isReplayTargetGuardMismatchResponse,
+  isWaitLandmarkMismatchResponse,
   verifyReplayActionTarget,
+  type ReplayVerifiedTargetGuard,
 } from './session-replay-target-verification.ts';
 import { buildReplayBuiltinVars } from './session-replay-vars.ts';
 import {
@@ -106,11 +110,14 @@ async function resolveReplayStepResponse(
   });
   if (!verification.verified) return verification.response;
   const guard = verification.guard;
-  const guardedReq = guard
-    ? {
-        ...ctx.replayReq,
-        internal: { ...ctx.replayReq.internal, replayTargetGuard: guard.expected },
-      }
+  const deferredLandmark = verification.deferredLandmark;
+  const guardInternal = guard
+    ? { replayTargetGuard: guard.expected }
+    : deferredLandmark
+      ? { replayLandmarkGuard: deferredLandmark }
+      : undefined;
+  const guardedReq = guardInternal
+    ? { ...ctx.replayReq, internal: { ...ctx.replayReq.internal, ...guardInternal } }
     : ctx.replayReq;
   const response = await invokeReplayAction({
     req: guardedReq,
@@ -124,11 +131,39 @@ async function resolveReplayStepResponse(
     tracePath: ctx.actionTracePath,
     invoke: ctx.invoke,
   });
-  if (!guard || !isReplayTargetGuardMismatchResponse(response)) return response;
-  return await buildReplayTargetGuardMismatchResponse({
+  return await convertIdentityRefusalResponse({
+    ctx,
+    action,
+    index,
+    artifactPaths,
+    sourcePath,
+    sourceLine,
+    response,
+    guard,
+    deferredLandmark,
+  });
+}
+
+/**
+ * Converts a dispatch-time identity refusal — the post-resolution guard
+ * mismatch, or wait's landmark timeout — into its identity-mismatch
+ * divergence; every other response passes through unchanged.
+ */
+async function convertIdentityRefusalResponse(params: {
+  ctx: ReplayStepContext;
+  action: SessionAction;
+  index: number;
+  artifactPaths: string[];
+  sourcePath: string;
+  sourceLine: number;
+  response: DaemonResponse;
+  guard: ReplayVerifiedTargetGuard | undefined;
+  deferredLandmark: TargetAnnotationV1 | undefined;
+}): Promise<DaemonResponse> {
+  const { ctx, action, index, artifactPaths, sourcePath, sourceLine, response } = params;
+  const mismatchParams = {
     action,
     scope: ctx.scope,
-    guard,
     failedResponse: response,
     sourcePath,
     sourceLine,
@@ -141,7 +176,14 @@ async function resolveReplayStepResponse(
     responseLevel: ctx.responseLevel,
     planActions: ctx.actions,
     planDigest: ctx.planDigest,
-  });
+  };
+  if (params.guard && isReplayTargetGuardMismatchResponse(response)) {
+    return await buildReplayTargetGuardMismatchResponse({ ...mismatchParams, guard: params.guard });
+  }
+  if (params.deferredLandmark && isWaitLandmarkMismatchResponse(response)) {
+    return await buildWaitLandmarkMismatchResponse(mismatchParams);
+  }
+  return response;
 }
 
 export async function runReplayScriptFile(params: {
