@@ -8,6 +8,7 @@ import { emitDiagnostic, getDiagnosticsMeta } from '../utils/diagnostics.ts';
 import { isRecord } from '../utils/parsing.ts';
 import type { DaemonRequest, DaemonResponse, SessionAction } from './types.ts';
 import { buildActionDetails, buildActionSummary } from './session-event-action.ts';
+import { buildRequestSuccessEventPresentation } from './session-event-request.ts';
 
 const SESSION_EVENT_LOG_FILENAME = 'events.ndjson';
 const EVENT_LOG_VERSION = 1;
@@ -133,26 +134,13 @@ export function appendActionEvent(
   });
 }
 
-export function buildRequestStartedEvent(params: {
-  req: DaemonRequest;
-  sessionName: string;
-  requestLogPath: string;
-  runnerLogPath: string;
-}): SessionEventLogInput {
-  const { req, sessionName, requestLogPath, runnerLogPath } = params;
+export function buildRequestStartedEvent(params: { req: DaemonRequest }): SessionEventLogInput {
+  const { req } = params;
   return {
     kind: 'request.started',
     requestId: req.meta?.requestId ?? getDiagnosticsMeta().requestId,
     command: req.command,
     summary: `Started ${req.command}`,
-    details: {
-      publicSession: req.session,
-      effectiveSession: sessionName,
-      tenant: req.meta?.tenantId,
-      isolation: req.meta?.sessionIsolation,
-      requestLogPath,
-      runnerLogPath,
-    },
   };
 }
 
@@ -163,13 +151,14 @@ export function buildRequestFinishedEvent(params: {
 }): SessionEventLogInput {
   const { req, response, durationMs } = params;
   if (response.ok) {
+    const presentation = buildRequestSuccessEventPresentation(req, response.data);
     return {
       kind: 'request.finished',
       requestId: req.meta?.requestId ?? getDiagnosticsMeta().requestId,
       command: req.command,
       status: 'ok',
-      summary: `Finished ${req.command}`,
-      details: { durationMs },
+      summary: presentation.summary ?? `Finished ${req.command}`,
+      details: { durationMs, ...presentation.details },
     };
   }
   return {
@@ -182,7 +171,6 @@ export function buildRequestFinishedEvent(params: {
       durationMs,
       code: response.error.code,
       diagnosticId: response.error.diagnosticId,
-      logPath: response.error.logPath,
     },
   };
 }
