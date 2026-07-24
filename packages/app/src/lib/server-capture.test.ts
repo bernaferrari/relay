@@ -80,14 +80,17 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
 test("capture boundary keeps screenshot and snapshot transport details out of the UI context", async () => {
   const harness = createHarness();
 
-  await harness.capture.captureUiScreenshot("before tap");
-  await harness.capture.captureUiSnapshot();
+  const frame = await harness.capture.captureUiScreenshot("before tap");
+  const snapshot = await harness.capture.captureUiSnapshot();
   await harness.capture.pollLiveFrame();
   await harness.capture.pollLiveSnapshot();
 
   assert.equal(harness.calls[0], "/screenshot?serial=device-1&caption=before+tap");
   assert.equal(harness.frames.length, 1);
   assert.equal((harness.frames[0] as { caption: string }).caption, "before tap");
+  assert.equal(frame.id, "frame-1", "recorders can persist the exact captured frame");
+  assert.equal(frame.caption, "before tap");
+  assert.deepEqual(snapshot?.bounds, { width: 100, height: 200 });
   assert.deepEqual((harness.getSnapshot() as { bounds: { width: number } }).bounds, {
     width: 100,
     height: 200,

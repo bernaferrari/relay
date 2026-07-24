@@ -1214,6 +1214,7 @@ async function handleRequest(
           steps: parsed.steps,
           quarantined: parsed.quarantined,
           quarantineReason: parsed.quarantineReason,
+          recordingFormatVersion: parsed.recordingFormatVersion,
         });
         json(res, 201, { recipe });
       } catch (error) {

@@ -20,30 +20,30 @@ import {
   type HorizontalConstraint,
   type VerticalConstraint,
 } from "../lib/target-inspector";
-import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { fmtAgo, fmtDur } from "../lib/job";
 import {
   convertStepAction,
   convertTapGesture,
+  FALLBACK_DEVICE_BOUNDS,
   isTapAction,
   tapGesture,
   type EditableActionKind,
   type TapGesture,
 } from "../lib/journey-action-conversion";
 import { testRunBlocker } from "../lib/test-run-readiness";
-import { Icon, type IconName } from "./icon";
+import { Icon } from "./icon";
 import {
   accentForStep,
   actionForStep,
   evidenceForStep,
   iconForStep,
 } from "./journey-step-presentation";
-import { kindLabel } from "./step-list-metadata";
-import { kindIcon } from "./step-list-metadata";
+import { ActionPicker } from "./action-picker";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { MaterialDiscreteSlider } from "./material-discrete-slider";
 import { StepEditor } from "./step-editor";
-import { eyebrow, productPrimary } from "../lib/ui";
+import { AddMenu } from "./step-list-controls";
+import { eyebrow, productPrimary, propertySeg, propertySegBtn, propertySegBtnOn } from "../lib/ui";
 
 const chromePanel =
   "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,var(--v2-background-bg-deep))]";
@@ -180,79 +180,6 @@ function simpleField(step: RecipeStep): {
   return { label: "Note", value: step.note ?? "" };
 }
 
-const QUICK_STEPS: {
-  label: string;
-  icon: "pointer" | "keyboard" | "check" | "clock" | "camera";
-  make: () => RecipeStep;
-}[] = [
-  { label: "Tap something", icon: "pointer", make: () => ({ kind: "tap", target: {} }) },
-  { label: "Type text", icon: "keyboard", make: () => ({ kind: "type", text: "" }) },
-  {
-    label: "Check something",
-    icon: "check",
-    make: () => ({ kind: "expect", target: {}, condition: "visible" }),
-  },
-  { label: "Wait", icon: "clock", make: () => ({ kind: "sleep", ms: 1_000 }) },
-  { label: "Take screenshot", icon: "camera", make: () => ({ kind: "screenshot" }) },
-];
-
-const ACTION_KINDS: RecipeStep["kind"][] = [
-  "tap",
-  "type",
-  "expect",
-  "wait-for",
-  "scroll",
-  "swipe",
-  "key",
-  "sleep",
-  "screenshot",
-  "pause",
-  "wait-response",
-  "extract",
-  "assert-content",
-  "evaluate-semantic",
-  "flow",
-  "module",
-  "branch",
-  "repeat",
-  "script",
-  "clipboard",
-  "app",
-  "device",
-  "rotate",
-  "settings",
-  "location",
-  "permission",
-  "alert",
-  "network",
-  "logs",
-];
-
-const ACTION_LABELS: Partial<Record<RecipeStep["kind"], string>> = {
-  expect: "Check element",
-  "wait-for": "Wait for element",
-  "wait-response": "Wait for response",
-  sleep: "Wait a duration",
-  screenshot: "Take screenshot",
-  pause: "Pause for person",
-  extract: "Extract content",
-  "assert-content": "Check content",
-  "evaluate-semantic": "Evaluate response",
-  module: "Reuse test",
-  settings: "Change setting",
-  logs: "Device logs",
-};
-
-const ACTION_OPTIONS: {
-  kind: EditableActionKind;
-  label: string;
-  icon: IconName;
-}[] = ACTION_KINDS.map((kind) => ({
-  kind,
-  label: ACTION_LABELS[kind] ?? kindLabel(kind),
-  icon: kindIcon(kind),
-}));
-
 function usesCompactInspector(step: RecipeStep): boolean {
   return [
     "tap",
@@ -266,35 +193,59 @@ function usesCompactInspector(step: RecipeStep): boolean {
   ].includes(step.kind);
 }
 
-function actionLabel(kind: RecipeStep["kind"]): string {
-  return ACTION_OPTIONS.find((option) => option.kind === kind)?.label ?? kindLabel(kind);
-}
-
 export function JourneyOutline(props: { compact?: boolean } = {}) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
   const active = () => workbench.focusedIndex() ?? 0;
-  const [addOpen, setAddOpen] = createSignal(false);
+  const [addAnchor, setAddAnchor] = createSignal<
+    { left: number; top: number; bottom: number; width: number } | undefined
+  >();
+  let addButton: HTMLButtonElement | undefined;
+  let stepList: HTMLElement | undefined;
+  let previousActive = active();
+
+  createEffect(() => {
+    const current = active();
+    if (current === previousActive) return;
+    previousActive = current;
+
+    queueMicrotask(() => {
+      const container = stepList;
+      const row = container?.querySelector<HTMLElement>(`[data-step-row="${current}"]`);
+      if (!container || !row) return;
+
+      const top = row.offsetTop - container.offsetTop;
+      const bottom = top + row.offsetHeight;
+      const visibleTop = container.scrollTop;
+      const visibleBottom = visibleTop + container.clientHeight;
+      if (top >= visibleTop && bottom <= visibleBottom) return;
+
+      container.scrollTo({
+        top: top < visibleTop ? top : bottom - container.clientHeight,
+        behavior: "smooth",
+      });
+    });
+  });
 
   const appendStep = (step: RecipeStep) => {
     const index = draft.steps().length;
     draft.insertStep(index, step);
     workbench.focusStep(index);
-    setAddOpen(false);
+    setAddAnchor(undefined);
   };
 
   return (
     <aside
       class={cn(chromePanel, "border-r border-[var(--v2-border-border-muted)] max-[900px]:!hidden")}
-      aria-label="Test steps"
+      aria-label="Journey actions"
     >
       <header class="border-b border-[var(--v2-border-border-muted)] px-[15px] pt-[17px] pb-[15px]">
         <Show
           when={props.compact}
           fallback={
             <>
-              <span class={eyebrow}>Steps</span>
+              <span class={eyebrow}>Journey</span>
               <h2 class="mt-1.5 overflow-hidden text-[18px] font-semibold tracking-[-0.025em] text-ellipsis whitespace-nowrap text-[var(--text-strong)]">
                 {draft.title()}
               </h2>
@@ -308,7 +259,7 @@ export function JourneyOutline(props: { compact?: boolean } = {}) {
                   "grid grid-cols-[repeat(auto-fit,minmax(8px,1fr))] gap-1",
                   !draft.description() && "mt-[15px]",
                 )}
-                aria-label={`Step ${active() + 1} of ${draft.steps().length}`}
+                aria-label={`Action ${active() + 1} of ${draft.steps().length}`}
               >
                 <For each={draft.steps()}>
                   {(_, index) => (
@@ -325,19 +276,19 @@ export function JourneyOutline(props: { compact?: boolean } = {}) {
                 <button
                   type="button"
                   class={walkStepBtn}
-                  aria-label="Previous step"
+                  aria-label="Previous action"
                   disabled={active() <= 0}
                   onClick={() => workbench.focusStep(Math.max(0, active() - 1))}
                 >
                   <Icon name="chevron-left" size={12} />
                 </button>
                 <small class="block font-mono text-[10.5px]/[1.2] tabular-nums text-[var(--text-weak)]">
-                  Step {Math.min(active() + 1, draft.steps().length)} of {draft.steps().length}
+                  Action {Math.min(active() + 1, draft.steps().length)} of {draft.steps().length}
                 </small>
                 <button
                   type="button"
                   class={walkStepBtn}
-                  aria-label="Next step"
+                  aria-label="Next action"
                   disabled={active() >= draft.steps().length - 1}
                   onClick={() =>
                     workbench.focusStep(Math.min(draft.steps().length - 1, active() + 1))
@@ -349,18 +300,30 @@ export function JourneyOutline(props: { compact?: boolean } = {}) {
             </>
           }
         >
-          <div class="flex items-center justify-between gap-3">
-            <span class={eyebrow}>Steps</span>
-            <span class="font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]">
-              {draft.steps().length}
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <span class={eyebrow}>Journey</span>
+              <strong class="mt-1 block truncate text-[14px] font-semibold tracking-[-0.015em] text-[var(--text-strong)]">
+                {draft.title() || "Untitled journey"}
+              </strong>
+            </div>
+            <span class="shrink-0 pt-0.5 font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]">
+              {draft.steps().length} actions
             </span>
           </div>
-          <p class="mt-1.5 line-clamp-1 text-[12px] text-[var(--text-base)]">
-            {draft.description() || "Actions Relay will perform in order"}
-          </p>
+          <Show when={draft.description()}>
+            <p class="mt-1.5 line-clamp-1 text-[12px] text-[var(--text-base)]">
+              {draft.description()}
+            </p>
+          </Show>
         </Show>
       </header>
-      <nav class="min-h-0 flex-1 overflow-y-auto p-2">
+      <nav
+        ref={(element) => {
+          stepList = element;
+        }}
+        class="min-h-0 flex-1 overflow-y-auto p-2"
+      >
         <For each={draft.steps()}>
           {(step, index) => {
             const annotation = () => workbench.rowAnno(index());
@@ -375,6 +338,7 @@ export function JourneyOutline(props: { compact?: boolean } = {}) {
             return (
               <button
                 type="button"
+                data-step-row={index()}
                 class={cn(
                   "relative grid min-h-[56px] w-full grid-cols-[32px_minmax(0,1fr)_7px] items-center gap-2.5 rounded-[10px] border border-transparent px-2.5 py-2 text-left text-[var(--text-weak)] transition-colors duration-150",
                   "hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-base)]",
@@ -413,33 +377,69 @@ export function JourneyOutline(props: { compact?: boolean } = {}) {
       </nav>
       <Show when={props.compact}>
         <footer class="relative shrink-0 border-t border-[var(--v2-border-border-muted)] p-2.5">
-          <button
-            type="button"
-            class="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] active:scale-[0.98]"
-            aria-expanded={addOpen()}
-            onClick={() => setAddOpen((open) => !open)}
-          >
-            <Icon name="plus" size={14} /> Add step
-          </button>
-          <Show when={addOpen()}>
-            <div
-              class="ui-pop absolute right-2.5 bottom-[calc(100%+6px)] left-2.5 z-20 grid gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
-              role="menu"
-              aria-label="Add step"
+          <div class="flex h-8 items-center justify-between px-0.5">
+            <button
+              type="button"
+              class={walkStepBtn}
+              aria-label="Previous action"
+              disabled={draft.steps().length === 0 || active() <= 0}
+              onClick={() => workbench.focusStep(Math.max(0, active() - 1))}
             >
-              <For each={QUICK_STEPS}>
-                {(item) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    class="flex min-h-9 items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.98]"
-                    onClick={() => appendStep(item.make())}
-                  >
-                    <Icon name={item.icon} size={14} /> {item.label}
-                  </button>
-                )}
-              </For>
-            </div>
+              <Icon name="chevron-left" size={12} />
+            </button>
+            <span
+              class="font-mono text-[10.5px] tabular-nums text-[var(--text-weak)]"
+              aria-live="polite"
+            >
+              {draft.steps().length
+                ? `Action ${active() + 1} of ${draft.steps().length}`
+                : "No actions"}
+            </span>
+            <button
+              type="button"
+              class={walkStepBtn}
+              aria-label="Next action"
+              disabled={draft.steps().length === 0 || active() >= draft.steps().length - 1}
+              onClick={() => workbench.focusStep(Math.min(draft.steps().length - 1, active() + 1))}
+            >
+              <Icon name="chevron-right" size={12} />
+            </button>
+          </div>
+          <div class="mt-1 border-t border-[var(--v2-border-border-muted)] pt-1">
+            <button
+              ref={(element) => {
+                addButton = element;
+              }}
+              type="button"
+              class="flex min-h-9 w-full items-center justify-center gap-2 rounded-lg text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] active:scale-[0.98]"
+              aria-expanded={Boolean(addAnchor())}
+              onClick={() => {
+                if (addAnchor()) {
+                  setAddAnchor(undefined);
+                  return;
+                }
+                const rect = addButton?.getBoundingClientRect();
+                if (!rect) return;
+                setAddAnchor({
+                  left: rect.left,
+                  top: rect.top,
+                  bottom: rect.bottom,
+                  width: rect.width,
+                });
+              }}
+            >
+              <Icon name="plus" size={14} /> Add action
+            </button>
+          </div>
+          <Show when={addAnchor()}>
+            {(anchor) => (
+              <AddMenu
+                anchor={anchor()}
+                placement="above"
+                onClose={() => setAddAnchor(undefined)}
+                onPick={appendStep}
+              />
+            )}
           </Show>
         </footer>
       </Show>
@@ -490,27 +490,8 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
   const [horizontalConstraint, setHorizontalConstraint] =
     createSignal<HorizontalConstraint>("left");
   const [verticalConstraint, setVerticalConstraint] = createSignal<VerticalConstraint>("top");
-  const [actionMenuOpen, setActionMenuOpen] = createSignal(false);
   const [stepMenuOpen, setStepMenuOpen] = createSignal(false);
-  const [actionQuery, setActionQuery] = createSignal("");
-  const filteredActions = createMemo(() => {
-    const query = actionQuery().trim().toLocaleLowerCase();
-    return query
-      ? ACTION_OPTIONS.filter((option) => option.label.toLocaleLowerCase().includes(query))
-      : ACTION_OPTIONS;
-  });
-  const actionMemory = new Map<string, RecipeStep>();
-  let actionMenuRoot: HTMLDivElement | undefined;
   let stepMenuRoot: HTMLDivElement | undefined;
-  let actionSearch: HTMLInputElement | undefined;
-  createEffect(() => {
-    if (!actionMenuOpen()) return;
-    const close = (event: PointerEvent) => {
-      if (!actionMenuRoot?.contains(event.target as Node)) setActionMenuOpen(false);
-    };
-    window.addEventListener("pointerdown", close, true);
-    onCleanup(() => window.removeEventListener("pointerdown", close, true));
-  });
   createEffect(() => {
     if (!stepMenuOpen()) return;
     const close = (event: PointerEvent) => {
@@ -522,19 +503,35 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
   const constraintPoint = createMemo(() => {
     const current = step();
     if (!current || !isTapAction(current)) return undefined;
-    if (current.target.point) return current.target.point;
-    const bounds = current.evidence?.deviceBounds;
-    const fallback =
-      current.evidence?.pointer ??
-      (previewNode() ? pointForAnchor(previewNode()!, "center") : undefined);
-    return fallback
-      ? {
-          ...fallback,
-          anchor: { horizontal: horizontalConstraint(), vertical: verticalConstraint() },
-          ...(bounds ? { referenceBounds: { ...bounds } } : {}),
-        }
-      : undefined;
+    const bounds =
+      current.evidence?.deviceBounds ??
+      current.target.point?.referenceBounds ??
+      server.snapshot()?.bounds ??
+      FALLBACK_DEVICE_BOUNDS;
+    if (current.target.point) {
+      return {
+        ...current.target.point,
+        ...(!current.target.point.referenceBounds ? { referenceBounds: { ...bounds } } : {}),
+      };
+    }
+    const fallback = current.evidence?.pointer ??
+      (previewNode() ? pointForAnchor(previewNode()!, "center") : undefined) ?? {
+        x: Math.round(bounds.width / 2),
+        y: Math.round(bounds.height / 2),
+      };
+    return {
+      ...fallback,
+      anchor: { horizontal: horizontalConstraint(), vertical: verticalConstraint() },
+      referenceBounds: { ...bounds },
+    };
   });
+  const coordinateBounds = createMemo(
+    () =>
+      tapEvidence()?.deviceBounds ??
+      constraintPoint()?.referenceBounds ??
+      server.snapshot()?.bounds ??
+      FALLBACK_DEVICE_BOUNDS,
+  );
   createEffect(() => {
     const current = step();
     const point = current && isTapAction(current) ? current.target.point : undefined;
@@ -547,11 +544,10 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
     return current ? sentenceForStep(current, server.recipes()) : "No state selected";
   });
   const capturedFrame = createMemo(() => {
-    const frame = server.frames()[index()];
-    if (frame) return frameToSrc(frame);
     const shot = evidenceForStep(draft.steps()[index()])?.screenshot;
     return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
   });
+  const canPreview = createMemo(() => Boolean(capturedFrame()));
   const annotation = createMemo(() => workbench.rowAnno(index()));
   const recentRuns = createMemo(() => {
     const recipe = server.selectedRecipe();
@@ -601,8 +597,6 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
     }
     void workbench.runFrom(index(), { continue: false });
   };
-  const move = (delta: number) =>
-    workbench.focusStep(Math.max(0, Math.min(index() + delta, draft.steps().length - 1)));
 
   function updateTarget(value: string): void {
     const current = step();
@@ -625,28 +619,20 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
   ): void {
     const point = constraintPoint();
     if (!point) return;
-    const current = step();
-    if (current && isTapAction(current) && current.target.point) {
-      workbench.rememberCoordinate(index(), current.target.point);
-    }
     chooseTarget({
-      point: anchoredPoint(point, horizontal, vertical, tapEvidence()?.deviceBounds),
+      point: anchoredPoint(point, horizontal, vertical, coordinateBounds()),
     });
   }
 
   function updateCoordinatePoint(value: { x: number; y: number }): void {
     const point = constraintPoint();
     if (!point) return;
-    const current = step();
-    if (current && isTapAction(current) && current.target.point) {
-      workbench.rememberCoordinate(index(), current.target.point);
-    }
     chooseTarget({
       point: anchoredPoint(
         { ...point, ...value },
         horizontalConstraint(),
         verticalConstraint(),
-        tapEvidence()?.deviceBounds,
+        coordinateBounds(),
       ),
     });
   }
@@ -692,11 +678,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
   function changeAction(kind: EditableActionKind): void {
     const current = step();
     if (!current) return;
-    const memoryKey = `${server.selectedRecipeId() ?? "draft"}:${index()}`;
-    actionMemory.set(`${memoryKey}:${current.kind}`, current);
-    const remembered = actionMemory.get(`${memoryKey}:${kind}`);
-    draft.updateStep(index(), remembered ?? convertStepAction(current, kind));
-    setActionMenuOpen(false);
+    draft.updateStep(index(), convertStepAction(current, kind));
   }
 
   function duplicateSelectedStep(): void {
@@ -763,34 +745,95 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
         chromePanel,
         "border-l border-[var(--v2-border-border-muted)] max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6] max-[900px]:flex max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))] max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
       )}
-      aria-label="Selected journey step"
+      aria-label="Selected journey action"
       onKeyDown={(event) => {
-        if (event.key !== "Backspace" && event.key !== "Delete") return;
         const target = event.target as HTMLElement;
-        if (target.matches("input, textarea, select, [contenteditable='true']")) return;
+        const editingText = target.matches("input, textarea, select, [contenteditable='true']");
+        if (event.key !== "Backspace" && event.key !== "Delete") return;
+        if (editingText) return;
         event.preventDefault();
         deleteSelectedStep();
       }}
     >
-      <header class="flex min-h-[67px] shrink-0 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-[15px]">
-        <div class="min-w-0">
-          <span class={eyebrow}>
-            Step {index() + 1} of {draft.steps().length}
-          </span>
-          <strong class="mt-1 block truncate text-[13px] leading-[1.2] font-semibold text-[var(--text-strong)]">
-            {sentence()}
-          </strong>
+      <header class="flex min-h-12 shrink-0 items-center justify-between gap-2.5 border-b border-[var(--v2-border-border-muted)] px-[15px]">
+        <span class="font-mono text-[10.5px] font-medium tracking-[0.04em] text-[var(--text-weak)] uppercase">
+          Action {String(index() + 1).padStart(2, "0")}
+        </span>
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            class="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-out hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-35"
+            aria-label={`Preview action ${index() + 1} on its recorded screen`}
+            data-tip={
+              canPreview()
+                ? "Preview on the recorded screen — does not touch the device"
+                : "Record or run this step to add a screen preview"
+            }
+            disabled={!canPreview()}
+            onClick={() => workbench.previewStep(index())}
+          >
+            <Icon name="play" size={11} /> Preview
+          </button>
+          <button
+            type="button"
+            class={cn(productPrimary, "h-7 !min-h-7 shrink-0 px-2.5 text-[10.5px]")}
+            aria-label={`Run action ${index() + 1}`}
+            disabled={workbench.running()}
+            onClick={runSelected}
+          >
+            <Icon name="play" size={11} />
+            {annotation().status === "running" ? "Running" : "Run"}
+          </button>
+          <div
+            ref={(element) => (stepMenuRoot = element)}
+            class="relative"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || !stepMenuOpen()) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setStepMenuOpen(false);
+            }}
+          >
+            <button
+              type="button"
+              class="grid size-7 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+              aria-label="Action options"
+              aria-haspopup="menu"
+              aria-expanded={stepMenuOpen()}
+              onClick={() => setStepMenuOpen((open) => !open)}
+            >
+              <Icon name="more" size={14} />
+            </button>
+            <Show when={stepMenuOpen()}>
+              <div
+                class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid min-w-[174px] gap-0.5 rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
+                role="menu"
+                aria-label="Action options"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="grid h-8 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                  onClick={duplicateSelectedStep}
+                >
+                  <Icon name="copy" size={12} />
+                  Duplicate action
+                </button>
+                <div class="mx-2 h-px bg-[var(--v2-border-border-muted)]" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="grid h-8 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--icon-critical-base)] transition-colors duration-100 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)]"
+                  onClick={deleteSelectedStep}
+                >
+                  <Icon name="trash" size={12} />
+                  <span>Delete action</span>
+                  <kbd class="font-mono text-[9px] font-normal opacity-65">⌫</kbd>
+                </button>
+              </div>
+            </Show>
+          </div>
         </div>
-        <button
-          type="button"
-          class={cn(productPrimary, "h-8 shrink-0 px-3 text-[11px]")}
-          aria-label={`Run step ${index() + 1}`}
-          disabled={workbench.running()}
-          onClick={runSelected}
-        >
-          <Icon name="play" size={11} />
-          {annotation().status === "running" ? "Running" : "Run step"}
-        </button>
       </header>
       <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         <Show when={!props.compact}>
@@ -832,283 +875,116 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
               </div>
             )}
           </Show>
-          <Show when={capturedFrame()}>
-            <section class="shrink-0 border-t border-[var(--v2-border-border-muted)] p-[15px]">
-              <span class="flex items-center gap-1.5 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-interactive-base)] uppercase">
-                <Show when={step()}>
-                  {(current) => <Icon name={iconForStep(current())} size={14} />}
-                </Show>
-                Captured action
-              </span>
-              <h3 class="mt-2 mb-3.5 text-[15px] leading-[1.4] font-medium tracking-[-0.015em] text-[var(--text-strong)]">
-                {sentence()}
-              </h3>
-              <dl class="m-0 grid grid-cols-2 gap-2">
-                <div class="rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 py-2">
-                  <dt class="m-0 text-[10.5px] text-[var(--text-weak)]">Evidence</dt>
-                  <dd class="mt-1 text-[11px] font-semibold text-[var(--text-base)] capitalize">
-                    Captured
-                  </dd>
-                </div>
-                <div class="rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 py-2">
-                  <dt class="m-0 text-[10.5px] text-[var(--text-weak)]">Status</dt>
-                  <dd
-                    class={cn(
-                      "mt-1 text-[11px] font-semibold capitalize",
-                      annotation().status === "pass" && "text-[var(--icon-success-base)]",
-                      annotation().status === "fail" && "text-[var(--icon-critical-base)]",
-                      annotation().status === "running" && "text-[var(--text-interactive-base)]",
-                      annotation().status === "idle" && "text-[var(--text-base)]",
-                    )}
-                  >
-                    {annotation().status === "idle" ? "Ready" : annotation().status}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-          </Show>
         </Show>
         <Show when={step()}>
           {(current) => (
-            <section class="border-t border-[var(--v2-border-border-muted)] px-[15px] py-[16px]">
-              <header class="mb-3 flex items-center justify-between gap-3">
-                <span class="text-[10.5px] font-semibold tracking-[0.08em] text-[var(--text-base)] uppercase">
-                  Action
-                </span>
-                <div class="flex items-center gap-1">
-                  <div
-                    ref={(element) => (actionMenuRoot = element)}
-                    class="relative"
-                    onKeyDown={(event) => {
-                      if (event.key !== "Escape" || !actionMenuOpen()) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setActionMenuOpen(false);
-                    }}
-                  >
-                    <button
-                      type="button"
-                      class="grid h-7 min-w-[112px] grid-cols-[18px_minmax(0,1fr)_14px] items-center gap-1.5 rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,border-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)] active:scale-[0.98]"
-                      aria-haspopup="menu"
-                      aria-expanded={actionMenuOpen()}
-                      onClick={() => {
-                        setStepMenuOpen(false);
-                        setActionMenuOpen((open) => {
-                          if (open) setActionQuery("");
-                          else queueMicrotask(() => actionSearch?.focus());
-                          return !open;
-                        });
-                      }}
-                    >
-                      <Icon name={iconForStep(current())} size={12} />
-                      <span class="truncate">{actionLabel(current().kind)}</span>
-                      <Icon name="chevron-down" size={11} />
-                    </button>
-                    <Show when={actionMenuOpen()}>
-                      <div
-                        class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid max-h-[min(420px,calc(100vh-180px))] min-w-[210px] origin-top-right gap-0.5 overflow-y-auto rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 pt-0 shadow-[var(--v2-elevation-overlay)]"
-                        role="menu"
-                        aria-label="Change action"
-                      >
-                        <label class="sticky top-0 z-10 flex h-9 items-center gap-2 border-b border-[var(--v2-border-border-muted)] bg-surface-raised-stronger-non-alpha px-2">
-                          <Icon name="search" size={12} />
-                          <input
-                            ref={(element) => (actionSearch = element)}
-                            class="min-w-0 flex-1 bg-transparent text-[11px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
-                            value={actionQuery()}
-                            placeholder="Find an action"
-                            aria-label="Find an action"
-                            onInput={(event) => setActionQuery(event.currentTarget.value)}
-                          />
-                        </label>
-                        <For each={filteredActions()}>
-                          {(option) => {
-                            const selected = () =>
-                              option.kind === "tap"
-                                ? isTapAction(current())
-                                : current().kind === option.kind;
-                            return (
-                              <button
-                                type="button"
-                                role="menuitemradio"
-                                aria-checked={selected()}
-                                class={cn(
-                                  "grid h-8 grid-cols-[22px_minmax(0,1fr)_16px] items-center gap-1.5 rounded-md px-2 text-left text-[10.5px] font-medium transition-[background-color,color,transform] duration-100 ease-out active:scale-[0.985]",
-                                  selected()
-                                    ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
-                                    : "text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
-                                )}
-                                onClick={() => changeAction(option.kind)}
-                              >
-                                <span class="grid size-[22px] place-items-center rounded-md bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]">
-                                  <Icon name={option.icon} size={12} />
-                                </span>
-                                <span>{option.label}</span>
-                                <Show when={selected()}>
-                                  <Icon name="check" size={12} />
-                                </Show>
-                              </button>
-                            );
-                          }}
-                        </For>
-                        <Show when={filteredActions().length === 0}>
-                          <span class="px-3 py-4 text-center text-[10.5px] text-[var(--text-weak)]">
-                            No matching action
-                          </span>
-                        </Show>
-                      </div>
-                    </Show>
-                  </div>
-                  <div
-                    ref={(element) => (stepMenuRoot = element)}
-                    class="relative"
-                    onKeyDown={(event) => {
-                      if (event.key !== "Escape" || !stepMenuOpen()) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setStepMenuOpen(false);
-                    }}
-                  >
-                    <button
-                      type="button"
-                      class="grid size-7 place-items-center rounded-md text-[var(--text-weak)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] active:scale-[0.96]"
-                      aria-label="Step actions"
-                      aria-haspopup="menu"
-                      aria-expanded={stepMenuOpen()}
-                      onClick={() => {
-                        setActionMenuOpen(false);
-                        setStepMenuOpen((open) => !open);
-                      }}
-                    >
-                      <Icon name="more" size={14} />
-                    </button>
-                    <Show when={stepMenuOpen()}>
-                      <div
-                        class="ui-pop absolute top-[calc(100%+4px)] right-0 z-30 grid min-w-[174px] gap-0.5 rounded-lg border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
-                        role="menu"
-                        aria-label="Step actions"
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          class="grid h-8 grid-cols-[20px_minmax(0,1fr)] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                          onClick={duplicateSelectedStep}
-                        >
-                          <Icon name="copy" size={12} />
-                          Duplicate step
-                        </button>
-                        <div class="mx-2 h-px bg-[var(--v2-border-border-muted)]" />
-                        <button
-                          type="button"
-                          role="menuitem"
-                          class="grid h-8 grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-left text-[10.5px] font-medium text-[var(--icon-critical-base)] transition-colors duration-100 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_10%,transparent)]"
-                          onClick={deleteSelectedStep}
-                        >
-                          <Icon name="trash" size={12} />
-                          <span>Delete step</span>
-                          <kbd class="font-mono text-[9px] font-normal opacity-65">⌫</kbd>
-                        </button>
-                      </div>
-                    </Show>
-                  </div>
+            <section
+              class={cn(
+                "px-[15px] py-3",
+                !props.compact && "border-t border-[var(--v2-border-border-muted)]",
+              )}
+            >
+              <header class="mb-1.5 grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2">
+                <span class="text-[11px] text-[var(--text-base)]">Action</span>
+                <div class="flex h-8 min-w-0 items-center rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]">
+                  <ActionPicker
+                    step={current()}
+                    onSelect={changeAction}
+                    onOpen={() => setStepMenuOpen(false)}
+                  />
                 </div>
               </header>
               <Show when={isTapAction(current())}>
-                <div class="mb-3 grid gap-1.5">
-                  <span class="text-[10.5px] text-[var(--text-weak)]">Gesture</span>
-                  <div
-                    class="grid grid-cols-3 rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]"
-                    role="radiogroup"
-                    aria-label="Tap gesture"
-                  >
-                    <For
-                      each={
-                        [
-                          ["single", "Single"],
-                          ["multi", "Multi"],
-                          ["hold", "Hold"],
-                        ] as const
-                      }
-                    >
-                      {([value, label]) => {
-                        const selected = () => tapGesture(current()) === value;
-                        return (
-                          <button
-                            type="button"
-                            role="radio"
-                            aria-checked={selected()}
-                            class={cn(
-                              "h-7 rounded-md text-[10.5px] font-medium transition-[background-color,color,box-shadow,transform] duration-100 ease-out active:scale-[0.98]",
-                              selected()
-                                ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_3px_rgb(0_0_0/24%)]"
-                                : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
-                            )}
-                            onClick={() => changeTapGesture(value)}
-                          >
-                            {label}
-                          </button>
-                        );
-                      }}
-                    </For>
-                  </div>
-                  <Show when={multiTapStep()}>
-                    {(_) => (
-                      <div class="mt-0.5 grid h-8 grid-cols-2 divide-x divide-[var(--v2-border-border-muted)] rounded-lg ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
-                        <label class="flex min-w-0 items-center justify-between gap-2 px-2.5">
-                          <span class="text-[10.5px] text-[var(--text-base)]">Taps</span>
-                          <input
-                            type="number"
-                            min="2"
-                            max="10"
-                            step="1"
-                            class="w-7 bg-transparent text-right font-mono text-[10.5px] text-[var(--text-strong)] outline-none"
-                            value={multiTapCount()}
-                            onInput={(event) => updateMultiTapCount(event.currentTarget.value)}
-                          />
-                        </label>
-                        <label class="flex min-w-0 items-center justify-between gap-1 px-2.5">
-                          <span class="text-[10.5px] text-[var(--text-base)]">Interval</span>
+                <div class="mb-2.5 grid grid-cols-[64px_minmax(0,1fr)] items-start gap-2">
+                  <span class="pt-2 text-[11px] text-[var(--text-base)]">Gesture</span>
+                  <div class="grid gap-1.5">
+                    <div class={propertySeg} role="radiogroup" aria-label="Tap gesture">
+                      <For
+                        each={
+                          [
+                            ["single", "Single"],
+                            ["multi", "Multi"],
+                            ["hold", "Hold"],
+                          ] as const
+                        }
+                      >
+                        {([value, label]) => {
+                          const selected = () => tapGesture(current()) === value;
+                          return (
+                            <button
+                              type="button"
+                              role="radio"
+                              aria-checked={selected()}
+                              class={selected() ? propertySegBtnOn : propertySegBtn}
+                              onClick={() => changeTapGesture(value)}
+                            >
+                              {label}
+                            </button>
+                          );
+                        }}
+                      </For>
+                    </div>
+                    <Show when={multiTapStep()}>
+                      {(_) => (
+                        <div class="grid h-8 grid-cols-2 divide-x divide-[var(--v2-border-border-muted)] rounded-lg ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                          <label class="flex min-w-0 items-center justify-between gap-2 px-2.5">
+                            <span class="text-[10.5px] text-[var(--text-base)]">Taps</span>
+                            <input
+                              type="number"
+                              min="2"
+                              max="10"
+                              step="1"
+                              class="w-7 bg-transparent text-right font-mono text-[10.5px] text-[var(--text-strong)] outline-none"
+                              value={multiTapCount()}
+                              onInput={(event) => updateMultiTapCount(event.currentTarget.value)}
+                            />
+                          </label>
+                          <label class="flex min-w-0 items-center justify-between gap-1 px-2.5">
+                            <span class="text-[10.5px] text-[var(--text-base)]">Interval</span>
+                            <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
+                              <input
+                                type="number"
+                                min="20"
+                                max="2000"
+                                step="10"
+                                class="w-9 bg-transparent text-right text-[var(--text-strong)] outline-none"
+                                value={multiTapInterval()}
+                                onInput={(event) =>
+                                  updateMultiTapInterval(event.currentTarget.value)
+                                }
+                              />
+                              ms
+                            </span>
+                          </label>
+                        </div>
+                      )}
+                    </Show>
+                    <Show when={holdStep()}>
+                      {(held) => (
+                        <label class="flex h-8 items-center justify-between gap-3 rounded-lg px-2.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
+                          <span class="text-[10.5px] text-[var(--text-base)]">Hold duration</span>
                           <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
                             <input
                               type="number"
-                              min="20"
-                              max="2000"
-                              step="10"
-                              class="w-9 bg-transparent text-right text-[var(--text-strong)] outline-none"
-                              value={multiTapInterval()}
-                              onInput={(event) => updateMultiTapInterval(event.currentTarget.value)}
+                              min="0.1"
+                              max="10"
+                              step="0.1"
+                              class="w-10 bg-transparent text-right text-[var(--text-strong)] outline-none"
+                              value={(held().durationMs ?? 700) / 1_000}
+                              onInput={(event) => updateHoldDuration(event.currentTarget.value)}
                             />
-                            ms
+                            s
                           </span>
                         </label>
-                      </div>
-                    )}
-                  </Show>
-                  <Show when={holdStep()}>
-                    {(held) => (
-                      <label class="mt-0.5 flex h-8 items-center justify-between gap-3 rounded-lg px-2.5 ring-1 ring-inset ring-[var(--v2-border-border-muted)]">
-                        <span class="text-[10.5px] text-[var(--text-base)]">Hold duration</span>
-                        <span class="flex items-center gap-1 font-mono text-[10.5px] text-[var(--text-weak)]">
-                          <input
-                            type="number"
-                            min="0.1"
-                            max="10"
-                            step="0.1"
-                            class="w-10 bg-transparent text-right text-[var(--text-strong)] outline-none"
-                            value={(held().durationMs ?? 700) / 1_000}
-                            onInput={(event) => updateHoldDuration(event.currentTarget.value)}
-                          />
-                          s
-                        </span>
-                      </label>
-                    )}
-                  </Show>
+                      )}
+                    </Show>
+                  </div>
                 </div>
               </Show>
               <Show
                 when={usesCompactInspector(current())}
                 fallback={
-                  <div class="-mx-[15px] -mb-[16px]">
+                  <div>
                     <StepEditor
                       step={() => step()!}
                       index={index()}
@@ -1116,6 +992,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                       onAutofocused={() => undefined}
                       onChange={(next) => draft.updateStep(index(), next)}
                       showEvidence={false}
+                      embedded
                     />
                   </div>
                 }
@@ -1260,18 +1137,13 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                                     : point()
                                 }
                                 active={defaultStrategy(target()) === "point"}
-                                onHorizontal={(value) => {
-                                  setHorizontalConstraint(value);
-                                  chooseConstraints(value, verticalConstraint());
-                                }}
-                                onVertical={(value) => {
-                                  setVerticalConstraint(value);
-                                  chooseConstraints(horizontalConstraint(), value);
+                                onConstraint={({ horizontal, vertical }) => {
+                                  setHorizontalConstraint(horizontal);
+                                  setVerticalConstraint(vertical);
+                                  chooseConstraints(horizontal, vertical);
                                 }}
                                 onPoint={updateCoordinatePoint}
                                 onActivate={() => chooseConstraints()}
-                                canUndo={workbench.coordinateUndo()?.index === index()}
-                                onUndo={workbench.undoCoordinate}
                               />
                             )}
                           </Show>
@@ -1334,30 +1206,29 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
           </section>
         </Show>
       </div>
-      <footer class="flex min-h-14 shrink-0 items-center justify-between border-t border-[var(--v2-border-border-muted)] px-[15px]">
-        <div class="flex gap-1">
+      <footer class="flex min-h-14 shrink-0 items-center border-t border-[var(--v2-border-border-muted)] px-[15px]">
+        <div class="flex items-center gap-1">
           <button
             type="button"
             class={navBtn}
-            aria-label="Previous state"
-            disabled={index() === 0}
-            onClick={() => move(-1)}
+            aria-label="Undo step edit"
+            data-tip="Undo · ⌘Z"
+            disabled={!draft.canUndo()}
+            onClick={draft.undo}
           >
-            <Icon name="chevron-left" size={14} />
+            <Icon name="undo" size={14} />
           </button>
           <button
             type="button"
             class={navBtn}
-            aria-label="Next state"
-            disabled={index() === draft.steps().length - 1}
-            onClick={() => move(1)}
+            aria-label="Redo step edit"
+            data-tip="Redo · ⇧⌘Z"
+            disabled={!draft.canRedo()}
+            onClick={draft.redo}
           >
-            <Icon name="chevron-right" size={14} />
+            <Icon name="redo" size={14} />
           </button>
         </div>
-        <span class="font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
-          {index() + 1} / {draft.steps().length}
-        </span>
       </footer>
     </aside>
   );

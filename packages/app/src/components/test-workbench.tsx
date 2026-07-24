@@ -58,11 +58,8 @@ export function TestWorkbench(props: {
                   <aside class="flex min-h-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-5 text-[12px] text-[var(--text-weak)]">
                     <span class={eyebrow}>Step properties</span>
                     <strong class="mt-2 text-[14px] text-[var(--text-strong)]">
-                      Record your first action
+                      No step selected
                     </strong>
-                    <p class="mt-1.5 max-w-[30ch] leading-[1.55]">
-                      Actions appear here as editable steps while you use the device.
-                    </p>
                   </aside>
                 }
               >

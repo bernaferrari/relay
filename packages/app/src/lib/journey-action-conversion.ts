@@ -4,6 +4,24 @@ export type EditableActionKind = RecipeStep["kind"];
 
 export type TapGesture = "single" | "multi" | "hold";
 
+export const FALLBACK_DEVICE_BOUNDS = { width: 1_080, height: 2_400 } as const;
+
+export function defaultTapTarget(
+  bounds: { width: number; height: number } = FALLBACK_DEVICE_BOUNDS,
+): StepTarget {
+  return {
+    point: {
+      x: Math.round(bounds.width / 2),
+      y: Math.round(bounds.height / 2),
+      referenceBounds: { ...bounds },
+    },
+  };
+}
+
+export function createTapStep(): Extract<RecipeStep, { kind: "tap" }> {
+  return { kind: "tap", target: defaultTapTarget() };
+}
+
 export function isTapAction(step: RecipeStep): step is Extract<RecipeStep, { kind: "tap" }> {
   return step.kind === "tap";
 }
@@ -14,12 +32,20 @@ export function tapGesture(step: RecipeStep): TapGesture {
 }
 
 function evidenceFrom(step: RecipeStep): RecordedStepEvidence | undefined {
-  return "evidence" in step ? step.evidence : undefined;
+  return step.evidence;
 }
 
 function targetFrom(step: RecipeStep): StepTarget {
   if ("target" in step && step.target) return step.target;
   const evidence = evidenceFrom(step);
+  if (step.kind === "swipe") {
+    return {
+      point: {
+        ...step.from,
+        ...(evidence?.deviceBounds ? { referenceBounds: { ...evidence.deviceBounds } } : {}),
+      },
+    };
+  }
   return (
     evidence?.candidates?.[0]?.target ?? (evidence?.pointer ? { point: evidence.pointer } : {})
   );
@@ -29,66 +55,104 @@ function hasTarget(target: StepTarget): boolean {
   return Boolean(target.ref || target.label || target.text || target.point);
 }
 
+function swipePoints(
+  target: StepTarget,
+  evidence: RecordedStepEvidence | undefined,
+): {
+  from: NonNullable<StepTarget["point"]>;
+  to: NonNullable<StepTarget["point"]>;
+} {
+  const bounds = evidence?.deviceBounds ?? target.point?.referenceBounds;
+  const withPin = (point: { x: number; y: number }) => ({
+    ...point,
+    ...(target.point?.anchor
+      ? { anchor: { ...target.point.anchor } }
+      : bounds
+        ? {
+            anchor: { horizontal: "left" as const, vertical: "top" as const },
+          }
+        : {}),
+    ...(target.point?.referenceBounds
+      ? { referenceBounds: { ...target.point.referenceBounds } }
+      : bounds
+        ? { referenceBounds: { ...bounds } }
+        : {}),
+  });
+  const from = target.point
+    ? withPin({ x: Math.round(target.point.x), y: Math.round(target.point.y) })
+    : bounds
+      ? withPin({ x: Math.round(bounds.width / 2), y: Math.round(bounds.height * 0.68) })
+      : withPin({ x: 360, y: 640 });
+  const distance = Math.max(120, Math.round((bounds?.height ?? 1_000) * 0.28));
+  const canMoveUp = from.y - distance >= 0;
+  const unclampedY = canMoveUp ? from.y - distance : from.y + distance;
+  const toY = bounds ? Math.min(bounds.height, unclampedY) : unclampedY;
+  return { from, to: withPin({ x: from.x, y: Math.round(toY) }) };
+}
+
 /** Convert an inspector action without discarding compatible recorded context. */
 export function convertStepAction(step: RecipeStep, kind: EditableActionKind): RecipeStep {
   if (step.kind === kind || (kind === "tap" && isTapAction(step))) return step;
   const target = targetFrom(step);
   const evidence = evidenceFrom(step);
-  const note = step.note;
-  const withNote = note ? { note } : {};
-  const withEvidence = evidence ? { evidence } : {};
+  const withMetadata = {
+    ...(step.id ? { id: step.id } : {}),
+    ...(evidence ? { evidence } : {}),
+    ...(step.note ? { note: step.note } : {}),
+  };
 
   switch (kind) {
     case "tap":
-      return { kind, target, ...withEvidence, ...withNote };
+      return {
+        kind,
+        target: hasTarget(target) ? target : defaultTapTarget(evidence?.deviceBounds),
+        ...withMetadata,
+      };
     case "type":
       return {
         kind,
         text: step.kind === "type" ? step.text : "",
         ...(hasTarget(target) ? { target } : {}),
-        ...withEvidence,
-        ...withNote,
+        ...withMetadata,
       };
     case "expect":
-      return { kind, target, condition: "visible", ...withEvidence, ...withNote };
+      return { kind, target, condition: "visible", ...withMetadata };
     case "wait-for":
-      return { kind, target, timeoutMs: 5_000, ...withEvidence, ...withNote };
+      return { kind, target, timeoutMs: 5_000, ...withMetadata };
     case "sleep":
-      return { kind, ms: 1_000, ...withNote };
+      return { kind, ms: 1_000, ...withMetadata };
     case "screenshot":
-      return { kind, ...withNote };
+      return { kind, ...withMetadata };
     case "pause":
-      return { kind, message: "Continue when ready", ...withNote };
+      return { kind, message: "Continue when ready", ...withMetadata };
     case "scroll":
-      return { kind, direction: "down", ...withNote };
+      return { kind, direction: "down", ...withMetadata };
     case "swipe":
       return {
         kind,
-        from: target.point ?? { x: 0, y: 0 },
-        to: target.point ?? { x: 0, y: 0 },
-        ...withEvidence,
-        ...withNote,
+        ...swipePoints(target, evidence),
+        ...withMetadata,
       };
     case "key":
-      return { kind, key: "back", ...withNote };
+      return { kind, key: "back", ...withMetadata };
     case "wait-response":
-      return { kind, target, timeoutMs: 90_000, stableForMs: 2_000, ...withNote };
+      return { kind, target, timeoutMs: 90_000, stableForMs: 2_000, ...withMetadata };
     case "extract":
-      return { kind, as: "response", target, role: "assistant", ...withNote };
+      return { kind, as: "response", target, role: "assistant", ...withMetadata };
     case "assert-content":
-      return { kind, input: "response", expected: "", match: "contains", ...withNote };
+      return { kind, input: "response", expected: "", match: "contains", ...withMetadata };
     case "evaluate-semantic":
       return {
         kind,
         input: "response",
         criteria: ["The response satisfies the requested intent."],
         threshold: 0.9,
-        ...withNote,
+        ...withMetadata,
       };
     case "flow":
-      return { kind, flow: "", ...withNote };
+      return { kind, flow: "", ...withMetadata };
     case "module":
-      return { kind, recipeId: "", ...withNote };
+      return { kind, recipeId: "", ...withMetadata };
     case "branch":
       return {
         kind,
@@ -96,32 +160,32 @@ export function convertStepAction(step: RecipeStep, kind: EditableActionKind): R
         operator: "contains",
         expected: "",
         thenRecipeId: "",
-        ...withNote,
+        ...withMetadata,
       };
     case "repeat":
-      return { kind, count: 3, recipeId: "", ...withNote };
+      return { kind, count: 3, recipeId: "", ...withMetadata };
     case "script":
-      return { kind, source: "set name = value", ...withNote };
+      return { kind, source: "set name = value", ...withMetadata };
     case "clipboard":
-      return { kind, action: "write", text: "", ...withNote };
+      return { kind, action: "write", text: "", ...withMetadata };
     case "app":
-      return { kind, action: "open", app: "", ...withNote };
+      return { kind, action: "open", app: "", ...withMetadata };
     case "device":
-      return { kind, action: "keyboard-dismiss", ...withNote };
+      return { kind, action: "keyboard-dismiss", ...withMetadata };
     case "rotate":
-      return { kind, orientation: "portrait", ...withNote };
+      return { kind, orientation: "portrait", ...withMetadata };
     case "settings":
-      return { kind, setting: "wifi", state: "on", ...withNote };
+      return { kind, setting: "wifi", state: "on", ...withMetadata };
     case "location":
-      return { kind, latitude: 0, longitude: 0, ...withNote };
+      return { kind, latitude: 0, longitude: 0, ...withMetadata };
     case "permission":
-      return { kind, action: "grant", permission: "camera", ...withNote };
+      return { kind, action: "grant", permission: "camera", ...withMetadata };
     case "alert":
-      return { kind, action: "accept", ...withNote };
+      return { kind, action: "accept", ...withMetadata };
     case "network":
-      return { kind, action: "dump", include: "headers", limit: 100, ...withNote };
+      return { kind, action: "dump", include: "headers", limit: 100, ...withMetadata };
     case "logs":
-      return { kind, action: "mark", message: "checkpoint", ...withNote };
+      return { kind, action: "mark", message: "checkpoint", ...withMetadata };
   }
 }
 
@@ -132,9 +196,12 @@ export function convertTapGesture(
 ): Extract<RecipeStep, { kind: "tap" }> {
   const target = targetFrom(step);
   const evidence = evidenceFrom(step);
-  const note = step.note;
   const withEvidence = evidence ? { evidence } : {};
-  const withNote = note ? { note } : {};
+  const withMetadata = {
+    ...(step.id ? { id: step.id } : {}),
+    ...withEvidence,
+    ...(step.note ? { note: step.note } : {}),
+  };
   const durationMs = step.kind === "tap" ? (step.durationMs ?? 700) : 700;
   const tapCount = step.kind === "tap" ? (step.tapCount ?? 2) : 2;
   const intervalMs = step.kind === "tap" ? (step.intervalMs ?? 100) : 100;
@@ -152,7 +219,6 @@ export function convertTapGesture(
     ...(gesture === "multi" || (step.kind === "tap" && step.intervalMs !== undefined)
       ? { intervalMs }
       : {}),
-    ...withEvidence,
-    ...withNote,
+    ...withMetadata,
   };
 }

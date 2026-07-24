@@ -1,4 +1,5 @@
 import type { RecipeStep } from "../context/server";
+import { createTapStep } from "../lib/journey-action-conversion";
 import { sentenceForStep } from "../lib/step-sentence";
 import type { TitledId } from "../lib/job";
 import type { IconName } from "./icon";
@@ -94,15 +95,29 @@ export function stepDetail(step: RecipeStep, recipes: Iterable<TitledId>): strin
 
 export const ADD_GROUPS: AddGroup[] = [
   {
-    label: "Act",
+    label: "Interact",
     items: [
-      { label: "Tap element", make: () => ({ kind: "tap", target: {} }) },
+      { label: "Tap element", make: createTapStep },
       { label: "Type text", make: () => ({ kind: "type", text: "" }) },
       { label: "Scroll", make: () => ({ kind: "scroll", direction: "down" }) },
-      { label: "Press Back", make: () => ({ kind: "key", key: "back" }) },
-      { label: "Press Home", make: () => ({ kind: "key", key: "home" }) },
-      { label: "Open app switcher", make: () => ({ kind: "app", action: "switcher" }) },
+      {
+        label: "Swipe",
+        make: () => ({ kind: "swipe", from: { x: 360, y: 640 }, to: { x: 360, y: 360 } }),
+      },
+    ],
+  },
+  {
+    label: "Device",
+    items: [
+      { label: "Go Back", make: () => ({ kind: "key", key: "back" }) },
+      { label: "Go Home", make: () => ({ kind: "key", key: "home" }) },
       { label: "Open app or deep link", make: () => ({ kind: "app", action: "open", app: "" }) },
+      { label: "Close / force-stop app", make: () => ({ kind: "app", action: "close", app: "" }) },
+      { label: "Open app switcher", make: () => ({ kind: "app", action: "switcher" }) },
+      { label: "Dismiss keyboard", make: () => ({ kind: "device", action: "keyboard-dismiss" }) },
+      { label: "Lock device", make: () => ({ kind: "device", action: "lock" }) },
+      { label: "Unlock device", make: () => ({ kind: "device", action: "unlock" }) },
+      { label: "Rotate device", make: () => ({ kind: "rotate", orientation: "landscape-left" }) },
       {
         label: "Record app version",
         make: () => ({ kind: "app", action: "inspect", app: "", as: "app_version" }),
@@ -115,14 +130,10 @@ export const ADD_GROUPS: AddGroup[] = [
         label: "Check app is not installed",
         make: () => ({ kind: "app", action: "assert-not-installed", app: "" }),
       },
-      { label: "Lock device", make: () => ({ kind: "device", action: "lock" }) },
-      { label: "Unlock device", make: () => ({ kind: "device", action: "unlock" }) },
-      { label: "Dismiss keyboard", make: () => ({ kind: "device", action: "keyboard-dismiss" }) },
-      { label: "Rotate device", make: () => ({ kind: "rotate", orientation: "landscape-left" }) },
     ],
   },
   {
-    label: "Check",
+    label: "Wait & check",
     items: [
       {
         label: "Check element is visible",
@@ -167,16 +178,24 @@ export const ADD_GROUPS: AddGroup[] = [
     ],
   },
   {
-    label: "More",
+    label: "Capture data",
     items: [
       { label: "Screenshot", make: () => ({ kind: "screenshot" }) },
-      { label: "Pause for human", make: () => ({ kind: "pause", message: "" }) },
       { label: "Set clipboard", make: () => ({ kind: "clipboard", action: "write", text: "" }) },
       {
-        label: "Install or update APK",
-        make: () => ({ kind: "app", action: "update", app: "", artifact: "" }),
+        label: "Capture network",
+        make: () => ({ kind: "network", action: "dump", include: "headers", limit: 100 }),
       },
-      { label: "Uninstall app", make: () => ({ kind: "app", action: "uninstall", app: "" }) },
+      {
+        label: "Mark device logs",
+        make: () => ({ kind: "logs", action: "mark", message: "checkpoint" }),
+      },
+    ],
+  },
+  {
+    label: "Reuse & logic",
+    items: [
+      { label: "Pause for human", make: () => ({ kind: "pause", message: "" }) },
       { label: "Attach recorded flow", make: () => ({ kind: "module", recipeId: "" }) },
       {
         label: "Branch to another test",
@@ -193,14 +212,16 @@ export const ADD_GROUPS: AddGroup[] = [
         label: "Transform variables",
         make: () => ({ kind: "script", source: "set name = value" }),
       },
+    ],
+  },
+  {
+    label: "System setup",
+    items: [
       {
-        label: "Capture network",
-        make: () => ({ kind: "network", action: "dump", include: "headers", limit: 100 }),
+        label: "Install or update APK",
+        make: () => ({ kind: "app", action: "update", app: "", artifact: "" }),
       },
-      {
-        label: "Mark device logs",
-        make: () => ({ kind: "logs", action: "mark", message: "checkpoint" }),
-      },
+      { label: "Uninstall app", make: () => ({ kind: "app", action: "uninstall", app: "" }) },
       { label: "Set location", make: () => ({ kind: "location", latitude: 0, longitude: 0 }) },
       {
         label: "Set permission",

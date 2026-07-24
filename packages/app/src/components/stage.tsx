@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 // createMemo used for focused step label
-import { useServer, type SnapshotNode } from "../context/server";
+import { useServer, type RecipeStep, type SnapshotNode } from "../context/server";
 import {
   ancestryOf,
   candidateAtPoint,
@@ -33,8 +33,9 @@ import {
   type VerticalConstraint,
 } from "../lib/target-inspector";
 import { cn } from "../lib/cn";
-import { accentForStep, evidenceForStep, iconForStep } from "./journey-step-presentation";
+import { evidenceForStep } from "./journey-step-presentation";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
+import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
 import {
   LIVE_SNAPSHOT_INTERVAL_MS,
   POST_INTERACTION_SNAPSHOT_DELAY_MS,
@@ -42,6 +43,8 @@ import {
 } from "../lib/live-inspection-policy";
 import { DeviceVideoStream } from "./device-video-stream";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
+import { SwipePathPreview, type SwipeEndpoint } from "./swipe-path-preview";
+import { StepPlaybackPreview } from "./step-playback-preview";
 import {
   deviceCaption,
   deviceIconWell,
@@ -51,6 +54,131 @@ import {
   phoneScreen,
   popover,
 } from "../lib/ui";
+
+type CoordinateGuide = NonNullable<ReturnType<typeof targetPointGuide>>;
+type DeviceBounds = { width: number; height: number };
+
+const DEFAULT_TOUCH_BOUNDS: DeviceBounds = { width: 1080, height: 2340 };
+
+function CoordinateTapPreview(props: { guide: CoordinateGuide; empty?: boolean }) {
+  return (
+    <div
+      class={cn(
+        "pointer-events-none absolute inset-0 z-[3] overflow-hidden",
+        props.empty &&
+          "bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--v2-background-bg-accent)_5%,transparent),transparent_58%)]",
+      )}
+      role={props.empty ? "img" : undefined}
+      aria-label={props.empty ? `Tap preview at ${props.guide.x}, ${props.guide.y}` : undefined}
+      aria-hidden={props.empty ? undefined : "true"}
+      data-coordinate-preview={props.empty ? "empty" : "evidence"}
+    >
+      <i
+        class="absolute top-0 border-l border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_72%,white)] opacity-80"
+        data-coordinate-guide="vertical"
+        style={{
+          left: props.guide.left,
+          top: props.guide.verticalGuide.top,
+          height: props.guide.verticalGuide.height,
+        }}
+      />
+      <i
+        class="absolute left-0 border-t border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_72%,white)] opacity-80"
+        data-coordinate-guide="horizontal"
+        style={{
+          left: props.guide.horizontalGuide.left,
+          top: props.guide.top,
+          width: props.guide.horizontalGuide.width,
+        }}
+      />
+      <i
+        class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_76%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
+        style={{ left: props.guide.horizontalOrigin, top: props.guide.top }}
+      />
+      <i
+        class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_76%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
+        style={{ left: props.guide.left, top: props.guide.verticalOrigin }}
+      />
+      <i
+        class="absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_22%,transparent)] shadow-[0_2px_8px_rgb(0_0_0/52%)] after:absolute after:inset-[5px] after:rounded-full after:bg-[var(--v2-background-bg-accent)] after:shadow-[0_0_0_1.5px_white] after:content-['']"
+        style={{ left: props.guide.left, top: props.guide.top }}
+        data-coordinate-point
+      />
+    </div>
+  );
+}
+
+function blankPreviewBounds(step: RecipeStep): DeviceBounds | undefined {
+  if (step.evidence?.deviceBounds) return step.evidence.deviceBounds;
+  if (step.kind === "tap") return step.target.point?.referenceBounds ?? DEFAULT_TOUCH_BOUNDS;
+  if (step.kind === "swipe") {
+    return step.from.referenceBounds ?? step.to.referenceBounds ?? DEFAULT_TOUCH_BOUNDS;
+  }
+  return undefined;
+}
+
+/** Show and edit the gesture in its original screen position when no image is available. */
+function UncapturedStepPreview(props: {
+  step: RecipeStep;
+  onSwipePoint: (endpoint: SwipeEndpoint, point: { x: number; y: number }) => void;
+}) {
+  return (
+    <>
+      <Show when={props.step.kind === "swipe" ? props.step : undefined}>
+        {(swipe) => (
+          <SwipePathPreview
+            from={swipe().from}
+            to={swipe().to}
+            bounds={blankPreviewBounds(swipe()) ?? DEFAULT_TOUCH_BOUNDS}
+            onPoint={props.onSwipePoint}
+          />
+        )}
+      </Show>
+      <Show when={props.step.kind === "tap" && props.step.target.point ? props.step : undefined}>
+        {(tap) => {
+          const guide = () => targetPointGuide(tap().target.point, blankPreviewBounds(tap()));
+          return (
+            <Show when={guide()}>{(value) => <CoordinateTapPreview guide={value()} empty />}</Show>
+          );
+        }}
+      </Show>
+      <Show when={props.step.kind === "scroll" ? props.step : undefined}>
+        {(scroll) => {
+          const down = () => scroll().direction === "down";
+          return (
+            <div
+              class="pointer-events-none absolute inset-0 z-[3]"
+              role="img"
+              aria-label={`Scroll ${scroll().direction}`}
+            >
+              <svg class="absolute inset-0 size-full" viewBox="0 0 100 100" aria-hidden="true">
+                <line
+                  x1="50"
+                  y1={down() ? "38" : "62"}
+                  x2="50"
+                  y2={down() ? "62" : "38"}
+                  stroke="var(--v2-background-bg-accent)"
+                  stroke-width="0.8"
+                  stroke-dasharray="1.8 2.6"
+                  stroke-linecap="round"
+                  opacity="0.86"
+                />
+                <path
+                  d={down() ? "M46.5 57.5 50 62l3.5-4.5" : "M46.5 42.5 50 38l3.5 4.5"}
+                  fill="none"
+                  stroke="var(--v2-background-bg-accent)"
+                  stroke-width="1.15"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+          );
+        }}
+      </Show>
+    </>
+  );
+}
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
 export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?: () => void }) {
@@ -97,16 +225,28 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   const frameDataUrl = (value: { mime: string; base64: string }) =>
     `data:${value.mime};base64,${value.base64}`;
   const [stageView, setStageView] = createSignal<"recorded" | "live">("live");
+  const [stepPlayback, setStepPlayback] = createSignal<{
+    index: number;
+    token: number;
+    step: RecipeStep;
+  } | null>(null);
   const liveControlActive = () => rec.interacting() && stageView() === "live";
   const frame = () =>
     liveControlActive() ? (server.liveFrame() ?? server.currentFrame()) : undefined;
   const recordedEvidenceSrc = createMemo(() => {
-    const index = wb.focusedIndex() ?? 0;
-    const step = draft.steps()[index];
+    // A playback request owns both the marker and its screenshot. Using the
+    // focused step alone can pair a preview marker with a frame from a run or
+    // a newly focused step, making a perfectly valid X/Y look misplaced.
+    const playback = stepPlayback();
+    const step = playback?.step ?? draft.steps()[wb.focusedIndex() ?? 0];
     const shot = step ? evidenceForStep(step)?.screenshot : undefined;
     return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
   });
   const displayImageSrc = createMemo(() => {
+    // Preview is a replay of the step's captured state, never a run trace.
+    // Its coordinates and image must therefore come from the same evidence.
+    if (stepPlayback()) return recordedEvidenceSrc();
+
     const traceFrame = wb.focusedTraceStep()?.frames.at(-1);
     if (traceFrame) {
       if (traceFrame.base64) {
@@ -124,12 +264,11 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
       if (reviewed?.kind === "disk") return server.frameUrlForPersisted(reviewed.run, traceFrame);
     }
 
-    const recorded = recordedEvidenceSrc();
-    if (stageView() === "recorded" && recorded) return recorded;
-    if (liveControlActive()) {
+    if (stageView() === "live") {
       const live = server.liveFrame() ?? server.currentFrame();
-      if (live) return frameDataUrl(live);
+      return live ? frameDataUrl(live) : "";
     }
+    const recorded = recordedEvidenceSrc();
     if (recorded) return recorded;
     if (wb.focusedIndex() != null) return "";
     const current = server.currentFrame();
@@ -138,9 +277,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   const displayCaption = createMemo(() => {
     const traceCaption = wb.focusedTraceStep()?.frames.at(-1)?.caption;
     if (traceCaption) return traceCaption;
-    if (stageView() === "recorded" && recordedEvidenceSrc())
-      return focusedStep()?.title ?? "Recorded device evidence";
-    if (liveControlActive() && frame()) return frame()!.caption ?? "Live device";
+    if (stageView() === "live") return frame()?.caption ?? "Live device";
     if (recordedEvidenceSrc()) return focusedStep()?.title ?? "Recorded device evidence";
     return wb.focusedIndex() == null ? (server.currentFrame()?.caption ?? "") : "";
   });
@@ -171,9 +308,71 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     if (step?.kind !== "tap" || defaultStrategy(step.target) !== "point") return undefined;
     return targetPointGuide(
       step.target.point,
-      step.evidence?.deviceBounds ?? server.snapshot()?.bounds,
+      step.evidence?.deviceBounds ??
+        step.target.point?.referenceBounds ??
+        server.snapshot()?.bounds,
     );
   });
+  const focusedSwipePreview = createMemo(() => {
+    const step = focusedPlanStep();
+    if (step?.kind !== "swipe") return undefined;
+    const bounds = step.evidence?.deviceBounds ?? server.snapshot()?.bounds;
+    if (!bounds?.width || !bounds.height) return undefined;
+    return { from: step.from, to: step.to, bounds };
+  });
+  const playbackBounds = createMemo(() => {
+    const playback = stepPlayback();
+    if (!playback) return undefined;
+    const step = playback.step;
+    if (step.evidence?.deviceBounds) return step.evidence.deviceBounds;
+    if (step.kind === "tap") {
+      return (
+        step.target.point?.referenceBounds ?? server.snapshot()?.bounds ?? DEFAULT_TOUCH_BOUNDS
+      );
+    }
+    if (step.kind === "swipe") {
+      return (
+        step.from.referenceBounds ??
+        step.to.referenceBounds ??
+        server.snapshot()?.bounds ??
+        DEFAULT_TOUCH_BOUNDS
+      );
+    }
+    return server.snapshot()?.bounds ?? DEFAULT_TOUCH_BOUNDS;
+  });
+  const swipePlayback = createMemo<
+    { index: number; token: number; step: Extract<RecipeStep, { kind: "swipe" }> } | undefined
+  >(() => {
+    const playback = stepPlayback();
+    if (!playback || playback.index !== wb.focusedIndex() || playback.step.kind !== "swipe") {
+      return undefined;
+    }
+    return { index: playback.index, token: playback.token, step: playback.step };
+  });
+  let playbackTimer: number | undefined;
+  createEffect(() => {
+    const request = wb.previewRequest();
+    if (!request) return;
+    const step = draft.steps()[request.index];
+    if (!step) return;
+    if (wb.focusedIndex() !== request.index) wb.focusStep(request.index);
+    if (step.evidence?.screenshot) setStageView("recorded");
+    setStepPlayback({ ...request, step });
+    wb.clearPreviewRequest(request.token);
+    if (playbackTimer) clearTimeout(playbackTimer);
+    const duration =
+      step.kind === "swipe" ? Math.max(180, Math.min(step.durationMs ?? 300, 900)) : 720;
+    playbackTimer = window.setTimeout(() => setStepPlayback(null), duration);
+  });
+  onCleanup(() => {
+    if (playbackTimer) clearTimeout(playbackTimer);
+  });
+  function updateFocusedSwipePoint(endpoint: SwipeEndpoint, point: { x: number; y: number }): void {
+    const index = wb.focusedIndex() ?? (draft.steps().length ? 0 : undefined);
+    const step = index == null ? undefined : draft.steps()[index];
+    if (index == null || step?.kind !== "swipe") return;
+    draft.updateStep(index, { ...step, [endpoint]: { ...step[endpoint], ...point } });
+  }
   const recordedCoordinateEditable = createMemo(() => {
     const step = focusedPlanStep();
     return (
@@ -191,8 +390,12 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     const step = focusedPlanStep();
     return step?.kind === "tap" ? recordedTargetNodes(step.evidence) : [];
   });
+  /** Hovering recorded evidence is always safe. The explicit picker only gates
+   * changing a target; it must not hide the captured UI tree. */
+  const recordedInspectionActive = () =>
+    stageView() === "recorded" && !recordedCoordinateEditable() && recordedNodes().length > 0;
   const recordedNodeOutlines = createMemo(() => {
-    if (recordedCoordinateEditable()) return [];
+    if (!recordedInspectionActive()) return [];
     const step = focusedPlanStep();
     const bounds = step?.kind === "tap" ? step.evidence?.deviceBounds : undefined;
     return recordedNodes()
@@ -200,7 +403,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
       .filter((value): value is NonNullable<typeof value> => Boolean(value));
   });
   const recordedHoverHighlight = createMemo(() => {
-    if (recordedCoordinateEditable()) return undefined;
+    if (!recordedInspectionActive()) return undefined;
     const step = focusedPlanStep();
     return step?.kind === "tap"
       ? targetHighlight(recordedHoverNode() ?? undefined, step.evidence?.deviceBounds)
@@ -211,7 +414,8 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     clientX: number,
     clientY: number,
   ): void {
-    if (stageView() !== "recorded" || recordedCoordinateEditable()) return;
+    if (stageView() !== "recorded" || recordedCoordinateEditable() || !recordedNodes().length)
+      return;
     const step = focusedPlanStep();
     const bounds = step?.kind === "tap" ? step.evidence?.deviceBounds : undefined;
     if (!bounds) return;
@@ -236,6 +440,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     const step = index == null ? undefined : draft.steps()[index];
     const node = recordedHoverNode();
     if (index == null || step?.kind !== "tap" || !node) return;
+    if (!RECORDED_OTHER_ELEMENT_PICKING || !recordedInspectionActive()) return;
     // A coordinate target makes the recorded screen a point picker. Pointer
     // events above already move that point; the trailing click must not switch
     // the step back to an element-based target.
@@ -265,6 +470,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     );
     if (alreadyInScope) {
       draft.updateStep(index, { ...step, target });
+      setRecordedHoverNode(null);
       return;
     }
 
@@ -278,6 +484,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
         ancestors: ancestors.slice(0, 8),
       },
     });
+    setRecordedHoverNode(null);
   }
   let recordedCoordinateDrag: { pointerId: number } | null = null;
   function moveRecordedCoordinate(element: HTMLImageElement, clientX: number, clientY: number) {
@@ -914,33 +1121,46 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
       <Show when={targetReady() || recordedEvidenceSrc()}>
         <div class="absolute top-4 z-[4] flex h-8 items-center justify-center text-text-base">
           <Show
-            when={recordedEvidenceSrc()}
+            when={recordedEvidenceSrc() && targetReady()}
             fallback={
-              <span
-                class="inline-flex min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium"
-                role="status"
-                aria-live="polite"
-                data-tip={
-                  videoReady()
-                    ? "Live device preview"
-                    : videoFailed()
-                      ? "Using screenshot preview while video reconnects"
-                      : "Connecting to the device"
+              <Show
+                when={recordedEvidenceSrc()}
+                fallback={
+                  <span
+                    class="inline-flex min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium"
+                    role="status"
+                    aria-live="polite"
+                    data-tip={
+                      videoReady()
+                        ? "Live device preview"
+                        : videoFailed()
+                          ? "Using screenshot preview while video reconnects"
+                          : "Connecting to the device"
+                    }
+                  >
+                    <i
+                      class={cn(
+                        "size-1.5 shrink-0 rounded-full",
+                        videoReady()
+                          ? "bg-[var(--icon-success-base)]"
+                          : videoFailed()
+                            ? "bg-[var(--icon-warning-base)]"
+                            : "animate-pulse bg-icon-base motion-reduce:animate-none",
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span>{videoReady() ? "Live" : videoFailed() ? "Preview" : "Connecting"}</span>
+                  </span>
                 }
               >
-                <i
-                  class={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    videoReady()
-                      ? "bg-[var(--icon-success-base)]"
-                      : videoFailed()
-                        ? "bg-[var(--icon-warning-base)]"
-                        : "animate-pulse bg-icon-base motion-reduce:animate-none",
-                  )}
-                  aria-hidden="true"
-                />
-                <span>{videoReady() ? "Live" : videoFailed() ? "Preview" : "Connecting"}</span>
-              </span>
+                <span
+                  class="inline-flex h-8 min-w-[64px] items-center justify-center gap-1.5 px-1.5 text-12-medium text-text-base"
+                  role="status"
+                  aria-label="Recorded device evidence"
+                >
+                  <Icon name="clock" size={12} /> Recorded
+                </span>
+              </Show>
             }
           >
             <div
@@ -954,7 +1174,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                   "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
                   stageView() === "recorded"
                     ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
-                    : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                    : "text-[var(--text-weak)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
                 )}
                 aria-pressed={stageView() === "recorded"}
                 disabled={rec.recording()}
@@ -968,12 +1188,14 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                   "inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[11px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 ease-out active:scale-[0.97]",
                   stageView() === "live"
                     ? "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)] shadow-[0_1px_2px_rgb(0_0_0/24%),inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent)]"
-                    : "text-[var(--text-weak)] hover:text-[var(--text-base)]",
+                    : "text-[var(--text-weak)] hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
                 )}
                 aria-pressed={stageView() === "live"}
                 disabled={!targetReady()}
                 data-tip={!targetReady() ? "Connect a device to use Live view" : undefined}
-                onClick={() => setStageView("live")}
+                onClick={() => {
+                  setStageView("live");
+                }}
               >
                 <i
                   class={cn(
@@ -998,7 +1220,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
         data-device-chrome
         class={cn(
           phoneShell,
-          "relative z-[2] h-[min(720px,calc(100%-148px))] w-auto max-w-[min(420px,calc(100%-56px))] shrink-0",
+          "relative z-[2] h-[min(760px,calc(100%-148px))] w-auto max-w-[min(440px,calc(100%-56px))] shrink-0",
         )}
         style={{ "aspect-ratio": frameAspect() }}
       >
@@ -1009,76 +1231,60 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
           <Show
             when={displayImageSrc()}
             fallback={
-              <div class="grid h-full w-full place-items-center px-6 text-center">
-                <div class="grid justify-items-center gap-2.5">
-                  <Show
-                    when={plannedFocus()}
-                    fallback={
-                      <>
-                        <span class={cn(deviceIconWell, "size-11 rounded-[13px]")}>
-                          <Icon name="smartphone" size={20} />
-                        </span>
-                        <strong
-                          class={cn(deviceTitle, "text-[14px] font-semibold tracking-[-0.01em]")}
+              <Show
+                when={plannedFocus()}
+                fallback={
+                  <div class="grid h-full w-full place-items-center px-6 text-center">
+                    <div class="grid justify-items-center gap-2.5">
+                      <span class={cn(deviceIconWell, "size-11 rounded-[13px]")}>
+                        <Icon name="smartphone" size={20} />
+                      </span>
+                      <strong
+                        class={cn(deviceTitle, "text-[14px] font-semibold tracking-[-0.01em]")}
+                      >
+                        Ready when you are
+                      </strong>
+                      <span class={cn(deviceCaption, "max-w-[24ch] text-[11.5px]/[1.5]")}>
+                        Record on the device or describe a journey to create steps.
+                      </span>
+                    </div>
+                  </div>
+                }
+              >
+                {(focused) => {
+                  const step = () => focusedPlanStep();
+                  return (
+                    <div class="relative h-full w-full">
+                      <Show when={step()}>
+                        {(value) => (
+                          <UncapturedStepPreview
+                            step={value()}
+                            onSwipePoint={updateFocusedSwipePoint}
+                          />
+                        )}
+                      </Show>
+                      <div class="pointer-events-none absolute inset-x-5 bottom-[15%] grid justify-items-center gap-1.5 text-center">
+                        <span
+                          class={cn(
+                            mono,
+                            deviceCaption,
+                            "text-[9.5px] tracking-[0.09em] uppercase",
+                          )}
                         >
-                          Ready when you are
-                        </strong>
-                        <span class={cn(deviceCaption, "max-w-[24ch] text-[11.5px]/[1.5]")}>
-                          Record on the device or describe a journey to create steps.
+                          Step {String(focused().index + 1).padStart(2, "0")}
                         </span>
-                      </>
-                    }
-                  >
-                    {(s) => {
-                      const accent = () => {
-                        const step = focusedPlanStep();
-                        return step ? accentForStep(step) : "var(--v2-background-bg-accent)";
-                      };
-                      return (
-                        <>
-                          <span
-                            class="grid size-11 place-items-center rounded-[13px] border"
-                            style={{
-                              "border-color": `color-mix(in srgb, ${accent()} 34%, transparent)`,
-                              background: `color-mix(in srgb, ${accent()} 13%, transparent)`,
-                              color: `color-mix(in srgb, ${accent()} 80%, white)`,
-                            }}
-                          >
-                            <Icon
-                              name={focusedPlanStep() ? iconForStep(focusedPlanStep()!) : "pointer"}
-                              size={20}
-                            />
-                          </span>
-                          <span
-                            class={cn(
-                              mono,
-                              deviceCaption,
-                              "text-[10px] tracking-[0.09em] uppercase",
-                            )}
-                          >
-                            Step {String(s().index + 1).padStart(2, "0")}
-                          </span>
-                          <strong
-                            class={cn(
-                              deviceTitle,
-                              "max-w-[22ch] text-[14px]/[1.4] font-semibold tracking-[-0.01em]",
-                            )}
-                          >
-                            {s().title}
-                          </strong>
-                          <span class={cn(deviceCaption, "max-w-[26ch] text-[11.5px]/[1.5]")}>
-                            {targetReady()
-                              ? "Run or record to capture this screen."
-                              : server.isEmptyDevices()
-                                ? "Connect a device to capture the real screen."
-                                : "Start the device to capture the real screen."}
-                          </span>
-                        </>
-                      );
-                    }}
-                  </Show>
-                </div>
-              </div>
+                        <span class={cn(deviceCaption, "max-w-[26ch] text-[11.5px]/[1.5]")}>
+                          {targetReady()
+                            ? "No captured screen"
+                            : server.isEmptyDevices()
+                              ? "No device selected"
+                              : "Device unavailable"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }}
+              </Show>
             }
           >
             <Show keyed when={!videoFailed() && liveVideoSrc()}>
@@ -1105,6 +1311,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                 "block h-full w-full touch-none overscroll-contain select-none object-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus",
                 rec.recording() ? "cursor-crosshair" : liveControlActive() && "cursor-pointer",
                 recordedCoordinateEditable() && "cursor-crosshair",
+                recordedInspectionActive() && "cursor-pointer",
               )}
               ref={(element) => {
                 deviceScreenEl = element;
@@ -1128,7 +1335,6 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                   if (index != null && step?.kind === "tap" && step.target.point) {
                     e.preventDefault();
                     e.currentTarget.focus({ preventScroll: true });
-                    wb.rememberCoordinate(index, step.target.point);
                     recordedCoordinateDrag = { pointerId: e.pointerId };
                     e.currentTarget.setPointerCapture(e.pointerId);
                     moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
@@ -1267,8 +1473,12 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
               }}
               onMouseMove={(e) => {
                 if (stageView() === "recorded") {
-                  setRecordedScreenHovered(true);
-                  updateRecordedNodeHover(e.currentTarget, e.clientX, e.clientY);
+                  setRecordedScreenHovered(recordedInspectionActive());
+                  if (recordedInspectionActive()) {
+                    updateRecordedNodeHover(e.currentTarget, e.clientX, e.clientY);
+                  } else {
+                    setRecordedHoverNode(null);
+                  }
                 } else if (frame()) scheduleHover(e.currentTarget, e.clientX, e.clientY);
               }}
               onMouseLeave={() => {
@@ -1307,55 +1517,24 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                 />
               )}
             </Show>
-            <Show when={focusedCoordinateGuide()}>
-              {(guide) => (
-                <div
-                  class="pointer-events-none absolute inset-0 z-[3] overflow-hidden"
-                  aria-hidden="true"
-                >
-                  <i
-                    class="absolute top-0 border-l border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_82%,white)]"
-                    data-coordinate-guide="vertical"
-                    style={{
-                      left: guide().left,
-                      top: guide().verticalGuide.top,
-                      height: guide().verticalGuide.height,
-                    }}
-                  />
-                  <i
-                    class="absolute left-0 border-t border-dashed border-[color-mix(in_srgb,var(--v2-background-bg-accent)_82%,white)]"
-                    data-coordinate-guide="horizontal"
-                    style={{
-                      left: guide().horizontalGuide.left,
-                      top: guide().top,
-                      width: guide().horizontalGuide.width,
-                    }}
-                  />
-                  <i
-                    class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_74%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
-                    style={{ left: guide().horizontalOrigin, top: guide().top }}
-                  />
-                  <i
-                    class="absolute size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_74%,white)] shadow-[0_0_0_1px_rgb(0_0_0/35%)]"
-                    style={{ left: guide().left, top: guide().verticalOrigin }}
-                  />
-                  <i
-                    class="absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_22%,transparent)] shadow-[0_2px_8px_rgb(0_0_0/52%)] after:absolute after:inset-[5px] after:rounded-full after:bg-[var(--v2-background-bg-accent)] after:shadow-[0_0_0_1.5px_white] after:content-['']"
-                    style={{ left: guide().left, top: guide().top }}
-                    data-coordinate-point
-                  />
-                  <code
-                    class="absolute -translate-y-[calc(100%+8px)] rounded-md bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_92%,black)] px-1.5 py-0.5 font-mono text-[8px] font-medium tabular-nums text-white shadow-[0_2px_8px_rgb(0_0_0/45%),inset_0_0_0_1px_rgb(255_255_255/14%)]"
-                    style={{
-                      left: `clamp(6px, calc(${guide().left} + 8px), calc(100% - 58px))`,
-                      top: `clamp(20px, ${guide().top}, calc(100% - 4px))`,
-                    }}
-                  >
-                    {guide().x}, {guide().y}
-                  </code>
-                </div>
+            <Show when={!stepPlayback() && focusedCoordinateGuide()}>
+              {(guide) => <CoordinateTapPreview guide={guide()} />}
+            </Show>
+            <Show when={focusedSwipePreview()}>
+              {(swipe) => (
+                <SwipePathPreview
+                  from={swipe().from}
+                  to={swipe().to}
+                  bounds={swipe().bounds}
+                  onPoint={updateFocusedSwipePoint}
+                  previewToken={swipePlayback()?.token}
+                  previewDurationMs={swipePlayback()?.step.durationMs}
+                />
               )}
             </Show>
+            {stepPlayback() && playbackBounds() && (
+              <StepPlaybackPreview step={stepPlayback()!.step} bounds={playbackBounds()!} />
+            )}
             <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
               {(h) => (
                 <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
@@ -1566,11 +1745,9 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                   vertical={verticalConstraint()}
                   point={constrainedPoint()!}
                   active={strategyId() === "point"}
-                  onHorizontal={(value) => {
-                    setHorizontalConstraint(value);
-                  }}
-                  onVertical={(value) => {
-                    setVerticalConstraint(value);
+                  onConstraint={({ horizontal, vertical }) => {
+                    setHorizontalConstraint(horizontal);
+                    setVerticalConstraint(vertical);
                   }}
                   onPoint={setManualPoint}
                   onActivate={() => setStrategyId("point")}
@@ -1640,58 +1817,81 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
               if (server.health() === "online") await server.refreshDevices();
             })();
           }}
-          onSetup={() => void cmd.run("nav.settings")}
+          onChooseDevice={() => window.dispatchEvent(new CustomEvent("relay:open-device-picker"))}
         />
       </Show>
 
-      {/* Recording and capture actions only apply to the live device. */}
-      <Show when={targetReady() && stageView() === "live"}>
+      {/* Keep the control row reserved in both views so switching between
+          Recorded and Live never moves the device. */}
+      <Show when={targetReady()}>
         <div class="z-[2] mt-3 flex h-9 items-center justify-center gap-1.5 text-text-base">
-          <label
-            class={cn(
-              "inline-flex h-8 cursor-pointer items-center justify-center gap-2.5 px-1.5 text-12-medium select-none",
-              "transition-colors duration-150",
-              rec.recording() ? "text-text-strong" : "text-text-base hover:text-text-strong",
-            )}
-            data-tip={rec.recording() ? "Stop recording steps" : "Record interactions as steps"}
-          >
-            <span class="w-[58px] text-right">{rec.recording() ? "Recording" : "Record"}</span>
-            <Switch
-              checked={rec.recording()}
-              aria-label="Record interactions as steps"
-              onCheckedChange={() => toggleRecording()}
-            />
-          </label>
-          <div class="flex items-center gap-0.5">
-            <IconButton
-              variant="ghost"
-              size="normal"
-              class="rounded-md"
-              data-tip="Screenshot (⌘⇧S)"
-              aria-label="Capture screenshot"
-              disabled={server.busyCapture()}
-              onClick={() => void server.captureUiScreenshot()}
+          <Show when={stageView() === "live"}>
+            <label
+              class={cn(
+                "inline-flex h-8 cursor-pointer items-center justify-center gap-2.5 px-1.5 text-12-medium select-none",
+                "transition-colors duration-150",
+                rec.recording() ? "text-text-strong" : "text-text-base hover:text-text-strong",
+              )}
+              data-tip={rec.recording() ? "Stop recording steps" : "Record interactions as steps"}
             >
-              <Show when={server.busyCapture()} fallback={<Icon name="camera" size={14} />}>
-                <span
-                  class="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
-                  aria-hidden="true"
+              <span class="w-[58px] text-right">{rec.recording() ? "Recording" : "Record"}</span>
+              <Switch
+                checked={rec.recording()}
+                aria-label="Record interactions as steps"
+                onCheckedChange={() => toggleRecording()}
+              />
+            </label>
+            <Show when={rec.recording()}>
+              <div class="flex h-8 min-w-0 items-center rounded-md bg-[var(--v2-background-bg-layer-01)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+                <input
+                  class="h-full w-32 min-w-0 bg-transparent px-2 text-[11px] font-medium text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+                  aria-label="Current recording task"
+                  value={rec.recordingGroup()}
+                  placeholder="Task name"
+                  onInput={(event) => rec.setRecordingGroup(event.currentTarget.value)}
                 />
-              </Show>
-            </IconButton>
-            <Show when={server.frames().length > 0}>
+                <button
+                  type="button"
+                  class="grid size-8 shrink-0 place-items-center rounded-r-md text-[var(--text-weak)] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.97]"
+                  aria-label="Start a new recording task"
+                  data-tip="Start a new task"
+                  onClick={() => rec.startNextRecordingGroup()}
+                >
+                  <Icon name="plus" size={14} />
+                </button>
+              </div>
+            </Show>
+            <div class="flex items-center gap-0.5">
               <IconButton
                 variant="ghost"
                 size="normal"
-                class="rounded-md hover:text-icon-critical-base"
-                data-tip="Clear frames"
-                aria-label="Clear frames"
-                onClick={() => server.clearFrames()}
+                class="rounded-md"
+                data-tip="Screenshot (⌘⇧S)"
+                aria-label="Capture screenshot"
+                disabled={server.busyCapture()}
+                onClick={() => void server.captureUiScreenshot()}
               >
-                <Icon name="trash" size={14} />
+                <Show when={server.busyCapture()} fallback={<Icon name="camera" size={14} />}>
+                  <span
+                    class="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                    aria-hidden="true"
+                  />
+                </Show>
               </IconButton>
-            </Show>
-          </div>
+              <Show when={server.frames().length > 0}>
+                <IconButton
+                  variant="ghost"
+                  size="normal"
+                  class="rounded-md hover:text-icon-critical-base"
+                  data-tip="Clear frames"
+                  aria-label="Clear frames"
+                  onClick={() => server.clearFrames()}
+                >
+                  <Icon name="trash" size={14} />
+                </IconButton>
+              </Show>
+            </div>
+          </Show>
         </div>
       </Show>
     </section>

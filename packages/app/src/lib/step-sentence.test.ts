@@ -79,6 +79,10 @@ describe("sentenceForStep", () => {
   it("formats key and scroll", () => {
     assert.equal(sentenceForStep({ kind: "key", key: "back" }), "Press Back");
     assert.equal(sentenceForStep({ kind: "scroll", direction: "down" }), "Scroll Down");
+    assert.equal(
+      sentenceForStep({ kind: "scroll", direction: "up", amount: 1 }),
+      "Scroll Up · full screen",
+    );
   });
   it("formats screenshot with caption", () => {
     assert.equal(sentenceForStep({ kind: "screenshot", caption: "home" }), "Screenshot · home");

@@ -6,6 +6,7 @@ import {
 } from "../lib/execution-moments";
 import type { FrameCanvasItem } from "../lib/frame-canvas-presentation";
 import { cn } from "../lib/cn";
+import { zoomViewportAtPoint } from "../lib/viewport-zoom";
 import { GLYPH_META, Icon } from "./icon";
 
 type Viewport = { x: number; y: number; scale: number };
@@ -41,7 +42,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Read-only run-report counterpart to journey-workspace.tsx's planning Map.
+ * Read-only run-report counterpart to journey-workspace.tsx's screen tree.
  * Same node-graph grammar (curved bezier edges, phone-card nodes, pan/zoom)
  * but fed by real execution moments instead of the plan — real screenshots,
  * real pass/fail state, real per-step timing. No editing affordances.
@@ -96,8 +97,14 @@ export function RunGraph(props: {
   const [view, setView] = createSignal<Viewport>({ x: 48, y: 48, scale: 0.9 });
   onMount(() => queueMicrotask(() => setView(fittedView())));
 
-  function zoom(delta: number): void {
-    setView((current) => ({ ...current, scale: clamp(current.scale + delta, 0.42, 1.15) }));
+  function zoom(delta: number, clientPoint?: { x: number; y: number }): void {
+    if (!board) return;
+    const rect = board.getBoundingClientRect();
+    const current = view();
+    const anchor = clientPoint
+      ? { x: clientPoint.x - rect.left, y: clientPoint.y - rect.top }
+      : { x: rect.width / 2, y: rect.height / 2 };
+    setView(zoomViewportAtPoint(current, clamp(current.scale + delta, 0.42, 1.15), anchor));
   }
 
   // Selecting a step elsewhere (Steps tab, replay scrubber) should bring its
@@ -130,11 +137,11 @@ export function RunGraph(props: {
         board = element;
       }}
       class="!absolute inset-0 cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-strong)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
-      aria-label="Run evidence map"
+      aria-label="Run screen path"
       onWheel={(event) => {
-        if (!event.ctrlKey && !event.metaKey) return;
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) return;
         event.preventDefault();
-        zoom(event.deltaY > 0 ? -0.08 : 0.08);
+        zoom(event.deltaY > 0 ? -0.08 : 0.08, { x: event.clientX, y: event.clientY });
       }}
       onPointerDown={(event) => {
         if (event.button !== 0 || (event.target as HTMLElement).closest("button, input, select"))

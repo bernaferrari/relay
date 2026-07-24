@@ -23,6 +23,12 @@ export type JourneyTreeEdge = {
 export type JourneyTree = {
   nodes: JourneyTreeNode[];
   edges: JourneyTreeEdge[];
+  /**
+   * A real screen map needs a durable visual hash or a captured UI tree. The
+   * step-index fallback keeps the model total, but must never be presented as
+   * a meaningful map to someone using an older recording.
+   */
+  hasScreenIdentity: boolean;
 };
 
 type DraftNode = Omit<JourneyTreeNode, "depth" | "x" | "y"> & {
@@ -60,6 +66,10 @@ export function screenKeyForStep(step: RecipeStep, index: number): string {
   // Older evidence can still show a useful ordered path; it just cannot claim
   // that two separate captures are the same screen.
   return `step:${index}`;
+}
+
+export function hasScreenIdentity(step: RecipeStep): boolean {
+  return Boolean(step.evidence?.screenshot?.sha256 || step.evidence?.nodes?.length);
 }
 
 export function buildJourneyTree(steps: RecipeStep[]): JourneyTree {
@@ -132,6 +142,7 @@ export function buildJourneyTree(steps: RecipeStep[]): JourneyTree {
         kind: edge.kind === "return" || to.depth <= from.depth ? "return" : "forward",
       };
     }),
+    hasScreenIdentity: steps.some(hasScreenIdentity),
   };
 }
 

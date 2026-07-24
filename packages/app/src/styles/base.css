@@ -180,6 +180,137 @@
     transform: scale(1);
   }
 }
+@keyframes swipe-path-flow {
+  to {
+    stroke-dashoffset: -14.2;
+  }
+}
+
+@keyframes step-preview-tap {
+  0% {
+    opacity: 0;
+    transform: scale(0.58);
+  }
+  24% {
+    opacity: 0.94;
+    transform: scale(0.96);
+  }
+  72% {
+    opacity: 0.72;
+    transform: scale(1.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+
+@keyframes step-preview-tap-dot {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.58);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  76% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.82);
+  }
+}
+
+@keyframes step-preview-label {
+  0% {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  18% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes step-preview-swipe-marker {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.58);
+  }
+  16% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  76% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.82);
+  }
+}
+
+@keyframes step-preview-scroll-down {
+  0% {
+    opacity: 0;
+    transform: translateY(-9px);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+}
+
+@keyframes step-preview-scroll-up {
+  0% {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-9px);
+  }
+}
+
+.step-preview-tap-dot,
+.step-preview-label,
+.step-preview-swipe-marker {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .step-preview-tap-dot {
+    animation: step-preview-tap-dot 620ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1))
+      both;
+  }
+
+  .step-preview-label {
+    animation: step-preview-label 720ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  }
+
+  .step-preview-swipe-marker {
+    animation: step-preview-swipe-marker var(--step-preview-duration, 300ms)
+      var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;
+  }
+}
 
 .ui-pop {
   animation: ui-pop-in 140ms var(--ease-out-strong, cubic-bezier(0.23, 1, 0.32, 1)) both;

@@ -2,7 +2,15 @@ import { For, Show, type JSX } from "solid-js";
 import { type RecipeStep } from "../context/server";
 import { detectedChain } from "../lib/step-target";
 import { cn } from "../lib/cn";
-import { fieldInput, fieldLabel, mono, propRow, seg, segBtn, segBtnOn } from "../lib/ui";
+import {
+  fieldInput,
+  fieldLabel,
+  mono,
+  propertySeg,
+  propertySegBtn,
+  propertySegBtnOn,
+  propRow,
+} from "../lib/ui";
 import { ManualTarget } from "./step-list-controls";
 import type { StepEditorFamilyProps } from "./step-editor-types";
 
@@ -106,7 +114,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
           return (
             <div class={propRow}>
               <span class={fieldLabel}>Timeout</span>
-              <span class="inline-flex h-7 items-center gap-1.5">
+              <span class="inline-flex h-8 items-center gap-1.5">
                 <input
                   class={cn(valueTimeoutCls, mono)}
                   type="number"
@@ -123,7 +131,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
                     });
                   }}
                 />
-                <span class="text-12-regular text-text-weak">sec</span>
+                <span class="text-[11px] text-text-weak">sec</span>
               </span>
             </div>
           );
@@ -148,7 +156,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
             <>
               <div class={propRow}>
                 <span class={fieldLabel}>Stable</span>
-                <span class="inline-flex h-7 items-center gap-1.5">
+                <span class="inline-flex h-8 items-center gap-1.5">
                   <input
                     class={cn(valueTimeoutCls, mono)}
                     type="number"
@@ -160,12 +168,12 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
                       onEdit({ ...s, stableForMs: Number(event.currentTarget.value) * 1_000 })
                     }
                   />
-                  <span class="text-12-regular text-text-weak">sec</span>
+                  <span class="text-[11px] text-text-weak">sec</span>
                 </span>
               </div>
               <div class={propRow}>
                 <span class={fieldLabel}>Timeout</span>
-                <span class="inline-flex h-7 items-center gap-1.5">
+                <span class="inline-flex h-8 items-center gap-1.5">
                   <input
                     class={cn(valueTimeoutCls, mono)}
                     type="number"
@@ -176,7 +184,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
                       onEdit({ ...s, timeoutMs: Number(event.currentTarget.value) * 1_000 })
                     }
                   />
-                  <span class="text-12-regular text-text-weak">sec</span>
+                  <span class="text-[11px] text-text-weak">sec</span>
                 </span>
               </div>
               <div class={propRow}>
@@ -226,7 +234,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
             <>
               <div class={propRow}>
                 <span class={fieldLabel}>When</span>
-                <div class={seg} role="group" aria-label="Condition">
+                <div class={propertySeg} role="group" aria-label="Condition">
                   {(
                     [
                       ["visible", "Visible"],
@@ -235,7 +243,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
                   ).map(([id, label]) => (
                     <button
                       type="button"
-                      class={s.condition === id ? segBtnOn : segBtn}
+                      class={s.condition === id ? propertySegBtnOn : propertySegBtn}
                       onClick={() => onEdit({ ...s, condition: id })}
                     >
                       {label}
@@ -245,7 +253,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
               </div>
               <div class={propRow}>
                 <span class={fieldLabel}>Timeout</span>
-                <span class="inline-flex h-7 items-center gap-1.5">
+                <span class="inline-flex h-8 items-center gap-1.5">
                   <input
                     class={cn(valueTimeoutCls, mono)}
                     type="number"
@@ -262,7 +270,7 @@ export function TargetStepEditors(props: StepEditorFamilyProps): JSX.Element {
                       });
                     }}
                   />
-                  <span class="text-12-regular text-text-weak">sec</span>
+                  <span class="text-[11px] text-text-weak">sec</span>
                 </span>
               </div>
             </>

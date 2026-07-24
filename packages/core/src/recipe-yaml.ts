@@ -8,6 +8,7 @@ import {
   type RecipeParameter,
   type RecipeStep,
 } from "./recipes.js";
+import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
 
 const SCHEMA_VERSION = 1;
 const MAX_RECIPE_YAML_BYTES = 1_000_000;
@@ -15,6 +16,7 @@ const YAML_SUFFIX = ".relay.yaml";
 
 export type RecipeYamlDocument = {
   schemaVersion: number;
+  recordingFormatVersion?: typeof CURRENT_RECORDING_FORMAT_VERSION;
   id: string;
   name: string;
   description?: string;
@@ -82,6 +84,9 @@ function canonicalStep(step: RecipeStep): RecipeStep {
 function documentFromRecipe(recipe: Recipe): RecipeYamlDocument {
   return {
     schemaVersion: SCHEMA_VERSION,
+    ...(recipe.recordingFormatVersion
+      ? { recordingFormatVersion: recipe.recordingFormatVersion }
+      : {}),
     id: recipe.id,
     name: recipe.title,
     ...(recipe.description?.trim() ? { description: recipe.description } : {}),
@@ -119,6 +124,7 @@ export function parseRecipeYaml(
 
   const allowed = new Set([
     "schemaVersion",
+    "recordingFormatVersion",
     "id",
     "name",
     "description",
@@ -137,6 +143,12 @@ export function parseRecipeYaml(
         ? `unsupported Relay test schemaVersion: ${value.schemaVersion}`
         : "schemaVersion must be 1",
     );
+  }
+  if (
+    value.recordingFormatVersion !== undefined &&
+    value.recordingFormatVersion !== CURRENT_RECORDING_FORMAT_VERSION
+  ) {
+    throw new Error(`recordingFormatVersion must be ${CURRENT_RECORDING_FORMAT_VERSION}`);
   }
   assertString(value.id, "id");
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,95}$/.test(value.id)) {
@@ -160,6 +172,9 @@ export function parseRecipeYaml(
     title: value.name,
     ...(typeof value.description === "string" ? { description: value.description } : {}),
     source: "custom",
+    ...(value.recordingFormatVersion === CURRENT_RECORDING_FORMAT_VERSION
+      ? { recordingFormatVersion: CURRENT_RECORDING_FORMAT_VERSION }
+      : {}),
     ...(variables ? { variables } : {}),
     ...(parameters ? { parameters } : {}),
     steps: validateRecipeSteps(value.steps),

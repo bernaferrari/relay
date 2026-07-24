@@ -17,6 +17,8 @@ export type IconName =
   | "pause"
   | "square"
   | "refresh"
+  | "undo"
+  | "redo"
   | "search"
   | "panel-left"
   | "sliders"
@@ -61,6 +63,8 @@ const STROKE: Record<string, Path[]> = {
   "chevron-left": [{ d: "m15 18-6-6 6-6" }],
   "chevron-up": [{ d: "m18 15-6-6-6 6" }],
   refresh: [{ d: "M3 12a9 9 0 1 0 3-6.7" }, { d: "M3 4v4h4" }],
+  undo: [{ d: "m9 14-5-5 5-5" }, { d: "M4 9h10a6 6 0 0 1 6 6v1" }],
+  redo: [{ d: "m15 14 5-5-5-5" }, { d: "M20 9H10a6 6 0 0 0-6 6v1" }],
   search: [{ d: "M11 3a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" }, { d: "m21 21-4.3-4.3" }],
   "panel-left": [
     { d: "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" },

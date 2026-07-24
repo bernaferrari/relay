@@ -17,8 +17,7 @@ const MIN_SCALE = 0.35;
 const MAX_SCALE = 1.15;
 
 /**
- * The Map is a screen-state tree, not a second way to edit a linear list of
- * steps. A screen is reused when its captured evidence matches, so a recorded
+ * The screen tree is not a second way to edit a linear list of actions. A screen is reused when its captured evidence matches, so a recorded
  * Back action visibly returns to Settings rather than manufacturing a second
  * Settings card.
  */
@@ -127,68 +126,95 @@ export function JourneyWorkspace(props: { onLive: () => void }) {
       <div class="absolute top-3 left-3 z-10 flex min-h-9 items-center gap-2 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] px-2.5 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
         <Icon name="move" size={13} class="text-[var(--text-base)]" />
         <span class="text-[11px] font-medium text-[var(--text-strong)]">Screen tree</span>
-        <span class="text-[10px] text-[var(--text-weak)]">
-          {tree().nodes.length} {tree().nodes.length === 1 ? "screen" : "screens"}
-        </span>
+        <Show
+          when={tree().hasScreenIdentity}
+          fallback={<span class="text-[10px] text-[var(--text-weak)]">No mapped screens</span>}
+        >
+          <span class="text-[10px] text-[var(--text-weak)]">
+            {tree().nodes.length} {tree().nodes.length === 1 ? "screen" : "screens"}
+          </span>
+        </Show>
         <Show when={returns() > 0}>
           <span class="rounded bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_14%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-interactive-base)]">
             {returns()} return{returns() === 1 ? "" : "s"}
           </span>
         </Show>
       </div>
-      <div class="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
-        <button
-          type="button"
-          class="grid size-7 place-items-center rounded-[7px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-          aria-label="Zoom out"
-          onClick={() =>
-            setView((current) => ({ ...current, scale: Math.max(MIN_SCALE, current.scale - 0.1) }))
-          }
-        >
-          −
-        </button>
-        <span class="min-w-9 text-center font-mono text-[10px] text-[var(--text-weak)]">
-          {Math.round(view().scale * 100)}%
-        </span>
-        <button
-          type="button"
-          class="grid size-7 place-items-center rounded-[7px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-          aria-label="Zoom in"
-          onClick={() =>
-            setView((current) => ({ ...current, scale: Math.min(MAX_SCALE, current.scale + 0.1) }))
-          }
-        >
-          +
-        </button>
-        <button
-          type="button"
-          class="h-7 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-          onClick={fit}
-        >
-          Fit
-        </button>
-      </div>
+      <Show when={tree().hasScreenIdentity}>
+        <div class="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
+          <button
+            type="button"
+            class="grid size-7 place-items-center rounded-[7px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            aria-label="Zoom out"
+            onClick={() =>
+              setView((current) => ({
+                ...current,
+                scale: Math.max(MIN_SCALE, current.scale - 0.1),
+              }))
+            }
+          >
+            −
+          </button>
+          <span class="min-w-9 text-center font-mono text-[10px] text-[var(--text-weak)]">
+            {Math.round(view().scale * 100)}%
+          </span>
+          <button
+            type="button"
+            class="grid size-7 place-items-center rounded-[7px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            aria-label="Zoom in"
+            onClick={() =>
+              setView((current) => ({
+                ...current,
+                scale: Math.min(MAX_SCALE, current.scale + 0.1),
+              }))
+            }
+          >
+            +
+          </button>
+          <button
+            type="button"
+            class="h-7 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            onClick={fit}
+          >
+            Fit
+          </button>
+        </div>
+      </Show>
 
       <Show
-        when={tree().nodes.length > 0}
+        when={tree().hasScreenIdentity}
         fallback={
           <div class="relative z-[1] flex flex-1 flex-col items-center justify-center px-5 text-center">
-            <span class="mb-2 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
-              New test
-            </span>
-            <h2 class="m-0 mb-2 text-[24px] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
-              Build a journey
-            </h2>
-            <p class="m-0 mb-5 max-w-[36ch] text-[12px]/[1.5] text-[var(--text-weak)]">
-              Record or describe the path. Relay will fold repeated screens into return paths.
-            </p>
-            <AgentTestComposer variant="canvas" defaultOpen />
+            <Show
+              when={tree().nodes.length > 0}
+              fallback={
+                <>
+                  <span class="mb-2 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
+                    New journey
+                  </span>
+                  <h2 class="m-0 mb-2 text-[24px] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
+                    Build a journey
+                  </h2>
+                  <p class="m-0 mb-5 max-w-[36ch] text-[12px]/[1.5] text-[var(--text-weak)]">
+                    Record or describe the path. Relay will fold repeated screens into return paths.
+                  </p>
+                  <AgentTestComposer variant="canvas" defaultOpen />
+                </>
+              }
+            >
+              <h2 class="m-0 mb-2 text-[24px] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
+                No screen map yet
+              </h2>
+              <p class="m-0 max-w-[38ch] text-[12px]/[1.5] text-[var(--text-weak)]">
+                Record a screen to see the journey’s paths and return points here.
+              </p>
+            </Show>
             <button
               type="button"
               class="mt-4 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]"
               onClick={props.onLive}
             >
-              <Icon name="circle" size={13} /> Record on a device
+              <Icon name="circle" size={13} /> Record a screen
             </button>
           </div>
         }
@@ -291,7 +317,7 @@ export function JourneyWorkspace(props: { onLive: () => void }) {
           </For>
         </div>
       </Show>
-      <Show when={tree().nodes.length > 0}>
+      <Show when={tree().hasScreenIdentity}>
         <p class="pointer-events-none absolute bottom-3 left-1/2 z-10 m-0 -translate-x-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_88%,transparent)] px-3 py-1.5 text-[10px] text-[var(--text-weak)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[10px]">
           Repeated captures fold into one screen · click an action to edit it
         </p>

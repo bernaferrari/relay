@@ -2,7 +2,7 @@ import type { RecipeStep, RecordedStepEvidence } from "../context/server";
 import type { IconName } from "./icon";
 
 export function evidenceForStep(step?: RecipeStep): RecordedStepEvidence | undefined {
-  return step && "evidence" in step ? step.evidence : undefined;
+  return step?.evidence;
 }
 
 export function accentForStep(step: RecipeStep): string {

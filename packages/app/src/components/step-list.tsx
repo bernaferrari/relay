@@ -12,6 +12,7 @@ import { useServer, type RecipeStep } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
+import { createTapStep } from "../lib/journey-action-conversion";
 import { Icon, type IconName } from "./icon";
 import { AddMenu } from "./step-list-controls";
 import { InsertGap, StepRow } from "./step-row";
@@ -110,7 +111,7 @@ export function RecipeStepsEditor(): JSX.Element {
       label: "Tap",
       description: "Select an element or point",
       icon: "pointer",
-      make: () => ({ kind: "tap", target: {} }),
+      make: createTapStep,
     },
     {
       label: "Type",
@@ -161,7 +162,7 @@ export function RecipeStepsEditor(): JSX.Element {
                 Start with an action
               </h3>
               <p class="mt-[7px] max-w-[360px] text-[12px]/[1.55] text-[var(--text-weak)]">
-                Choose one to configure it. Recording on the device adds steps here automatically.
+                Choose an action, or record on a device.
               </p>
               <div class="mt-[18px] grid grid-cols-2 gap-2 max-[1040px]:grid-cols-1">
                 <For each={STARTERS}>
@@ -205,6 +206,20 @@ export function RecipeStepsEditor(): JSX.Element {
             <Index each={draft.steps()}>
               {(step, i) => (
                 <>
+                  <Show
+                    when={
+                      step().group &&
+                      step().group !== (i > 0 ? draft.steps()[i - 1]?.group : undefined)
+                    }
+                  >
+                    <div class="flex items-center gap-2 pt-2 pb-0.5" role="heading" aria-level="3">
+                      <span class="h-px min-w-3 flex-1 bg-[var(--v2-border-border-muted)]" />
+                      <span class="max-w-[78%] truncate text-[10px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+                        {step().group}
+                      </span>
+                      <span class="h-px min-w-3 flex-1 bg-[var(--v2-border-border-muted)]" />
+                    </div>
+                  </Show>
                   <StepRow
                     step={step}
                     index={i}

@@ -12,7 +12,7 @@ import { withRefreshFeedback } from "../lib/refresh-feedback";
 export function DeviceConnectState(props: {
   offline: boolean;
   onRefresh: () => void | Promise<void>;
-  onSetup: () => void;
+  onChooseDevice: () => void;
 }): JSX.Element {
   const [refreshing, setRefreshing] = createSignal(false);
   async function refresh(): Promise<void> {
@@ -26,42 +26,29 @@ export function DeviceConnectState(props: {
   }
 
   return (
-    <div
-      class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center gap-1 text-12-medium text-text-base"
-      role="status"
-      aria-label={props.offline ? "Connection unavailable" : "No device connected"}
-    >
-      <span class="inline-flex min-w-0 items-center gap-1.5 px-1.5 text-text-weak">
+    <div class="z-[2] mt-3 flex h-9 max-w-full items-center justify-center text-12-medium">
+      <button
+        type="button"
+        class="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg bg-surface-base px-2.5 text-text-base shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-colors hover:bg-surface-base-hover hover:text-text-strong disabled:cursor-not-allowed disabled:text-text-weaker"
+        disabled={props.offline && refreshing()}
+        aria-busy={props.offline && refreshing()}
+        aria-label={props.offline ? "Relay offline. Retry connection" : "No device. Choose device"}
+        data-tip={props.offline ? "Retry connection" : "Choose device"}
+        onClick={() => (props.offline ? void refresh() : props.onChooseDevice())}
+      >
         <Icon name={props.offline ? "server" : "smartphone"} size={13} class="shrink-0" />
         <span class="truncate">{props.offline ? "Relay offline" : "No device"}</span>
-      </span>
-      <span class="mx-0.5 h-4 w-px bg-border-weak-base" aria-hidden="true" />
-      <span class="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          class="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-text-strong transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:text-text-weaker"
-          disabled={refreshing()}
-          aria-busy={refreshing()}
-          onClick={() => void refresh()}
-        >
-          <Icon
-            name="refresh"
-            size={12}
-            class={cn(
+        <Icon
+          name={props.offline ? "refresh" : "chevron-down"}
+          size={12}
+          class={cn(
+            "ml-0.5 text-text-weak",
+            props.offline &&
               refreshing() &&
-                "animate-spin origin-center motion-reduce:animate-none motion-reduce:opacity-70",
-            )}
-          />
-          {props.offline ? "Retry" : "Refresh"}
-        </button>
-        <button
-          type="button"
-          class="h-8 rounded-lg px-2.5 text-text-base transition-colors hover:bg-surface-base-hover hover:text-text-strong"
-          onClick={props.onSetup}
-        >
-          Set up
-        </button>
-      </span>
+              "animate-spin origin-center motion-reduce:animate-none motion-reduce:opacity-70",
+          )}
+        />
+      </button>
     </div>
   );
 }

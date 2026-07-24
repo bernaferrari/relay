@@ -71,7 +71,7 @@ const MapsWorkspace = lazy(() =>
   import("./workspaces/maps-workspace").then((module) => ({ default: module.MapsWorkspace })),
 );
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
-  { id: "tests", label: "Tests", icon: "grid" },
+  { id: "tests", label: "Journeys", icon: "grid" },
   { id: "suites", label: "Flows", icon: "check" },
   { id: "runs", label: "Runs", icon: "wave" },
 ];
@@ -248,12 +248,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     const recipe = selected();
     if (!recipe) return;
     confirmAction({
-      title: "Delete test?",
+      title: "Delete journey?",
       body: `“${displayTitle(recipe.title)}” and its version history will be removed. This cannot be undone.`,
-      confirmLabel: "Delete test",
+      confirmLabel: "Delete journey",
       onConfirm: async () => {
         await server.deleteRecipeRemote(recipe.id);
-        toast("Test deleted", "info");
+        toast("Journey deleted", "info");
       },
     });
   }
@@ -355,7 +355,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <button
                 type="button"
                 class={productIconButton}
-                aria-label={libraryOpen() ? "Hide test library" : "Show test library"}
+                aria-label={libraryOpen() ? "Hide journey library" : "Show journey library"}
                 onClick={() => setLibraryOpen((value) => !value)}
               >
                 <Icon name="panel-left" size={17} />
@@ -372,7 +372,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         ? "Flows"
                         : area() === "map"
                           ? "Atlas"
-                          : "Tests"}
+                          : "Journeys"}
                   </strong>
                 }
               >
@@ -384,24 +384,27 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     setLibraryOpen(true);
                   }}
                 >
-                  Tests
+                  Journeys
                 </button>
                 <Icon name="chevron-right" size={13} />
                 <input
                   type="text"
-                  size={Math.max(12, Math.min(34, (draft.title() || "Untitled test").length + 1))}
+                  size={Math.max(
+                    12,
+                    Math.min(34, (draft.title() || "Untitled journey").length + 1),
+                  )}
                   class="h-8 min-w-[120px] max-w-[min(32vw,360px)] rounded-md bg-transparent px-1.5 font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
-                  aria-label="Test name"
-                  data-tip="Rename test"
+                  aria-label="Journey name"
+                  data-tip="Rename journey"
                   value={draft.title()}
-                  placeholder="Untitled test"
+                  placeholder="Untitled journey"
                   spellcheck={false}
                   onFocus={() => {
                     titleBeforeEdit = draft.title();
                   }}
                   onInput={(event) => draft.setTitle(event.currentTarget.value)}
                   onBlur={() => {
-                    if (!draft.title().trim()) draft.setTitle("Untitled test");
+                    if (!draft.title().trim()) draft.setTitle("Untitled journey");
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();
@@ -423,8 +426,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 type="button"
                 class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
                 data-blocked={testBlockedReason() ? "" : undefined}
-                data-tip={testBlockedReason() || "Run this test"}
-                aria-label={testBlockedReason() || "Run this test"}
+                data-tip={testBlockedReason() || "Run this journey"}
+                aria-label={testBlockedReason() || "Run this journey"}
                 onClick={runSelectedTest}
               >
                 <Icon name="play" size={13} /> Run
@@ -437,14 +440,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           <section class={shellStudio}>
             <Show when={selected()}>
               <div class={shellStudioBar}>
-                <div class={shellViewTabs} role="group" aria-label="Test view">
+                <div class={shellViewTabs} role="group" aria-label="Journey view">
                   <button
                     type="button"
                     aria-pressed={studioView() === "workbench"}
                     class={cn(shellViewTab, studioView() === "workbench" && shellViewTabActive)}
                     onClick={() => setStudioView("workbench")}
                   >
-                    <Icon name="grid" size={13} /> Steps
+                    <Icon name="grid" size={13} /> Journey
                   </button>
                   <button
                     type="button"
@@ -455,7 +458,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       setStudioView("map");
                     }}
                   >
-                    <Icon name="move" size={13} /> Map
+                    <Icon name="move" size={13} /> Screens
                   </button>
                 </div>
                 <div class="relative flex items-center gap-2">
@@ -486,7 +489,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       class={productIconButton}
                       type="button"
-                      aria-label="More test options"
+                      aria-label="More journey options"
                       aria-expanded={studioActionsOpen()}
                       onClick={() => setStudioActionsOpen((open) => !open)}
                     >
@@ -506,7 +509,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                             void duplicateSelected();
                           }}
                         >
-                          <Icon name="copy" size={14} /> Duplicate test
+                          <Icon name="copy" size={14} /> Duplicate journey
                         </button>
                         <button
                           type="button"
@@ -528,7 +531,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                             void deleteSelected();
                           }}
                         >
-                          <Icon name="trash" size={14} /> Delete test
+                          <Icon name="trash" size={14} /> Delete journey
                         </button>
                       </div>
                     </Show>
@@ -747,10 +750,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
 function nextUntitledTitle(recipes: RecipeInfo[]): string {
   const used = new Set(recipes.map((recipe) => recipe.title));
-  if (!used.has("Untitled test")) return "Untitled test";
+  if (!used.has("Untitled journey")) return "Untitled journey";
   let index = 2;
-  while (used.has(`Untitled test ${index}`)) index++;
-  return `Untitled test ${index}`;
+  while (used.has(`Untitled journey ${index}`)) index++;
+  return `Untitled journey ${index}`;
 }
 
 function titleFromPrompt(
@@ -758,7 +761,7 @@ function titleFromPrompt(
   recipes: RecipeInfo[],
   steps: RecipeStep[] = [],
 ): string {
-  const sentence = description.split(/[.!?\n]/, 1)[0]?.trim() || "New test";
+  const sentence = description.split(/[.!?\n]/, 1)[0]?.trim() || "New journey";
   // Long prompts make unreadable truncated titles; the check clause (the point
   // of the test) makes a better name than the first 49 characters.
   const check = steps.find(

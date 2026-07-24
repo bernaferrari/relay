@@ -56,7 +56,7 @@ export function n(count: number, noun: string): string {
 
 /** Display fallback for a test title: blank/whitespace never renders empty. */
 export function displayTitle(title: string | undefined | null): string {
-  return (title ?? "").trim() || "Untitled test";
+  return (title ?? "").trim() || "Untitled journey";
 }
 
 /** A known recipe/action id → title, for resolving slugs at render sites. */

@@ -588,7 +588,12 @@ export async function runRecipeStep(
 
     case "swipe": {
       const { from, to, durationMs } = step;
-      await swipeGesture(device, from, to, durationMs ?? 250);
+      await swipeGesture(
+        device,
+        await resolvePointForDevice(device, from),
+        await resolvePointForDevice(device, to),
+        durationMs ?? 250,
+      );
       break;
     }
 

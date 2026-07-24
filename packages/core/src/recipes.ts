@@ -6,11 +6,16 @@
  * UI has a uniform list; custom recipes live as files under `recipes/`.
  */
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, writeFile, unlink, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile, unlink, rm, stat, link } from "node:fs/promises";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { ACTIONS, isActionId } from "./actions.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { now } from "./events.js";
+import {
+  CURRENT_RECORDING_FORMAT_VERSION,
+  type RecordingFormatVersion,
+} from "./recording-format.js";
 import type { Glyph } from "./trace.js";
 import type {
   HumanCheckpointReason,
@@ -54,6 +59,12 @@ export type Recipe = {
   /** Declared inputs when this recipe is used as a reusable flow. */
   parameters?: RecipeParameter[];
   source: "builtin" | "custom";
+  /**
+   * Version of the recorded-evidence contract. It is intentionally separate
+   * from the YAML schema so recordings can be audited or retired without
+   * invalidating an otherwise readable journey definition.
+   */
+  recordingFormatVersion?: RecordingFormatVersion;
   steps: RecipeStep[];
   createdAt: number;
   updatedAt: number;
@@ -90,15 +101,42 @@ export async function saveRecipeEvidenceImage(input: {
   recipeId: string;
   evidenceId: string;
   base64: string;
-}): Promise<{ bytes: number }> {
+}): Promise<{ bytes: number; sha256: string; deduplicated: boolean }> {
   const dir = evidenceDir(input.recipeId);
   const id = evidencePart(input.evidenceId, "evidenceId");
   const data = Buffer.from(input.base64, "base64");
   if (data.byteLength === 0) throw new Error("evidence image is empty");
   if (data.byteLength > 8 * 1024 * 1024) throw new Error("evidence image exceeds 8 MB");
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${id}.png`), data);
-  return { bytes: data.byteLength };
+  // Evidence IDs are immutable event references, while bytes are shared by
+  // content hash. Hard links preserve the existing `<evidenceId>.png` read
+  // contract and turn duplicate recording frames into one physical blob.
+  const sha256 = createHash("sha256").update(data).digest("hex");
+  const blobs = join(dir, ".blobs");
+  const blob = join(blobs, `${sha256}.png`);
+  const target = join(dir, `${id}.png`);
+  await mkdir(blobs, { recursive: true });
+  let deduplicated = true;
+  try {
+    await writeFile(blob, data, { flag: "wx" });
+    deduplicated = false;
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "EEXIST")) {
+      throw error;
+    }
+  }
+  try {
+    await link(blob, target);
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "EEXIST")) {
+      throw error;
+    }
+    // Evidence IDs should be unique, but retrying a completed request must be
+    // idempotent. Replace only this validated target, never the whole store.
+    await unlink(target);
+    await link(blob, target);
+  }
+  return { bytes: data.byteLength, sha256, deduplicated };
 }
 
 export async function readRecipeEvidenceImage(
@@ -204,42 +242,46 @@ function parseTarget(raw: unknown, index: number, field: string): StepTarget {
     t.text = raw.text;
   }
   if (raw.point !== undefined) {
-    const p = raw.point;
-    if (!isObject(p) || !isNumber(p.x) || !isNumber(p.y)) {
-      throw stepErr(index, `${field}.point must be { x: number, y: number }`);
-    }
-    const point: StepPoint = { x: p.x, y: p.y };
-    if (p.anchor !== undefined) {
-      if (
-        !isObject(p.anchor) ||
-        !["left", "center", "right"].includes(String(p.anchor.horizontal)) ||
-        !["top", "center", "bottom"].includes(String(p.anchor.vertical))
-      ) {
-        throw stepErr(index, `${field}.point.anchor must contain horizontal and vertical anchors`);
-      }
-      point.anchor = {
-        horizontal: p.anchor.horizontal as HorizontalCoordinateAnchor,
-        vertical: p.anchor.vertical as VerticalCoordinateAnchor,
-      };
-    }
-    if (p.referenceBounds !== undefined) {
-      if (
-        !isObject(p.referenceBounds) ||
-        !isNumber(p.referenceBounds.width) ||
-        !isNumber(p.referenceBounds.height) ||
-        p.referenceBounds.width <= 0 ||
-        p.referenceBounds.height <= 0
-      ) {
-        throw stepErr(index, `${field}.point.referenceBounds must be { width, height }`);
-      }
-      point.referenceBounds = {
-        width: p.referenceBounds.width,
-        height: p.referenceBounds.height,
-      };
-    }
-    t.point = point;
+    t.point = parseStepPoint(raw.point, index, `${field}.point`);
   }
   return t;
+}
+
+/** Parse an authored point with its optional responsive pin-to constraint. */
+function parseStepPoint(raw: unknown, index: number, field: string): StepPoint {
+  if (!isObject(raw) || !isNumber(raw.x) || !isNumber(raw.y)) {
+    throw stepErr(index, `${field} must be { x: number, y: number }`);
+  }
+  const point: StepPoint = { x: raw.x, y: raw.y };
+  if (raw.anchor !== undefined) {
+    if (
+      !isObject(raw.anchor) ||
+      !["left", "center", "right"].includes(String(raw.anchor.horizontal)) ||
+      !["top", "center", "bottom"].includes(String(raw.anchor.vertical))
+    ) {
+      throw stepErr(index, `${field}.anchor must contain horizontal and vertical anchors`);
+    }
+    point.anchor = {
+      horizontal: raw.anchor.horizontal as HorizontalCoordinateAnchor,
+      vertical: raw.anchor.vertical as VerticalCoordinateAnchor,
+    };
+  }
+  if (raw.referenceBounds !== undefined) {
+    if (
+      !isObject(raw.referenceBounds) ||
+      !isNumber(raw.referenceBounds.width) ||
+      !isNumber(raw.referenceBounds.height) ||
+      raw.referenceBounds.width <= 0 ||
+      raw.referenceBounds.height <= 0
+    ) {
+      throw stepErr(index, `${field}.referenceBounds must be { width, height }`);
+    }
+    point.referenceBounds = {
+      width: raw.referenceBounds.width,
+      height: raw.referenceBounds.height,
+    };
+  }
+  return point;
 }
 /** Parse a required { x, y } coordinate object. */
 function parsePoint(raw: unknown, index: number, field: string): { x: number; y: number } {
@@ -296,6 +338,47 @@ function parseRecordedEvidence(raw: unknown, index: number): RecordedStepEvidenc
   if (raw.serial !== undefined) {
     if (!isString(raw.serial)) throw stepErr(index, "evidence.serial must be a string");
     evidence.serial = raw.serial;
+  }
+  if (raw.capture !== undefined) {
+    if (!isObject(raw.capture) || raw.capture.schemaVersion !== 1) {
+      throw stepErr(index, "evidence.capture is invalid");
+    }
+    if (raw.capture.uiTreeCapturedAt !== undefined && !isNumber(raw.capture.uiTreeCapturedAt)) {
+      throw stepErr(index, "evidence.capture.uiTreeCapturedAt must be a number");
+    }
+    if (
+      raw.capture.screenshotCapturedAt !== undefined &&
+      !isNumber(raw.capture.screenshotCapturedAt)
+    ) {
+      throw stepErr(index, "evidence.capture.screenshotCapturedAt must be a number");
+    }
+    if (!(raw.capture.status === "complete" || raw.capture.status === "partial")) {
+      throw stepErr(index, "evidence.capture.status is invalid");
+    }
+    if (raw.capture.issues !== undefined) {
+      if (
+        !Array.isArray(raw.capture.issues) ||
+        raw.capture.issues.some(
+          (issue) =>
+            issue !== "missing-ui-tree" &&
+            issue !== "missing-screenshot" &&
+            issue !== "missing-target",
+        )
+      ) {
+        throw stepErr(index, "evidence.capture.issues is invalid");
+      }
+    }
+    evidence.capture = {
+      schemaVersion: 1,
+      ...(raw.capture.uiTreeCapturedAt !== undefined
+        ? { uiTreeCapturedAt: raw.capture.uiTreeCapturedAt }
+        : {}),
+      ...(raw.capture.screenshotCapturedAt !== undefined
+        ? { screenshotCapturedAt: raw.capture.screenshotCapturedAt }
+        : {}),
+      status: raw.capture.status,
+      ...(raw.capture.issues !== undefined ? { issues: [...raw.capture.issues] } : {}),
+    };
   }
   if (raw.deviceBounds !== undefined) {
     if (
@@ -372,8 +455,48 @@ function parseRecordedEvidence(raw: unknown, index: number): RecordedStepEvidenc
       capturedAt: shot.capturedAt,
       mime: "image/png",
     };
+    if (shot.bytes !== undefined) {
+      if (!isNumber(shot.bytes) || shot.bytes < 0) {
+        throw stepErr(index, "evidence.screenshot.bytes is invalid");
+      }
+      evidence.screenshot.bytes = shot.bytes;
+    }
+    if (shot.sha256 !== undefined) {
+      if (!isString(shot.sha256) || !/^[a-f0-9]{64}$/.test(shot.sha256)) {
+        throw stepErr(index, "evidence.screenshot.sha256 is invalid");
+      }
+      evidence.screenshot.sha256 = shot.sha256;
+    }
   }
   return evidence;
+}
+
+function parseStepMetadata(
+  raw: Record<string, unknown>,
+  index: number,
+): {
+  id?: string;
+  group?: string;
+  evidence?: RecordedStepEvidence;
+  note?: string;
+} {
+  const metadata: { id?: string; group?: string; evidence?: RecordedStepEvidence; note?: string } =
+    {};
+  if (raw.id !== undefined) {
+    if (!isString(raw.id) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(raw.id)) {
+      throw stepErr(index, "id must use letters, numbers, hyphens, and underscores only");
+    }
+    metadata.id = raw.id;
+  }
+  if (raw.group !== undefined) {
+    if (!isString(raw.group) || raw.group.trim().length === 0 || raw.group.trim().length > 96) {
+      throw stepErr(index, "group must be a non-empty string of at most 96 characters");
+    }
+    metadata.group = raw.group.trim();
+  }
+  if (raw.evidence !== undefined) metadata.evidence = parseRecordedEvidence(raw.evidence, index);
+  if (isString(raw.note) && raw.note.trim()) metadata.note = raw.note;
+  return metadata;
 }
 
 /**
@@ -433,9 +556,6 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(raw.tapCount !== undefined ? { tapCount: raw.tapCount as number } : {}),
           ...(raw.intervalMs !== undefined ? { intervalMs: raw.intervalMs as number } : {}),
           ...(raw.durationMs !== undefined ? { durationMs: raw.durationMs as number } : {}),
-          ...(raw.evidence !== undefined
-            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
-            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -447,9 +567,6 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           kind: "type",
           text: raw.text,
           ...(raw.target !== undefined ? { target: parseTarget(raw.target, index, "target") } : {}),
-          ...(raw.evidence !== undefined
-            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
-            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -475,8 +592,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "swipe": {
-        const from = parsePoint(raw.from, index, "swipe.from");
-        const to = parsePoint(raw.to, index, "swipe.to");
+        const from = parseStepPoint(raw.from, index, "swipe.from");
+        const to = parseStepPoint(raw.to, index, "swipe.to");
         let durationMs: number | undefined;
         if (raw.durationMs !== undefined) {
           if (!isNumber(raw.durationMs)) throw stepErr(index, "swipe.durationMs must be a number");
@@ -490,9 +607,6 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           from,
           to,
           ...(durationMs !== undefined ? { durationMs } : {}),
-          ...(raw.evidence !== undefined
-            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
-            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -545,9 +659,6 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           kind: "wait-for",
           target,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-          ...(raw.evidence !== undefined
-            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
-            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -619,9 +730,6 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           target,
           condition: raw.condition,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-          ...(raw.evidence !== undefined
-            ? { evidence: parseRecordedEvidence(raw.evidence, index)! }
-            : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);
@@ -1113,7 +1221,10 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         throw stepErr(index, `unknown step kind: ${kind}`);
     }
   });
-  return out;
+  return out.map((step, position) => ({
+    ...step,
+    ...parseStepMetadata(steps[position] as Record<string, unknown>, position + 1),
+  }));
 }
 
 /** Built-in recipes: one per coded flow, each a single opaque `flow` step. */
@@ -1283,6 +1394,7 @@ export type SaveRecipeInput = {
   steps: RecipeStep[];
   quarantined?: boolean;
   quarantineReason?: string;
+  recordingFormatVersion?: RecordingFormatVersion;
 };
 
 /**
@@ -1324,6 +1436,10 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
         ? { parameters: existing.parameters }
         : {}),
     source: "custom",
+    recordingFormatVersion:
+      input.recordingFormatVersion ??
+      existing?.recordingFormatVersion ??
+      CURRENT_RECORDING_FORMAT_VERSION,
     steps,
     createdAt: existing?.createdAt ?? ts,
     updatedAt: ts,

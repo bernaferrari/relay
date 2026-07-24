@@ -395,9 +395,11 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
         return await performBrowserFind(locator, input.query, input.action);
       },
       scroll: async (input: { direction?: string; amount?: number }) => {
-        const amount = input.amount ?? 600;
-        const y = input.direction === "up" ? -amount : amount;
-        await (await activePage(session)).mouse.wheel(0, y);
+        const page = await activePage(session);
+        const viewportHeight = page.viewportSize()?.height ?? 1_000;
+        const distance = viewportHeight * (input.amount ?? 0.5);
+        const y = input.direction === "up" ? -distance : distance;
+        await page.mouse.wheel(0, y);
         return { ok: true };
       },
       swipe: async (input) => {

@@ -1,11 +1,30 @@
-import { createSignal, createEffect, on, onCleanup } from "solid-js";
+import { createSignal, createEffect, on, onCleanup, onMount } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { useServer, type RecipeInfo, type RecipeParameter, type RecipeStep } from "./server";
 import { stepValid } from "../lib/step-sentence";
 import { collapseUnchangedFlow, expandFlowToEditableSteps } from "../lib/run-gates";
+import { createStepId, ensureStepId } from "../lib/step-identity";
 import { toast } from "./toast";
 
 export type SaveState = "saved" | "saving" | "invalid";
+
+type DraftSnapshot = {
+  title: string;
+  description: string;
+  parameters: RecipeParameter[];
+  steps: RecipeStep[];
+  expandedFromFlow: string | null;
+};
+
+type DraftHistoryEntry = {
+  before: DraftSnapshot;
+  after: DraftSnapshot;
+  key?: string;
+  at: number;
+};
+
+const HISTORY_LIMIT = 100;
+const HISTORY_COALESCE_MS = 750;
 
 /**
  * The run-pane's step list IS the test editor (no modal). This context owns a
@@ -35,6 +54,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     const [expandedStep, setExpandedStep] = createSignal<number | null>(null);
     /** When we auto-forked a library test, where to go “back”. */
     const [forkedFrom, setForkedFrom] = createSignal<{ id: string; title: string } | null>(null);
+    const [historyDepth, setHistoryDepth] = createSignal({ undo: 0, redo: 0 });
 
     let currentId: string | null = null;
     let dirty = false;
@@ -61,6 +81,81 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
 
     /** Original packaged flow id when draft rows were expanded from planned[]. */
     let expandedFromFlow: string | null = null;
+    let undoStack: DraftHistoryEntry[] = [];
+    let redoStack: DraftHistoryEntry[] = [];
+
+    function snapshot(): DraftSnapshot {
+      return {
+        title: title(),
+        description: description(),
+        parameters: structuredClone(parameters()),
+        steps: structuredClone(steps()),
+        expandedFromFlow,
+      };
+    }
+
+    function restoreSnapshot(next: DraftSnapshot): void {
+      setTitleState(next.title);
+      setDescriptionState(next.description);
+      setParametersState(structuredClone(next.parameters));
+      setStepsState(structuredClone(next.steps));
+      expandedFromFlow = next.expandedFromFlow;
+      setExpandedStep(null);
+    }
+
+    function syncHistoryDepth(): void {
+      setHistoryDepth({ undo: undoStack.length, redo: redoStack.length });
+    }
+
+    function clearHistory(): void {
+      undoStack = [];
+      redoStack = [];
+      syncHistoryDepth();
+    }
+
+    function snapshotsMatch(a: DraftSnapshot, b: DraftSnapshot): boolean {
+      return JSON.stringify(a) === JSON.stringify(b);
+    }
+
+    function editDraft(change: () => void, key?: string): void {
+      const before = snapshot();
+      change();
+      const after = snapshot();
+      if (snapshotsMatch(before, after)) return;
+
+      const at = Date.now();
+      const previous = undoStack.at(-1);
+      if (key && previous?.key === key && at - previous.at < HISTORY_COALESCE_MS) {
+        previous.after = after;
+        previous.at = at;
+      } else {
+        undoStack.push({ before, after, key, at });
+        if (undoStack.length > HISTORY_LIMIT) undoStack = undoStack.slice(-HISTORY_LIMIT);
+      }
+      redoStack = [];
+      syncHistoryDepth();
+      scheduleSave();
+    }
+
+    function preserveStepMetadata(current: RecipeStep | undefined, next: RecipeStep): RecipeStep {
+      const group =
+        "group" in next ? next.group : current && "group" in current ? current.group : undefined;
+      const evidence =
+        "evidence" in next
+          ? next.evidence
+          : current && "evidence" in current
+            ? current.evidence
+            : undefined;
+      const note =
+        "note" in next ? next.note : current && "note" in current ? current.note : undefined;
+      return {
+        ...next,
+        id: next.id ?? current?.id ?? createStepId(),
+        ...(group ? { group } : {}),
+        ...(evidence ? { evidence } : {}),
+        ...(note ? { note } : {}),
+      };
+    }
 
     function seedFrom(r: RecipeInfo | null): void {
       // Selection can change from the library, suites, command palette, or a
@@ -85,9 +180,10 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         setTitleState(cached.title);
         setDescriptionState(cached.description);
         setParametersState(cached.parameters.map((parameter) => ({ ...parameter })));
-        setStepsState(cached.steps.map((step) => structuredClone(step)));
+        setStepsState(cached.steps.map((step) => ensureStepId(structuredClone(step))));
         setExpandedStep(null);
         expandedFromFlow = cached.expandedFromFlow;
+        clearHistory();
         dirty = cached.dirty;
         setSaveState(invalidCount() > 0 ? "invalid" : "saving");
         clearTimeout(saveTimer);
@@ -101,7 +197,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       setExpandedStep(null);
       // Clear back-link unless this seed is the fork we just created.
       if (!r || skipReseedFor !== r.id) setForkedFrom(null);
-      const raw = r?.steps ? r.steps.map((s) => ({ ...s })) : [];
+      const raw = r?.steps ? r.steps.map((s) => ensureStepId(structuredClone(s))) : [];
       expandedFromFlow = null;
       // Library tests are one opaque flow step — expand planned titles into the
       // same editable list as custom tests (nothing special about defaults).
@@ -121,13 +217,14 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         });
         if (expanded && flowId) {
           expandedFromFlow = flowId;
-          setStepsState(expanded);
+          setStepsState(expanded.map(ensureStepId));
         } else {
           setStepsState(raw);
         }
       } else {
         setStepsState([]);
       }
+      clearHistory();
       dirty = false;
       setSaveState("saved");
       clearTimeout(saveTimer);
@@ -199,7 +296,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       }
 
       const body = {
-        title: title().trim() || "Untitled test",
+        title: title().trim() || "Untitled journey",
         description: description().trim() || undefined,
         parameters: parameters(),
         steps: persistSteps,
@@ -229,67 +326,102 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       }
     }
 
+    onMount(() => {
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (!((event.metaKey || event.ctrlKey) && ["z", "y"].includes(event.key.toLowerCase()))) {
+          return;
+        }
+        const target = event.target as HTMLElement | null;
+        if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+        event.preventDefault();
+        if (event.key.toLowerCase() === "y" || event.shiftKey) redo();
+        else undo();
+      };
+      window.addEventListener("keydown", onKeyDown);
+      onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+    });
+
     onCleanup(() => {
       if (dirty && invalidCount() === 0) void flush();
       clearTimeout(saveTimer);
     });
 
     function setTitle(v: string): void {
-      setTitleState(v);
-      scheduleSave();
+      editDraft(() => setTitleState(v), "title");
     }
     function setDescription(v: string): void {
-      setDescriptionState(v);
-      scheduleSave();
+      editDraft(() => setDescriptionState(v), "description");
     }
     function setParameters(next: RecipeParameter[]): void {
-      setParametersState(next);
-      scheduleSave();
+      editDraft(() => setParametersState(structuredClone(next)), "parameters");
     }
     function insertStep(index: number, step: RecipeStep): void {
-      setStepsState((s) => [...s.slice(0, index), step, ...s.slice(index)]);
-      scheduleSave();
+      editDraft(() =>
+        setStepsState((s) => [
+          ...s.slice(0, index),
+          ensureStepId(structuredClone(step)),
+          ...s.slice(index),
+        ]),
+      );
     }
     function updateStep(index: number, next: RecipeStep): void {
-      setStepsState((s) => s.map((st, i) => (i === index ? next : st)));
-      scheduleSave();
+      const current = steps()[index];
+      const coalesceKey =
+        current && current.kind === next.kind
+          ? `step:${current.id ?? index}:${current.kind}`
+          : undefined;
+      editDraft(
+        () =>
+          setStepsState((s) =>
+            s.map((step, position) =>
+              position === index ? preserveStepMetadata(step, structuredClone(next)) : step,
+            ),
+          ),
+        coalesceKey,
+      );
     }
     function removeStep(index: number): void {
-      setStepsState((s) => s.filter((_, i) => i !== index));
-      scheduleSave();
+      editDraft(() => setStepsState((s) => s.filter((_, position) => position !== index)));
     }
     function duplicateStep(index: number): void {
-      setStepsState((s) => {
-        const target = s[index];
-        if (!target) return s;
-        return [...s.slice(0, index + 1), { ...target }, ...s.slice(index + 1)];
-      });
-      scheduleSave();
+      editDraft(() =>
+        setStepsState((s) => {
+          const target = s[index];
+          if (!target) return s;
+          return [
+            ...s.slice(0, index + 1),
+            { ...structuredClone(target), id: createStepId() },
+            ...s.slice(index + 1),
+          ];
+        }),
+      );
     }
     function moveStep(index: number, dir: -1 | 1): void {
-      setStepsState((s) => {
-        const j = index + dir;
-        if (j < 0 || j >= s.length) return s;
-        const next = [...s];
-        const tmp = next[index]!;
-        next[index] = next[j]!;
-        next[j] = tmp;
-        return next;
-      });
-      scheduleSave();
+      editDraft(() =>
+        setStepsState((s) => {
+          const j = index + dir;
+          if (j < 0 || j >= s.length) return s;
+          const next = [...s];
+          const tmp = next[index]!;
+          next[index] = next[j]!;
+          next[j] = tmp;
+          return next;
+        }),
+      );
     }
 
     function moveStepTo(from: number, to: number): void {
       if (from === to) return;
-      setStepsState((steps) => {
-        if (from < 0 || from >= steps.length || to < 0 || to >= steps.length) return steps;
-        const next = [...steps];
-        const [step] = next.splice(from, 1);
-        if (!step) return steps;
-        next.splice(to, 0, step);
-        return next;
-      });
-      scheduleSave();
+      editDraft(() =>
+        setStepsState((steps) => {
+          if (from < 0 || from >= steps.length || to < 0 || to >= steps.length) return steps;
+          const next = [...steps];
+          const [step] = next.splice(from, 1);
+          if (!step) return steps;
+          next.splice(to, 0, step);
+          return next;
+        }),
+      );
     }
 
     /** Flash-highlight freshly recorder-appended steps for ~1.4s. */
@@ -312,8 +444,37 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
      *  (a builtin auto-forks on save like any other edit). */
     function appendSteps(extra: RecipeStep[]): void {
       if (!currentId || extra.length === 0) return;
-      setStepsState((s) => [...s, ...extra]);
-      flash(extra);
+      const recorded = extra.map((step) => ensureStepId(structuredClone(step)));
+      editDraft(() => setStepsState((s) => [...s, ...recorded]));
+      flash(recorded);
+    }
+
+    /** Rename one task boundary without touching the runnable action payloads. */
+    function renameGroup(from: string, to: string): void {
+      const next = to.trim();
+      if (!from || !next || from === next) return;
+      editDraft(() =>
+        setStepsState((items) =>
+          items.map((step) => (step.group === from ? { ...step, group: next } : step)),
+        ),
+      );
+    }
+
+    function undo(): void {
+      const entry = undoStack.pop();
+      if (!entry) return;
+      restoreSnapshot(entry.before);
+      redoStack.push(entry);
+      syncHistoryDepth();
+      scheduleSave();
+    }
+
+    function redo(): void {
+      const entry = redoStack.pop();
+      if (!entry) return;
+      restoreSnapshot(entry.after);
+      undoStack.push(entry);
+      syncHistoryDepth();
       scheduleSave();
     }
 
@@ -352,6 +513,10 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       source,
       invalidCount,
       parameterIssue,
+      canUndo: () => historyDepth().undo > 0,
+      canRedo: () => historyDepth().redo > 0,
+      undo,
+      redo,
       flashSteps,
       expandedStep,
       setExpandedStep,
@@ -367,6 +532,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       moveStep,
       moveStepTo,
       appendSteps,
+      renameGroup,
       ensureRecordingDraft,
     };
   },

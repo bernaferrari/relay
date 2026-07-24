@@ -14,11 +14,6 @@ import { InteractionStepEditors } from "./step-editors-interaction";
 import { FlowStepEditors } from "./step-editors-flow";
 import { DeviceStepEditors } from "./step-editors-device";
 
-const editorPanel = cn(
-  "flex w-full min-w-0 flex-col gap-2.5 overflow-hidden border-t border-border-weak-base",
-  "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_64%,var(--v2-background-bg-base))] px-3.5 py-3 pl-3.5",
-);
-
 function isTargetKind(
   step: RecipeStep,
 ): step is Extract<
@@ -41,6 +36,7 @@ export function StepEditor(props: {
   onAutofocused: () => void;
   onChange: (next: RecipeStep) => void;
   showEvidence?: boolean;
+  embedded?: boolean;
 }): JSX.Element {
   const wb = useWorkbench();
   const initialStep = props.step();
@@ -53,10 +49,7 @@ export function StepEditor(props: {
   });
   const kind = () => props.step().kind;
   const anno = () => wb.rowAnno(props.index);
-  const evidence = () => {
-    const step = props.step();
-    return "evidence" in step ? step.evidence : undefined;
-  };
+  const evidence = () => props.step().evidence;
   const target = (): StepTarget => {
     const step = props.step();
     return isTargetKind(step) ? step.target : {};
@@ -97,7 +90,14 @@ export function StepEditor(props: {
     onRetargetTap: retargetTap,
   };
   return (
-    <div class={editorPanel}>
+    <div
+      class={cn(
+        "flex w-full min-w-0 flex-col overflow-hidden",
+        props.embedded
+          ? "gap-1.5"
+          : "gap-2.5 border-t border-border-weak-base bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_64%,var(--v2-background-bg-base))] px-3.5 py-3 pl-3.5",
+      )}
+    >
       <Show when={props.showEvidence !== false && evidence()}>
         {(captured) => (
           <RecordingEvidencePanel

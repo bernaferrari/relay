@@ -1,7 +1,16 @@
 import { For, Show, type JSX } from "solid-js";
 import { useServer, type RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
-import { fieldInput, fieldLabel, mono, propRow, seg, segBtn, segBtnOn } from "../lib/ui";
+import {
+  fieldInput,
+  fieldLabel,
+  mono,
+  propertySeg,
+  propertySegBtn,
+  propertySegBtnOn,
+  propRow,
+} from "../lib/ui";
+import { Icon } from "./icon";
 import type { StepEditorFamilyProps } from "./step-editor-types";
 
 const valueCls = cn(fieldInput, "min-w-0 flex-1");
@@ -21,7 +30,7 @@ export function DeviceStepEditors(props: StepEditorFamilyProps): JSX.Element {
             <>
               <div class={propRow}>
                 <span class={fieldLabel}>Action</span>
-                <div class={seg}>
+                <div class={propertySeg}>
                   {(
                     [
                       ["write", "Write"],
@@ -30,7 +39,7 @@ export function DeviceStepEditors(props: StepEditorFamilyProps): JSX.Element {
                   ).map(([id, label]) => (
                     <button
                       type="button"
-                      class={s.action === id ? segBtnOn : segBtn}
+                      class={s.action === id ? propertySegBtnOn : propertySegBtn}
                       onClick={() =>
                         onEdit(
                           id === "write"
@@ -67,7 +76,7 @@ export function DeviceStepEditors(props: StepEditorFamilyProps): JSX.Element {
               <Show when={s.action === "read"}>
                 <div class={propRow}>
                   <span class={fieldLabel}>Match</span>
-                  <div class={seg}>
+                  <div class={propertySeg}>
                     {(
                       [
                         ["exact", "Exact"],
@@ -78,8 +87,8 @@ export function DeviceStepEditors(props: StepEditorFamilyProps): JSX.Element {
                         type="button"
                         class={
                           (s.match !== "contains" && id === "exact") || s.match === id
-                            ? segBtnOn
-                            : segBtn
+                            ? propertySegBtnOn
+                            : propertySegBtn
                         }
                         onClick={() => onEdit({ ...s, match: id })}
                       >
@@ -114,7 +123,7 @@ export function DeviceStepEditors(props: StepEditorFamilyProps): JSX.Element {
                   }
                 >
                   <option value="open">Open app / deep link</option>
-                  <option value="close">Close app</option>
+                  <option value="close">Close / force-stop app</option>
                   <option value="switcher">Open app switcher</option>
                   <option value="inspect">Record installed version</option>
                   <option value="assert-installed">Check app is installed</option>
@@ -447,21 +456,29 @@ export function DeviceStepEditors(props: StepEditorFamilyProps): JSX.Element {
             <>
               <div class={propRow}>
                 <span class={fieldLabel}>Evidence</span>
-                <select
-                  class={valueCls}
-                  value={s.include ?? "summary"}
-                  onChange={(e) =>
-                    onEdit({
-                      ...s,
-                      include: e.currentTarget.value as NonNullable<typeof s.include>,
-                    })
-                  }
-                >
-                  <option value="summary">Summary</option>
-                  <option value="headers">Headers</option>
-                  <option value="body">Bodies</option>
-                  <option value="all">Everything</option>
-                </select>
+                <span class="relative min-w-0 flex-1">
+                  <select
+                    class={cn(valueCls, "appearance-none pr-9")}
+                    value={s.include ?? "summary"}
+                    onChange={(e) =>
+                      onEdit({
+                        ...s,
+                        include: e.currentTarget.value as NonNullable<typeof s.include>,
+                      })
+                    }
+                  >
+                    <option value="summary">Summary</option>
+                    <option value="headers">Headers</option>
+                    <option value="body">Bodies</option>
+                    <option value="all">Everything</option>
+                  </select>
+                  <Icon
+                    name="chevron-down"
+                    size={14}
+                    class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[var(--text-weak)]"
+                    aria-hidden
+                  />
+                </span>
               </div>
               <div class={propRow}>
                 <span class={fieldLabel}>Limit</span>

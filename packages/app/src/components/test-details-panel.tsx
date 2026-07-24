@@ -3,13 +3,13 @@ import { useServer } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { cn } from "../lib/cn";
 import { productIconButton, tabUnderline, tabUnderlineActive } from "../lib/ui";
-import { shellAsideDrawer, shellSteps, shellStepsBody, shellStepsHead } from "../lib/shell-layout";
+import { shellAsideDrawer, shellSteps, shellStepsBody } from "../lib/shell-layout";
 import { FlowParametersEditor } from "./flow-parameters-editor";
 import { Icon } from "./icon";
 
 type DetailsTab = "properties" | "source";
 
-export function TestSettingsPanel(props: { onClose: () => void; onOpenData: () => void }) {
+export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables: () => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const [tab, setTab] = createSignal<DetailsTab>("properties");
@@ -70,16 +70,23 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenData: () =
 
   return (
     <aside class={cn(shellSteps, shellAsideDrawer)} aria-label="Test details">
-      <div class={shellStepsHead}>
-        <div class="flex min-h-9 items-center justify-between gap-3">
-          <div class="min-w-0">
-            <span class="block text-[10px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
-              Test
-            </span>
-            <strong class="mt-0.5 block truncate text-[13px] font-semibold text-[var(--text-strong)]">
-              {draft.title() || "Untitled test"}
-            </strong>
-          </div>
+      <header class="flex h-12 shrink-0 items-end justify-between border-b border-[var(--v2-border-border-muted)] px-3">
+        <div class="flex h-full items-end" role="tablist" aria-label="Test detail panels">
+          <For each={["properties", "source"] as const}>
+            {(item) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab() === item}
+                class={cn(tabUnderline, "h-full", tab() === item && tabUnderlineActive)}
+                onClick={() => setTab(item)}
+              >
+                {item === "properties" ? "Properties" : "Source"}
+              </button>
+            )}
+          </For>
+        </div>
+        <div class="flex h-full items-center">
           <button
             type="button"
             class={productIconButton}
@@ -89,73 +96,49 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenData: () =
             <Icon name="x" size={14} />
           </button>
         </div>
-        <div class="mt-2 flex items-center" role="tablist" aria-label="Test detail panels">
-          <For each={["properties", "source"] as const}>
-            {(item) => (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab() === item}
-                class={cn(tabUnderline, tab() === item && tabUnderlineActive)}
-                onClick={() => setTab(item)}
-              >
-                {item === "properties" ? "Properties" : "Source"}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
+      </header>
 
       <div class={shellStepsBody} data-editor-tab={tab()}>
         <Show when={tab() === "properties"}>
-          <div class="grid content-start gap-5 p-4">
-            <section class="grid gap-3">
+          <div class="h-full overflow-y-auto divide-y divide-[var(--v2-border-border-muted)]">
+            <section class="p-4">
               <label class="grid gap-1.5">
-                <span class="text-[10.5px] font-medium text-[var(--text-weak)]">Name</span>
-                <input
-                  class="h-9 w-full rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 text-[12px] text-[var(--text-strong)] outline-none transition-colors duration-150 focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
-                  value={draft.title()}
-                  placeholder="Untitled test"
-                  spellcheck={false}
-                  onInput={(event) => draft.setTitle(event.currentTarget.value)}
-                />
-              </label>
-              <label class="grid gap-1.5">
-                <span class="text-[10.5px] font-medium text-[var(--text-weak)]">Description</span>
+                <span class="text-[10.5px] font-medium text-[var(--text-base)]">Description</span>
                 <textarea
-                  class="min-h-[76px] w-full resize-none rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-colors duration-150 focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
+                  class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
                   value={draft.description()}
                   placeholder="What this test verifies"
                   onInput={(event) => draft.setDescription(event.currentTarget.value)}
                 />
               </label>
             </section>
-            <div class="h-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
-            <FlowParametersEditor />
-            <div class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] pt-3.5">
-              <div class="flex min-w-0 items-center gap-2.5">
-                <Icon
-                  name="sparkle"
-                  size={15}
-                  class="shrink-0 text-[var(--text-interactive-base)]"
-                />
-                <span class="min-w-0">
-                  <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
-                    Values shared across tests
-                  </strong>
-                  <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
-                    Workspace variables use {"{{variable_name}}"}.
-                  </small>
-                </span>
-              </div>
+            <section class="p-4">
+              <FlowParametersEditor />
+            </section>
+            <section class="p-3">
               <button
                 type="button"
-                class="shrink-0 text-[11px] font-semibold text-[var(--text-interactive-base)] hover:underline"
-                onClick={props.onOpenData}
+                class="group flex min-h-12 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)]"
+                onClick={props.onOpenVariables}
               >
-                Open variables
+                <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_10%,var(--v2-background-bg-layer-01))] text-[var(--text-interactive-base)]">
+                  <Icon name="sparkle" size={14} />
+                </span>
+                <span class="min-w-0 flex-1">
+                  <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
+                    Workspace variables
+                  </strong>
+                  <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
+                    Reusable values written as {"{{variable_name}}"}
+                  </small>
+                </span>
+                <Icon
+                  name="chevron-right"
+                  size={13}
+                  class="shrink-0 text-[var(--text-weak)] transition-transform duration-150 group-hover:translate-x-0.5"
+                />
               </button>
-            </div>
+            </section>
           </div>
         </Show>
 

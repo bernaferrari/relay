@@ -42,14 +42,14 @@ export function LibraryPanel(props: {
   return (
     <aside
       class={cn(shellLibrary, !props.open && shellLibraryClosed)}
-      aria-label="Test library"
+      aria-label="Journey library"
       aria-hidden={!props.open}
       inert={!props.open}
       data-recipe-count={props.items.length}
     >
       <div class="shell-drag flex min-h-[56px] items-center justify-between px-3.5 py-2.5">
         <h1 class="text-[15px] font-semibold leading-[1.2] tracking-[-0.025em] text-text-strong">
-          Tests
+          Journeys
         </h1>
         <div class="relative flex items-center gap-0.5">
           <input
@@ -57,7 +57,7 @@ export function LibraryPanel(props: {
             class="sr-only"
             type="file"
             accept=".yaml,.yml,text/yaml,application/yaml"
-            aria-label="Import Relay test file"
+            aria-label="Import Relay journey file"
             onChange={(event) => {
               const file = event.currentTarget.files?.[0];
               event.currentTarget.value = "";
@@ -68,8 +68,8 @@ export function LibraryPanel(props: {
           <button
             type="button"
             class={productIconButtonSolid}
-            aria-label="Create test"
-            data-tip="Create test"
+            aria-label="Create journey"
+            data-tip="Create journey"
             onClick={props.onCreate}
           >
             <Icon name="plus" size={17} />
@@ -103,7 +103,7 @@ export function LibraryPanel(props: {
                 <Icon name="upload" size={14} />
                 <span class="min-w-0">
                   <strong class="block text-[11px] font-medium text-text-strong">
-                    Import test file
+                    Import journey file
                   </strong>
                   <small class="mt-0.5 block text-[9px] text-text-weaker">
                     Open a Relay YAML file
@@ -117,13 +117,13 @@ export function LibraryPanel(props: {
       <div class="mb-2.5 shrink-0 px-2.5">
         <label class="relative flex h-[34px] w-full items-center gap-2 rounded-[9px] bg-v2-background-bg-base px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:text-text-base focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base),0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_10%,transparent)]">
           <Icon name="search" size={15} />
-          <span class="sr-only">Search tests</span>
+          <span class="sr-only">Search journeys</span>
           <input
             ref={(element) => (searchInput = element)}
             class="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-text-strong outline-none placeholder:text-text-weaker"
             type="search"
             value={props.query}
-            placeholder="Search tests"
+            placeholder="Search journeys"
             autocomplete="off"
             spellcheck={false}
             onInput={(event) => props.onQuery(event.currentTarget.value)}
@@ -137,7 +137,7 @@ export function LibraryPanel(props: {
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto px-1.5">
         <RecipeGroup
-          title="Tests"
+          title="Journeys"
           items={tests()}
           selectedId={props.selectedId}
           onSelect={props.onSelect}
@@ -171,7 +171,7 @@ export function LibraryPanel(props: {
         </Show>
         <Show when={props.query.trim().length > 0 && props.items.length === 0}>
           <div class="px-3 py-6 text-center text-12-regular text-text-weak">
-            No tests match “{props.query}”.
+            No journeys match “{props.query}”.
           </div>
         </Show>
       </div>
@@ -240,7 +240,7 @@ function RecipeRow(props: {
         </strong>
         <small class="mt-0.5 flex items-center gap-1 text-[11px]/[1.25] text-text-weaker">
           {props.recipe.steps.length > 0
-            ? `${props.recipe.steps.length} step${props.recipe.steps.length === 1 ? "" : "s"}`
+            ? `${props.recipe.steps.length} action${props.recipe.steps.length === 1 ? "" : "s"}`
             : "Draft"}
           <span class="opacity-50">·</span>
           <span class={mono}>{fmtAgo(props.recipe.updatedAt, Date.now()) || "now"}</span>

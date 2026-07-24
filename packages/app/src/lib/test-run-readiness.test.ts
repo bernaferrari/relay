@@ -18,7 +18,7 @@ describe("testRunBlocker", () => {
   it("prioritizes the environmental blocker", () => {
     assert.equal(
       testRunBlocker({ ...ready, health: "offline", invalidCount: 2 }),
-      "Start the Relay server before running this test.",
+      "Start the Relay server before running this journey.",
     );
   });
 

@@ -24,8 +24,9 @@ export function shellRootLibraryVar(open: boolean): Record<string, string> {
 }
 
 export const shellRail = cn(
-  "relative z-[3] col-start-1 row-start-1 flex min-h-0 flex-col items-center gap-4 border-r border-[var(--v2-border-border-muted)]",
+  "relative z-[3] col-start-1 row-start-1 flex min-h-0 flex-col items-center gap-4",
   "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_97%,black)] px-1.5 pt-[var(--rail-top-pad,14px)] pb-2.5",
+  "after:pointer-events-none after:absolute after:top-[calc(var(--rail-top-pad,14px)+32px)] after:right-0 after:bottom-0 after:w-px after:bg-[var(--v2-border-border-muted)] after:content-['']",
 );
 
 /** Brand mark — the one place a flat brand color is allowed to stand alone
@@ -35,7 +36,7 @@ export const shellMark = cn(
   "active:scale-[0.97]",
 );
 
-export const shellRailNav = "flex w-full flex-1 flex-col gap-1.5";
+export const shellRailNav = "flex w-full flex-1 flex-col gap-1.5 pt-2";
 
 export const shellRailItem = cn(
   "flex min-h-11 w-full flex-col items-center justify-center gap-0.5 rounded-lg",

@@ -12,6 +12,7 @@ import {
   productPageHero,
   productPageTitle,
   productPageLead,
+  productIconButton,
 } from "../../lib/ui";
 
 type DataRow = {
@@ -52,7 +53,11 @@ const INITIAL_DATA: DataRow[] = [
 const fieldClass =
   "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-[13px]/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
 
-export function DataWorkspace(props: { onConfigureProvider: () => void }) {
+export function DataWorkspace(props: {
+  onConfigureProvider: () => void;
+  embedded?: boolean;
+  onClose?: () => void;
+}) {
   const server = useServer();
   const [rows, setRows] = createSignal<DataRow[]>(INITIAL_DATA);
   const [hydrated, setHydrated] = createSignal(false);
@@ -102,14 +107,37 @@ export function DataWorkspace(props: { onConfigureProvider: () => void }) {
   };
 
   return (
-    <section class={productPage}>
-      <div class={productPageHero}>
-        <div>
+    <section
+      class={
+        props.embedded
+          ? "flex h-full min-h-0 flex-col bg-[var(--v2-background-bg-deep)]"
+          : productPage
+      }
+    >
+      <div
+        class={
+          props.embedded
+            ? "flex min-h-16 shrink-0 items-center justify-between gap-4 border-b border-border-weak-base px-4"
+            : productPageHero
+        }
+      >
+        <div class="min-w-0">
           <span class={eyebrow}>Variables</span>
-          <h2 class={productPageTitle}>Test data</h2>
-          <p class={productPageLead}>
-            Prepare fresh inputs before a run while keeping every test deterministic and debuggable.
-          </p>
+          <h2
+            class={
+              props.embedded
+                ? "m-0 mt-0.5 truncate text-[16px] font-semibold tracking-[-0.015em] text-text-strong"
+                : productPageTitle
+            }
+          >
+            {props.embedded ? "Workspace variables" : "Test data"}
+          </h2>
+          <Show when={!props.embedded}>
+            <p class={productPageLead}>
+              Prepare fresh inputs before a run while keeping every test deterministic and
+              debuggable.
+            </p>
+          </Show>
         </div>
         <div class="flex items-center gap-2">
           <button type="button" class={productSecondary} onClick={props.onConfigureProvider}>
@@ -118,12 +146,23 @@ export function DataWorkspace(props: { onConfigureProvider: () => void }) {
           <button type="button" class={productPrimary} onClick={addRow}>
             <Icon name="plus" size={15} /> New variable
           </button>
+          <Show when={props.embedded && props.onClose}>
+            <button
+              type="button"
+              class={productIconButton}
+              aria-label="Close workspace variables"
+              onClick={() => props.onClose?.()}
+            >
+              <Icon name="x" size={14} />
+            </button>
+          </Show>
         </div>
       </div>
       <div
         class={cn(
           "mx-auto grid w-full max-w-[1180px] grid-cols-1 gap-3",
           selectedRow() && "grid-cols-[minmax(0,1fr)_minmax(320px,0.42fr)] max-[900px]:grid-cols-1",
+          props.embedded && "min-h-0 flex-1 overflow-y-auto p-4",
         )}
       >
         <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger">

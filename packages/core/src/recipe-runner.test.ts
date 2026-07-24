@@ -27,6 +27,7 @@ function stubDevice(impl: {
   press?: (options: unknown) => Promise<unknown>;
   longPress?: (options: unknown) => Promise<unknown>;
   type?: (options: unknown) => Promise<unknown>;
+  swipe?: (options: unknown) => Promise<unknown>;
   wait?: () => Promise<unknown>;
   snapshot?: () => Promise<unknown>;
 }): Device {
@@ -36,6 +37,7 @@ function stubDevice(impl: {
       press: impl.press ?? (() => Promise.resolve({})),
       longPress: impl.longPress ?? (() => Promise.resolve({})),
       type: impl.type ?? (() => Promise.resolve({})),
+      swipe: impl.swipe ?? (() => Promise.resolve({})),
     },
     command: { wait: impl.wait ?? (() => Promise.resolve({})) },
     capture: { snapshot: impl.snapshot ?? (() => Promise.resolve({ nodes: [] })) },
@@ -113,6 +115,50 @@ describe("runRecipeStep tap gestures", () => {
     );
     assert.equal(holds.length, 1);
     assert.deepEqual(holds[0], { platform: "android", ref: "@e53", durationMs: 900 });
+  });
+});
+
+describe("runRecipeStep swipe", () => {
+  it("resolves the pinned start and end independently on a larger device", async () => {
+    const swipes: unknown[] = [];
+    const device = stubDevice({
+      swipe: (options) => {
+        swipes.push(options);
+        return Promise.resolve({});
+      },
+      snapshot: () =>
+        Promise.resolve({ nodes: [{ rect: { x: 0, y: 0, width: 200, height: 400 } }] }),
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "swipe",
+        from: {
+          x: 10,
+          y: 20,
+          anchor: { horizontal: "left", vertical: "top" },
+          referenceBounds: { width: 100, height: 200 },
+        },
+        to: {
+          x: 90,
+          y: 180,
+          anchor: { horizontal: "right", vertical: "bottom" },
+          referenceBounds: { width: 100, height: 200 },
+        },
+        durationMs: 330,
+      },
+      noLog,
+    );
+
+    assert.deepEqual(swipes, [
+      {
+        platform: "android",
+        from: { x: 10, y: 20 },
+        to: { x: 190, y: 380 },
+        durationMs: 330,
+      },
+    ]);
   });
 });
 

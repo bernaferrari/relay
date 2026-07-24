@@ -64,6 +64,22 @@ export function migrateLegacyStep(step: LegacyRecStep): RecipeStep {
  *  so it's shared by the row list without pulling in this context. */
 export const describeStep = sentenceForStep;
 
+/** A recording without real device geometry is not safe to replay. In
+ * particular, never turn a fractional pointer into a 0/1 coordinate just
+ * because a snapshot request happened to fail. */
+export function hasUsableDeviceBounds(
+  snapshot: SnapshotState,
+): snapshot is NonNullable<SnapshotState> & { bounds: { width: number; height: number } } {
+  const bounds = snapshot?.bounds;
+  return Boolean(
+    bounds &&
+    Number.isFinite(bounds.width) &&
+    Number.isFinite(bounds.height) &&
+    bounds.width > 1 &&
+    bounds.height > 1,
+  );
+}
+
 /**
  * Build the full tap target for a click — every field that is known, so the
  * recorded step can fall back through ref → label → point at replay time
@@ -151,12 +167,13 @@ function recordedCandidates(
       });
     }
   });
+  if (!hasUsableDeviceBounds(snap)) return candidates;
   const point = targetFromStrategy(
     {
       id: "point",
       kind: "point",
-      x: Math.round(fx * (snap?.bounds?.width ?? 1)),
-      y: Math.round(fy * (snap?.bounds?.height ?? 1)),
+      x: Math.round(fx * snap.bounds.width),
+      y: Math.round(fy * snap.bounds.height),
       describe: "Coordinate",
     },
     fx,
@@ -208,6 +225,12 @@ function recordedEvidence(
         }
       : {}),
     ...(hasPointer ? { candidates: recordedCandidates(snap, node, fx, fy) } : {}),
+    capture: {
+      schemaVersion: 1,
+      ...(snap ? { uiTreeCapturedAt: snap.capturedAt } : {}),
+      status: snap ? "partial" : "partial",
+      issues: snap ? ["missing-screenshot"] : ["missing-ui-tree", "missing-screenshot"],
+    },
   };
 }
 
@@ -219,6 +242,35 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     const draft = useRecipeDraft();
     const [interacting, setInteracting] = createSignal(false);
     const [recording, setRecording] = createSignal(false);
+    const [recordingGroup, setRecordingGroupState] = createSignal("");
+
+    function nextRecordingGroup(): string {
+      const used = new Set(
+        draft
+          .steps()
+          .map((step) => step.group)
+          .filter((group): group is string => Boolean(group))
+          .map((group) => /^Task (\d+)$/.exec(group)?.[1])
+          .filter((value): value is string => Boolean(value))
+          .map((value) => Number(value)),
+      );
+      let number = 1;
+      while (used.has(number)) number += 1;
+      return `Task ${number}`;
+    }
+
+    function setRecordingGroup(value: string): void {
+      setRecordingGroupState(value.slice(0, 96));
+    }
+
+    function startNextRecordingGroup(): void {
+      setRecordingGroupState(nextRecordingGroup());
+    }
+
+    function withRecordingGroup(step: RecipeStep): RecipeStep {
+      const group = recordingGroup().trim();
+      return group ? { ...step, group } : step;
+    }
 
     /** "Recorded test N" — next free number, so back-to-back recordings
      *  without a rename don't collide. */
@@ -243,10 +295,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       return draft.ensureRecordingDraft(nextRecordedTitle);
     }
 
-    function latestFrame(since = 0): Frame | undefined {
-      return [...server.frames()].reverse().find((frame) => frame.capturedAt >= since);
-    }
-
     async function attachEvidenceScreenshot(
       evidence: RecordedStepEvidence,
       recipeId: string,
@@ -260,7 +308,76 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         id: evidence.id,
         capturedAt: frame.capturedAt,
         mime: "image/png",
+        bytes: saved.bytes,
+        sha256: saved.sha256,
       };
+      evidence.capture = {
+        schemaVersion: 1,
+        ...(evidence.capture?.uiTreeCapturedAt !== undefined
+          ? { uiTreeCapturedAt: evidence.capture.uiTreeCapturedAt }
+          : {}),
+        screenshotCapturedAt: frame.capturedAt,
+        status: evidence.capture?.issues?.includes("missing-ui-tree") ? "partial" : "complete",
+        ...(evidence.capture?.issues?.includes("missing-ui-tree")
+          ? { issues: ["missing-ui-tree"] }
+          : {}),
+      };
+    }
+
+    let lastMissingContextNotice = 0;
+    function noteMissingRecordingContext(): void {
+      const now = Date.now();
+      if (now - lastMissingContextNotice < 3_000) return;
+      lastMissingContextNotice = now;
+      toast("Recording paused until Relay can read the device screen", "warning");
+      server.appendLog("recording skipped · no valid UI snapshot/device bounds", "error");
+    }
+
+    async function exactEvidenceFrame(caption: string): Promise<Frame | undefined> {
+      try {
+        return await server.captureUiScreenshot(caption, undefined, undefined, true);
+      } catch {
+        return undefined;
+      }
+    }
+
+    async function appendRecordedStep(
+      step: RecipeStep,
+      evidence: RecordedStepEvidence,
+      caption: string,
+    ): Promise<void> {
+      const frame = await exactEvidenceFrame(caption);
+      const id = await ensureRecordingTarget();
+      if (!id) return;
+      if (frame) await attachEvidenceScreenshot(evidence, id, frame);
+      else {
+        evidence.capture = {
+          schemaVersion: 1,
+          ...(evidence.capture?.uiTreeCapturedAt !== undefined
+            ? { uiTreeCapturedAt: evidence.capture.uiTreeCapturedAt }
+            : {}),
+          status: "partial",
+          issues: ["missing-screenshot"],
+        };
+        server.appendLog("recording evidence saved without a screenshot", "error");
+      }
+      draft.appendSteps([withRecordingGroup({ ...step, evidence })]);
+      // Prime context for the next direct-control event. This is intentionally
+      // not awaited: touch/keyboard delivery stays on the fast H.264 path.
+      void server.captureUiSnapshot();
+    }
+
+    async function snapshotForRecording(waitForCapture: boolean): Promise<SnapshotState> {
+      const current = server.snapshot();
+      if (hasUsableDeviceBounds(current)) return current;
+      if (!waitForCapture) return null;
+      const captured = await server.captureUiSnapshot();
+      return hasUsableDeviceBounds(captured) ? captured : null;
+    }
+
+    function noteMissingInteractionContext(): void {
+      toast("Relay can’t map this gesture until the device screen is available", "warning");
+      server.appendLog("interaction skipped · no valid UI snapshot/device bounds", "error");
     }
 
     /** Enter Record mode: arm the flag + make sure the stage has something
@@ -269,6 +386,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
      *  device" action so both paths behave identically. */
     function enterRecordMode(): void {
       if (recording()) return;
+      if (!recordingGroup().trim()) startNextRecordingGroup();
       setInteracting(true);
       setRecording(true);
       server.setShowOverlays(true);
@@ -281,6 +399,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     async function stopRecording(): Promise<void> {
       await flushType();
       setRecording(false);
+      setRecordingGroupState("");
       // Stopping capture returns to live control. Interacting with the mirrored
       // device and recording those interactions are separate concerns.
       setInteracting(true);
@@ -321,33 +440,21 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
       // Flush any buffered typing first so order stays tap → type, not interleaved.
       await flushType();
-      if (!server.snapshot()?.bounds) {
-        await server.captureUiSnapshot().catch(() => undefined);
+      const snapshot = await snapshotForRecording(!alreadyApplied);
+      if (!hasUsableDeviceBounds(snapshot)) {
+        if (recording()) noteMissingRecordingContext();
+        else noteMissingInteractionContext();
+        return alreadyApplied;
       }
-      const hitNode = nodeAtPoint(server.snapshot(), fx, fy);
-      const targetNode = semanticTapNode(server.snapshot(), hitNode);
-      const target = buildTapTarget(server.snapshot()?.bounds, targetNode, fx, fy);
-      const evidence = recordedEvidence(
-        server.snapshot(),
-        hitNode,
-        fx,
-        fy,
-        server.selectedDevice(),
-      );
+      const hitNode = nodeAtPoint(snapshot, fx, fy);
+      const targetNode = semanticTapNode(snapshot, hitNode);
+      const target = buildTapTarget(snapshot?.bounds, targetNode, fx, fy);
+      const evidence = recordedEvidence(snapshot, hitNode, fx, fy, server.selectedDevice());
       const step: Extract<RecipeStep, { kind: "tap" }> = { kind: "tap", target };
       const caption = describeStep(step);
       const ok = alreadyApplied ? true : await executeTap(target, caption);
-      if (alreadyApplied && recording()) {
-        await server
-          .captureUiScreenshot(caption, undefined, undefined, true)
-          .catch(() => undefined);
-      }
       if (ok && recording()) {
-        const id = await ensureRecordingTarget();
-        if (id) {
-          await attachEvidenceScreenshot(evidence, id, latestFrame(evidence.recordedAt));
-          draft.appendSteps([{ ...step, evidence }]);
-        }
+        await appendRecordedStep(step, evidence, caption);
       }
       return ok;
     }
@@ -368,14 +475,28 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         return false;
       }
       await flushType();
-      const b = server.snapshot()?.bounds;
+      const snapshot = await snapshotForRecording(!alreadyApplied);
+      if (!hasUsableDeviceBounds(snapshot)) {
+        // The gesture has already reached the phone over H.264, but storing
+        // fake 0/1 coordinates would make a future run actively misleading.
+        if (recording()) noteMissingRecordingContext();
+        else noteMissingInteractionContext();
+        return alreadyApplied;
+      }
+      const b = snapshot?.bounds;
       const w = b?.width ?? 1;
       const h = b?.height ?? 1;
-      const devFrom = { x: Math.round(from.x * w), y: Math.round(from.y * h) };
-      const devTo = { x: Math.round(to.x * w), y: Math.round(to.y * h) };
+      const recordedPin = b
+        ? {
+            anchor: { horizontal: "left" as const, vertical: "top" as const },
+            referenceBounds: { ...b },
+          }
+        : {};
+      const devFrom = { x: Math.round(from.x * w), y: Math.round(from.y * h), ...recordedPin };
+      const devTo = { x: Math.round(to.x * w), y: Math.round(to.y * h), ...recordedPin };
       const evidence = recordedEvidence(
-        server.snapshot(),
-        nodeAtPoint(server.snapshot(), from.x, from.y),
+        snapshot,
+        nodeAtPoint(snapshot, from.x, from.y),
         from.x,
         from.y,
         server.selectedDevice(),
@@ -393,17 +514,8 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
             { kind: "swipe", from: devFrom, to: devTo, durationMs },
             caption,
           );
-      if (alreadyApplied && recording()) {
-        await server
-          .captureUiScreenshot(caption, undefined, undefined, true)
-          .catch(() => undefined);
-      }
       if (ok && recording()) {
-        const id = await ensureRecordingTarget();
-        if (id) {
-          await attachEvidenceScreenshot(evidence, id, latestFrame(evidence.recordedAt));
-          draft.appendSteps([{ ...step, evidence }]);
-        }
+        await appendRecordedStep(step, evidence, caption);
       }
       return ok;
     }
@@ -423,15 +535,19 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         vertical: "top" | "center" | "bottom";
       } = { horizontal: "left", vertical: "top" },
     ): Promise<void> {
-      const target = targetFromStrategy(strategy, fx, fy, server.snapshot()?.bounds, anchor);
+      const snapshot = await snapshotForRecording(true);
+      if (!hasUsableDeviceBounds(snapshot)) {
+        noteMissingRecordingContext();
+        return;
+      }
+      const target = targetFromStrategy(strategy, fx, fy, snapshot.bounds, anchor);
       const id = await ensureRecordingTarget();
       if (!id) return;
-      const frame = latestFrame();
-      const node = nodeAtPoint(server.snapshot(), fx, fy);
-      const evidence = recordedEvidence(server.snapshot(), node, fx, fy, server.selectedDevice());
-      if (frame) evidence.recordedAt = Math.min(evidence.recordedAt, frame.capturedAt);
-      await attachEvidenceScreenshot(evidence, id, frame);
-      draft.appendSteps([{ kind: "tap", target, evidence }]);
+      const node = nodeAtPoint(snapshot, fx, fy);
+      const evidence = recordedEvidence(snapshot, node, fx, fy, server.selectedDevice());
+      const frame = await exactEvidenceFrame("Recorded target");
+      if (frame) await attachEvidenceScreenshot(evidence, id, frame);
+      draft.appendSteps([withRecordingGroup({ kind: "tap", target, evidence })]);
     }
 
     // ── Typing capture (plan 010 step 3.3) ──────────────────────────────────
@@ -497,8 +613,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setTypeBuffer("");
       await delivery.delivery;
       if (!text || server.health() !== "online") return;
+      const snapshot = await snapshotForRecording(false);
       const evidence = recordedEvidence(
-        server.snapshot(),
+        snapshot,
         null,
         undefined,
         undefined,
@@ -510,16 +627,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         ? await server.interactStep({ kind: "type", text }, caption)
         : true;
       if (ok && recording()) {
-        if (!delivery.batchFallback) {
-          await server
-            .captureUiScreenshot(caption, undefined, undefined, true)
-            .catch(() => undefined);
-        }
-        const id = await ensureRecordingTarget();
-        if (id) {
-          await attachEvidenceScreenshot(evidence, id, latestFrame(evidence.recordedAt));
-          draft.appendSteps([{ ...step, evidence }]);
-        }
+        await appendRecordedStep(step, evidence, caption);
       }
     }
 
@@ -621,7 +729,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         for (const r of legacy) {
           const steps = (r.steps ?? []).map(migrateLegacyStep);
           const saved = await server.saveRecipeRemote({
-            title: (r.title ?? "Untitled test").trim() || "Untitled test",
+            title: (r.title ?? "Untitled journey").trim() || "Untitled journey",
             steps,
           });
           if (!saved) allOk = false;
@@ -653,6 +761,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       interacting,
       setInteracting,
       recording,
+      recordingGroup,
+      setRecordingGroup,
+      startNextRecordingGroup,
       setRecording,
       enterRecordMode,
       stopRecording,

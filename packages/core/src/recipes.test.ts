@@ -81,7 +81,17 @@ describe("recipe store roundtrip", () => {
       base64: image.toString("base64"),
     });
     assert.equal(result.bytes, image.byteLength);
+    assert.equal(result.deduplicated, false);
+    assert.match(result.sha256, /^[a-f0-9]{64}$/);
     assert.deepEqual(await readRecipeEvidenceImage(saved.id, "ev-test"), image);
+    const duplicate = await saveRecipeEvidenceImage({
+      recipeId: saved.id,
+      evidenceId: "ev-duplicate",
+      base64: image.toString("base64"),
+    });
+    assert.equal(duplicate.deduplicated, true);
+    assert.equal(duplicate.sha256, result.sha256);
+    assert.deepEqual(await readRecipeEvidenceImage(saved.id, "ev-duplicate"), image);
     await deleteRecipe(saved.id);
     assert.equal(await readRecipeEvidenceImage(saved.id, "ev-test"), null);
   });
@@ -94,6 +104,7 @@ describe("recipe store roundtrip", () => {
     });
     const source = await readFile(recipeYamlPath(testsRoot(), saved.id), "utf8");
     assert.match(source, /^schemaVersion: 1/m);
+    assert.match(source, /^recordingFormatVersion: 2/m);
     assert.match(source, /^name: YAML smoke/m);
     assert.match(source, /account_tier: Pro/);
     const read = await readRecipe(saved.id);
@@ -153,9 +164,10 @@ describe("frozen recipe execution", () => {
 describe("recipe YAML", () => {
   it("round-trips through a stable, schema-versioned source format", () => {
     const recipe = parseRecipeYaml(
-      `schemaVersion: 1\nid: yaml-roundtrip\nname: YAML roundtrip\nsteps:\n  - kind: sleep\n    ms: 10\n`,
+      `schemaVersion: 1\nrecordingFormatVersion: 2\nid: yaml-roundtrip\nname: YAML roundtrip\nsteps:\n  - kind: sleep\n    ms: 10\n`,
     );
     const output = formatRecipeYaml(recipe);
+    assert.match(output, /^recordingFormatVersion: 2/m);
     assert.equal(output, formatRecipeYaml(parseRecipeYaml(output)));
     assert.equal(recipe.title, "YAML roundtrip");
   });
@@ -248,6 +260,13 @@ describe("recipe YAML", () => {
       /unsupported Relay test schemaVersion/i,
     );
     assert.throws(
+      () =>
+        parseRecipeYaml(
+          `schemaVersion: 1\nrecordingFormatVersion: 1\nid: old-recording\nname: Old recording\nsteps: []\n`,
+        ),
+      /recordingFormatVersion must be 2/i,
+    );
+    assert.throws(
       () => parseRecipeYaml(`schemaVersion: 1\nid: extra\nname: Extra\nsteps: []\nunknown: true\n`),
       /unknown Relay test field/i,
     );
@@ -327,10 +346,17 @@ describe("validateRecipeSteps", () => {
             referenceBounds: { width: 1080, height: 2400 },
           },
         },
+        group: "Sign in",
         evidence: {
           id: "ev-1",
           recordedAt: 123,
           serial: "pixel",
+          capture: {
+            schemaVersion: 1,
+            uiTreeCapturedAt: 121,
+            screenshotCapturedAt: 124,
+            status: "complete",
+          },
           deviceBounds: { width: 1080, height: 2400 },
           pointer: { x: 10, y: 20 },
           node: { label: "Sign in", role: "button", ref: "@e1" },
@@ -358,6 +384,8 @@ describe("validateRecipeSteps", () => {
             id: "ev-1",
             capturedAt: 124,
             mime: "image/png",
+            bytes: 1024,
+            sha256: "a".repeat(64),
           },
         },
       },
@@ -370,10 +398,55 @@ describe("validateRecipeSteps", () => {
     assert.equal(step?.kind === "tap" ? step.evidence?.node?.label : undefined, "Sign in");
     assert.equal(step?.kind === "tap" ? step.evidence?.nodes?.length : undefined, 1);
     assert.equal(step?.kind === "tap" ? step.evidence?.nodes?.[0]?.parentIndex : undefined, 1);
+    assert.equal(step?.kind === "tap" ? step.evidence?.capture?.status : undefined, "complete");
+    assert.equal(step?.group, "Sign in");
     assert.equal(
       step?.kind === "tap" ? step.evidence?.candidates?.[0]?.strategy : undefined,
       "label",
     );
+  });
+
+  it("keeps recording context on non-target actions and pinned swipe endpoints", () => {
+    const [scroll, swipe] = validateRecipeSteps([
+      {
+        id: "step-scroll",
+        kind: "scroll",
+        direction: "down",
+        evidence: {
+          id: "ev-scroll",
+          recordedAt: 123,
+          screenshot: {
+            recipeId: "custom-test",
+            id: "ev-scroll",
+            capturedAt: 124,
+            mime: "image/png",
+          },
+        },
+      },
+      {
+        id: "step-swipe",
+        kind: "swipe",
+        from: {
+          x: 540,
+          y: 1600,
+          anchor: { horizontal: "center", vertical: "bottom" },
+          referenceBounds: { width: 1080, height: 2400 },
+        },
+        to: {
+          x: 540,
+          y: 600,
+          anchor: { horizontal: "center", vertical: "top" },
+          referenceBounds: { width: 1080, height: 2400 },
+        },
+      },
+    ]);
+    assert.equal(scroll?.id, "step-scroll");
+    assert.equal(scroll?.evidence?.screenshot?.id, "ev-scroll");
+    assert.equal(swipe?.kind, "swipe");
+    assert.deepEqual(swipe?.kind === "swipe" ? swipe.from.anchor : undefined, {
+      horizontal: "center",
+      vertical: "bottom",
+    });
   });
 
   it("accepts every step kind with valid fields", () => {

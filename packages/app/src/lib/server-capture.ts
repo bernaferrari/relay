@@ -133,7 +133,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
     return keyboardChain;
   }
 
-  async function captureUiSnapshot(): Promise<void> {
+  async function captureUiSnapshot(): Promise<SnapshotState> {
     deps.setBusyCapture(true);
     try {
       const serial = serialFor(deps);
@@ -147,8 +147,10 @@ export function createServerCapture(deps: CaptureServerDeps) {
         `snapshot ${data.nodes.length} nodes · bounds ${data.bounds?.width ?? "?"}×${data.bounds?.height ?? "?"}`,
         "info",
       );
+      return data;
     } catch (error) {
       deps.appendLog(error instanceof Error ? error.message : String(error), "error");
+      return null;
     } finally {
       deps.setBusyCapture(false);
     }
@@ -159,7 +161,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
     jobId?: string,
     actionId?: string,
     quiet = false,
-  ): Promise<ScreenshotResponse> {
+  ): Promise<Frame> {
     deps.setBusyCapture(true);
     try {
       const serial = serialFor(deps);
@@ -169,7 +171,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
       if (jobId) params.set("jobId", jobId);
       const query = params.toString() ? `?${params}` : "";
       const data = await deps.request<ScreenshotResponse>(`/screenshot${query}`);
-      deps.pushFrame({
+      const frame = deps.pushFrame({
         capturedAt: data.capturedAt,
         mime: data.mime,
         base64: data.base64,
@@ -183,7 +185,7 @@ export function createServerCapture(deps: CaptureServerDeps) {
       });
       deps.appendLog(`screenshot ${data.bytes} bytes`, "info", data.jobId ?? jobId);
       if (!quiet) toast("Screenshot captured", "success");
-      return data;
+      return frame;
     } catch (error) {
       deps.appendLog(error instanceof Error ? error.message : String(error), "error");
       throw error;
@@ -196,20 +198,23 @@ export function createServerCapture(deps: CaptureServerDeps) {
     recipeId: string,
     evidenceId: string,
     frame: Frame,
-  ): Promise<boolean> {
+  ): Promise<{ bytes: number; sha256: string; deduplicated: boolean } | null> {
     try {
-      await deps.request(`/recipes/${encodeURIComponent(recipeId)}/evidence`, {
-        method: "POST",
-        body: JSON.stringify({ evidenceId, mime: frame.mime, base64: frame.base64 }),
-      });
+      const saved = await deps.request<{ bytes: number; sha256: string; deduplicated: boolean }>(
+        `/recipes/${encodeURIComponent(recipeId)}/evidence`,
+        {
+          method: "POST",
+          body: JSON.stringify({ evidenceId, mime: frame.mime, base64: frame.base64 }),
+        },
+      );
       deps.appendLog(`saved recording evidence ${evidenceId}`, "success");
-      return true;
+      return saved;
     } catch (error) {
       deps.appendLog(
         `recording evidence not saved · ${error instanceof Error ? error.message : String(error)}`,
         "error",
       );
-      return false;
+      return null;
     }
   }
 

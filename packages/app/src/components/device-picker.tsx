@@ -245,7 +245,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                     No devices found
                   </strong>
                   <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
-                    Connect a device over USB or Wi-Fi, or add a managed browser.
+                    Connect by USB, Wi-Fi, or browser.
                   </p>
                 </div>
               }

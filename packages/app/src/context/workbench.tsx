@@ -1,12 +1,6 @@
 import { createSignal, createEffect, createMemo, on } from "solid-js";
 import { createSimpleContext } from "@relay/ui/context/helper";
-import {
-  useServer,
-  type JobInfo,
-  type PersistedRun,
-  type StepPoint,
-  type TraceStep,
-} from "./server";
+import { useServer, type JobInfo, type PersistedRun, type TraceStep } from "./server";
 import { useRecipeDraft } from "./recipe-draft";
 
 /**
@@ -31,6 +25,9 @@ export type RowAnno = {
 export type RunChip =
   | { kind: "live"; id: string; ts: number; job: JobInfo }
   | { kind: "disk"; id: string; ts: number; run: PersistedRun };
+
+/** A non-destructive request to replay a step over its recorded screen. */
+export type StepPreviewRequest = { index: number; token: number };
 
 const AUTO_KEY = "stage:auto-continue";
 const AUTO_KEY_LEGACY = "specimen:auto-continue";
@@ -260,32 +257,12 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
 
     // ── Step ↔ frame focus (Figma selection: one index lights both sides) ─
     const [focusedIndex, setFocusedIndex] = createSignal<number | null>(null);
-    const [coordinateUndo, setCoordinateUndo] = createSignal<{
-      index: number;
-      point: StepPoint;
-    } | null>(null);
-
-    function rememberCoordinate(index: number, point: StepPoint): void {
-      setCoordinateUndo({ index, point: structuredClone(point) });
-    }
-
-    function undoCoordinate(): void {
-      const undo = coordinateUndo();
-      if (!undo) return;
-      const step = draft.steps()[undo.index];
-      if (step?.kind === "tap") {
-        draft.updateStep(undo.index, {
-          ...step,
-          target: { ...step.target, point: structuredClone(undo.point) },
-        });
-      }
-      setCoordinateUndo(null);
-    }
+    const [previewRequest, setPreviewRequest] = createSignal<StepPreviewRequest | null>(null);
+    let previewToken = 0;
 
     // New test selected → focus first step so the artboard always shows *something*.
     createEffect(
       on(server.selectedRecipeId, (id) => {
-        setCoordinateUndo(null);
         if (!id) {
           setFocusedIndex(null);
           return;
@@ -304,26 +281,46 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
      * expand is a separate affordance so users never “lose” the list context.
      */
     function focusStep(i: number | null): void {
-      if (i !== focusedIndex()) setCoordinateUndo(null);
-      setFocusedIndex(i);
-      if (i != null) server.stopPlayback();
+      const count = draft.steps().length;
+      const next =
+        i == null || count === 0 || !Number.isFinite(i)
+          ? null
+          : Math.max(0, Math.min(Math.trunc(i), count - 1));
+      setFocusedIndex(next);
+      if (next != null) server.stopPlayback();
+    }
+
+    function previewStep(index: number): void {
+      if (index < 0 || index >= draft.steps().length) return;
+      setPreviewRequest({ index, token: ++previewToken });
+    }
+
+    /** Preview requests are one-shot UI events, never persistent selection. */
+    function clearPreviewRequest(token: number): void {
+      setPreviewRequest((current) => (current?.token === token ? null : current));
     }
 
     /** Select a frame — lights the matching step without forcing the editor open. */
     function focusFrame(i: number): void {
-      server.stopPlayback();
       server.setFrameIndex(i);
       const frame = server.frames()[i];
       const s = source();
-      if (!frame || s?.kind !== "run") return;
-      const matched = s.steps.findIndex((step) =>
-        step.frames.some(
-          (candidate) =>
-            candidate.capturedAt === frame.capturedAt ||
-            (candidate.path && frame.path && candidate.path === frame.path),
-        ),
-      );
-      if (matched >= 0) setFocusedIndex(matched);
+      const matched =
+        frame && s?.kind === "run"
+          ? s.steps.findIndex((step) =>
+              step.frames.some(
+                (candidate) =>
+                  candidate.capturedAt === frame.capturedAt ||
+                  (candidate.path && frame.path && candidate.path === frame.path),
+              ),
+            )
+          : -1;
+
+      // Frames produced outside a run do not carry a step id. They still
+      // arrive in step order, so use that ordered position as the explicit
+      // fallback. A screen can never become merely "shown" while its list
+      // row and inspector remain on a different step.
+      focusStep(matched >= 0 ? matched : i);
     }
 
     return {
@@ -343,9 +340,9 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
       focusedIndex,
       focusStep,
       focusFrame,
-      coordinateUndo,
-      rememberCoordinate,
-      undoCoordinate,
+      previewRequest,
+      previewStep,
+      clearPreviewRequest,
     };
   },
 });

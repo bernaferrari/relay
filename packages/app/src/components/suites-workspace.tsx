@@ -31,7 +31,7 @@ function SuiteChecklistPreview() {
     <div class={cn(listPanel, "w-full select-none p-3")} aria-hidden="true">
       <div class="flex items-center justify-between px-1 pb-2">
         <span class="text-[10px] font-semibold tracking-[0.1em] text-text-weaker uppercase">
-          Smoke tests
+          Example journeys
         </span>
         <span class="text-[10px] tabular-nums text-text-weaker">3</span>
       </div>
@@ -56,9 +56,9 @@ function SuiteChecklistPreview() {
 }
 
 /**
- * A small, always-visible mental-model cue. It deliberately describes the
- * actual execution guarantee rather than suggesting that a single device can
- * safely run tests in parallel.
+ * A small, always-visible mental-model cue. A flow only orchestrates named
+ * journeys: each journey owns its own return path and the flow has one clear
+ * beginning and end. We do not make people reason about a generic graph.
  */
 function FlowPathGuide(props: { suite: TestSuite; titleForTest: (testId: string) => string }) {
   const entries = () => props.suite.sections.flatMap((section) => section.entries);
@@ -70,9 +70,9 @@ function FlowPathGuide(props: { suite: TestSuite; titleForTest: (testId: string)
     <div class="border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-4 py-2.5">
       <div class="flex items-center justify-between gap-3">
         <span class="text-[10px] font-semibold tracking-[0.09em] text-[var(--text-weak)] uppercase">
-          Flow order
+          This flow
         </span>
-        <span class="text-[10px] text-[var(--text-weak)]">One device · runs in order</span>
+        <span class="text-[10px] text-[var(--text-weak)]">Runs in order</span>
       </div>
       <div class="mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--text-base)]">
         <span class="shrink-0 font-medium text-[var(--text-strong)]">Start</span>
@@ -86,6 +86,9 @@ function FlowPathGuide(props: { suite: TestSuite; titleForTest: (testId: string)
         <Icon name="chevron-right" size={12} class="shrink-0 text-[var(--text-weak)]" />
         <span class="shrink-0 font-medium text-[var(--text-strong)]">Finish</span>
       </div>
+      <p class="mt-1.5 text-[10px]/[1.35] text-[var(--text-weak)]">
+        Every journey starts from its recorded state and leaves the device ready for the next one.
+      </p>
     </div>
   );
 }
@@ -323,14 +326,14 @@ export function SuitesWorkspace(props: {
           <div>
             <strong class="block text-[13px] font-semibold text-[var(--text-strong)]">Flows</strong>
             <small class="text-[10px] text-[var(--text-weak)]">
-              {server.suites().length} saved test sequences
+              {server.suites().length} saved flow{server.suites().length === 1 ? "" : "s"}
             </small>
           </div>
           <button
             type="button"
             class={productIconButton}
             aria-label="New flow"
-            data-tip="Create a new test flow"
+            data-tip="Create a new flow"
             onClick={() => void createSuite()}
           >
             <Icon name="plus" size={14} />
@@ -344,7 +347,7 @@ export function SuitesWorkspace(props: {
                 size="sm"
                 icon="check"
                 title="No flows yet"
-                description="Create an ordered sequence of tests to run together."
+                description="Arrange named journeys into one ordered run."
                 class="min-h-48 justify-center"
               />
             }
@@ -370,7 +373,7 @@ export function SuitesWorkspace(props: {
                       {suite.title}
                     </strong>
                     <small class="text-[10px] text-[var(--text-weak)]">
-                      {count()} {count() === 1 ? "test" : "tests"}
+                      {count()} {count() === 1 ? "journey" : "journeys"}
                     </small>
                   </span>
                 </SelectableRow>
@@ -396,8 +399,8 @@ export function SuitesWorkspace(props: {
                 <EmptyState
                   size="lg"
                   icon="check"
-                  title="Create a test flow"
-                  description="Arrange existing tests into one reusable sequence."
+                  title="Create a flow"
+                  description="Arrange existing journeys into one reusable sequence."
                   actionLabel="Create a flow"
                   onAction={() => void createSuite()}
                 />
@@ -411,7 +414,7 @@ export function SuitesWorkspace(props: {
               <EmptyState
                 size="lg"
                 icon="smartphone"
-                title="Select a test"
+                title="Select a journey"
                 description="Its real device capture and latest evidence appear here."
                 class="h-full justify-center"
               />
@@ -504,7 +507,7 @@ export function SuitesWorkspace(props: {
                   onClick={() => {
                     confirmAction({
                       title: "Delete flow?",
-                      body: `“${suite().title}” will be removed. Tests inside it are not deleted.`,
+                      body: `“${suite().title}” will be removed. Journeys inside it are not deleted.`,
                       confirmLabel: "Delete flow",
                       onConfirm: () => void server.deleteSuite(suite().id),
                     });
@@ -636,7 +639,7 @@ export function SuitesWorkspace(props: {
                           if (section.entries.length === 0) return removeSection();
                           confirmAction({
                             title: "Remove stage?",
-                            body: `“${section.title}” and its ${section.entries.length} ${section.entries.length === 1 ? "test" : "tests"} will be removed from this flow.`,
+                            body: `“${section.title}” and its ${section.entries.length} ${section.entries.length === 1 ? "journey" : "journeys"} will be removed from this flow.`,
                             confirmLabel: "Remove stage",
                             onConfirm: removeSection,
                           });
@@ -796,13 +799,13 @@ export function SuitesWorkspace(props: {
                           <div class="border-b border-[var(--v2-border-border-muted)] p-1.5">
                             <label class="flex h-8 items-center gap-2 rounded-md bg-[var(--v2-background-bg-deep)] px-2 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base)]">
                               <Icon name="search" size={13} />
-                              <span class="sr-only">Search tests</span>
+                              <span class="sr-only">Search journeys</span>
                               <input
                                 ref={(element) => (addSearchInput = element)}
                                 class="min-w-0 flex-1 border-0 bg-transparent text-[12px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
                                 type="search"
                                 value={addQuery()}
-                                placeholder="Search tests"
+                                placeholder="Search journeys"
                                 autocomplete="off"
                                 spellcheck={false}
                                 onInput={(event) => setAddQuery(event.currentTarget.value)}
@@ -819,7 +822,7 @@ export function SuitesWorkspace(props: {
                               each={filteredLibraryTests()}
                               fallback={
                                 <p class="m-0 px-2 py-4 text-center text-[11px] text-[var(--text-weak)]">
-                                  No tests match.
+                                  No journeys match.
                                 </p>
                               }
                             >

@@ -1,5 +1,11 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
-import { useServer, type JobInfo, type PersistedRun } from "../context/server";
+import {
+  useServer,
+  type JobInfo,
+  type PersistedRun,
+  type VisualComparison,
+} from "../context/server";
+import { useWorkbench } from "../context/workbench";
 import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon, type IconName } from "./icon";
 import { StatusChip, jobStatusChip } from "./status-chip";
@@ -31,8 +37,8 @@ import {
 } from "../lib/execution-moments";
 import { ExecutionTimeline } from "./execution-timeline";
 import { RunGraph } from "./run-graph";
+import { VisualDiffReview } from "./visual-diff-review";
 import {
-  formatReviewTime,
   initialRunReviewStep,
   runCompletion,
   runElapsedAtStep,
@@ -45,12 +51,16 @@ export function RunsWorkspace(props: {
   onOpenTests: () => void;
 }) {
   const server = useServer();
+  const workbench = useWorkbench();
   const linkedRun = new URLSearchParams(window.location.search).get("run");
   const [selectedId, setSelectedId] = createSignal<string | null>(linkedRun);
   const [selectedRunStep, setSelectedRunStep] = createSignal(0);
   const [tab, setTab] = createSignal<
-    "timeline" | "summary" | "evaluation" | "network" | "logs" | "compatibility"
+    "timeline" | "summary" | "visual" | "evaluation" | "network" | "logs" | "compatibility"
   >("timeline");
+  const [visualComparison, setVisualComparison] = createSignal<VisualComparison | null>(null);
+  const [visualLoading, setVisualLoading] = createSignal(false);
+  const [approvingVisualBaseline, setApprovingVisualBaseline] = createSignal(false);
   const [matrixReport, setMatrixReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
@@ -59,6 +69,7 @@ export function RunsWorkspace(props: {
   >([]);
   const [refreshing, setRefreshing] = createSignal(false);
   const [runFilter, setRunFilter] = createSignal<"all" | "passed" | "attention" | "active">("all");
+  const [historyExpanded, setHistoryExpanded] = createSignal(false);
   const requestedDetails = new Set<string>();
   async function refreshRuns(): Promise<void> {
     if (refreshing()) return;
@@ -85,29 +96,25 @@ export function RunsWorkspace(props: {
   });
   const visibleRows = createMemo(() => {
     const filter = runFilter();
-    if (filter === "passed")
-      return rows().filter((row) => row.status === "ok" || row.status === "healed");
-    if (filter === "attention")
-      return rows().filter((row) => row.status === "error" || row.status === "cancelled");
-    if (filter === "active")
-      return rows().filter((row) => ["queued", "running", "paused"].includes(row.status));
-    return rows();
-  });
-  const passedCount = createMemo(
-    () => rows().filter((row) => row.status === "ok" || row.status === "healed").length,
-  );
-  const passRate = createMemo(() =>
-    rows().length > 0 ? Math.round((passedCount() / rows().length) * 100) : 0,
-  );
-  const typicalDuration = createMemo(() => {
-    const durations = rows()
-      .map((row) =>
-        row.startedAt && row.finishedAt ? Math.max(0, row.finishedAt - row.startedAt) : null,
-      )
-      .filter((value): value is number => value !== null)
-      .sort((a, b) => a - b);
-    if (durations.length === 0) return "—";
-    return formatReviewTime(durations[Math.floor(durations.length / 2)]!);
+    const filtered =
+      filter === "passed"
+        ? rows().filter((row) => row.status === "ok" || row.status === "healed")
+        : filter === "attention"
+          ? rows().filter((row) => row.status === "error" || row.status === "cancelled")
+          : filter === "active"
+            ? rows().filter((row) => ["queued", "running", "paused"].includes(row.status))
+            : rows();
+    // The default should answer “what needs review?” rather than repeat the
+    // same journey forty times. Full chronology remains one deliberate click
+    // away for audit work.
+    if (filter !== "all" || historyExpanded()) return filtered;
+    const seenJourneys = new Set<string>();
+    return filtered.filter((row) => {
+      const key = row.action || row.title || row.id;
+      if (seenJourneys.has(key)) return false;
+      seenJourneys.add(key);
+      return true;
+    });
   });
   // Custom equality: `rows()` re-spreads every persisted run into a fresh
   // object on every background poll (persistedAsJob), even when nothing
@@ -131,6 +138,16 @@ export function RunsWorkspace(props: {
         (a.artifacts?.length ?? 0) === (b.artifacts?.length ?? 0) &&
         (a.frames?.length ?? 0) === (b.frames?.length ?? 0)),
   });
+  /**
+   * A run report owns its local replay cursor, but when the corresponding
+   * test is open it must also advance the shared workbench selection. This
+   * keeps a selected report screen, the test outline, and its inspector from
+   * drifting into three different ideas of the current step.
+   */
+  function selectRunStep(index: number): void {
+    setSelectedRunStep(index);
+    if (server.selectedRecipeId() === selected()?.action) workbench.focusStep(index);
+  }
   createEffect(() => {
     const run = selected();
     if (run && !run.steps?.length && !requestedDetails.has(run.id)) {
@@ -140,10 +157,36 @@ export function RunsWorkspace(props: {
     if (run?.evidence) void server.loadRunSignals(run.id).then(setRegressionSignals);
     else setRegressionSignals([]);
   });
+  createEffect(() => {
+    const job = selected();
+    if (tab() !== "visual" || !job?.persisted) {
+      setVisualComparison(null);
+      return;
+    }
+    setVisualLoading(true);
+    void server
+      .loadVisualComparison(job.id)
+      .then(setVisualComparison)
+      .finally(() => setVisualLoading(false));
+  });
+  async function approveCurrentVisualBaseline(): Promise<void> {
+    const job = selected();
+    if (!job?.persisted || approvingVisualBaseline()) return;
+    setApprovingVisualBaseline(true);
+    try {
+      const comparison = await server.approveVisualBaseline(job.id);
+      if (comparison) {
+        setVisualComparison(comparison);
+        toast("Visual baseline approved", "success");
+      }
+    } finally {
+      setApprovingVisualBaseline(false);
+    }
+  }
   const openRun = (job: JobInfo) => {
     setSelectedId(job.id);
     server.setSelectedJobId(job.id);
-    setSelectedRunStep(initialRunReviewStep(job));
+    selectRunStep(initialRunReviewStep(job));
     setTab("timeline");
     if (!job.steps?.length && !requestedDetails.has(job.id)) {
       requestedDetails.add(job.id);
@@ -171,7 +214,7 @@ export function RunsWorkspace(props: {
     if (!requested || !rows().some((row) => row.id === requested)) return;
     const requestedRun = rows().find((row) => row.id === requested)!;
     setSelectedId(requested);
-    setSelectedRunStep(initialRunReviewStep(requestedRun));
+    selectRunStep(initialRunReviewStep(requestedRun));
     setTab("timeline");
   });
   createEffect(() => {
@@ -236,24 +279,6 @@ export function RunsWorkspace(props: {
           </Show>
         </div>
       </Show>
-      <Show when={rows().length > 0 && !selected()}>
-        <div class="mx-auto mb-5 grid w-full max-w-[1080px] grid-cols-4 gap-2 max-[760px]:grid-cols-2">
-          <Metric
-            label="Pass rate"
-            value={`${passRate()}%`}
-            detail="across saved runs"
-            tone={passRate() > 0 ? "success" : undefined}
-          />
-          <Metric label="Passed" value={passedCount()} detail="including healed" tone="success" />
-          <Metric
-            label="Needs attention"
-            value={rows().filter((row) => row.status === "error").length}
-            detail="failed runs"
-            tone="danger"
-          />
-          <Metric label="Typical time" value={typicalDuration()} detail="median duration" />
-        </div>
-      </Show>
       <div
         class={cn(
           selected()
@@ -275,7 +300,7 @@ export function RunsWorkspace(props: {
                 >
                   {(
                     [
-                      ["all", "All"],
+                      ["all", "Latest"],
                       ["passed", "Passed"],
                       ["attention", "Attention"],
                       ["active", "Active"],
@@ -297,9 +322,25 @@ export function RunsWorkspace(props: {
                     </button>
                   ))}
                 </div>
-                <span class="font-mono text-[10.5px] text-text-weaker">
-                  {visibleRows().length} run{visibleRows().length === 1 ? "" : "s"}
-                </span>
+                <div class="flex items-center gap-2">
+                  <Show when={runFilter() === "all" && rows().length > visibleRows().length}>
+                    <button
+                      type="button"
+                      class="rounded-md px-2 py-1 text-[10.5px] font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                      onClick={() => setHistoryExpanded((expanded) => !expanded)}
+                    >
+                      {historyExpanded() ? "Latest only" : `All ${rows().length}`}
+                    </button>
+                  </Show>
+                  <span class="font-mono text-[10.5px] text-text-weaker">
+                    {visibleRows().length}{" "}
+                    {historyExpanded()
+                      ? "runs"
+                      : visibleRows().length === 1
+                        ? "journey"
+                        : "journeys"}
+                  </span>
+                </div>
               </div>
             </Show>
             <For
@@ -351,7 +392,7 @@ export function RunsWorkspace(props: {
               job={job()}
               items={selectedCanvasItems()}
               selectedIndex={selectedRunStep()}
-              onSelect={setSelectedRunStep}
+              onSelect={selectRunStep}
               onBack={() => {
                 setSelectedId(null);
                 const url = new URL(window.location.href);
@@ -480,8 +521,9 @@ export function RunsWorkspace(props: {
               >
                 {(
                   [
-                    ["timeline", "Steps"],
-                    ["summary", "Summary"],
+                    ["timeline", "Playback"],
+                    ["summary", "Overview"],
+                    ["visual", "Changes"],
                     ["evaluation", "Checks"],
                     ["network", "Network"],
                     ["logs", "Logs"],
@@ -538,7 +580,7 @@ export function RunsWorkspace(props: {
                   <RunStepList
                     job={job()}
                     selectedIndex={selectedRunStep()}
-                    onSelect={setSelectedRunStep}
+                    onSelect={selectRunStep}
                   />
                 </Show>
                 <Show when={tab() === "summary"}>
@@ -638,6 +680,24 @@ export function RunsWorkspace(props: {
                       </Show>
                     </dl>
                   </details>
+                </Show>
+                <Show when={tab() === "visual"}>
+                  <Show
+                    when={job().persisted}
+                    fallback={
+                      <p class="m-0 rounded-lg border border-border-weak-base px-3 py-3 text-[11px]/[1.45] text-text-weak">
+                        This run is still being saved. Visual review becomes available when its
+                        evidence is complete.
+                      </p>
+                    }
+                  >
+                    <VisualDiffReview
+                      comparison={visualComparison()}
+                      loading={visualLoading()}
+                      approving={approvingVisualBaseline()}
+                      onApprove={() => void approveCurrentVisualBaseline()}
+                    />
+                  </Show>
                 </Show>
                 <Show when={tab() === "network"}>
                   <EvidenceList
@@ -907,8 +967,8 @@ type VideoArtifactData = {
   result?: unknown;
 };
 
-/** Left half of a run report: the captured evidence, framed like a device,
- * with a step timeline scrubber underneath. */
+/** The primary run-review surface: captured playback with a concise scrubber.
+ * The optional screen view remains secondary to the evidence people can see. */
 function RunReplayStage(props: {
   job: JobInfo;
   items: FrameCanvasItem[];
@@ -1146,7 +1206,7 @@ function RunReplayStage(props: {
               aria-pressed={stageMode() === "map"}
               onClick={() => setStageMode("map")}
             >
-              <Icon name="move" size={12} /> Map
+              <Icon name="move" size={12} /> Screens
             </button>
           </div>
         </Show>
@@ -1276,7 +1336,8 @@ function RunReplayStage(props: {
   );
 }
 
-/** The Steps tab of a run report — the reference reading surface. */
+/** The supporting action list for a run report. Playback remains the primary
+ * review surface; this list exists to explain and jump to a moment. */
 function RunStepList(props: {
   job: JobInfo;
   selectedIndex: number;
@@ -1612,29 +1673,6 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
         </span>
       </span>
     </button>
-  );
-}
-
-function Metric(props: {
-  label: string;
-  value: number | string;
-  detail: string;
-  tone?: "success" | "danger";
-}) {
-  return (
-    <div class="grid min-w-0 gap-1 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 py-3 shadow-[0_6px_18px_rgb(0_0_0/6%)]">
-      <strong
-        class={cn(
-          "font-mono text-[22px]/none font-semibold tracking-[-0.04em] tabular-nums text-text-strong",
-          props.tone === "success" && "text-text-success-base",
-          props.tone === "danger" && "text-text-critical-base",
-        )}
-      >
-        {props.value}
-      </strong>
-      <span class="text-[11.5px]/[1.25] font-medium text-text-base">{props.label}</span>
-      <small class="text-[10px]/[1.25] text-text-weaker">{props.detail}</small>
-    </div>
   );
 }
 

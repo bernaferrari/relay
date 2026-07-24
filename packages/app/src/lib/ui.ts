@@ -166,21 +166,45 @@ export const segBtnRec = cn(
   "bg-surface-critical-weak text-icon-critical-base ring-border-critical-base/40",
 );
 
+/** Full-width segmented control for dense property inspectors. */
+export const propertySeg = cn(
+  "inline-flex h-8 w-full items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] p-0.5",
+  "ring-1 ring-inset ring-[var(--v2-border-border-muted)]",
+);
+
+const propertySegBtnBase = cn(
+  "inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-md px-2",
+  "text-[10.5px] font-medium text-[var(--text-weak)] select-none",
+  "transition-[background-color,color,box-shadow,transform] duration-100 ease-out",
+  "active:enabled:scale-[0.98]",
+);
+
+export const propertySegBtn = cn(
+  propertySegBtnBase,
+  "hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-base)]",
+);
+
+export const propertySegBtnOn = cn(
+  propertySegBtnBase,
+  "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-strong)]",
+  "shadow-[0_1px_3px_rgb(0_0_0/24%)] hover:enabled:bg-[var(--v2-background-bg-layer-03)]",
+);
+
 export const mono = "font-mono tabular-nums";
 
 export const fieldLabel = cn(
-  "w-[72px] shrink-0 pt-[7px] text-12-medium leading-none text-text-base",
+  "w-16 shrink-0 pt-[9px] text-[11px] leading-none font-normal text-text-base",
 );
 
 export const fieldInput = cn(
-  "h-7 min-w-0 w-full rounded-md bg-surface-raised-stronger-non-alpha px-2.5",
-  "text-12-regular text-text-strong ring-1 ring-inset ring-border-weak-base",
+  "h-8 min-w-0 w-full rounded-md bg-surface-raised-stronger-non-alpha px-2.5",
+  "text-[11px] font-normal text-text-strong ring-1 ring-inset ring-border-weak-base",
   "placeholder:text-text-weak",
   "transition-[box-shadow] duration-150",
   "focus:outline-none focus:ring-2 focus:ring-border-interactive-base/45",
 );
 
-export const propRow = "grid grid-cols-[72px_minmax(0,1fr)] items-start gap-x-2.5 gap-y-1";
+export const propRow = "grid grid-cols-[64px_minmax(0,1fr)] items-start gap-x-2 gap-y-1";
 
 export const popover = cn(
   "ui-pop z-50 overflow-hidden rounded-lg",
@@ -230,11 +254,11 @@ export const eyebrow = cn(
  * with `tabUnderlineActive` on the selected tab.
  */
 export const tabUnderline = cn(
-  "relative inline-flex min-h-9 shrink-0 items-center gap-1.5 px-2.5",
+  "relative inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md px-2.5",
   "text-[12.5px]/[1.25] font-semibold text-text-weaker transition-colors",
   "after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:scale-x-0",
   "after:rounded-full after:bg-surface-brand-base after:transition-transform",
-  "hover:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
+  "hover:enabled:bg-surface-raised-base-hover hover:enabled:text-text-weak focus-visible:outline-1 focus-visible:outline-border-strong-focus",
 );
 
 export const tabUnderlineActive = "text-text-strong after:scale-x-100";

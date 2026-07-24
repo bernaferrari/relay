@@ -32,19 +32,19 @@ export function FlowParametersEditor() {
   const label = "grid min-w-0 gap-1 text-[10px] text-[var(--text-weak)]";
 
   return (
-    <div class="grid gap-3.5">
-      <header class="flex items-center justify-between gap-4 max-sm:grid max-sm:grid-cols-1">
+    <div class="grid gap-2.5">
+      <header class="flex items-center justify-between gap-3">
         <div class="grid min-w-0 gap-1">
-          <h3 class="m-0 text-[15px] font-semibold leading-[1.2] tracking-[-0.01em] text-[var(--text-strong)]">
+          <h3 class="m-0 text-[12px] font-semibold leading-[1.2] text-[var(--text-strong)]">
             Inputs
           </h3>
-          <p class="m-0 max-w-[34rem] text-[10.5px]/[1.45] text-[var(--text-weak)]">
-            Values someone can change when they reuse this test.
+          <p class="m-0 text-[10px]/[1.35] text-[var(--text-weak)]">
+            Values changed when this test is reused.
           </p>
         </div>
         <button
           type="button"
-          class={cn(productSecondary, "min-h-8 shrink-0 whitespace-nowrap px-2.5 text-[11px]")}
+          class={cn(productSecondary, "min-h-8 shrink-0 whitespace-nowrap px-2.5 text-[10.5px]")}
           onClick={add}
         >
           <Icon name="plus" size={13} /> Add input
@@ -53,15 +53,11 @@ export function FlowParametersEditor() {
       <Show
         when={draft.parameters().length > 0}
         fallback={
-          <div class="grid min-h-24 place-items-center border-y border-dashed border-[var(--v2-border-border-muted)] px-4 py-5 text-center">
-            <div>
-              <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
-                No inputs needed
-              </strong>
-              <span class="mt-1 block text-[10px] text-[var(--text-weak)]">
-                This test uses the values you recorded.
-              </span>
-            </div>
+          <div class="flex min-h-10 items-center gap-2 rounded-lg bg-[var(--v2-background-bg-layer-01)] px-3">
+            <Icon name="check" size={13} class="shrink-0 text-[var(--text-weak)]" />
+            <span class="text-[10.5px] text-[var(--text-weak)]">
+              No inputs — recorded values will be used.
+            </span>
           </div>
         }
       >
