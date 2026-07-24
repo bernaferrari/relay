@@ -80,6 +80,7 @@ import type {
   LocalSchedule,
   SaveSuiteInput,
   TestSuite,
+  VisualComparison,
 } from "../lib/api-types";
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
@@ -110,6 +111,7 @@ export type {
   SuiteEntry,
   SuiteSection,
   TestSuite,
+  VisualComparison,
 } from "../lib/api-types";
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
@@ -637,6 +639,28 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         return data.signals ?? [];
       } catch {
         return [];
+      }
+    }
+
+    async function loadVisualComparison(id: string): Promise<VisualComparison | null> {
+      try {
+        return await request<VisualComparison>(`/runs/${encodeURIComponent(id)}/visual-baseline`);
+      } catch {
+        return null;
+      }
+    }
+
+    async function approveVisualBaseline(id: string): Promise<VisualComparison | null> {
+      try {
+        await request(`/runs/${encodeURIComponent(id)}/visual-baseline`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        return await loadVisualComparison(id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toast(message, "error");
+        return null;
       }
     }
 
@@ -1361,6 +1385,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshRuns,
       loadRunDetail,
       loadRunSignals,
+      loadVisualComparison,
+      approveVisualBaseline,
       pollHealth,
       retryConnection,
       runRecipeRemote,

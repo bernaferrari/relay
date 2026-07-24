@@ -1,722 +1,397 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
-import type { JourneyMetadata, Revisioned } from "@relay/protocol";
+import { For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer, type RecipeStep } from "../context/server";
 import { useWorkbench } from "../context/workbench";
-import { sentenceForStep } from "../lib/step-sentence";
-import { frameToSrc } from "../lib/frame-canvas-presentation";
 import { cn } from "../lib/cn";
+import { buildJourneyTree, type JourneyTreeEdge, type JourneyTreeNode } from "../lib/journey-tree";
+import { zoomViewportAtPoint } from "../lib/viewport-zoom";
 import { Icon } from "./icon";
 import { AgentTestComposer } from "./agent-test-composer";
 import { accentForStep, evidenceForStep, iconForStep } from "./journey-step-presentation";
-import { AddMenu } from "./step-list-controls";
-import { kindLabel } from "./step-list-metadata";
-import { eyebrow } from "../lib/ui";
 
 type Viewport = { x: number; y: number; scale: number };
-type EdgeStyle = "flow" | "branch" | "failure";
-type EdgeConfig = { label: string; style: EdgeStyle };
 
-const JOURNEY_NODE_WIDTH = 220;
-const JOURNEY_NODE_HEIGHT = 468;
-const JOURNEY_NODE_PORT_Y = JOURNEY_NODE_HEIGHT / 2;
-const JOURNEY_NODE_GAP = 96;
-const JOURNEY_NODE_STEP = JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP;
-
-const boardChrome =
-  "absolute top-3.5 z-[5] flex min-h-[38px] items-center rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]";
-
-const controlBtn =
-  "inline-flex h-[30px] min-w-[30px] items-center justify-center rounded-[7px] text-[10px] text-[var(--text-base)] hover:bg-surface-raised-base-hover hover:text-[var(--text-strong)]";
+const CARD_W = 208;
+const CARD_H = 292;
+const MIN_SCALE = 0.35;
+const MAX_SCALE = 1.15;
 
 /**
- * Journey is always available. Planned steps, captured device frames, and run
- * results stay on one graph so execution adds evidence without replacing the
- * surface the user was editing.
+ * The Map is a screen-state tree, not a second way to edit a linear list of
+ * steps. A screen is reused when its captured evidence matches, so a recorded
+ * Back action visibly returns to Settings rather than manufacturing a second
+ * Settings card.
  */
 export function JourneyWorkspace(props: { onLive: () => void }) {
-  return <PlannedJourney onLive={props.onLive} />;
-}
-
-function PlannedJourney(props: { onLive: () => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const workbench = useWorkbench();
-  // Fit measures the actual board and content instead of guessing from the
-  // window width — otherwise the last node hides behind the inspector column.
-  const fittedView = (): Viewport => {
-    const count = Math.max(1, draft.steps().length);
-    const contentWidth = count * (JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP) - JOURNEY_NODE_GAP;
-    const boardWidth = board?.clientWidth ?? Math.max(620, window.innerWidth - 700);
-    const boardHeight = board?.clientHeight ?? 640;
-    const contentHeight =
-      board?.querySelector<HTMLElement>("[data-journey-node]")?.offsetHeight ?? 430;
-    const pad = 56;
-    const scale = Math.min(
-      1,
-      Math.max(
-        0.3,
-        Math.min((boardWidth - pad * 2) / contentWidth, (boardHeight - pad * 2) / contentHeight),
+  const tree = createMemo(() => buildJourneyTree(draft.steps()));
+  const [view, setView] = createSignal<Viewport>({ x: 56, y: 72, scale: 0.78 });
+  let canvas: HTMLElement | undefined;
+  let pan: { x: number; y: number; view: Viewport } | undefined;
+
+  const bounds = createMemo(() => {
+    const nodes = tree().nodes;
+    if (!nodes.length) return { width: 720, height: 520 };
+    return {
+      width: Math.max(720, Math.max(...nodes.map((node) => node.x + CARD_W)) + 96),
+      height: Math.max(520, Math.max(...nodes.map((node) => node.y + CARD_H)) + 96),
+    };
+  });
+
+  const returns = createMemo(() => tree().edges.filter((edge) => edge.kind === "return").length);
+
+  const fit = () => {
+    const element = canvas;
+    if (!element) return;
+    const width = bounds().width;
+    const height = bounds().height;
+    const pad = 52;
+    const scale = Math.max(
+      MIN_SCALE,
+      Math.min(
+        1,
+        (element.clientWidth - pad * 2) / width,
+        (element.clientHeight - pad * 2) / height,
       ),
     );
-    return {
-      x: Math.max(pad, (boardWidth - contentWidth * scale) / 2),
-      y: Math.max(32, (boardHeight - contentHeight * scale) / 2),
+    setView({
       scale,
-    };
-  };
-  // `board` is not bound yet at signal-init time; the mount refit measures it.
-  const [view, setView] = createSignal<Viewport>({ x: 48, y: 64, scale: 0.9 });
-  onMount(() => queueMicrotask(() => setView(fittedView())));
-  const [selectedEdge, setSelectedEdge] = createSignal<number | null>(null);
-  const [addMenu, setAddMenu] = createSignal<{
-    at: number;
-    anchor: { left: number; top: number; bottom: number; width: number };
-  } | null>(null);
-  const [edgeConfig, setEdgeConfig] = createSignal<Record<number, EdgeConfig>>({});
-  const [stepDrag, setStepDrag] = createSignal<{
-    pointerId: number;
-    from: number;
-    over: number;
-    startClientX: number;
-    deltaX: number;
-  } | null>(null);
-  const [journeyRevision, setJourneyRevision] = createSignal<Revisioned<JourneyMetadata>>({
-    revision: 0,
-    value: { positions: {}, edgeLabels: {}, edgeKinds: {} },
-    updatedAt: 0,
-  });
-  let drag: { x: number; y: number; vx: number; vy: number } | null = null;
-  let board: HTMLElement | undefined;
-  let lastCenteredIndex: number | null = null;
-
-  const nodes = createMemo(() =>
-    draft.steps().map((step, index) => ({
-      step,
-      index,
-      x: index * JOURNEY_NODE_STEP,
-      y: 0,
-    })),
-  );
-  const evidenceCount = createMemo(
-    () =>
-      nodes().filter(
-        (node) => server.frames()[node.index] || evidenceForStep(node.step)?.screenshot,
-      ).length,
-  );
-  const resultCounts = createMemo(() => {
-    const annotations = nodes().map((node) => workbench.rowAnno(node.index));
-    return {
-      passed: annotations.filter((item) => item.status === "pass").length,
-      failed: annotations.filter((item) => item.status === "fail").length,
-      running: annotations.filter((item) => item.status === "running").length,
-    };
-  });
-  const width = () =>
-    Math.max(620, nodes().length * (JOURNEY_NODE_WIDTH + JOURNEY_NODE_GAP) + JOURNEY_NODE_WIDTH);
-  const defaultEdge = (index: number): EdgeConfig => {
-    const step = nodes()[index]?.step;
-    return step?.kind === "branch"
-      ? { label: `Matched → ${step.thenRecipeId}`, style: "branch" }
-      : step?.kind === "repeat"
-        ? { label: `Repeat ${step.count}×`, style: "branch" }
-        : { label: "Continue", style: "flow" };
+      x: Math.max(pad, (element.clientWidth - width * scale) / 2),
+      y: Math.max(pad, (element.clientHeight - height * scale) / 2),
+    });
   };
 
-  createEffect(() => {
-    const id = server.selectedRecipeId();
-    if (!id) return;
-    void server
-      .loadJourney(id)
-      .then((metadata) => {
-        if (server.selectedRecipeId() !== id) return;
-        setJourneyRevision(metadata);
-        setEdgeConfig(
-          Object.fromEntries(
-            Object.keys(metadata.value.edgeLabels).map((key) => [
-              Number(key),
-              {
-                label: metadata.value.edgeLabels[key] ?? "Continue",
-                style: (metadata.value.edgeKinds[key] as EdgeStyle | undefined) ?? "flow",
-              },
-            ]),
-          ),
-        );
-      })
-      .catch(() => setEdgeConfig({}));
-    setSelectedEdge(null);
-  });
+  onMount(() => requestAnimationFrame(fit));
 
-  function patchEdge(index: number, patch: Partial<EdgeConfig>): void {
-    const next = {
-      ...edgeConfig(),
-      [index]: {
-        label: edgeConfig()[index]?.label ?? defaultEdge(index).label,
-        style: edgeConfig()[index]?.style ?? defaultEdge(index).style,
-        ...patch,
-      },
-    };
-    setEdgeConfig(next);
-    const id = server.selectedRecipeId();
-    if (id) {
-      const current = journeyRevision();
-      const value: JourneyMetadata = {
-        ...current.value,
-        edgeLabels: Object.fromEntries(
-          Object.entries(next).map(([key, config]) => [key, config.label]),
-        ),
-        edgeKinds: Object.fromEntries(
-          Object.entries(next).map(([key, config]) => [key, config.style]),
-        ),
-      };
-      setJourneyRevision({
-        ...current,
-        revision: current.revision + 1,
-        value,
-        updatedAt: Date.now(),
-      });
-      void server
-        .saveJourney(id, current, value)
-        .then(setJourneyRevision)
-        .catch(() => setJourneyRevision(current));
-    }
-  }
-
-  function zoom(delta: number): void {
-    setView((current) => ({ ...current, scale: clamp(current.scale + delta, 0.48, 1.18) }));
-  }
-
-  function focusAfterMove(from: number, to: number): void {
-    const selected = workbench.focusedIndex();
-    if (selected == null) return;
-    if (selected === from) workbench.focusStep(to);
-    else if (from < to && selected > from && selected <= to) workbench.focusStep(selected - 1);
-    else if (to < from && selected >= to && selected < from) workbench.focusStep(selected + 1);
-  }
-
-  function commitStepDrag(): void {
-    const current = stepDrag();
-    setStepDrag(null);
-    if (!current || current.from === current.over) return;
-    draft.moveStepTo(current.from, current.over);
-    focusAfterMove(current.from, current.over);
-    setSelectedEdge(null);
-    setAddMenu(null);
-  }
-
-  function moveStepByKeyboard(index: number, direction: -1 | 1): void {
-    const next = clamp(index + direction, 0, nodes().length - 1);
-    if (next === index) return;
-    draft.moveStepTo(index, next);
-    focusAfterMove(index, next);
-    queueMicrotask(() =>
-      board
-        ?.querySelector<HTMLButtonElement>(`[data-reorder-step="${next}"]`)
-        ?.focus({ preventScroll: true }),
-    );
-  }
-
-  // Layers, canvas, and inspector share one selection. If a step is chosen in
-  // the outline, reveal its device frame instead of leaving the user hunting
-  // for the selected object off-canvas.
-  createEffect(() => {
-    const selected = workbench.focusedIndex();
-    if (selected == null || selected === lastCenteredIndex || !board) return;
-    const node = nodes()[selected];
-    if (!node) return;
-    lastCenteredIndex = selected;
-    setView((current) => ({
-      ...current,
-      x: board!.clientWidth / 2 - (node.x + JOURNEY_NODE_WIDTH / 2) * current.scale,
-      y: Math.max(60, Math.min(current.y, 92)),
-    }));
-  });
+  const selectStep = (index: number) => {
+    workbench.focusStep(index);
+    draft.setExpandedStep(index);
+  };
 
   return (
     <section
       ref={(element) => {
-        board = element;
+        canvas = element;
       }}
-      class="!absolute inset-0 cursor-grab touch-none select-none overflow-hidden active:cursor-grabbing [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-strong)_10%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
-      aria-label="Planned test journey"
+      class="relative isolate flex min-h-0 flex-1 overflow-hidden bg-[var(--v2-background-bg-deep)]"
+      aria-label="Screen tree"
       onWheel={(event) => {
-        if (!event.ctrlKey && !event.metaKey) return;
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) return;
         event.preventDefault();
-        zoom(event.deltaY > 0 ? -0.08 : 0.08);
+        const element = canvas;
+        if (!element) return;
+        const rect = element.getBoundingClientRect();
+        const current = view();
+        setView(
+          zoomViewportAtPoint(
+            current,
+            Math.max(
+              MIN_SCALE,
+              Math.min(MAX_SCALE, current.scale + (event.deltaY > 0 ? -0.08 : 0.08)),
+            ),
+            { x: event.clientX - rect.left, y: event.clientY - rect.top },
+          ),
+        );
       }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || (event.target as HTMLElement).closest("button, input, select"))
-          return;
-        event.preventDefault();
-        const current = view();
-        drag = { x: event.clientX, y: event.clientY, vx: current.x, vy: current.y };
+        if (event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+        pan = { x: event.clientX, y: event.clientY, view: view() };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
-        if (!drag) return;
-        setView((current) => ({
-          ...current,
-          x: drag!.vx + event.clientX - drag!.x,
-          y: drag!.vy + event.clientY - drag!.y,
-        }));
+        if (!pan) return;
+        setView({
+          ...pan.view,
+          x: pan.view.x + event.clientX - pan.x,
+          y: pan.view.y + event.clientY - pan.y,
+        });
       }}
       onPointerUp={() => {
-        drag = null;
+        pan = undefined;
       }}
       onPointerCancel={() => {
-        drag = null;
-      }}
-      onLostPointerCapture={() => {
-        drag = null;
+        pan = undefined;
       }}
     >
-      <div class={cn(boardChrome, "left-3.5 gap-2.5 px-2.5 text-[10px] text-[var(--text-base)]")}>
-        <span class="inline-flex items-center gap-1.5 font-semibold">
-          <i class="size-1.5 rounded-full bg-[var(--v2-background-bg-accent)] shadow-[0_0_9px_color-mix(in_srgb,var(--v2-background-bg-accent)_65%,transparent)]" />
-          {nodes().length} {nodes().length === 1 ? "step" : "steps"}
+      <div
+        class="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          "background-image":
+            "radial-gradient(circle at 1px 1px,color-mix(in srgb,var(--text-strong) 11%,transparent) 1px,transparent 0)",
+          "background-size": "22px 22px",
+        }}
+      />
+
+      <div class="absolute top-3 left-3 z-10 flex min-h-9 items-center gap-2 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] px-2.5 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
+        <Icon name="move" size={13} class="text-[var(--text-base)]" />
+        <span class="text-[11px] font-medium text-[var(--text-strong)]">Screen tree</span>
+        <span class="text-[10px] text-[var(--text-weak)]">
+          {tree().nodes.length} {tree().nodes.length === 1 ? "screen" : "screens"}
         </span>
-        <b class="border-l border-[var(--v2-border-border-muted)] pl-2.5 font-mono text-[9px] font-normal text-[var(--text-weak)]">
-          <Show
-            when={
-              resultCounts().running > 0 || resultCounts().passed > 0 || resultCounts().failed > 0
-            }
-            fallback={evidenceCount() > 0 ? `${evidenceCount()} captured` : "Not run yet"}
-          >
-            {resultCounts().running > 0
-              ? `Running step ${resultCounts().passed + resultCounts().failed + 1}`
-              : resultCounts().failed > 0
-                ? `${resultCounts().failed} failed · ${resultCounts().passed} passed`
-                : `${resultCounts().passed} passed`}
-          </Show>
-        </b>
+        <Show when={returns() > 0}>
+          <span class="rounded bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_14%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-interactive-base)]">
+            {returns()} return{returns() === 1 ? "" : "s"}
+          </span>
+        </Show>
       </div>
-      <div class={cn(boardChrome, "right-3.5 gap-0.5 border-0 p-1")}>
-        <button type="button" class={controlBtn} onClick={() => zoom(-0.1)} aria-label="Zoom out">
+      <div class="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
+        <button
+          type="button"
+          class="grid size-7 place-items-center rounded-[7px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+          aria-label="Zoom out"
+          onClick={() =>
+            setView((current) => ({ ...current, scale: Math.max(MIN_SCALE, current.scale - 0.1) }))
+          }
+        >
           −
         </button>
-        <span class="inline-flex h-[30px] min-w-10 items-center justify-center font-mono text-[10px] text-[var(--text-weak)]">
+        <span class="min-w-9 text-center font-mono text-[10px] text-[var(--text-weak)]">
           {Math.round(view().scale * 100)}%
         </span>
-        <button type="button" class={controlBtn} onClick={() => zoom(0.1)} aria-label="Zoom in">
+        <button
+          type="button"
+          class="grid size-7 place-items-center rounded-[7px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+          aria-label="Zoom in"
+          onClick={() =>
+            setView((current) => ({ ...current, scale: Math.min(MAX_SCALE, current.scale + 0.1) }))
+          }
+        >
           +
         </button>
-        <button type="button" class={controlBtn} onClick={() => setView(fittedView())}>
+        <button
+          type="button"
+          class="h-7 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+          onClick={fit}
+        >
           Fit
         </button>
       </div>
 
-      <Show when={selectedEdge() !== null}>
-        <div
-          class="absolute top-[82px] right-3.5 z-[7] grid w-[260px] cursor-default gap-2.5 rounded-xl border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-3 text-[var(--text-strong)] shadow-[var(--v2-elevation-floating)]"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <div class="grid gap-1">
-            <span class={eyebrow}>Connection</span>
-            <strong class="text-[13px] font-semibold">Customize arrow</strong>
-          </div>
-          <label class="grid gap-1">
-            <span class="text-[10px] text-[var(--text-weak)]">Label</span>
-            <input
-              class="h-8 w-full rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[var(--text-strong)] outline-none focus:border-[var(--text-interactive-base)]"
-              value={edgeConfig()[selectedEdge()!]?.label ?? defaultEdge(selectedEdge()!).label}
-              onInput={(event) => patchEdge(selectedEdge()!, { label: event.currentTarget.value })}
-            />
-          </label>
-          <label class="grid gap-1">
-            <span class="text-[10px] text-[var(--text-weak)]">Type</span>
-            <select
-              class="h-8 w-full rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[var(--text-strong)] outline-none"
-              value={edgeConfig()[selectedEdge()!]?.style ?? defaultEdge(selectedEdge()!).style}
-              onChange={(event) =>
-                patchEdge(selectedEdge()!, { style: event.currentTarget.value as EdgeStyle })
-              }
-            >
-              <option value="flow">Normal path</option>
-              <option value="branch">Alternate branch</option>
-              <option value="failure">Failure path</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            class="absolute top-1.5 right-1.5 grid size-7 place-items-center rounded-[7px] text-[var(--text-weak)] hover:bg-surface-raised-base-hover hover:text-[var(--text-strong)]"
-            aria-label="Close arrow editor"
-            onClick={() => setSelectedEdge(null)}
-          >
-            ×
-          </button>
-        </div>
-      </Show>
-
       <Show
-        when={nodes().length > 0}
+        when={tree().nodes.length > 0}
         fallback={
-          <div class="absolute inset-0 flex flex-col items-center justify-center px-5 text-center">
+          <div class="relative z-[1] flex flex-1 flex-col items-center justify-center px-5 text-center">
             <span class="mb-2 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
               New test
             </span>
-            <h2 class="m-0 text-[24px] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
-              What should happen?
+            <h2 class="m-0 mb-2 text-[24px] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
+              Build a journey
             </h2>
-            <p class="mt-2 mb-5 max-w-[430px] text-[12.5px]/[1.55] text-[var(--text-base)]">
-              Describe the journey in plain language. Relay will turn it into editable device states
-              you can run and inspect.
+            <p class="m-0 mb-5 max-w-[36ch] text-[12px]/[1.5] text-[var(--text-weak)]">
+              Record or describe the path. Relay will fold repeated screens into return paths.
             </p>
             <AgentTestComposer variant="canvas" defaultOpen />
-            <div class="mt-4 flex items-center gap-3 text-[11px] text-[var(--text-weak)]">
-              <span class="h-px w-12 bg-[var(--v2-border-border-muted)]" /> or
-              <button
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]"
-                onClick={props.onLive}
-              >
-                <Icon name="circle" size={13} /> Record on a device
-              </button>
-              <span class="h-px w-12 bg-[var(--v2-border-border-muted)]" />
-            </div>
+            <button
+              type="button"
+              class="mt-4 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)]"
+              onClick={props.onLive}
+            >
+              <Icon name="circle" size={13} /> Record on a device
+            </button>
           </div>
         }
       >
         <div
-          class="absolute top-16 left-0 h-[620px] origin-top-left will-change-transform"
+          class="absolute top-0 left-0 origin-top-left will-change-transform"
           style={{
+            width: `${bounds().width}px`,
+            height: `${bounds().height}px`,
             transform: `translate3d(${view().x}px, ${view().y}px, 0) scale(${view().scale})`,
-            width: `${width()}px`,
           }}
         >
-          <Show when={stepDrag()}>
-            {(dragging) => (
-              <i
-                class="pointer-events-none absolute top-[-10px] z-[8] h-[488px] w-px bg-[var(--v2-background-bg-accent)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_14%,transparent)]"
-                style={{ left: `${dragging().over * JOURNEY_NODE_STEP - JOURNEY_NODE_GAP / 2}px` }}
-                aria-hidden="true"
-              />
-            )}
-          </Show>
           <svg
-            class="pointer-events-auto absolute inset-0 overflow-visible"
-            width={width()}
-            height="620"
-            aria-label="Journey connections"
+            class="pointer-events-none absolute inset-0 overflow-visible"
+            width={bounds().width}
+            height={bounds().height}
           >
             <defs>
               <marker
-                id="journey-arrow"
+                id="journey-tree-forward"
                 viewBox="0 0 10 10"
                 refX="8"
                 refY="5"
                 markerWidth="6"
                 markerHeight="6"
-                orient="auto-start-reverse"
+                orient="auto"
               >
-                <path
-                  d="M 0 0 L 10 5 L 0 10 z"
-                  class="fill-[var(--v2-background-bg-accent)] stroke-none"
-                />
+                <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-interactive-base)]" />
+              </marker>
+              <marker
+                id="journey-tree-return"
+                viewBox="0 0 10 10"
+                refX="8"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-base)]" />
               </marker>
             </defs>
-            <For each={nodes().slice(0, -1)}>
-              {(node) => {
-                const next = () => nodes()[node.index + 1]!;
-                const x1 = () => node.x + JOURNEY_NODE_WIDTH + 7;
-                const y1 = () => node.y + JOURNEY_NODE_PORT_Y;
-                const x2 = () => next().x - 13;
-                const y2 = () => next().y + JOURNEY_NODE_PORT_Y;
-                const style = () =>
-                  edgeConfig()[node.index]?.style ?? defaultEdge(node.index).style;
-                const lineClass = () =>
-                  cn(
-                    "pointer-events-none fill-none stroke-2",
-                    style() === "branch" &&
-                      "stroke-[var(--icon-warning-base)] [stroke-dasharray:2_5]",
-                    style() === "failure" &&
-                      "stroke-[var(--icon-critical-base)] [stroke-dasharray:8_5]",
-                    style() === "flow" &&
-                      "stroke-[color-mix(in_srgb,var(--v2-background-bg-accent)_62%,var(--v2-border-border-muted))] [stroke-dasharray:6_7]",
-                  );
+            <For each={tree().edges}>
+              {(edge) => {
+                const geometry = () => edgeGeometry(edge, tree().nodes);
                 return (
-                  <g>
+                  <g
+                    class="pointer-events-auto cursor-pointer"
+                    onClick={() => selectStep(edge.stepIndex)}
+                  >
                     <path
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Edit connection after step ${node.index + 1}`}
-                      class="cursor-pointer fill-none stroke-transparent [stroke-width:18]"
-                      d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={() => setSelectedEdge(node.index)}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        setSelectedEdge(node.index);
-                      }}
+                      d={geometry().path}
+                      class="fill-none stroke-transparent"
+                      stroke-width="18"
                     />
                     <path
-                      class={lineClass()}
-                      marker-end="url(#journey-arrow)"
-                      d={`M ${x1()} ${y1()} C ${x1() + 56} ${y1()}, ${x2() - 56} ${y2()}, ${x2()} ${y2()}`}
+                      d={geometry().path}
+                      class={cn(
+                        "pointer-events-none fill-none",
+                        edge.kind === "return"
+                          ? "stroke-[var(--text-base)] [stroke-dasharray:6_6]"
+                          : "stroke-[var(--text-interactive-base)]",
+                      )}
+                      stroke-width={edge.kind === "return" ? 1.7 : 2}
+                      stroke-linecap="round"
+                      marker-end={`url(#journey-tree-${edge.kind})`}
                     />
-                    <text
-                      class="pointer-events-none fill-[var(--text-weak)] font-mono text-[9px]"
-                      x={(x1() + x2()) / 2}
-                      y={(y1() + y2()) / 2 - 10}
-                      text-anchor="middle"
-                    >
-                      {edgeConfig()[node.index]?.label ?? defaultEdge(node.index).label}
-                    </text>
+                    <g transform={`translate(${geometry().labelX}, ${geometry().labelY})`}>
+                      <rect
+                        x={-Math.max(22, edge.label.length * 3.1 + 10)}
+                        y={-10}
+                        width={Math.max(44, edge.label.length * 6.2 + 20)}
+                        height="20"
+                        rx="6"
+                        class="fill-[var(--v2-background-bg-base)] stroke-[var(--v2-border-border-muted)]"
+                      />
+                      <text
+                        text-anchor="middle"
+                        dominant-baseline="middle"
+                        y="0.5"
+                        class="fill-[var(--text-weak)] text-[9px] font-medium"
+                      >
+                        {edge.label}
+                      </text>
+                    </g>
                   </g>
                 );
               }}
             </For>
           </svg>
-          <For each={nodes()}>
-            {(node) => {
-              const active = () => workbench.focusedIndex() === node.index;
-              return (
-                <div
-                  data-journey-node
-                  class={cn(
-                    "group absolute top-0 left-0 w-[220px] origin-top-left select-none rounded-[18px] p-0 text-left outline-none",
-                    stepDrag()?.from === node.index &&
-                      "z-[9] cursor-grabbing opacity-95 drop-shadow-[0_18px_22px_rgb(0_0_0/30%)]",
-                  )}
-                  style={{
-                    transform: `translate3d(${node.x + (stepDrag()?.from === node.index ? stepDrag()!.deltaX : 0)}px, ${node.y}px, 0)`,
-                    "--journey-node-accent": accentForStep(node.step),
-                  }}
-                >
-                  <button
-                    type="button"
-                    class="block w-full cursor-pointer rounded-[18px] text-left outline-none"
-                    onClick={() => workbench.focusStep(node.index)}
-                  >
-                    <JourneyPlanCard step={node.step} index={node.index} active={active()} />
-                    <Show when={node.index > 0}>
-                      <span
-                        class="absolute top-[229px] left-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
-                        aria-hidden="true"
-                      />
-                    </Show>
-                    <Show when={node.index < nodes().length - 1}>
-                      <span
-                        class="absolute top-[229px] right-[-5px] size-2.5 rounded-full border-2 border-[var(--v2-background-bg-base)] bg-[var(--v2-background-bg-accent)]"
-                        aria-hidden="true"
-                      />
-                    </Show>
-                  </button>
-                  <button
-                    type="button"
-                    data-reorder-step={node.index}
-                    class="absolute top-0 right-0 z-[5] grid h-[34px] w-10 cursor-grab place-items-center rounded-tr-[18px] text-[var(--text-weak)] outline-none transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:cursor-grabbing focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-white/70"
-                    aria-label={`Reorder step ${node.index + 1}. Use left and right arrow keys.`}
-                    aria-grabbed={stepDrag()?.from === node.index}
-                    onPointerDown={(event) => {
-                      if (event.button !== 0) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      workbench.focusStep(node.index);
-                      setStepDrag({
-                        pointerId: event.pointerId,
-                        from: node.index,
-                        over: node.index,
-                        startClientX: event.clientX,
-                        deltaX: 0,
-                      });
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                    }}
-                    onPointerMove={(event) => {
-                      const current = stepDrag();
-                      if (!current || current.pointerId !== event.pointerId) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const deltaX = (event.clientX - current.startClientX) / view().scale;
-                      const over = clamp(
-                        Math.round((node.x + deltaX) / JOURNEY_NODE_STEP),
-                        0,
-                        nodes().length - 1,
-                      );
-                      setStepDrag({ ...current, deltaX, over });
-                    }}
-                    onPointerUp={(event) => {
-                      if (stepDrag()?.pointerId !== event.pointerId) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      commitStepDrag();
-                    }}
-                    onPointerCancel={() => setStepDrag(null)}
-                    onLostPointerCapture={(event) => {
-                      if (stepDrag()?.pointerId === event.pointerId) setStepDrag(null);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      moveStepByKeyboard(node.index, event.key === "ArrowLeft" ? -1 : 1);
-                    }}
-                  >
-                    <Icon name="move" size={13} />
-                  </button>
-                  <div class="pointer-events-none absolute top-[201px] right-[-76px] z-[4] flex h-[66px] w-[86px] items-center justify-end opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-                    <span
-                      class="absolute inset-0 [clip-path:polygon(0_28%,100%_0,100%_100%,0_72%)]"
-                      aria-hidden="true"
-                    />
-                    <button
-                      type="button"
-                      class="relative mr-1.5 grid size-9 place-items-center rounded-full border border-white/15 bg-[#6f5bf3] text-white shadow-[0_10px_28px_rgb(0_0_0/45%),0_0_0_5px_#10131a] transition-[transform,background-color] duration-150 hover:scale-105 hover:bg-[#806df8] active:scale-90"
-                      aria-label={`Add step after ${node.index + 1}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        const rect = event.currentTarget.getBoundingClientRect();
-                        setAddMenu({
-                          at: node.index + 1,
-                          anchor: {
-                            left: rect.left,
-                            top: rect.top,
-                            bottom: rect.bottom,
-                            width: rect.width,
-                          },
-                        });
-                      }}
-                    >
-                      <Icon name="plus" size={16} />
-                    </button>
-                  </div>
-                </div>
-              );
-            }}
+          <For each={tree().nodes}>
+            {(node) => (
+              <JourneyScreenCard
+                node={node}
+                step={draft.steps()[node.representativeStepIndex]!}
+                selected={workbench.focusedIndex() === node.representativeStepIndex}
+                src={() => screenshotUrl(server, draft.steps()[node.representativeStepIndex])}
+                onSelect={() => selectStep(node.representativeStepIndex)}
+              />
+            )}
           </For>
         </div>
       </Show>
-      <Show when={addMenu()}>
-        {(menu) => (
-          <AddMenu
-            anchor={menu().anchor}
-            onClose={() => setAddMenu(null)}
-            onPick={(step) => {
-              draft.insertStep(menu().at, step);
-              workbench.focusStep(menu().at);
-              draft.setExpandedStep(menu().at);
-              setAddMenu(null);
-            }}
-          />
-        )}
+      <Show when={tree().nodes.length > 0}>
+        <p class="pointer-events-none absolute bottom-3 left-1/2 z-10 m-0 -translate-x-1/2 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_88%,transparent)] px-3 py-1.5 text-[10px] text-[var(--text-weak)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[10px]">
+          Repeated captures fold into one screen · click an action to edit it
+        </p>
       </Show>
     </section>
   );
 }
 
-export function JourneyPlanCard(props: { step: RecipeStep; index: number; active?: boolean }) {
-  const server = useServer();
-  const workbench = useWorkbench();
-  const evidence = createMemo(() => evidenceForStep(props.step));
-  const screenshot = createMemo(() => {
-    const frame = server.frames()[props.index];
-    if (frame) return frameToSrc(frame);
-    const shot = evidence()?.screenshot;
-    return shot ? server.recordingEvidenceUrl(shot.recipeId, shot.id) : "";
-  });
-  const annotation = createMemo(() => workbench.rowAnno(props.index));
-  const statusLabel = createMemo(() => {
-    if (annotation().status === "pass") return "Passed";
-    if (annotation().status === "fail") return "Failed";
-    if (annotation().status === "running") return "Running";
-    return "";
-  });
-  const deviceAspect = createMemo(() => {
-    const bounds = evidence()?.deviceBounds;
-    return bounds?.width && bounds.height ? bounds.width / bounds.height : 9 / 19.5;
-  });
+function JourneyScreenCard(props: {
+  node: JourneyTreeNode;
+  step: RecipeStep;
+  selected: boolean;
+  src: () => string;
+  onSelect: () => void;
+}) {
   return (
-    <div
+    <button
+      type="button"
       class={cn(
-        "relative grid h-[468px] grid-rows-[34px_minmax(0,1fr)_44px] overflow-hidden rounded-[18px] border border-[var(--v2-border-border-strong)] shadow-[0_2px_10px_rgb(0_0_0/12%)] transition-[border-color,box-shadow] duration-150",
-        "bg-surface-raised-stronger-non-alpha",
-        "before:absolute before:top-0 before:right-5 before:left-5 before:h-px before:bg-[linear-gradient(90deg,transparent,var(--journey-node-accent),transparent)] before:opacity-70 before:content-['']",
-        props.active &&
-          "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_24%,transparent),0_6px_18px_rgb(0_0_0/18%)]",
-        annotation().status === "fail" &&
-          "border-[color-mix(in_srgb,var(--icon-critical-base)_65%,var(--v2-border-border-muted))]",
+        "absolute grid h-[292px] w-[208px] grid-rows-[42px_minmax(0,1fr)_34px] overflow-hidden rounded-[18px] border bg-[var(--v2-background-bg-base)] text-left shadow-[0_10px_30px_rgb(0_0_0/20%)] transition-[border-color,box-shadow] duration-150",
+        props.selected
+          ? "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_22%,transparent),0_10px_30px_rgb(0_0_0/24%)]"
+          : "border-[var(--v2-border-border-muted)] hover:border-[var(--v2-border-border-strong)]",
       )}
-      style={{ "--journey-node-accent": accentForStep(props.step) }}
+      style={{ transform: `translate3d(${props.node.x}px, ${props.node.y}px, 0)` }}
+      onClick={props.onSelect}
     >
-      <header class="grid grid-cols-[auto_1fr_auto] items-center gap-2 border-b border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] pr-11 pl-3 text-[var(--text-weak)]">
-        <span class="font-mono text-[11px] leading-none text-[var(--text-base)]">
-          {String(props.index + 1).padStart(2, "0")}
+      <header class="flex min-w-0 items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
+        <span
+          class="grid size-5 shrink-0 place-items-center rounded-md text-white"
+          style={{ background: accentForStep(props.step) }}
+        >
+          <Icon name={iconForStep(props.step)} size={11} />
         </span>
-        <span class="text-[10px] font-semibold tracking-[0.09em] uppercase">
-          {kindLabel(props.step.kind)}
-        </span>
-        <Show when={statusLabel()}>
-          <span class="inline-flex items-center gap-1.5 text-[9px] font-medium">
-            <i
-              class={cn(
-                "size-1.5 rounded-full",
-                annotation().status === "pass" && "bg-[var(--icon-success-base)]",
-                annotation().status === "fail" && "bg-[var(--icon-critical-base)]",
-                annotation().status === "running" &&
-                  "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]",
-              )}
-            />
-            {statusLabel()}
+        <strong class="min-w-0 truncate text-[11.5px] font-semibold text-[var(--text-strong)]">
+          {props.node.title}
+        </strong>
+        <Show when={props.node.stepIndexes.length > 1}>
+          <span class="ml-auto shrink-0 rounded bg-[var(--v2-background-bg-layer-02)] px-1 py-0.5 font-mono text-[9px] text-[var(--text-weak)]">
+            {props.node.stepIndexes.length}×
           </span>
         </Show>
       </header>
       <Show
-        when={screenshot()}
+        when={props.src()}
         fallback={
-          <div class="grid min-w-0 place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--journey-node-accent)_13%,transparent),transparent_42%),var(--v2-background-bg-deep)] p-5 text-center">
-            <span class="grid size-[46px] place-items-center rounded-[14px] border border-[color-mix(in_srgb,var(--journey-node-accent)_28%,var(--v2-border-border-muted))] bg-[color-mix(in_srgb,var(--journey-node-accent)_11%,var(--v2-background-bg-layer-01))] text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]">
-              <Icon name={iconForStep(props.step)} size={22} />
+          <div class="grid place-items-center bg-[radial-gradient(circle_at_50%_35%,color-mix(in_srgb,var(--v2-background-bg-accent)_14%,transparent),transparent_44%),var(--v2-background-bg-deep)]">
+            <span class="grid size-11 place-items-center rounded-[14px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)]">
+              <Icon name={iconForStep(props.step)} size={20} />
             </span>
-            <div class="mt-4 min-w-0">
-              <strong class="line-clamp-3 block text-[14px]/[1.4] font-semibold tracking-[-0.012em] text-[var(--text-strong)]">
-                {sentenceForStep(props.step, server.recipes())}
-              </strong>
-            </div>
           </div>
         }
       >
         {(src) => (
-          <div class="grid min-h-0 place-items-center overflow-hidden bg-[var(--v2-background-bg-deep)] p-2.5">
-            <div
-              class="h-full max-h-[369px] max-w-full overflow-hidden rounded-[20px] bg-[#080a0f] shadow-[0_0_0_1px_rgb(255_255_255/10%),0_8px_22px_rgb(0_0_0/32%)]"
-              style={{ "aspect-ratio": String(deviceAspect()) }}
-            >
-              <img
-                src={src()}
-                alt={`Device evidence for step ${props.index + 1}`}
-                draggable={false}
-                class="size-full select-none object-contain object-top"
-              />
-            </div>
+          <div class="min-h-0 overflow-hidden bg-[#080a0f] p-2">
+            <img
+              src={src()}
+              alt={`Recorded ${props.node.title} screen`}
+              draggable={false}
+              class="size-full rounded-[12px] object-contain object-top"
+            />
           </div>
         )}
       </Show>
-      <footer class="flex min-w-0 items-center justify-between gap-2 border-t border-[color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent)] px-3 text-[var(--text-weak)]">
-        <Show
-          when={screenshot()}
-          fallback={
-            <span class="inline-flex items-center gap-1.5 text-[10px]">
-              <i class="size-1.5 rounded-full bg-[var(--v2-border-border-strong)]" /> Planned
-            </span>
-          }
-        >
-          <strong class="min-w-0 truncate text-[11px] font-medium text-[var(--text-base)]">
-            {sentenceForStep(props.step, server.recipes())}
-          </strong>
-        </Show>
-        <Show when={annotation().durationMs}>
-          {(duration) => (
-            <b class="shrink-0 font-mono text-[9px] font-normal tabular-nums">
-              {Math.round(duration())}ms
-            </b>
-          )}
-        </Show>
-        <Icon name="chevron-right" size={13} />
+      <footer class="flex items-center justify-between gap-2 border-t border-[var(--v2-border-border-muted)] px-3 text-[10px] text-[var(--text-weak)]">
+        <span>Step {String(props.node.representativeStepIndex + 1).padStart(2, "0")}</span>
+        <Icon name="chevron-right" size={12} />
       </footer>
-    </div>
+    </button>
   );
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
+function screenshotUrl(server: ReturnType<typeof useServer>, step: RecipeStep | undefined): string {
+  const screenshot = evidenceForStep(step)?.screenshot;
+  return screenshot ? server.recordingEvidenceUrl(screenshot.recipeId, screenshot.id) : "";
+}
+
+function edgeGeometry(edge: JourneyTreeEdge, nodes: JourneyTreeNode[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const from = byId.get(edge.from)!;
+  const to = byId.get(edge.to)!;
+  if (edge.kind === "return") {
+    const startX = from.x + CARD_W / 2;
+    const startY = from.y;
+    const endX = to.x + CARD_W / 2;
+    const endY = to.y;
+    const railY = Math.min(startY, endY) - 48;
+    return {
+      path: `M ${startX} ${startY} C ${startX} ${railY}, ${endX} ${railY}, ${endX} ${endY}`,
+      labelX: (startX + endX) / 2,
+      labelY: railY - 12,
+    };
+  }
+  const startX = from.x + CARD_W;
+  const startY = from.y + CARD_H / 2;
+  const endX = to.x;
+  const endY = to.y + CARD_H / 2;
+  return {
+    path: `M ${startX} ${startY} C ${startX + 56} ${startY}, ${endX - 56} ${endY}, ${endX} ${endY}`,
+    labelX: (startX + endX) / 2,
+    labelY: (startY + endY) / 2 - 14,
+  };
 }

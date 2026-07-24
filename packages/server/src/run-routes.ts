@@ -17,6 +17,9 @@ import {
   runsRoot,
   runStorageHealth,
   setRunPinned,
+  approveVisualBaseline,
+  getVisualBaseline,
+  visualTargetKey,
 } from "@relay/core";
 import { recordAudit, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
@@ -173,6 +176,35 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       );
     json(response, 200, { metrics, signals: compareEvidenceMetrics(metrics, history) });
     return true;
+  }
+
+  const visualMatch = matchPath(pathname, "/runs/:id/visual-baseline");
+  if (visualMatch) {
+    const run = await readPersistedRun(visualMatch.id!);
+    assertRunAccess(scope, run);
+    if (method === "GET") {
+      const targetKey = visualTargetKey(run);
+      const baseline = await getVisualBaseline(runsRoot(), run.action, targetKey);
+      const baselineRun = baseline ? await readPersistedRun(baseline.runId) : null;
+      if (baselineRun) assertRunAccess(scope, baselineRun);
+      json(response, 200, {
+        current: run,
+        targetKey,
+        baseline: baselineRun && baseline ? { ...baseline, run: baselineRun } : null,
+      });
+      return true;
+    }
+    if (method === "POST") {
+      if (run.frames.length === 0) {
+        throw new HttpError(
+          409,
+          "This run has no step screenshots to approve as a visual baseline",
+        );
+      }
+      const baseline = await approveVisualBaseline(runsRoot(), run);
+      json(response, 200, { baseline });
+      return true;
+    }
   }
 
   const pinMatch = matchPath(pathname, "/runs/:id/pin");

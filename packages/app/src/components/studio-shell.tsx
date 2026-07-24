@@ -1,4 +1,13 @@
-import { For, Show, Suspense, createEffect, createMemo, createSignal, lazy } from "solid-js";
+import {
+  For,
+  Show,
+  Suspense,
+  createEffect,
+  createMemo,
+  createSignal,
+  lazy,
+  onCleanup,
+} from "solid-js";
 import { useServer, type RecipeInfo, type RecipeStep } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
@@ -52,7 +61,7 @@ import { planTestPrompt } from "../lib/natural-language-plan";
 import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
-type ProductArea = "tests" | "suites" | "runs" | "map" | "data";
+type ProductArea = "tests" | "suites" | "runs" | "map";
 type StudioView = "workbench" | "map";
 
 const DataWorkspace = lazy(() =>
@@ -63,9 +72,8 @@ const MapsWorkspace = lazy(() =>
 );
 const AREA_ITEMS: { id: ProductArea; label: string; icon: IconName }[] = [
   { id: "tests", label: "Tests", icon: "grid" },
-  { id: "suites", label: "Suites", icon: "check" },
+  { id: "suites", label: "Flows", icon: "check" },
   { id: "runs", label: "Runs", icon: "wave" },
-  { id: "map", label: "Atlas", icon: "move" },
 ];
 
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
@@ -80,6 +88,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   // are deliberate power-user destinations, never competing default tabs.
   const [studioView, setStudioView] = createSignal<StudioView>("workbench");
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [libraryOpen, setLibraryOpen] = createSignal(true);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
@@ -91,6 +100,17 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   } | null>(null);
 
   const selected = createMemo(() => server.selectedRecipe());
+  let titleBeforeEdit = "";
+  let variablesDialog: HTMLElement | undefined;
+  createEffect(() => {
+    if (!variablesOpen()) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setVariablesOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    requestAnimationFrame(() => variablesDialog?.focus({ preventScroll: true }));
+    onCleanup(() => window.removeEventListener("keydown", close));
+  });
   let previousReadyRecipeId: string | null = null;
   createEffect(() => {
     const readyId = selected()?.id ?? null;
@@ -112,6 +132,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (!recipe) return;
     setStudioView("workbench");
     setSettingsOpen(false);
+    setVariablesOpen(false);
     defaultedViewForId = id;
   });
   const readinessState = () => ({
@@ -348,12 +369,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     {area() === "runs"
                       ? "Run history"
                       : area() === "suites"
-                        ? "Suites"
+                        ? "Flows"
                         : area() === "map"
                           ? "Atlas"
-                          : area() === "data"
-                            ? "Test data"
-                            : "Tests"}
+                          : "Tests"}
                   </strong>
                 }
               >
@@ -368,9 +387,30 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   Tests
                 </button>
                 <Icon name="chevron-right" size={13} />
-                <span class="max-w-[min(32vw,360px)] truncate font-medium text-[var(--text-base)]">
-                  {displayTitle(selected()!.title)}
-                </span>
+                <input
+                  type="text"
+                  size={Math.max(12, Math.min(34, (draft.title() || "Untitled test").length + 1))}
+                  class="h-8 min-w-[120px] max-w-[min(32vw,360px)] rounded-md bg-transparent px-1.5 font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
+                  aria-label="Test name"
+                  data-tip="Rename test"
+                  value={draft.title()}
+                  placeholder="Untitled test"
+                  spellcheck={false}
+                  onFocus={() => {
+                    titleBeforeEdit = draft.title();
+                  }}
+                  onInput={(event) => draft.setTitle(event.currentTarget.value)}
+                  onBlur={() => {
+                    if (!draft.title().trim()) draft.setTitle("Untitled test");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                    if (event.key === "Escape") {
+                      draft.setTitle(titleBeforeEdit);
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
               </Show>
             </div>
           </div>
@@ -404,7 +444,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     class={cn(shellViewTab, studioView() === "workbench" && shellViewTabActive)}
                     onClick={() => setStudioView("workbench")}
                   >
-                    <Icon name="grid" size={13} /> List
+                    <Icon name="grid" size={13} /> Steps
                   </button>
                   <button
                     type="button"
@@ -433,6 +473,17 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </Show>
                   <Show when={selected()}>
                     <button
+                      type="button"
+                      aria-pressed={settingsOpen()}
+                      class={cn(shellViewTab, settingsOpen() && shellViewTabActive)}
+                      onClick={() => {
+                        setStudioView("workbench");
+                        setSettingsOpen((open) => !open);
+                      }}
+                    >
+                      <Icon name="sliders" size={13} /> Properties
+                    </button>
+                    <button
                       class={productIconButton}
                       type="button"
                       aria-label="More test options"
@@ -452,26 +503,21 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                           class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
-                            setStudioView("workbench");
-                            setSettingsOpen(true);
+                            void duplicateSelected();
                           }}
                         >
-                          <Icon name="sliders" size={14} /> Test details
+                          <Icon name="copy" size={14} /> Duplicate test
                         </button>
-                        <div
-                          class="my-0.5 h-px bg-[var(--v2-border-border-muted)]"
-                          aria-hidden="true"
-                        />
                         <button
                           type="button"
                           role="menuitem"
                           class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                           onClick={() => {
                             setStudioActionsOpen(false);
-                            void duplicateSelected();
+                            setArea("map");
                           }}
                         >
-                          <Icon name="copy" size={14} /> Duplicate test
+                          <Icon name="move" size={14} /> Explore in Atlas
                         </button>
                         <button
                           type="button"
@@ -517,7 +563,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       settingsOpen() ? (
                         <TestSettingsPanel
                           onClose={() => setSettingsOpen(false)}
-                          onOpenData={() => setArea("data")}
+                          onOpenVariables={() => setVariablesOpen(true)}
                         />
                       ) : undefined
                     }
@@ -572,10 +618,43 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             <MapsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
           </Suspense>
         </Show>
-        <Show when={area() === "data"}>
-          <DataWorkspace onConfigureProvider={props.onOpenSettings} />
-        </Show>
       </main>
+      <Show when={variablesOpen()}>
+        <div
+          class={cn(modalScrim, "z-[130] flex items-center justify-center p-5")}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setVariablesOpen(false);
+          }}
+        >
+          <section
+            ref={(element) => {
+              variablesDialog = element;
+            }}
+            class={cn(modalPanel, "h-[min(82vh,760px)] w-[min(100%,980px)] outline-none")}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Workspace variables"
+            tabindex={-1}
+          >
+            <Suspense
+              fallback={
+                <div class="grid h-full place-items-center text-[12px] text-[var(--text-weak)]">
+                  Loading variables…
+                </div>
+              }
+            >
+              <DataWorkspace
+                embedded
+                onClose={() => setVariablesOpen(false)}
+                onConfigureProvider={() => {
+                  setVariablesOpen(false);
+                  props.onOpenSettings();
+                }}
+              />
+            </Suspense>
+          </section>
+        </div>
+      </Show>
       <Show when={importReview()}>
         {(review) => (
           <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>

@@ -55,6 +55,41 @@ function SuiteChecklistPreview() {
   );
 }
 
+/**
+ * A small, always-visible mental-model cue. It deliberately describes the
+ * actual execution guarantee rather than suggesting that a single device can
+ * safely run tests in parallel.
+ */
+function FlowPathGuide(props: { suite: TestSuite; titleForTest: (testId: string) => string }) {
+  const entries = () => props.suite.sections.flatMap((section) => section.entries);
+  const enabled = () => entries().filter((entry) => entry.enabled);
+  const first = () => enabled()[0];
+  const remaining = () => Math.max(0, enabled().length - 1);
+
+  return (
+    <div class="border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-4 py-2.5">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-[10px] font-semibold tracking-[0.09em] text-[var(--text-weak)] uppercase">
+          Flow order
+        </span>
+        <span class="text-[10px] text-[var(--text-weak)]">One device · runs in order</span>
+      </div>
+      <div class="mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--text-base)]">
+        <span class="shrink-0 font-medium text-[var(--text-strong)]">Start</span>
+        <Icon name="chevron-right" size={12} class="shrink-0 text-[var(--text-weak)]" />
+        <span class="min-w-0 truncate rounded-md bg-[var(--v2-background-bg-layer-02)] px-1.5 py-0.5 font-medium text-[var(--text-strong)]">
+          {first() ? props.titleForTest(first()!.testId) : "Add the first test"}
+        </span>
+        <Show when={remaining() > 0}>
+          <span class="shrink-0 text-[var(--text-weak)]">+{remaining()}</span>
+        </Show>
+        <Icon name="chevron-right" size={12} class="shrink-0 text-[var(--text-weak)]" />
+        <span class="shrink-0 font-medium text-[var(--text-strong)]">Finish</span>
+      </div>
+    </div>
+  );
+}
+
 export function SuitesWorkspace(props: {
   onOpenTest: (id: string) => void;
   onOpenRun: (id: string) => void;
@@ -143,8 +178,8 @@ export function SuitesWorkspace(props: {
 
   const createSuite = async () => {
     const suite = await server.saveSuiteRemote({
-      title: `Suite ${server.suites().length + 1}`,
-      sections: [{ title: "Tests", entries: [] }],
+      title: `Flow ${server.suites().length + 1}`,
+      sections: [{ title: "Main path", entries: [] }],
     });
     if (!suite) return;
     server.setSelectedSuiteId(suite.id);
@@ -158,6 +193,22 @@ export function SuitesWorkspace(props: {
     setSelectedEntryId(entryId);
     server.setSelectedRecipeId(testId);
   };
+
+  // A Flow is a sequence, not a blank container. Opening one should immediately
+  // show the first runnable test; the user can then move through the sequence
+  // deliberately instead of first having to discover a second selection.
+  createEffect(() => {
+    const suite = selectedSuite();
+    if (!suite) {
+      if (selectedEntryId()) setSelectedEntryId(null);
+      return;
+    }
+    const entries = suite.sections.flatMap((section) => section.entries);
+    if (entries.some((entry) => entry.id === selectedEntryId())) return;
+    const first = entries.find((entry) => entry.enabled) ?? entries[0];
+    if (first) selectEntry(first.id, first.testId);
+    else setSelectedEntryId(null);
+  });
 
   createEffect(() => {
     const suite = selectedSuite();
@@ -193,6 +244,8 @@ export function SuitesWorkspace(props: {
       ).length;
 
   const libraryTests = createMemo(() => server.recipes().filter((test) => test.steps.length > 0));
+  const titleForTest = (testId: string) =>
+    displayTitle(server.recipes().find((test) => test.id === testId)?.title ?? "Missing test");
   const libraryTitleCounts = createMemo(() => {
     const counts = new Map<string, number>();
     for (const test of libraryTests()) {
@@ -218,30 +271,66 @@ export function SuitesWorkspace(props: {
     closeAddPopover();
   };
 
+  // The user sees one ordered Flow even when they use named stages to keep a
+  // longer release journey readable. Moving therefore crosses stage boundaries
+  // instead of silently stopping at the first or last item in a stage.
+  const moveEntry = (suite: TestSuite, entryId: string, direction: -1 | 1) => {
+    const ordered = suite.sections.flatMap((section) =>
+      section.entries.map((entry) => ({ sectionId: section.id, entry })),
+    );
+    const from = ordered.findIndex((item) => item.entry.id === entryId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ordered.length) return;
+
+    const source = ordered[from]!;
+    const destination = ordered[to]!;
+    const sections = suite.sections.map((section) => ({
+      ...section,
+      entries: [...section.entries],
+    }));
+    const sourceSection = sections.find((section) => section.id === source.sectionId)!;
+    const destinationSection = sections.find((section) => section.id === destination.sectionId)!;
+    const sourceIndex = sourceSection.entries.findIndex((entry) => entry.id === entryId);
+    const [moved] = sourceSection.entries.splice(sourceIndex, 1);
+    if (!moved) return;
+    const destinationIndex = destinationSection.entries.findIndex(
+      (entry) => entry.id === destination.entry.id,
+    );
+    destinationSection.entries.splice(
+      direction < 0 ? destinationIndex : destinationIndex + 1,
+      0,
+      moved,
+    );
+    void save(suite, sections);
+  };
+
   return (
     <section
       class={cn(
         "grid min-h-0 min-w-0 flex-1 overflow-hidden max-[900px]:grid-cols-1",
         selectedSuite()
-          ? "grid-cols-[224px_minmax(420px,1fr)_390px] max-[1160px]:grid-cols-[200px_minmax(360px,1fr)_340px]"
+          ? "grid-cols-[minmax(280px,300px)_minmax(420px,1fr)_224px] max-[1160px]:grid-cols-[minmax(248px,280px)_minmax(360px,1fr)_200px]"
           : "grid-cols-[224px_minmax(0,1fr)] max-[1160px]:grid-cols-[200px_minmax(0,1fr)]",
       )}
     >
-      <aside class="flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
+      <aside
+        class={cn(
+          "flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
+          selectedSuite() && "col-start-3 row-start-1 border-r-0 border-l",
+        )}
+      >
         <header class="flex min-h-14 items-center justify-between gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
           <div>
-            <strong class="block text-[13px] font-semibold text-[var(--text-strong)]">
-              Suites
-            </strong>
+            <strong class="block text-[13px] font-semibold text-[var(--text-strong)]">Flows</strong>
             <small class="text-[10px] text-[var(--text-weak)]">
-              {server.suites().length} saved
+              {server.suites().length} saved test sequences
             </small>
           </div>
           <button
             type="button"
             class={productIconButton}
-            aria-label="New suite"
-            data-tip="Create a new suite"
+            aria-label="New flow"
+            data-tip="Create a new test flow"
             onClick={() => void createSuite()}
           >
             <Icon name="plus" size={14} />
@@ -254,8 +343,8 @@ export function SuitesWorkspace(props: {
               <EmptyState
                 size="sm"
                 icon="check"
-                title="No suites yet"
-                description="Your release checklists will appear here."
+                title="No flows yet"
+                description="Create an ordered sequence of tests to run together."
                 class="min-h-48 justify-center"
               />
             }
@@ -291,7 +380,13 @@ export function SuitesWorkspace(props: {
         </div>
       </aside>
 
-      <div class={cn(shellStageWrap, "flex min-h-0 flex-col")}>
+      <div
+        class={cn(
+          shellStageWrap,
+          "flex min-h-0 flex-col",
+          selectedSuite() && "col-start-2 row-start-1",
+        )}
+      >
         <Show
           when={selectedSuite()}
           fallback={
@@ -301,9 +396,9 @@ export function SuitesWorkspace(props: {
                 <EmptyState
                   size="lg"
                   icon="check"
-                  title="Create a release suite"
-                  description="Group existing tests into a checklist your team can edit, reuse, and run together."
-                  actionLabel="Create a suite"
+                  title="Create a test flow"
+                  description="Arrange existing tests into one reusable sequence."
+                  actionLabel="Create a flow"
                   onAction={() => void createSuite()}
                 />
               </div>
@@ -346,7 +441,7 @@ export function SuitesWorkspace(props: {
 
       <Show when={selectedSuite()}>
         {(suite) => (
-          <aside class="relative flex min-h-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
+          <aside class="relative col-start-1 row-start-1 flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
             <Show
               when={
                 suiteExecutionJob() &&
@@ -366,7 +461,7 @@ export function SuitesWorkspace(props: {
                 <div class="group/title relative flex min-w-0 flex-1 items-center">
                   <input
                     ref={(element) => (suiteTitleInput = element)}
-                    aria-label="Suite name"
+                    aria-label="Flow name"
                     class="min-w-0 flex-1 rounded-md bg-transparent px-2 py-1 text-[16px] font-semibold tracking-[-0.015em] text-[var(--text-strong)] outline-none transition hover:shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:bg-[var(--v2-background-bg-layer-01)] focus:shadow-[inset_0_0_0_1px_var(--border-interactive-base)]"
                     value={suite().title}
                     onChange={(event) =>
@@ -377,8 +472,8 @@ export function SuitesWorkspace(props: {
                     type="button"
                     tabIndex={-1}
                     class="grid size-6 shrink-0 place-items-center rounded-md text-[var(--text-weak)] opacity-0 transition-opacity hover:text-[var(--text-strong)] group-hover/title:opacity-100 group-focus-within/title:opacity-100"
-                    aria-label="Rename suite"
-                    data-tip="Rename suite"
+                    aria-label="Rename flow"
+                    data-tip="Rename flow"
                     onClick={() => {
                       suiteTitleInput?.focus();
                       suiteTitleInput?.select();
@@ -390,7 +485,7 @@ export function SuitesWorkspace(props: {
                 <button
                   type="button"
                   class={productIconButton}
-                  aria-label="Suite history"
+                  aria-label="Flow history"
                   data-tip="View version history"
                   aria-expanded={historyOpen()}
                   onClick={() => {
@@ -404,13 +499,13 @@ export function SuitesWorkspace(props: {
                 <button
                   type="button"
                   class={productIconButtonDanger}
-                  aria-label="Delete suite"
-                  data-tip="Delete this suite"
+                  aria-label="Delete flow"
+                  data-tip="Delete this flow"
                   onClick={() => {
                     confirmAction({
-                      title: "Delete suite?",
-                      body: `"${suite().title}" and its checklist will be removed. Tests inside it are not deleted.`,
-                      confirmLabel: "Delete suite",
+                      title: "Delete flow?",
+                      body: `“${suite().title}” will be removed. Tests inside it are not deleted.`,
+                      confirmLabel: "Delete flow",
                       onConfirm: () => void server.deleteSuite(suite().id),
                     });
                   }}
@@ -437,10 +532,12 @@ export function SuitesWorkspace(props: {
                     name={suiteExecutionJob()?.status === "running" ? "wave" : "play"}
                     size={13}
                   />
-                  {suiteExecutionJob()?.status === "running" ? "Running suite" : "Run suite"}
+                  {suiteExecutionJob()?.status === "running" ? "Running flow" : "Run flow"}
                 </button>
               </div>
             </header>
+
+            <FlowPathGuide suite={suite()} titleForTest={titleForTest} />
 
             <Show when={historyOpen()}>
               <div class="max-h-52 overflow-y-auto border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] p-2">
@@ -479,7 +576,7 @@ export function SuitesWorkspace(props: {
                           {new Date(version.updatedAt).toLocaleString()}
                         </strong>
                         <small class="text-[10px] text-[var(--text-weak)]">
-                          {version.sections.length} sections
+                          {version.sections.length} stages
                         </small>
                       </span>
                       <Icon name="refresh" size={13} />
@@ -497,7 +594,7 @@ export function SuitesWorkspace(props: {
                       <div class="group/title relative flex min-w-0 flex-1 items-center">
                         <input
                           ref={(element) => sectionTitleInputs.set(section.id, element)}
-                          aria-label={`Section ${sectionIndex() + 1} name`}
+                          aria-label={`Stage ${sectionIndex() + 1} name`}
                           class="min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-[10px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase outline-none transition hover:shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--border-interactive-base)] max-[900px]:text-[16px]"
                           value={section.title}
                           onChange={(event) =>
@@ -511,8 +608,8 @@ export function SuitesWorkspace(props: {
                           type="button"
                           tabIndex={-1}
                           class="grid size-5 shrink-0 place-items-center rounded-md text-[var(--text-weak)] opacity-0 transition-opacity hover:text-[var(--text-strong)] group-hover/title:opacity-100 group-focus-within/title:opacity-100"
-                          aria-label="Rename section"
-                          data-tip="Rename section"
+                          aria-label="Rename stage"
+                          data-tip="Rename stage"
                           onClick={() => {
                             const input = sectionTitleInputs.get(section.id);
                             input?.focus();
@@ -528,8 +625,8 @@ export function SuitesWorkspace(props: {
                       <button
                         type="button"
                         class={productIconButtonDanger}
-                        aria-label={`Remove ${section.title} section`}
-                        data-tip="Remove this section"
+                        aria-label={`Remove ${section.title} stage`}
+                        data-tip="Remove this stage"
                         onClick={() => {
                           const removeSection = () =>
                             void save(
@@ -538,9 +635,9 @@ export function SuitesWorkspace(props: {
                             );
                           if (section.entries.length === 0) return removeSection();
                           confirmAction({
-                            title: "Remove section?",
-                            body: `“${section.title}” and its ${section.entries.length} suite ${section.entries.length === 1 ? "entry" : "entries"} will be removed. Library tests will remain.`,
-                            confirmLabel: "Remove section",
+                            title: "Remove stage?",
+                            body: `“${section.title}” and its ${section.entries.length} ${section.entries.length === 1 ? "test" : "tests"} will be removed from this flow.`,
+                            confirmLabel: "Remove stage",
                             onConfirm: removeSection,
                           });
                         }}
@@ -557,10 +654,14 @@ export function SuitesWorkspace(props: {
                           </p>
                         }
                       >
-                        {(entry, entryIndex) => {
+                        {(entry) => {
                           const test = () =>
                             server.recipes().find((item) => item.id === entry.testId);
                           const job = () => latestJob(entry.testId);
+                          const flowEntries = () =>
+                            suite().sections.flatMap((item) => item.entries);
+                          const flowIndex = () =>
+                            flowEntries().findIndex((item) => item.id === entry.id);
                           return (
                             <div
                               class={cn(
@@ -605,7 +706,7 @@ export function SuitesWorkspace(props: {
                                 </span>
                                 <small class="mt-1 block truncate text-[10px] text-[var(--text-weak)]">
                                   {usedIn(entry.testId)}{" "}
-                                  {usedIn(entry.testId) === 1 ? "suite" : "suites"} ·{" "}
+                                  {usedIn(entry.testId) === 1 ? "flow" : "flows"} ·{" "}
                                   {entry.version === "latest" ? "Follows latest" : "Pinned"}
                                 </small>
                               </button>
@@ -613,42 +714,28 @@ export function SuitesWorkspace(props: {
                                 <button
                                   type="button"
                                   class={productIconButton}
-                                  aria-label="Move test up"
-                                  data-tip="Move up"
-                                  disabled={entryIndex() === 0}
-                                  onClick={() => {
-                                    const entries = [...section.entries];
-                                    [entries[entryIndex() - 1], entries[entryIndex()]] = [
-                                      entries[entryIndex()]!,
-                                      entries[entryIndex() - 1]!,
-                                    ];
-                                    patchSection(suite(), section.id, { ...section, entries });
-                                  }}
+                                  aria-label="Move test earlier in flow"
+                                  data-tip="Move earlier"
+                                  disabled={flowIndex() === 0}
+                                  onClick={() => moveEntry(suite(), entry.id, -1)}
                                 >
                                   <Icon name="chevron-up" size={12} />
                                 </button>
                                 <button
                                   type="button"
                                   class={productIconButton}
-                                  aria-label="Move test down"
-                                  data-tip="Move down"
-                                  disabled={entryIndex() === section.entries.length - 1}
-                                  onClick={() => {
-                                    const entries = [...section.entries];
-                                    [entries[entryIndex()], entries[entryIndex() + 1]] = [
-                                      entries[entryIndex() + 1]!,
-                                      entries[entryIndex()]!,
-                                    ];
-                                    patchSection(suite(), section.id, { ...section, entries });
-                                  }}
+                                  aria-label="Move test later in flow"
+                                  data-tip="Move later"
+                                  disabled={flowIndex() === flowEntries().length - 1}
+                                  onClick={() => moveEntry(suite(), entry.id, 1)}
                                 >
                                   <Icon name="chevron-down" size={12} />
                                 </button>
                                 <button
                                   type="button"
                                   class={productIconButtonDanger}
-                                  aria-label="Remove from suite"
-                                  data-tip="Remove from suite"
+                                  aria-label="Remove from flow"
+                                  data-tip="Remove from flow"
                                   onClick={() =>
                                     patchSection(suite(), section.id, {
                                       ...section,
@@ -692,7 +779,7 @@ export function SuitesWorkspace(props: {
                         type="button"
                         class={productIconButton}
                         aria-label={`Record a new test in ${section.title}`}
-                        data-tip="Record a new test into this section"
+                        data-tip="Record a new test into this stage"
                         onClick={() => props.onRecordTest(suite().id, section.id)}
                       >
                         <span class="size-2 rounded-full bg-[var(--icon-critical-base)]" />
@@ -774,13 +861,13 @@ export function SuitesWorkspace(props: {
                     ...suite().sections,
                     {
                       id: crypto.randomUUID(),
-                      title: `Section ${suite().sections.length + 1}`,
+                      title: `Stage ${suite().sections.length + 1}`,
                       entries: [],
                     },
                   ])
                 }
               >
-                <Icon name="plus" size={13} /> Add section
+                <Icon name="plus" size={13} /> Add stage
               </button>
             </div>
             <Show when={selectedTest()}>

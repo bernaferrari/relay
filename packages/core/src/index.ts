@@ -10,6 +10,7 @@ export * from "./session.js";
 export * from "./workspace.js";
 export * from "./trace.js";
 export * from "./runs.js";
+export * from "./visual-baselines.js";
 export * from "./report.js";
 export * from "./doctor.js";
 export * from "./control.js";
