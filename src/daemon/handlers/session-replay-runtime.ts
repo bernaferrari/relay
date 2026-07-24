@@ -425,6 +425,7 @@ function completeReplayRun(params: {
       replayed: replayedCount,
       healed: 0,
       session: sessionName,
+      sessionActive: completedSession !== undefined,
       artifactPaths: [...artifactPaths],
       ...(snapshotDiagnosticsSummary ? { snapshotDiagnostics: snapshotDiagnosticsSummary } : {}),
       message: formatReplaySuccessMessage(replayedCount, Date.now() - startedAt),

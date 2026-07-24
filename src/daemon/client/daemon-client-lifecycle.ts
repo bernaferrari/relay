@@ -18,6 +18,7 @@ import {
 } from '../config.ts';
 import { computeDaemonCodeSignature } from '../code-signature.ts';
 import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { shellQuoteIfNeeded } from '../../utils/shell-quote.ts';
 import { sleep } from '../../utils/timeouts.ts';
 import {
   cleanupFailedDaemonStartupMetadata,
@@ -342,7 +343,19 @@ export async function cleanupDaemonAfterRequest(
     // `REPAIR_SESSION_EXPIRED` tombstone on reap), so an abandoned repair still
     // cannot leak indefinitely; this only stops the ONE-SHOT-COMMAND teardown
     // below from racing ahead of that window.
-    isHeldRepairDivergence(response)
+    isHeldRepairDivergence(response) ||
+    // ADR 0016: a `replay` whose script had no terminal `close` reports its
+    // session as still active by design (the consumption contract this ADR
+    // defines) — tearing down its owning daemon here would make that contract
+    // unaddressable over the real CLI path the instant the response is sent.
+    // Keyed off the session surviving the run (`sessionActive`), never off
+    // parsing the script for `close`, so a `--from` resume is covered too.
+    // Unlike the repair case, this session has no bounded reap of its own: an
+    // unattended close-less replay leaves a live daemon+app session until
+    // ordinary idle-reap or an explicit `close` ends it — the same lifetime an
+    // interactively opened session already has, and exactly what the ADR's
+    // "caller owns close" contract asks for.
+    isActiveReplaySessionResponse(req, response)
   ) {
     return response;
   }
@@ -474,6 +487,72 @@ export function attachRepairSessionAddressHint(
 
 function isOneShotReplayCommand(command: string | undefined): boolean {
   return command === PUBLIC_COMMANDS.replay || command === PUBLIC_COMMANDS.test;
+}
+
+/**
+ * ADR 0016: true when a successful `replay` response reports its session as
+ * still active (`ReplayCommandResult.sessionActive`, set by the daemon from
+ * whether the session survived in its own store — never derived here by
+ * re-parsing the script). Restricted to `replay` itself, never `test`: a
+ * `test` run's own per-file runner already closes each session before the
+ * suite summary is built, and its `ReplaySuiteResult` carries no such field
+ * anyway, but the explicit command check keeps that carve-out a decision
+ * rather than an accident of the response shape.
+ */
+export function isActiveReplaySessionResponse(
+  req: Omit<DaemonRequest, 'token'>,
+  response: DaemonResponse | undefined,
+): boolean {
+  if (req.command !== PUBLIC_COMMANDS.replay) return false;
+  if (!response || !response.ok) return false;
+  return response.data?.sessionActive === true;
+}
+
+/**
+ * ADR 0016 counterpart to `attachRepairSessionAddressHint`: a still-active
+ * replay session is only unaddressable by `--state-dir` when it lives on an
+ * OWNED, randomly generated one (`stateDir` undefined otherwise — an explicit
+ * `--state-dir`/`AGENT_DEVICE_STATE_DIR` caller already knows it). But the
+ * SESSION name is always cwd-qualified (`cwd:<hash>:default`) and, per #1394,
+ * `session list` cannot rediscover it either — so `--session` is always
+ * emitted when a name is available, explicit state dir or not. Attached to
+ * both a structured `hint` field (for `--json` consumers) and appended to
+ * `message` — the only field the default text renderer surfaces
+ * (`src/utils/success-text.ts`) — so the hint reaches a caller in either mode.
+ *
+ * `data.session` is used verbatim, never reconstructed as `default`: an
+ * EXPLICIT `--session <value>` is used as-is by `resolveEffectiveSessionName`,
+ * skipping cwd-scoping entirely (`hasExplicitSessionFlag`), so passing the
+ * qualified name back unchanged is what actually reaches the same session
+ * from any cwd — a bare `--session default` would only match by coincidence
+ * (an implicit, no-`--session` follow-up run from the identical cwd). Both
+ * the state dir and the session name are shell-quoted (only when needed) so
+ * the hint stays literally copy-pasteable even if either contains spaces or
+ * shell metacharacters.
+ */
+export function attachActiveSessionAddressHint(
+  response: Extract<DaemonResponse, { ok: true }>,
+  stateDir: string | undefined,
+): Extract<DaemonResponse, { ok: true }> {
+  const data = response.data ?? {};
+  const sessionName = typeof data.session === 'string' ? data.session : undefined;
+  const addressFlags = [
+    ...(stateDir ? [`--state-dir ${shellQuoteIfNeeded(stateDir)}`] : []),
+    ...(sessionName ? [`--session ${shellQuoteIfNeeded(sessionName)}`] : []),
+  ];
+  if (addressFlags.length === 0) return response;
+  const addressHint =
+    `This session's daemon was kept alive because its script left the session active; ` +
+    `pass ${addressFlags.join(' ')} on your next command to reach it.`;
+  const existingMessage = typeof data.message === 'string' ? data.message : undefined;
+  return {
+    ...response,
+    data: {
+      ...data,
+      hint: addressHint,
+      message: existingMessage ? `${existingMessage} ${addressHint}` : addressHint,
+    },
+  };
 }
 
 async function waitForDaemonStartup(
