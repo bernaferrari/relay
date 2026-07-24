@@ -43,7 +43,14 @@ import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { MaterialDiscreteSlider } from "./material-discrete-slider";
 import { StepEditor } from "./step-editor";
 import { AddMenu } from "./step-list-controls";
-import { eyebrow, productPrimary, propertySeg, propertySegBtn, propertySegBtnOn } from "../lib/ui";
+import {
+  eyebrow,
+  productPrimary,
+  propertySeg,
+  propertySegBtn,
+  propertySegBtnOn,
+  propertySegIndicator,
+} from "../lib/ui";
 
 const chromePanel =
   "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,var(--v2-background-bg-deep))]";
@@ -458,6 +465,11 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
   const holdStep = createMemo(() => {
     const current = step();
     return current && isTapAction(current) && tapGesture(current) === "hold" ? current : undefined;
+  });
+  const gestureIndex = createMemo(() => {
+    const current = step();
+    const gesture = current && isTapAction(current) ? tapGesture(current) : "single";
+    return gesture === "multi" ? 1 : gesture === "hold" ? 2 : 0;
   });
   const multiTapStep = createMemo(() => {
     const current = step();
@@ -899,6 +911,14 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
                   <span class="pt-2 text-[11px] text-[var(--text-base)]">Gesture</span>
                   <div class="grid gap-1.5">
                     <div class={propertySeg} role="radiogroup" aria-label="Tap gesture">
+                      <span
+                        aria-hidden="true"
+                        class={propertySegIndicator}
+                        style={{
+                          width: "calc((100% - 4px) / 3)",
+                          transform: `translateX(${gestureIndex() * 100}%)`,
+                        }}
+                      />
                       <For
                         each={
                           [
