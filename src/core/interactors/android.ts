@@ -32,6 +32,7 @@ import { setAndroidSetting } from '../../platforms/android/settings.ts';
 import { snapshotAndroid } from '../../platforms/android/snapshot.ts';
 import { screenshotAndroid } from '../../platforms/android/screenshot.ts';
 import { withDiagnosticTimer } from '../../utils/diagnostics.ts';
+import { withMethodScope } from '../../utils/method-scope.ts';
 import type { DeviceInfo } from '../../kernel/device.ts';
 import type { Interactor } from '../interactor-types.ts';
 import { snapshotCaptureAnnotationsFrom } from '../../snapshot-capture-annotations.ts';
@@ -98,16 +99,7 @@ export function createAndroidInteractor(
       setAndroidSetting(device, setting, state, appId, options),
   };
   if (!provider) return interactor;
-  return new Proxy(interactor, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (typeof value !== 'function') return value;
-      return (...args: unknown[]) =>
-        withAndroidAdbProvider(
-          provider,
-          { serial: device.id },
-          async () => await value.apply(target, args),
-        );
-    },
-  });
+  return withMethodScope(interactor, (task) =>
+    withAndroidAdbProvider(provider, { serial: device.id }, task),
+  );
 }
