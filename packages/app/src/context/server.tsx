@@ -9,6 +9,8 @@ import type {
   DiscoveryScope,
   DiscoveryControl,
   JourneyMetadata,
+  JourneyCanvasNote,
+  JourneyTake,
   CompatibilityMatrix,
   Revisioned,
   ServerConnection,
@@ -82,6 +84,24 @@ import type {
   TestSuite,
   VisualComparison,
 } from "../lib/api-types";
+
+function mergeJourneyTakes(
+  remote: JourneyTake[] | undefined,
+  local: JourneyTake[] | undefined,
+): JourneyTake[] {
+  const byId = new Map((remote ?? []).map((take) => [take.id, take]));
+  for (const take of local ?? []) byId.set(take.id, take);
+  return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt).slice(-50);
+}
+
+function mergeJourneyNotes(
+  remote: JourneyCanvasNote[] | undefined,
+  local: JourneyCanvasNote[] | undefined,
+): JourneyCanvasNote[] {
+  const byId = new Map((remote ?? []).map((note) => [note.id, note]));
+  for (const note of local ?? []) byId.set(note.id, note);
+  return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt).slice(-100);
+}
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
 export type {
@@ -735,9 +755,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             return client!.updateJourney(recipeId, {
               expectedRevision: latest.revision,
               value: {
+                ...latest.value,
+                ...value,
                 positions: { ...latest.value.positions, ...value.positions },
                 edgeLabels: { ...latest.value.edgeLabels, ...value.edgeLabels },
                 edgeKinds: { ...latest.value.edgeKinds, ...value.edgeKinds },
+                notes: mergeJourneyNotes(latest.value.notes, value.notes),
+                // A take has one stable id; keep local updates for matching
+                // ids while retaining remote takes created by collaborators.
+                takes: mergeJourneyTakes(latest.value.takes, value.takes),
               },
               idempotencyKey: crypto.randomUUID(),
             });

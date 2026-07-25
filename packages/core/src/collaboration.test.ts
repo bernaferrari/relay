@@ -53,9 +53,30 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
     const journey = await writeJourney("project-a", "login", {
       expectedRevision: 0,
       value: {
+        schemaVersion: 3,
         positions: { first: { x: 12, y: 24 } },
         edgeLabels: { "first:second": "Continue" },
         edgeKinds: { "first:second": "flow" },
+        notes: [
+          {
+            id: "note-1",
+            text: "Keep this branch independent",
+            x: 44,
+            y: 52,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        takes: [
+          {
+            id: "take-1",
+            recipeId: "login",
+            startedAt: 1,
+            group: "Sign in",
+            state: "review",
+            steps: [{ kind: "key", key: "home" }],
+          },
+        ],
       },
     });
     assert.equal(journey.revision, 1);
@@ -63,6 +84,7 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
       x: 12,
       y: 24,
     });
+    assert.equal((await readJourney("project-a", "login")).value.takes?.[0]?.state, "review");
   } finally {
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
     else process.env.GROK_DEVICE_STATE_DIR = previous;

@@ -1,5 +1,6 @@
 export * from "./suites.js";
 export * from "./recipes.js";
+import type { RecipeStep } from "./recipes.js";
 
 export type ConnectionAuth =
   | { type: "none" }
@@ -588,16 +589,39 @@ export type TestVariable = {
 };
 
 export type JourneyNodePosition = { x: number; y: number };
+/** Non-executable context placed beside captured screens: a compact canvas
+ * primitive for requirements, review decisions, or a reminder to branch. */
+export type JourneyCanvasNote = JourneyNodePosition & {
+  id: string;
+  text: string;
+  createdAt: number;
+  updatedAt: number;
+};
+/** A captured pass before (or after) it becomes part of the executable path.
+ * Keeping the raw step/evidence references here lets people resume review
+ * after a restart without turning exploratory actions into the journey. */
+export type JourneyTake = {
+  id: string;
+  recipeId: string;
+  startedAt: number;
+  finishedAt?: number;
+  group: string;
+  state: "review" | "kept" | "discarded";
+  steps: RecipeStep[];
+};
 /**
  * Layout metadata is deliberately separate from a recipe's executable steps.
  * It lets the graph evolve (and be rearranged) without making a recorded
  * journey impossible to run on an older Relay host.
  */
 export type JourneyMetadata = {
-  schemaVersion?: 1 | 2;
+  schemaVersion?: 1 | 2 | 3;
   positions: Record<string, JourneyNodePosition>;
   edgeLabels: Record<string, string>;
   edgeKinds: Record<string, string>;
+  notes?: JourneyCanvasNote[];
+  /** Versioned, non-executable recording review state. */
+  takes?: JourneyTake[];
 };
 
 export type GenerationPurpose = "variable" | "test-plan";

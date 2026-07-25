@@ -55,6 +55,11 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
     /** When we auto-forked a library test, where to go “back”. */
     const [forkedFrom, setForkedFrom] = createSignal<{ id: string; title: string } | null>(null);
     const [historyDepth, setHistoryDepth] = createSignal({ undo: 0, redo: 0 });
+    /** Durable checkpoints are kept by the recipe store, not just this tab's
+     * undo stack. It means an accidental edit can be recovered after reload,
+     * restart, or hand-off to another person. */
+    const [savedHistory, setSavedHistory] = createSignal<RecipeInfo[]>([]);
+    const [historyLoading, setHistoryLoading] = createSignal(false);
 
     let currentId: string | null = null;
     let dirty = false;
@@ -111,6 +116,20 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       undoStack = [];
       redoStack = [];
       syncHistoryDepth();
+    }
+
+    async function refreshSavedHistory(id = currentId): Promise<void> {
+      if (!id) {
+        setSavedHistory([]);
+        return;
+      }
+      setHistoryLoading(true);
+      try {
+        const entries = await server.loadRecipeHistory(id);
+        if (currentId === id) setSavedHistory(entries);
+      } finally {
+        if (currentId === id) setHistoryLoading(false);
+      }
     }
 
     function snapshotsMatch(a: DraftSnapshot, b: DraftSnapshot): boolean {
@@ -174,6 +193,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         if (invalidCount() === 0) void flush();
       }
       currentId = r?.id ?? null;
+      void refreshSavedHistory(currentId);
       const cached = r ? draftCache.get(r.id) : undefined;
       if (cached) {
         setSource(cached.source);
@@ -320,6 +340,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       if (editSeq === myEdit) {
         dirty = false;
         setSaveState("saved");
+        void refreshSavedHistory(id);
       } else {
         // Edits landed mid-save — go around again (now targeting the copy).
         scheduleSave();
@@ -478,6 +499,28 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       scheduleSave();
     }
 
+    /** Restore is intentionally a normal save: the current state itself is
+     * checkpointed first, so recovery is reversible rather than destructive. */
+    async function restoreSavedHistory(updatedAt: number): Promise<void> {
+      const id = currentId;
+      if (!id) return;
+      setHistoryLoading(true);
+      try {
+        const restored = await server.restoreRecipeVersion(id, updatedAt);
+        if (currentId !== id) return;
+        draftCache.delete(id);
+        skipReseedFor = id;
+        seedFrom(restored);
+        server.setSelectedRecipeId(id);
+        toast("Restored a previous version", "success");
+        await refreshSavedHistory(id);
+      } catch {
+        toast("Couldn’t restore that version", "error");
+      } finally {
+        if (currentId === id) setHistoryLoading(false);
+      }
+    }
+
     /**
      * Recording needs somewhere to land: any selected recipe works (builtins
      * auto-fork on the first appended step). Only when NOTHING is selected do
@@ -515,6 +558,10 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       parameterIssue,
       canUndo: () => historyDepth().undo > 0,
       canRedo: () => historyDepth().redo > 0,
+      savedHistory,
+      historyLoading,
+      refreshSavedHistory,
+      restoreSavedHistory,
       undo,
       redo,
       flashSteps,

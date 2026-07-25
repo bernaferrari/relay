@@ -33,6 +33,19 @@ import { toast } from "./toast";
  */
 export type RecLevel = "smart" | "element" | "point";
 
+/** A take is deliberately separate from executable recipe steps. Recording is
+ * exploratory; people should be able to pause, inspect, keep, or throw away a
+ * whole pass without making the journey noisy or unsafe. */
+export type RecordingTake = {
+  id: string;
+  recipeId?: string;
+  startedAt: number;
+  finishedAt?: number;
+  group: string;
+  steps: RecipeStep[];
+  state: "recording" | "review";
+};
+
 /** Legacy localStorage step shape (pre-plan-003). */
 export type LegacyRecStep =
   | { kind: "ref"; ref: string; label?: string }
@@ -243,6 +256,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     const [interacting, setInteracting] = createSignal(false);
     const [recording, setRecording] = createSignal(false);
     const [recordingGroup, setRecordingGroupState] = createSignal("");
+    const [take, setTake] = createSignal<RecordingTake | null>(null);
+
+    function takeId(): string {
+      const suffix =
+        globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Math.random().toString(36).slice(2, 10);
+      return `take-${Date.now().toString(36)}-${suffix}`;
+    }
 
     function nextRecordingGroup(): string {
       const used = new Set(
@@ -378,7 +398,21 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         };
         server.appendLog("recording evidence saved without a screenshot", "error");
       }
-      draft.appendSteps([withRecordingGroup({ ...step, evidence })]);
+      const recorded = withRecordingGroup({ ...step, evidence });
+      // Never mutate the journey during an active recording. The take remains
+      // editable evidence until the author explicitly keeps it.
+      setTake((current) =>
+        current
+          ? { ...current, recipeId: id, steps: [...current.steps, recorded] }
+          : {
+              id: takeId(),
+              recipeId: id,
+              startedAt: Date.now(),
+              group: recordingGroup().trim() || nextRecordingGroup(),
+              steps: [recorded],
+              state: "recording",
+            },
+      );
       // Prime context for the next direct-control event. This is intentionally
       // not awaited: touch/keyboard delivery stays on the fast H.264 path.
       void server.captureUiSnapshot();
@@ -420,7 +454,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
      *  device" action so both paths behave identically. */
     function enterRecordMode(): void {
       if (recording()) return;
-      if (!recordingGroup().trim()) startNextRecordingGroup();
+      if (take()?.state === "review") {
+        toast("Review or discard the current take before recording again", "info");
+        return;
+      }
+      const group = recordingGroup().trim() || nextRecordingGroup();
+      if (!recordingGroup().trim()) setRecordingGroupState(group);
+      setTake({ id: takeId(), startedAt: Date.now(), group, steps: [], state: "recording" });
       setInteracting(true);
       setRecording(true);
       server.setShowOverlays(true);
@@ -434,6 +474,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       await flushType();
       setRecording(false);
       setRecordingGroupState("");
+      setTake((current) =>
+        current ? { ...current, finishedAt: Date.now(), state: "review" } : current,
+      );
       // Stopping capture returns to live control. Interacting with the mirrored
       // device and recording those interactions are separate concerns.
       setInteracting(true);
@@ -594,7 +637,52 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       const evidence = recordedEvidence(snapshot, node, fx, fy, server.selectedDevice());
       const frame = await exactEvidenceFrame("Recorded target");
       if (frame) await attachEvidenceScreenshot(evidence, id, frame);
-      draft.appendSteps([withRecordingGroup({ kind: "tap", target, evidence })]);
+      const step = withRecordingGroup({ kind: "tap", target, evidence });
+      setTake((current) =>
+        current
+          ? { ...current, recipeId: id, steps: [...current.steps, step] }
+          : {
+              id: takeId(),
+              recipeId: id,
+              startedAt: Date.now(),
+              group: recordingGroup().trim() || nextRecordingGroup(),
+              steps: [step],
+              state: recording() ? "recording" : "review",
+            },
+      );
+    }
+
+    function keepTake(): boolean {
+      const current = take();
+      if (!current || current.steps.length === 0) return false;
+      draft.appendSteps(current.steps);
+      setTake(null);
+      toast(
+        `Added ${current.steps.length} action${current.steps.length === 1 ? "" : "s"} to the journey`,
+        "success",
+      );
+      return true;
+    }
+
+    function discardTake(): void {
+      const current = take();
+      setTake(null);
+      if (current?.steps.length) toast("Discarded this recording take", "info");
+    }
+
+    function removeTakeStep(index: number): void {
+      setTake((current) =>
+        current
+          ? { ...current, steps: current.steps.filter((_, position) => position !== index) }
+          : current,
+      );
+    }
+
+    /** Rehydrate a stopped take from durable journey metadata. The caller only
+     * does this for the active recipe; it never crosses journeys. */
+    function restoreTake(next: RecordingTake): void {
+      if (recording() || take()) return;
+      setTake({ ...structuredClone(next), state: "review" });
     }
 
     // ── Typing capture (plan 010 step 3.3) ──────────────────────────────────
@@ -809,6 +897,11 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setInteracting,
       recording,
       recordingGroup,
+      take,
+      keepTake,
+      discardTake,
+      removeTakeStep,
+      restoreTake,
       setRecordingGroup,
       startNextRecordingGroup,
       setRecording,

@@ -1,8 +1,8 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
-import type { JourneyMetadata, Revisioned } from "@relay/protocol";
+import type { JourneyCanvasNote, JourneyMetadata, JourneyTake, Revisioned } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { useRecorder } from "../context/recorder";
-import { useServer, type RecipeStep } from "../context/server";
+import { useRecorder, type RecordingTake } from "../context/recorder";
+import { useServer, type RecipeInfo, type RecipeStep } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { buildJourneyTree, transitionLabel, type JourneyTreeNode } from "../lib/journey-tree";
@@ -19,10 +19,12 @@ const CARD_H = 248;
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 1.25;
 const EMPTY_METADATA: JourneyMetadata = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   positions: {},
   edgeLabels: {},
   edgeKinds: {},
+  notes: [],
+  takes: [],
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -49,9 +51,11 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
     updatedAt: 0,
   });
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
+  const [historyOpen, setHistoryOpen] = createSignal(false);
   let canvas: HTMLElement | undefined;
   let pan: { x: number; y: number; view: Viewport } | undefined;
   let nodeDrag: { id: string; x: number; y: number; origin: Point; moved: boolean } | undefined;
+  let noteDrag: { id: string; x: number; y: number; origin: Point; moved: boolean } | undefined;
   let fittedSignature = "";
 
   createEffect(() => {
@@ -73,6 +77,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   });
 
   const positions = () => metadata().value.positions;
+  const hasCanvasContent = () => hasMap() || (metadata().value.notes?.length ?? 0) > 0;
   const positionFor = (node: JourneyTreeNode): Point => positions()[node.id] ?? node;
   const selectedNode = createMemo(
     () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? tree().nodes[0] ?? null,
@@ -83,16 +88,27 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   });
   const bounds = createMemo(() => {
     const nodes = tree().nodes;
-    if (!nodes.length) return { width: 760, height: 560 };
+    const notes = metadata().value.notes ?? [];
+    if (!nodes.length && !notes.length) return { width: 760, height: 560 };
+    const right = Math.max(
+      ...nodes.map((node) => positionFor(node).x + CARD_W),
+      ...notes.map((note) => note.x + 220),
+      648,
+    );
+    const bottom = Math.max(
+      ...nodes.map((node) => positionFor(node).y + CARD_H),
+      ...notes.map((note) => note.y + 132),
+      448,
+    );
     return {
-      width: Math.max(760, Math.max(...nodes.map((node) => positionFor(node).x + CARD_W)) + 112),
-      height: Math.max(560, Math.max(...nodes.map((node) => positionFor(node).y + CARD_H)) + 112),
+      width: Math.max(760, right + 112),
+      height: Math.max(560, bottom + 112),
     };
   });
 
   const fit = () => {
     const element = canvas;
-    if (!element || !hasMap()) return;
+    if (!element || !hasCanvasContent()) return;
     const content = bounds();
     const padding = 56;
     const scale = clamp(
@@ -113,9 +129,10 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
 
   onMount(() => requestAnimationFrame(fit));
   createEffect(() => {
-    const signature = tree()
-      .nodes.map((node) => node.id)
-      .join("|");
+    const signature = [
+      ...tree().nodes.map((node) => node.id),
+      ...(metadata().value.notes ?? []).map((note) => note.id),
+    ].join("|");
     if (!signature || signature === fittedSignature) return;
     fittedSignature = signature;
     setSelectedNodeId((current) =>
@@ -149,12 +166,87 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
     const recipeId = server.selectedRecipeId();
     if (!recipeId) return;
     const current = metadata();
-    const value: JourneyMetadata = { ...current.value, schemaVersion: 2, positions: next };
+    const value: JourneyMetadata = { ...current.value, schemaVersion: 3, positions: next };
     setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
     void server
       .saveJourney(recipeId, current, value)
       .then(setMetadata)
       .catch(() => setMetadata(current));
+  };
+  const persistTake = (take: RecordingTake, state: JourneyTake["state"]) => {
+    const recipeId = take.recipeId;
+    if (!recipeId || recipeId !== server.selectedRecipeId()) return;
+    const current = metadata();
+    const nextTake: JourneyTake = {
+      id: take.id,
+      recipeId,
+      startedAt: take.startedAt,
+      ...(take.finishedAt ? { finishedAt: take.finishedAt } : {}),
+      group: take.group,
+      state,
+      steps: structuredClone(take.steps),
+    };
+    const previous = current.value.takes ?? [];
+    const same = previous.find((entry) => entry.id === nextTake.id);
+    if (same && JSON.stringify(same) === JSON.stringify(nextTake)) return;
+    const value: JourneyMetadata = {
+      ...current.value,
+      schemaVersion: 3,
+      takes: [...previous.filter((entry) => entry.id !== nextTake.id), nextTake].slice(-50),
+    };
+    setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
+    void server
+      .saveJourney(recipeId, current, value)
+      .then(setMetadata)
+      .catch(() => setMetadata(current));
+  };
+  const persistNotes = (notes: JourneyCanvasNote[]) => {
+    const recipeId = server.selectedRecipeId();
+    if (!recipeId) return;
+    const current = metadata();
+    const value: JourneyMetadata = { ...current.value, schemaVersion: 3, notes };
+    setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
+    void server
+      .saveJourney(recipeId, current, value)
+      .then(setMetadata)
+      .catch(() => setMetadata(current));
+  };
+  const addNote = () => {
+    const element = canvas;
+    const current = view();
+    const x = element ? (element.clientWidth * 0.52 - current.x) / current.scale : 320;
+    const y = element ? (element.clientHeight * 0.42 - current.y) / current.scale : 180;
+    const at = Date.now();
+    const id = `note-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? at.toString(36)}`;
+    persistNotes([
+      ...(metadata().value.notes ?? []),
+      { id, text: "Add context for this part of the journey", x, y, createdAt: at, updatedAt: at },
+    ]);
+  };
+  createEffect(() => {
+    const recipeId = server.selectedRecipeId();
+    const current = recorder.take();
+    if (!recipeId || !current || current.recipeId !== recipeId || current.state !== "review")
+      return;
+    persistTake(current, "review");
+  });
+  createEffect(() => {
+    const recipeId = server.selectedRecipeId();
+    if (!recipeId || recorder.take()) return;
+    const review = [...(metadata().value.takes ?? [])]
+      .reverse()
+      .find((take) => take.recipeId === recipeId && take.state === "review");
+    if (review?.state === "review") recorder.restoreTake({ ...review, state: "review" });
+  });
+  const keepTake = () => {
+    const take = recorder.take();
+    if (!take) return;
+    if (recorder.keepTake()) persistTake(take, "kept");
+  };
+  const discardTake = () => {
+    const take = recorder.take();
+    if (take) persistTake(take, "discarded");
+    recorder.discardTake();
   };
   const recordFromHere = () => {
     const screen = selectedNode();
@@ -176,12 +268,16 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
         class="relative isolate flex min-h-0 min-w-0 select-none overflow-hidden border-r border-[var(--v2-border-border-muted)]"
         aria-label="Journey graph"
         onWheel={(event) => {
-          if (!hasMap() || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
+          if (!hasCanvasContent() || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
           event.preventDefault();
           zoom(event.deltaY > 0 ? -0.08 : 0.08, { x: event.clientX, y: event.clientY });
         }}
         onPointerDown={(event) => {
-          if (!hasMap() || event.button !== 0 || (event.target as HTMLElement).closest("button"))
+          if (
+            !hasCanvasContent() ||
+            event.button !== 0 ||
+            (event.target as HTMLElement).closest("button")
+          )
             return;
           pan = { x: event.clientX, y: event.clientY, view: view() };
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -204,6 +300,23 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
             }));
             return;
           }
+          if (noteDrag) {
+            const moved = Math.hypot(event.clientX - noteDrag.x, event.clientY - noteDrag.y) > 4;
+            if (!moved && !noteDrag.moved) return;
+            noteDrag.moved = true;
+            const next = (metadata().value.notes ?? []).map((note) =>
+              note.id === noteDrag!.id
+                ? {
+                    ...note,
+                    x: noteDrag!.origin.x + (event.clientX - noteDrag!.x) / view().scale,
+                    y: noteDrag!.origin.y + (event.clientY - noteDrag!.y) / view().scale,
+                    updatedAt: Date.now(),
+                  }
+                : note,
+            );
+            setMetadata((current) => ({ ...current, value: { ...current.value, notes: next } }));
+            return;
+          }
           if (!pan) return;
           setView({
             ...pan.view,
@@ -213,11 +326,14 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
         }}
         onPointerUp={() => {
           if (nodeDrag?.moved) persistPositions(positions());
+          if (noteDrag?.moved) persistNotes(metadata().value.notes ?? []);
           nodeDrag = undefined;
+          noteDrag = undefined;
           pan = undefined;
         }}
         onPointerCancel={() => {
           nodeDrag = undefined;
+          noteDrag = undefined;
           pan = undefined;
         }}
       >
@@ -239,12 +355,56 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
               {tree().nodes.length === 1 ? "screen" : "screens"}
             </span>
           </div>
-          <button type="button" class={recordButton} onClick={recordFromHere}>
-            <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" /> Record from device
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button
+              type="button"
+              class={mapControlButton}
+              aria-label="Undo"
+              title="Undo"
+              disabled={!draft.canUndo()}
+              onClick={draft.undo}
+            >
+              <Icon name="undo" size={13} />
+            </button>
+            <button
+              type="button"
+              class={mapControlButton}
+              aria-label="Redo"
+              title="Redo"
+              disabled={!draft.canRedo()}
+              onClick={draft.redo}
+            >
+              <Icon name="redo" size={13} />
+            </button>
+            <button
+              type="button"
+              class={mapControlButton}
+              aria-expanded={historyOpen()}
+              onClick={() => setHistoryOpen((open) => !open)}
+            >
+              <Icon name="clock" size={13} /> History
+            </button>
+            <button type="button" class={mapControlButton} onClick={addNote}>
+              <Icon name="plus" size={13} /> Note
+            </button>
+            <button type="button" class={recordButton} onClick={recordFromHere}>
+              <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" /> Record from device
+            </button>
+          </div>
         </header>
+        <Show when={historyOpen()}>
+          <HistoryPanel
+            loading={draft.historyLoading()}
+            entries={draft.savedHistory()}
+            onClose={() => setHistoryOpen(false)}
+            onRestore={(updatedAt) => {
+              void draft.restoreSavedHistory(updatedAt);
+              setHistoryOpen(false);
+            }}
+          />
+        </Show>
         <Show
-          when={hasMap()}
+          when={hasCanvasContent()}
           fallback={<GraphEmptyState onRecord={recordFromHere} onOpenDevice={props.onLive} />}
         >
           <div
@@ -328,6 +488,41 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                 />
               )}
             </For>
+            <For each={metadata().value.notes ?? []}>
+              {(note) => (
+                <CanvasNote
+                  note={note}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    noteDrag = {
+                      id: note.id,
+                      x: event.clientX,
+                      y: event.clientY,
+                      origin: { x: note.x, y: note.y },
+                      moved: false,
+                    };
+                  }}
+                  onText={(text) =>
+                    setMetadata((current) => ({
+                      ...current,
+                      value: {
+                        ...current.value,
+                        notes: (current.value.notes ?? []).map((entry) =>
+                          entry.id === note.id ? { ...entry, text, updatedAt: Date.now() } : entry,
+                        ),
+                      },
+                    }))
+                  }
+                  onCommit={() => persistNotes(metadata().value.notes ?? [])}
+                  onDelete={() =>
+                    persistNotes(
+                      (metadata().value.notes ?? []).filter((entry) => entry.id !== note.id),
+                    )
+                  }
+                />
+              )}
+            </For>
           </div>
           <ScreenActions
             node={selectedNode()}
@@ -383,6 +578,17 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
             <Icon name="arrow-right" size={13} />
           </button>
         </div>
+        <Show when={recorder.take()}>
+          {(take) => (
+            <TakeReviewBar
+              take={take()}
+              onStop={() => void recorder.stopRecording()}
+              onKeep={keepTake}
+              onDiscard={discardTake}
+              onRemove={(index) => recorder.removeTakeStep(index)}
+            />
+          )}
+        </Show>
         <div class="min-h-0 flex-1">
           <DeviceStage onOpenTargets={props.onOpenTargets} />
         </div>
@@ -394,7 +600,156 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
 const recordButton =
   "inline-flex h-7 items-center gap-1.5 rounded-[7px] bg-[var(--product-accent-soft)] px-2.5 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]";
 const mapControlButton =
-  "grid h-7 min-w-7 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "grid h-7 min-w-7 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+
+function TakeReviewBar(props: {
+  take: RecordingTake;
+  onStop: () => void;
+  onKeep: () => void;
+  onDiscard: () => void;
+  onRemove: (index: number) => void;
+}) {
+  const count = () => props.take.steps.length;
+  const isRecording = () => props.take.state === "recording";
+  return (
+    <section class="border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-4 py-2.5">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--text-strong)]">
+            <i
+              class={cn(
+                "size-1.5 rounded-full",
+                isRecording()
+                  ? "bg-[var(--icon-critical-base)]"
+                  : "bg-[var(--text-interactive-base)]",
+              )}
+            />
+            {isRecording() ? "Recording freely" : "Review this take"}
+          </div>
+          <p class="m-0 mt-0.5 text-[10px] text-[var(--text-weak)]">
+            {isRecording()
+              ? `${count()} captured action${count() === 1 ? "" : "s"}. Nothing is permanent yet.`
+              : `${count()} action${count() === 1 ? "" : "s"} ready to add to this journey.`}
+          </p>
+        </div>
+        <Show
+          when={isRecording()}
+          fallback={
+            <div class="flex shrink-0 items-center gap-1.5">
+              <button type="button" class={mapControlButton} onClick={props.onDiscard}>
+                Discard
+              </button>
+              <button type="button" class={recordButton} onClick={props.onKeep}>
+                <Icon name="check" size={12} /> Keep take
+              </button>
+            </div>
+          }
+        >
+          <button type="button" class={mapControlButton} onClick={props.onStop}>
+            <Icon name="square" size={11} /> Stop & review
+          </button>
+        </Show>
+      </div>
+      <Show when={!isRecording() && count() > 0}>
+        <div class="mt-2 grid gap-0.5 border-t border-[var(--v2-border-border-muted)] pt-1.5">
+          <For each={props.take.steps.slice(-4)}>
+            {(step, displayIndex) => {
+              const index = () => Math.max(0, props.take.steps.length - 4) + displayIndex();
+              return (
+                <div class="flex min-w-0 items-center gap-2 rounded-[6px] px-1.5 py-1 text-[10px] text-[var(--text-base)]">
+                  <span class="font-mono text-[9px] text-[var(--text-weak)]">
+                    {String(index() + 1).padStart(2, "0")}
+                  </span>
+                  <span class="min-w-0 flex-1 truncate">{transitionLabel(step)}</span>
+                  <button
+                    type="button"
+                    class="grid size-5 place-items-center rounded-[5px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
+                    aria-label={`Remove ${transitionLabel(step)}`}
+                    onClick={() => props.onRemove(index())}
+                  >
+                    <Icon name="x" size={10} />
+                  </button>
+                </div>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
+    </section>
+  );
+}
+
+function HistoryPanel(props: {
+  loading: boolean;
+  entries: RecipeInfo[];
+  onClose: () => void;
+  onRestore: (updatedAt: number) => void;
+}) {
+  return (
+    <aside class="absolute top-14 right-4 z-30 w-[min(320px,calc(100%-32px))] overflow-hidden rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] shadow-[0_16px_40px_rgb(0_0_0/28%)]">
+      <header class="flex items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3 py-2.5">
+        <div>
+          <strong class="block text-[11.5px] text-[var(--text-strong)]">Journey history</strong>
+          <span class="text-[9.5px] text-[var(--text-weak)]">
+            Restore any prior save. Your current state stays recoverable.
+          </span>
+        </div>
+        <button
+          type="button"
+          class={mapControlButton}
+          aria-label="Close history"
+          onClick={props.onClose}
+        >
+          <Icon name="x" size={13} />
+        </button>
+      </header>
+      <div class="max-h-60 overflow-auto p-1.5">
+        <Show
+          when={!props.loading}
+          fallback={
+            <p class="m-0 px-2 py-3 text-[10.5px] text-[var(--text-weak)]">
+              Loading saved versions…
+            </p>
+          }
+        >
+          <Show
+            when={props.entries.length}
+            fallback={
+              <p class="m-0 px-2 py-3 text-[10.5px] text-[var(--text-weak)]">
+                Your first meaningful edit will appear here.
+              </p>
+            }
+          >
+            <For each={props.entries}>
+              {(entry) => (
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between gap-3 rounded-[8px] px-2 py-2 text-left transition-colors hover:bg-[var(--v2-background-bg-layer-02)]"
+                  onClick={() => props.onRestore(entry.updatedAt)}
+                >
+                  <span class="min-w-0">
+                    <strong class="block truncate text-[10.5px] font-medium text-[var(--text-strong)]">
+                      {entry.title}
+                    </strong>
+                    <span class="text-[9.5px] text-[var(--text-weak)]">
+                      {entry.steps.length} {entry.steps.length === 1 ? "action" : "actions"}
+                    </span>
+                  </span>
+                  <span class="shrink-0 text-[9.5px] text-[var(--text-weak)]">
+                    {new Date(entry.updatedAt).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </button>
+              )}
+            </For>
+          </Show>
+        </Show>
+      </div>
+    </aside>
+  );
+}
 
 function GraphEmptyState(props: { onRecord: () => void; onOpenDevice: () => void }) {
   return (
@@ -417,6 +772,49 @@ function GraphEmptyState(props: { onRecord: () => void; onOpenDevice: () => void
         </button>
       </div>
     </div>
+  );
+}
+
+function CanvasNote(props: {
+  note: JourneyCanvasNote;
+  onPointerDown: (event: PointerEvent & { currentTarget: HTMLButtonElement }) => void;
+  onText: (text: string) => void;
+  onCommit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <article
+      class="absolute w-[220px] overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--v2-border-border-strong)_74%,transparent)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_96%,var(--product-accent-soft))] shadow-[0_8px_26px_rgb(0_0_0/18%)]"
+      style={{ transform: `translate3d(${props.note.x}px, ${props.note.y}px, 0)` }}
+    >
+      <header class="flex h-8 items-center justify-between border-b border-[color-mix(in_srgb,var(--v2-border-border-muted)_82%,transparent)] px-1">
+        <button
+          type="button"
+          class="flex h-full min-w-0 flex-1 cursor-grab items-center gap-1.5 px-1.5 text-left active:cursor-grabbing"
+          onPointerDown={props.onPointerDown}
+        >
+          <Icon name="edit" size={11} class="text-[var(--text-interactive-base)]" />
+          <span class="text-[10px] font-semibold text-[var(--text-strong)]">Note</span>
+          <span class="text-[9px] text-[var(--text-weak)]">drag</span>
+        </button>
+        <button
+          type="button"
+          class="grid size-6 place-items-center rounded-[6px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
+          aria-label="Delete note"
+          onClick={props.onDelete}
+        >
+          <Icon name="x" size={11} />
+        </button>
+      </header>
+      <textarea
+        class="block min-h-[96px] w-full resize-none bg-transparent px-2.5 py-2 text-[11px]/[1.5] text-[var(--text-base)] outline-none placeholder:text-[var(--text-weak)]"
+        value={props.note.text}
+        aria-label="Canvas note"
+        onPointerDown={(event) => event.stopPropagation()}
+        onInput={(event) => props.onText(event.currentTarget.value.slice(0, 480))}
+        onBlur={props.onCommit}
+      />
+    </article>
   );
 }
 
