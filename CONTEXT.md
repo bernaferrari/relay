@@ -239,11 +239,16 @@ The perfect-shape refactor is complete and merged. Its end-state:
 - Typed result spine. Per-command typed results replaced the ad-hoc `Record`-typed returns across the
   daemon/dispatch path; errors gained machine-readable `retriable`/`supportedOn` signals on
   `DaemonError` (#939). Error-system conventions live in [ADR 0010](docs/adr/0010-error-system.md).
-- Apple platform model. Internally `Platform` is `apple` (plus `android`/`linux`/`web`) with an
+- Apple platform model. Internally `Platform` is `apple` (plus `android`/`vega`/`linux`/`web`) with an
   `appleOs` discriminant (`ios | ipados | tvos | watchos | visionos | macos`); the shared Apple engine
   lives under `src/platforms/apple/core/` with per-OS leaves under `src/platforms/apple/os/<os>/`.
   The public wire stays non-breaking: `PUBLIC_PLATFORMS` (`src/kernel/device.ts`) still emits
   `ios`/`macos` leaf output. See [ADR 0009](docs/adr/0009-apple-platform-consolidation.md).
+- Vega platform model. Initial Vega OS support is deliberately **VVD-only**: discovery returns
+  `VirtualDevice`, and platform capability admission rejects physical Fire TV devices until durable
+  hardware evidence validates discovery, lifecycle, and the complete remote-control contract.
+  Vega capture, selector, inventory, install, logging, and performance backends remain separate
+  follow-up surfaces.
 - Folder DAG + layering lint. `scripts/layering/check.ts` enforces two different scopes in CI.
   GLOBALLY, across every production source file, it enforces the R1-R3 move rules (kernel-sink,
   commands-floor, platforms-seam) and rejects all production static value-import cycles. Separately,
