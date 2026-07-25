@@ -18,7 +18,7 @@ test('normalizeOpenDevice accepts exactly the canonical leaf platforms', () => {
     assert.equal(result.platform, platform);
   }
   // Lock the membership so the derived check cannot silently widen/narrow.
-  assert.deepEqual([...PUBLIC_PLATFORMS], ['ios', 'macos', 'android', 'linux', 'web']);
+  assert.deepEqual([...PUBLIC_PLATFORMS], ['ios', 'macos', 'android', 'vega', 'linux', 'web']);
 });
 
 test('normalizeOpenDevice rejects the apple selector and unknown platforms', () => {
@@ -96,7 +96,7 @@ test('normalizeSession carries the additive appleOs discriminant on the session 
   assert.equal(session.device.platform, 'ios');
 });
 
-test('normalizeOpenDevice preserves per-platform identifier shaping', () => {
+test('normalizeOpenDevice preserves iOS identifier shaping', () => {
   const ios = normalizeOpenDevice({
     platform: 'ios',
     id: 'udid-1',
@@ -105,7 +105,11 @@ test('normalizeOpenDevice preserves per-platform identifier shaping', () => {
   });
   assert.deepEqual(ios?.ios, { udid: 'udid-1', simulatorSetPath: '/tmp/set' });
   assert.equal(ios?.android, undefined);
+  assert.equal('android' in (ios ?? {}), false);
+  assert.equal('vega' in (ios ?? {}), false);
+});
 
+test('normalizeOpenDevice preserves Android identifier shaping', () => {
   const android = normalizeOpenDevice({
     platform: 'android',
     id: 'serial-1',
@@ -114,4 +118,22 @@ test('normalizeOpenDevice preserves per-platform identifier shaping', () => {
   });
   assert.deepEqual(android?.android, { serial: 'explicit-serial' });
   assert.equal(android?.ios, undefined);
+  assert.equal(android?.identifiers.serial, 'explicit-serial');
+  assert.equal('ios' in (android ?? {}), false);
+  assert.equal('vega' in (android ?? {}), false);
+});
+
+test('normalizeOpenDevice preserves Vega identifier shaping', () => {
+  const vega = normalizeOpenDevice({
+    platform: 'vega',
+    id: 'VirtualDevice',
+    device: 'Vega Virtual Device',
+    serial: 'explicit-vega-serial',
+  });
+  assert.deepEqual(vega?.vega, { serial: 'explicit-vega-serial' });
+  assert.equal(vega?.ios, undefined);
+  assert.equal(vega?.android, undefined);
+  assert.equal(vega?.identifiers.serial, 'explicit-vega-serial');
+  assert.equal('ios' in (vega ?? {}), false);
+  assert.equal('android' in (vega ?? {}), false);
 });

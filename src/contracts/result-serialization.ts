@@ -14,7 +14,7 @@ import {
   publicSnapshotCaptureAnnotations,
   type SnapshotCaptureAnnotations,
 } from '../snapshot-capture-annotations.ts';
-import type { PublicPlatform } from '../kernel/device.ts';
+import { isSerialAddressablePlatform, type PublicPlatform } from '../kernel/device.ts';
 import { successText, withSuccessText } from '../utils/success-text.ts';
 
 export function buildAppIdentifiers(params: {
@@ -40,15 +40,20 @@ export function buildDeviceIdentifiers(
   return {
     deviceId: id,
     deviceName: name,
-    ...(platform === 'android' ? { serial: id } : platform === 'ios' ? { udid: id } : {}),
+    ...(isSerialAddressablePlatform(platform)
+      ? { serial: id }
+      : platform === 'ios'
+        ? { udid: id }
+        : {}),
   };
 }
 
 function serializeSessionDevice(
   device: AgentDeviceSessionDevice,
-  options: { includeAndroidSerial?: boolean } = {},
+  options: { includeSerial?: boolean } = {},
 ): Record<string, unknown> {
-  const includeAndroidSerial = options.includeAndroidSerial ?? true;
+  const includeSerial = options.includeSerial ?? true;
+  const serial = sessionDeviceSerial(device);
   return {
     platform: device.platform,
     target: device.target,
@@ -60,12 +65,14 @@ function serializeSessionDevice(
           ios_simulator_device_set: device.ios?.simulatorSetPath ?? null,
         }
       : {}),
-    ...(device.platform === 'android' && includeAndroidSerial
-      ? {
-          serial: device.android?.serial ?? device.id,
-        }
-      : {}),
+    ...(includeSerial && serial ? { serial } : {}),
   };
+}
+
+function sessionDeviceSerial(device: AgentDeviceSessionDevice): string | undefined {
+  return isSerialAddressablePlatform(device.platform)
+    ? (device.identifiers.serial ?? device.id)
+    : undefined;
 }
 
 export function serializeSessionListEntry(session: AgentDeviceSession): Record<string, unknown> {
@@ -73,7 +80,7 @@ export function serializeSessionListEntry(session: AgentDeviceSession): Record<s
     name: session.name,
     ...(session.sessionStateDir ? { sessionStateDir: session.sessionStateDir } : {}),
     ...(session.runnerLogPath ? { runnerLogPath: session.runnerLogPath } : {}),
-    ...serializeSessionDevice(session.device, { includeAndroidSerial: false }),
+    ...serializeSessionDevice(session.device, { includeSerial: false }),
     createdAt: session.createdAt,
   };
 }

@@ -1,7 +1,11 @@
 import { AppError } from '../kernel/errors.ts';
 import type { CommandFlags } from '../core/dispatch.ts';
 import type { SessionState } from './types.ts';
-import { isIosFamily, matchesPlatformSelector } from '../kernel/device.ts';
+import {
+  isIosFamily,
+  isSerialAddressablePlatform,
+  matchesPlatformSelector,
+} from '../kernel/device.ts';
 import { parseSerialAllowlist } from '../utils/device-isolation.ts';
 import { buildSessionRecoveryHint, describeSessionDevice } from './session-recovery-hints.ts';
 
@@ -55,7 +59,10 @@ export function listSessionSelectorConflicts(
     mismatches.push({ key: 'udid', value: flags.udid });
   }
 
-  if (flags.serial && (device.platform !== 'android' || flags.serial !== device.id)) {
+  if (
+    flags.serial &&
+    (!isSerialAddressablePlatform(device.platform) || flags.serial !== device.id)
+  ) {
     mismatches.push({ key: 'serial', value: flags.serial });
   }
 
