@@ -502,6 +502,21 @@ test('usageForCommand resolves physical-device help topic', async () => {
   );
 });
 
+test('usageForCommand resolves ios-system-ui help topic', async () => {
+  const help = await usageForCommand('ios-system-ui');
+  if (help === null) throw new Error('Expected ios-system-ui help text');
+  assert.match(help, /agent-device help ios-system-ui/);
+  assert.match(help, /agent-device open com\.apple\.springboard --platform ios/);
+  assert.match(help, /longpress <x> <y> on an empty area of the home screen/);
+  assert.match(help, /discover them from the current snapshot/);
+  assert.match(
+    help,
+    /verified on iOS simulator; physical-iPhone SpringBoard support is not yet verified/,
+  );
+  assert.match(help, /Do not hard-code Edit\/Done\/Add Widget or other SpringBoard label text/);
+  assert.match(help, /Reopen the app bundle under test/);
+});
+
 test('usageForCommand resolves manual QA help topic', async () => {
   const help = await usageForCommand('manual-qa');
   if (help === null) throw new Error('Expected manual QA help text');
