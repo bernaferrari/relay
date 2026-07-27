@@ -66,9 +66,9 @@ import {
   captureSimulatorScreenshotWithRetry,
   captureScreenshotViaRunner,
   resolveSimulatorRunnerScreenshotCandidatePaths,
-  shouldFallbackToRunnerForIosScreenshot,
   shouldRetryIosSimulatorScreenshot,
 } from '../screenshot.ts';
+import { shouldFallbackToRunnerForIosScreenshot } from '../physical-device-screenshot.ts';
 import { ensureBootedSimulator, openIosSimulatorApp } from '../simulator.ts';
 import {
   invalidateSimulatorStatusBarOverrideCache,
@@ -1251,6 +1251,23 @@ test('captureScreenshotViaRunner reuses a verified simulator container path', as
       mockRunCmd.mock.calls.filter(([, args]) => args.includes('get_app_container')).length,
       1,
     );
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('captureScreenshotViaRunner copies macOS runner screenshots from the host', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-macos-screenshot-'));
+  const sourcePath = path.join(tmpDir, 'runner.png');
+  const outPath = path.join(tmpDir, 'screen.png');
+  await fs.writeFile(sourcePath, 'runner-image', 'utf8');
+  mockRunAppleRunnerCommand.mockResolvedValue({ message: sourcePath });
+  mockRunCmd.mockRejectedValue(new Error('macOS screenshot must not invoke xcrun devicectl'));
+
+  try {
+    await captureScreenshotViaRunner(MACOS_TEST_DEVICE, outPath);
+    assert.equal(await fs.readFile(outPath, 'utf8'), 'runner-image');
+    assert.equal(mockRunCmd.mock.calls.length, 0);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
