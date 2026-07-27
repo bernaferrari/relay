@@ -7,12 +7,12 @@ import {
   createAppResolutionCache,
   type AppResolutionCacheScope,
 } from '../../app-resolution-cache.ts';
-import { listIosDeviceApps } from './devicectl.ts';
 import type { IosAppInfo } from './app-info.ts';
 import { filterAppleAppsByBundlePrefix } from './app-filter.ts';
 import { listMacApps, resolveMacOsApp } from '../os/macos/apps.ts';
 import { runAppleToolCommand } from './tool-provider.ts';
 import { runSimctl } from './apps-simctl.ts';
+import { resolveIosPhysicalDeviceControl } from './physical-device-control.ts';
 
 const ALIASES: Record<string, string> = {
   settings: 'com.apple.Preferences',
@@ -41,7 +41,6 @@ export async function resolveIosApp(device: DeviceInfo, app: string): Promise<st
 
   const alias = resolveIosAppAlias(trimmed);
   if (alias !== trimmed) return alias;
-
   const cacheScope = iosAppResolutionScope(device);
   const cached = iosAppResolutionCache.get(cacheScope, trimmed);
   if (cached) return cached;
@@ -49,7 +48,7 @@ export async function resolveIosApp(device: DeviceInfo, app: string): Promise<st
   const list =
     device.kind === 'simulator'
       ? await listSimulatorApps(device)
-      : await listIosDeviceApps(device, 'all');
+      : await resolveIosPhysicalDeviceControl(device).listApps(device, 'all');
   const matches = list.filter((entry) => entry.name.toLowerCase() === trimmed.toLowerCase());
   const match = matches[0];
   if (match !== undefined && matches.length === 1) {
@@ -139,7 +138,7 @@ export async function listIosApps(device: DeviceInfo, filter: AppsFilter): Promi
     const apps = await listSimulatorApps(device);
     return filterAppleAppsByBundlePrefix(apps, filter);
   }
-  return await listIosDeviceApps(device, filter);
+  return await resolveIosPhysicalDeviceControl(device).listApps(device, filter);
 }
 
 async function listSimulatorApps(device: DeviceInfo): Promise<IosAppInfo[]> {
