@@ -8,8 +8,8 @@ import type {
 } from '../../remote/remote-config-schema.ts';
 import { AppError, asAppError } from '../../kernel/errors.ts';
 import type { EnvMap } from '../../utils/env-map.ts';
-import type { CliFlags } from '../../commands/cli-grammar/flag-types.ts';
-import { profileToCliFlags } from '../../utils/remote-config.ts';
+import type { CliFlags } from '../../contracts/cli-flags.ts';
+import { profileToCliFlags } from '../remote-config-flags.ts';
 
 const GENERATED_REMOTE_CONFIG_SECRET_KEYS = new Set(['daemonAuthToken', 'metroBearerToken']);
 

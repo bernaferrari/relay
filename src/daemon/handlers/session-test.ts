@@ -1,12 +1,11 @@
 import { asAppError, normalizeError } from '../../kernel/errors.ts';
 import { errorResponse } from './response.ts';
+import type { DaemonRequest, DaemonResponse } from '../types.ts';
 import type {
-  DaemonRequest,
-  DaemonResponse,
   ReplaySuiteResult,
   ReplaySuiteTestFailed,
   ReplaySuiteTestResult,
-} from '../types.ts';
+} from '../../contracts/replay.ts';
 import { resolveReplayTestArtifactsDir } from './session-test-artifacts.ts';
 import { emitRequestProgress } from '../../request/progress.ts';
 import {
@@ -25,7 +24,7 @@ import {
   type ReplayTestShardPlan,
 } from './session-test-sharding.ts';
 import { isRequestCanceled } from '../../request/cancel.ts';
-import { mergeSnapshotDiagnostics } from '../../snapshot-diagnostics.ts';
+import { mergeSnapshotDiagnostics } from '../../contracts/snapshot-diagnostics.ts';
 
 type ReplayTestEntry = ReturnType<typeof discoverReplayTestEntries>[number];
 type ReplayTestQueuedEntry = {

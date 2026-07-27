@@ -20,13 +20,13 @@ import {
   type RemoteConnectionState,
   type RemoteConnectionRequestMetadata,
 } from '../../remote/remote-connection-state.ts';
-import { profileToCliFlags } from '../../utils/remote-config.ts';
+import { profileToCliFlags } from '../remote-config-flags.ts';
 import type { BatchStep } from '../../client/client-types.ts';
 import { AppError } from '../../kernel/errors.ts';
 import type { LeaseBackend, SessionRuntimeHints } from '../../kernel/contracts.ts';
-import type { CliFlags } from '../../commands/cli-grammar/flag-types.ts';
+import type { CliFlags } from '../../contracts/cli-flags.ts';
 import type { AgentDeviceClient, Lease } from '../../agent-device-client.ts';
-import type { CloudProviderSessionResult } from '../../cloud-artifacts.ts';
+import type { CloudProviderSessionResult } from '../../contracts/cloud-artifacts.ts';
 import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
 import { readMetroPrepareKind } from '../../commands/metro/prepare-kind.ts';
 import { connectionProviderRequiresRemoteDaemon } from '../connection/provider-policy.ts';
