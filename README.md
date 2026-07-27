@@ -28,9 +28,7 @@ Install the CLI and check setup. It requires Node.js 22.12 or newer; web automat
 ```bash
 npm install -g agent-device@latest
 agent-device doctor
-agent-device --version
 agent-device help workflow
-agent-device help tv
 ```
 
 Run `agent-device doctor` yourself before handing the CLI to an agent. The installed CLI help defines current behavior. `agent-device help workflow` links to guides for debugging, replay, React Native profiling, and other tasks.
