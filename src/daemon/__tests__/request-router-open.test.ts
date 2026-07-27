@@ -8,6 +8,7 @@ vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) 
 
 import { dispatchCommand } from '../../core/dispatch.ts';
 import { createRequestHandler } from '../request-router.ts';
+import { resolveRequestExecutionLockKeys } from '../request-binding.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
 import type { DeviceInfo } from '../../kernel/device.ts';
@@ -24,6 +25,17 @@ function makeIosDevice(id: string): DeviceInfo {
     id,
     name: `iPhone ${id}`,
     kind: 'simulator',
+    target: 'mobile',
+    booted: true,
+  };
+}
+
+function makeAndroidDevice(id: string): DeviceInfo {
+  return {
+    platform: 'android',
+    id,
+    name: `Android ${id}`,
+    kind: 'emulator',
     target: 'mobile',
     booted: true,
   };
@@ -120,6 +132,94 @@ test('fresh open uses app-aware device selection for advisory locking and dispat
     [{ platform: 'ios' }, { appleSimulatorAppTarget: 'com.example.demo' }],
   ]);
   expect(sessionStore.get('session-app-aware')?.device.id).toBe(appDevice.id);
+});
+
+test('fresh replay reserves its authored app simulator before any replay step', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-app-lock-'));
+  const replayPath = path.join(root, 'flow.ad');
+  fs.writeFileSync(
+    replayPath,
+    'runtime set --platform ios --metro-port 8081\nopen com.example.demo\n',
+  );
+  const sessionStore = makeSessionStore('agent-device-router-replay-lock-');
+  const genericDevice = makeIosDevice('SIM-GENERIC');
+  const appDevice = makeIosDevice('SIM-WITH-APP');
+  mockResolveTargetDevice.mockImplementation(async (_flags, options) =>
+    options?.appleSimulatorAppTarget === 'com.example.demo' ? appDevice : genericDevice,
+  );
+
+  const keys = await resolveRequestExecutionLockKeys({
+    req: {
+      token: 'test-token',
+      session: 'fresh-replay',
+      command: 'replay',
+      positionals: [replayPath],
+      flags: {},
+      meta: { cwd: root },
+    },
+    sessionName: 'fresh-replay',
+    sessionStore,
+  });
+
+  expect(keys).toEqual(['session:fresh-replay', 'device:SIM-WITH-APP']);
+  expect(mockResolveTargetDevice).toHaveBeenCalledWith(
+    { platform: 'ios' },
+    { appleSimulatorAppTarget: 'com.example.demo' },
+  );
+});
+
+test('fresh replay leaves a first deep-link open unbound when a later app target exists', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-deep-link-lock-'));
+  const replayPath = path.join(root, 'flow.ad');
+  fs.writeFileSync(
+    replayPath,
+    'runtime set --platform ios --metro-port 8081\nopen demo://checkout\nopen com.example.demo\n',
+  );
+  const sessionStore = makeSessionStore('agent-device-router-replay-deep-link-lock-');
+
+  const keys = await resolveRequestExecutionLockKeys({
+    req: {
+      token: 'test-token',
+      session: 'fresh-replay-deep-link',
+      command: 'replay',
+      positionals: [replayPath],
+      flags: {},
+      meta: { cwd: root },
+    },
+    sessionName: 'fresh-replay-deep-link',
+    sessionStore,
+  });
+
+  expect(keys).toEqual(['session:fresh-replay-deep-link']);
+  expect(mockResolveTargetDevice).not.toHaveBeenCalled();
+});
+
+test('fresh replay preserves an authored Android platform before advisory locking', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-android-lock-'));
+  const replayPath = path.join(root, 'flow.ad');
+  fs.writeFileSync(
+    replayPath,
+    'runtime set --platform android --metro-port 8081\nopen com.example.demo\n',
+  );
+  const sessionStore = makeSessionStore('agent-device-router-replay-android-lock-');
+  const androidDevice = makeAndroidDevice('ANDROID-EMULATOR');
+  mockResolveTargetDevice.mockResolvedValue(androidDevice);
+
+  const keys = await resolveRequestExecutionLockKeys({
+    req: {
+      token: 'test-token',
+      session: 'fresh-replay-android',
+      command: 'replay',
+      positionals: [replayPath],
+      flags: {},
+      meta: { cwd: root },
+    },
+    sessionName: 'fresh-replay-android',
+    sessionStore,
+  });
+
+  expect(keys).toEqual(['session:fresh-replay-android', 'device:ANDROID-EMULATOR']);
+  expect(mockResolveTargetDevice).toHaveBeenCalledWith({ platform: 'android' }, undefined);
 });
 
 test('open --debug writes bounded open timing diagnostics to requestLogPath', async () => {
