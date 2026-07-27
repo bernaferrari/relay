@@ -1,8 +1,8 @@
 import type { CommandCapability } from '../capabilities.ts';
-import type { DaemonRequest } from '../../daemon/types.ts';
-// Type-only back-edge, erased at runtime (same pattern as derive.ts importing
-// DaemonCommandDescriptor); no runtime import cycle.
-import type { RefFrameEffect } from '../../daemon/daemon-command-registry.ts';
+// The typed-flags request from contracts/, not the daemon's server-side refinement: these
+// descriptors read `command`, `positionals` and `flags` and never touch `internal`.
+import type { DispatchedCommand } from '../../contracts/dispatched-command.ts';
+import type { RefFrameEffect } from '../../contracts/ref-frame-effect.ts';
 import { isReadOnlyFindAction, parseFindArgs } from '../../selectors/find.ts';
 import { resolveWaitBudgetMs } from '../wait-positionals.ts';
 import {
@@ -84,10 +84,10 @@ const REQUEST_EXECUTION_EXEMPT = {
 
 const allowAnyDeviceSessionless = (): boolean => true;
 
-const isRecordingStartRequest = (req: DaemonRequest): boolean =>
+const isRecordingStartRequest = (req: DispatchedCommand): boolean =>
   (req.positionals?.[0] ?? '').toLowerCase() === 'start';
 
-const isShardedTestRequest = (req: DaemonRequest): boolean =>
+const isShardedTestRequest = (req: DispatchedCommand): boolean =>
   req.command === 'test' &&
   (typeof req.flags?.shardAll === 'number' || typeof req.flags?.shardSplit === 'number');
 
@@ -101,23 +101,21 @@ const isShardedTestRequest = (req: DaemonRequest): boolean =>
 // enter/return dispatch a real return key. Anything other than a read is
 // classified may-invalidate (the honest superset for unknown subactions).
 const KEYBOARD_READ_ONLY_ACTIONS = new Set(['status', 'get']);
-const keyboardRefFrameEffect = (req: DaemonRequest): RefFrameEffect =>
+const keyboardRefFrameEffect = (req: DispatchedCommand): RefFrameEffect =>
   readOnlySubactionRefFrameEffect(req, KEYBOARD_READ_ONLY_ACTIONS, 'status');
 
 // alert actions are get/wait/accept/dismiss: get/wait read, accept/dismiss act.
 const ALERT_READ_ONLY_ACTIONS = new Set(['get', 'wait']);
-const alertRefFrameEffect = (req: DaemonRequest): RefFrameEffect =>
+const alertRefFrameEffect = (req: DispatchedCommand): RefFrameEffect =>
   readOnlySubactionRefFrameEffect(req, ALERT_READ_ONLY_ACTIONS, 'get');
 
-type RecordingEffectRequest = Pick<DaemonRequest, 'command' | 'positionals' | 'flags'>;
-
-const keyboardRecordingEffect = (req: RecordingEffectRequest): RecordingEffect =>
+const keyboardRecordingEffect = (req: DispatchedCommand): RecordingEffect =>
   readOnlySubactionRecordingEffect(req, KEYBOARD_READ_ONLY_ACTIONS, 'status');
 
-const alertRecordingEffect = (req: RecordingEffectRequest): RecordingEffect =>
+const alertRecordingEffect = (req: DispatchedCommand): RecordingEffect =>
   readOnlySubactionRecordingEffect(req, ALERT_READ_ONLY_ACTIONS, 'get');
 
-const findRecordingEffect = (req: RecordingEffectRequest): RecordingEffect => {
+const findRecordingEffect = (req: DispatchedCommand): RecordingEffect => {
   try {
     return isReadOnlyFindAction(parseFindArgs(req.positionals ?? []).action)
       ? 'observes-app'
@@ -129,7 +127,7 @@ const findRecordingEffect = (req: RecordingEffectRequest): RecordingEffect => {
 };
 
 function readOnlySubactionRefFrameEffect(
-  req: DaemonRequest,
+  req: DispatchedCommand,
   readOnlyActions: ReadonlySet<string>,
   defaultAction: string,
 ): RefFrameEffect {
@@ -139,7 +137,7 @@ function readOnlySubactionRefFrameEffect(
 }
 
 function readOnlySubactionRecordingEffect(
-  req: RecordingEffectRequest,
+  req: DispatchedCommand,
   readOnlyActions: ReadonlySet<string>,
   defaultAction: string,
 ): RecordingEffect {
@@ -1452,9 +1450,7 @@ export function resolveTargetIdentityVerification(
 }
 
 /** ADR 0016 request-sensitive app-state effect for one recorded request. */
-export function resolveCommandRecordingEffect(
-  req: Pick<DaemonRequest, 'command' | 'positionals' | 'flags'>,
-): RecordingEffect | undefined {
+export function resolveCommandRecordingEffect(req: DispatchedCommand): RecordingEffect | undefined {
   const descriptor = COMMAND_DESCRIPTOR_BY_NAME.get(req.command);
   if (!descriptor?.recordsSessionAction) return undefined;
   return typeof descriptor.recordingEffect === 'function'

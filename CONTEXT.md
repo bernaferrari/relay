@@ -271,7 +271,12 @@ The perfect-shape refactor is complete and merged. Its end-state:
   which R5 ignores by design: a type-only import is free at runtime, but "zone A is declared in
   terms of zone B" is still a boundary claim, and ranking type edges surfaced 61 inversions the gate
   had never seen. `TYPE_INVERSION_BASELINE` in `check.ts` holds the remaining pairs with their
-  counts; the numbers may only shrink, and a new pair fails outright.
+  counts; the numbers may only shrink, and a new pair fails outright. Down to **7**, and each is a
+  deliberate position rather than a misplaced declaration: 4 are `AgentDeviceClient` used as an
+  opaque handle (the facade is built from `commands/`'s own projection registry, so moving it down
+  is a design call about where that registry belongs, not a file move), and 3 are the ADR 0003
+  daemon descriptor, whose route type is `keyof typeof DAEMON_ROUTE_HANDLERS` — derived from what
+  the server actually implements. Both are explained at the baseline.
 - SessionState ownership (R7). `SessionStore.get()` returns the live record out of a private Map
   and `set()` re-puts the same reference, so any `session.<field> = …` in the daemon is a durable
   write to store-owned state — persistence depends on aliasing, not on an API call. That is
@@ -293,6 +298,14 @@ The perfect-shape refactor is complete and merged. Its end-state:
   two modules until `activateRefFrame` took the transition, and `snapshotScopeSource` +
   `snapshotGeneration` were assigned in `snapshot-runtime.ts` until `setSnapshotLineage` took
   theirs.
+- Type-cycle growth (R9). R4 keeps the VALUE import graph acyclic, so every remaining cycle is
+  created by type-only imports — free at runtime, invisible to R5/R6, and the largest single
+  obstacle to reading a subsystem in isolation: inside a strongly-connected component of 102 files,
+  no file has a self-contained slice. `TYPE_CYCLE_BASELINE` in `check.ts` ratchets it for **growth
+  only**, deliberately unlike R6: reducing it is a real refactor rather than a file move, so a hard
+  equality would turn every unrelated improvement into a baseline edit. A shrunk tree is reported in
+  the success line instead of failing. Hubs by in-component dependents: `runtime-contract.ts` (25),
+  `commands/runtime-types.ts` (21), `backend.ts` (15), `commands/runtime-common.ts` (12).
 - Zero-dep CI jobs (R8). Some jobs run scripts straight from a checkout with `install-deps: false`,
   so they have no `node_modules`. Nothing local can feel that constraint — every dev machine has
   `node_modules` sitting right there — so a script grows a package import, passes locally, and fails
