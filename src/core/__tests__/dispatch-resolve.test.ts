@@ -185,7 +185,20 @@ test('resolveTargetDevice selects the unique booted simulator with the requested
   );
 });
 
-test('resolveTargetDevice reuses an app-aware selection for later request resolution', async () => {
+test('resolveTargetDevice leaves platform-less static app selection to normal cross-platform resolution', async () => {
+  const result = await withDeviceInventoryProvider(
+    async (request) => {
+      assert.equal(request.platform, undefined);
+      return [androidEmulator, bootedSimulator, secondBootedSimulator];
+    },
+    async () => await resolveTargetDevice({}, { appleSimulatorAppTarget: 'com.example.demo' }),
+  );
+
+  assert.equal(result.id, androidEmulator.id);
+  assert.equal(mockFindIosSimulatorInstalledApp.mock.calls.length, 0);
+});
+
+test('resolveTargetDevice reuses an app-aware iOS selection for later iOS resolution', async () => {
   mockListAppleDevices.mockResolvedValue([bootedSimulator, secondBootedSimulator]);
   mockFindIosSimulatorInstalledApp.mockImplementation(async (device) =>
     device.id === secondBootedSimulator.id ? 'com.example.demo' : undefined,
@@ -233,11 +246,11 @@ test('resolveTargetDevice refuses ambiguous booted simulator app matches', async
   assert.equal(error.details?.hint, 'Pass --udid to select the intended simulator explicitly.');
 });
 
-test('resolveTargetDevice does not probe when an Apple device is explicitly selected', async () => {
+test('resolveTargetDevice preserves an explicit device selector when platform is omitted', async () => {
   mockListAppleDevices.mockResolvedValue([bootedSimulator, secondBootedSimulator]);
 
   const result = await resolveTargetDevice(
-    { platform: 'ios', udid: bootedSimulator.id },
+    { udid: bootedSimulator.id },
     { appleSimulatorAppTarget: 'com.example.demo' },
   );
 
