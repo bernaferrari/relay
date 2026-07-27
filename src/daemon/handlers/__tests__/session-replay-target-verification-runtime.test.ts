@@ -13,6 +13,16 @@ vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
   return { ...actual, dispatchCommand: vi.fn(async () => ({})), resolveTargetDevice: vi.fn() };
 });
 
+// #1385's pre-dispatch launch-race retry (captureDivergenceObservation's
+// `retryLaunchRace`) awaits a real `sleep` between attempts; stub it to a
+// no-op so the retry tests below exercise the retry BRANCH (still runs each
+// mocked capture attempt) without a real wall-clock wait (repo guidance: unit
+// tests must not wait real time).
+vi.mock('../../../utils/timeouts.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/timeouts.ts')>();
+  return { ...actual, sleep: vi.fn(async () => {}) };
+});
+
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,6 +30,7 @@ import { runReplayScriptFile } from '../session-replay-runtime.ts';
 import { SessionStore } from '../../session-store.ts';
 import type { DaemonRequest } from '../../types.ts';
 import { dispatchCommand } from '../../../core/dispatch.ts';
+import { AppError } from '../../../kernel/errors.ts';
 import { makeIosSession } from '../../../__tests__/test-utils/session-factories.ts';
 
 const mockDispatchCommand = vi.mocked(dispatchCommand);
@@ -484,6 +495,290 @@ test('a target-binding divergence carries a real computed resume (step 5 wiring,
   expect(typeof resume.planDigest).toBe('string');
   expect((resume.planDigest ?? '').length).toBeGreaterThan(0);
   expect(resume.reason).toBeUndefined();
+});
+
+// #1385: a step-2 press right after `open --relaunch` can capture while the
+// app is still launching/mounting. The bounded retry in
+// `captureDivergenceObservation` (`retryLaunchRace`) only rides out a
+// content-quality verdict — Android's helper path attaches
+// `androidSnapshotHelperFailureReason` as one of exactly three literals
+// ('empty-helper-output' | 'system-window-only' | 'content-poor-app-window')
+// on that verdict (`rejectAndroidHelperContentUnavailable`) — never a
+// mechanism failure (helper artifact missing, device offline, adb connection
+// dropped), which must still fail fast even when the underlying error
+// separately carries `retriable: true` for its own (adb-level, same-command)
+// retry semantics. The three `throw*` helpers below build the three shapes
+// this distinction must tell apart.
+function throwContentQualityCaptureFailure(): never {
+  throw new AppError(
+    'COMMAND_FAILED',
+    'Android snapshot helper returned insufficient foreground app content',
+    { androidSnapshotHelperFailureReason: 'content-poor-app-window', retriable: true },
+  );
+}
+
+function throwPermanentCaptureFailure(): never {
+  throw new AppError(
+    'COMMAND_FAILED',
+    'Android snapshot helper is unavailable: the bundled helper artifact was not found',
+  );
+}
+
+function throwAdbMechanismFailureMarkedRetriable(): never {
+  // Mirrors `classifyAdbFailure`'s `connection_dropped` entry
+  // (adb-executor.ts): `retriable: true` at the adb-transport level (retrying
+  // the SAME adb command can succeed), but not evidence of a content-quality
+  // capture verdict — a launch-race retry has no reason to believe THIS
+  // failure resolves itself, and must not be fooled by the bare `retriable`
+  // flag into treating it as one.
+  throw new AppError('COMMAND_FAILED', 'adb: transport error', {
+    adbFailure: 'connection_dropped',
+    retriable: true,
+  });
+}
+
+test('a transient content-quality capture failure right after launch recovers within the bounded retry, and the action still dispatches', async () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-replay-target-verify-launch-race-recover-'),
+  );
+  const { sessionStore, sessionName } = setupSession(root);
+  const filePath = writeReplayFile(root, [SAVE_ANNOTATION, 'click id="save"']);
+
+  // First two captures fail closed with a content-quality verdict (mirrors a
+  // mid-launch/mid-mount capture); the third lands after the app settles and
+  // finds the recorded target.
+  mockDispatchCommand
+    .mockImplementationOnce(async () => throwContentQualityCaptureFailure())
+    .mockImplementationOnce(async () => throwContentQualityCaptureFailure())
+    .mockResolvedValue({
+      nodes: [
+        {
+          index: 0,
+          depth: 0,
+          type: 'Button',
+          identifier: 'save',
+          label: 'Save',
+          rect: { x: 10, y: 10, width: 40, height: 20 },
+        },
+      ],
+      truncated: false,
+      backend: 'xctest',
+    });
+
+  const invoked: DaemonRequest[] = [];
+  const response = await runReplayScriptFile({
+    req: baseReq({ positionals: [filePath] }),
+    sessionName,
+    logPath: path.join(root, 'daemon.log'),
+    sessionStore,
+    invoke: async (req) => {
+      invoked.push(req);
+      return { ok: true, data: {} };
+    },
+  });
+
+  expect(response.ok).toBe(true);
+  expect(invoked.map((req) => req.command)).toEqual(['click']);
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(3);
+});
+
+test('a content-quality capture failure that never recovers still fails closed as identity-unverifiable once the bounded retry is exhausted', async () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-replay-target-verify-launch-race-exhausted-'),
+  );
+  const { sessionStore, sessionName } = setupSession(root);
+  const filePath = writeReplayFile(root, [SAVE_ANNOTATION, 'click id="save"']);
+
+  mockDispatchCommand.mockImplementation(async () => throwContentQualityCaptureFailure());
+
+  const invoked: DaemonRequest[] = [];
+  const response = await runReplayScriptFile({
+    req: baseReq({ positionals: [filePath] }),
+    sessionName,
+    logPath: path.join(root, 'daemon.log'),
+    sessionStore,
+    invoke: async (req) => {
+      invoked.push(req);
+      return { ok: true, data: {} };
+    },
+  });
+
+  expect(invoked.length).toBe(0);
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  expect(response.error.code).toBe('REPLAY_DIVERGENCE');
+  const divergence = response.error.details?.divergence as Record<string, unknown>;
+  expect(divergence.kind).toBe('identity-unverifiable');
+  const cause = divergence.cause as { code: string; message: string };
+  expect(cause.code).toBe('IDENTITY_UNVERIFIABLE');
+  expect(cause.message).toContain('capture-failed');
+  // Bounded: the retry gives up after its fixed delay list, not forever.
+  expect(mockDispatchCommand.mock.calls.length).toBeGreaterThan(1);
+});
+
+// #1385: the iOS side of the same launch race — the capture doesn't throw,
+// it returns a structurally-valid tree flagged `sparse` (the private-AX
+// fallback engaging under load). `isSparseSnapshotQualityVerdict` treats this
+// as always-retryable, unlike the Android thrown-error branch, which is
+// gated on the narrower content-quality taxonomy — so this needs its own
+// regression, not just coverage by the Android capture-failed tests above.
+function iosSparseCapture(): {
+  nodes: never[];
+  truncated: false;
+  backend: 'xctest';
+  quality: object;
+} {
+  return {
+    nodes: [],
+    truncated: false,
+    backend: 'xctest',
+    quality: { state: 'sparse', backend: 'private-ax', reason: 'AX query rejected mid-transition' },
+  };
+}
+
+test('an iOS sparse-snapshot verdict right after launch recovers within the bounded retry, and the action still dispatches', async () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-replay-target-verify-launch-race-sparse-recover-'),
+  );
+  const { sessionStore, sessionName } = setupSession(root);
+  const filePath = writeReplayFile(root, [SAVE_ANNOTATION, 'click id="save"']);
+
+  // First two captures return a structurally-valid but sparse-flagged tree
+  // (mirrors the private-AX fallback engaging mid-launch); the third lands
+  // after the app settles and finds the recorded target.
+  mockDispatchCommand
+    .mockImplementationOnce(async () => iosSparseCapture())
+    .mockImplementationOnce(async () => iosSparseCapture())
+    .mockResolvedValue({
+      nodes: [
+        {
+          index: 0,
+          depth: 0,
+          type: 'Button',
+          identifier: 'save',
+          label: 'Save',
+          rect: { x: 10, y: 10, width: 40, height: 20 },
+        },
+      ],
+      truncated: false,
+      backend: 'xctest',
+    });
+
+  const invoked: DaemonRequest[] = [];
+  const response = await runReplayScriptFile({
+    req: baseReq({ positionals: [filePath] }),
+    sessionName,
+    logPath: path.join(root, 'daemon.log'),
+    sessionStore,
+    invoke: async (req) => {
+      invoked.push(req);
+      return { ok: true, data: {} };
+    },
+  });
+
+  expect(response.ok).toBe(true);
+  expect(invoked.map((req) => req.command)).toEqual(['click']);
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(3);
+});
+
+test('an iOS sparse-snapshot verdict that never recovers still fails closed as identity-unverifiable once the bounded retry is exhausted', async () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-replay-target-verify-launch-race-sparse-exhausted-'),
+  );
+  const { sessionStore, sessionName } = setupSession(root);
+  const filePath = writeReplayFile(root, [SAVE_ANNOTATION, 'click id="save"']);
+
+  mockDispatchCommand.mockImplementation(async () => iosSparseCapture());
+
+  const invoked: DaemonRequest[] = [];
+  const response = await runReplayScriptFile({
+    req: baseReq({ positionals: [filePath] }),
+    sessionName,
+    logPath: path.join(root, 'daemon.log'),
+    sessionStore,
+    invoke: async (req) => {
+      invoked.push(req);
+      return { ok: true, data: {} };
+    },
+  });
+
+  expect(invoked.length).toBe(0);
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  expect(response.error.code).toBe('REPLAY_DIVERGENCE');
+  const divergence = response.error.details?.divergence as Record<string, unknown>;
+  expect(divergence.kind).toBe('identity-unverifiable');
+  const cause = divergence.cause as { code: string; message: string };
+  expect(cause.code).toBe('IDENTITY_UNVERIFIABLE');
+  expect(cause.message).toContain('sparse-snapshot');
+  // Bounded: the retry gives up after its fixed delay list, not forever.
+  expect(mockDispatchCommand.mock.calls.length).toBeGreaterThan(1);
+});
+
+test('a permanent (non-content-quality) capture failure fails fast without retrying', async () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-replay-target-verify-launch-race-permanent-'),
+  );
+  const { sessionStore, sessionName } = setupSession(root);
+  const filePath = writeReplayFile(root, [SAVE_ANNOTATION, 'click id="save"']);
+
+  // A missing helper artifact is not something a launch-race retry can fix —
+  // it never carries `androidSnapshotHelperFailureReason` at all, so the
+  // capture must fail on the FIRST attempt, not spend the retry budget on a
+  // foregone conclusion.
+  mockDispatchCommand.mockImplementation(async () => throwPermanentCaptureFailure());
+
+  const invoked: DaemonRequest[] = [];
+  const response = await runReplayScriptFile({
+    req: baseReq({ positionals: [filePath] }),
+    sessionName,
+    logPath: path.join(root, 'daemon.log'),
+    sessionStore,
+    invoke: async (req) => {
+      invoked.push(req);
+      return { ok: true, data: {} };
+    },
+  });
+
+  expect(invoked.length).toBe(0);
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  const divergence = response.error.details?.divergence as Record<string, unknown>;
+  expect(divergence.kind).toBe('identity-unverifiable');
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(1);
+});
+
+test('an adb mechanism failure marked retriable at the transport level still fails fast (retriable is not a content-quality signal)', async () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agent-device-replay-target-verify-launch-race-adb-mechanism-'),
+  );
+  const { sessionStore, sessionName } = setupSession(root);
+  const filePath = writeReplayFile(root, [SAVE_ANNOTATION, 'click id="save"']);
+
+  // A dropped adb connection carries `retriable: true` (retrying the SAME adb
+  // command can succeed) but no `androidSnapshotHelperFailureReason` content
+  // verdict — the launch-race retry must not treat the bare `retriable` flag
+  // as proof this is a "the app is still mounting" content-quality failure.
+  mockDispatchCommand.mockImplementation(async () => throwAdbMechanismFailureMarkedRetriable());
+
+  const invoked: DaemonRequest[] = [];
+  const response = await runReplayScriptFile({
+    req: baseReq({ positionals: [filePath] }),
+    sessionName,
+    logPath: path.join(root, 'daemon.log'),
+    sessionStore,
+    invoke: async (req) => {
+      invoked.push(req);
+      return { ok: true, data: {} };
+    },
+  });
+
+  expect(invoked.length).toBe(0);
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  const divergence = response.error.details?.divergence as Record<string, unknown>;
+  expect(divergence.kind).toBe('identity-unverifiable');
+  expect(mockDispatchCommand).toHaveBeenCalledTimes(1);
 });
 
 // ---------------------------------------------------------------------------

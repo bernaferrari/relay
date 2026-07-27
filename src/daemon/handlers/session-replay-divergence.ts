@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { sleep } from '../../utils/timeouts.ts';
 import { markSessionPartialRefsIssued, setSessionSnapshot } from '../session-snapshot.ts';
-import { isSparseSnapshotQualityVerdict } from '../../snapshot/snapshot-quality.ts';
+import {
+  isSparseSnapshotQualityVerdict,
+  isUnreadableCaptureContentError,
+} from '../../snapshot/snapshot-quality.ts';
 import { displayLabel, formatRole } from '../../snapshot/snapshot-lines.ts';
 import { redactDiagnosticData } from '../../kernel/redaction.ts';
 import type { CommandFlags } from '../../core/dispatch.ts';
@@ -216,15 +220,98 @@ export function toReplayRepairHintCapture(
  * (`collectSettleChromeRefs`) and the meaningful-target filter stay layered ON
  * TOP of this full capture as FILTERS, never as a narrower scoping.
  */
+// #1385: a `capture-failed` / `sparse-snapshot` verdict on the PRE-DISPATCH
+// target-verification capture (`verifyReplayActionTarget`) right after an
+// `open --relaunch` step is often just the app still launching/mounting, not
+// a real divergence — the SAME transition `wait`'s keep-polling landmark
+// verification (#1349) rides out on its own (post-resolution) path.
+//
+// The `DIVERGENCE_CAPTURE_RETRY_DEADLINE_MS` budget is a DELAY-ONLY bound: it
+// caps how long this loop SLEEPS between attempts (measured from the first
+// attempt, so a slow first capture eats into the same budget rather than
+// getting a free 12s on top), not how long any individual capture attempt
+// itself may run — a capture already carries its own platform-level bounds
+// (adb/xcodebuild command timeouts) this loop does not re-implement or
+// shorten. The fixed-length `DIVERGENCE_CAPTURE_RETRY_DELAYS_MS` array is a
+// SEPARATE, independent bound: it caps the attempt COUNT regardless of the
+// deadline, so a mocked-instant `sleep` in tests cannot turn this into a
+// busy-loop racing real time — it just runs the list once (mirrors the
+// Android freshness retry shape in `snapshot-capture.ts`).
+//
+// Opt-in via `retryLaunchRace`, NOT the default for every caller: the
+// post-failure diagnostic capture (`buildReplayFailureDivergence`) and the
+// post-resolution guard-mismatch capture follow an ALREADY-REAL failure, not
+// a launch race, and plenty of unit tests stub a throwing `snapshot` dispatch
+// there expecting an immediate `capture-failed` result (repo convention: unit
+// tests must not wait real time). Retrying unconditionally would force real
+// wall-clock waits onto every one of those.
+const DIVERGENCE_CAPTURE_RETRY_DEADLINE_MS = 12_000;
+const DIVERGENCE_CAPTURE_RETRY_DELAYS_MS = [300, 500, 800, 1200, 2000, 3000, 4000] as const;
+
 export async function captureDivergenceObservation(params: {
   session: SessionState;
   sessionName: string;
   sessionStore: SessionStore;
   logPath: string;
   action: ReplayReportAction;
+  retryLaunchRace?: boolean;
 }): Promise<DivergenceObservation> {
-  const { session, sessionName, sessionStore, logPath, action } = params;
+  const { session, sessionName, sessionStore, logPath, action, retryLaunchRace = false } = params;
   const flags = divergenceCaptureFlags(action);
+  // Anchored BEFORE the first attempt, not after: a slow first capture
+  // shrinks the retry budget rather than getting a free `DEADLINE_MS` on top
+  // of however long it took.
+  const deadline = Date.now() + DIVERGENCE_CAPTURE_RETRY_DEADLINE_MS;
+
+  let attempt = await captureDivergenceObservationAttempt({
+    session,
+    sessionName,
+    sessionStore,
+    logPath,
+    flags,
+  });
+  if (!retryLaunchRace) return attempt.observation;
+
+  for (const delayMs of DIVERGENCE_CAPTURE_RETRY_DELAYS_MS) {
+    if (attempt.observation.state === 'available' || !attempt.retryable) break;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+    await sleep(Math.min(delayMs, remainingMs));
+    attempt = await captureDivergenceObservationAttempt({
+      session,
+      sessionName,
+      sessionStore,
+      logPath,
+      flags,
+    });
+  }
+
+  return attempt.observation;
+}
+
+type DivergenceCaptureAttempt = {
+  observation: DivergenceObservation;
+  /**
+   * Meaningful only when `observation.state === 'unavailable'`: whether this
+   * particular failure is a content-quality verdict a launch-race retry
+   * should ride out, versus a mechanism failure that will not resolve itself
+   * (helper artifact missing, device offline, adb connection dropped).
+   * Mirrors #1381's `isUnreadableCaptureContentError` taxonomy for the wait
+   * keep-poll loop — content verdict retries, mechanism failure fails fast.
+   * The non-throwing `sparse-snapshot` verdict is always retryable — it is
+   * already a content-quality signal, never a mechanism failure.
+   */
+  retryable: boolean;
+};
+
+async function captureDivergenceObservationAttempt(params: {
+  session: SessionState;
+  sessionName: string;
+  sessionStore: SessionStore;
+  logPath: string;
+  flags: CommandFlags;
+}): Promise<DivergenceCaptureAttempt> {
+  const { session, sessionName, sessionStore, logPath, flags } = params;
   try {
     const capture = await captureSnapshot({
       device: session.device,
@@ -235,9 +322,12 @@ export async function captureDivergenceObservation(params: {
     const snapshot = capture.snapshot;
     if (isSparseSnapshotQualityVerdict(snapshot.snapshotQuality)) {
       return {
-        state: 'unavailable',
-        reason: 'sparse-snapshot',
-        hint: 'The post-failure snapshot was sparse or unavailable; run snapshot -i to observe the current screen.',
+        observation: {
+          state: 'unavailable',
+          reason: 'sparse-snapshot',
+          hint: 'The post-failure snapshot was sparse or unavailable; run snapshot -i to observe the current screen.',
+        },
+        retryable: true,
       };
     }
     setSessionSnapshot(session, snapshot);
@@ -255,16 +345,22 @@ export async function captureDivergenceObservation(params: {
     markSessionPartialRefsIssued(session, digestBodies);
     sessionStore.set(sessionName, session);
     return {
-      state: 'available',
-      nodes: snapshot.nodes,
-      refsGeneration: session.snapshotGeneration ?? 0,
-      appBundleId: session.appBundleId,
+      observation: {
+        state: 'available',
+        nodes: snapshot.nodes,
+        refsGeneration: session.snapshotGeneration ?? 0,
+        appBundleId: session.appBundleId,
+      },
+      retryable: false,
     };
   } catch (error) {
     return {
-      state: 'unavailable',
-      reason: 'capture-failed',
-      hint: `Post-failure snapshot capture failed (${error instanceof Error ? error.message : String(error)}); the original replay failure is unaffected.`,
+      observation: {
+        state: 'unavailable',
+        reason: 'capture-failed',
+        hint: `Post-failure snapshot capture failed (${error instanceof Error ? error.message : String(error)}); the original replay failure is unaffected.`,
+      },
+      retryable: isUnreadableCaptureContentError(error),
     };
   }
 }
