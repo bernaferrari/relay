@@ -35,6 +35,8 @@ import { SessionStore } from '../../session-store.ts';
 import { handleCloseCommand } from '../session-close.ts';
 import { handleOpenCommand } from '../session-open.ts';
 import type { DeviceInfo } from '../../../kernel/device.ts';
+import type { SessionState } from '../../types.ts';
+import { AppError } from '../../../kernel/errors.ts';
 
 const mockDispatch = vi.mocked(dispatchCommand);
 const mockResolveTargetDevice = vi.mocked(resolveTargetDevice);
@@ -244,4 +246,81 @@ test('local close clears its matching advisory claim after teardown', async () =
   });
   assert.equal(response.ok, true);
   assert.deepEqual(inspectDeviceClaims({ serial: android.id }), []);
+});
+
+test('#1391: a close-time script save failure still clears the advisory claim and deletes the session', async () => {
+  const { store, stateDir } = setup();
+  const acquired = await acquireAdvisoryDeviceClaim({
+    device: android,
+    session: 'close-save-script-failure',
+    workspace: process.cwd(),
+    stateDir,
+  });
+  assert.ok(acquired.ownership);
+  const targetPath = path.join(stateDir, 'already-published.ad');
+  fs.writeFileSync(targetPath, 'pre-existing\n');
+  // Retained directly (not just looked up via `store`) so it stays inspectable
+  // after `handleCloseCommand` deletes it from the store — `store.delete` only
+  // drops the map entry, it doesn't touch the object this variable still
+  // points at.
+  const session: SessionState = {
+    name: 'close-save-script-failure',
+    device: android,
+    deviceClaim: acquired.ownership,
+    createdAt: Date.now(),
+    actions: [],
+    recordSession: true,
+    saveScriptPath: targetPath,
+  };
+  store.set('close-save-script-failure', session);
+  mockDispatch.mockResolvedValue({});
+
+  // Like the platform-close-error tests above, a failed close-time save is
+  // thrown (not returned as `{ok:false}`) — `handleCloseCommand` never
+  // converts its own errors; the request-router does that for real requests.
+  let thrown: unknown;
+  try {
+    await handleCloseCommand({
+      req: {
+        command: 'close',
+        token: 'test',
+        session: 'close-save-script-failure',
+        positionals: [],
+        flags: {},
+      },
+      sessionName: 'close-save-script-failure',
+      logPath: path.join(stateDir, 'daemon.log'),
+      sessionStore: store,
+      leaseRegistry: new LeaseRegistry(),
+    });
+  } catch (error) {
+    thrown = error;
+  }
+
+  // The failed save is surfaced, but never at the cost of leaking the session
+  // or the device claim (#1391 item 1) — and the target is left untouched
+  // rather than rewritten (#1391 item 2).
+  assert.ok(thrown instanceof AppError, 'expected close to throw an AppError');
+  const error = thrown as AppError;
+  assert.equal(error.code, 'COMMAND_FAILED');
+  assert.match(error.message, /session was closed, but its script was not saved/);
+  assert.equal(error.details?.retriable, false);
+  // The original write failure's machine-readable details survive the
+  // close-specific hint/retriable override, so a caller dispatching on them
+  // (e.g. `reason === 'script_target_exists'`) still can.
+  assert.equal(error.details?.reason, 'script_target_exists');
+  assert.equal(error.details?.path, targetPath);
+  assert.equal(store.get('close-save-script-failure'), undefined);
+  assert.deepEqual(inspectDeviceClaims({ serial: android.id }), []);
+  assert.equal(fs.readFileSync(targetPath, 'utf8'), 'pre-existing\n');
+
+  assert.deepEqual(
+    session.actions.map((action) => action.command),
+    ['close'],
+  );
+  await store.flushEvents('close-save-script-failure');
+  const durableCloseEvents = store
+    .readEvents('close-save-script-failure')
+    .events.filter((event) => event.kind === 'action.recorded' && event.command === 'close');
+  assert.equal(durableCloseEvents.length, session.actions.length);
 });
