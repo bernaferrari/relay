@@ -34,34 +34,44 @@ import {
 import { readScreenshotResultData } from './utils/screenshot-result.ts';
 import { isRecord } from './utils/parsing.ts';
 import type {
-  AgentDeviceCommandClient,
-  AgentDeviceClient,
-  AgentDeviceClientConfig,
-  AgentDeviceDaemonTransport,
   AppCloseOptions,
   AppDeployOptions,
-  AppInstallOptions,
   AppInstallFromSourceOptions,
+  AppInstallOptions,
   AppListOptions,
   AppOpenOptions,
+  MaterializationReleaseOptions,
+} from './contracts/client-app.ts';
+import type {
   CaptureScreenshotOptions,
   CaptureScreenshotResult,
   CaptureSnapshotOptions,
   CaptureSnapshotResult,
-  InternalRequestOptions,
-  Lease,
-  MaterializationReleaseOptions,
-  MetroPrepareOptions,
-  MetroPrepareResult,
-  PanOptions,
+} from './contracts/client-capture.ts';
+import type {
+  AgentDeviceClientConfig,
+  AgentDeviceDaemonTransport,
+} from './contracts/client-connection.ts';
+import type {
   FlingOptions,
-  RotateCommandResult,
-  SwipeGestureOptions,
+  PanOptions,
   PinchOptions,
   RotateGestureOptions,
+  SwipeGestureOptions,
+  TransformGestureOptions,
+} from './contracts/client-gesture.ts';
+import type { Lease } from './contracts/client-lease.ts';
+import type { InternalRequestOptions } from './contracts/client-request.ts';
+import type {
   SessionSaveScriptOptions,
   SessionSaveScriptResult,
-  TransformGestureOptions,
+} from './contracts/client-session.ts';
+import type { MetroPrepareOptions } from './contracts/metro.ts';
+import type {
+  AgentDeviceCommandClient,
+  AgentDeviceClient,
+  MetroPrepareResult,
+  RotateCommandResult,
 } from './client/client-types.ts';
 import type { OrientationCommandResult } from './contracts/navigation.ts';
 import type { CommandResult } from './core/command-descriptor/command-result.ts';

@@ -1,9 +1,8 @@
 import type {
   AgentDeviceRequestOverrides,
   AgentDeviceSelectionOptions,
-  ElementTarget,
-  InteractionTarget,
-} from '../client/client-types.ts';
+} from '../contracts/client-connection.ts';
+import type { ElementTarget, InteractionTarget } from '../contracts/client-target.ts';
 import {
   DEVICE_TARGETS,
   PLATFORM_SELECTORS,

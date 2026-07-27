@@ -18,6 +18,9 @@
 //   - Over the ZERO-DEP CI JOBS only: their scripts may import nothing that needs
 //     installing (R8), a constraint no local run can feel because `node_modules` is
 //     always there locally and never there in those jobs.
+//   - Over the TYPE GRAPH: the largest type-level import cycle may not grow (R9). R4
+//     keeps the value graph acyclic, so these cycles are free at runtime but bound
+//     what can be read in isolation. Growth-only, deliberately loose.
 // Only `(root)` is unranked (see `UNRANKED_ZONES` in model.ts): it holds the
 // entrypoints and the composition roots that wire the command surface into the
 // daemon, which R2 forbids the daemon from importing, so they sit outside the
@@ -38,6 +41,7 @@ import { uninstallableImports, zeroDepJobs } from './zero-dep-jobs.ts';
 import {
   backEdgePair,
   findValueImportCycles,
+  largestTypeCycleSize,
   resolveImportEdges,
   topFolder,
   typeInversionPair,
@@ -187,34 +191,46 @@ function checkBackEdges(edges: readonly ResolvedImportEdge[]): Violation[] {
   });
 }
 
-// R6 ratchet: type-only spine inversions, per zone pair. R5 cannot see these (a
-// type-only import is free at runtime), but "zone A is declared in terms of zone B"
-// is still a boundary claim, and ranking type edges surfaced 61 of them. Two clusters
-// remain, each needing its own change rather than a file move:
+// R6 ratchet: type-only spine inversions, per zone pair. R5 cannot see these (a type-only import
+// is free at runtime), but "zone A is declared in terms of zone B" is still a boundary claim, and
+// ranking type edges surfaced 61 of them. Down to 7, and every one of the 7 is now a deliberate
+// architectural position rather than a misplaced declaration:
 //
-//   commands/contracts/mcp        the per-command Options/Result vocabulary, plus the client
-//     -> client                   facade itself, are declared inside the 1.2k-line public
-//                                 Node-client surface (client/client-types.ts) instead of in
-//                                 contracts/, where the 24 types it already re-exports live.
-//   core/commands -> daemon-server the ADR 0003 daemon facet: core's descriptor registry
-//                                  composes a shape the daemon owns. The daemon keeps the
-//                                  VALUES; only the shape needs to move below core.
-//   replay -> daemon-server        `SessionAction`, the recorded-action shape replay reads and
-//                                  writes. It belongs in contracts/, but it references
-//                                  `CommandFlags` (core) which references `DaemonBatchStep`
-//                                  (core), so it moves as a chain of three, not one file.
+//   commands/mcp -> client (4)   `AgentDeviceClient`, used as an opaque handle ("the client this
+//                                command runs against"). It cannot move below `commands/` because
+//                                the facade is BUILT from the command surface's own projection
+//                                registry: AgentDeviceClient -> AgentDeviceCommandClient ->
+//                                ProjectedNavigationCommandClient -> NAVIGATION_COMMAND_PROJECTIONS
+//                                in commands/system/. That is a genuine zone-level cycle, and
+//                                breaking it means deciding where the projection registry belongs —
+//                                a design call, not a file move. R5 is zero here: nothing imports
+//                                the client at runtime, only its type.
 //
-// The counts may only go DOWN. Fixing edges without lowering the number fails too, so the
-// baseline cannot quietly stop describing the tree.
+//   core -> daemon-server (2)    `DaemonCommandDescriptor`, which is STATED IN TERMS OF the daemon's
+//                                own server-private `DaemonRequest` (`refFrameEffect`,
+//                                `allowSessionlessDefaultDevice`, `skipSessionlessProviderDevice`
+//                                are all `(req: DaemonRequest) => …`). It therefore cannot be
+//                                declared below the daemon, and having core/ re-declare a parallel
+//                                13-field shape would trade one erased edge for a second source of
+//                                truth. Zones that only need to CLASSIFY a command take
+//                                `contracts/dispatched-command.ts` instead. ADR 0003/0008.
+//
+//   commands -> daemon-server (1)  `DaemonCommandRoute` = `keyof typeof DAEMON_ROUTE_HANDLERS`, so
+//                                it is COMPUTED FROM the daemon's handler table and cannot exist
+//                                below it. `commands/command-explain.ts` uses it to key an
+//                                exhaustive `Record<DaemonCommandRoute, string>` of owner files; a
+//                                hand-written union in contracts/ would drop that exhaustiveness.
+//
+// See docs/dependency-graph-findings.md §0 for the long form. The counts may only go DOWN. Fixing edges without lowering the number fails too, so the baseline
+// cannot quietly stop describing the tree.
+//
 // Exported so scripts/depgraph can assert its own graph build reproduces it — see the
 // baseline-parity test there. The gate remains the authority; the report follows.
 export const TYPE_INVERSION_BASELINE: Readonly<Record<string, number>> = {
-  'commands -> client': 28,
+  'commands -> client': 3,
   'commands -> daemon-server': 1,
-  'contracts -> client': 1,
-  'core -> daemon-server': 5,
+  'core -> daemon-server': 2,
   'mcp -> client': 1,
-  'replay -> daemon-server': 6,
 };
 
 function checkTypeInversions(edges: readonly ResolvedImportEdge[]): Violation[] {
@@ -275,6 +291,44 @@ function checkTypeInversions(edges: readonly ResolvedImportEdge[]): Violation[] 
     });
   }
   return violations;
+}
+
+// R9: the largest type-level import cycle, ratcheted for GROWTH ONLY.
+//
+// R4 keeps the value graph acyclic, so every cycle counted here is created by type-only imports.
+// That is free at runtime and invisible to R5/R6, but it bounds what can be read in isolation:
+// inside a strongly-connected component of 102 files, no file has a self-contained slice — reading
+// any one of them means reaching every other one's declarations. It is the largest single obstacle
+// to understanding a subsystem on its own, and nothing else in this gate measures it.
+//
+// Deliberately loose. Unlike R6 this does NOT fail when the number drops, because the number is
+// large and reducing it is a real refactor rather than a file move — a hard equality would turn
+// every unrelated improvement into a baseline edit. It fails only on growth, and reports the slack
+// when the tree has improved so the baseline can be lowered when someone is in here anyway.
+//
+// Hubs at the time of writing, by in-component dependents: runtime-contract.ts (25),
+// commands/runtime-types.ts (21), backend.ts (15), commands/runtime-common.ts (12). A pass at this
+// starts there. See docs/dependency-graph-findings.md.
+// Set to what THIS branch achieves, not to what main carries: main is at 107, and the boundary
+// moves here bring it to 102. Measured on the rebased tree — an earlier 87 was taken against an
+// older main and was stale rather than violated, which is exactly the kind of drift a ratchet
+// measured at merge time prevents.
+const TYPE_CYCLE_BASELINE = 102;
+
+function checkTypeCycleGrowth(actual: number): Violation[] {
+  if (actual <= TYPE_CYCLE_BASELINE) return [];
+  return [
+    {
+      rule: 'R9 type-cycle-growth',
+      file: 'scripts/layering/check.ts',
+      line: 1,
+      message:
+        `the largest type-level import cycle grew to ${actual} files (baseline ` +
+        `${TYPE_CYCLE_BASELINE}). A type-only import that closes a loop makes every file in the ` +
+        `loop unreadable in isolation. Declare the shared type below both modules, or if the growth ` +
+        `is genuinely warranted, raise TYPE_CYCLE_BASELINE in the same commit and say why.`,
+    },
+  ];
 }
 
 function checkSessionStateOwnership(sources: ReadonlyMap<string, string>): Violation[] {
@@ -431,7 +485,20 @@ function sessionStateFieldCount(): number {
   );
 }
 
-function report(files: readonly string[], violations: readonly Violation[]): number {
+/** R9 is growth-only, so a shrunk tree is reported rather than failed — see checkTypeCycleGrowth. */
+function typeCycleNote(actual: number): string {
+  if (actual >= TYPE_CYCLE_BASELINE) return `the largest type-level cycle is ${actual} files (R9)`;
+  return (
+    `the largest type-level cycle is down to ${actual} files, under the R9 baseline of ` +
+    `${TYPE_CYCLE_BASELINE} — lower TYPE_CYCLE_BASELINE when convenient`
+  );
+}
+
+function report(
+  files: readonly string[],
+  violations: readonly Violation[],
+  typeCycle: number,
+): number {
   if (violations.length === 0) {
     process.stdout.write(
       `Layering guard: OK — ${files.length} source files satisfy R1-R3 and contain no ` +
@@ -439,8 +506,8 @@ function report(files: readonly string[], violations: readonly Violation[]): num
         `back-edges (only the composition root is unranked), and its type-only ` +
         `inversions match the R6 ratchet (${Object.values(TYPE_INVERSION_BASELINE).reduce((sum, count) => sum + count, 0)} remaining); ` +
         `all ${sessionStateFieldCount()} SessionState fields are classified and every write is ` +
-        `inside its declared owner (R7); and every zero-dep CI job resolves without ` +
-        `node_modules (R8).\n`,
+        `inside its declared owner (R7); every zero-dep CI job resolves without ` +
+        `node_modules (R8); and ${typeCycleNote(typeCycle)}.\n`,
     );
     return 0;
   }
@@ -470,15 +537,18 @@ export function main(): number {
   const sourceFiles = listSourceFiles();
   const sources = readSources(sourceFiles);
   const edges = resolveImportEdges(sources);
+  // Computed once and threaded: the rule and the success line must report the same number.
+  const typeCycle = largestTypeCycleSize(edges);
   const violations = [
     ...checkLayeringRules(edges),
     ...checkCycles(edges),
     ...checkBackEdges(edges),
     ...checkTypeInversions(edges),
     ...checkSessionStateOwnership(sources),
+    ...checkTypeCycleGrowth(typeCycle),
     ...checkZeroDepJobs(),
   ];
-  return report(sourceFiles, violations);
+  return report(sourceFiles, violations, typeCycle);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
