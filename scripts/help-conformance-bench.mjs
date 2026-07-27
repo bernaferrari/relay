@@ -2,11 +2,20 @@
 import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import {
+  assertCaseDefinitions,
+  countChecks,
+  scoreExpectations,
+} from './help-conformance-case-checks.mjs';
+import { validatePlanCommands } from './help-conformance-plan-validator.mjs';
+import { detectRunnerError, extractCommands } from './help-conformance-runner-output.mjs';
+import { summarizeResults } from './help-conformance-summary.mjs';
 
 const execFileAsync = promisify(execFile);
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OUT_DIR = process.env.HELP_BENCH_OUT ?? join(ROOT, '.tmp', 'help-conformance-bench');
 const RUN_TIMEOUT_MS = Number(process.env.HELP_BENCH_TIMEOUT_MS ?? 90_000);
 // Runner x case pairs run concurrently, capped low: these are paid LLM calls
@@ -16,13 +25,14 @@ const DEFAULT_RUNNERS = ['codex:gpt-5.4-mini', 'claude:claude-haiku-4-5'];
 const USAGE = `Usage: node scripts/help-conformance-bench.mjs [options]
 
 Feeds a help slice + task into one non-agentic LLM call per runner x case and
-regex-scores the returned command plan.
+scores the returned command plan with production parser-backed syntax checks.
 
 Options:
   --runner <kind:model>    Add one runner (repeatable). Default: ${DEFAULT_RUNNERS.join(', ')}
   --runners <a,b>          Comma-separated runner list
   --case <id>              Add one case id (repeatable). Default: all cases
   --cases <a,b>            Comma-separated case id list
+  --repeat <n>             Run every runner x case pair n times (default: 1)
   --out <dir>              Output directory (default: .tmp/help-conformance-bench)
   --override-doc <topicId>=<path>
                            Grade a DRAFT doc: load this topic's text from the file
@@ -43,6 +53,7 @@ const OPTION_SPECS = {
   '--runners': { target: 'runners', mode: 'csv' },
   '--case': { target: 'cases', mode: 'append' },
   '--cases': { target: 'cases', mode: 'csv' },
+  '--repeat': { target: 'repeat', mode: 'positiveInteger' },
   '--out': { target: 'outDir', mode: 'value' },
   '--override-doc': { target: 'overrideDocs', mode: 'keyvalue' },
 };
@@ -55,6 +66,9 @@ const OPTION_APPLIERS = {
   },
   value: (args, target, value) => {
     args[target] = value;
+  },
+  positiveInteger: (args, target, value) => {
+    args[target] = parsePositiveInteger(value, `--${target}`);
   },
   keyvalue: (args, target, value) => {
     const separatorIndex = value.indexOf('=');
@@ -79,13 +93,55 @@ const CASES = [
     id: 'raw-first-screen-bluesky',
     docs: ['--help:first30'],
     task: 'Plan commands to open an already installed Bluesky app, search "callstack", open the @callstack.com account, press Follow or Following, and close.',
-    expectations: ['fullPrefix', 'usesSnapshotI', 'usesSettleOnMutations', 'noWaitStable'],
+    expectations: [
+      'validPlanCommands',
+      'fullPrefix',
+      'usesSnapshotI',
+      'usesSettleOnMutations',
+      'noWaitStable',
+    ],
+  },
+  {
+    id: 'metamorphic-community-search',
+    docs: ['--help:first30'],
+    task: 'Plan commands to open the already installed app com.example.community, open the visible Discover destination, fill the People search field with "react native", open the @react.dev account, press Connect or Connected, and close.',
+    expectations: [
+      'validPlanCommands',
+      'fullPrefix',
+      'usesSnapshotI',
+      'usesSettleOnMutations',
+      'noWaitStable',
+      'opensAndCloses',
+    ],
+    matchers: [
+      {
+        id: 'opensKnownCommunityApp',
+        pattern: /\bagent-device\s+open\s+com\.example\.community\b/i,
+      },
+      {
+        id: 'fillsExpectedSearch',
+        pattern: /\bagent-device\s+fill\b[^\n]*(?:"react native"|'react native')[^\n]*--settle\b/i,
+      },
+      {
+        id: 'usesLiteralHandleSelector',
+        pattern:
+          /\bagent-device\s+(?:press|click|tap)\b[^\n]*(?:label|text)=@react\.dev\b[^\n]*--settle\b/i,
+      },
+    ],
+    forbidden: [
+      {
+        id: 'noBlueskyLeakage',
+        pattern: /(?:bluesky|callstack|@e64|@callstack\.com)/i,
+      },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
   },
   {
     id: 'manual-qa-bluesky-script',
     docs: ['--help:first30', 'manual-qa'],
     task: 'You are following a manual QA script: on Bluesky, open Search, search "callstack", open @callstack.com, press Follow or Following, verify the button state changed, then close. Plan commands only.',
     expectations: [
+      'validPlanCommands',
       'fullPrefix',
       'usesSnapshotI',
       'usesSettleOnMutations',
@@ -96,19 +152,55 @@ const CASES = [
   {
     id: 'dogfood-mode',
     docs: ['--help:first30', 'dogfood'],
-    task: 'Plan a short dogfood pass for a logged-in mobile app that captures reproducible evidence for any issue found.',
-    expectations: ['fullPrefix', 'usesDogfoodEvidence', 'opensAndCloses'],
+    task: 'Plan a short dogfood pass for the logged-in iOS shop app com.example.shop. Exercise the visible Home, Search, and Cart destinations and capture reproducible evidence for any issue found.',
+    allowedExternalCommands: ['mkdir'],
+    expectations: [
+      'validPlanCommands',
+      'fullPrefix',
+      'usesSnapshotI',
+      'usesSettleOnMutations',
+      'usesDogfoodEvidence',
+      'opensAndCloses',
+    ],
+    matchers: [
+      { id: 'opensKnownDogfoodApp', pattern: /\bagent-device\s+open\s+com\.example\.shop\b/i },
+      {
+        id: 'capturesStrongIssueEvidence',
+        pattern: /\b(?:screenshot\b[^\n]*--overlay-refs|record\s+start\b|logs\s+mark\b)/i,
+      },
+    ],
   },
   {
     id: 'engineering-validate-mode',
     docs: ['--help:first30', 'validate'],
-    task: 'Plan commands to validate a CLI/runtime change in agent-device against an iOS app without accidentally using stale built output.',
-    expectations: ['fullPrefix', 'usesValidationPrep', 'opensAndCloses'],
+    task: 'Plan commands to validate a TypeScript-only CLI/runtime change to settled press output against the already installed iOS Settings app. Use the known General control, prove current built output is running, and clean up. Swift runner code did not change.',
+    allowedExternalCommands: ['pnpm'],
+    expectations: [
+      'validPlanCommands',
+      'fullPrefix',
+      'usesSnapshotI',
+      'usesSettleOnMutations',
+      'usesValidationPrep',
+      'opensAndCloses',
+    ],
+    matchers: [
+      {
+        id: 'opensSettings',
+        pattern: /\bagent-device\s+open\s+(?:settings|com\.apple\.Preferences)\b/i,
+      },
+    ],
+    forbidden: [
+      {
+        id: 'avoidsUnrelatedPlatformBuild',
+        pattern: /\bpnpm\s+(?:run\s+)?build:(?:android|xcuitest)\b/i,
+      },
+    ],
   },
-  // The three cases below are ported from
+  // The first three cases below are ported from
   // test/skillgym/suites/agent-device-smoke-suite.ts (settle-diff-is-observation,
   // sample-output-settled-diff-next-target, sample-output-not-settled-needs-observe).
-  // They are self-contained "next-command quiz" cases: a captured agent-device
+  // The fourth comes from test/output-economy/routine-workflow.ts. They are
+  // self-contained "next-command quiz" cases: a captured agent-device
   // output plus a task, scored by regex instead of the named expectation
   // scorers above. Output text mirrors the CURRENT settle rendering in
   // src/commands/interaction/output.ts, including the "unchanged interactive
@@ -128,8 +220,8 @@ unchanged interactive (4):
 = @e12 [tab] "Home"
 = @e40 [tab] "Profile"
 
-The task was to confirm the feed-search UI is present, then close the session. The settled diff and its unchanged-interactive tail above already contain every ref and piece of evidence the task needs: the Search field and Recent searches are both listed. Plan only the next command. Do not take another snapshot, wait, find, get, or is call just to re-read evidence that is already shown above.`,
-    expectations: ['fullPrefix'],
+Use the output already shown to determine whether the feed-search UI is present, then close the session. What command should run next?`,
+    expectations: ['validPlanCommands', 'fullPrefix'],
     matchers: [{ id: 'plansClose', pattern: /(?:^|\n)(?:agent-device\s+)?close\b/i }],
     forbidden: [
       { id: 'noSnapshot', pattern: /\bsnapshot\b/i },
@@ -151,8 +243,8 @@ settled after 610ms: +2 -0 (~18 unchanged)
 + @e64 [button] "@callstack.com"
 + @e65 [text] "Callstack"
 
-Use the ref exposed by the settled diff to open the account, with --settle on this next action too. Do not re-read the same screen first.`,
-    expectations: ['fullPrefix'],
+The task is to open the matching account result. What command should run next?`,
+    expectations: ['validPlanCommands', 'fullPrefix'],
     matchers: [
       { id: 'pressOrClickOrTap', pattern: /\b(?:press|click|tap)\b/i },
       { id: 'usesE64RefOrLabel', pattern: /@e64\b|label=(?:["']?@callstack\.com["']?)/i },
@@ -175,8 +267,8 @@ Tapped @e12 (166, 240)
 not settled after 10000ms
 hint: The UI kept changing for the whole settle budget (animation, carousel, or ticker?), so no settled diff is shown. Raise --timeout, wait for specific content, or take a fresh snapshot.
 
-Old refs may be stale after this mutation, and no settled diff was printed, so the next target is unknown. Follow the output hint: observe the current UI (a fresh snapshot or a wait) before attempting another ref-based action.`,
-    expectations: ['fullPrefix'],
+The next target is not known yet. What command should run next?`,
+    expectations: ['validPlanCommands', 'fullPrefix'],
     matchers: [
       {
         id: 'observesBeforeActing',
@@ -208,8 +300,8 @@ retriable: true
 hint: The tap did not settle in time. Retry press @e6 --settle with a higher --timeout; refs from this session are still valid.
 details: { reason: "timeout", timeoutMs: 10000, ref: "@e6", session: "checkout", refsGeneration: 22 }
 
-The failure is retriable and preserved the session plus the ref generation, so @e6 is still valid. Follow the hint: retry the same target in the same session with a higher --timeout. Do not reopen the session and do not re-observe with snapshot/find/get/wait.`,
-    expectations: ['fullPrefix'],
+What command should run next?`,
+    expectations: ['validPlanCommands', 'fullPrefix'],
     matchers: [
       { id: 'retriesSameRef', pattern: /(?:^|\n)(?:agent-device\s+)?press\s+@e6\b/i },
       { id: 'keepsSettle', pattern: /--settle\b/i },
@@ -270,13 +362,23 @@ function assertOptionValue(spec, value) {
 }
 
 function applyDefaultArgs(args) {
-  args.runners ??= DEFAULT_RUNNERS;
-  args.cases ??= CASES.map((testCase) => testCase.id);
-  args.overrideDocs ??= new Map();
+  args.runners = withDefault(args.runners, DEFAULT_RUNNERS);
+  args.cases = withDefault(
+    args.cases,
+    CASES.map((testCase) => testCase.id),
+  );
+  args.overrideDocs = withDefault(args.overrideDocs, new Map());
+  args.repeat = withDefault(args.repeat, 1);
+}
+
+function withDefault(value, fallback) {
+  return value ?? fallback;
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  assertRuntimeConfiguration();
+  assertCaseDefinitions(CASES);
   const outDir = resolveOutDir(args);
   await mkdir(outDir, { recursive: true });
   const selectedCases = selectCases(args.cases);
@@ -284,10 +386,25 @@ async function main() {
   assertOverrideDocIds(args.overrideDocs, docIds);
   const docs = await loadDocs(docIds, args.overrideDocs);
 
-  const results = await runBenchmarkMatrix(args.runners, selectedCases, docs, outDir, args.dryRun);
-  const reportPath = join(outDir, `report-${Date.now()}.json`);
+  const results = await runBenchmarkMatrix(
+    args.runners,
+    selectedCases,
+    docs,
+    outDir,
+    args.dryRun,
+    args.repeat,
+  );
+  const timestamp = Date.now();
+  const reportPath = join(outDir, `report-${timestamp}.json`);
   await writeFile(reportPath, `${JSON.stringify(results, null, 2)}\n`);
   console.log(`Wrote ${reportPath}`);
+  if (!args.dryRun && args.repeat > 1) {
+    const summary = summarizeResults(results);
+    const summaryPath = join(outDir, `summary-${timestamp}.json`);
+    await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+    printSummary(summary);
+    console.log(`Wrote ${summaryPath}`);
+  }
   updateExitCode(results, args.dryRun);
 }
 
@@ -296,6 +413,9 @@ function resolveOutDir(args) {
 }
 
 function selectCases(caseIds) {
+  const knownCaseIds = new Set(CASES.map((testCase) => testCase.id));
+  const unknown = [...new Set(caseIds.filter((caseId) => !knownCaseIds.has(caseId)))];
+  if (unknown.length > 0) throw new Error(`Unknown benchmark case id(s): ${unknown.join(', ')}`);
   const selectedCases = CASES.filter((testCase) => caseIds.includes(testCase.id));
   assertCasesSelected(selectedCases);
   return selectedCases;
@@ -323,17 +443,23 @@ function updateExitCode(results, dryRun) {
   if (!dryRun && results.some((result) => !result.passed)) process.exitCode = 1;
 }
 
-async function runBenchmarkMatrix(runners, selectedCases, docs, outDir, dryRun) {
+async function runBenchmarkMatrix(runners, selectedCases, docs, outDir, dryRun, repeat) {
   const entries = runners.flatMap((runner) =>
-    selectedCases.map((testCase) => ({ runner, testCase })),
+    selectedCases.flatMap((testCase) =>
+      Array.from({ length: repeat }, (_, index) => ({
+        runner,
+        testCase,
+        trial: index + 1,
+      })),
+    ),
   );
   // Concurrency-capped, but results print in the original runner x case
   // matrix order (not completion order) once every entry has settled, so
   // output stays as readable as the old sequential loop.
-  const results = await mapWithConcurrency(entries, CONCURRENCY, ({ runner, testCase }) =>
-    runBenchmarkEntry(runner, testCase, docs, outDir, dryRun),
+  const results = await mapWithConcurrency(entries, CONCURRENCY, ({ runner, testCase, trial }) =>
+    runBenchmarkEntry(runner, testCase, docs, outDir, dryRun, trial, repeat),
   );
-  for (const result of results) printResult(result, dryRun);
+  for (const result of results) printResult(result, dryRun, repeat);
   return results;
 }
 
@@ -353,18 +479,45 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
-async function runBenchmarkEntry(runner, testCase, docs, outDir, dryRun) {
+async function runBenchmarkEntry(runner, testCase, docs, outDir, dryRun, trial, repeat) {
   const prompt = buildPrompt(testCase, docs);
   return dryRun
-    ? { runner, caseId: testCase.id, prompt }
-    : runCase(runner, testCase, prompt, outDir);
+    ? { runner, caseId: testCase.id, trial, prompt }
+    : runCase(runner, testCase, prompt, outDir, trial, repeat);
 }
 
-function printResult(result, dryRun) {
+function printResult(result, dryRun, repeat) {
   if (dryRun) return;
+  const trial = repeat > 1 ? ` trial=${result.trial}/${repeat}` : '';
   console.log(
-    `${result.passed ? 'PASS' : 'FAIL'} ${result.runner} ${result.caseId} ${result.score}/${result.total}`,
+    `${result.passed ? 'PASS' : 'FAIL'} ${result.runner} ${result.caseId}${trial} ${result.score}/${result.total}`,
   );
+}
+
+function printSummary(summary) {
+  console.log('Aggregate stability:');
+  for (const group of summary) {
+    const percent = Math.round(group.passRate * 100);
+    const details = summaryDetails(group);
+    console.log(
+      `  ${group.runner} ${group.caseId}: ${group.passed}/${group.evaluatedTrials} (${percent}%)${details ? `; ${details}` : ''}`,
+    );
+  }
+}
+
+function summaryDetails(group) {
+  return [
+    countDetails('failed', group.failedChecks),
+    countDetails('validation', group.validationIssues),
+    group.runnerErrors > 0 ? `runner errors=${group.runnerErrors}` : '',
+  ]
+    .filter(Boolean)
+    .join('; ');
+}
+
+function countDetails(label, counts) {
+  const entries = Object.entries(counts).map(([id, count]) => `${id}=${count}`);
+  return entries.length > 0 ? `${label} ${entries.join(', ')}` : '';
 }
 
 async function loadDocs(docIds, overrideDocs) {
@@ -431,18 +584,24 @@ function buildPrompt(testCase, docs) {
   ].join('\n');
 }
 
-async function runCase(runner, testCase, prompt, outDir) {
+async function runCase(runner, testCase, prompt, outDir, trial, repeat) {
   const { raw, runnerError } = await runCaseRawOutput(runner, prompt, outDir);
-  const outputPath = join(outDir, `${safeName(runner)}-${testCase.id}.txt`);
+  const trialSuffix = repeat > 1 ? `-trial-${trial}` : '';
+  const outputPath = join(outDir, `${safeName(runner)}-${testCase.id}${trialSuffix}.txt`);
   await writeFile(outputPath, raw);
   const commands = extractCommands(raw);
-  const checks = scoreExpectations(testCase, commands, raw);
+  const commandValidation = await validatePlanCommands(commands, {
+    allowedExternalCommands: testCase.allowedExternalCommands,
+  });
+  const checks = scoreExpectations(testCase, commands, raw, commandValidation);
   const score = countPassingChecks(checks);
   const total = countChecks(testCase);
   return {
     runner,
     caseId: testCase.id,
+    trial,
     commands,
+    commandValidation,
     checks,
     score,
     total,
@@ -456,10 +615,7 @@ async function runCaseRawOutput(runner, prompt, outDir) {
   const [kind, model] = runner.split(':');
   try {
     const raw = await runModel(kind, model, prompt, outDir);
-    return {
-      raw,
-      runnerError: raw.trim().length === 0 ? 'Runner returned empty output.' : undefined,
-    };
+    return { raw, runnerError: detectRunnerError(raw) };
   } catch (error) {
     return { raw: errorOutput(error), runnerError: errorMessage(error) };
   }
@@ -556,116 +712,9 @@ async function runCodex(model, prompt, outDir) {
   return lastMessage.trim().length > 0 ? lastMessage : stdout;
 }
 
-function extractCommands(raw) {
-  const json = parseJsonPayload(raw);
-  if (json && Array.isArray(json.commands)) {
-    return json.commands.map((command) => String(command).trim()).filter(Boolean);
-  }
-  return raw
-    .split('\n')
-    .map((line) => line.replace(/^[-*\d.]+\s*/, '').trim())
-    .filter(
-      (line) =>
-        line.startsWith('agent-device ') || line.match(/^(open|snapshot|press|fill|click|close)\b/),
-    );
-}
-
-function parseJsonPayload(raw) {
-  const candidates = jsonPayloadCandidates(raw);
-  for (const candidate of candidates) {
-    const parsed = parseJsonCandidate(candidate);
-    if (parsed !== undefined) return parsed;
-  }
-  return null;
-}
-
-function jsonPayloadCandidates(raw) {
-  return [raw, raw.match(/```json\s*([\s\S]*?)```/)?.[1], raw.match(/\{[\s\S]*\}/)?.[0]].filter(
-    Boolean,
-  );
-}
-
-function parseJsonCandidate(candidate) {
-  try {
-    return normalizeParsedJson(JSON.parse(candidate));
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeParsedJson(parsed) {
-  if (typeof parsed?.result === 'string') return parseJsonPayload(parsed.result);
-  return parsed;
-}
-
-const EXPECTATION_SCORERS = {
-  fullPrefix: ({ commands }) =>
-    commands.length > 0 &&
-    commands.every(
-      (command) => !/^(open|snapshot|press|fill|click|longpress|wait|close)\b/.test(command),
-    ),
-  usesSnapshotI: ({ commands }) => commands.some((command) => /\bsnapshot\b.*\s-i\b/.test(command)),
-  usesSettleOnMutations: ({ commands }) => allMutationsUseSettle(commands),
-  noWaitStable: ({ joined }) => !joined.includes('wait stable'),
-  verifiesNamedExpectation: ({ joined }) => /\b(wait|is|get|find)\b/.test(joined),
-  usesDogfoodEvidence: ({ joined }) =>
-    /(?:\bscreenshot\b|\brecord\b|\blogs\b|\bnetwork\b|\bperf\b|\btrace\b|dogfood-output)/i.test(
-      joined,
-    ),
-  usesValidationPrep: ({ joined }) =>
-    /(?:pnpm\s+(?:build|clean:daemon|prepare)|agent-device\s+(?:doctor|prepare)\b|\bbuild:xcuitest\b)/i.test(
-      joined,
-    ),
-  opensAndCloses: ({ joined }) => /\bopen\b/.test(joined) && /\bclose\b/.test(joined),
-};
-
-/**
- * Every check a case declares, normalized to a uniform `{ id, test }` shape:
- * - `expectations`: named lookups into EXPECTATION_SCORERS (the original 4
- *   help-layout cases).
- * - `matchers`: the check passes when the pattern matches the planned
- *   commands (ported skillgym quiz cases' `outputs`).
- * - `forbidden`: the check passes when the pattern does NOT match (ported
- *   skillgym quiz cases' `forbiddenOutputs`).
- */
-function resolveChecks(testCase) {
-  const named = (testCase.expectations ?? []).map((id) => ({
-    id,
-    test: (context) => scoreExpectation(id, context),
-  }));
-  const matched = (testCase.matchers ?? []).map(({ id, pattern }) => ({
-    id,
-    test: (context) => pattern.test(context.joined),
-  }));
-  const forbidden = (testCase.forbidden ?? []).map(({ id, pattern }) => ({
-    id,
-    test: (context) => !pattern.test(context.joined),
-  }));
-  return [...named, ...matched, ...forbidden];
-}
-
-function countChecks(testCase) {
-  return resolveChecks(testCase).length;
-}
-
-function scoreExpectations(testCase, commands, raw) {
-  const context = { commands, joined: commands.join('\n').toLowerCase(), raw };
-  return Object.fromEntries(resolveChecks(testCase).map(({ id, test }) => [id, test(context)]));
-}
-
-function scoreExpectation(expectation, context) {
-  const scorer = EXPECTATION_SCORERS[expectation];
-  if (!scorer) throw new Error(`Unknown expectation: ${expectation}`);
-  return scorer(context);
-}
-
-function allMutationsUseSettle(commands) {
-  const mutating = commands.filter(isMutationCommand);
-  return mutating.length > 0 && mutating.every((command) => command.includes('--settle'));
-}
-
-function isMutationCommand(command) {
-  return /\b(press|click|fill|longpress)\b/.test(command) && !/\bsnapshot\b/.test(command);
+function assertRuntimeConfiguration() {
+  parsePositiveInteger(String(CONCURRENCY), 'HELP_BENCH_CONCURRENCY');
+  parsePositiveInteger(String(RUN_TIMEOUT_MS), 'HELP_BENCH_TIMEOUT_MS');
 }
 
 function countPassingChecks(checks) {
@@ -674,6 +723,14 @@ function countPassingChecks(checks) {
 
 function safeName(name) {
   return basename(name).replace(/[^a-z0-9_.-]+/gi, '-');
+}
+
+function parsePositiveInteger(value, label) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${label} expects a positive integer, got: ${value}`);
+  }
+  return parsed;
 }
 
 // Expected failures (bad flags, unreadable override files, unknown topic ids)
