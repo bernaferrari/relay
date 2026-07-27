@@ -1,7 +1,7 @@
 import type { SessionSurface } from './session-surface.ts';
-import type { RecordingExportQuality } from '../core/recording-export-quality.ts';
+import type { RecordingExportQuality } from './recording-export-quality.ts';
 import type { BackMode } from './back-mode.ts';
-import type { ClickButton } from '../core/click-button.ts';
+import type { ClickButton } from './click-button.ts';
 import type { SwipePattern } from './scroll-gesture.ts';
 import type { DeviceTarget, PlatformSelector } from '../kernel/device.ts';
 import type {
@@ -17,7 +17,7 @@ import type {
 import type {
   CloudProviderProfileFields,
   RemoteConfigMetroOptions,
-} from '../remote/remote-config-schema.ts';
+} from './remote-config-fields.ts';
 import type { ScreenshotRequestFlags } from './screenshot.ts';
 import type { RecordingScope } from './recording-scope.ts';
 

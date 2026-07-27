@@ -1,5 +1,5 @@
-import type { PublicSnapshotCaptureAnnotations } from '../snapshot-capture-annotations.ts';
-import type { SnapshotDiagnosticsSummary } from '../snapshot-diagnostics.ts';
+import type { PublicSnapshotCaptureAnnotations } from '../contracts/snapshot-capture-annotations.ts';
+import type { SnapshotDiagnosticsSummary } from '../contracts/snapshot-diagnostics.ts';
 import type {
   DaemonResponseData,
   DaemonInstallSource,
@@ -21,8 +21,8 @@ import type {
 } from '../kernel/device.ts';
 import type { BackMode } from '../contracts/back-mode.ts';
 import type { RotateCommandResult } from '../contracts/navigation.ts';
-import type { ClickButton } from '../core/click-button.ts';
-import type { RecordingExportQuality } from '../core/recording-export-quality.ts';
+import type { ClickButton } from '../contracts/click-button.ts';
+import type { RecordingExportQuality } from '../contracts/recording-export-quality.ts';
 import type { RecordingScope } from '../contracts/recording-scope.ts';
 import type {
   ScrollDirection,
@@ -41,42 +41,36 @@ import type { SessionSurface } from '../contracts/session-surface.ts';
 import type { FindLocator } from '../selectors/find.ts';
 import type { SnapshotNode, SnapshotUnchanged, SnapshotVisibility } from '../kernel/snapshot.ts';
 import type { ScreenshotResultData } from '../utils/screenshot-result.ts';
-import type {
-  MetroPrepareKind,
-  PrepareMetroRuntimeResult,
-  ReloadMetroResult,
-} from '../metro/client-metro.ts';
+import type { PrepareMetroRuntimeResult, ReloadMetroResult } from '../metro/client-metro.ts';
+import type { MetroPrepareKind } from '../contracts/metro.ts';
 import type { MetroBridgeScope } from './client-companion-tunnel-contract.ts';
 import type { AppsFilter } from '../contracts/app-inventory.ts';
 import type { ScreenshotRequestFlags } from '../contracts/screenshot.ts';
 import type { BatchRunResult, DaemonBatchStep } from '../core/batch.ts';
 export type { BatchRunResult } from '../core/batch.ts';
-import type { TargetShutdownResult } from '../target-shutdown-contract.ts';
-export type { TargetShutdownResult } from '../target-shutdown-contract.ts';
+import type { TargetShutdownResult } from '../contracts/target-shutdown-contract.ts';
+export type { TargetShutdownResult } from '../contracts/target-shutdown-contract.ts';
 import type { PerfAction, PerfArea, PerfKind, PerfSubject } from '../contracts/perf.ts';
-import type { AlertAction } from '../alert-contract.ts';
+import type { AlertAction } from '../contracts/alert-contract.ts';
 import type { DebugSymbolsOptions, DebugSymbolsResult } from '../contracts/debug-symbols.ts';
 import type { JsonObject } from '../contracts/json.ts';
-import type {
-  CloudProviderProfileFields,
-  RemoteConnectionProfileFields,
-} from '../remote/remote-config-schema.ts';
+import type { RemoteConnectionProfileFields } from '../remote/remote-config-schema.ts';
+import type { CloudProviderProfileFields } from '../contracts/remote-config-fields.ts';
 import type { CommandResult } from '../core/command-descriptor/command-result.ts';
-import type { AgentArtifactsResult, CloudProviderSessionResult } from '../cloud-artifacts.ts';
+import type {
+  AgentArtifactsResult,
+  CloudProviderSessionResult,
+} from '../contracts/cloud-artifacts.ts';
 
 export type { MetroBridgeScope } from './client-companion-tunnel-contract.ts';
 export type { AppsFilter } from '../contracts/app-inventory.ts';
-export type { AlertAction } from '../alert-contract.ts';
+export type { AlertAction } from '../contracts/alert-contract.ts';
 export type { DebugSymbolsOptions, DebugSymbolsResult } from '../contracts/debug-symbols.ts';
 export type { AppleOS } from '../kernel/device.ts';
 export type {
-  OrientationCommandResult,
   /** @deprecated Renamed to `OrientationCommandResult`. Retained until the next major. */
   RotateCommandResult,
 } from '../contracts/navigation.ts';
-export type { ClipboardCommandResult } from '../contracts/clipboard.ts';
-export type { AppStateCommandResult } from '../contracts/app-state.ts';
-export type { KeyboardCommandResult } from '../contracts/keyboard.ts';
 export type { WaitCommandResult } from '../contracts/wait.ts';
 export type { PrepareCommandResult } from '../contracts/prepare.ts';
 export type { PushCommandResult } from '../contracts/push.ts';

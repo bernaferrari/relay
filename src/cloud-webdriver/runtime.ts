@@ -2,12 +2,14 @@ import type {
   CloudArtifactProvider,
   CloudArtifactsQuery,
   CloudArtifactsResult,
-} from '../cloud-artifacts.ts';
-import type { DeviceInventoryProvider } from '../core/dispatch-resolve.ts';
-import type { Interactor } from '../core/interactor-types.ts';
-import type { LeaseLifecycleProvider } from '../daemon/handlers/lease.ts';
-import type { DeviceLease } from '../daemon/lease-registry.ts';
-import type { DaemonRequest } from '../daemon/types.ts';
+} from '../contracts/cloud-artifacts.ts';
+import type {
+  DeviceInventoryProvider,
+  DeviceLease,
+  LeaseLifecycleProvider,
+} from '../contracts/device-provider.ts';
+import type { Interactor } from '../contracts/interactor-types.ts';
+import type { DaemonRequest } from '../kernel/contracts.ts';
 import type {
   ProviderDeviceInstallOptions,
   ProviderDeviceInstallResult,

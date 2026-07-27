@@ -1,4 +1,5 @@
 import {
+  FIND_VALUE_REQUIRED_MESSAGE,
   findBestMatchesByLocator,
   parseFindSelectorExpression,
   type FindAction,
@@ -37,11 +38,8 @@ import {
   type TargetAnnotationV1,
 } from '../../../replay/target-identity.ts';
 import { buildSelectorChainForNode } from '../../../selectors/build.ts';
-import {
-  evaluateIsPredicate,
-  isSupportedPredicate,
-  IS_PREDICATE_REQUIRED_MESSAGE,
-} from '../../../selectors/predicates.ts';
+import { checkIsPredicate, evaluateIsPredicate } from '../../../selectors/predicates.ts';
+import { checkWaitText, IS_TEXT_VALUE_REQUIRED_MESSAGE } from '../../../selectors/arguments.ts';
 import type {
   ElementTarget,
   RefTarget,
@@ -220,7 +218,7 @@ export const findCommand: RuntimeCommand<FindReadCommandOptions, FindReadCommand
 ): Promise<FindReadCommandResult> => {
   const locator = options.locator ?? 'any';
   if (!options.query) {
-    throw new AppError('INVALID_ARGS', 'find requires a value');
+    throw new AppError('INVALID_ARGS', FIND_VALUE_REQUIRED_MESSAGE);
   }
   if (options.action === 'wait') {
     return await waitForFindMatch(runtime, options, locator);
@@ -339,19 +337,22 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
   runtime,
   options,
 ): Promise<IsCommandResult> => {
-  if (!isSupportedPredicate(options.predicate)) {
-    throw new AppError('INVALID_ARGS', IS_PREDICATE_REQUIRED_MESSAGE);
-  }
-  if (options.predicate === 'text' && !options.expectedText) {
-    throw new AppError('INVALID_ARGS', 'is text requires expected text value');
+  const admitted = checkIsPredicate(options.predicate);
+  if (!admitted.ok) throw new AppError(admitted.code, admitted.message, { hint: admitted.hint });
+  // Admission normalizes case, so every decision below reads the ADMITTED value: the raw
+  // option would send an uppercase predicate past the gate and then evaluate it against
+  // lower-case branches, admitting `EXISTS`/`TEXT` and returning the wrong answer.
+  const predicate = admitted.predicate;
+  if (predicate === 'text' && !options.expectedText) {
+    throw new AppError('INVALID_ARGS', IS_TEXT_VALUE_REQUIRED_MESSAGE);
   }
   const chain = parseSelectorChain(options.selector);
   const capture = await captureSelectorSnapshot(runtime, options, {
     updateSession: true,
-    ...deriveSelectorCapturePolicy({ predicate: options.predicate, selectorChain: chain }),
+    ...deriveSelectorCapturePolicy({ predicate: predicate, selectorChain: chain }),
   });
 
-  if (options.predicate === 'exists') {
+  if (predicate === 'exists') {
     const matched = findSelectorChainMatch(capture.snapshot.nodes, chain, {
       platform: runtime.backend.platform,
     });
@@ -361,7 +362,7 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
       });
     }
     return {
-      predicate: options.predicate,
+      predicate: predicate,
       pass: true,
       selector: matched.selector.raw,
       matches: matched.matches,
@@ -379,7 +380,7 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
     throw new AppError('COMMAND_FAILED', formatSelectorFailure(chain, [], { unique: true }), {
       command: 'is',
       reason: 'selector_not_found',
-      predicate: options.predicate,
+      predicate: predicate,
       selector: chain.raw,
       hint: selectorFailureHint([]),
     });
@@ -391,7 +392,7 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
     'is',
   );
   const result = evaluateIsPredicate({
-    predicate: options.predicate,
+    predicate: predicate,
     node: resolved.node,
     nodes: capture.snapshot.nodes,
     expectedText: options.expectedText,
@@ -400,21 +401,21 @@ export const isCommand: RuntimeCommand<IsCommandOptions, IsCommandResult> = asyn
   if (!result.pass) {
     throw new AppError(
       'COMMAND_FAILED',
-      `is ${options.predicate} failed for selector ${resolved.selector.raw}: ${result.details}`,
+      `is ${predicate} failed for selector ${resolved.selector.raw}: ${result.details}`,
       {
         command: 'is',
         reason: 'predicate_failed',
-        predicate: options.predicate,
+        predicate: predicate,
         selector: resolved.selector.raw,
         predicateDetails: result.details,
       },
     );
   }
   return {
-    predicate: options.predicate,
+    predicate: predicate,
     pass: true,
     selector: resolved.selector.raw,
-    ...(options.predicate === 'text' ? { text: result.actualText } : {}),
+    ...(predicate === 'text' ? { text: result.actualText } : {}),
     selectorChain: chain.selectors.map((entry) => entry.raw),
     node: resolved.node,
     preActionNodes: capture.snapshot.nodes,
@@ -472,7 +473,8 @@ export const waitCommand: RuntimeCommand<WaitCommandOptions, WaitCommandResult> 
   if (options.target.kind === 'stable') {
     return await waitForStable(runtime, options, options.target.quietMs, options.target.timeoutMs);
   }
-  if (!options.target.text) throw new AppError('INVALID_ARGS', 'wait requires text');
+  const waitText = checkWaitText(options.target.text);
+  if (!waitText.ok) throw new AppError(waitText.code, waitText.message);
   return await waitForText(runtime, options, options.target.text, options.target.timeoutMs);
 };
 

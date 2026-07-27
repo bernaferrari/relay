@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { SnapshotState } from '../kernel/snapshot.ts';
-import { refFrameEpoch, refFrameState } from './ref-frame.ts';
+import { activatePartialRefFrame, refFrameEpoch, refFrameState } from './ref-frame.ts';
 import type { SessionState } from './types.ts';
 
 /**
@@ -20,7 +20,8 @@ export const STALE_SNAPSHOT_REFS_WARNING =
  * does NOT touch the ref frame: replacing the latest observation is an
  * operational read, so it never expires, reactivates, or reindexes the
  * authorized frame (ADR 0014). Frame lifetime is owned solely by
- * `src/daemon/ref-frame.ts` and the partial-issuance writer below.
+ * `src/daemon/ref-frame.ts`; the partial-issuance writer below decides WHETHER to issue
+ * and hands the transition there.
  */
 export function setSessionSnapshot(session: SessionState, snapshot: SnapshotState): void {
   if (session.snapshot !== snapshot) {
@@ -37,6 +38,41 @@ export function setSessionSnapshot(session: SessionState, snapshot: SnapshotStat
 }
 
 /**
+ * The same lineage rule, applied to a freshly BUILT record instead of the stored one.
+ * `snapshot-runtime.ts` constructs a new `SessionState` rather than mutating the one in the
+ * store, so it cannot go through `setSessionSnapshot` — but the invariant it has to honour is
+ * identical, and it is the invariant that matters: #1076 versioned refs require the observation
+ * counter to advance exactly when the stored tree is replaced, for `snapshot` and `diff` alike,
+ * and the scope source must describe the tree that actually ended up there.
+ *
+ * Advancing the counter is NOT the same as invalidating client refs, and the comment this
+ * replaced said otherwise — it claimed a diff leaves refs pinned to the previous generation
+ * "which is exactly what the pinned warning diagnoses". It does not: `diff` passes
+ * `issuesRefsToClient: false`, so it never reactivates the frame, and
+ * `resolveRefStalenessWarning` compares a pin against the frame EPOCH rather than this counter,
+ * precisely so a capture that bumped the counter cannot make a valid pin look stale. A ref
+ * pinned before a diff therefore keeps resolving, with no warning, by design (ADR 0014).
+ * `session-snapshot.test.ts` pins that outcome so the claim cannot drift back.
+ *
+ * Both fields move together, here, next to the writer they have to agree with. They used to be
+ * assigned at the call site, which is how the rule came to have two statements of itself in two
+ * modules.
+ */
+export function setSnapshotLineage(
+  session: SessionState,
+  params: {
+    scopeSource: SnapshotState | undefined;
+    keptCurrentSnapshot: boolean;
+    previousGeneration: number | undefined;
+  },
+): void {
+  session.snapshotScopeSource = params.scopeSource;
+  session.snapshotGeneration = params.keptCurrentSnapshot
+    ? params.previousGeneration
+    : nextSnapshotGeneration(params.previousGeneration);
+}
+
+/**
  * Advance `snapshotGeneration` (#1076 versioned refs). The FIRST bump of a
  * session lifetime seeds at a random 6-digit base instead of 1: a reopened
  * session restarts its counter, so a per-lifetime count starting at 1 would
@@ -46,7 +82,7 @@ export function setSessionSnapshot(session: SessionState, snapshot: SnapshotStat
  * Within a lifetime the counter stays strictly monotonic (+1 per replacement),
  * so pinned-vs-current comparisons remain exact.
  */
-export function nextSnapshotGeneration(current: number | undefined): number {
+function nextSnapshotGeneration(current: number | undefined): number {
   return current === undefined ? randomInt(100_000, 1_000_000) : current + 1;
 }
 
@@ -76,18 +112,12 @@ export function markSessionPartialRefsIssued(session: SessionState, refs: Iterab
   // below. Build the scope before touching anything so a no-ref result is a
   // true no-op.
   if (scope.size === 0) return;
-  session.refFrameState = 'active';
-  session.refFrameScope = scope;
-  // ADR 0014: retain the tree this partial result published from as the frame's
-  // immutable source (shared reference — the caller already stored it via
-  // setSessionSnapshot). Interaction guards and replay identity can depend on
-  // ancestors, siblings, and viewport outside the emitted subset, so the whole
-  // tree is kept while the issuance set bounds authority.
-  session.refFrameTree = session.snapshot;
-  // Freeze the epoch the client is handed (the response-level refsGeneration),
-  // so a later read-only capture that bumps the observation counter cannot
-  // invalidate a correct pin from this frame.
-  session.refFrameGeneration = session.snapshotGeneration;
+  // The frame transition itself belongs to ref-frame.ts, which owns all four fields: the
+  // tree retained as the frame's immutable source (interaction guards and replay identity
+  // depend on ancestors, siblings and viewport outside the emitted subset, so the whole
+  // tree is kept while the issuance set bounds authority) and the frozen epoch that keeps
+  // a later read-only capture from invalidating a correct pin from this frame.
+  activatePartialRefFrame(session, scope);
 }
 
 /**
