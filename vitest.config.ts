@@ -16,6 +16,12 @@ export const SUBPROCESS_STUB_TESTS = [
   'src/platforms/apple/core/__tests__/index.test.ts',
   // Stubs npx + the package managers on PATH and spawns a real Metro dev server per case.
   'src/__tests__/client-metro.test.ts',
+  // Proves the parser fuzz harness still fails (#1414): every case spawns a node subprocess or a
+  // worker thread and one target is a deliberate hang, so it waits real watchdog time.
+  'scripts/fuzz/harness.test.ts',
+  // Replays the fuzz regression corpus (#1414) through that same worker watchdog, so a promoted
+  // hang case fails against its per-case budget instead of wedging the unit job.
+  'scripts/fuzz/corpus-replay.test.ts',
 ];
 
 export default defineConfig({
