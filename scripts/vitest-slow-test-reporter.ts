@@ -1,4 +1,5 @@
 import type { Reporter, TestCase, TestModule } from 'vitest/node';
+import { recordRunBlocker } from './lib/run-blocker-bus.ts';
 
 /**
  * Slow-test ratchet (see docs/agents/testing.md "Speed rules").
@@ -99,6 +100,10 @@ export default function slowTestGateReporter(): Reporter {
       // eslint-disable-next-line no-console
       if (reportSlowTests(offenders, (message) => console.error(message))) {
         process.exitCode = 1;
+        recordRunBlocker({
+          kind: 'slow-test gate',
+          detail: `${offenders.filter((offender) => offender.enforce).length} test(s) exceeded the wall-clock budget`,
+        });
       }
     },
   };
