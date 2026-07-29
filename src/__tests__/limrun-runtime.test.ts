@@ -29,6 +29,10 @@ const limrunMockState = vi.hoisted(() => {
     iosLaunchApp: vi.fn(async () => undefined),
     iosOpenUrl: vi.fn(async () => undefined),
     iosSetOrientation: vi.fn(async () => undefined),
+    iosListApps: vi.fn(async () => [
+      { bundleId: 'com.apple.Preferences', name: 'Settings', installType: 'System' },
+      { bundleId: 'com.example.ios', name: 'Example', installType: 'User' },
+    ]),
     androidOpenUrl: vi.fn(async () => undefined),
     androidDisconnect: vi.fn(),
     androidSendAsset: vi.fn(async () => undefined),
@@ -91,6 +95,13 @@ vi.mock('@limrun/api/ios-client', () => ({
     launchApp: limrunMockState.iosLaunchApp,
     openUrl: limrunMockState.iosOpenUrl,
     setOrientation: limrunMockState.iosSetOrientation,
+    listApps: limrunMockState.iosListApps,
+    deviceInfo: {
+      udid: 'ios-device',
+      screenWidth: 402,
+      screenHeight: 874,
+      model: 'iPhone',
+    },
   })),
 }));
 
@@ -135,7 +146,12 @@ test('Limrun runtime identifies direct CLI usage to the Limrun API', async () =>
   try {
     const allocateLease = runtime.leaseLifecycle.allocate;
     if (!allocateLease) throw new Error('Limrun runtime must provide lease allocation');
-    await allocateLease(lease);
+    const allocation = await allocateLease(lease);
+    const device = allocation?.device as DeviceInfo | undefined;
+    if (!device) throw new Error('Limrun runtime must expose its allocated device');
+    const deviceSession = runtime.getDeviceSession(device);
+    assert.equal(deviceSession?.platform, 'ios');
+    assert.equal(deviceSession ? 'client' in deviceSession : true, false);
 
     assert.deepEqual(limrunMockState.constructorOptions[0]?.defaultHeaders, {
       'x-agent-device-client': 'agent-device-cli',
