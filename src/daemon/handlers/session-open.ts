@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { dispatchCommand, resolveTargetDevice } from '../../core/dispatch.ts';
-import { isDeepLinkTarget } from '../../contracts/open-target.ts';
 import type { SessionSurface } from '../../contracts/session-surface.ts';
 import { contextFromFlags } from '../context.ts';
 import { createRequestCanceledError, isRequestCanceled } from '../../request/cancel.ts';
@@ -38,6 +37,10 @@ import { withKeyedLock } from '../../utils/keyed-lock.ts';
 import { emitDiagnostic, getDiagnosticsMeta } from '../../utils/diagnostics.ts';
 import { isActiveProviderDevice } from '../../provider-device-runtime.ts';
 import { inferAndroidPackageAfterOpen } from './session-open-target.ts';
+import {
+  buildSessionOpenLaunchPlan,
+  dispatchSessionOpenFollowUpLaunchUrl,
+} from './session-open-launch-url.ts';
 import { buildOpenTargetDeviceResolutionOptions } from '../open-device-selection.ts';
 import {
   invalidOpenArgs,
@@ -125,39 +128,6 @@ async function relaunchCloseApp(params: {
   }
   await dispatchCommand(device, 'close', [closeTarget], outFlag, context);
   await settleIosSimulator(device, IOS_SIMULATOR_POST_CLOSE_SETTLE_MS);
-}
-
-async function maybeApplySessionLaunchUrl(params: {
-  runtime: SessionRuntimeHints | undefined;
-  device: DeviceInfo;
-  req: DaemonRequest;
-  logPath: string;
-  appBundleId?: string;
-  traceLogPath?: string;
-  openPositionals: string[];
-}): Promise<void> {
-  const { runtime, device, req, logPath, appBundleId, traceLogPath, openPositionals } = params;
-  const launchUrl = runtime?.launchUrl;
-  if (!launchUrl) return;
-  if (openPositionals.length === 0) return;
-  if (openPositionals.length > 1) return;
-  const openTarget = openPositionals[0]?.trim();
-  if (!openTarget || isDeepLinkTarget(openTarget)) return;
-  await dispatchCommand(device, 'open', [launchUrl], req.flags?.out, {
-    ...contextForRuntimeLaunchUrl(logPath, req.flags, appBundleId, traceLogPath),
-  });
-}
-
-function contextForRuntimeLaunchUrl(
-  logPath: string,
-  flags: DaemonRequest['flags'],
-  appBundleId?: string,
-  traceLogPath?: string,
-): ReturnType<typeof contextFromFlags> {
-  const context = contextFromFlags(logPath, flags, appBundleId, traceLogPath);
-  delete context.launchConsole;
-  delete context.launchArgs;
-  return context;
 }
 
 // Default-on for emulators, opt-in via --test-ime on real devices; --no-test-ime forces off.
@@ -300,21 +270,17 @@ async function completeOpenCommand(params: {
     schedulePrewarm();
   }
 
-  // Local iOS simulators relaunch with one `simctl launch --terminate-running-process`
-  // instead of terminate + settle + launch (~1s per relaunch). Provider simulators
-  // must dispatch an explicit close because their interactors own app termination.
-  // Runtime hints written below are user-defaults reads at that launch, so ordering holds.
-  // Only the single app-launch form collapses: `open <app> <url>` dispatches
-  // through the URL path, where a deep-link open never launches the app and
-  // so cannot carry the terminate; those keep the close-first ordering, as
-  // does --clear-app-state, which must never mutate a running app's container.
+  const usesLocalIosSimulatorLifecycle = isIosSimulator(device) && !isActiveProviderDevice(device);
+  const launchPlan = buildSessionOpenLaunchPlan({
+    openPositionals,
+    runtime,
+    flags: req.flags,
+    foldRuntimeLaunchUrl: usesLocalIosSimulatorLifecycle,
+  });
+  // Local simulators terminate inside the Apple open path. Provider simulators
+  // keep explicit close/open dispatches, and clear-state must mutate a stopped app.
   const collapseSimulatorRelaunch =
-    shouldRelaunch &&
-    Boolean(openTarget) &&
-    openPositionals.length === 1 &&
-    isIosSimulator(device) &&
-    !isActiveProviderDevice(device) &&
-    req.flags?.clearAppState !== true;
+    shouldRelaunch && usesLocalIosSimulatorLifecycle && req.flags?.clearAppState !== true;
   if (
     shouldRunRelaunchPreClose({
       shouldRelaunch,
@@ -379,22 +345,23 @@ async function completeOpenCommand(params: {
   // its visible surface. Expire that session's frame before the first
   // close/launch dispatch; a fresh first open has no prior frame to expire.
   if (openDispatchSession) expireRefFrame(openDispatchSession);
-  await dispatchCommand(device, 'open', openPositionals, req.flags?.out, {
+  await dispatchCommand(device, 'open', launchPlan.openPositionals, req.flags?.out, {
     ...contextFromFlags(logPath, req.flags, sessionAppBundleId),
     ...(collapseSimulatorRelaunch ? { terminateRunningApp: true } : {}),
   });
   timing.openDispatchDurationMs = Math.max(0, Date.now() - openStartedAtMs);
   await maybeActivateAndroidTestImeForOpen(device, req, sessionStore.resolveDaemonStateDir());
   const launchUrlStartedAtMs = Date.now();
-  await maybeApplySessionLaunchUrl({
-    runtime,
-    device,
-    req,
-    logPath,
-    appBundleId: sessionAppBundleId,
-    traceLogPath,
-    openPositionals,
-  });
+  if (launchPlan.followUpLaunchUrl) {
+    await dispatchSessionOpenFollowUpLaunchUrl({
+      launchUrl: launchPlan.followUpLaunchUrl,
+      device,
+      req,
+      logPath,
+      appBundleId: sessionAppBundleId,
+      traceLogPath,
+    });
+  }
   timing.launchUrlDurationMs = Math.max(0, Date.now() - launchUrlStartedAtMs);
   if (shouldPrewarmIosRunner && !runnerPrewarmScheduled) {
     schedulePrewarm();
