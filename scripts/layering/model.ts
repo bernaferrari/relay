@@ -14,6 +14,13 @@ export type ResolvedImportEdge = ImportEdge & {
   toZone: string;
 };
 
+export type LayeringViolation = {
+  rule: string;
+  file: string;
+  line: number;
+  message: string;
+};
+
 export type BackEdgeMap = Record<string, string[]>;
 
 // The ranked target spine. Back-edge detection is defined ONLY between two ranked
@@ -344,8 +351,6 @@ export function collectBackEdges(edges: readonly ResolvedImportEdge[]): BackEdge
  * self-contained slice. Dynamic edges are excluded deliberately: a dynamic import is a lazy seam,
  * and a loop through one is not a comprehension barrier in the same way.
  *
- * Returned as a single number because that is all R9 ratchets.
- *
  * Floor semantics, which are specified rather than incidental: only files that participate in at
  * least one non-dynamic edge are considered, so an acyclic graph reports 1 (every such file is its
  * own trivial component) and a graph whose only edges are dynamic reports 0 (no file enters the
@@ -357,7 +362,7 @@ export function largestTypeCycleSize(edges: readonly ResolvedImportEdge[]): numb
 }
 
 /** Members of the largest value+type strongly-connected component, sorted. */
-function largestTypeCycleMembers(edges: readonly ResolvedImportEdge[]): string[] {
+export function largestTypeCycleMembers(edges: readonly ResolvedImportEdge[]): string[] {
   const successors = new Map<string, string[]>();
   for (const edge of edges) {
     if (edge.dynamic) continue;
