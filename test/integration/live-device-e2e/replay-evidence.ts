@@ -23,8 +23,10 @@ export function assertReplayCommands(
 }
 
 export function replayAttemptTimeoutMs(replayPath: string): number {
-  const script = fs.readFileSync(replayPath, 'utf8');
-  return readReplayScriptMetadata(script).timeoutMs ?? DEFAULT_REPLAY_TIMEOUT_MS;
+  return (
+    readReplayScriptMetadata(fs.readFileSync(replayPath, 'utf8')).timeoutMs ??
+    DEFAULT_REPLAY_TIMEOUT_MS
+  );
 }
 
 export function replaySuiteHostTimeoutMs(replayPaths: readonly string[], retries: number): number {

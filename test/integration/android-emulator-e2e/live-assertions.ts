@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict';
-
 import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
 import type { RawSnapshotNode } from '@agent-device/kernel/snapshot';
 import type { SnapshotDiffLine } from '../../../src/snapshot/snapshot-diff.ts';
 import {
   assertFilesDiffer,
   assertJsonContains,
+  assertMp4File,
+  assertNonEmptyFile,
   createLiveDeviceAssertions,
 } from '../live-device-e2e/assertions.ts';
 import type { CliJsonResult } from '../cli-json.ts';
 import type { AndroidEmulatorBehaviorId } from './behavior-coverage.ts';
 import { type LiveContext, runStep, verifyCommand } from './live-harness.ts';
 
-export { assertFilesDiffer, assertJsonContains };
+export { assertFilesDiffer, assertJsonContains, assertMp4File, assertNonEmptyFile };
 
 export const { assertElementText, assertWaitSelector, assertWaitText, capturePng } =
   createLiveDeviceAssertions<AndroidEmulatorBehaviorId, LiveContext>(
