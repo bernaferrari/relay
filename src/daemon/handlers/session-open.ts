@@ -592,9 +592,10 @@ async function openNewSessionWithAdvisoryClaim(params: {
       await rollbackNewSessionClaim(localClaim.ownership, effects);
       return details.response;
     }
-    // Preparation above is validation-only. `completeOpenCommand` can prewarm a runner,
-    // relaunch-close an app, or write runtime hints before its main open dispatch, so a
-    // failure from that point cannot prove the device is unchanged.
+    // Preparation can boot the device or warm caches, but it cannot establish session
+    // ownership. `completeOpenCommand` can relaunch-close an app or write runtime hints
+    // before its main open dispatch, so a failure from that point cannot prove ownership
+    // was not established.
     effects.mayHaveStarted = true;
     const response = await completeOpenCommand({
       req,
@@ -680,6 +681,7 @@ export async function handleOpenCommand(params: {
     }
 
     const device = await refreshSessionDeviceIfNeeded(session.device);
+    await req.internal?.retainDeviceExecutionLock?.(device.id);
     const details = await prepareOpenCommandDetails({
       req,
       sessionName,
@@ -740,6 +742,7 @@ export async function handleOpenCommand(params: {
     req.flags ?? {},
     buildOpenTargetDeviceResolutionOptions(openTarget),
   );
+  await req.internal?.retainDeviceExecutionLock?.(device.id);
   const surfaceResult = resolveOpenSurfaceResponse(device, req.flags?.surface, openTarget);
   if (typeof surfaceResult !== 'string') {
     return surfaceResult;
