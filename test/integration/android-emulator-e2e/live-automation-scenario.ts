@@ -164,6 +164,7 @@ export async function assertAutomationSystem(context: LiveContext): Promise<void
   verifyCommand(context, C.alert, 'alert wait/get/dismiss/accept produce fixture-visible results');
 
   await assertHomeAndRecentsRestoration(context);
+  await runStep(context, 'reveal Android alert canary for diff baseline', ['scroll', 'down', '1']);
   await runStep(context, 'establish automation diff baseline', ['snapshot', '-i']);
   await runStep(context, 'return from automation route with Back', ['back']);
   const diff = await runStep(context, 'observe automation-to-settings diff', [
@@ -176,6 +177,11 @@ export async function assertAutomationSystem(context: LiveContext): Promise<void
   await assertWaitText(context, 'Settings');
   verifyCommand(context, C.diff, 'snapshot diff reports the Automation-to-Settings transition');
   verifyCommand(context, C.back, 'Android Back returns from automation route to Settings');
+  verifyBehavior(
+    context,
+    'safe-back-navigation',
+    'Back returned from the automation route to the fixture Settings tab without opening system navigation',
+  );
 }
 
 async function assertOrientationFixtureState(
@@ -206,6 +212,7 @@ async function assertHomeAndRecentsRestoration(context: LiveContext): Promise<vo
   verifyCommand(context, C.appSwitcher, 'Recents pixels differ from Home system surface');
 
   await runStep(context, 'restore fixture after Android system UI', ['open', context.appId]);
+  await runStep(context, 'restore automation route top after Android system UI', ['scroll', 'top']);
   await assertWaitSelector(context, 'id="automation-open-sheet"');
   const restored = await runStep(context, 'verify restored Android fixture foreground state', [
     'appstate',

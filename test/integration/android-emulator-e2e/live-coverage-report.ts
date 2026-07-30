@@ -28,6 +28,7 @@ export function assertCoverageComplete(
 export function writeCoverageReport(context: LiveContext): string {
   return writeLiveCoverageReport(context, {
     classificationSummary: ANDROID_EMULATOR_COVERAGE_CLASSIFICATION_SUMMARY,
+    tier: context.tier,
   });
 }
 
