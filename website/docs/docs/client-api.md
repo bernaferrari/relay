@@ -1,23 +1,44 @@
 ---
-title: Typed Client
+title: Node.js API
 ---
 
-# Typed Client
+# Node.js API
 
-Use `createAgentDeviceClient()` when you want to drive the daemon from application code instead of shelling out to the CLI.
+Use `createAgentDeviceClient()` to give a Node.js agent typed access to device automation instead of shelling out to the CLI. Its methods can be exposed as model tools, called from deterministic orchestration code, or combined with another Node.js agent framework.
 
-For remote Metro-backed flows, import the reusable Node APIs instead of spawning the `agent-device` binary. The CLI uses the same helpers internally.
+Start with the [AI SDK](/docs/ai-sdk) or [Eve](/docs/eve) integration guide for complete tool-calling examples. The client is framework-neutral, so the same pattern works with other solutions that accept JavaScript or TypeScript functions as tools.
 
-Public subpath API exposed for Node consumers:
+## Runnable examples
+
+The repository includes [runnable, typechecked Node.js examples](https://github.com/callstack/agent-device/tree/main/examples/sdk) that import the same published `agent-device/*` entry points used by consumers:
+
+| Example | Demonstrates |
+| --- | --- |
+| [`client-session.ts`](https://github.com/callstack/agent-device/blob/main/examples/sdk/client-session.ts) | Open, snapshot, interact, handle typed errors, and always close the session |
+| [`contracts-result.ts`](https://github.com/callstack/agent-device/blob/main/examples/sdk/contracts-result.ts) | Consume snapshot results with helpers from `agent-device/contracts` |
+| [`batch-orchestration.ts`](https://github.com/callstack/agent-device/blob/main/examples/sdk/batch-orchestration.ts) | Run a batch through a custom transport |
+| [`metro-runtime.ts`](https://github.com/callstack/agent-device/blob/main/examples/sdk/metro-runtime.ts) | Normalize a Metro URL and resolve runtime transport hints |
+
+The examples are checked against the source SDK using their dedicated [`tsconfig.json`](https://github.com/callstack/agent-device/blob/main/examples/sdk/tsconfig.json). After building the package with `pnpm build`, run an example directly with Node:
+
+```bash
+node --experimental-strip-types examples/sdk/client-session.ts
+```
+
+## API reference
+
+Supported public entry points for Node consumers:
 
 - `agent-device`
   - `createAgentDeviceClient(options?)`
   - `createLocalArtifactAdapter(options?)`
   - `AppError`, `isAgentDeviceError(error)`, `normalizeAgentDeviceError(error)`
   - `centerOfRect(rect)`
-  - root types are limited to the typed client contracts used by hosted adapters, such as `AppListOptions`, `BackCommandOptions`, `ScrollOptions`, and command result types.
 - `agent-device/io`
-  - artifact adapter types, file input refs, and file output refs
+  - `createLocalArtifactAdapter(options?)`
+  - types: `ArtifactAdapter`, `ArtifactDescriptor`, `CreateTempFileOptions`, `FileInputRef`,
+    `FileOutputRef`, `LocalArtifactAdapterOptions`, `OutputVisibility`, `ReserveOutputOptions`,
+    `ReservedOutputFile`, `ResolveInputOptions`, `ResolvedInputFile`, `TemporaryFile`
 - `agent-device/metro`
   - `buildBundleUrl(baseUrl, platform)`
   - `normalizeBaseUrl(baseUrl)`
@@ -48,6 +69,7 @@ Public subpath API exposed for Node consumers:
   - `parseFindArgs(args)`
   - types: `FindMatchOptions`
 - `agent-device/install-source`
+  - `ARCHIVE_EXTENSIONS`
   - `isTrustedInstallSourceUrl(sourceUrl)`
   - `validateDownloadSourceUrl(url)`
   - types: `MaterializeInstallSource`
@@ -68,46 +90,16 @@ Public subpath API exposed for Node consumers:
   - `new LimrunRuntime(options)`
   - `runtime.getDeviceSession(device)`
   - types: `LimrunRuntimeOptions`, `LimrunDeviceSession`, `LimrunAndroidDeviceSession`,
-    `LimrunIosDeviceSession`, `AndroidAdbProvider`, `AndroidKeyboardState`,
-    `AndroidKeyboardDismissResult`
-
-The `contracts`, `selectors`, `finders`, `install-source`, `android-adb`, `limrun`, `artifacts`, `batch`, `metro`, `remote-config`, and `io` subpaths are the supported Node entry points. The former compatibility subpaths `agent-device/android-apps` and `agent-device/daemon`, plus hosted-runtime subpaths `agent-device/cloud-webdriver`, `agent-device/commands`, `agent-device/backend`, `agent-device/testing/conformance`, and `agent-device/observability`, are not published.
+    `LimrunIosDeviceSession`, `LimrunForegroundApp`, `LimrunInstalledApp`,
+    `LimrunIosCommandExecution`, `LimrunIosCommandResult`, `LimrunRecordingQuality`,
+    `LimrunIosRemoteInstallOptions`, `LimrunIosRemoteInstallResult`, `AndroidAdbProvider`,
+    `AndroidKeyboardState`, `AndroidKeyboardDismissResult`
 
 ## Basic usage
 
-```ts
-import { createAgentDeviceClient } from 'agent-device';
+The canonical client example is embedded below. It is also runnable from [`examples/sdk/client-session.ts`](https://github.com/callstack/agent-device/blob/main/examples/sdk/client-session.ts).
 
-const client = createAgentDeviceClient({
-  session: 'qa-ios',
-  lockPolicy: 'reject',
-  lockPlatform: 'ios',
-});
-
-const devices = await client.devices.list({ platform: 'ios' });
-const capabilities = await client.devices.capabilities({ platform: 'ios' });
-const apps = await client.apps.list({ platform: 'ios' });
-const device = devices.find((candidate) => candidate.name === 'iPhone 16') ?? devices[0];
-if (!device) {
-  throw new Error('No iOS device available');
-}
-if (!capabilities.availableCommands.includes('snapshot')) {
-  throw new Error('Selected target does not support snapshots');
-}
-
-await client.apps.open({
-  app: 'com.apple.Preferences',
-  platform: 'ios',
-  udid: device.id,
-  runtime: {
-    metroHost: '127.0.0.1',
-    metroPort: 8081,
-  },
-});
-
-const snapshot = await client.capture.snapshot({ interactiveOnly: true });
-
-await client.sessions.close();
+```ts file="<root>/../examples/sdk/client-session.ts"
 ```
 
 `client.devices.capabilities()` returns `{ device, availableCommands }`, using the same capability matrix as the CLI. Use it when a dynamic integration needs to decide which command names are valid for the selected target.
@@ -267,6 +259,7 @@ Vega OS client support is currently VVD-only and covers device discovery, app op
 Supported command methods:
 
 - `wait`
+- `alert`
 - `appState`
 - `back`
 - `home`
@@ -275,20 +268,27 @@ Supported command methods:
 - `keyboard`
 - `clipboard`
 - `tvRemote`
-- `alert`
+- `reactNative`
+- `doctor`
+- `prepare`
+- `viewport`
 
-Additional CLI-backed methods are exposed on their domain groups with typed option objects so Node consumers do not need to build raw daemon requests:
+The deprecated `rotate()` alias remains available for compatibility; use `orientation()` in new integrations.
 
-- `client.devices.boot()`
-- `client.devices.capabilities()`
-- `client.devices.shutdown()`
-- `client.apps.push()`
-- `client.apps.triggerEvent()`
-- `client.capture.diff()`
-- `client.interactions.click()`, `press()`, `longPress()`, `swipe()`, `pan()`, `fling()`, `focus()`, `type()`, `fill()`, `scroll()`, `pinch()`, `rotateGesture()`, `transformGesture()`, `get()`, `is()`, `find()`
+The complete domain-client method map is:
+
+- `client.devices.list()`, `capabilities()`, `boot()`, `shutdown()`
+- `client.sessions.list()`, `stateDir()`, `close()`, `saveScript()`, `artifacts()`
+- `client.apps.install()`, `reinstall()`, `installFromSource()`, `list()`, `open()`, `close()`, `push()`, `triggerEvent()`
+- `client.materializations.release()`
+- `client.leases.allocate()`, `heartbeat()`, `release()`
+- `client.metro.prepare()`, `reload()`
+- `client.capture.snapshot()`, `screenshot()`, `diff()`
+- `client.interactions.click()`, `press()`, `longPress()`, `swipe()`, `pan()`, `fling()`, `swipeGesture()`, `focus()`, `type()`, `fill()`, `scroll()`, `pinch()`, `rotateGesture()`, `transformGesture()`, `get()`, `is()`, `find()`
 - `client.replay.run()` and `client.replay.test()`
 - `client.batch.run()`
 - `client.observability.perf()`, `logs()`, `events()`, `network()`, and `audio()`
+- `client.debug.symbols()`
 - `client.recording.record()` and `client.recording.trace()`
 - `client.settings.update()`
 
@@ -331,21 +331,9 @@ executor.
 
 Use `agent-device/batch` when a bridge or in-process runner receives daemon-shaped requests but owns command dispatch itself. The helper keeps validation, inherited flags, serial execution, partial results, and error envelopes aligned with the daemon batch command.
 
-```ts
-import { runBatch } from 'agent-device/batch';
-import type { DaemonResponse } from 'agent-device/contracts';
+The standalone custom-transport example is embedded below from [`examples/sdk/batch-orchestration.ts`](https://github.com/callstack/agent-device/blob/main/examples/sdk/batch-orchestration.ts).
 
-type BatchRequest = Parameters<typeof runBatch>[0];
-
-async function handleBatch(req: BatchRequest): Promise<DaemonResponse> {
-  return await runBatch(req, req.session ?? 'default', async (stepReq) => {
-    try {
-      return { ok: true, data: await dispatch(stepReq) };
-    } catch (error) {
-      return bridgeErrorToDaemonResponse(error);
-    }
-  });
-}
+```ts file="<root>/../examples/sdk/batch-orchestration.ts"
 ```
 
 ## Android `installFromSource()`
