@@ -31,7 +31,6 @@ export type BackEdgeMap = Record<string, string[]>;
 // ranked here or listed as unranked — `unclassifiedZones` and `model.test.ts` guard
 // that no zone is silently unclassified.
 const TARGET_DAG_RANK = new Map([
-  ['kernel', 0],
   ['cloud-webdriver', 1],
   ['contracts', 1],
   ['platforms', 1],
@@ -79,7 +78,10 @@ export function zoneRank(zone: string): number | null {
 // invent an order the architecture had not committed to. Once `utils` joined the spine and
 // `(root)` was emptied of shared contracts, every one of them turned out to have a
 // consistent rank already — so the order was there, just unasserted.
-export const UNRANKED_ZONES: ReadonlySet<string> = new Set(['(root)']);
+// 'kernel' is unranked because it is no longer a src/ zone at all: it lives in
+// packages/kernel (#1490 W0), R11 package-boundaries owns that seam, and its
+// zone name only appears in graphs that follow workspace specifiers.
+export const UNRANKED_ZONES: ReadonlySet<string> = new Set(['(root)', 'kernel']);
 
 export type ZoneClassification = 'ranked' | 'unranked' | 'unclassified';
 
@@ -156,6 +158,8 @@ export function parseImports(source: string): ImportEdge[] {
 }
 
 export function topFolder(file: string): string {
+  const packageMatch = /^packages\/([^/]+)\//.exec(file);
+  if (packageMatch) return packageMatch[1]!;
   const match = /^src\/([^/]+)\//.exec(file);
   return match ? match[1]! : '(root)';
 }
@@ -183,7 +187,27 @@ function resolveTargetFile(
   fromFile: string,
   spec: string,
   sourceFiles: ReadonlySet<string>,
+  workspaceExportTargets?: ReadonlyMap<string, string>,
 ): string | null {
+  if (spec.startsWith('@agent-device/')) {
+    // Workspace specifier (#1490 W0). Real runs pass the exports-derived map
+    // (workspaceSpecifierTargets), which is authoritative — it handles '.'
+    // facade exports and any source layout. The positional fallback exists
+    // only for map-less fixtures (the P0-pinned depgraph contract) and cannot
+    // resolve a bare facade specifier by construction.
+    if (workspaceExportTargets) {
+      const target = workspaceExportTargets.get(spec);
+      return target !== undefined && sourceFiles.has(target) ? target : null;
+    }
+    const [name, ...subParts] = spec.slice('@agent-device/'.length).split('/');
+    const sub = subParts.join('/');
+    if (!name || !sub) return null;
+    return (
+      [`packages/${name}/src/${sub}.ts`, `src/${name}/${sub}.ts`].find((candidate) =>
+        sourceFiles.has(candidate),
+      ) ?? null
+    );
+  }
   if (!spec.startsWith('.')) return null;
   const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), spec));
   if (!resolved.startsWith('src/')) return null;
@@ -196,12 +220,15 @@ function resolveTargetFile(
   return candidates.find((candidate) => sourceFiles.has(candidate)) ?? null;
 }
 
-export function resolveImportEdges(sources: ReadonlyMap<string, string>): ResolvedImportEdge[] {
+export function resolveImportEdges(
+  sources: ReadonlyMap<string, string>,
+  workspaceExportTargets?: ReadonlyMap<string, string>,
+): ResolvedImportEdge[] {
   const sourceFiles = new Set(sources.keys());
   const edges: ResolvedImportEdge[] = [];
   for (const [file, source] of sources) {
     for (const edge of parseImports(source)) {
-      const target = resolveTargetFile(file, edge.spec, sourceFiles);
+      const target = resolveTargetFile(file, edge.spec, sourceFiles, workspaceExportTargets);
       if (!target) continue;
       edges.push({
         ...edge,
