@@ -22,7 +22,7 @@ import {
   type AppErrorCode,
   type Rect,
   type SnapshotNode,
-} from '../kernel/contracts.ts';
+} from '@agent-device/kernel/contracts';
 
 const invalidArgsCode = 'INVALID_ARGS' satisfies AppErrorCode;
 const rect = { x: 1, y: 2, width: 3, height: 4 } satisfies Rect;
@@ -36,7 +36,7 @@ const node = {
 
 test('public contracts error helpers do not load diagnostics module', () => {
   const errorsSource = fs.readFileSync(
-    path.join(import.meta.dirname, '..', 'kernel', 'errors.ts'),
+    path.join(import.meta.dirname, '..', '..', 'packages', 'kernel', 'src', 'errors.ts'),
     'utf8',
   );
 
