@@ -14,7 +14,6 @@ import {
   compareScreenshots,
   type ScreenshotDiffResult,
 } from '../../../screenshot-diff/screenshot-diff.ts';
-import type { DiffScreenshotCommandResult } from '../../../contracts/diff.ts';
 import { attachCurrentOverlayMatches } from '../../../screenshot-diff/screenshot-diff-overlay-matches.ts';
 import type { RuntimeCommand } from '../../runtime-types.ts';
 import {
@@ -38,7 +37,9 @@ export type DiffScreenshotCommandOptions = CommandContext & {
   surface?: BackendScreenshotOptions['surface'];
 };
 
-export type { DiffScreenshotCommandResult } from '../../../contracts/diff.ts';
+export type DiffScreenshotCommandResult = ScreenshotDiffResult & {
+  artifacts?: ArtifactDescriptor[];
+};
 
 const DEFAULT_SCREENSHOT_DIFF_THRESHOLD = 0.1;
 
