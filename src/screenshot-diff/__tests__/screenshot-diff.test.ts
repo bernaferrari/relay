@@ -74,6 +74,10 @@ test('identical images produce match: true with 0% mismatch', async () => {
   assert.equal(result.differentPixels, 0);
   assert.equal(result.mismatchPercentage, 0);
   assert.equal(result.totalPixels, 100);
+  assert.equal(result.ocr, undefined);
+  assert.equal(result.nonTextDeltas, undefined);
+  assert.equal(Object.hasOwn(result, 'ocr'), false);
+  assert.equal(Object.hasOwn(result, 'nonTextDeltas'), false);
   assert.equal(result.dimensionMismatch, undefined);
   assert.equal(result.diffPath, undefined, 'diffPath should not be set when images match');
   // No diff image should be written when images match
@@ -310,8 +314,6 @@ test('dimension mismatch returns expected vs actual sizes', async () => {
   assert.equal(result.mismatchPercentage, 100);
   assert.equal(result.diffPath, undefined, 'diffPath should not be set for dimension mismatch');
   assert.equal(result.regions, undefined);
-  assert.equal(result.ocr, undefined);
-  assert.equal(result.nonTextDeltas, undefined);
   assert.deepEqual(result.dimensionMismatch, {
     expected: { width: 10, height: 20 },
     actual: { width: 15, height: 25 },
