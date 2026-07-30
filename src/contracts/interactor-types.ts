@@ -17,6 +17,7 @@ import type {
 
 export type RunnerContext = {
   requestId?: string;
+  signal?: AbortSignal;
   appBundleId?: string;
   verbose?: boolean;
   logPath?: string;
@@ -30,6 +31,7 @@ export type RunnerContext = {
 /** Subset of {@link RunnerContext} forwarded to runner command invocations. */
 export type RunnerCallOptions = Pick<
   RunnerContext,
+  | 'signal'
   | 'verbose'
   | 'logPath'
   | 'traceLogPath'
@@ -71,6 +73,7 @@ export const MAESTRO_NON_HITTABLE_FALLBACK_MESSAGE = 'tapped via non-hittable co
 
 export type SnapshotOptions = BaseSnapshotOptions & {
   appBundleId?: string;
+  signal?: AbortSignal;
   includeRects?: boolean;
   includeHiddenContentHints?: boolean;
   surface?: SessionSurface;

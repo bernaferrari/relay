@@ -59,6 +59,7 @@ type CaptureSnapshotParams = {
   logPath: string;
   snapshotScope?: string;
   androidFreshnessMode?: AndroidFreshnessMode;
+  signal?: AbortSignal;
 };
 
 type SnapshotData = {
@@ -199,7 +200,7 @@ async function waitForDelayedInteractionSurfaceChange(
 export async function captureSnapshotData(params: CaptureSnapshotParams): Promise<SnapshotData> {
   const { device, session, flags, outPath, logPath, snapshotScope } = params;
   if (device.platform === 'linux') {
-    const linuxResult = await snapshotLinux(session?.surface);
+    const linuxResult = await snapshotLinux(session?.surface, params.signal);
     return shapeDesktopSurfaceSnapshot(
       { nodes: linuxResult.nodes, truncated: linuxResult.truncated, backend: 'linux-atspi' },
       {
@@ -212,6 +213,7 @@ export async function captureSnapshotData(params: CaptureSnapshotParams): Promis
   if (isMacOs(device) && session?.surface && session.surface !== 'app') {
     const helperSnapshot = await runMacOsSnapshotAction(session.surface, {
       bundleId: session.surface === 'menubar' ? session.appBundleId : undefined,
+      signal: params.signal,
     });
     return shapeDesktopSurfaceSnapshot(helperSnapshot, {
       snapshotDepth: flags?.snapshotDepth,
@@ -227,6 +229,7 @@ export async function captureSnapshotData(params: CaptureSnapshotParams): Promis
       session?.trace?.outPath,
     ),
     snapshotIncludeRects: params.includeRects,
+    signal: params.signal,
   })) as SnapshotData;
 }
 
