@@ -1,16 +1,134 @@
-import type {
-  EvidenceCollectionPolicy,
-  GenerationRequest,
-  GenerationResult,
-  JobSummary,
-  JourneyMetadata,
-  RedactionPolicy,
-  RevisionWrite,
-  Revisioned,
-  RunSummary,
-  SensitiveEvidenceChannel,
-  TestVariable,
-} from "./index.js";
+// Keep the operation contract at the bottom of the protocol dependency graph.
+// In particular, do not import from `index.ts`: it re-exports this module and
+// doing so creates a public-barrel cycle. These transport DTOs intentionally
+// describe only the stable wire fields needed by every host.
+type RedactionPolicyDto = {
+  enabled: boolean;
+  source: "default" | "workspace" | "environment";
+  locked: boolean;
+  updatedAt?: number;
+};
+
+type SensitiveEvidenceChannelDto = "audio" | "crash" | "network-body";
+
+type EvidenceCollectionPolicyDto = {
+  schemaVersion: 1;
+  sensitive: Partial<
+    Record<SensitiveEvidenceChannelDto, { grantedAt: number; grantedBy: string; reason: string }>
+  >;
+  updatedAt?: number;
+};
+
+type JobSummaryDto = {
+  id: string;
+  action: string;
+  status: string;
+  queuedAt: number;
+  frameCount: number;
+  [key: string]: unknown;
+};
+
+type RunSummaryDto = JobSummaryDto & {
+  writtenAt: number;
+  artifactCount: number;
+  artifactBytes: number;
+  pinned: boolean;
+  retentionClass: "standard" | "protected";
+};
+
+type RevisionedDto<T> = {
+  revision: number;
+  value: T;
+  updatedAt: number;
+  updatedBy?: string;
+};
+
+type RevisionWriteDto<T> = {
+  expectedRevision: number;
+  value: T;
+  actorId?: string;
+  idempotencyKey?: string;
+};
+
+type TestVariableDto = {
+  id: string;
+  name: string;
+  source: "static" | "list" | "generated";
+  fallback: string;
+  prompt?: string;
+  values?: string[];
+  sensitive?: boolean;
+};
+
+type GenerationRequestDto = {
+  purpose: "variable" | "test-plan";
+  prompt: string;
+  provider?: string;
+  model?: string;
+  count?: number;
+  seed?: number;
+};
+
+type GenerationResultDto = {
+  provider: string;
+  model: string;
+  values: string[];
+  generatedAt: number;
+};
+
+type ProjectDto = {
+  id: string;
+  organizationId: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type BuildDto = {
+  id: string;
+  projectId: string;
+  name: string;
+  platform: "android" | "ios";
+  sourceUrl?: string;
+  status: "uploaded" | "ready" | "failed" | "archived";
+  createdAt: number;
+  updatedAt: number;
+};
+
+type DevicePoolDto = {
+  id: string;
+  projectId: string;
+  name: string;
+  platform: "android" | "ios" | "mixed";
+  deviceSerials: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+type DeviceLeaseDto = {
+  id: string;
+  projectId: string;
+  poolId: string;
+  deviceSerial: string;
+  ownerId: string;
+  status: "leased" | "released" | "expired";
+  leasedAt: number;
+  expiresAt: number;
+  releasedAt?: number;
+};
+
+type JourneyDto = {
+  id: string;
+  title: string;
+  steps: unknown[];
+  [key: string]: unknown;
+};
+
+type CollectionDto = {
+  id: string;
+  title: string;
+  [key: string]: unknown;
+};
 
 export type OperationMode = "query" | "command" | "stream";
 export type OperationIdempotency = "none" | "optional" | "required" | "inherent";
@@ -34,14 +152,14 @@ export type OperationTransport = {
   path: string;
 };
 
-export type OperationDefinition<Id extends string = string> = {
+export type OperationDefinition<Id extends string = string, Input = unknown, Output = unknown> = {
   id: Id;
   version: 1;
   label: string;
   category: OperationCategory;
   mode: OperationMode;
-  input: RuntimeParser<unknown>;
-  output: RuntimeParser<unknown>;
+  input: RuntimeParser<Input>;
+  output: RuntimeParser<Output>;
   idempotency: OperationIdempotency;
   targetCapabilities: readonly string[];
   lease: "none" | "shared" | "exclusive";
@@ -93,16 +211,19 @@ type SpecificOperationMap = {
   "system.health.get": { input: Record<string, never>; output: HealthSummary };
   "workspace.privacy.get": {
     input: Record<string, never>;
-    output: { policy: RedactionPolicy };
+    output: { policy: RedactionPolicyDto };
   };
-  "workspace.privacy.update": { input: { enabled: boolean }; output: { policy: RedactionPolicy } };
+  "workspace.privacy.update": {
+    input: { enabled: boolean };
+    output: { policy: RedactionPolicyDto };
+  };
   "workspace.evidence.get": {
     input: Record<string, never>;
-    output: { policy: EvidenceCollectionPolicy };
+    output: { policy: EvidenceCollectionPolicyDto };
   };
   "workspace.evidence.update": {
-    input: { channel: SensitiveEvidenceChannel; enabled: boolean; reason?: string };
-    output: { policy: EvidenceCollectionPolicy };
+    input: { channel: SensitiveEvidenceChannelDto; enabled: boolean; reason?: string };
+    output: { policy: EvidenceCollectionPolicyDto };
   };
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
   "target.devices.list": { input: Record<string, never>; output: { devices: DeviceSummary[] } };
@@ -120,7 +241,7 @@ type SpecificOperationMap = {
   };
   "job.list": {
     input: { full?: boolean; limit?: number };
-    output: { jobs: JobSummary[]; active?: JobSummary | null };
+    output: { jobs: JobSummaryDto[]; active?: JobSummaryDto | null };
   };
   "job.get": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.start": {
@@ -130,29 +251,78 @@ type SpecificOperationMap = {
   "job.cancel": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
-  "run.list": { input: Record<string, never>; output: { runs: RunSummary[] } };
+  "run.list": { input: Record<string, never>; output: { runs: RunSummaryDto[] } };
   "workspace.variables.get": {
     input: Record<string, never>;
-    output: Revisioned<TestVariable[]>;
+    output: RevisionedDto<TestVariableDto[]>;
   };
   "workspace.variables.update": {
-    input: RevisionWrite<TestVariable[]>;
-    output: Revisioned<TestVariable[]>;
+    input: RevisionWriteDto<TestVariableDto[]>;
+    output: RevisionedDto<TestVariableDto[]>;
   };
   "journey.document.get": {
     input: { journeyId: string };
-    output: Revisioned<JourneyMetadata>;
+    output: RevisionedDto<unknown>;
   };
   "journey.document.update": {
-    input: { journeyId: string; write: RevisionWrite<JourneyMetadata> };
-    output: Revisioned<JourneyMetadata>;
+    input: { journeyId: string } & RevisionWriteDto<unknown>;
+    output: RevisionedDto<unknown>;
   };
-  "generation.create": { input: GenerationRequest; output: GenerationResult };
+  "generation.create": { input: GenerationRequestDto; output: GenerationResultDto };
+  "project.list": { input: Record<string, never>; output: { projects: ProjectDto[] } };
+  "project.save": {
+    input: Pick<ProjectDto, "id" | "name">;
+    output: { project: ProjectDto };
+  };
+  "build.list": { input: Record<string, never>; output: { builds: BuildDto[] } };
+  "build.save": {
+    input: Omit<BuildDto, "projectId" | "createdAt" | "updatedAt">;
+    output: { build: BuildDto };
+  };
+  "device-pool.list": { input: Record<string, never>; output: { pools: DevicePoolDto[] } };
+  "device-pool.save": {
+    input: Omit<DevicePoolDto, "projectId" | "createdAt" | "updatedAt">;
+    output: { pool: DevicePoolDto };
+  };
+  "lease.list": { input: Record<string, never>; output: { leases: DeviceLeaseDto[] } };
+  "lease.create": {
+    input: Pick<DeviceLeaseDto, "poolId" | "deviceSerial" | "ownerId" | "expiresAt">;
+    output: { lease: DeviceLeaseDto };
+  };
+  "lease.release": { input: { leaseId: string }; output: { lease: DeviceLeaseDto } };
+  "journey.list": { input: Record<string, never>; output: { journeys: JourneyDto[] } };
+  "journey.get": { input: { journeyId: string }; output: { journey: JourneyDto } };
+  "journey.create": { input: OperationRecord; output: { journey: JourneyDto } };
+  "journey.update": {
+    input: { journeyId: string } & OperationRecord;
+    output: { journey: JourneyDto };
+  };
+  "journey.delete": { input: { journeyId: string }; output: { ok: true } };
+  "journey.history.restore": {
+    input: { journeyId: string; updatedAt: number };
+    output: { journey: JourneyDto };
+  };
+  "collection.list": { input: Record<string, never>; output: { collections: CollectionDto[] } };
+  "collection.get": {
+    input: { collectionId: string };
+    output: { collection: CollectionDto };
+  };
+  "collection.create": { input: OperationRecord; output: { collection: CollectionDto } };
+  "collection.update": {
+    input: { collectionId: string } & OperationRecord;
+    output: { collection: CollectionDto };
+  };
+  "collection.delete": { input: { collectionId: string }; output: { ok: true } };
+  "collection.restore": {
+    input: { collectionId: string; updatedAt: number };
+    output: { collection: CollectionDto };
+  };
 };
 
 type GenericOperationId =
   | "system.doctor.get"
   | "system.audit.list"
+  | "workspace.apple-device.update"
   | "target.list"
   | "target.create"
   | "target.delete"
@@ -165,30 +335,9 @@ type GenericOperationId =
   | "target.key"
   | "target.scroll"
   | "target.video.start"
-  | "project.list"
-  | "project.save"
-  | "build.list"
-  | "build.save"
-  | "device-pool.list"
-  | "device-pool.save"
-  | "lease.list"
-  | "lease.create"
-  | "lease.release"
-  | "journey.list"
-  | "journey.get"
-  | "journey.create"
-  | "journey.update"
-  | "journey.delete"
+  | "action.run"
   | "journey.import"
-  | "journey.run"
-  | "journey.history.restore"
   | "journey.evidence.save"
-  | "collection.list"
-  | "collection.get"
-  | "collection.create"
-  | "collection.update"
-  | "collection.delete"
-  | "collection.restore"
   | "collection.run"
   | "schedule.list"
   | "schedule.create"
@@ -283,6 +432,26 @@ function objectParser<T extends OperationRecord>(
   };
 }
 
+function arrayFieldParser<T extends OperationRecord>(
+  description: string,
+  field: string,
+): RuntimeParser<T> {
+  return objectParser<T>(description, (input) => {
+    if (!Array.isArray(input[field])) fail(`${description} ${field}`, "must be an array");
+  });
+}
+
+function objectFieldParser<T extends OperationRecord>(
+  description: string,
+  field: string,
+): RuntimeParser<T> {
+  return objectParser<T>(description, (input) => record(input[field], `${description} ${field}`));
+}
+
+const okParser = objectParser<{ ok: true }>("success response", (input) => {
+  if (input.ok !== true) fail("success response ok", "must be true");
+});
+
 const healthParser = objectParser<HealthSummary>("health response", (input) => {
   boolean(input.ok, "health ok");
   string(input.product, "health product");
@@ -320,10 +489,27 @@ const screenshotParser = objectParser<OperationOutput<"target.screenshot.capture
 
 const jobsParser = objectParser<OperationOutput<"job.list">>("jobs response", (input) => {
   if (!Array.isArray(input.jobs)) fail("jobs", "must be an array");
+  for (const item of input.jobs) {
+    const job = record(item, "job summary");
+    string(job.id, "job summary id");
+    string(job.action, "job summary action");
+    string(job.status, "job summary status");
+    number(job.queuedAt, "job summary queuedAt");
+    number(job.frameCount, "job summary frameCount");
+  }
 });
 
 const runsParser = objectParser<OperationOutput<"run.list">>("runs response", (input) => {
   if (!Array.isArray(input.runs)) fail("runs", "must be an array");
+  for (const item of input.runs) {
+    const run = record(item, "run summary");
+    string(run.id, "run summary id");
+    string(run.action, "run summary action");
+    number(run.writtenAt, "run summary writtenAt");
+    number(run.artifactCount, "run summary artifactCount");
+    number(run.artifactBytes, "run summary artifactBytes");
+    boolean(run.pinned, "run summary pinned");
+  }
 });
 
 const serialInputParser = objectParser<{ serial: string | null }>("target selection", (input) => {
@@ -342,10 +528,58 @@ const enabledInputParser = objectParser<{ enabled: boolean }>("enabled input", (
   boolean(input.enabled, "enabled");
 });
 
-const policyParser = objectParser<{ policy: RedactionPolicy | EvidenceCollectionPolicy }>(
-  "policy response",
-  (input) => record(input.policy, "policy"),
+const redactionPolicyParser = objectParser<{ policy: RedactionPolicyDto }>(
+  "redaction policy response",
+  (input) => {
+    const policy = record(input.policy, "redaction policy");
+    boolean(policy.enabled, "redaction enabled");
+    string(policy.source, "redaction source");
+    boolean(policy.locked, "redaction locked");
+  },
 );
+
+const evidencePolicyParser = objectParser<{ policy: EvidenceCollectionPolicyDto }>(
+  "evidence policy response",
+  (input) => {
+    const policy = record(input.policy, "evidence policy");
+    if (policy.schemaVersion !== 1) fail("evidence policy schemaVersion", "must be 1");
+    record(policy.sensitive, "evidence policy sensitive grants");
+  },
+);
+
+const revisionedVariablesParser = objectParser<RevisionedDto<TestVariableDto[]>>(
+  "variables response",
+  (input) => {
+    number(input.revision, "variables revision");
+    number(input.updatedAt, "variables updatedAt");
+    if (!Array.isArray(input.value)) fail("variables value", "must be an array");
+  },
+);
+
+const revisionedJourneyParser = objectParser<RevisionedDto<unknown>>(
+  "Journey document response",
+  (input) => {
+    number(input.revision, "Journey revision");
+    number(input.updatedAt, "Journey updatedAt");
+    record(input.value, "Journey document");
+  },
+);
+
+const generationInputParser = objectParser<GenerationRequestDto>("generation input", (input) => {
+  if (input.purpose !== "variable" && input.purpose !== "test-plan") {
+    fail("generation purpose", "must be variable or test-plan");
+  }
+  string(input.prompt, "generation prompt");
+});
+
+const generationOutputParser = objectParser<GenerationResultDto>("generation response", (input) => {
+  string(input.provider, "generation provider");
+  string(input.model, "generation model");
+  if (!Array.isArray(input.values) || input.values.some((value) => typeof value !== "string")) {
+    fail("generation values", "must be an array of strings");
+  }
+  number(input.generatedAt, "generation generatedAt");
+});
 
 const generic = operationRecordParser;
 
@@ -416,24 +650,31 @@ export const operationDefinitions = [
   query("system.audit.list", "List audit events", "/audit", { category: "system" }),
   query("workspace.privacy.get", "Get privacy policy", "/settings/privacy", {
     input: emptyInputParser,
-    output: policyParser,
+    output: redactionPolicyParser,
   }),
   command("workspace.privacy.update", "Update privacy policy", "PUT", "/settings/privacy", {
     input: enabledInputParser,
-    output: policyParser,
+    output: redactionPolicyParser,
   }),
   query("workspace.evidence.get", "Get evidence policy", "/settings/evidence", {
     input: emptyInputParser,
-    output: policyParser,
+    output: evidencePolicyParser,
   }),
   command("workspace.evidence.update", "Update evidence consent", "PUT", "/settings/evidence", {
     input: objectParser("evidence consent", (input) => {
       string(input.channel, "evidence channel");
       boolean(input.enabled, "evidence enabled");
     }),
-    output: policyParser,
+    output: evidencePolicyParser,
     confirmation: "confirm",
   }),
+  command(
+    "workspace.apple-device.update",
+    "Update Apple device setup",
+    "PUT",
+    "/settings/devices/apple",
+    { confirmation: "confirm" },
+  ),
   query("target.actions.list", "List available actions", "/actions", {
     category: "target",
     input: emptyInputParser,
@@ -501,81 +742,141 @@ export const operationDefinitions = [
     targetCapabilities: ["recording"],
     lease: "shared",
   }),
-  query("project.list", "List projects", "/projects"),
-  command("project.save", "Save project", "POST", "/projects"),
-  query("build.list", "List builds", "/builds"),
-  command("build.save", "Save build", "POST", "/builds"),
-  query("device-pool.list", "List device pools", "/device-pools"),
-  command("device-pool.save", "Save device pool", "POST", "/device-pools"),
-  query("lease.list", "List target leases", "/device-leases"),
-  command("lease.create", "Lease target", "POST", "/device-leases", { confirmation: "confirm" }),
-  command("lease.release", "Release target lease", "POST", "/device-leases/:leaseId/release"),
-  query("workspace.variables.get", "Get project variables", "/project/variables", {
+  query("project.list", "List projects", "/projects", {
     input: emptyInputParser,
+    output: arrayFieldParser("projects response", "projects"),
   }),
-  command("workspace.variables.update", "Update project variables", "PUT", "/project/variables"),
-  query("journey.list", "List Journeys", "/recipes", { category: "authoring" }),
-  query("journey.get", "Get Journey", "/recipes/:journeyId", { category: "authoring" }),
-  command("journey.create", "Create Journey", "POST", "/recipes", { category: "authoring" }),
-  command("journey.update", "Update Journey", "PUT", "/recipes/:journeyId", {
-    category: "authoring",
+  command("project.save", "Save project", "POST", "/projects", {
+    output: objectFieldParser("project response", "project"),
   }),
-  command("journey.delete", "Delete Journey", "DELETE", "/recipes/:journeyId", {
-    category: "authoring",
+  query("build.list", "List builds", "/builds", {
+    input: emptyInputParser,
+    output: arrayFieldParser("builds response", "builds"),
   }),
-  command("journey.import", "Import Journey", "POST", "/recipes/import", {
-    category: "authoring",
+  command("build.save", "Save build", "POST", "/builds", {
+    output: objectFieldParser("build response", "build"),
   }),
-  command("journey.run", "Run Journey", "POST", "/recipes/:journeyId/run", {
+  query("device-pool.list", "List device pools", "/device-pools", {
+    input: emptyInputParser,
+    output: arrayFieldParser("device pools response", "pools"),
+  }),
+  command("device-pool.save", "Save device pool", "POST", "/device-pools", {
+    output: objectFieldParser("device pool response", "pool"),
+  }),
+  query("lease.list", "List target leases", "/device-leases", {
+    input: emptyInputParser,
+    output: arrayFieldParser("leases response", "leases"),
+  }),
+  command("lease.create", "Lease target", "POST", "/device-leases", {
+    confirmation: "confirm",
+    output: objectFieldParser("lease response", "lease"),
+  }),
+  command("lease.release", "Release target lease", "POST", "/device-leases/:leaseId/release", {
+    output: objectFieldParser("lease response", "lease"),
+  }),
+  command("action.run", "Run action and wait", "POST", "/actions/:actionId/run", {
     category: "execution",
     progress: true,
     cancellable: true,
+  }),
+  query("workspace.variables.get", "Get project variables", "/project/variables", {
+    input: emptyInputParser,
+    output: revisionedVariablesParser,
+  }),
+  command("workspace.variables.update", "Update project variables", "PUT", "/project/variables", {
+    output: revisionedVariablesParser,
+  }),
+  query("journey.list", "List Journeys", "/journeys", {
+    category: "authoring",
+    input: emptyInputParser,
+    output: arrayFieldParser("Journeys response", "journeys"),
+  }),
+  query("journey.get", "Get Journey", "/journeys/:journeyId", {
+    category: "authoring",
+    output: objectFieldParser("Journey response", "journey"),
+  }),
+  command("journey.create", "Create Journey", "POST", "/journeys", {
+    category: "authoring",
+    output: objectFieldParser("Journey response", "journey"),
+  }),
+  command("journey.update", "Update Journey", "PUT", "/journeys/:journeyId", {
+    category: "authoring",
+    output: objectFieldParser("Journey response", "journey"),
+  }),
+  command("journey.delete", "Delete Journey", "DELETE", "/journeys/:journeyId", {
+    category: "authoring",
+    output: okParser,
+  }),
+  command("journey.import", "Import Journey", "POST", "/journeys/import", {
+    category: "authoring",
   }),
   command(
     "journey.history.restore",
     "Restore Journey history",
     "POST",
-    "/recipes/:journeyId/history",
+    "/journeys/:journeyId/history",
     {
       category: "authoring",
       confirmation: "confirm",
+      output: objectFieldParser("Journey response", "journey"),
     },
   ),
   command(
     "journey.evidence.save",
     "Save Journey evidence",
     "POST",
-    "/recipes/:journeyId/evidence",
+    "/journeys/:journeyId/evidence",
     {
       category: "evidence",
     },
   ),
-  query("journey.document.get", "Get Journey document", "/recipes/:journeyId/journey", {
+  query("journey.document.get", "Get Journey document", "/journeys/:journeyId/document", {
     category: "authoring",
+    output: revisionedJourneyParser,
   }),
   command(
     "journey.document.update",
     "Update Journey document",
     "PUT",
-    "/recipes/:journeyId/journey",
+    "/journeys/:journeyId/document",
     {
       category: "authoring",
+      output: revisionedJourneyParser,
     },
   ),
-  query("collection.list", "List Collections", "/suites", { category: "authoring" }),
-  query("collection.get", "Get Collection", "/suites/:collectionId", { category: "authoring" }),
-  command("collection.create", "Create Collection", "POST", "/suites", { category: "authoring" }),
-  command("collection.update", "Update Collection", "PUT", "/suites/:collectionId", {
+  query("collection.list", "List Collections", "/collections", {
     category: "authoring",
+    input: emptyInputParser,
+    output: arrayFieldParser("Collections response", "collections"),
   }),
-  command("collection.delete", "Delete Collection", "DELETE", "/suites/:collectionId", {
+  query("collection.get", "Get Collection", "/collections/:collectionId", {
     category: "authoring",
+    output: objectFieldParser("Collection response", "collection"),
   }),
-  command("collection.restore", "Restore Collection", "POST", "/suites/:collectionId/restore", {
+  command("collection.create", "Create Collection", "POST", "/collections", {
     category: "authoring",
-    confirmation: "confirm",
+    output: objectFieldParser("Collection response", "collection"),
   }),
-  command("collection.run", "Run Collection", "POST", "/suites/:collectionId/run", {
+  command("collection.update", "Update Collection", "PUT", "/collections/:collectionId", {
+    category: "authoring",
+    output: objectFieldParser("Collection response", "collection"),
+  }),
+  command("collection.delete", "Delete Collection", "DELETE", "/collections/:collectionId", {
+    category: "authoring",
+    output: okParser,
+  }),
+  command(
+    "collection.restore",
+    "Restore Collection",
+    "POST",
+    "/collections/:collectionId/restore",
+    {
+      category: "authoring",
+      confirmation: "confirm",
+      output: objectFieldParser("Collection response", "collection"),
+    },
+  ),
+  command("collection.run", "Run Collection", "POST", "/collections/:collectionId/run", {
     category: "execution",
     progress: true,
     cancellable: true,
@@ -595,7 +896,7 @@ export const operationDefinitions = [
   command("discovery.create", "Create Discovery Map", "POST", "/discovery", {
     category: "discovery",
   }),
-  command("discovery.rename", "Rename Discovery Map", "POST", "/discovery/:sessionId/rename", {
+  command("discovery.rename", "Rename Discovery Map", "POST", "/discovery/:sessionId/name", {
     category: "discovery",
   }),
   command(
@@ -719,13 +1020,17 @@ export const operationDefinitions = [
   }),
   command("generation.create", "Generate test data", "POST", "/generate", {
     category: "authoring",
+    input: generationInputParser,
+    output: generationOutputParser,
   }),
 ] as const satisfies readonly OperationDefinition<OperationId>[];
 
-export function operationDefinition<Id extends OperationId>(id: Id): OperationDefinition<Id> {
+export function operationDefinition<Id extends OperationId>(
+  id: Id,
+): OperationDefinition<Id, OperationInput<Id>, OperationOutput<Id>> {
   const definition = operationDefinitions.find((candidate) => candidate.id === id);
   if (!definition) throw new Error(`Unknown operation: ${id}`);
-  return definition as OperationDefinition<Id>;
+  return definition as OperationDefinition<Id, OperationInput<Id>, OperationOutput<Id>>;
 }
 
 export function validateOperationDefinitions(

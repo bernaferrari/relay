@@ -19,6 +19,12 @@ import {
   type SensitiveEvidenceChannel,
   type RunSummary,
   type MatrixExpansion,
+  operationDefinition,
+  operationDefinitions,
+  type OperationDefinition,
+  type OperationId,
+  type OperationInput,
+  type OperationOutput,
   type SoakReport,
 } from "@relay/protocol";
 
@@ -38,6 +44,82 @@ export type RelayClientOptions = {
   timeoutMs?: number;
 };
 
+export type InvokeOptions = {
+  signal?: AbortSignal;
+};
+
+function operationRequest<Id extends OperationId>(
+  id: Id,
+  input: OperationInput<Id>,
+): { path: string; init: RequestInit } {
+  const definition = operationDefinition(id);
+  const parsed = definition.input.parse(input);
+  const values = { ...(parsed as Record<string, unknown>) };
+  const path = definition.transport.path.replace(/:([A-Za-z][A-Za-z0-9_]*)/g, (_, key: string) => {
+    const value = values[key];
+    if (typeof value !== "string" || !value) {
+      throw new TypeError(`${id} is missing path parameter ${key}`);
+    }
+    delete values[key];
+    return encodeURIComponent(value);
+  });
+
+  if (definition.transport.method === "GET") {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined || value === null) continue;
+      if (Array.isArray(value)) {
+        for (const item of value) query.append(key, String(item));
+      } else {
+        query.set(key, String(value));
+      }
+    }
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return { path: `${path}${suffix}`, init: { method: "GET" } };
+  }
+
+  return {
+    path,
+    init: {
+      method: definition.transport.method,
+      ...(definition.transport.method === "DELETE" && Object.keys(values).length === 0
+        ? {}
+        : { body: JSON.stringify(values) }),
+    },
+  };
+}
+
+function registeredTransport(
+  path: string,
+  method: string,
+): { definition: OperationDefinition; input: Record<string, unknown> } | null {
+  const url = new URL(path, "http://relay.local");
+  const actual = url.pathname.split("/").filter(Boolean);
+  for (const definition of operationDefinitions) {
+    if (definition.transport.method !== method) continue;
+    const expected = definition.transport.path.split("/").filter(Boolean);
+    if (expected.length !== actual.length) continue;
+    const input: Record<string, unknown> = {};
+    let matches = true;
+    for (let index = 0; index < expected.length; index++) {
+      const segment = expected[index]!;
+      const value = actual[index]!;
+      if (segment.startsWith(":")) input[segment.slice(1)] = decodeURIComponent(value);
+      else if (segment !== value) {
+        matches = false;
+        break;
+      }
+    }
+    if (!matches) continue;
+    for (const key of new Set(url.searchParams.keys())) {
+      const values = url.searchParams.getAll(key);
+      input[key] = values.length === 1 ? values[0]! : values;
+    }
+    return { definition, input };
+  }
+  return null;
+}
+
 export class RelayClient {
   readonly connection: ServerConnection;
   private readonly fetcher: typeof fetch;
@@ -52,7 +134,7 @@ export class RelayClient {
     this.timeoutMs = options.timeoutMs ?? 20_000;
   }
 
-  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async requestUnknown(path: string, init: RequestInit = {}): Promise<unknown> {
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
     headers.set("X-Organization-Id", this.connection.organizationId);
@@ -81,7 +163,76 @@ export class RelayClient {
           : `${response.status} ${response.statusText}`;
       throw new ApiError(response.status, message, body);
     }
-    return body as T;
+    return body;
+  }
+
+  /**
+   * Low-level transport for immutable artifacts and streaming-adjacent
+   * resources that are intentionally not operations. Product mutations must
+   * use `invoke` so both sides enforce the shared runtime contract.
+   */
+  async resource<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const method = (init.method ?? "GET").toUpperCase();
+    const registered = registeredTransport(path, method);
+    if (!registered && method !== "GET") {
+      throw new TypeError(`Unregistered mutation transport: ${method} ${path}`);
+    }
+    if (registered) {
+      let body: unknown = {};
+      if (typeof init.body === "string" && init.body) {
+        try {
+          body = JSON.parse(init.body) as unknown;
+        } catch {
+          throw new TypeError(`Invalid JSON operation body for ${method} ${path}`);
+        }
+      }
+      const bodyRecord =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>)
+          : { value: body };
+      try {
+        registered.definition.input.parse({ ...registered.input, ...bodyRecord });
+      } catch (error) {
+        throw new TypeError(
+          `${registered.definition.id} has invalid input: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const response = await this.requestUnknown(path, init);
+    if (registered) {
+      try {
+        registered.definition.output.parse(response);
+      } catch (error) {
+        throw new ApiError(
+          502,
+          `${registered.definition.id} returned an invalid response: ${error instanceof Error ? error.message : String(error)}`,
+          response,
+        );
+      }
+    }
+    return response as T;
+  }
+
+  async invoke<Id extends OperationId>(
+    id: Id,
+    input: OperationInput<Id>,
+    options: InvokeOptions = {},
+  ): Promise<OperationOutput<Id>> {
+    const definition = operationDefinition(id);
+    const request = operationRequest(id, input);
+    const body = await this.requestUnknown(request.path, {
+      ...request.init,
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    try {
+      return definition.output.parse(body);
+    } catch (error) {
+      throw new ApiError(
+        502,
+        `${id} returned an invalid response: ${error instanceof Error ? error.message : String(error)}`,
+        body,
+      );
+    }
   }
 
   scoped(projectId: string): RelayClient {
@@ -91,33 +242,31 @@ export class RelayClient {
     );
   }
 
-  health<T = unknown>(): Promise<T> {
-    return this.request<T>("/health");
+  health() {
+    return this.invoke("system.health.get", {});
   }
   redactionPolicy(): Promise<{ policy: RedactionPolicy }> {
-    return this.request("/settings/privacy");
+    return this.invoke("workspace.privacy.get", {});
   }
   setRedactionEnabled(enabled: boolean): Promise<{ policy: RedactionPolicy }> {
-    return this.request("/settings/privacy", {
-      method: "PUT",
-      body: JSON.stringify({ enabled }),
-    });
+    return this.invoke("workspace.privacy.update", { enabled });
   }
   evidenceCollectionPolicy(): Promise<{ policy: EvidenceCollectionPolicy }> {
-    return this.request("/settings/evidence");
+    return this.invoke("workspace.evidence.get", {});
   }
   setSensitiveEvidenceConsent(
     channel: SensitiveEvidenceChannel,
     enabled: boolean,
     reason?: string,
   ): Promise<{ policy: EvidenceCollectionPolicy }> {
-    return this.request("/settings/evidence", {
-      method: "PUT",
-      body: JSON.stringify({ channel, enabled, ...(reason ? { reason } : {}) }),
+    return this.invoke("workspace.evidence.update", {
+      channel,
+      enabled,
+      ...(reason ? { reason } : {}),
     });
   }
   async jobs(): Promise<{ jobs: JobSummary[] }> {
-    const body = await this.request<{ jobs?: unknown }>("/jobs?full=0");
+    const body = await this.invoke("job.list", { full: false });
     if (!body || !Array.isArray(body.jobs))
       throw new ApiError(502, "Malformed jobs response", body);
     try {
@@ -127,7 +276,7 @@ export class RelayClient {
     }
   }
   async runs(): Promise<{ runs: RunSummary[] }> {
-    const body = await this.request<{ runs?: unknown }>("/runs");
+    const body = await this.invoke("run.list", {});
     if (!body || !Array.isArray(body.runs))
       throw new ApiError(502, "Malformed runs response", body);
     try {
@@ -147,67 +296,71 @@ export class RelayClient {
     batchId: string;
     repetitions: number;
   }> {
-    return this.request("/jobs/soak", { method: "POST", body: JSON.stringify(input) });
+    return this.invoke("job.soak.start", input) as Promise<{
+      jobs: JobSummary[];
+      matrix: MatrixExpansion;
+      batchId: string;
+      repetitions: number;
+    }>;
   }
   soakReport(batchId: string): Promise<{ report: SoakReport }> {
-    return this.request(`/reports/soak/${encodeURIComponent(batchId)}`);
+    return this.resource(`/reports/soak/${encodeURIComponent(batchId)}`);
   }
   projects(): Promise<{ projects: Project[] }> {
-    return this.request("/projects");
+    return this.invoke("project.list", {}) as Promise<{ projects: Project[] }>;
   }
   saveProject(project: Pick<Project, "id" | "name">): Promise<{ project: Project }> {
-    return this.request("/projects", { method: "POST", body: JSON.stringify(project) });
+    return this.invoke("project.save", project) as Promise<{ project: Project }>;
   }
   builds(): Promise<{ builds: Build[] }> {
-    return this.request("/builds");
+    return this.invoke("build.list", {}) as Promise<{ builds: Build[] }>;
   }
   saveBuild(
     build: Omit<Build, "projectId" | "createdAt" | "updatedAt">,
   ): Promise<{ build: Build }> {
-    return this.request("/builds", { method: "POST", body: JSON.stringify(build) });
+    return this.invoke("build.save", build) as Promise<{ build: Build }>;
   }
   devicePools(): Promise<{ pools: DevicePool[] }> {
-    return this.request("/device-pools");
+    return this.invoke("device-pool.list", {}) as Promise<{ pools: DevicePool[] }>;
   }
   saveDevicePool(
     pool: Omit<DevicePool, "projectId" | "createdAt" | "updatedAt">,
   ): Promise<{ pool: DevicePool }> {
-    return this.request("/device-pools", { method: "POST", body: JSON.stringify(pool) });
+    return this.invoke("device-pool.save", pool) as Promise<{ pool: DevicePool }>;
   }
   leases(): Promise<{ leases: DeviceLease[] }> {
-    return this.request("/device-leases");
+    return this.invoke("lease.list", {}) as Promise<{ leases: DeviceLease[] }>;
   }
   lease(
     input: Pick<DeviceLease, "poolId" | "deviceSerial" | "ownerId" | "expiresAt">,
   ): Promise<{ lease: DeviceLease }> {
-    return this.request("/device-leases", { method: "POST", body: JSON.stringify(input) });
+    return this.invoke("lease.create", input) as Promise<{ lease: DeviceLease }>;
   }
   releaseLease(id: string): Promise<{ lease: DeviceLease }> {
-    return this.request(`/device-leases/${encodeURIComponent(id)}/release`, {
-      method: "POST",
-      body: "{}",
-    });
+    return this.invoke("lease.release", { leaseId: id }) as Promise<{ lease: DeviceLease }>;
   }
   variables(): Promise<Revisioned<TestVariable[]>> {
-    return this.request("/project/variables");
+    return this.invoke("workspace.variables.get", {}) as Promise<Revisioned<TestVariable[]>>;
   }
   updateVariables(write: RevisionWrite<TestVariable[]>): Promise<Revisioned<TestVariable[]>> {
-    return this.request("/project/variables", { method: "PUT", body: JSON.stringify(write) });
+    return this.invoke("workspace.variables.update", write) as Promise<Revisioned<TestVariable[]>>;
   }
   journey(recipeId: string): Promise<Revisioned<JourneyMetadata>> {
-    return this.request(`/recipes/${encodeURIComponent(recipeId)}/journey`);
+    return this.invoke("journey.document.get", { journeyId: recipeId }) as Promise<
+      Revisioned<JourneyMetadata>
+    >;
   }
   updateJourney(
     recipeId: string,
     write: RevisionWrite<JourneyMetadata>,
   ): Promise<Revisioned<JourneyMetadata>> {
-    return this.request(`/recipes/${encodeURIComponent(recipeId)}/journey`, {
-      method: "PUT",
-      body: JSON.stringify(write),
-    });
+    return this.invoke("journey.document.update", {
+      journeyId: recipeId,
+      ...write,
+    }) as Promise<Revisioned<JourneyMetadata>>;
   }
   generate(input: GenerationRequest): Promise<GenerationResult> {
-    return this.request("/generate", { method: "POST", body: JSON.stringify(input) });
+    return this.invoke("generation.create", input);
   }
 
   async events(
