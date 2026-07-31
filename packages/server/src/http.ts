@@ -1,5 +1,6 @@
 import type http from "node:http";
 import { redactValue } from "@relay/core";
+import { validateOperationBody, validateOperationResponse } from "./operations.js";
 
 export const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -21,6 +22,7 @@ export class HttpError extends Error {
 }
 
 export function json(res: http.ServerResponse, status: number, body: unknown): void {
+  validateOperationResponse(res, status, body);
   const payload = JSON.stringify(redactValue(body));
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -86,12 +88,19 @@ export async function parseJsonBody(
   maxBytes = MAX_BODY_BYTES,
 ): Promise<unknown> {
   const raw = await readBody(req, maxBytes);
-  if (!raw.trim()) return {};
+  if (!raw.trim()) {
+    const body = {};
+    validateOperationBody(req, body);
+    return body;
+  }
+  let body: unknown;
   try {
-    return JSON.parse(raw) as unknown;
+    body = JSON.parse(raw) as unknown;
   } catch {
     throw new HttpError(400, "Invalid JSON body");
   }
+  validateOperationBody(req, body);
+  return body;
 }
 
 export function matchPath(pathname: string, pattern: string): Record<string, string> | null {

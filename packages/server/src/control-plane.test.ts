@@ -116,7 +116,7 @@ test("authenticated network service cannot read unowned workspace assets", async
   process.env.RELAY_REDACTION_MODE = "on";
   const server = await startServer({ host: "0.0.0.0", port: 0, token });
   try {
-    const response = await fetch(`http://127.0.0.1:${server.port}/recipes`, {
+    const response = await fetch(`http://127.0.0.1:${server.port}/journeys`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "x-project-id": "project-a",

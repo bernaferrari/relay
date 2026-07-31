@@ -146,6 +146,11 @@ import {
   type AndroidTouchAction,
 } from "./live-video.js";
 import { readIosVideoTake, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
+import {
+  bindOperationRequest,
+  OperationContractError,
+  serverOperationManifest,
+} from "./operations.js";
 import { createReadStream } from "node:fs";
 import type {
   Build,
@@ -270,6 +275,7 @@ async function handleRequest(
       recordAudit(scope, { action: "workspace.access", resource: pathname, result: "deny" });
       throw new HttpError(403, "This workspace asset is available only from the local Relay host");
     }
+    bindOperationRequest(req, res, method, pathname, url);
     if (method === "GET" && pathname === "/settings/privacy") {
       json(res, 200, { policy: getRedactionPolicy() });
       return;
@@ -921,7 +927,7 @@ async function handleRequest(
       return;
     }
 
-    const journeyMatch = matchPath(pathname, "/recipes/:id/journey");
+    const journeyMatch = matchPath(pathname, "/journeys/:id/document");
     if (method === "GET" && journeyMatch) {
       json(res, 200, await readJourney(scope.projectId, journeyMatch.id!));
       return;
@@ -1012,46 +1018,46 @@ async function handleRequest(
       return;
     }
 
-    // ---- Suite CRUD and execution ----
-    if (method === "GET" && pathname === "/suites") {
-      json(res, 200, { suites: await listSuites() });
+    // ---- Collection CRUD and execution ----
+    if (method === "GET" && pathname === "/collections") {
+      json(res, 200, { collections: await listSuites() });
       return;
     }
 
-    if (method === "POST" && pathname === "/suites") {
+    if (method === "POST" && pathname === "/collections") {
       const body = (await parseJsonBody(req)) as SaveSuiteInput;
       try {
-        const suite = await saveSuite(body);
-        json(res, 201, { suite });
+        const collection = await saveSuite(body);
+        json(res, 201, { collection });
       } catch (error) {
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
       }
       return;
     }
 
-    const suiteHistoryMatch = matchPath(pathname, "/suites/:id/history");
+    const suiteHistoryMatch = matchPath(pathname, "/collections/:id/history");
     if (method === "GET" && suiteHistoryMatch) {
       json(res, 200, { history: await listSuiteHistory(suiteHistoryMatch.id!) });
       return;
     }
 
-    const suiteRestoreMatch = matchPath(pathname, "/suites/:id/restore");
+    const suiteRestoreMatch = matchPath(pathname, "/collections/:id/restore");
     if (method === "POST" && suiteRestoreMatch) {
       const body = (await parseJsonBody(req)) as { updatedAt?: number };
       if (!Number.isFinite(body.updatedAt)) throw new HttpError(400, "updatedAt is required");
       try {
-        const suite = await restoreSuiteHistory(suiteRestoreMatch.id!, body.updatedAt!);
-        json(res, 200, { suite });
+        const collection = await restoreSuiteHistory(suiteRestoreMatch.id!, body.updatedAt!);
+        json(res, 200, { collection });
       } catch (error) {
         throw new HttpError(404, error instanceof Error ? error.message : String(error));
       }
       return;
     }
 
-    const suiteRunMatch = matchPath(pathname, "/suites/:id/run");
+    const suiteRunMatch = matchPath(pathname, "/collections/:id/run");
     if (method === "POST" && suiteRunMatch) {
       const suite = await readSuite(suiteRunMatch.id!);
-      if (!suite) throw new HttpError(404, "Suite not found");
+      if (!suite) throw new HttpError(404, "Collection not found");
       const body = (await parseJsonBody(req)) as {
         serial?: string;
         platform?: "android" | "ios";
@@ -1067,7 +1073,7 @@ async function handleRequest(
         throw new HttpError(409, error instanceof Error ? error.message : String(error));
       }
       if (manifest.entries.length === 0)
-        throw new HttpError(409, "This suite has no enabled tests");
+        throw new HttpError(409, "This collection has no enabled Journeys");
       const recipesById = new Map(recipes.map((recipe) => [recipe.id, recipe]));
       for (const entry of manifest.entries) {
         const current = recipesById.get(entry.testId);
@@ -1116,18 +1122,18 @@ async function handleRequest(
       return;
     }
 
-    const suiteMatch = matchPath(pathname, "/suites/:id");
+    const suiteMatch = matchPath(pathname, "/collections/:id");
     if (method === "GET" && suiteMatch) {
       const suite = await readSuite(suiteMatch.id!);
-      if (!suite) throw new HttpError(404, "Suite not found");
-      json(res, 200, { suite });
+      if (!suite) throw new HttpError(404, "Collection not found");
+      json(res, 200, { collection: suite });
       return;
     }
     if (method === "PUT" && suiteMatch) {
       const body = (await parseJsonBody(req)) as SaveSuiteInput;
       try {
-        const suite = await saveSuite({ ...body, id: suiteMatch.id! });
-        json(res, 200, { suite });
+        const collection = await saveSuite({ ...body, id: suiteMatch.id! });
+        json(res, 200, { collection });
       } catch (error) {
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
       }
@@ -1139,8 +1145,8 @@ async function handleRequest(
       return;
     }
 
-    if (method === "GET" && pathname === "/recipes") {
-      json(res, 200, { recipes: await listRecipes() });
+    if (method === "GET" && pathname === "/journeys") {
+      json(res, 200, { journeys: await listRecipes() });
       return;
     }
 
@@ -1178,7 +1184,7 @@ async function handleRequest(
       return;
     }
 
-    const recipeEvidenceImageMatch = matchPath(pathname, "/recipes/:id/evidence/:evidenceId");
+    const recipeEvidenceImageMatch = matchPath(pathname, "/journeys/:id/evidence/:evidenceId");
     if (method === "GET" && recipeEvidenceImageMatch) {
       const image = await readRecipeEvidenceImage(
         recipeEvidenceImageMatch.id!,
@@ -1195,7 +1201,7 @@ async function handleRequest(
       return;
     }
 
-    const recipeHistoryMatch = matchPath(pathname, "/recipes/:id/history");
+    const recipeHistoryMatch = matchPath(pathname, "/journeys/:id/history");
     if (method === "GET" && recipeHistoryMatch) {
       json(res, 200, { versions: await listRecipeHistory(recipeHistoryMatch.id!) });
       return;
@@ -1205,7 +1211,7 @@ async function handleRequest(
       if (!Number.isFinite(body.updatedAt)) throw new HttpError(400, "updatedAt is required");
       try {
         json(res, 200, {
-          recipe: await restoreRecipeHistory(recipeHistoryMatch.id!, body.updatedAt!),
+          journey: await restoreRecipeHistory(recipeHistoryMatch.id!, body.updatedAt!),
         });
       } catch (error) {
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
@@ -1213,16 +1219,16 @@ async function handleRequest(
       return;
     }
 
-    const recipeStabilityMatch = matchPath(pathname, "/recipes/:id/stability");
+    const recipeStabilityMatch = matchPath(pathname, "/journeys/:id/stability");
     if (method === "GET" && recipeStabilityMatch) {
       json(res, 200, { stability: await recipeStability(recipeStabilityMatch.id!) });
       return;
     }
 
-    const recipeYamlMatch = matchPath(pathname, "/recipes/:id/yaml");
+    const recipeYamlMatch = matchPath(pathname, "/journeys/:id/yaml");
     if (method === "GET" && recipeYamlMatch) {
       const recipe = await readRecipe(recipeYamlMatch.id!);
-      if (!recipe) throw new HttpError(404, "Recipe not found");
+      if (!recipe) throw new HttpError(404, "Journey not found");
       const yaml = formatRecipeYaml(recipe);
       // The HTTP API defaults to JSON while direct links, curl, and Git tooling
       // receive the portable source file. Keeping both forms at one address
@@ -1232,7 +1238,7 @@ async function handleRequest(
       return;
     }
 
-    if (method === "POST" && pathname === "/recipes/import") {
+    if (method === "POST" && pathname === "/journeys/import") {
       const body = (await parseJsonBody(req)) as {
         yaml?: string;
         dryRun?: boolean;
@@ -1245,7 +1251,7 @@ async function handleRequest(
         if (body.dryRun) {
           json(res, 200, {
             preview: {
-              recipe: parsed,
+              journey: parsed,
               exists: Boolean(existing),
               canonicalYaml: formatRecipeYaml(parsed),
             },
@@ -1275,7 +1281,7 @@ async function handleRequest(
           quarantineReason: parsed.quarantineReason,
           recordingFormatVersion: parsed.recordingFormatVersion,
         });
-        json(res, 201, { recipe });
+        json(res, 201, { journey: recipe });
       } catch (error) {
         if (error instanceof HttpError) throw error;
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
@@ -1283,10 +1289,10 @@ async function handleRequest(
       return;
     }
 
-    const recipeEvidenceMatch = matchPath(pathname, "/recipes/:id/evidence");
+    const recipeEvidenceMatch = matchPath(pathname, "/journeys/:id/evidence");
     if (method === "POST" && recipeEvidenceMatch) {
       const recipe = await readRecipe(recipeEvidenceMatch.id!);
-      if (!recipe) throw new HttpError(404, "Recipe not found");
+      if (!recipe) throw new HttpError(404, "Journey not found");
       const body = (await parseJsonBody(req, 12 * 1024 * 1024)) as {
         evidenceId?: string;
         mime?: string;
@@ -1308,15 +1314,15 @@ async function handleRequest(
       return;
     }
 
-    const recipeMatch = matchPath(pathname, "/recipes/:id");
+    const recipeMatch = matchPath(pathname, "/journeys/:id");
     if (method === "GET" && recipeMatch) {
       const recipe = await readRecipe(recipeMatch.id!);
-      if (!recipe) throw new HttpError(404, "Recipe not found");
-      json(res, 200, { recipe });
+      if (!recipe) throw new HttpError(404, "Journey not found");
+      json(res, 200, { journey: recipe });
       return;
     }
 
-    if (method === "POST" && pathname === "/recipes") {
+    if (method === "POST" && pathname === "/journeys") {
       const body = (await parseJsonBody(req)) as {
         title?: string;
         description?: string;
@@ -1342,7 +1348,7 @@ async function handleRequest(
         quarantined: body.quarantined,
         quarantineReason: body.quarantineReason,
       });
-      json(res, 201, { recipe });
+      json(res, 201, { journey: recipe });
       return;
     }
 
@@ -1380,7 +1386,7 @@ async function handleRequest(
         const message = err instanceof Error ? err.message : String(err);
         throw new HttpError(400, message);
       }
-      json(res, 200, { recipe });
+      json(res, 200, { journey: recipe });
       return;
     }
 
@@ -1732,72 +1738,15 @@ async function handleRequest(
     if (method === "GET" && pathname === "/meta") {
       json(res, 200, {
         name: "relay",
-        description: "Relay mobile app testing server (agent-device)",
+        description: "Relay app graph authoring and testing server",
         version: PRODUCT_VERSION,
         runsDir: runsRoot(),
-        endpoints: [
-          "GET /health",
-          "GET/PUT /settings/privacy",
-          "GET/PUT /settings/evidence",
-          "GET /settings/devices/android",
-          "GET/PUT /settings/devices/apple",
-          "GET /doctor",
-          "GET /report",
-          "GET /report/:jobId",
-          "GET /report/junit",
-          "GET /reports/matrix/:batchId",
-          "GET /reports/soak/:batchId",
-          "GET /events (SSE)",
-          "GET /actions",
-          "GET /devices",
-          "GET/POST /projects",
-          "GET/POST /builds",
-          "GET/POST /device-pools",
-          "GET /matrices",
-          "GET /matrices/:id/yaml",
-          "POST /matrices/import",
-          "GET/POST /device-leases",
-          "POST /device-leases/:id/release",
-          "GET/PUT /project/variables",
-          "GET/PUT /recipes/:id/journey",
-          "POST /generate",
-          "POST /device/select",
-          "POST /device/boot",
-          "POST /device/authorize",
-          "GET /jobs",
-          "GET /jobs/:id",
-          "POST /jobs",
-          "POST /jobs/matrix",
-          "POST /jobs/compatibility-matrix",
-          "POST /jobs/soak",
-          "POST /jobs/:id/retry",
-          "POST /jobs/:id/cancel",
-          "POST /jobs/:id/pause",
-          "POST /jobs/:id/resume",
-          "GET /recipes",
-          "GET /atlas",
-          "GET/POST /schedules",
-          "DELETE /schedules/:id",
-          "GET /recipes/:id",
-          "GET/POST /recipes/:id/history",
-          "GET /recipes/:id/stability",
-          "GET /discovery/:id/coverage",
-          "POST /recipes",
-          "PUT /recipes/:id",
-          "DELETE /recipes/:id",
-          "POST /actions/:id/run",
-          "GET /snapshot",
-          "GET /screenshot",
-          "GET /device/stream",
-          "POST /device/touch",
-          "POST /device/key",
-          "POST /device/scroll",
-          "POST /interact",
-          "POST /step/run",
-          "GET /runs",
-          "GET /runs/:id",
-          "GET /runs/:id/frames/:file",
-          "GET /runs/:id/video/:file",
+        operations: serverOperationManifest(),
+        resources: [
+          { method: "GET", path: "/events", mediaType: "text/event-stream" },
+          { method: "GET", path: "/device/stream", mediaType: "multipart/x-mixed-replace" },
+          { method: "GET", path: "/runs/:id/frames/:file", mediaType: "image/*" },
+          { method: "GET", path: "/runs/:id/video/:file", mediaType: "video/*" },
         ],
       });
       return;
@@ -1805,8 +1754,21 @@ async function handleRequest(
 
     json(res, 404, { error: `Not found: ${method} ${pathname}` });
   } catch (err) {
+    // Streaming routes have already committed their response by the time a
+    // browser disconnect or decoder restart can reject. Attempting to send a
+    // JSON error after that point crashes the entire local server with
+    // ERR_HTTP_HEADERS_SENT. Close the abandoned stream and keep serving the
+    // rest of Relay instead.
+    if (res.headersSent || res.destroyed || res.writableEnded) {
+      if (!res.destroyed && !res.writableEnded) res.destroy();
+      return;
+    }
     if (err instanceof RevisionConflict) {
       json(res, 409, { error: err.message, current: err.current });
+      return;
+    }
+    if (err instanceof OperationContractError) {
+      json(res, err.phase === "input" ? 400 : 500, { error: err.message });
       return;
     }
     if (err instanceof HttpError) {
