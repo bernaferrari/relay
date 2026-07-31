@@ -1,5 +1,6 @@
 export * from "./suites.js";
 export * from "./recipes.js";
+export * from "./operations.js";
 import type { RecipeStep } from "./recipes.js";
 
 export type ConnectionAuth =
