@@ -1,7 +1,7 @@
 import type { RawSnapshotNode } from '@agent-device/kernel/snapshot';
 import { AppError } from '@agent-device/kernel/errors';
 import { parseBounds } from '@agent-device/kernel/bounds';
-import { parseXmlDocumentSync, type XmlNode } from '../utils/xml.ts';
+import { parseXmlDocumentSync, type XmlNode } from '@agent-device/xml';
 
 export function parseWebDriverSource(source: string): RawSnapshotNode[] {
   let roots: XmlNode[];
