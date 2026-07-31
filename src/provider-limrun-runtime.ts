@@ -9,14 +9,14 @@ import type {
 } from '@agent-device/contracts/device';
 import type { Interactor } from '@agent-device/contracts/interaction';
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import type { LimrunDeviceSession } from './limrun-runtime-types.ts';
 import {
   createLimrunRuntime,
   type LimrunRuntime as LimrunRuntimeImplementation,
   type LimrunRuntimeOptions,
-} from './providers/limrun/runtime.ts';
-import { LIMRUN_PROVIDER } from './providers/limrun/device.ts';
+  LIMRUN_PROVIDER,
+} from '@agent-device/provider-limrun';
 import { createLimrunRuntimeDependencies } from './sdk/limrun-runtime-dependencies.ts';
+import type { LimrunDeviceSession } from './sdk/limrun-runtime-types.ts';
 
 export class LimrunRuntime implements ProviderDeviceRuntime {
   private readonly implementation: LimrunRuntimeImplementation;
