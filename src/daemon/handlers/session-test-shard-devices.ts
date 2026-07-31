@@ -11,47 +11,44 @@ import {
 } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import type { CommandFlags } from '../../core/dispatch.ts';
+import type {
+  ReplayTestShardMode,
+  ReplayTestResolveShardTargets,
+  ReplayTestShardContext,
+  ReplayTestShardTarget,
+} from '@agent-device/replay-test';
 
-export type ReplayTestShardMode = 'all' | 'split';
-
-export type ReplayTestShardContext = {
-  shardIndex: number;
-  shardCount: number;
-  device: DeviceInfo;
-};
-
-export type ReplayTestShardPlan<TEntry> = {
-  mode: ReplayTestShardMode;
-  shardCount: number;
-  total: number;
-  shards: Array<ReplayTestShardContext & { entries: TEntry[] }>;
-};
-
-export async function buildReplayTestShardPlan<TEntry>(
+/**
+ * The daemon adapter's shard-device binding (#1478 P3b).
+ *
+ * Inventory enumeration, allowlists, simulator set paths, explicit `--device` selectors, and
+ * the too-few-devices error live here. The scheduler decides how many shards exist and which
+ * entries each one runs; it never enumerates hardware.
+ */
+export function buildReplayTestShardTargetResolver(
   flags: CommandFlags | undefined,
-  runnableEntries: TEntry[],
-  skippedCount: number,
-): Promise<ReplayTestShardPlan<TEntry> | undefined> {
-  const mode = readReplayTestShardMode(flags);
-  if (!mode) return undefined;
-  if (runnableEntries.length === 0) return undefined;
+): ReplayTestResolveShardTargets {
+  return async (shardCount) => {
+    const devices = await resolveReplayTestShardDevices(flags, shardCount);
+    return devices.map(toReplayTestShardTarget);
+  };
+}
 
-  const devices = await resolveReplayTestShardDevices(flags, mode.count);
+function toReplayTestShardTarget(device: DeviceInfo): ReplayTestShardTarget {
+  // Implicit selection already filters to mobile; an explicit `--device` selector could in
+  // principle name a web target, which is not a shardable device. Reject it here rather than
+  // widening the neutral vocabulary to carry a platform the scheduler can never run.
+  if (device.platform === 'web' || !isMobilePlatform(device)) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `test sharding requires a mobile device; ${device.id} is ${device.platform}`,
+    );
+  }
   return {
-    mode: mode.kind,
-    shardCount: mode.count,
-    total:
-      skippedCount +
-      (mode.kind === 'all' ? runnableEntries.length * mode.count : runnableEntries.length),
-    shards: devices.map((device, index) => ({
-      shardIndex: index,
-      shardCount: mode.count,
-      device,
-      entries:
-        mode.kind === 'all'
-          ? runnableEntries
-          : runnableEntries.filter((_entry, entryIndex) => entryIndex % mode.count === index),
-    })),
+    id: device.id,
+    name: device.name,
+    platform: device.platform,
+    ...(device.target !== undefined ? { target: device.target } : {}),
   };
 }
 
@@ -75,27 +72,6 @@ export function buildReplayTestShardFlags(
   return shard.device.platform === 'android'
     ? { ...base, serial: shard.device.id }
     : { ...base, udid: shard.device.id };
-}
-
-function readReplayTestShardMode(
-  flags: CommandFlags | undefined,
-): { kind: ReplayTestShardMode; count: number } | undefined {
-  const shardAll = readPositiveShardCount(flags?.shardAll, '--shard-all');
-  const shardSplit = readPositiveShardCount(flags?.shardSplit, '--shard-split');
-  if (shardAll !== undefined && shardSplit !== undefined) {
-    throw new AppError('INVALID_ARGS', '--shard-all and --shard-split are mutually exclusive');
-  }
-  if (shardAll !== undefined) return { kind: 'all', count: shardAll };
-  if (shardSplit !== undefined) return { kind: 'split', count: shardSplit };
-  return undefined;
-}
-
-function readPositiveShardCount(value: unknown, flagName: string): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
-    throw new AppError('INVALID_ARGS', `${flagName} requires a positive integer`);
-  }
-  return value;
 }
 
 async function resolveReplayTestShardDevices(
@@ -196,4 +172,30 @@ function normalizeDeviceName(value: string): string {
 
 function compareShardDevices(a: DeviceInfo, b: DeviceInfo): number {
   return a.id.localeCompare(b.id);
+}
+
+/**
+ * Reads the `--shard-all` / `--shard-split` selection from daemon flags (#1478 P3b).
+ *
+ * Flag parsing is host work; the scheduler receives a resolved mode and count.
+ */
+export function readReplayTestShardSelection(
+  flags: CommandFlags | undefined,
+): { mode: ReplayTestShardMode; count: number } | undefined {
+  const shardAll = readPositiveShardCount(flags?.shardAll, '--shard-all');
+  const shardSplit = readPositiveShardCount(flags?.shardSplit, '--shard-split');
+  if (shardAll !== undefined && shardSplit !== undefined) {
+    throw new AppError('INVALID_ARGS', '--shard-all and --shard-split are mutually exclusive');
+  }
+  if (shardAll !== undefined) return { mode: 'all', count: shardAll };
+  if (shardSplit !== undefined) return { mode: 'split', count: shardSplit };
+  return undefined;
+}
+
+function readPositiveShardCount(value: unknown, flagName: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+    throw new AppError('INVALID_ARGS', `${flagName} requires a positive integer`);
+  }
+  return value;
 }

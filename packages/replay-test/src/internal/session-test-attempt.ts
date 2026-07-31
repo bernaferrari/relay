@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { emitRequestProgress } from '../../request/progress.ts';
 import type { ReplaySuiteTestFailed, ReplaySuiteTestResult } from '@agent-device/contracts/replay';
 import type { ReplayTestProgressEvent } from '@agent-device/contracts/progress';
 import {
@@ -15,10 +14,9 @@ import {
 import { runReplayTestAttempt } from './session-test-runtime.ts';
 import type {
   ReplayTestAttemptOutcome,
-  ReplayTestRuntimeDependencies,
+  ReplayTestExecutionDependencies,
 } from './session-test-types.ts';
 import type { ReplayTestShardContext } from './session-test-sharding.ts';
-import { isRequestCanceled } from '../../request/cancel.ts';
 
 type ReplayTestCaseResult = Extract<ReplaySuiteTestResult, { status: 'passed' | 'failed' }>;
 type ReplayTestAttemptFailure = NonNullable<
@@ -59,7 +57,7 @@ type ReplayTestCaseParams = {
   suiteIndex: number;
   suiteTotal: number;
   shard?: ReplayTestShardContext;
-} & ReplayTestRuntimeDependencies;
+} & ReplayTestExecutionDependencies;
 
 type ReplayTestCaseContext = {
   testStartedAt: number;
@@ -108,7 +106,7 @@ async function runReplayTestCaseAttempts(
   };
 
   for (let attemptIndex = 0; attemptIndex <= params.retries; attemptIndex += 1) {
-    if (isRequestCanceled(params.requestId)) break;
+    if (params.isCanceled()) break;
     const attempt = await runSingleReplayTestAttempt(params, context, attemptIndex);
     updateReplayTestCaseOutcome(outcome, attempt);
     if (shouldStopReplayTestAttempts(params, attempt.outcome, attemptIndex)) break;
@@ -171,12 +169,17 @@ async function runSingleReplayTestAttempt(
     requestId: attemptRequestId,
     parentRequestId: requestId,
     timeoutMs,
-    platform: entry.metadata.platform,
-    target: entry.metadata.target,
+    // The scheduler only ever names a declared platform; caller-bound and unspecified both
+    // mean "do not pin one on the nested request" (#1478 P3b).
+    platform:
+      entry.manifest.device.platform.kind === 'declared'
+        ? entry.manifest.device.platform.value
+        : undefined,
+    target: entry.manifest.device.target,
     artifactsDir: attemptArtifactsDir,
     shard,
     onStep: (step) => {
-      emitRequestProgress({
+      params.emitProgress({
         type: 'replay-test',
         ...attemptProgress,
         status: 'progress',
@@ -189,6 +192,8 @@ async function runSingleReplayTestAttempt(
     runReplay: params.runReplay,
     cleanupSession: params.cleanupSession,
     finalizeAttempt: params.finalizeAttempt,
+    emitDiagnostic: params.emitDiagnostic,
+    bindAttemptCancellation: params.bindAttemptCancellation,
   });
   const durationMs = Date.now() - startedAt;
   materializeReplayTestAttemptArtifacts({
@@ -223,7 +228,7 @@ function emitReplayTestStartProgress(
 ): void {
   const { entry, sessionName, suiteInvocationId, caseIndex, suiteIndex, suiteTotal, shard } =
     params;
-  emitRequestProgress({
+  params.emitProgress({
     type: 'replay-test',
     file: entry.path,
     title: entry.title,
@@ -260,7 +265,7 @@ function shouldStopReplayTestAttempts(
 ): boolean {
   return (
     outcome.status === 'passed' ||
-    isRequestCanceled(params.requestId) ||
+    params.isCanceled() ||
     outcome.infrastructure ||
     attemptIndex >= params.retries
   );
@@ -272,7 +277,7 @@ function emitReplayTestRetryProgress(
   attempt: ReplayTestAttemptResult,
 ): void {
   if (attempt.outcome.status === 'passed') return;
-  emitRequestProgress({
+  params.emitProgress({
     type: 'replay-test',
     file: params.entry.path,
     title: params.entry.title,
@@ -312,7 +317,7 @@ function buildReplayTestPassedResult(
   const { entry, suiteIndex, suiteTotal, shard } = params;
   const attemptOutcome = outcome.finalOutcome;
   if (attemptOutcome?.status !== 'passed') throw new Error('Expected passing replay test outcome.');
-  emitRequestProgress({
+  params.emitProgress({
     type: 'replay-test',
     file: entry.path,
     title: entry.title,
@@ -358,7 +363,7 @@ function buildReplayTestFailedResult(
     attemptOutcome?.status === 'failed'
       ? attemptOutcome.error
       : { code: 'COMMAND_FAILED', message: 'Unknown replay test failure' };
-  emitRequestProgress({
+  params.emitProgress({
     type: 'replay-test',
     file: entry.path,
     title: entry.title,
