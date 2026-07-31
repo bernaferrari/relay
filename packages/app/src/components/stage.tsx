@@ -13,8 +13,8 @@ import { useRecorder } from "../context/recorder";
 import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
-import { DeviceConnectState } from "./device-connect-state";
 import { DeviceEvidenceEmptyState } from "./device-evidence-empty-state";
+import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
 import { IconButton } from "@relay/ui/icon-button";
 import { Switch } from "@relay/ui/switch";
 import { useCommand } from "../context/command";
@@ -35,6 +35,8 @@ import {
 import { cn } from "../lib/cn";
 import { evidenceForStep } from "./journey-step-presentation";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
+import { targetIsReady } from "../lib/target-presentation";
+import { deviceReadiness } from "../lib/device-readiness";
 import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
 import {
   LIVE_SNAPSHOT_INTERVAL_MS,
@@ -181,12 +183,23 @@ function UncapturedStepPreview(props: {
 }
 
 /** Device-as-hero stage: phone bezel, frame filmstrip, snapshot rect overlays. */
-export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?: () => void }) {
+export function DeviceStage(_props: {
+  onExpandBoard?: () => void;
+  onOpenTargets?: () => void;
+  /**
+   * Capture owns the recording lifecycle in the graph workspace. Keeping a
+   * second switch and task field beneath the same device makes it unclear
+   * which control is authoritative, so embedded stages only keep the useful
+   * device utilities here.
+   */
+  recordingControls?: "full" | "embedded";
+}) {
   const server = useServer();
   const rec = useRecorder();
   const cmd = useCommand();
   const wb = useWorkbench();
   const draft = useRecipeDraft();
+  const embeddedRecordingControls = () => _props.recordingControls === "embedded";
   const [refreshingTarget, setRefreshingTarget] = createSignal(false);
   async function refreshTarget(): Promise<void> {
     if (refreshingTarget()) return;
@@ -231,8 +244,9 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     step: RecipeStep;
   } | null>(null);
   const liveControlActive = () => rec.interacting() && stageView() === "live";
-  const frame = () =>
-    liveControlActive() ? (server.liveFrame() ?? server.currentFrame()) : undefined;
+  // A live surface must never borrow an old recording frame. That made the
+  // device look awake while it was actually locked or had switched targets.
+  const frame = () => (liveControlActive() ? (server.liveFrame() ?? undefined) : undefined);
   const recordedEvidenceSrc = createMemo(() => {
     // A playback request owns both the marker and its screenshot. Using the
     // focused step alone can pair a preview marker with a frame from a run or
@@ -265,7 +279,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     }
 
     if (stageView() === "live") {
-      const live = server.liveFrame() ?? server.currentFrame();
+      const live = server.liveFrame();
       return live ? frameDataUrl(live) : "";
     }
     const recorded = recordedEvidenceSrc();
@@ -523,6 +537,23 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   const [videoReady, setVideoReady] = createSignal(false);
   const [videoFailed, setVideoFailed] = createSignal(false);
   const [videoAttempt, setVideoAttempt] = createSignal(0);
+  const [previewUnavailable, setPreviewUnavailable] = createSignal(false);
+  // iOS has to sign and install its local runner once before Relay can ask it
+  // for pixels. Keep that preflight separate from frame polling so the stage
+  // never briefly promises a loading screen and then jumps to setup.
+  const [iosSetupState, setIosSetupState] = createSignal<
+    | "idle"
+    | "checking"
+    | "preparing"
+    | "ready"
+    | "needs-setup"
+    | "developer-mode-disabled"
+    | "device-support-pending"
+    | "failed"
+  >("idle");
+  const [iosSetupCheck, setIosSetupCheck] = createSignal(0);
+  let completedIosSetupCheck = "";
+  let resumedIosPreview = "";
   // transient tap feedback (positioned in % of the glass)
   const [tapFeedback, setTapFeedback] = createSignal<{ x: number; y: number } | null>(null);
   let feedbackTimer: number | undefined;
@@ -785,10 +816,14 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   let snapRefreshTimer: number | undefined;
 
   const livePaused = () =>
-    !liveControlActive() || !tabVisible() || server.health() !== "online" || picker() !== null;
+    !liveControlActive() ||
+    !tabVisible() ||
+    server.health() !== "online" ||
+    picker() !== null ||
+    (currentDevice()?.platform === "ios" && !["preparing", "ready"].includes(iosSetupState()));
 
   async function tickLiveFrame(): Promise<void> {
-    const concurrency = !videoReady() && videoFailed() ? 2 : 1;
+    const concurrency = supportsH264Stream() && !videoReady() && videoFailed() ? 2 : 1;
     if (livePaused() || frameRequestsInFlight >= concurrency) return;
     frameRequestsInFlight += 1;
     try {
@@ -840,7 +875,105 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   }
 
   createEffect(() => {
-    const policy = liveInspectionPolicy(liveControlActive(), videoFailed());
+    const selected = server.selectedDevice();
+    const device = selected
+      ? (server.devices().find((candidate) => candidate.serial === selected) ?? null)
+      : null;
+    const isReady = targetIsReady(device, server.health() === "online");
+    if (!isReady || device?.platform !== "ios") {
+      setIosSetupState("idle");
+      return;
+    }
+
+    const readiness = deviceReadiness(device, server.health() === "online");
+    if (readiness.kind === "ios-developer-mode-disabled") {
+      setIosSetupState("developer-mode-disabled");
+      return;
+    }
+    if (readiness.kind === "ios-preparing") {
+      setIosSetupState("device-support-pending");
+      return;
+    }
+
+    const checkKey = `${device.serial}:${iosSetupCheck()}`;
+    if (completedIosSetupCheck === checkKey) return;
+    completedIosSetupCheck = checkKey;
+    setIosSetupState("checking");
+
+    void server
+      .preflightAppleDeviceSetup()
+      .then((configured) => {
+        const current = currentDevice();
+        // The preflight is asynchronous. Do not let a reply for an iPad that
+        // was just disconnected or replaced overwrite the next device's UI.
+        if (
+          completedIosSetupCheck !== checkKey ||
+          current?.platform !== "ios" ||
+          current.serial !== device.serial
+        ) {
+          return;
+        }
+        // Saved Apple details only mean Relay can attempt preparation; the
+        // runner is ready only after it returns a real screen. This avoids a
+        // false "ready" state while Xcode is still signing or failing.
+        setIosSetupState(configured ? "preparing" : "needs-setup");
+      })
+      .catch(() => {
+        const current = currentDevice();
+        if (
+          completedIosSetupCheck === checkKey &&
+          current?.platform === "ios" &&
+          current.serial === device.serial
+        ) {
+          setIosSetupState("failed");
+        }
+      });
+  });
+
+  // Saving Apple details only gives the runner permission to prepare. Clear a
+  // stale frame error once and immediately prove readiness with a new frame.
+  createEffect(() => {
+    const device = currentDevice();
+    if (device?.platform !== "ios" || iosSetupState() !== "preparing") {
+      resumedIosPreview = "";
+      return;
+    }
+    const resumeKey = `${device.serial}:${iosSetupCheck()}`;
+    if (resumedIosPreview === resumeKey) return;
+    resumedIosPreview = resumeKey;
+    server.clearLiveCaptureIssue();
+    setPreviewUnavailable(false);
+    if (liveControlActive()) {
+      void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+    }
+  });
+
+  // The first usable frame is the single source of truth for Apple readiness.
+  // Do not call an iPad "ready" merely because setup values were saved.
+  createEffect(() => {
+    if (
+      currentDevice()?.platform === "ios" &&
+      iosSetupState() === "preparing" &&
+      Boolean(displayImageSrc())
+    ) {
+      setIosSetupState("ready");
+    }
+  });
+
+  createEffect(() => {
+    const issue = server.liveCaptureIssue();
+    if (
+      currentDevice()?.platform === "ios" &&
+      iosSetupState() === "preparing" &&
+      issue &&
+      /(runner|signing|xcode|provision|team id|bundle id|set.?up)/i.test(issue)
+    ) {
+      setIosSetupState("failed");
+    }
+  });
+
+  createEffect(() => {
+    const policy = liveInspectionPolicy(liveControlActive(), usesScreenshotPreview());
     if (!policy.pollSnapshot && !policy.pollFallbackFrame) return;
 
     // H.264 owns pixels whenever it is healthy. Accessibility inspection is
@@ -856,7 +989,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     if (!displayImageSrc()) void tickLiveFrame();
     if (policy.pollFallbackFrame) {
       void tickLiveFrame();
-      frameTimer = setInterval(() => void tickLiveFrame(), 125);
+      frameTimer = setInterval(() => void tickLiveFrame(), supportsH264Stream() ? 125 : 650);
     }
     onCleanup(stopLiveTimers);
   });
@@ -1056,23 +1189,66 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     });
   }
 
-  /** The selected device stays authoritative across transient disconnects. */
+  /**
+   * Device selection is intentional. Falling back to the first discovered
+   * target made this stage say "ready" while the rest of Relay correctly
+   * asked the person to choose a device.
+   */
   const currentDevice = () => {
     const selected = server.selectedDevice();
     return selected
       ? (server.devices().find((device) => device.serial === selected) ?? null)
-      : (server.devices()[0] ?? null);
+      : null;
   };
-  const targetReady = () => {
-    const device = currentDevice();
-    return server.health() === "online" && Boolean(device) && device?.booted !== false;
-  };
-  const screenMapReady = createMemo(() => {
-    const snapshot = server.snapshot();
-    return Boolean(
-      snapshot?.inspectable !== false && snapshot?.bounds && snapshot.nodes.length > 0,
+  const targetReady = () => targetIsReady(currentDevice(), server.health() === "online");
+  const supportsH264Stream = () => currentDevice()?.platform === "android";
+  const usesScreenshotPreview = () => !supportsH264Stream() || videoFailed();
+  const liveCaptureIssue = () => server.liveCaptureIssue();
+  const needsIosSetup = () =>
+    currentDevice()?.platform === "ios" && iosSetupState() === "needs-setup";
+  const iosReadiness = () => deviceReadiness(currentDevice(), server.health() === "online");
+  const developerModeDisabled = () =>
+    iosReadiness().kind === "ios-developer-mode-disabled" ||
+    /developer mode.*(?:disabled|turn on)|turn on developer mode/i.test(liveCaptureIssue() ?? "");
+  const iosDeviceSupportPending = () => iosReadiness().kind === "ios-preparing";
+  const hasIosSetupIssue = () => {
+    const issue = liveCaptureIssue() ?? "";
+    return (
+      developerModeDisabled() ||
+      needsIosSetup() ||
+      (currentDevice()?.platform === "ios" &&
+        /(runner|signing|xcode|provision|team id|bundle id|set.?up)/i.test(issue))
     );
-  });
+  };
+  const iosSetupGuidance = () => {
+    const readiness = iosReadiness();
+    if (readiness.kind === "ios-developer-mode-disabled") return readiness.detail;
+    if (readiness.kind === "ios-preparing") return readiness.detail;
+    const issue = liveCaptureIssue();
+    if (
+      issue &&
+      /(developer mode|runner|signing|xcode|provision|team id|bundle id|set.?up)/i.test(issue)
+    )
+      return issue;
+    return "Relay needs to finish setting up its local iPad runner before it can read the screen.";
+  };
+  const preparingIosScreen = () =>
+    targetReady() &&
+    currentDevice()?.platform === "ios" &&
+    ["preparing", "device-support-pending"].includes(iosSetupState()) &&
+    !displayImageSrc() &&
+    !liveCaptureIssue();
+  const checkingIosSetup = () =>
+    targetReady() &&
+    currentDevice()?.platform === "ios" &&
+    ["idle", "checking"].includes(iosSetupState());
+  const emptyStageTitle = () => {
+    if (!targetReady()) return "Device unavailable";
+    if (developerModeDisabled()) return "Turn on Developer Mode";
+    if (iosDeviceSupportPending()) return "Preparing this iPad";
+    if (checkingIosSetup()) return "Checking iPad setup";
+    return preparingIosScreen() ? "Preparing this iPad" : "Waiting for screen";
+  };
   const videoIdentity = createMemo(() => {
     const serial = currentDevice()?.serial;
     const base = server.serverUrl().replace(/\/+$/, "");
@@ -1080,7 +1256,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
   });
   const liveVideoSrc = createMemo(() => {
     const identity = videoIdentity();
-    if (!identity || !liveControlActive()) return "";
+    if (!identity || !liveControlActive() || !supportsH264Stream()) return "";
     const separator = identity.lastIndexOf("|");
     const base = identity.slice(0, separator);
     const serial = identity.slice(separator + 1);
@@ -1092,6 +1268,28 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
     setVideoReady(false);
     setVideoFailed(false);
   });
+  createEffect(() => {
+    const waitingForScreen = targetReady() && liveControlActive() && !displayImageSrc();
+    if (!waitingForScreen) {
+      setPreviewUnavailable(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setPreviewUnavailable(true), 3000);
+    onCleanup(() => window.clearTimeout(timer));
+  });
+  function retryScreenPreview(): void {
+    if (currentDevice()?.platform === "ios" && iosSetupState() !== "ready") {
+      setIosSetupCheck((check) => check + 1);
+      return;
+    }
+    server.clearLiveCaptureIssue();
+    if (rec.recordingIssue()) {
+      void rec.enterRecordMode();
+      return;
+    }
+    setPreviewUnavailable(false);
+    void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
+  }
   function retryVideo(): void {
     setVideoReady(false);
     setVideoFailed(true);
@@ -1126,7 +1324,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
       aria-label="Device stage"
       class="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-5"
     >
-      <Show when={targetReady() || recordedEvidenceSrc()}>
+      <Show when={!embeddedRecordingControls() && (targetReady() || recordedEvidenceSrc())}>
         <div class="absolute top-4 z-[4] flex h-8 items-center justify-center text-text-base">
           <Show
             when={recordedEvidenceSrc() && targetReady()}
@@ -1139,17 +1337,17 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                     role="status"
                     aria-live="polite"
                     data-tip={
-                      videoReady() && screenMapReady()
+                      videoReady()
                         ? "Live device preview"
                         : videoFailed()
                           ? "Using screenshot preview while video reconnects"
-                          : "Preparing the device"
+                          : "Screen preview is starting"
                     }
                   >
                     <i
                       class={cn(
                         "size-1.5 shrink-0 rounded-full",
-                        videoReady() && screenMapReady()
+                        videoReady()
                           ? "bg-[var(--icon-success-base)]"
                           : videoFailed()
                             ? "bg-[var(--icon-warning-base)]"
@@ -1157,13 +1355,7 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
                       )}
                       aria-hidden="true"
                     />
-                    <span>
-                      {videoReady() && screenMapReady()
-                        ? "Live"
-                        : videoFailed()
-                          ? "Preview"
-                          : "Preparing"}
-                    </span>
+                    <span>{videoReady() ? "Live" : videoFailed() ? "Preview" : "Preview"}</span>
                   </span>
                 }
               >
@@ -1230,381 +1422,552 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
           </Show>
         </div>
       </Show>
-      <div
-        data-device-chrome
-        class={cn(
-          phoneShell,
-          "relative z-[2] h-[min(760px,calc(100%-148px))] w-auto max-w-[min(440px,calc(100%-56px))] shrink-0",
-        )}
-        style={{ "aspect-ratio": frameAspect() }}
+      <Show
+        when={Boolean(currentDevice()) || Boolean(recordedEvidenceSrc())}
+        fallback={
+          <ChooseDeviceEmptyState
+            purpose="live"
+            onChooseDevice={() => window.dispatchEvent(new CustomEvent("relay:open-device-picker"))}
+          />
+        }
       >
-        <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[18px]")}>
-          {/* The plan is the hero even before evidence exists: the selected
+        <div
+          data-device-chrome
+          class={cn(
+            phoneShell,
+            "relative z-[2] w-auto max-w-[min(440px,calc(100%-56px))] shrink-0",
+            embeddedRecordingControls()
+              ? "h-[min(790px,calc(100%-108px))]"
+              : "h-[min(760px,calc(100%-148px))]",
+          )}
+          style={{ "aspect-ratio": frameAspect() }}
+        >
+          <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[18px]")}>
+            {/* The plan is the hero even before evidence exists: the selected
                 step renders inside the screen, so the frame never reads as a
                 dead end — only as "not captured yet". */}
-          <Show
-            when={displayImageSrc()}
-            fallback={
-              <Show
-                when={plannedFocus()}
-                fallback={
+            <Show
+              when={!rec.arming() && !rec.recordingIssue() && displayImageSrc()}
+              fallback={
+                <Show
+                  when={rec.arming()}
+                  fallback={
+                    <Show
+                      when={rec.recordingIssue()}
+                      fallback={
+                        <Show
+                          when={plannedFocus()}
+                          fallback={
+                            <div class="grid h-full w-full place-items-center px-6 text-center">
+                              <Show
+                                when={
+                                  embeddedRecordingControls() &&
+                                  targetReady() &&
+                                  (needsIosSetup() ||
+                                    developerModeDisabled() ||
+                                    Boolean(liveCaptureIssue()) ||
+                                    (previewUnavailable() && !preparingIosScreen()))
+                                }
+                                fallback={
+                                  <Show
+                                    when={embeddedRecordingControls() && targetReady()}
+                                    fallback={
+                                      <div class="grid justify-items-center gap-2.5">
+                                        <span class={cn(deviceIconWell, "size-11 rounded-[13px]")}>
+                                          <Icon name="smartphone" size={20} />
+                                        </span>
+                                        <strong
+                                          class={cn(
+                                            deviceTitle,
+                                            "text-[14px] font-semibold tracking-[-0.01em]",
+                                          )}
+                                        >
+                                          {emptyStageTitle()}
+                                        </strong>
+                                      </div>
+                                    }
+                                  >
+                                    <div class="grid justify-items-center gap-2.5 text-center">
+                                      <span
+                                        class="size-5 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none"
+                                        role="status"
+                                        aria-label={
+                                          checkingIosSetup()
+                                            ? "Checking iPad setup"
+                                            : preparingIosScreen()
+                                              ? "Preparing the iPad"
+                                              : "Waiting for the device screen"
+                                        }
+                                      />
+                                      <Show when={preparingIosScreen()}>
+                                        <strong
+                                          class={cn(
+                                            deviceTitle,
+                                            "text-[14px] font-semibold tracking-[-0.01em]",
+                                          )}
+                                        >
+                                          {emptyStageTitle()}
+                                        </strong>
+                                      </Show>
+                                      <Show when={checkingIosSetup()}>
+                                        <strong
+                                          class={cn(
+                                            deviceTitle,
+                                            "text-[14px] font-semibold tracking-[-0.01em]",
+                                          )}
+                                        >
+                                          Checking iPad setup
+                                        </strong>
+                                      </Show>
+                                    </div>
+                                  </Show>
+                                }
+                              >
+                                <div class="grid justify-items-center gap-3 text-center">
+                                  <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
+                                    <Icon name="smartphone" size={18} />
+                                  </span>
+                                  <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
+                                    {developerModeDisabled()
+                                      ? "Turn on Developer Mode"
+                                      : hasIosSetupIssue()
+                                        ? "Set up this iPad"
+                                        : "Screen unavailable"}
+                                  </strong>
+                                  <Show when={hasIosSetupIssue()}>
+                                    <p class="m-0 max-w-[23ch] text-[10.5px] leading-4 text-[var(--text-weak)]">
+                                      {iosSetupGuidance()}
+                                    </p>
+                                  </Show>
+                                  <Show when={!developerModeDisabled()}>
+                                    <button
+                                      type="button"
+                                      class="rounded-[7px] px-2 py-1 text-[10.5px] font-medium text-[var(--text-interactive-base)] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)]"
+                                      onClick={() => {
+                                        if (hasIosSetupIssue()) {
+                                          window.dispatchEvent(
+                                            new CustomEvent("relay:open-settings", {
+                                              detail: { section: "devices" },
+                                            }),
+                                          );
+                                          return;
+                                        }
+                                        retryScreenPreview();
+                                      }}
+                                    >
+                                      {hasIosSetupIssue() ? "Open iPad setup" : "Retry"}
+                                    </button>
+                                  </Show>
+                                </div>
+                              </Show>
+                            </div>
+                          }
+                        >
+                          {(focused) => {
+                            const step = () => focusedPlanStep();
+                            return (
+                              <div class="relative h-full w-full">
+                                <Show when={step()}>
+                                  {(value) => (
+                                    <UncapturedStepPreview
+                                      step={value()}
+                                      onSwipePoint={updateFocusedSwipePoint}
+                                    />
+                                  )}
+                                </Show>
+                                <div class="pointer-events-none absolute inset-x-5 bottom-[15%] grid justify-items-center gap-1.5 text-center">
+                                  <span
+                                    class={cn(
+                                      mono,
+                                      deviceCaption,
+                                      "text-[9.5px] tracking-[0.09em] uppercase",
+                                    )}
+                                  >
+                                    Step {String(focused().index + 1).padStart(2, "0")}
+                                  </span>
+                                  <span
+                                    class={cn(deviceCaption, "max-w-[26ch] text-[11.5px]/[1.5]")}
+                                  >
+                                    {targetReady()
+                                      ? "No captured screen"
+                                      : server.isEmptyDevices()
+                                        ? "No device selected"
+                                        : "Device unavailable"}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          }}
+                        </Show>
+                      }
+                    >
+                      {(issue) => (
+                        <div class="grid h-full w-full place-items-center px-6 text-center">
+                          <div class="grid max-w-[220px] justify-items-center gap-3">
+                            <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
+                              <Icon name="smartphone" size={18} />
+                            </span>
+                            <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
+                              {issue().kind === "setup"
+                                ? "Set up this iPad"
+                                : "Can’t read this screen"}
+                            </strong>
+                            <p class="m-0 text-[10.5px] leading-4 text-[var(--text-weak)]">
+                              {issue().message}
+                            </p>
+                            <button
+                              type="button"
+                              class="rounded-[7px] bg-[var(--product-accent-soft)] px-2.5 py-1.5 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]"
+                              onClick={() => {
+                                if (issue().kind === "setup") {
+                                  window.dispatchEvent(
+                                    new CustomEvent("relay:open-settings", {
+                                      detail: { section: "devices" },
+                                    }),
+                                  );
+                                  return;
+                                }
+                                void rec.enterRecordMode();
+                              }}
+                            >
+                              {issue().kind === "setup" ? "Open iPad setup" : "Try again"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </Show>
+                  }
+                >
                   <div class="grid h-full w-full place-items-center px-6 text-center">
-                    <div class="grid justify-items-center gap-2.5">
-                      <span class={cn(deviceIconWell, "size-11 rounded-[13px]")}>
-                        <Icon name="smartphone" size={20} />
+                    <div class="grid justify-items-center gap-3">
+                      <span class={cn(deviceIconWell, "size-10 rounded-[12px]")}>
+                        <Icon name="smartphone" size={18} />
                       </span>
-                      <strong
-                        class={cn(deviceTitle, "text-[14px] font-semibold tracking-[-0.01em]")}
-                      >
-                        Ready when you are
+                      <strong class={cn(deviceTitle, "text-[13px] font-semibold")}>
+                        Preparing device
                       </strong>
-                      <span class={cn(deviceCaption, "max-w-[24ch] text-[11.5px]/[1.5]")}>
-                        Record on the device or describe a journey to create steps.
-                      </span>
+                      <span
+                        class="size-4 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none"
+                        role="status"
+                        aria-label="Preparing device for recording"
+                      />
                     </div>
                   </div>
-                }
-              >
-                {(focused) => {
-                  const step = () => focusedPlanStep();
-                  return (
-                    <div class="relative h-full w-full">
-                      <Show when={step()}>
-                        {(value) => (
-                          <UncapturedStepPreview
-                            step={value()}
-                            onSwipePoint={updateFocusedSwipePoint}
-                          />
-                        )}
-                      </Show>
-                      <div class="pointer-events-none absolute inset-x-5 bottom-[15%] grid justify-items-center gap-1.5 text-center">
-                        <span
-                          class={cn(
-                            mono,
-                            deviceCaption,
-                            "text-[9.5px] tracking-[0.09em] uppercase",
-                          )}
-                        >
-                          Step {String(focused().index + 1).padStart(2, "0")}
-                        </span>
-                        <span class={cn(deviceCaption, "max-w-[26ch] text-[11.5px]/[1.5]")}>
-                          {targetReady()
-                            ? "No captured screen"
-                            : server.isEmptyDevices()
-                              ? "No device selected"
-                              : "Device unavailable"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                }}
+                </Show>
+              }
+            >
+              <Show keyed when={!videoFailed() && liveVideoSrc()}>
+                {(src) => (
+                  <div
+                    class="pointer-events-none absolute inset-0 z-[1] transition-opacity duration-150"
+                    data-device-video-ready={videoReady() ? "true" : "false"}
+                    style={{ opacity: videoReady() ? 1 : 0 }}
+                  >
+                    <DeviceVideoStream
+                      src={src}
+                      onReady={() => {
+                        setVideoFailed(false);
+                        setVideoReady(true);
+                      }}
+                      onFailure={retryVideo}
+                      onSize={(width, height) => setFrameAspect(`${width} / ${height}`)}
+                    />
+                  </div>
+                )}
               </Show>
-            }
-          >
-            <Show keyed when={!videoFailed() && liveVideoSrc()}>
-              {(src) => (
-                <div
-                  class="pointer-events-none absolute inset-0 z-[1] transition-opacity duration-150"
-                  data-device-video-ready={videoReady() ? "true" : "false"}
-                  style={{ opacity: videoReady() ? 1 : 0 }}
-                >
-                  <DeviceVideoStream
-                    src={src}
-                    onReady={() => {
-                      setVideoFailed(false);
-                      setVideoReady(true);
-                    }}
-                    onFailure={retryVideo}
-                    onSize={(width, height) => setFrameAspect(`${width} / ${height}`)}
-                  />
-                </div>
-              )}
-            </Show>
-            <img
-              class={cn(
-                "block h-full w-full touch-none overscroll-contain select-none object-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus",
-                rec.recording() ? "cursor-crosshair" : liveControlActive() && "cursor-pointer",
-                recordedCoordinateEditable() && "cursor-crosshair",
-                recordedInspectionActive() && "cursor-pointer",
-              )}
-              ref={(element) => {
-                deviceScreenEl = element;
-              }}
-              alt={displayCaption() || "Recorded device evidence"}
-              aria-label="Interactive device screen"
-              src={displayImageSrc()}
-              draggable={false}
-              tabindex={0}
-              onClick={chooseRecordedNode}
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                if (img.naturalWidth && img.naturalHeight) {
-                  setFrameAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
-                }
-              }}
-              onPointerDown={(e) => {
-                if (recordedCoordinateEditable() && e.button === 0) {
-                  const index = wb.focusedIndex();
-                  const step = index == null ? undefined : draft.steps()[index];
-                  if (index != null && step?.kind === "tap" && step.target.point) {
-                    e.preventDefault();
-                    e.currentTarget.focus({ preventScroll: true });
-                    recordedCoordinateDrag = { pointerId: e.pointerId };
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
+              <img
+                class={cn(
+                  "block h-full w-full touch-none overscroll-contain select-none object-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus",
+                  rec.recording() ? "cursor-crosshair" : liveControlActive() && "cursor-pointer",
+                  recordedCoordinateEditable() && "cursor-crosshair",
+                  recordedInspectionActive() && "cursor-pointer",
+                )}
+                ref={(element) => {
+                  deviceScreenEl = element;
+                }}
+                alt={displayCaption() || "Recorded device evidence"}
+                aria-label="Interactive device screen"
+                src={displayImageSrc()}
+                draggable={false}
+                tabindex={0}
+                onClick={chooseRecordedNode}
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  if (img.naturalWidth && img.naturalHeight) {
+                    setFrameAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
                   }
-                  return;
-                }
-                if (!frame() || !liveControlActive() || e.button !== 0) return;
-                e.currentTarget.focus({ preventScroll: true });
-                const r = e.currentTarget.getBoundingClientRect();
-                down = {
-                  fx: (e.clientX - r.left) / r.width,
-                  fy: (e.clientY - r.top) / r.height,
-                  t: e.timeStamp,
-                  pointerId: e.pointerId,
-                };
-                e.currentTarget.setPointerCapture(e.pointerId);
-                void queueTouch("down", down.fx, down.fy);
-              }}
-              onPointerMove={(e) => {
-                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
-                  moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
-                  return;
-                }
-                const start = down;
-                if (!start || start.pointerId !== e.pointerId) return;
-                const r = e.currentTarget.getBoundingClientRect();
-                pendingMove = {
-                  fx: (e.clientX - r.left) / r.width,
-                  fy: (e.clientY - r.top) / r.height,
-                  pointerId: e.pointerId,
-                };
-                if (!moveRaf) {
-                  moveRaf = requestAnimationFrame(() => {
-                    moveRaf = 0;
-                    const move = pendingMove;
-                    pendingMove = null;
-                    if (move && down?.pointerId === move.pointerId) {
-                      void queueTouch("move", move.fx, move.fy);
+                }}
+                onPointerDown={(e) => {
+                  if (recordedCoordinateEditable() && e.button === 0) {
+                    const index = wb.focusedIndex();
+                    const step = index == null ? undefined : draft.steps()[index];
+                    if (index != null && step?.kind === "tap" && step.target.point) {
+                      e.preventDefault();
+                      e.currentTarget.focus({ preventScroll: true });
+                      recordedCoordinateDrag = { pointerId: e.pointerId };
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
                     }
-                  });
-                }
-              }}
-              onPointerUp={(e) => {
-                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
-                  moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
-                  recordedCoordinateDrag = null;
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                    e.currentTarget.releasePointerCapture(e.pointerId);
+                    return;
                   }
-                  return;
-                }
-                if (!frame() || !liveControlActive()) return;
-                const start = down;
-                if (!start || start.pointerId !== e.pointerId || e.button !== 0) return;
-                const r = e.currentTarget.getBoundingClientRect();
-                const fx = (e.clientX - r.left) / r.width;
-                const fy = (e.clientY - r.top) / r.height;
-                flushPendingMove(e.pointerId);
-                down = null;
-                const appliedLive = queueTouch("up", fx, fy);
-                const dx = (fx - start.fx) * r.width;
-                const dy = (fy - start.fy) * r.height;
-                if (Math.hypot(dx, dy) < 6) {
-                  // tap → direct action, no picker
-                  // show brief physical feedback at tap location
-                  setTapFeedback({ x: start.fx * 100, y: start.fy * 100 });
-                  if (feedbackTimer) clearTimeout(feedbackTimer);
-                  feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
+                  if (!frame() || !liveControlActive() || e.button !== 0) return;
+                  e.currentTarget.focus({ preventScroll: true });
+                  const r = e.currentTarget.getBoundingClientRect();
+                  down = {
+                    fx: (e.clientX - r.left) / r.width,
+                    fy: (e.clientY - r.top) / r.height,
+                    t: e.timeStamp,
+                    pointerId: e.pointerId,
+                  };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  void queueTouch("down", down.fx, down.fy);
+                }}
+                onPointerMove={(e) => {
+                  if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                    moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
+                    return;
+                  }
+                  const start = down;
+                  if (!start || start.pointerId !== e.pointerId) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  pendingMove = {
+                    fx: (e.clientX - r.left) / r.width,
+                    fy: (e.clientY - r.top) / r.height,
+                    pointerId: e.pointerId,
+                  };
+                  if (!moveRaf) {
+                    moveRaf = requestAnimationFrame(() => {
+                      moveRaf = 0;
+                      const move = pendingMove;
+                      pendingMove = null;
+                      if (move && down?.pointerId === move.pointerId) {
+                        void queueTouch("move", move.fx, move.fy);
+                      }
+                    });
+                  }
+                }}
+                onPointerUp={(e) => {
+                  if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                    moveRecordedCoordinate(e.currentTarget, e.clientX, e.clientY);
+                    recordedCoordinateDrag = null;
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                    return;
+                  }
+                  if (!frame() || !liveControlActive()) return;
+                  const start = down;
+                  if (!start || start.pointerId !== e.pointerId || e.button !== 0) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const fx = (e.clientX - r.left) / r.width;
+                  const fy = (e.clientY - r.top) / r.height;
+                  flushPendingMove(e.pointerId);
+                  down = null;
+                  const appliedLive = queueTouch("up", fx, fy);
+                  const dx = (fx - start.fx) * r.width;
+                  const dy = (fy - start.fy) * r.height;
+                  if (Math.hypot(dx, dy) < 6) {
+                    // tap → direct action, no picker
+                    // show brief physical feedback at tap location
+                    setTapFeedback({ x: start.fx * 100, y: start.fy * 100 });
+                    if (feedbackTimer) clearTimeout(feedbackTimer);
+                    feedbackTimer = window.setTimeout(() => setTapFeedback(null), 280);
 
-                  void appliedLive.then((live) =>
-                    rec.driveTap(start.fx, start.fy, live).then(() => {
-                      if (rec.interacting()) scheduleLiveSnapshot();
-                    }),
-                  );
-                } else {
-                  // drag → swipe, duration clamped to a sane gesture range
-                  const durationMs = Math.round(Math.max(80, Math.min(e.timeStamp - start.t, 800)));
-                  void appliedLive.then((live) =>
-                    rec
-                      .driveSwipe({ x: start.fx, y: start.fy }, { x: fx, y: fy }, durationMs, live)
-                      .then(() => {
+                    void appliedLive.then((live) =>
+                      rec.driveTap(start.fx, start.fy, live).then(() => {
                         if (rec.interacting()) scheduleLiveSnapshot();
                       }),
-                  );
-                }
-              }}
-              onPointerCancel={(e) => {
-                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
-                  recordedCoordinateDrag = null;
-                  return;
-                }
-                cancelGesture(e.pointerId);
-              }}
-              onLostPointerCapture={(e) => {
-                if (recordedCoordinateDrag?.pointerId === e.pointerId) {
-                  recordedCoordinateDrag = null;
-                  return;
-                }
-                cancelGesture(e.pointerId);
-              }}
-              onWheel={(e) => {
-                if (!frame() || !liveControlActive() || down) return;
-                e.preventDefault();
-                e.currentTarget.focus({ preventScroll: true });
-                const r = e.currentTarget.getBoundingClientRect();
-                const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1;
-                const dx = e.deltaX * scale;
-                const dy = e.deltaY * scale;
-                const fx = (e.clientX - r.left) / r.width;
-                const fy = (e.clientY - r.top) / r.height;
-                if (!wheelBurst) {
-                  wheelBurst = { startedAt: performance.now(), dx: 0, dy: 0 };
-                  wheelSent = false;
-                }
-                wheelBurst.dx += dx;
-                wheelBurst.dy += dy;
-                if (pendingWheel) {
-                  pendingWheel = {
-                    fx,
-                    fy,
-                    dx: pendingWheel.dx + dx,
-                    dy: pendingWheel.dy + dy,
-                  };
-                } else {
-                  pendingWheel = { fx, fy, dx, dy };
-                }
-                if (!wheelRaf) wheelRaf = requestAnimationFrame(flushWheel);
-                if (wheelEndTimer) clearTimeout(wheelEndTimer);
-                wheelEndTimer = window.setTimeout(finishWheelBurst, 90);
-              }}
-              onContextMenu={(e) => {
-                // Right-click = deliberate inspection / strategy selection.
-                if (!frame() || !liveControlActive()) return;
-                e.preventDefault();
-                openPickerAt(e.currentTarget, e.clientX, e.clientY);
-              }}
-              onMouseMove={(e) => {
-                if (stageView() === "recorded") {
-                  setRecordedScreenHovered(recordedInspectionActive());
-                  if (recordedInspectionActive()) {
-                    updateRecordedNodeHover(e.currentTarget, e.clientX, e.clientY);
+                    );
                   } else {
-                    setRecordedHoverNode(null);
+                    // drag → swipe, duration clamped to a sane gesture range
+                    const durationMs = Math.round(
+                      Math.max(80, Math.min(e.timeStamp - start.t, 800)),
+                    );
+                    void appliedLive.then((live) =>
+                      rec
+                        .driveSwipe(
+                          { x: start.fx, y: start.fy },
+                          { x: fx, y: fy },
+                          durationMs,
+                          live,
+                        )
+                        .then(() => {
+                          if (rec.interacting()) scheduleLiveSnapshot();
+                        }),
+                    );
                   }
-                  // Overlay inspection follows the accessibility snapshot, not
-                  // the PNG fallback. Healthy H.264 deliberately stops PNG
-                  // polling, which previously made hover disappear when live
-                  // streaming was working best.
-                } else if (liveControlActive()) {
-                  scheduleHover(e.currentTarget, e.clientX, e.clientY);
-                }
-              }}
-              onMouseLeave={() => {
-                setRecordedScreenHovered(false);
-                setRecordedHoverNode(null);
-                clearHover();
-              }}
-            />
-            <Show when={stageView() === "recorded" && recordedScreenHovered()}>
-              <For each={recordedNodeOutlines()}>
+                }}
+                onPointerCancel={(e) => {
+                  if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                    recordedCoordinateDrag = null;
+                    return;
+                  }
+                  cancelGesture(e.pointerId);
+                }}
+                onLostPointerCapture={(e) => {
+                  if (recordedCoordinateDrag?.pointerId === e.pointerId) {
+                    recordedCoordinateDrag = null;
+                    return;
+                  }
+                  cancelGesture(e.pointerId);
+                }}
+                onWheel={(e) => {
+                  if (!frame() || !liveControlActive() || down) return;
+                  e.preventDefault();
+                  e.currentTarget.focus({ preventScroll: true });
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1;
+                  const dx = e.deltaX * scale;
+                  const dy = e.deltaY * scale;
+                  const fx = (e.clientX - r.left) / r.width;
+                  const fy = (e.clientY - r.top) / r.height;
+                  if (!wheelBurst) {
+                    wheelBurst = { startedAt: performance.now(), dx: 0, dy: 0 };
+                    wheelSent = false;
+                  }
+                  wheelBurst.dx += dx;
+                  wheelBurst.dy += dy;
+                  if (pendingWheel) {
+                    pendingWheel = {
+                      fx,
+                      fy,
+                      dx: pendingWheel.dx + dx,
+                      dy: pendingWheel.dy + dy,
+                    };
+                  } else {
+                    pendingWheel = { fx, fy, dx, dy };
+                  }
+                  if (!wheelRaf) wheelRaf = requestAnimationFrame(flushWheel);
+                  if (wheelEndTimer) clearTimeout(wheelEndTimer);
+                  wheelEndTimer = window.setTimeout(finishWheelBurst, 90);
+                }}
+                onContextMenu={(e) => {
+                  // Right-click = deliberate inspection / strategy selection.
+                  if (!frame() || !liveControlActive()) return;
+                  e.preventDefault();
+                  openPickerAt(e.currentTarget, e.clientX, e.clientY);
+                }}
+                onMouseMove={(e) => {
+                  if (stageView() === "recorded") {
+                    setRecordedScreenHovered(recordedInspectionActive());
+                    if (recordedInspectionActive()) {
+                      updateRecordedNodeHover(e.currentTarget, e.clientX, e.clientY);
+                    } else {
+                      setRecordedHoverNode(null);
+                    }
+                    // Overlay inspection follows the accessibility snapshot, not
+                    // the PNG fallback. Healthy H.264 deliberately stops PNG
+                    // polling, which previously made hover disappear when live
+                    // streaming was working best.
+                  } else if (liveControlActive()) {
+                    scheduleHover(e.currentTarget, e.clientX, e.clientY);
+                  }
+                }}
+                onMouseLeave={() => {
+                  setRecordedScreenHovered(false);
+                  setRecordedHoverNode(null);
+                  clearHover();
+                }}
+              />
+              <Show when={stageView() === "recorded" && recordedScreenHovered()}>
+                <For each={recordedNodeOutlines()}>
+                  {(highlight) => (
+                    <i
+                      class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--v2-background-bg-accent)_34%,transparent)]"
+                      style={highlight}
+                      data-recorded-node-outline
+                      aria-hidden="true"
+                    />
+                  )}
+                </For>
+              </Show>
+              <Show when={recordedHoverHighlight()}>
                 {(highlight) => (
                   <i
-                    class="pointer-events-none absolute z-[2] rounded-[2px] border border-[color-mix(in_srgb,var(--v2-background-bg-accent)_34%,transparent)]"
-                    style={highlight}
-                    data-recorded-node-outline
+                    class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
+                    style={highlight()}
                     aria-hidden="true"
                   />
                 )}
-              </For>
-            </Show>
-            <Show when={recordedHoverHighlight()}>
-              {(highlight) => (
-                <i
-                  class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_12%,transparent)] shadow-[0_0_0_1px_rgb(255_255_255/16%)]"
-                  style={highlight()}
-                  aria-hidden="true"
-                />
-              )}
-            </Show>
-            <Show when={focusedEvidenceHighlight()}>
-              {(highlight) => (
-                <div
-                  class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/30%)]"
-                  style={highlight()}
-                  aria-hidden="true"
-                />
-              )}
-            </Show>
-            <Show when={!stepPlayback() && focusedCoordinateGuide()}>
-              {(guide) => <CoordinateTapPreview guide={guide()} />}
-            </Show>
-            <Show when={focusedSwipePreview()}>
-              {(swipe) => (
-                <SwipePathPreview
-                  from={swipe().from}
-                  to={swipe().to}
-                  bounds={swipe().bounds}
-                  onPoint={updateFocusedSwipePoint}
-                  previewToken={swipePlayback()?.token}
-                  previewDurationMs={swipePlayback()?.step.durationMs}
-                />
-              )}
-            </Show>
-            {stepPlayback() && playbackBounds() && (
-              <StepPlaybackPreview step={stepPlayback()!.step} bounds={playbackBounds()!} />
-            )}
-            <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
-              {(h) => (
-                <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
+              </Show>
+              <Show when={focusedEvidenceHighlight()}>
+                {(highlight) => (
                   <div
-                    class="absolute rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12]"
-                    style={h().rect}
+                    class="pointer-events-none absolute z-[3] rounded-[3px] border-[1.5px] border-[var(--v2-background-bg-accent)] bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] shadow-[0_0_0_999px_rgb(4_7_14/30%)]"
+                    style={highlight()}
+                    aria-hidden="true"
                   />
-                  <div
-                    class={cn(
-                      "absolute z-[5] max-w-[62%] overflow-hidden rounded-md bg-surface-brand-base px-1.5 py-0.5 font-mono text-12-regular leading-snug text-ellipsis whitespace-nowrap text-text-on-brand-base shadow-sm",
-                      h().chip.below ? "translate-y-1" : "-translate-y-[calc(100%+4px)]",
-                    )}
-                    style={{
-                      left: h().chip.left,
-                      top: h().chip.below ? h().chip.bottom : h().chip.top,
-                    }}
-                  >
-                    {h().chip.text}
+                )}
+              </Show>
+              <Show when={!stepPlayback() && focusedCoordinateGuide()}>
+                {(guide) => <CoordinateTapPreview guide={guide()} />}
+              </Show>
+              <Show when={focusedSwipePreview()}>
+                {(swipe) => (
+                  <SwipePathPreview
+                    from={swipe().from}
+                    to={swipe().to}
+                    bounds={swipe().bounds}
+                    onPoint={updateFocusedSwipePoint}
+                    previewToken={swipePlayback()?.token}
+                    previewDurationMs={swipePlayback()?.step.durationMs}
+                  />
+                )}
+              </Show>
+              {stepPlayback() && playbackBounds() && (
+                <StepPlaybackPreview step={stepPlayback()!.step} bounds={playbackBounds()!} />
+              )}
+              <Show when={server.showOverlays() && !picker() && hoverHighlight()}>
+                {(h) => (
+                  <div class="pointer-events-none absolute inset-0 z-[4]" aria-hidden="true">
+                    <div
+                      class="absolute rounded-[3px] border-[1.5px] border-border-interactive-base bg-surface-brand-base/[0.12]"
+                      style={h().rect}
+                    />
+                    <div
+                      class={cn(
+                        "absolute z-[5] max-w-[62%] overflow-hidden rounded-md bg-surface-brand-base px-1.5 py-0.5 font-mono text-12-regular leading-snug text-ellipsis whitespace-nowrap text-text-on-brand-base shadow-sm",
+                        h().chip.below ? "translate-y-1" : "-translate-y-[calc(100%+4px)]",
+                      )}
+                      style={{
+                        left: h().chip.left,
+                        top: h().chip.below ? h().chip.bottom : h().chip.top,
+                      }}
+                    >
+                      {h().chip.text}
+                    </div>
                   </div>
-                </div>
-              )}
-            </Show>
-            <Show when={pickedHighlight()}>
-              {(h) => (
-                <div
-                  class="pointer-events-none absolute z-[5] rounded-[3px] border-[1.6px] border-border-interactive-base bg-surface-brand-base/[0.18]"
-                  aria-hidden="true"
-                  style={h()}
-                />
-              )}
-            </Show>
+                )}
+              </Show>
+              <Show when={pickedHighlight()}>
+                {(h) => (
+                  <div
+                    class="pointer-events-none absolute z-[5] rounded-[3px] border-[1.6px] border-border-interactive-base bg-surface-brand-base/[0.18]"
+                    aria-hidden="true"
+                    style={h()}
+                  />
+                )}
+              </Show>
 
-            {/* tap confirmation ring */}
-            <Show when={tapFeedback()}>
-              {(fb) => (
-                <div
-                  class="pointer-events-none absolute z-[6] origin-center rounded-full border-[1.5px] border-border-interactive-base bg-surface-brand-base/20 animate-ping"
-                  aria-hidden="true"
-                  style={{
-                    left: `calc(${fb().x}% - 10px)`,
-                    top: `calc(${fb().y}% - 10px)`,
-                    width: "20px",
-                    height: "20px",
-                  }}
-                />
-              )}
+              {/* tap confirmation ring */}
+              <Show when={tapFeedback()}>
+                {(fb) => (
+                  <div
+                    class="pointer-events-none absolute z-[6] origin-center rounded-full border-[1.5px] border-border-interactive-base bg-surface-brand-base/20 animate-ping"
+                    aria-hidden="true"
+                    style={{
+                      left: `calc(${fb().x}% - 10px)`,
+                      top: `calc(${fb().y}% - 10px)`,
+                      width: "20px",
+                      height: "20px",
+                    }}
+                  />
+                )}
+              </Show>
             </Show>
-          </Show>
+          </div>
         </div>
-      </div>
+      </Show>
 
       <Show when={picker() && liveControlActive() && (pickerNode() || rec.recording())}>
         <div
@@ -1805,45 +2168,27 @@ export function DeviceStage(_props: { onExpandBoard?: () => void; onOpenTargets?
 
       {/* Device plumbing lives in a slim strip below the stage — never as a
             hero card blocking the content. */}
-      <Show
-        when={server.isEmptyDevices()}
-        fallback={
-          <Show when={!targetReady()}>
-            <DeviceEvidenceEmptyState
-              deviceName={currentDevice()?.name}
-              refreshing={refreshingTarget()}
-              starting={server.bootingSerial() === currentDevice()?.serial}
-              onStartDevice={
-                currentDevice() && currentDevice()?.platform !== "browser"
-                  ? () => {
-                      const serial = currentDevice()?.serial;
-                      if (serial) void server.bootDevice(serial);
-                    }
-                  : undefined
-              }
-              onChooseDevice={() =>
-                window.dispatchEvent(new CustomEvent("relay:open-device-picker"))
-              }
-              onRefresh={() => void refreshTarget()}
-            />
-          </Show>
-        }
-      >
-        <DeviceConnectState
-          offline={server.health() === "offline"}
-          onRefresh={() => {
-            void (async () => {
-              await server.pollHealth();
-              if (server.health() === "online") await server.refreshDevices();
-            })();
-          }}
+      <Show when={currentDevice() && !targetReady()}>
+        <DeviceEvidenceEmptyState
+          deviceName={currentDevice()?.name}
+          refreshing={refreshingTarget()}
+          starting={server.bootingSerial() === currentDevice()?.serial}
+          onStartDevice={
+            currentDevice() && currentDevice()?.platform !== "browser"
+              ? () => {
+                  const serial = currentDevice()?.serial;
+                  if (serial) void server.bootDevice(serial);
+                }
+              : undefined
+          }
           onChooseDevice={() => window.dispatchEvent(new CustomEvent("relay:open-device-picker"))}
+          onRefresh={() => void refreshTarget()}
         />
       </Show>
 
-      {/* Keep the control row reserved in both views so switching between
-          Recorded and Live never moves the device. */}
-      <Show when={targetReady()}>
+      {/* Device-only utilities stay outside embedded capture, where the
+          recording bar is the single source of control. */}
+      <Show when={targetReady() && !embeddedRecordingControls()}>
         <div class="z-[2] mt-3 flex h-9 items-center justify-center gap-1.5 text-text-base">
           <Show when={stageView() === "live"}>
             <label

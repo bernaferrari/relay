@@ -10,6 +10,8 @@ const api: ElectronAPI = {
     void ipcRenderer.invoke("open-external", url);
   },
 
+  openXcode: () => ipcRenderer.invoke("open-xcode"),
+
   notify: (title, body) => {
     void ipcRenderer.invoke("notify", title, body);
   },

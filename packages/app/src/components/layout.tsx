@@ -20,7 +20,7 @@ export function Layout(props: {
   const platform = usePlatform();
 
   onMount(() => {
-    // Fixed tooltip layer — avoids overflow:auto clipping on step actions.
+    // Fixed tooltip layer — avoids overflow:auto clipping in step actions.
     // Emil: first tip delays; subsequent tips in a cluster are instant.
     const layer = document.createElement("div");
     layer.className = "tip-layer";

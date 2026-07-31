@@ -62,16 +62,19 @@ async function isServerCompatible(url: string): Promise<boolean> {
 
 function resolveServerEntry(): string | null {
   const here = dirname(fileURLToPath(import.meta.url));
-  // monorepo: packages/desktop/out/main → packages/server/src/index.ts
-  // or packages/desktop/src/main during unbundled runs
-  const candidates = [
-    join(process.resourcesPath, "server/index.cjs"),
-    resolve(here, "../server/index.cjs"),
+  // In development, the app bundle may retain a previously packaged server.
+  // Prefer the workspace server so newly connected devices and source changes
+  // are never hidden behind a stale Resources/server/index.cjs.
+  const workspaceCandidates = [
     resolve(here, "../../../server/src/index.ts"),
     resolve(here, "../../server/src/index.ts"),
     resolve(process.cwd(), "packages/server/src/index.ts"),
     resolve(process.cwd(), "../server/src/index.ts"),
+    resolve(here, "../server/index.cjs"),
   ];
+  const candidates = app.isPackaged
+    ? [join(process.resourcesPath, "server/index.cjs"), ...workspaceCandidates]
+    : [...workspaceCandidates, join(process.resourcesPath, "server/index.cjs")];
   for (const c of candidates) {
     if (existsSync(c)) return c;
   }

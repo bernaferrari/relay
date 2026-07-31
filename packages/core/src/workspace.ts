@@ -46,6 +46,55 @@ import {
   type TargetContext,
 } from "./target-context.js";
 import { adbSwipeInputArgs } from "./adb-input.js";
+import {
+  IosRunnerSetupError,
+  diagnoseIosRunnerError,
+  prepareIosRunner,
+  recordIosVideo,
+} from "./ios-device-adapter.js";
+
+/**
+ * XCTest runner setup is a device concern, not a recording concern. A stage
+ * opens by reading the screen, so that first read must be able to prepare the
+ * iOS runner too. Keep one preparation in flight per device; otherwise the
+ * initial screenshot and UI-tree polls race each other and each attempt can
+ * try to sign/install the same runner.
+ */
+const iosRunnerPreparations = new Map<string, Promise<void>>();
+const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
+const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
+
+function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> {
+  const recentFailure = iosRunnerFailures.get(serial);
+  if (recentFailure && recentFailure.expiresAt > Date.now()) {
+    return Promise.reject(recentFailure.error);
+  }
+  if (recentFailure) iosRunnerFailures.delete(serial);
+
+  const existing = iosRunnerPreparations.get(serial);
+  if (existing) return existing;
+
+  const preparation = prepareIosRunner(device, { udid: serial })
+    .then(() => {
+      iosRunnerFailures.delete(serial);
+    })
+    .catch((error) => {
+      iosRunnerPreparations.delete(serial);
+      // A missing Xcode account or a provisioning error cannot be repaired by
+      // another simultaneous screen poll. Briefly share the failure across
+      // screenshot, snapshot, and video so the stage settles on one truthful
+      // state instead of repeatedly launching xcodebuild.
+      if (error instanceof IosRunnerSetupError) {
+        iosRunnerFailures.set(serial, {
+          error,
+          expiresAt: Date.now() + IOS_RUNNER_FAILURE_TTL_MS,
+        });
+      }
+      throw error;
+    });
+  iosRunnerPreparations.set(serial, preparation);
+  return preparation;
+}
 
 /**
  * Recover from session binding conflicts by releasing the stale binding
@@ -120,9 +169,97 @@ export type ListedDevice = {
   connectionState?: AndroidConnectionState;
   /** Observed by the adapter or the platform tool; omitted when unavailable. */
   osVersion?: string;
+  /** Physical iOS devices need Developer Mode before Xcode can install Relay's local runner. */
+  developerMode?: "enabled" | "disabled";
+  /** Xcode has mounted the platform services needed to install and run Relay's local iOS runner. */
+  developerServicesAvailable?: boolean;
 };
 
 const execFileAsync = promisify(execFile);
+const observedDevicePlatforms = new Map<string, { platform: DevicePlatform; expiresAt: number }>();
+const DEVICE_PLATFORM_CACHE_TTL_MS = 30_000;
+// Apple device discovery enumerates simulators and attached hardware together.
+// On a workspace with many installed simulators this routinely takes a little
+// longer than two seconds, so an aggressively short cutoff made real iPads
+// disappear from Relay's picker even though the adapter had found them.
+const DEVICE_DISCOVERY_TIMEOUT_MS = 5_000;
+
+type AppleDeviceControlRecord = {
+  identifier?: unknown;
+  deviceProperties?: {
+    bootState?: unknown;
+    name?: unknown;
+    osVersionNumber?: unknown;
+    developerModeStatus?: unknown;
+    ddiServicesAvailable?: unknown;
+  };
+  hardwareProperties?: {
+    platform?: unknown;
+    reality?: unknown;
+    udid?: unknown;
+  };
+};
+
+/**
+ * Xcode's CoreDevice command is the platform source of truth for attached
+ * iPhones and iPads. Keep it as a small discovery fallback: the SDK normally
+ * supplies simulators and device metadata, while CoreDevice makes physical
+ * hardware visible even when the SDK is being bundled by Electron.
+ */
+async function listAppleHardwareDevices(): Promise<ListedDevice[]> {
+  const directory = await mkdtemp(join(tmpdir(), "relay-devicectl-"));
+  const output = join(directory, "devices.json");
+  try {
+    await execFileAsync("xcrun", ["devicectl", "list", "devices", "--json-output", output], {
+      timeout: 8_000,
+      maxBuffer: 16 * 1024,
+    });
+    const parsed = JSON.parse(await readFile(output, "utf8")) as {
+      result?: { devices?: AppleDeviceControlRecord[] };
+    };
+    return (parsed.result?.devices ?? []).flatMap((device) => {
+      const hardware = device.hardwareProperties;
+      const properties = device.deviceProperties;
+      const udid = typeof hardware?.udid === "string" ? hardware.udid.trim() : "";
+      const name = typeof properties?.name === "string" ? properties.name.trim() : "";
+      const platform = typeof hardware?.platform === "string" ? hardware.platform : "";
+      const reality = typeof hardware?.reality === "string" ? hardware.reality : "";
+      if (!udid || !name || !/^ios$/i.test(platform) || !/^physical$/i.test(reality)) return [];
+      const bootState = typeof properties?.bootState === "string" ? properties.bootState : "";
+      const osVersion =
+        typeof properties?.osVersionNumber === "string"
+          ? properties.osVersionNumber.trim()
+          : undefined;
+      const developerModeStatus =
+        typeof properties?.developerModeStatus === "string"
+          ? properties.developerModeStatus.toLowerCase()
+          : "";
+      const developerServicesAvailable =
+        typeof properties?.ddiServicesAvailable === "boolean"
+          ? properties.ddiServicesAvailable
+          : undefined;
+      return [
+        {
+          id: udid,
+          serial: udid,
+          name,
+          kind: "Physical device",
+          booted: !bootState || /^booted$/i.test(bootState),
+          platform: "ios" as const,
+          ...(osVersion ? { osVersion } : {}),
+          ...(developerModeStatus === "enabled" || developerModeStatus === "disabled"
+            ? { developerMode: developerModeStatus }
+            : {}),
+          ...(developerServicesAvailable !== undefined ? { developerServicesAvailable } : {}),
+        },
+      ];
+    });
+  } catch {
+    return [];
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
 
 function explicitOsVersion(value: unknown): string | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -178,11 +315,17 @@ export async function listDevices(): Promise<ListedDevice[]> {
           devices: [],
           error: new Error("Relay device adapter did not respond in time"),
         });
-      }, 2_000);
+      }, DEVICE_DISCOVERY_TIMEOUT_MS);
     }),
   ]);
-  const [adapterResult, adbDevices] = await Promise.all([adapterList, listAdbDevices()]);
-  if (adapterResult.error && adbDevices.length === 0) throw adapterResult.error;
+  const [adapterResult, adbDevices, appleHardware] = await Promise.all([
+    adapterList,
+    listAdbDevices(),
+    listAppleHardwareDevices(),
+  ]);
+  if (adapterResult.error && adbDevices.length === 0 && appleHardware.length === 0) {
+    throw adapterResult.error;
+  }
 
   const devices = adapterResult.devices;
   const listed: ListedDevice[] = await Promise.all(
@@ -213,14 +356,43 @@ export async function listDevices(): Promise<ListedDevice[]> {
     const existing = bySerial.get(observed.serial);
     bySerial.set(observed.serial, mergeAdbObservation(existing, observed));
   }
+  for (const observed of appleHardware) {
+    const existing = bySerial.get(observed.serial);
+    bySerial.set(observed.serial, mergeAppleObservation(existing, observed));
+  }
 
   const merged = [...bySerial.values()].sort((left, right) => {
     const rank = (device: ListedDevice) =>
       device.kind === "Physical device" ? 0 : device.booted !== false ? 1 : 2;
     return rank(left) - rank(right);
   });
+  const expiresAt = Date.now() + DEVICE_PLATFORM_CACHE_TTL_MS;
+  for (const device of merged) {
+    observedDevicePlatforms.set(device.serial, { platform: device.platform, expiresAt });
+  }
   publish({ type: "device.list", at: now(), count: merged.length });
   return merged;
+}
+
+function mergeAppleObservation(
+  existing: ListedDevice | undefined,
+  observed: ListedDevice,
+): ListedDevice {
+  if (!existing) return observed;
+  return {
+    ...existing,
+    id: observed.id,
+    serial: observed.serial,
+    name: observed.name || existing.name,
+    kind: observed.kind,
+    booted: observed.booted,
+    platform: "ios",
+    ...(observed.osVersion ? { osVersion: observed.osVersion } : {}),
+    ...(observed.developerMode ? { developerMode: observed.developerMode } : {}),
+    ...(observed.developerServicesAvailable !== undefined
+      ? { developerServicesAvailable: observed.developerServicesAvailable }
+      : {}),
+  };
 }
 
 function mergeAdbObservation(
@@ -299,6 +471,18 @@ export function selectBrowserTarget(targetId: string | null): void {
   publish({ type: "device.selected", at: now(), serial: targetId?.trim() || null });
 }
 
+/**
+ * Resolve a physical platform without repeatedly invoking the comparatively
+ * expensive Apple device discovery command. The cache is refreshed by every
+ * full device-list request and expires quickly enough to follow reconnects.
+ */
+export async function devicePlatformForSerial(serial: string): Promise<DevicePlatform | undefined> {
+  const observed = observedDevicePlatforms.get(serial);
+  if (observed && observed.expiresAt > Date.now()) return observed.platform;
+  if (observed) observedDevicePlatforms.delete(serial);
+  return (await listDevices()).find((device) => device.serial === serial)?.platform;
+}
+
 async function resolveRuntimeTarget(
   serial?: string,
   provided?: Device,
@@ -312,7 +496,13 @@ async function resolveRuntimeTarget(
       };
     }
     const configured = configuredTargetContext();
-    const platform = configured.kind === "device" ? configured.platform : "android";
+    // HTTP callers identify a device by serial, but they do not share the
+    // desktop process's selected-target environment. Never infer a platform
+    // from that process-global fallback here: an iPad serial would otherwise
+    // be routed through Android's adb screenshot/input paths.
+    const platform =
+      (await devicePlatformForSerial(serial)) ??
+      (configured.kind === "device" ? configured.platform : "android");
     return {
       context: { kind: "device", platform, serial },
       device: createDevice(),
@@ -368,6 +558,13 @@ async function snapshotForTarget(
   interactiveOnly: boolean,
 ): Promise<SnapshotCapture> {
   if (
+    target.context.kind === "device" &&
+    target.context.platform === "ios" &&
+    target.context.serial
+  ) {
+    await ensureIosRunnerPrepared(target.device, target.context.serial);
+  }
+  if (
     target.context.kind !== "device" ||
     target.context.platform !== "android" ||
     !target.context.serial
@@ -397,7 +594,16 @@ export async function captureSnapshot(opts?: {
 }): Promise<SnapshotPayload> {
   const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
   return runWithTargetContext(target.context, async () => {
-    const snapshot = await snapshotForTarget(target, opts?.interactiveOnly ?? false);
+    let snapshot: SnapshotCapture;
+    try {
+      snapshot = await snapshotForTarget(target, opts?.interactiveOnly ?? false);
+    } catch (error) {
+      if (target.context.kind === "device" && target.context.platform === "ios") {
+        const normalized = await diagnoseIosRunnerError(error);
+        throw normalized;
+      }
+      throw error;
+    }
     const { nodes, ...capture } = snapshot;
     const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
     const bounds = inferBounds(nodes);
@@ -438,7 +644,20 @@ export async function captureScreenshot(opts?: {
       // avoids the SDK's long retry path when its optional app session expires.
       rawScreenshot(path, context.serial);
     } else {
-      await withSession(target.device, () => target.device.capture.screenshot({ ...base(), path }));
+      try {
+        if (context.kind === "device" && context.platform === "ios" && context.serial) {
+          await ensureIosRunnerPrepared(target.device, context.serial);
+        }
+        await withSession(target.device, () =>
+          target.device.capture.screenshot({ ...base(), path }),
+        );
+      } catch (error) {
+        if (context.kind === "device" && context.platform === "ios") {
+          const normalized = await diagnoseIosRunnerError(error);
+          throw normalized;
+        }
+        throw error;
+      }
     }
     const buf = await readFile(path);
     const base64 = buf.toString("base64");
@@ -470,6 +689,45 @@ export async function captureScreenshot(opts?: {
       jobId,
       framePath,
     };
+  });
+}
+
+export type DeviceVideoCapture = {
+  serial?: string;
+  platform: DevicePlatform;
+  mode: "recorded-video";
+  path?: string;
+  warning?: string;
+};
+
+/**
+ * Capture an iOS review take through XCTest. It intentionally does not share
+ * the Android H.264 stream path: a take is a durable video, not live preview.
+ */
+export async function captureDeviceVideo(input: {
+  serial: string;
+  action: "start" | "stop";
+  path?: string;
+}): Promise<DeviceVideoCapture> {
+  const target = await resolveRuntimeTarget(input.serial);
+  return runWithTargetContext(target.context, async () => {
+    const context = currentTargetContext();
+    if (context.kind !== "device" || context.platform !== "ios") {
+      throw new Error("Recorded video capture is currently available for Apple devices only");
+    }
+    const serial = context.serial;
+    if (!serial) throw new Error("Choose an iPhone or iPad before recording video");
+    if (input.action === "start") {
+      await ensureIosRunnerPrepared(target.device, serial);
+    }
+    const recorded = await withSession(target.device, () =>
+      recordIosVideo(target.device, {
+        udid: serial,
+        action: input.action,
+        ...(input.path ? { path: input.path } : {}),
+      }),
+    );
+    return { serial, platform: context.platform, ...recorded };
   });
 }
 

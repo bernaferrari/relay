@@ -26,6 +26,9 @@ export type CaptureServerDeps = {
   setSnapshot: (value: SnapshotState) => void;
   setShowOverlays: (value: boolean) => void;
   setLiveFrame: (value: Frame | null) => void;
+  /** A live poll is deliberately non-throwing, but the stage still needs to
+   * explain a setup failure instead of spinning forever. */
+  setLiveCaptureIssue?: (value: string | null) => void;
   pushFrame: (frame: Omit<Frame, "id">) => Frame;
   copyImage?: (base64: string, mime: string) => void | Promise<void>;
   appendLog: (
@@ -44,6 +47,15 @@ type ScreenshotResponse = {
   bytes: number;
   jobId?: string;
   framePath?: string;
+};
+
+export type DeviceVideoTake = {
+  id: string;
+  serial: string;
+  startedAt: number;
+  finishedAt?: number;
+  state: "recording" | "ready";
+  warning?: string;
 };
 
 export type LiveTouchAction = "down" | "move" | "up" | "cancel";
@@ -66,6 +78,20 @@ function serialFor(deps: CaptureServerDeps): string | undefined {
 
 export function createServerCapture(deps: CaptureServerDeps) {
   let keyboardChain = Promise.resolve(true);
+
+  async function recordIosVideo(action: "start" | "stop"): Promise<DeviceVideoTake | null> {
+    const serial = serialFor(deps);
+    if (!serial) return null;
+    const result = await deps.request<{ take: DeviceVideoTake | null }>("/device/video", {
+      method: "POST",
+      body: JSON.stringify({ serial, action }),
+    }, 250_000);
+    return result.take;
+  }
+
+  function iosVideoUrl(takeId: string): string {
+    return `${deps.serverUrl().replace(/\/$/, "")}/device/video/${encodeURIComponent(takeId)}`;
+  }
 
   async function touchDevice(action: LiveTouchAction, x: number, y: number): Promise<boolean> {
     const serial = deps.selectedDevice();
@@ -249,7 +275,15 @@ export function createServerCapture(deps: CaptureServerDeps) {
       const serial = serialFor(deps);
       const params = new URLSearchParams({ ephemeral: "1" });
       if (serial) params.set("serial", serial);
-      const data = await deps.request<ScreenshotResponse>(`/screenshot?${params}`, undefined, 5000);
+      // The first iOS read may install/sign the local XCTest runner. It is a
+      // one-time operation and legitimately takes longer than Android's
+      // screenshot path, so a five second transport timeout turns setup into
+      // a phantom "Loading screen" race.
+      const data = await deps.request<ScreenshotResponse>(
+        `/screenshot?${params}`,
+        undefined,
+        30_000,
+      );
       deps.setLiveFrame({
         id: `live-${data.capturedAt}`,
         capturedAt: data.capturedAt,
@@ -259,8 +293,11 @@ export function createServerCapture(deps: CaptureServerDeps) {
         serial: data.serial ?? serial,
         caption: `live · ${new Date(data.capturedAt).toLocaleTimeString(undefined, { hour12: false })}`,
       });
-    } catch {
-      // Live refresh is best-effort; retain the last good frame.
+      deps.setLiveCaptureIssue?.(null);
+    } catch (error) {
+      // Live refresh is best-effort; retain the last good frame, but preserve
+      // the reason for the stage. Swallowing it made setup failures invisible.
+      deps.setLiveCaptureIssue?.(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -271,11 +308,18 @@ export function createServerCapture(deps: CaptureServerDeps) {
       const data = await deps.request<NonNullable<SnapshotState> & { tree?: string }>(
         `/snapshot${query}`,
         undefined,
-        5000,
+        // Keep this in lockstep with the screenshot poll. On iOS both calls
+        // wait for the same first-run XCTest preparation, so a shorter tree
+        // timeout used to overwrite the useful "preparing" state with an
+        // unrelated network error.
+        30_000,
       );
       deps.setSnapshot(data);
-    } catch {
-      // Live refresh is best-effort; retain the last good tree.
+      deps.setLiveCaptureIssue?.(null);
+    } catch (error) {
+      // Snapshot and screenshot share the same iOS runner. Preserve the
+      // failure reason without disturbing a previously valid UI tree.
+      deps.setLiveCaptureIssue?.(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -370,6 +414,8 @@ export function createServerCapture(deps: CaptureServerDeps) {
   }
 
   return {
+    recordIosVideo,
+    iosVideoUrl,
     touchDevice,
     keyDevice,
     scrollDevice,

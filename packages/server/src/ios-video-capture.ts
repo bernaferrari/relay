@@ -1,0 +1,122 @@
+/**
+ * Temporary, local iOS video takes.
+ *
+ * XCTest can produce review-quality video for a physical iPhone/iPad, but it
+ * is not a live transport. Keeping this tiny adapter separate from
+ * `live-video.ts` prevents a future Android streaming change from changing
+ * Apple capture semantics.
+ */
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { captureDeviceVideo, runsRoot } from "@relay/core";
+
+export type IosVideoTake = {
+  id: string;
+  serial: string;
+  path: string;
+  startedAt: number;
+  finishedAt?: number;
+  state: "recording" | "ready";
+  warning?: string;
+};
+
+const takesById = new Map<string, IosVideoTake>();
+const activeTakeBySerial = new Map<string, string>();
+
+function id(): string {
+  return `ios-take-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function takeDirectory(): string {
+  return join(runsRoot(), "ios-takes");
+}
+
+function videoPath(takeId: string): string {
+  return join(takeDirectory(), `${takeId}.mp4`);
+}
+
+function metadataPath(takeId: string): string {
+  return join(takeDirectory(), `${takeId}.json`);
+}
+
+function isTakeId(value: string): boolean {
+  return /^ios-take-[a-z0-9]+-[a-z0-9]+$/.test(value);
+}
+
+function isStoredTake(value: unknown, takeId: string): value is IosVideoTake {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<IosVideoTake>;
+  return (
+    candidate.id === takeId &&
+    typeof candidate.serial === "string" &&
+    typeof candidate.path === "string" &&
+    typeof candidate.startedAt === "number" &&
+    (candidate.state === "recording" || candidate.state === "ready")
+  );
+}
+
+async function persistTake(take: IosVideoTake): Promise<void> {
+  await writeFile(metadataPath(take.id), JSON.stringify(take), { mode: 0o600 });
+}
+
+export async function startIosVideoTake(serial: string): Promise<IosVideoTake> {
+  const currentId = activeTakeBySerial.get(serial);
+  if (currentId) {
+    const current = takesById.get(currentId);
+    if (current) return current;
+  }
+  const takeId = id();
+  const path = videoPath(takeId);
+  await mkdir(takeDirectory(), { recursive: true, mode: 0o700 });
+  const result = await captureDeviceVideo({ serial, action: "start", path });
+  const take: IosVideoTake = {
+    id: takeId,
+    serial,
+    path: result.path ?? path,
+    startedAt: Date.now(),
+    state: "recording",
+    ...(result.warning ? { warning: result.warning } : {}),
+  };
+  takesById.set(take.id, take);
+  activeTakeBySerial.set(serial, take.id);
+  await persistTake(take);
+  return take;
+}
+
+export async function stopIosVideoTake(serial: string): Promise<IosVideoTake | null> {
+  const takeId = activeTakeBySerial.get(serial);
+  if (!takeId) return null;
+  const take = takesById.get(takeId);
+  activeTakeBySerial.delete(serial);
+  if (!take) return null;
+  const result = await captureDeviceVideo({ serial, action: "stop" });
+  const path = result.path ?? take.path;
+  let warning = result.warning;
+  try {
+    await access(path);
+  } catch {
+    warning ??= "The Apple runner stopped, but its video file is not ready yet.";
+  }
+  const complete: IosVideoTake = {
+    ...take,
+    path,
+    finishedAt: Date.now(),
+    state: "ready",
+    ...(warning ? { warning } : {}),
+  };
+  takesById.set(takeId, complete);
+  await persistTake(complete);
+  return complete;
+}
+
+export async function readIosVideoTake(takeId: string): Promise<IosVideoTake | null> {
+  const inMemory = takesById.get(takeId);
+  if (inMemory) return inMemory;
+  if (!isTakeId(takeId)) return null;
+  try {
+    const stored = JSON.parse(await readFile(metadataPath(takeId), "utf8")) as unknown;
+    return isStoredTake(stored, takeId) ? stored : null;
+  } catch {
+    return null;
+  }
+}

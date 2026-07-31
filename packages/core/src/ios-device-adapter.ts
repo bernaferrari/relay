@@ -1,0 +1,174 @@
+/**
+ * Relay's Apple-device capture boundary.
+ *
+ * Android can offer a low-latency scrcpy stream. Apple physical devices use
+ * the signed XCTest runner instead: it provides snapshots, interaction, and
+ * a high-quality recorded take, but not a misleading pseudo-live H.264 feed.
+ * Keep that distinction here so callers do not have to infer it from platform
+ * names or runner errors.
+ */
+import { readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import type { Device } from "./device.js";
+
+export type IosCaptureMode = "snapshot" | "recorded-video";
+
+export type IosVideoCaptureResult = {
+  mode: "recorded-video";
+  path?: string;
+  warning?: string;
+};
+
+export class IosRunnerSetupError extends Error {
+  readonly code = "ios-runner-setup";
+
+  constructor(readonly causeMessage: string) {
+    super(iosRunnerSetupMessage(causeMessage));
+    this.name = "IosRunnerSetupError";
+  }
+}
+
+function iosRunnerSetupMessage(cause: string): string {
+  if (/conflicting provisioning settings|automatically signed.*manually specified/i.test(cause)) {
+    return "Relay found a manual signing override that conflicts with Xcode automatic signing. Clear the advanced signing options in Settings, then try again.";
+  }
+  if (/developer mode/i.test(cause)) {
+    return "Turn on Developer Mode on this iPad, then reconnect it and try again.";
+  }
+  if (/developer disk image/i.test(cause)) {
+    return "Unlock this iPad and wait for Xcode to finish preparing device support, then try again.";
+  }
+  if (/no account for team|valid credentials|sign into .*xcode|account.*xcode/i.test(cause)) {
+    return "Xcode is not signed in to this Apple team. Open Xcode → Settings → Accounts, sign in to the team shown in Relay, then try again.";
+  }
+  if (/no profiles? for|provisioning profiles? matching/i.test(cause)) {
+    return "Xcode could not create a development profile for Relay’s local runner. Sign in to the Apple team in Xcode, then try again.";
+  }
+  if (/provisioning profile|code sign|signing identity|apple team|AGENT_DEVICE_IOS_|build-for-testing|xcodebuild/i.test(cause)) {
+    return "Relay could not sign its local iPad runner. Check the Apple setup in Settings, then try again.";
+  }
+  return "Relay could not prepare this iPad yet. Reconnect it and try again.";
+}
+
+function valueFrom(result: unknown, key: "path" | "warning"): string | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const value = (result as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * agent-device intentionally returns a compact error for runner preparation,
+ * while xcodebuild writes the actionable cause to its per-session log. Read a
+ * *fresh* log only after that compact error so Relay can distinguish a missing
+ * Xcode account from an unplugged iPad without exposing the full build log.
+ */
+async function recentIosRunnerFailure(): Promise<string | undefined> {
+  const stateDir = process.env.AGENT_DEVICE_STATE_DIR?.trim() || join(homedir(), ".agent-device");
+  const session = process.env.AGENT_DEVICE_SESSION?.trim() || "relay-actions";
+  const path = join(stateDir, "sessions", session, "runner.log");
+  try {
+    const info = await stat(path);
+    if (Date.now() - info.mtimeMs > 60_000) return undefined;
+    const log = (await readFile(path, "utf8")).slice(-32_768);
+    if (/no account for team|valid credentials/i.test(log)) {
+      return "No Account for Team";
+    }
+    if (/developer mode/i.test(log)) {
+      return "Developer Mode disabled";
+    }
+    if (/developer disk image|ddi services/i.test(log)) {
+      return "Developer Disk Image unavailable";
+    }
+    if (/no profiles? for|provisioning profiles? matching/i.test(log)) {
+      return "No profiles for Relay's local runner";
+    }
+    if (/automatically signed.*manually specified|conflicting provisioning settings/i.test(log)) {
+      return "Automatically signed runner has a manually specified signing identity";
+    }
+  } catch {
+    // The runner log is optional diagnostic context. Preserve the original
+    // device error when it does not exist or cannot be read.
+  }
+  return undefined;
+}
+
+/** Convert noisy Xcode/agent-device configuration failures into product language. */
+export function normalizeIosRunnerError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    /provisioning profile|code sign|signing identity|apple team|AGENT_DEVICE_IOS_|build-for-testing|xcodebuild|developer mode|developer disk image|no account for team|valid credentials|no profiles? for/i.test(
+      message,
+    )
+  ) {
+    return new IosRunnerSetupError(message);
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
+/**
+ * Some agent-device calls prepare the XCTest runner internally, after Relay's
+ * explicit preparation has already returned. Enrich those later errors from a
+ * freshly written runner log as well, so screenshot, snapshot, and video all
+ * present the same actionable setup state.
+ */
+export async function diagnoseIosRunnerError(error: unknown): Promise<Error> {
+  const diagnostic = await recentIosRunnerFailure();
+  return normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
+}
+
+/**
+ * Build and health-check the locally signed XCTest runner. This is deliberate:
+ * discovery alone never writes to Xcode or asks for signing access.
+ */
+export async function prepareIosRunner(
+  device: Device,
+  selection: { udid: string },
+): Promise<void> {
+  try {
+    await device.command.prepare({
+      platform: "ios",
+      udid: selection.udid,
+      device: selection.udid,
+      action: "ios-runner",
+      timeoutMs: 240_000,
+    });
+  } catch (error) {
+    const diagnostic = await recentIosRunnerFailure();
+    throw normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
+  }
+}
+
+/**
+ * Start or stop an iOS XCTest video take. The returned file is an actual video
+ * artifact for review/export—not a stream surrogate. `path` is supplied on
+ * start so Relay owns where evidence is retained.
+ */
+export async function recordIosVideo(
+  device: Device,
+  input: { udid: string; action: "start" | "stop"; path?: string },
+): Promise<IosVideoCaptureResult> {
+  try {
+    const result = await device.recording.record(
+      {
+        platform: "ios",
+        udid: input.udid,
+        device: input.udid,
+        action: input.action,
+        ...(input.path ? { path: input.path } : {}),
+        fps: 30,
+        quality: "high",
+      } as Parameters<Device["recording"]["record"]>[0],
+    );
+    return {
+      mode: "recorded-video",
+      ...(valueFrom(result, "path") || input.path
+        ? { path: valueFrom(result, "path") ?? input.path }
+        : {}),
+      ...(valueFrom(result, "warning") ? { warning: valueFrom(result, "warning") } : {}),
+    };
+  } catch (error) {
+    const diagnostic = await recentIosRunnerFailure();
+    throw normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
+  }
+}

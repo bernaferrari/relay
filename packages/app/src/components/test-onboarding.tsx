@@ -1,103 +1,112 @@
 import { Show } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
-import { presentTarget } from "../lib/target-presentation";
+import { shellStageWrap } from "../lib/shell-layout";
+import { presentTarget, targetIsReady } from "../lib/target-presentation";
+import { productPrimary, productSecondary } from "../lib/ui";
+import { DeviceStage } from "./stage";
 import { Icon } from "./icon";
 
-export function TestWelcome(props: { onRecord: () => void; onOpenTargets: () => void }) {
+/**
+ * The launch surface is a live session, not a silently-restored journey.
+ * Device control is always available; recording only begins after the user
+ * explicitly creates a journey.
+ */
+export function TestWelcome(props: {
+  onChooseDevice: () => void;
+  onStartJourney: () => void;
+  onOpenTargets: () => void;
+}) {
   const server = useServer();
   const target = () =>
     server.devices().find((device) => device.serial === server.selectedDevice()) ?? null;
-  const targetCopy = () => (target() ? presentTarget(target()!) : null);
-  const targetReady = () =>
-    Boolean(target()) && server.health() === "online" && target()!.booted !== false;
+  const ready = () => targetIsReady(target() ?? undefined, server.health() === "online");
+  const targetName = () => (target() ? presentTarget(target()!).displayName : "your device");
+  const journeyCount = () => server.recipes().filter((recipe) => recipe.source === "custom").length;
 
   return (
     <section
-      class="col-span-full flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-10"
-      aria-labelledby="test-welcome-title"
+      class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(300px,0.72fr)_minmax(420px,1fr)] bg-[var(--v2-background-bg-deep)] max-[980px]:grid-cols-1"
+      aria-labelledby="session-home-title"
     >
-      <div class="my-auto grid w-[min(100%,452px)] gap-5 self-center">
-        <header class="text-center">
-          <h2
-            id="test-welcome-title"
-            class="text-[23px] font-semibold tracking-[-0.035em] text-[var(--text-strong)]"
-          >
-            Show Relay what to test
-          </h2>
-          <p class="mx-auto mt-1.5 max-w-[368px] text-[12.5px]/[1.55] text-[var(--text-base)]">
-            Start on your device. Relay turns the screens and actions you record into a journey map.
-          </p>
-        </header>
-
-        {/* Primary — record on device */}
-        <button
-          type="button"
-          class={cn(
-            "group/rec relative grid w-full grid-cols-[46px_minmax(0,1fr)_38px] items-center gap-3.5 rounded-[18px] p-4 text-left",
-            "border transition-[background-color,border-color,box-shadow,transform] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
-            "active:scale-[0.99]",
-            targetReady()
-              ? "border-transparent bg-gradient-to-b from-[#7c6cf6] to-[#6957ee] shadow-[0_10px_28px_-10px_rgb(89_69_214/55%)] hover:shadow-[0_14px_34px_-10px_rgb(89_69_214/60%)]"
-              : "border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha shadow-xs-border-base hover:border-[var(--text-interactive-base)]",
-          )}
-          onClick={() => (targetReady() ? props.onRecord() : props.onOpenTargets())}
-        >
-          <span
-            class={cn(
-              "grid size-[46px] place-items-center rounded-[13px]",
-              targetReady()
-                ? "bg-white/15 text-white"
-                : "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-            )}
-          >
-            <Show when={target()} fallback={<Icon name="smartphone" size={21} />}>
-              <Icon name={target()!.platform === "browser" ? "server" : "smartphone"} size={21} />
-            </Show>
-          </span>
-
-          <span class="min-w-0 text-left">
-            <strong
-              class={cn(
-                "block truncate text-[14.5px] font-semibold tracking-[-0.015em]",
-                targetReady() ? "text-white" : "text-[var(--text-strong)]",
-              )}
+      <div class="flex min-h-0 min-w-0 items-center border-r border-[var(--v2-border-border-muted)] px-[clamp(28px,5vw,72px)] py-10 max-[980px]:border-r-0 max-[980px]:border-b">
+        <div class="grid w-full max-w-[460px] gap-5">
+          <div>
+            <span class="text-[10px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
+              Live session
+            </span>
+            <h2
+              id="session-home-title"
+              class="m-0 mt-2 text-[clamp(22px,2.4vw,32px)] leading-[1.04] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance"
             >
-              {targetReady() ? `Record on ${targetCopy()!.displayName}` : "Record from device"}
-            </strong>
-            <small
-              class={cn(
-                "mt-0.5 flex items-center justify-start gap-1.5 truncate text-left text-[11.5px]/[1.4]",
-                targetReady() ? "text-white/75" : "text-[var(--text-weak)]",
-              )}
-            >
-              <Show when={!targetReady()}>
-                <i class="size-1.5 shrink-0 rounded-full bg-[var(--icon-warning-base)]" />
+              <Show when={ready()} fallback={<>Choose a device to begin</>}>
+                Explore {targetName()}
               </Show>
-              {targetReady()
-                ? "Use the app normally; every tap becomes a step."
-                : target()
-                  ? "Boot the device, then start recording."
-                  : "Pick a simulator, phone, or browser to record on."}
-            </small>
-          </span>
+            </h2>
+            <p class="m-0 mt-2.5 max-w-[44ch] text-[13px]/[1.6] text-[var(--text-weak)] text-pretty">
+              <Show
+                when={ready()}
+                fallback={
+                  <>
+                    Connect a phone, emulator, or browser target. Relay keeps the live session
+                    separate from journeys until you choose to record.
+                  </>
+                }
+              >
+                Tap, swipe, and type freely. Recording is off until you explicitly start a new
+                journey.
+              </Show>
+            </p>
+          </div>
 
-          <span
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class={cn(productPrimary, "min-h-10 gap-2 px-3.5 text-[12px]")}
+              onClick={() => (ready() ? props.onStartJourney() : props.onChooseDevice())}
+            >
+              <Icon name={ready() ? "circle" : "smartphone"} size={13} />
+              {ready() ? "Record new journey" : "Choose a device"}
+            </button>
+            <button
+              type="button"
+              class={cn(productSecondary, "min-h-10 px-3 text-[12px]")}
+              onClick={props.onOpenTargets}
+            >
+              Manage targets
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2 border-t border-[var(--v2-border-border-muted)] pt-4 text-[11px] text-[var(--text-weak)]">
+            <i
+              class={cn(
+                "size-1.5 shrink-0 rounded-full",
+                ready() ? "bg-[var(--icon-success-base)]" : "bg-[var(--v2-border-border-strong)]",
+              )}
+              aria-hidden="true"
+            />
+            <span>
+              {ready()
+                ? `Live control · recording off · ${journeyCount()} ${
+                    journeyCount() === 1 ? "journey" : "journeys"
+                  }`
+                : "No live target selected"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class={cn(shellStageWrap, "min-h-[420px] min-w-0")}>
+        <div class="pointer-events-none absolute top-4 left-4 z-10 flex items-center gap-2 rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_88%,transparent)] px-2.5 py-1.5 text-[10.5px] text-[var(--text-base)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
+          <i
             class={cn(
-              "grid size-[34px] place-items-center rounded-full transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/rec:translate-x-0.5",
-              targetReady()
-                ? "bg-white/18 text-white"
-                : "bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)]",
+              "size-1.5 rounded-full",
+              ready() ? "bg-[var(--icon-success-base)]" : "bg-[var(--text-weak)]",
             )}
-          >
-            <Icon name="arrow-right" size={16} />
-          </span>
-        </button>
-
-        <p class="m-0 text-center text-[11.5px]/[1.5] text-[var(--text-weak)]">
-          Record a screen, its actions, and the next screen. You can name and refine the path as you
-          go.
-        </p>
+          />
+          {ready() ? targetName() : "Live device"}
+        </div>
+        <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
       </div>
     </section>
   );

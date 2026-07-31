@@ -1,0 +1,130 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { JourneyMetadata, RecipeStep } from "@relay/protocol";
+import { buildJourneyTree } from "./journey-tree";
+import {
+  addPlannedConnection,
+  attachRecordedTake,
+  attachTransitionSteps,
+  canvasConnections,
+  removeAuthoredConnection,
+  reviewTransition,
+  setJourneyBaseline,
+} from "./journey-prototype";
+
+const metadata: JourneyMetadata = {
+  schemaVersion: 5,
+  positions: {},
+  edgeLabels: {},
+  edgeKinds: {},
+};
+
+const steps: RecipeStep[] = [
+  {
+    id: "open",
+    kind: "tap",
+    target: { label: "Open" },
+    evidence: {
+      id: "evidence-a",
+      recordedAt: 1,
+      screenshot: { recipeId: "take", id: "a", capturedAt: 1, mime: "image/png", sha256: "a" },
+    },
+  },
+  {
+    id: "close",
+    kind: "tap",
+    target: { label: "Close" },
+    evidence: {
+      id: "evidence-b",
+      recordedAt: 2,
+      screenshot: { recipeId: "take", id: "b", capturedAt: 2, mime: "image/png", sha256: "b" },
+    },
+  },
+];
+
+test("derived connections retain the runnable action identity", () => {
+  const tree = buildJourneyTree(steps);
+  const connection = canvasConnections(tree, steps, metadata)[0];
+  assert.equal(connection?.stepId, "open");
+  assert.equal(connection?.state, "recorded");
+  assert.equal(connection?.source, "derived");
+});
+
+test("planned connections are reversible and become recorded only after a stable step id exists", () => {
+  const tree = buildJourneyTree(steps);
+  const [from, to] = tree.nodes;
+  const planned = addPlannedConnection(
+    metadata,
+    { fromScreenId: from!.id, toScreenId: to!.id },
+    10,
+    steps,
+  );
+  // The migrated recording remains alongside the newly sketched route. Select
+  // the actual pending route instead of assuming it is the first transition.
+  const pending = planned.graph?.transitions.find(
+    (transition) => transition.state === "needs-recording",
+  );
+  assert.equal(pending?.state, "needs-recording");
+
+  const attached = attachRecordedTake(
+    planned,
+    pending!.id,
+    {
+      id: "take-transition",
+      steps,
+      videoTakeId: "video-transition",
+      videoClip: { startMs: 250, endMs: 1_500 },
+    },
+    20,
+  );
+  const recorded = attached.graph?.transitions.find((transition) => transition.id === pending!.id);
+  assert.deepEqual(recorded?.stepIds, ["open", "close"]);
+  assert.equal(recorded?.takeId, "take-transition");
+  assert.equal(recorded?.videoTakeId, "video-transition");
+  assert.deepEqual(recorded?.videoClip, { startMs: 250, endMs: 1_500 });
+  assert.equal(recorded?.mode, "interaction");
+  assert.equal(recorded?.review?.status, "draft");
+  assert.equal(recorded?.state, "recorded");
+
+  const removed = removeAuthoredConnection(attached, pending!.id);
+  assert.equal(
+    removed.graph?.transitions.some((transition) => transition.id === pending!.id),
+    false,
+  );
+  // The migrated recording is independent evidence, not part of the authored
+  // connection we just removed.
+  assert.equal(removed.graph?.transitions.length, 1);
+});
+
+test("visual quick behaviors remain replayable and independently reviewable", () => {
+  const tree = buildJourneyTree(steps);
+  const [from, to] = tree.nodes;
+  const planned = addPlannedConnection(
+    metadata,
+    { fromScreenId: from!.id, toScreenId: to!.id },
+    10,
+    steps,
+  );
+  const pending = planned.graph!.transitions.find(
+    (transition) => transition.state === "needs-recording",
+  )!;
+  const automaticStep: RecipeStep = { id: "wait-next", kind: "sleep", ms: 750 };
+  const attached = attachTransitionSteps(planned, pending.id, [automaticStep], "automatic", 20);
+  const reviewed = reviewTransition(attached, pending.id, { status: "verified" }, 30);
+  const connection = canvasConnections(
+    buildJourneyTree([...steps, automaticStep]),
+    [...steps, automaticStep],
+    reviewed,
+  ).find((candidate) => candidate.id === pending.id);
+
+  assert.equal(connection?.mode, "automatic");
+  assert.equal(connection?.review?.status, "verified");
+  assert.deepEqual(connection?.stepIds, ["wait-next"]);
+});
+
+test("a baseline is a canvas decision and never alters the executable recipe", () => {
+  const baseline = setJourneyBaseline(metadata, "baselined", 30);
+  assert.equal(baseline.prototype?.verification?.state, "baselined");
+  assert.equal(baseline.prototype?.verification?.baselineAt, 30);
+  assert.equal(steps[0]?.id, "open");
+});

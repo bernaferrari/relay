@@ -78,6 +78,7 @@ export type Device = {
       options?: Parameters<NativeDevice["command"]["appSwitcher"]>[0],
     ) => Promise<unknown>;
     rotate: (options: Parameters<NativeDevice["command"]["rotate"]>[0]) => Promise<unknown>;
+    prepare: (options: Parameters<NativeDevice["command"]["prepare"]>[0]) => Promise<unknown>;
   };
   settings: {
     update: (options: Parameters<NativeDevice["settings"]["update"]>[0]) => Promise<unknown>;

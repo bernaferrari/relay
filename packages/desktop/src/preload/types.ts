@@ -7,6 +7,9 @@ export type ElectronAPI = {
   /** Open a URL in the system browser. */
   openExternal: (url: string) => void;
 
+  /** Open Xcode to its Accounts settings workflow. */
+  openXcode: () => Promise<boolean>;
+
   /** Show a native OS notification. */
   notify: (title: string, body?: string) => void;
 

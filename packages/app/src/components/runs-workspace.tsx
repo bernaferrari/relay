@@ -44,6 +44,12 @@ import {
   runElapsedAtStep,
   runReviewCounts,
 } from "../lib/run-review-model";
+import {
+  deriveReviewCut,
+  nextReviewSourceMs,
+  reviewTimeToSourceMs,
+  sourceTimeToReviewMs,
+} from "../lib/review-cut";
 import { seg, segBtn, segBtnOn } from "../lib/ui";
 
 export function RunsWorkspace(props: {
@@ -1033,6 +1039,8 @@ function RunReplayStage(props: {
   let videoRef: HTMLVideoElement | undefined;
   const [videoElapsedMs, setVideoElapsedMs] = createSignal(0);
   const [videoDurationMs, setVideoDurationMs] = createSignal<number | null>(null);
+  const [reviewCutEnabled, setReviewCutEnabled] = createSignal(true);
+  const [reviewCutSkipped, setReviewCutSkipped] = createSignal<number | null>(null);
   // Distinguishes a timeupdate-driven step change (don't re-seek, it would
   // fight the currently-playing video) from a user/keyboard-driven one.
   let seekingFromVideo = false;
@@ -1088,6 +1096,31 @@ function RunReplayStage(props: {
   const videoTotalDurationMs = createMemo(
     () => videoData()?.durationMs ?? videoDurationMs() ?? totalDuration(),
   );
+  const reviewCut = createMemo(() =>
+    deriveReviewCut({
+      sourceDurationMs: videoTotalDurationMs(),
+      sourceStartedAt: videoStart(),
+      steps: props.job.steps ?? [],
+      evidenceEvents: props.job.evidence?.events,
+    }),
+  );
+  const cutActive = () => reviewCutEnabled() && reviewCut() != null;
+  const reviewMarkerFractions = createMemo(() => {
+    const cut = reviewCut();
+    if (!cutActive() || !cut || cut.reviewDurationMs <= 0) return undefined;
+    return stepOffsetsMs().map((offset) =>
+      Math.max(0, Math.min(1, sourceTimeToReviewMs(cut, offset) / cut.reviewDurationMs)),
+    );
+  });
+  const reviewGapFractions = createMemo(() => {
+    const cut = reviewCut();
+    if (!cutActive() || !cut || cut.reviewDurationMs <= 0) return undefined;
+    let elapsed = 0;
+    return cut.segments.slice(0, -1).map((segment) => {
+      elapsed += segment.endMs - segment.startMs;
+      return elapsed / cut.reviewDurationMs;
+    });
+  });
   const seekVideoTo = (idx: number) => {
     const video = videoRef;
     if (!video) return;
@@ -1099,6 +1132,18 @@ function RunReplayStage(props: {
   const onVideoTimeUpdate = (event: Event) => {
     const video = event.currentTarget as HTMLVideoElement;
     const elapsedMs = video.currentTime * 1000;
+    const cut = reviewCut();
+    if (playing() && cutActive() && cut) {
+      const next = nextReviewSourceMs(cut, elapsedMs + 20);
+      if (next != null && next > elapsedMs + 20) {
+        const skipped = Math.max(0, next - elapsedMs);
+        video.currentTime = next / 1000;
+        setVideoElapsedMs(next);
+        setReviewCutSkipped(skipped);
+        window.setTimeout(() => setReviewCutSkipped(null), 1_400);
+        return;
+      }
+    }
     setVideoElapsedMs(elapsedMs);
     const derived = deriveStepIndex(elapsedMs);
     if (derived !== index()) {
@@ -1111,8 +1156,22 @@ function RunReplayStage(props: {
     if (Number.isFinite(video.duration)) setVideoDurationMs(video.duration * 1000);
     seekVideoTo(index());
   };
-  const timelineElapsedMs = () => (hasVideo() ? videoElapsedMs() : elapsed());
-  const timelineTotalMs = () => (hasVideo() ? videoTotalDurationMs() : totalDuration());
+  const timelineElapsedMs = () => {
+    const cut = reviewCut();
+    return hasVideo() && cutActive() && cut
+      ? sourceTimeToReviewMs(cut, videoElapsedMs())
+      : hasVideo()
+        ? videoElapsedMs()
+        : elapsed();
+  };
+  const timelineTotalMs = () => {
+    const cut = reviewCut();
+    return hasVideo() && cutActive() && cut
+      ? cut.reviewDurationMs
+      : hasVideo()
+        ? videoTotalDurationMs()
+        : totalDuration();
+  };
   // Seeking effect: fires whenever the selected step changes from anywhere
   // (timeline chip, step list, arrow keys) except when the change originated
   // from the video's own timeupdate — that direction is already in sync.
@@ -1301,6 +1360,44 @@ function RunReplayStage(props: {
           />
           <p class="m-0 truncate text-[12.5px] font-medium text-text-base">{node()?.title}</p>
         </div>
+        <Show when={hasVideo() && reviewCut()}>
+          {(cut) => (
+            <div class="relative z-[2] mx-auto flex w-full max-w-[560px] items-center justify-between gap-3 px-4 pb-1">
+              <div class="min-w-0">
+                <p class="m-0 text-[11px] font-medium text-text-base">Focused review</p>
+                <p class="m-0.5 text-[10px] text-text-weaker">
+                  Skips {formatStepDuration(cut().skippedDurationMs)} of unchanged time. Original
+                  video stays intact.
+                </p>
+              </div>
+              <div class={seg} role="group" aria-label="Replay timeline">
+                <button
+                  type="button"
+                  class={cn(segBtn, !reviewCutEnabled() && segBtnOn)}
+                  aria-pressed={!reviewCutEnabled()}
+                  onClick={() => setReviewCutEnabled(false)}
+                >
+                  Original
+                </button>
+                <button
+                  type="button"
+                  class={cn(segBtn, reviewCutEnabled() && segBtnOn)}
+                  aria-pressed={reviewCutEnabled()}
+                  onClick={() => setReviewCutEnabled(true)}
+                >
+                  Review cut
+                </button>
+              </div>
+            </div>
+          )}
+        </Show>
+        <Show when={reviewCutSkipped()}>
+          {(skipped) => (
+            <div class="pointer-events-none absolute right-4 bottom-[72px] z-[4] rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_94%,transparent)] px-2.5 py-1 text-[10px] font-medium text-text-base shadow-[0_8px_24px_rgb(0_0_0/28%)] backdrop-blur">
+              Skipped {formatStepDuration(skipped())} unchanged
+            </div>
+          )}
+        </Show>
         <ExecutionTimeline
           moments={nodes()}
           selectedIndex={index()}
@@ -1321,12 +1418,18 @@ function RunReplayStage(props: {
           }}
           elapsedMs={timelineElapsedMs()}
           totalDurationMs={timelineTotalMs()}
+          markerFractions={reviewMarkerFractions()}
+          skippedFractions={reviewGapFractions()}
           speed={speed()}
           onCycleSpeed={cycleSpeed}
           onScrub={(fraction) => {
             const video = videoRef;
             if (!hasVideo() || !video) return;
-            const target = fraction * (videoTotalDurationMs() / 1000);
+            const cut = reviewCut();
+            const target =
+              cutActive() && cut
+                ? reviewTimeToSourceMs(cut, fraction * cut.reviewDurationMs) / 1000
+                : fraction * (videoTotalDurationMs() / 1000);
             video.currentTime = Math.max(0, Math.min(target, video.duration || target));
             setVideoElapsedMs(target * 1000);
           }}

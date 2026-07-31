@@ -597,17 +597,153 @@ export type JourneyCanvasNote = JourneyNodePosition & {
   createdAt: number;
   updatedAt: number;
 };
+/** A non-destructive edit of the evidence video attached to a transition. */
+export type JourneyVideoClip = {
+  startMs: number;
+  endMs: number;
+};
+
+/** Replay is the approval loop for one transition, independent from a full
+ * journey run. A draft can be refined repeatedly without losing its evidence. */
+export type JourneyTransitionReview = {
+  status: "draft" | "verified" | "failed";
+  updatedAt: number;
+  verifiedAt?: number;
+  error?: string;
+};
+
 /** A captured pass before (or after) it becomes part of the executable path.
  * Keeping the raw step/evidence references here lets people resume review
  * after a restart without turning exploratory actions into the journey. */
 export type JourneyTake = {
   id: string;
   recipeId: string;
+  /** Explicit source keeps a paused/reloaded review attached to the screen
+   * the person actually recorded from, rather than whichever card is selected
+   * when they return. */
+  sourceScreenId?: string;
   startedAt: number;
   finishedAt?: number;
   group: string;
+  /** Local Relay video evidence captured through the physical iOS runner. */
+  videoTakeId?: string;
+  videoClip?: JourneyVideoClip;
   state: "review" | "kept" | "discarded";
   steps: RecipeStep[];
+};
+/** A deliberately small, human-owned decision about the executable journey.
+ * It is separate from run evidence: someone can approve the authored path
+ * while still reviewing a particular run against a visual baseline. */
+export type JourneyReviewState = "draft" | "needs-review" | "approved" | "attention";
+
+export type JourneyReview = {
+  state: JourneyReviewState;
+  updatedAt: number;
+  approvedAt?: number;
+};
+/**
+ * A prototype connection belongs to the canvas, not the runner. When it has a
+ * `stepId` it describes a real recorded action; when it is pending it is an
+ * intentional, visible reminder to record that interaction. This keeps the
+ * graph honest while still letting someone sketch a route before recording it.
+ */
+export type JourneyConnection = {
+  id: string;
+  fromScreenId: string;
+  toScreenId: string;
+  stepId?: string;
+  /** Capture provenance survives even when the canvas is migrated to the
+   * canonical graph model. */
+  takeId?: string;
+  videoTakeId?: string;
+  videoClip?: JourneyVideoClip;
+  label?: string;
+  state: "recorded" | "needs-recording";
+  createdAt: number;
+  updatedAt: number;
+};
+
+/**
+ * Canonical authoring graph for a journey. A graph is deliberately separate
+ * from the executable recipe: it describes the screens a person sees and the
+ * transitions they approve between those screens. The runner still receives a
+ * plain ordered RecipeStep[] compiled from the transition step ids.
+ *
+ * This separation is what lets the canvas become collaborative and free-form
+ * without making a partially-arranged diagram change what runs on a device.
+ */
+export type JourneyGraphScreen = {
+  id: string;
+  title: string;
+  /** The post-action capture used to render this card, when one exists. */
+  representativeStepId?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type JourneyGraphDestination = { kind: "screen"; screenId: string } | { kind: "end" };
+
+export type JourneyGraphTransition = {
+  id: string;
+  fromScreenId: string;
+  destination: JourneyGraphDestination;
+  /** Stable recipe action ids, in the exact order a person recorded them. */
+  stepIds: string[];
+  /** The full take is evidence for the edge, not merely for either endpoint.
+   * A video may contain loading, animation, or navigation that no single
+   * discrete action can describe. */
+  takeId?: string;
+  videoTakeId?: string;
+  videoClip?: JourneyVideoClip;
+  /** How the transition was authored. All modes still compile to recipe steps. */
+  mode?: "interaction" | "automatic" | "reusable";
+  review?: JourneyTransitionReview;
+  label?: string;
+  state: "recorded" | "needs-recording";
+  kind: "forward" | "return";
+  createdAt: number;
+  updatedAt: number;
+};
+
+/** A journey can expose more than one intentional entry point. */
+export type JourneyGraphFlow = {
+  id: string;
+  name: string;
+  screenId: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type JourneyGraph = {
+  schemaVersion: 1;
+  screens: JourneyGraphScreen[];
+  transitions: JourneyGraphTransition[];
+  flows: JourneyGraphFlow[];
+};
+
+/** A named device context for a journey. Variant-specific captures can be
+ * attached later without changing the authored route or its executable steps. */
+export type JourneyDeviceVariant = {
+  id: string;
+  label: string;
+  deviceId?: string;
+  status: "current" | "verified" | "needs-review";
+  updatedAt: number;
+};
+
+export type JourneyVerification = {
+  state: "draft" | "verifying" | "needs-review" | "baselined";
+  updatedAt: number;
+  baselineAt?: number;
+  baselineRunId?: string;
+};
+
+/** Versioned canvas-only prototype data. It is deliberately optional so
+ * existing recordings retain their exact executable recipe semantics. */
+export type JourneyPrototype = {
+  connections?: JourneyConnection[];
+  deviceVariants?: JourneyDeviceVariant[];
+  verification?: JourneyVerification;
 };
 /**
  * Layout metadata is deliberately separate from a recipe's executable steps.
@@ -615,13 +751,25 @@ export type JourneyTake = {
  * journey impossible to run on an older Relay host.
  */
 export type JourneyMetadata = {
-  schemaVersion?: 1 | 2 | 3;
+  schemaVersion?: 1 | 2 | 3 | 4 | 5 | 6;
   positions: Record<string, JourneyNodePosition>;
+  /** Human names for captured screens. Kept outside executable steps so the
+   * graph can be clarified without changing what a runner performs. */
+  screenTitles?: Record<string, string>;
   edgeLabels: Record<string, string>;
   edgeKinds: Record<string, string>;
   notes?: JourneyCanvasNote[];
   /** Versioned, non-executable recording review state. */
   takes?: JourneyTake[];
+  /** Human approval of the journey itself; run-by-run visual approval stays in run evidence. */
+  review?: JourneyReview;
+  /** Canvas-only authoring, device coverage, and baseline state. */
+  prototype?: JourneyPrototype;
+  /**
+   * The versioned source of truth for canvas authoring. Older layout fields
+   * remain readable during migration, but new writes should use this graph.
+   */
+  graph?: JourneyGraph;
 };
 
 export type GenerationPurpose = "variable" | "test-plan";

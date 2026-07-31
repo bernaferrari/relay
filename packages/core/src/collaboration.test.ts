@@ -53,7 +53,7 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
     const journey = await writeJourney("project-a", "login", {
       expectedRevision: 0,
       value: {
-        schemaVersion: 3,
+        schemaVersion: 6,
         positions: { first: { x: 12, y: 24 } },
         edgeLabels: { "first:second": "Continue" },
         edgeKinds: { "first:second": "flow" },
@@ -77,6 +77,33 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
             steps: [{ kind: "key", key: "home" }],
           },
         ],
+        review: { state: "needs-review", updatedAt: 2 },
+        graph: {
+          schemaVersion: 1,
+          screens: [
+            { id: "start", title: "Start", createdAt: 1, updatedAt: 1 },
+            {
+              id: "settings",
+              title: "Settings",
+              representativeStepId: "open-settings",
+              createdAt: 2,
+              updatedAt: 2,
+            },
+          ],
+          transitions: [
+            {
+              id: "open-settings",
+              fromScreenId: "start",
+              destination: { kind: "screen", screenId: "settings" },
+              stepIds: ["open-settings"],
+              state: "recorded",
+              kind: "forward",
+              createdAt: 2,
+              updatedAt: 2,
+            },
+          ],
+          flows: [{ id: "main", name: "Main flow", screenId: "start", createdAt: 1, updatedAt: 1 }],
+        },
       },
     });
     assert.equal(journey.revision, 1);
@@ -85,6 +112,8 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
       y: 24,
     });
     assert.equal((await readJourney("project-a", "login")).value.takes?.[0]?.state, "review");
+    assert.equal((await readJourney("project-a", "login")).value.review?.state, "needs-review");
+    assert.equal((await readJourney("project-a", "login")).value.graph?.transitions[0]?.id, "open-settings");
   } finally {
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
     else process.env.GROK_DEVICE_STATE_DIR = previous;

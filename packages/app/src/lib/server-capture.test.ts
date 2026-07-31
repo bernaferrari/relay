@@ -117,6 +117,33 @@ test("copy screenshot is ephemeral and does not create a Relay frame or log", as
   assert.equal(harness.isBusy(), false);
 });
 
+test("live capture exposes a setup failure without throwing from the polling loop", async () => {
+  let issue: string | null = null;
+  const capture = createServerCapture({
+    request: async () => {
+      throw new Error("Finish iPad setup in Relay Settings before capturing.");
+    },
+    serverUrl: () => "http://localhost:8787",
+    selectedDevice: () => "ipad-1",
+    selectedAction: () => null,
+    activeDiscoverySessionId: () => null,
+    setBusyCapture: () => undefined,
+    setSnapshot: () => undefined,
+    setShowOverlays: () => undefined,
+    setLiveFrame: () => undefined,
+    setLiveCaptureIssue: (value) => {
+      issue = value;
+    },
+    pushFrame: (frame) => ({ ...frame, id: "frame" }) as never,
+    appendLog: () => undefined,
+    refreshDiscoverySessions: async () => undefined,
+  });
+
+  await capture.pollLiveFrame();
+
+  assert.match(issue ?? "", /Finish iPad setup/i);
+});
+
 test("step execution returns the typed backend result and includes the selected device", async () => {
   const harness = createHarness();
   const result = await harness.capture.runStep({ kind: "sleep", ms: 50 });

@@ -13,6 +13,7 @@ import { SuitesWorkspace } from "./suites-workspace";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
+import { targetIsReady } from "../lib/target-presentation";
 import { toast } from "../context/toast";
 import { confirmAction } from "./confirm-dialog";
 import {
@@ -32,9 +33,6 @@ import {
   shellTopbarActions,
   shellBreadcrumb,
   shellStudio,
-  shellViewTabs,
-  shellViewTab,
-  shellViewTabActive,
   shellSaveState,
   shellStudioBodyJourney,
   shellStageWrap,
@@ -85,6 +83,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   let titleBeforeEdit = "";
   let variablesDialog: HTMLElement | undefined;
   createEffect(() => {
+    const openSettings = (event: Event) => {
+      const detail = (event as CustomEvent<{ section?: SettingsSection }>).detail;
+      props.onOpenSettings(detail?.section);
+    };
+    window.addEventListener("relay:open-settings", openSettings);
+    onCleanup(() => window.removeEventListener("relay:open-settings", openSettings));
+  });
+  createEffect(() => {
     if (!variablesOpen()) return;
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") setVariablesOpen(false);
@@ -93,24 +99,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     requestAnimationFrame(() => variablesDialog?.focus({ preventScroll: true }));
     onCleanup(() => window.removeEventListener("keydown", close));
   });
-  // The navigator now holds the open journey's steps, so it must not auto-close
-  // when a journey is selected — that would hide the very list being edited.
-  // Every test opens on the device-first workbench. Remembering a settings
-  // drawer across tests makes a new selection feel broken or unpredictable.
-  let defaultedViewForId: string | null = null;
+  // A journey is authored on its graph. The live device remains available
+  // inside that workspace, but merely connecting hardware must never change
+  // what the user is editing or reopen yesterday's draft on launch.
+  let openedRecipeId: string | null | undefined;
   createEffect(() => {
     const id = server.selectedRecipeId();
-    if (!id) {
-      defaultedViewForId = null;
-      return;
-    }
-    if (defaultedViewForId === id) return;
-    const recipe = server.recipes().find((item) => item.id === id);
-    if (!recipe) return;
+    if (openedRecipeId === id) return;
+    openedRecipeId = id;
     setStudioView("map");
     setSettingsOpen(false);
     setVariablesOpen(false);
-    defaultedViewForId = id;
+    if (area() === "tests") setNavOpen(!id);
   });
   const readinessState = () => ({
     health: server.health(),
@@ -119,15 +119,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     stepCount: draft.steps().length,
     invalidCount: draft.invalidCount(),
   });
+  const selectedTargetIsReady = () =>
+    targetIsReady(
+      server.devices().find((device) => device.serial === server.selectedDevice()),
+      server.health() === "online",
+    );
+  const openDevicePicker = () => window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
   const testBlockedReason = () => testRunBlocker(readinessState());
   const runSelectedTest = () => {
     const blocker = testBlockedReason();
     if (blocker) {
       toast(blocker, "warning");
-      if (server.isEmptyDevices()) props.onOpenSettings("targets");
-      else if (readinessState() && blockerIsDeviceRelated(readinessState())) {
-        // A selected-but-stopped device is fixed in the picker, not in settings.
-        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+      if (server.isEmptyDevices() || blockerIsDeviceRelated(readinessState())) {
+        // Hardware selection is a direct, lightweight decision. Settings is
+        // reserved for managing target configuration, never a detour before a
+        // normal record or run.
+        openDevicePicker();
       }
       return;
     }
@@ -148,6 +155,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       : rows;
   });
   async function createTest(record = false): Promise<RecipeInfo | null> {
+    if (record && !selectedTargetIsReady()) {
+      openDevicePicker();
+      return null;
+    }
     const saved = await server.saveRecipeRemote({
       title: nextUntitledTitle(server.recipes()),
       steps: [],
@@ -157,7 +168,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setArea("tests");
     setStudioView("map");
     setSettingsOpen(false);
-    if (record) recorder.enterRecordMode();
+    setNavOpen(false);
+    if (record) {
+      const target = server.devices().find((device) => device.serial === server.selectedDevice());
+      if (targetIsReady(target, server.health() === "online")) recorder.enterRecordMode();
+      else window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+    }
     return saved;
   }
 
@@ -242,9 +258,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function openRecipe(id: string): void {
     server.setSelectedRecipeId(id);
     setArea("tests");
-    // Selecting a journey unfolds it in place in the navigator, so the panel
-    // stays open — its steps are the thing being opened.
-    setNavOpen(true);
+    setStudioView("map");
+    setSettingsOpen(false);
+    // The library is for choosing work. Once chosen, give the graph and live
+    // device the room; the toolbar button keeps the library one click away.
+    setNavOpen(false);
   }
 
   async function createFlow(): Promise<void> {
@@ -265,6 +283,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   function startNewJourney(): void {
     setArea("tests");
     setNavOpen(true);
+    // Choosing hardware is setup, not a failed attempt to record. Do not
+    // create an empty journey until Relay actually has somewhere to record.
+    if (!selectedTargetIsReady()) {
+      openDevicePicker();
+      return;
+    }
     void createTest(true);
   }
 
@@ -296,7 +320,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       <main class={shellMain}>
         {/* One toolbar. The journey's name, its view, and its actions used to
             be split across two stacked bars for no reason a user could name. */}
-        <header class={shellTopbar}>
+        <header class={cn(shellTopbar, !navOpen() && "pl-[calc(var(--traffic-pad,12px)+18px)]")}>
           <div class={shellTopbarContext}>
             <button
               type="button"
@@ -361,35 +385,20 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     : `${draft.invalidCount()} incomplete`}
                 </span>
               </Show>
-              <div class={shellViewTabs} role="group" aria-label="Journey view">
+              <Show when={studioView() === "workbench"}>
                 <button
                   type="button"
-                  aria-pressed={studioView() === "workbench"}
-                  class={cn(shellViewTab, studioView() === "workbench" && shellViewTabActive)}
-                  onClick={() => setStudioView("workbench")}
-                >
-                  <Icon name="grid" size={13} /> Device
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={studioView() === "map"}
-                  class={cn(shellViewTab, studioView() === "map" && shellViewTabActive)}
+                  class={cn(productSecondary, "min-h-8 gap-1.5 px-2.5 text-[12px]")}
                   onClick={() => {
                     setSettingsOpen(false);
                     setStudioView("map");
                   }}
                 >
-                  <Icon name="move" size={13} /> Graph
+                  <Icon name="chevron-left" size={13} /> Back to journey
                 </button>
-              </div>
+              </Show>
             </Show>
-            <Show
-              when={
-                area() === "suites" ||
-                area() === "map" ||
-                (area() === "tests" && Boolean(selected()) && studioView() === "workbench")
-              }
-            >
+            <Show when={area() === "suites" || area() === "map" || area() === "tests"}>
               <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
             </Show>
             <Show when={area() === "tests" && selected()}>
@@ -486,7 +495,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 when={selected()}
                 fallback={
                   <TestWelcome
-                    onRecord={() => void createTest(true)}
+                    onChooseDevice={openDevicePicker}
+                    onStartJourney={startNewJourney}
                     onOpenTargets={() => props.onOpenSettings("targets")}
                   />
                 }

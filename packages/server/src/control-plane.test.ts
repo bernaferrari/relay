@@ -62,6 +62,52 @@ test("loopback API rejects hostile browser origins and reflects Relay origins", 
   }
 });
 
+test("mobile setup endpoints report prerequisites and persist Apple runner settings", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-device-settings-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousTeam = process.env.AGENT_DEVICE_IOS_TEAM_ID;
+  const previousBundle = process.env.AGENT_DEVICE_IOS_BUNDLE_ID;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const baseUrl = `http://127.0.0.1:${server.port}`;
+    const android = await fetch(`${baseUrl}/settings/devices/android`);
+    assert.equal(android.status, 200);
+    const androidBody = (await android.json()) as { checks: Array<{ id: string }> };
+    assert.equal(androidBody.checks[0]?.id, "adb");
+
+    const beforeSetup = await fetch(`${baseUrl}/settings/devices/apple/preflight`);
+    assert.equal(beforeSetup.status, 200);
+    assert.deepEqual(await beforeSetup.json(), { configured: false });
+
+    const saved = await fetch(`${baseUrl}/settings/devices/apple`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        teamId: "ABCDE12345",
+        bundleId: "com.example.relay.runner",
+      }),
+    });
+    assert.equal(saved.status, 200);
+    const apple = await fetch(`${baseUrl}/settings/devices/apple`);
+    const appleBody = (await apple.json()) as { setup: { ios?: { teamId?: string } } };
+    assert.equal(appleBody.setup.ios?.teamId, "ABCDE12345");
+
+    const afterSetup = await fetch(`${baseUrl}/settings/devices/apple/preflight`);
+    assert.equal(afterSetup.status, 200);
+    assert.deepEqual(await afterSetup.json(), { configured: true });
+  } finally {
+    await server.close();
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousTeam === undefined) delete process.env.AGENT_DEVICE_IOS_TEAM_ID;
+    else process.env.AGENT_DEVICE_IOS_TEAM_ID = previousTeam;
+    if (previousBundle === undefined) delete process.env.AGENT_DEVICE_IOS_BUNDLE_ID;
+    else process.env.AGENT_DEVICE_IOS_BUNDLE_ID = previousBundle;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("authenticated network service cannot read unowned workspace assets", async () => {
   const token = "test-service-token-with-24-characters";
   const previousProjects = process.env.RELAY_AUTH_PROJECT_IDS;

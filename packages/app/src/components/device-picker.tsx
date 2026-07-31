@@ -18,6 +18,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
   const [refreshing, setRefreshing] = createSignal(false);
   const device = () => server.devices().find((item) => item.serial === server.selectedDevice());
   const online = () => server.health() === "online";
+  const scanning = () => server.deviceDiscoveryStatus() === "scanning";
   const ready = () => targetIsReady(device(), online());
   const groupedDevices = createMemo<TargetGroup[]>(() => {
     const groups = new Map<string, DeviceInfo[]>();
@@ -77,14 +78,25 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
 
   async function startDevice(serial: string): Promise<void> {
     const booted = await server.bootDevice(serial);
-    if (booted) void server.setSelectedDevice(serial);
+    if (booted) selectTarget(serial);
   }
 
   async function authorizeDevice(serial: string): Promise<void> {
     const authorized = await server.authorizeDevice(serial);
     if (!authorized) return;
-    void server.setSelectedDevice(serial);
+    selectTarget(serial);
+  }
+
+  /**
+   * Selection is visible immediately, while the control plane refreshes the
+   * target's readiness in the background. The event lets an empty journey
+   * advance from “Choose a device” to “Preparing” without waiting for the
+   * next polling interval.
+   */
+  function selectTarget(serial: string): void {
     closePicker(true);
+    void server.setSelectedDevice(serial).then(() => server.refreshDevices());
+    window.dispatchEvent(new CustomEvent("relay:device-selected", { detail: { serial } }));
   }
 
   const closePicker = (restoreFocus = false) => {
@@ -198,13 +210,16 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
               id="target-picker-title"
               class="text-[12px] font-semibold text-[var(--text-base)]"
             >
-              Devices
+              <span>Devices</span>
+              <Show when={scanning()}>
+                <span class="text-[10px] font-normal text-[var(--text-weak)]">Scanning…</span>
+              </Show>
             </span>
             <button
               type="button"
               class="grid size-7 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-              disabled={refreshing()}
-              aria-busy={refreshing()}
+              disabled={refreshing() || scanning()}
+              aria-busy={refreshing() || scanning()}
               aria-label="Refresh devices"
               title="Refresh devices"
               onClick={() => void refreshTargets()}
@@ -237,17 +252,41 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
             <Show
               when={server.devices().length > 0}
               fallback={
-                <div class="flex flex-col items-center px-4 pt-7 pb-6 text-center">
-                  <span class="grid size-11 place-items-center rounded-[9px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
-                    <Icon name="smartphone" size={20} />
-                  </span>
-                  <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
-                    No devices found
-                  </strong>
-                  <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
-                    Connect by USB, Wi-Fi, or browser.
-                  </p>
-                </div>
+                <Show
+                  when={!scanning()}
+                  fallback={
+                    <div
+                      class="flex flex-col items-center px-4 pt-7 pb-6 text-center"
+                      aria-live="polite"
+                    >
+                      <span class="grid size-11 place-items-center rounded-[9px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                        <Icon
+                          name="refresh"
+                          size={20}
+                          class="animate-spin motion-reduce:animate-none motion-reduce:opacity-70"
+                        />
+                      </span>
+                      <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
+                        Looking for devices…
+                      </strong>
+                      <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
+                        Checking Android through ADB and Apple devices through Xcode.
+                      </p>
+                    </div>
+                  }
+                >
+                  <div class="flex flex-col items-center px-4 pt-7 pb-6 text-center">
+                    <span class="grid size-11 place-items-center rounded-[9px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                      <Icon name="smartphone" size={20} />
+                    </span>
+                    <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
+                      No devices found
+                    </strong>
+                    <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
+                      Connect by USB, Wi-Fi, or browser.
+                    </p>
+                  </div>
+                </Show>
               }
             >
               <For each={attentionGroups()}>
@@ -266,10 +305,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                   <TargetRow
                     group={group}
                     selected={group.items.some((item) => item.serial === server.selectedDevice())}
-                    onPick={() => {
-                      void server.setSelectedDevice(group.item.serial);
-                      closePicker(true);
-                    }}
+                    onPick={() => selectTarget(group.item.serial)}
                   />
                 )}
               </For>
@@ -303,10 +339,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                         )}
                         starting={server.bootingSerial() === group.item.serial}
                         onStart={() => void startDevice(group.item.serial)}
-                        onPick={() => {
-                          void server.setSelectedDevice(group.item.serial);
-                          closePicker(true);
-                        }}
+                        onPick={() => selectTarget(group.item.serial)}
                       />
                     )}
                   </For>

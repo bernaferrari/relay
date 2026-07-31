@@ -29,7 +29,6 @@ const MOBILE_CAPABILITIES: Record<"android" | "ios", TargetCapability[]> = {
   ios: [
     "snapshot",
     "screenshot",
-    "stream",
     "recording",
     "tap",
     "type",

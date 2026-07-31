@@ -33,6 +33,8 @@ export * from "./run-catalog.js";
 export * from "./evidence-metrics.js";
 export * from "./workspace-root.js";
 export * from "./workspace-settings.js";
+export * from "./device-setup.js";
+export * from "./ios-device-adapter.js";
 export * from "./matrix.js";
 export * from "./matrix-yaml.js";
 export * from "./compatibility-report.js";

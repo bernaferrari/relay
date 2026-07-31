@@ -8,8 +8,8 @@ allowBuilds:
   "@tailwindcss/oxide": true
 
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@0.2.5
-  vite-plus: 0.2.5
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.6
+  vite-plus: 0.2.6
   solid-js: ^1.9.7
   typescript: ^7.0.2
 

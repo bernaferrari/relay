@@ -31,6 +31,7 @@ import {
   interact,
   listActionsWithTrace,
   listDevices,
+  devicePlatformForSerial,
   bootDevice,
   requestAndroidAuthorization,
   listJobs,
@@ -115,6 +116,11 @@ import {
   RedactionPolicyLockedError,
   setRedactionEnabled,
   setSensitiveEvidenceConsent,
+  inspectAppleDeviceSetup,
+  inspectAndroidDeviceSetup,
+  loadDeviceSetup,
+  readDeviceSetup,
+  saveAppleDeviceSetup,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
@@ -139,6 +145,8 @@ import {
   type AndroidKeyboardInput,
   type AndroidTouchAction,
 } from "./live-video.js";
+import { readIosVideoTake, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
+import { createReadStream } from "node:fs";
 import type {
   Build,
   DevicePool,
@@ -286,6 +294,57 @@ async function handleRequest(
     }
     if (method === "GET" && pathname === "/settings/evidence") {
       json(res, 200, { policy: getEvidenceCollectionPolicy() });
+      return;
+    }
+    if (method === "GET" && pathname === "/settings/devices/apple") {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Device setup can only be read from a local Relay host");
+      }
+      json(res, 200, await inspectAppleDeviceSetup());
+      return;
+    }
+    if (method === "GET" && pathname === "/settings/devices/apple/preflight") {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Device setup can only be read from a local Relay host");
+      }
+      // Stage startup only needs to know whether the runner has been configured.
+      // Keep it filesystem-only: the fuller Settings check runs Xcode commands and
+      // can take seconds on first use.
+      const setup = await readDeviceSetup();
+      json(res, 200, { configured: Boolean(setup.ios) });
+      return;
+    }
+    if (method === "GET" && pathname === "/settings/devices/android") {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Device setup can only be read from a local Relay host");
+      }
+      json(res, 200, await inspectAndroidDeviceSetup());
+      return;
+    }
+    if (method === "PUT" && pathname === "/settings/devices/apple") {
+      if (!scope.localTrusted) {
+        throw new HttpError(403, "Device setup can only be changed from a local Relay host");
+      }
+      const body = (await parseJsonBody(req)) as {
+        teamId?: unknown;
+        bundleId?: unknown;
+        signingIdentity?: unknown;
+        provisioningProfile?: unknown;
+      };
+      if (typeof body.teamId !== "string" || typeof body.bundleId !== "string") {
+        throw new HttpError(400, "teamId and bundleId are required");
+      }
+      const setup = await saveAppleDeviceSetup({
+        teamId: body.teamId,
+        bundleId: body.bundleId,
+        ...(typeof body.signingIdentity === "string"
+          ? { signingIdentity: body.signingIdentity }
+          : {}),
+        ...(typeof body.provisioningProfile === "string"
+          ? { provisioningProfile: body.provisioningProfile }
+          : {}),
+      });
+      json(res, 200, { setup });
       return;
     }
     if (method === "PUT" && pathname === "/settings/evidence") {
@@ -1420,6 +1479,68 @@ async function handleRequest(
       return;
     }
 
+    if (method === "POST" && pathname === "/device/video") {
+      const body = (await parseJsonBody(req)) as { serial?: unknown; action?: unknown };
+      const serial = typeof body.serial === "string" ? body.serial.trim() : "";
+      if (!serial) throw new HttpError(400, "serial is required");
+      if (body.action !== "start" && body.action !== "stop") {
+        throw new HttpError(400, "action must be start or stop");
+      }
+      await assertTargetControl(scope, serial);
+      if ((await devicePlatformForSerial(serial)) !== "ios") {
+        throw new HttpError(400, "Recorded video capture is available for Apple devices only");
+      }
+      try {
+        const take =
+          body.action === "start"
+            ? await startIosVideoTake(serial)
+            : await stopIosVideoTake(serial);
+        json(res, 200, {
+          take: take && {
+            id: take.id,
+            serial: take.serial,
+            startedAt: take.startedAt,
+            ...(take.finishedAt ? { finishedAt: take.finishedAt } : {}),
+            state: take.state,
+            ...(take.warning ? { warning: take.warning } : {}),
+          },
+        });
+      } catch (error) {
+        throw new HttpError(502, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+
+    const iosVideoMatch = matchPath(pathname, "/device/video/:id");
+    if (method === "GET" && iosVideoMatch) {
+      // A finished take is workspace evidence, not live device control. Keep
+      // it local-only, but let review continue after the iPhone/iPad is
+      // unplugged or a different target has been selected.
+      if (!scope.localTrusted) {
+        throw new HttpError(
+          403,
+          "Recorded Apple video is available only from the local Relay host",
+        );
+      }
+      const take = await readIosVideoTake(iosVideoMatch.id!);
+      if (!take || take.state !== "ready") throw new HttpError(404, "Video take is not ready");
+      try {
+        await new Promise<void>((resolve, reject) => {
+          res.writeHead(200, {
+            "content-type": "video/mp4",
+            "cache-control": "private, max-age=0, no-store",
+          });
+          const stream = createReadStream(take.path);
+          stream.on("error", reject);
+          stream.on("end", resolve);
+          stream.pipe(res);
+        });
+      } catch {
+        throw new HttpError(404, "Recorded video is unavailable");
+      }
+      return;
+    }
+
     if (method === "POST" && pathname === "/device/touch") {
       const body = (await parseJsonBody(req)) as {
         serial?: unknown;
@@ -1618,6 +1739,8 @@ async function handleRequest(
           "GET /health",
           "GET/PUT /settings/privacy",
           "GET/PUT /settings/evidence",
+          "GET /settings/devices/android",
+          "GET/PUT /settings/devices/apple",
           "GET /doctor",
           "GET /report",
           "GET /report/:jobId",
@@ -1697,6 +1820,9 @@ async function handleRequest(
 }
 
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
+  // Settings are applied once in the server process, rather than requiring a
+  // person to export device-specific variables before launching Relay.
+  await loadDeviceSetup();
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;

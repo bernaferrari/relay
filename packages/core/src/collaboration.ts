@@ -28,12 +28,14 @@ type CollaborationState = {
 };
 
 const EMPTY_JOURNEY: JourneyMetadata = {
-  schemaVersion: 3,
+  schemaVersion: 6,
   positions: {},
   edgeLabels: {},
   edgeKinds: {},
   notes: [],
   takes: [],
+  review: { state: "draft", updatedAt: now() },
+  graph: { schemaVersion: 1, screens: [], transitions: [], flows: [] },
 };
 let queue = Promise.resolve();
 

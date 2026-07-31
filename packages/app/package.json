@@ -22,7 +22,8 @@
     "@relay/ui": "workspace:*",
     "@yume-chan/scrcpy": "2.3.0",
     "@yume-chan/scrcpy-decoder-webcodecs": "2.5.3",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "yjs": "^13.6.29"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.11",

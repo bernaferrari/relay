@@ -1,18 +1,13 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
-import { useServer, type JobInfo, type RecipeInfo, type RecipeStep } from "../context/server";
-import { useWorkbench } from "../context/workbench";
+import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo, fmtDur, titleize } from "../lib/job";
-import { sentenceForStep } from "../lib/step-sentence";
 import { shellNav, shellNavClosed } from "../lib/shell-layout";
 import { mono } from "../lib/ui";
-import { accentForStep, iconForStep } from "./journey-step-presentation";
 import { RelayMark } from "./relay-mark";
 import { persistedAsJob } from "./runs-workspace";
 import { Icon, type IconName } from "./icon";
-import { AddMenu } from "./step-list-controls";
 
 export type NavigatorArea = "tests" | "suites" | "runs";
 type RunFilter = "all" | "attention" | "active";
@@ -50,9 +45,9 @@ const groupLabel = cn(
  * The rail, the journey library, and the step outline used to be separate
  * columns showing the same row grammar at three zoom levels — and Flows and
  * Runs then opened a *fourth* list inside the main pane. Everything nameable
- * lives here instead: areas at the top, records below, and the open journey
- * unfolds in place into its steps. The main pane only ever shows the thing
- * that is open, never a list of things to open.
+ * lives here instead: areas at the top and journeys below. A journey's actual
+ * screen/action structure belongs to the center canvas, its only source of
+ * truth, rather than being duplicated in a narrow navigation column.
  */
 export function JourneyNavigator(props: {
   open: boolean;
@@ -71,23 +66,10 @@ export function JourneyNavigator(props: {
   onOpenSettings: () => void;
 }) {
   let searchInput: HTMLInputElement | undefined;
+  const recorder = useRecorder();
   const [draftsOpen, setDraftsOpen] = createSignal(false);
   const journeys = () => props.items.filter((recipe) => recipe.steps.length > 0);
   const drafts = () => props.items.filter((recipe) => recipe.steps.length === 0);
-
-  // Expansion is independent of selection: opening a journey to edit it and
-  // peeking at another journey's steps are different intents.
-  const [collapsedIds, setCollapsedIds] = createSignal<Record<string, boolean>>({});
-  const [manuallyOpenIds, setManuallyOpenIds] = createSignal<Record<string, boolean>>({});
-  const isExpanded = (id: string) =>
-    id === props.selectedId ? !collapsedIds()[id] : Boolean(manuallyOpenIds()[id]);
-  const toggleExpanded = (id: string) => {
-    if (id === props.selectedId) {
-      setCollapsedIds((current) => ({ ...current, [id]: !current[id] }));
-      return;
-    }
-    setManuallyOpenIds((current) => ({ ...current, [id]: !current[id] }));
-  };
 
   createEffect(() => {
     if (drafts().some((recipe) => recipe.id === props.selectedId)) setDraftsOpen(true);
@@ -185,8 +167,6 @@ export function JourneyNavigator(props: {
               <JourneyBranch
                 recipe={recipe}
                 selected={props.selectedId === recipe.id}
-                expanded={isExpanded(recipe.id)}
-                onToggle={() => toggleExpanded(recipe.id)}
                 onSelect={props.onSelect}
                 onDelete={props.onDelete}
               />
@@ -211,8 +191,6 @@ export function JourneyNavigator(props: {
                     <JourneyBranch
                       recipe={recipe}
                       selected={props.selectedId === recipe.id}
-                      expanded={isExpanded(recipe.id)}
-                      onToggle={() => toggleExpanded(recipe.id)}
                       onSelect={props.onSelect}
                       onDelete={props.onDelete}
                     />
@@ -239,7 +217,7 @@ export function JourneyNavigator(props: {
       </Show>
 
       <footer class="shrink-0 border-t border-border-weak-base p-1.5">
-        <Show when={props.area === "tests"}>
+        <Show when={props.area === "tests" && !recorder.recording() && !recorder.take()}>
           {/* Recording creates a new journey immediately. It lives beside the
               persistent footer actions instead of masquerading as a library
               row, so its affordance remains clear however long the list gets. */}
@@ -281,230 +259,53 @@ export function JourneyNavigator(props: {
   );
 }
 
-/**
- * A journey row that unfolds into its own steps. Steps come from the live
- * draft for the open journey, so an edit shows in the tree immediately.
- */
+/** A library row deliberately stops at the journey boundary. The screen tree
+ * is authored in the canvas, so the same action never competes for attention
+ * in both the sidebar and the workspace. */
 function JourneyBranch(props: {
   recipe: RecipeInfo;
   selected: boolean;
-  expanded: boolean;
-  onToggle: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const server = useServer();
-  const draft = useRecipeDraft();
-  const workbench = useWorkbench();
-  const recorder = useRecorder();
-  const [addAnchor, setAddAnchor] = createSignal<
-    { left: number; top: number; bottom: number; width: number } | undefined
-  >();
-  let addButton: HTMLButtonElement | undefined;
-  let stepList: HTMLElement | undefined;
-
-  // Only the open journey has a live draft; any other expanded journey shows
-  // its last saved steps rather than someone else's unsaved edits.
-  const steps = createMemo(() =>
-    props.expanded ? (props.selected ? draft.steps() : props.recipe.steps) : [],
-  );
-  const active = () => (props.selected ? (workbench.focusedIndex() ?? 0) : -1);
-  let previousActive = active();
-
-  createEffect(() => {
-    const current = active();
-    if (!props.expanded || current === previousActive) return;
-    previousActive = current;
-    queueMicrotask(() => {
-      stepList
-        ?.querySelector<HTMLElement>(`[data-step-row="${current}"]`)
-        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
-  });
-
-  const appendStep = (step: RecipeStep) => {
-    const index = draft.steps().length;
-    draft.insertStep(index, step);
-    workbench.focusStep(index);
-    setAddAnchor(undefined);
-  };
-
   return (
-    <div class="relative">
-      {/* The open journey's header stays put while its steps scroll past, so
-          you always know which journey the rows under the cursor belong to. */}
-      <div
+    <div class="group relative flex min-h-[38px] items-center gap-1 rounded-lg px-1">
+      <button
+        type="button"
         class={cn(
-          "grid grid-cols-[22px_minmax(0,1fr)_22px] items-center rounded-lg",
-          props.selected && "sticky top-0 z-[1] bg-surface-base-active",
+          "grid min-w-0 flex-1 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 rounded-[7px] px-2 py-1.5 text-left transition-colors duration-100",
+          props.selected
+            ? "bg-surface-base-active text-text-strong"
+            : "text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base",
+          "focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
         )}
+        aria-current={props.selected ? "page" : undefined}
+        title={displayTitle(props.recipe.title)}
+        onClick={() => props.onSelect(props.recipe.id)}
       >
+        <span
+          class={cn("justify-self-center text-text-weaker", props.selected && "text-text-interactive-base")}
+          aria-hidden="true"
+        >
+          <Icon name={recipeIcon(props.recipe)} size={13} />
+        </span>
+        <span class={cn("truncate text-[12.5px]/[1.3] font-[550]", !props.selected && "text-text-weak")}>
+          {displayTitle(props.recipe.title)}
+        </span>
+        <small class={cn("shrink-0 text-[10px] text-text-weaker", mono)}>
+          {props.recipe.steps.length || "—"}
+        </small>
+      </button>
+      <Show when={props.selected}>
         <button
           type="button"
-          class="grid size-[22px] place-items-center rounded-md text-text-weaker transition-colors hover:bg-surface-raised-base-hover hover:text-text-base"
-          aria-label={`${props.expanded ? "Collapse" : "Expand"} ${displayTitle(props.recipe.title)}`}
-          aria-expanded={props.expanded}
-          onClick={props.onToggle}
+          class="grid size-7 shrink-0 place-items-center rounded-[6px] text-text-weaker transition-colors hover:bg-surface-raised-base-hover hover:text-[var(--icon-critical-base)] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
+          aria-label={`Delete ${displayTitle(props.recipe.title)}`}
+          title="Delete journey"
+          onClick={() => props.onDelete(props.recipe.id)}
         >
-          <Icon name={props.expanded ? "chevron-down" : "chevron-right"} size={13} />
+          <Icon name="trash" size={13} />
         </button>
-        <button
-          type="button"
-          class={cn(
-            "grid min-h-[34px] w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg pr-1.5 text-left transition-colors duration-100",
-            !props.selected && "hover:bg-surface-raised-base-hover",
-            "focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
-          )}
-          aria-current={props.selected ? "page" : undefined}
-          title={displayTitle(props.recipe.title)}
-          onClick={() => props.onSelect(props.recipe.id)}
-        >
-          <span
-            class={cn(
-              "justify-self-center text-text-weaker",
-              props.selected && "text-text-interactive-base",
-            )}
-            aria-hidden="true"
-          >
-            <Icon name={recipeIcon(props.recipe)} size={13} />
-          </span>
-          <span
-            class={cn(
-              "truncate text-[12.5px]/[1.3] font-[550] text-text-weak",
-              props.selected && "text-text-strong",
-            )}
-          >
-            {displayTitle(props.recipe.title)}
-          </span>
-          <small class={cn("shrink-0 text-[10px] text-text-weaker", mono)}>
-            {props.recipe.steps.length || "—"}
-          </small>
-        </button>
-        <Show when={props.selected}>
-          <button
-            type="button"
-            class="grid size-[22px] place-items-center rounded-md text-text-weaker transition-colors duration-100 hover:bg-surface-raised-base-hover hover:text-[var(--icon-critical-base)] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
-            aria-label={`Delete ${displayTitle(props.recipe.title)}`}
-            title="Delete journey"
-            onClick={() => props.onDelete(props.recipe.id)}
-          >
-            <Icon name="trash" size={13} />
-          </button>
-        </Show>
-      </div>
-
-      <Show when={props.expanded}>
-        <div
-          ref={(element) => {
-            stepList = element;
-          }}
-          class="relative ml-[10px] border-l border-border-weak-base pt-0.5 pb-1 pl-1.5"
-        >
-          <For
-            each={steps()}
-            fallback={
-              <p class="px-2 py-1.5 text-[11px]/[1.5] text-text-weaker">
-                No steps yet. Add one below.
-              </p>
-            }
-          >
-            {(step, index) => {
-              const annotation = () => (props.selected ? workbench.rowAnno(index()) : null);
-              const isActive = () => active() === index();
-              const sentence = () => sentenceForStep(step, server.recipes());
-              return (
-                <button
-                  type="button"
-                  data-step-row={index()}
-                  aria-label={`Step ${index() + 1}: ${sentence()}`}
-                  title={sentence()}
-                  class={cn(
-                    "grid min-h-7 w-full grid-cols-[16px_18px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md px-1 text-left transition-colors duration-100",
-                    "hover:bg-surface-raised-base-hover",
-                    // A soft accent tint, not a saturated block: at fifteen
-                    // steps a solid fill turns the list into a bar chart.
-                    isActive() &&
-                      "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_15%,transparent)]",
-                  )}
-                  aria-current={isActive() ? "step" : undefined}
-                  onClick={() => {
-                    if (!props.selected) props.onSelect(props.recipe.id);
-                    workbench.focusStep(index());
-                  }}
-                >
-                  <small
-                    class={cn(
-                      "justify-self-end text-[9.5px] text-text-weaker",
-                      mono,
-                      isActive() && "text-text-interactive-base",
-                    )}
-                  >
-                    {String(index() + 1).padStart(2, "0")}
-                  </small>
-                  <span
-                    class="justify-self-center text-[color-mix(in_srgb,var(--journey-node-accent)_78%,white)]"
-                    style={{ "--journey-node-accent": accentForStep(step) }}
-                    aria-hidden="true"
-                  >
-                    <Icon name={iconForStep(step)} size={12} />
-                  </span>
-                  <span
-                    class={cn(
-                      "truncate text-[11.5px]/[1.3] text-text-weak",
-                      isActive() && "text-text-strong",
-                    )}
-                  >
-                    {sentence()}
-                  </span>
-                  <Show when={annotation() && annotation()!.status !== "idle"}>
-                    <i class={cn("mr-1 size-1.5 rounded-full", statusTint(annotation()!.status))} />
-                  </Show>
-                </button>
-              );
-            }}
-          </For>
-
-          <Show when={props.selected}>
-            <button
-              ref={(element) => {
-                addButton = element;
-              }}
-              type="button"
-              class="mt-0.5 grid min-h-7 w-full grid-cols-[16px_18px_minmax(0,1fr)] items-center gap-1.5 rounded-md px-1 text-left text-[11.5px] font-medium text-text-weaker transition-colors duration-100 hover:bg-surface-raised-base-hover hover:text-text-base"
-              aria-expanded={Boolean(addAnchor())}
-              onClick={() => {
-                if (addAnchor()) {
-                  setAddAnchor(undefined);
-                  return;
-                }
-                const rect = addButton?.getBoundingClientRect();
-                if (!rect) return;
-                setAddAnchor({
-                  left: rect.left,
-                  top: rect.top,
-                  bottom: rect.bottom,
-                  width: rect.width,
-                });
-              }}
-            >
-              <span />
-              <Icon name="plus" size={12} class="justify-self-center" />
-              <span>Add step</span>
-            </button>
-          </Show>
-
-          <Show when={addAnchor()}>
-            {(anchor) => (
-              <AddMenu
-                anchor={anchor()}
-                placement="below"
-                onClose={() => setAddAnchor(undefined)}
-                onPick={appendStep}
-                onRecord={() => recorder.enterRecordMode()}
-              />
-            )}
-          </Show>
-        </div>
       </Show>
     </div>
   );

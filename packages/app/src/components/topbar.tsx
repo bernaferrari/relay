@@ -30,7 +30,10 @@ export function Topbar(props: { onSettings: () => void }) {
   const deviceLabel = () => {
     if (server.health() === "offline") return "Connection unavailable";
     const s = server.selectedDevice();
-    if (!s) return server.isEmptyDevices() ? "No target" : "Select target";
+    if (!s) {
+      if (server.deviceDiscoveryStatus() === "scanning") return "Discovering devices…";
+      return server.isEmptyDevices() ? "No target" : "Select target";
+    }
     const d = server.devices().find((x) => x.serial === s);
     return d ? presentTarget(d).displayName : "Select target";
   };
@@ -123,12 +126,24 @@ export function Topbar(props: { onSettings: () => void }) {
             <Show
               when={server.devices().length > 0}
               fallback={
-                <div class="px-3 py-3.5 text-center">
-                  <p class="m-0 text-12-medium text-text-strong">No target connected</p>
-                  <p class="mt-1 mb-2 text-12-regular text-text-weak">
-                    Connect a phone or add a browser target in Settings.
-                  </p>
-                </div>
+                <Show
+                  when={server.deviceDiscoveryStatus() !== "scanning"}
+                  fallback={
+                    <div class="px-3 py-3.5 text-center" aria-live="polite">
+                      <p class="m-0 text-12-medium text-text-strong">Discovering devices…</p>
+                      <p class="mt-1 mb-2 text-12-regular text-text-weak">
+                        Checking Android through ADB and Apple devices through Xcode.
+                      </p>
+                    </div>
+                  }
+                >
+                  <div class="px-3 py-3.5 text-center">
+                    <p class="m-0 text-12-medium text-text-strong">No target connected</p>
+                    <p class="mt-1 mb-2 text-12-regular text-text-weak">
+                      Connect a phone or add a browser target in Settings.
+                    </p>
+                  </div>
+                </Show>
               }
             >
               <For each={server.devices()}>

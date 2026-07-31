@@ -118,6 +118,7 @@ export function FrameCanvas(props: {
     const id = journeyId();
     const current = journeyRevision();
     const value: JourneyMetadata = {
+      ...current.value,
       positions: Object.fromEntries(nextPositions),
       edgeLabels: Object.fromEntries(
         Object.entries(nextEdges).map(([key, config]) => [key, config.label]),

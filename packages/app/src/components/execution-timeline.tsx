@@ -36,6 +36,10 @@ export function ExecutionTimeline(props: {
   onCycleSpeed?: () => void;
   /** Replay-only: fraction (0..1) of totalDurationMs from a scrub track click/drag. */
   onScrub?: (fraction: number) => void;
+  /** Optional compressed-time marker positions for a non-destructive review cut. */
+  markerFractions?: number[];
+  /** Boundaries where quiet source time was collapsed from the review rail. */
+  skippedFractions?: number[];
   class?: string;
 }) {
   let trackEl: HTMLDivElement | undefined;
@@ -71,6 +75,8 @@ export function ExecutionTimeline(props: {
     return props.moments.length > 0 ? ((safeIndex() + 1) / props.moments.length) * 100 : 0;
   });
   const offsetPercent = (moment: ExecutionMoment) => {
+    const custom = props.markerFractions?.[moment.index];
+    if (custom != null && Number.isFinite(custom)) return Math.max(0, Math.min(100, custom * 100));
     const total = totalMs();
     if (total <= 0) return 0;
     return Math.max(0, Math.min(100, ((stepOffsetsMs()[moment.index] ?? 0) / total) * 100));
@@ -266,6 +272,17 @@ export function ExecutionTimeline(props: {
                     )}
                   />
                 </button>
+              )}
+            </For>
+            <For each={props.skippedFractions ?? []}>
+              {(fraction) => (
+                <span
+                  class="pointer-events-none absolute top-1/2 z-[3] grid size-4 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[var(--v2-background-bg-base)] text-[9px] leading-none text-[var(--text-weaker)]"
+                  style={{ left: `${Math.max(0, Math.min(1, fraction)) * 100}%` }}
+                  aria-label="Quiet time skipped"
+                >
+                  ⋯
+                </span>
               )}
             </For>
             {/* Thumb — only appears on hover/focus so the rail stays calm at rest. */}

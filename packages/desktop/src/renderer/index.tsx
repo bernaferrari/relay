@@ -29,6 +29,9 @@ function createDesktopPlatform(): Platform {
     openExternal: (url) => {
       api.openExternal(url);
     },
+    openXcode: () => {
+      void api.openXcode();
+    },
     notify: (title, body) => {
       api.notify(title, body);
     },

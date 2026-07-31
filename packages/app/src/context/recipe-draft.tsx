@@ -354,6 +354,15 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
         }
         const target = event.target as HTMLElement | null;
         if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+        const requested = new CustomEvent<{ redo: boolean }>("relay:undo-request", {
+          cancelable: true,
+          detail: { redo: event.key.toLowerCase() === "y" || event.shiftKey },
+        });
+        window.dispatchEvent(requested);
+        if (requested.defaultPrevented) {
+          event.preventDefault();
+          return;
+        }
         event.preventDefault();
         if (event.key.toLowerCase() === "y" || event.shiftKey) redo();
         else undo();
@@ -463,11 +472,12 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
 
     /** Recorder append path: steps land at the end of whatever's selected
      *  (a builtin auto-forks on save like any other edit). */
-    function appendSteps(extra: RecipeStep[]): void {
-      if (!currentId || extra.length === 0) return;
+    function appendSteps(extra: RecipeStep[]): RecipeStep[] {
+      if (!currentId || extra.length === 0) return [];
       const recorded = extra.map((step) => ensureStepId(structuredClone(step)));
       editDraft(() => setStepsState((s) => [...s, ...recorded]));
       flash(recorded);
+      return recorded;
     }
 
     /** Rename one task boundary without touching the runnable action payloads. */

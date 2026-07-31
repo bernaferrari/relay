@@ -23,7 +23,7 @@
     "verify": "vp check && pnpm typecheck && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.1.2",
     "tsx": "^4.23.1",
     "typescript": "catalog:",
     "vite": "catalog:",

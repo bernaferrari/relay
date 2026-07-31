@@ -35,6 +35,8 @@ export type Platform = {
   platform: PlatformName;
   /** Open a URL externally (browser / OS handler) */
   openExternal?(url: string): void | Promise<void>;
+  /** Open Xcode for Apple-device provisioning (desktop macOS only). */
+  openXcode?(): void | Promise<void>;
   /** System notification */
   notify?(title: string, body?: string): void | Promise<void>;
   /** Copy a captured image without adding it to a journey or run. */

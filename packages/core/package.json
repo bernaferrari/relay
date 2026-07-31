@@ -32,7 +32,8 @@
     "./schedules": "./src/schedules.ts",
     "./suites": "./src/suites.ts",
     "./targets": "./src/targets.ts",
-    "./browser-target": "./src/browser-target.ts"
+    "./browser-target": "./src/browser-target.ts",
+    "./device-setup": "./src/device-setup.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

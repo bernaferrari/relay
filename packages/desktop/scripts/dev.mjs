@@ -4,6 +4,7 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createServer as createNetServer } from "node:net";
 import { createServer } from "vite";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,28 @@ function resolveElectronCli() {
   }
 }
 
+/**
+ * Each desktop development session owns its Relay server. Reusing :8787 is
+ * handy for production and the CLI, but it can silently attach Electron to a
+ * server started before the current source changes were compiled.
+ */
+async function reserveLoopbackPort() {
+  return await new Promise((resolvePort, reject) => {
+    const listener = createNetServer();
+    listener.once("error", reject);
+    listener.listen({ host: "127.0.0.1", port: 0 }, () => {
+      const address = listener.address();
+      if (!address || typeof address === "string") {
+        listener.close();
+        reject(new Error("Could not reserve a loopback port for Relay"));
+        return;
+      }
+      const { port } = address;
+      listener.close((error) => (error ? reject(error) : resolvePort(port)));
+    });
+  });
+}
+
 async function main() {
   process.chdir(root);
 
@@ -43,6 +66,10 @@ async function main() {
   const rendererUrl = urls[0] ?? "http://127.0.0.1:5173/";
   console.log(`[desktop] renderer ${rendererUrl}`);
 
+  const relayPort = await reserveLoopbackPort();
+  const relayUrl = `http://127.0.0.1:${relayPort}`;
+  console.log(`[desktop] Relay server ${relayUrl}`);
+
   const electronCliPath = resolveElectronCli();
   const executable =
     process.platform === "darwin" ? prepareMacOSDevApp(electronCliPath, root) : process.execPath;
@@ -56,6 +83,7 @@ async function main() {
       ...process.env,
       ELECTRON_RENDERER_URL: rendererUrl,
       RELAY_DESKTOP_ROOT: root,
+      RELAY_URL: relayUrl,
     },
     stdio: "inherit",
   });

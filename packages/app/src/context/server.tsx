@@ -10,6 +10,9 @@ import type {
   DiscoveryControl,
   JourneyMetadata,
   JourneyCanvasNote,
+  JourneyConnection,
+  JourneyDeviceVariant,
+  JourneyGraph,
   JourneyTake,
   CompatibilityMatrix,
   Revisioned,
@@ -55,6 +58,15 @@ import {
   saveRecipe as saveRecipeRemoteRequest,
 } from "../lib/server-recipe-remote";
 import { createServerPrivacyController } from "../lib/server-privacy-controller";
+import {
+  loadAndroidDeviceSetup,
+  loadAppleDeviceSetup,
+  loadAppleSetupPreflight,
+  saveAppleDeviceSetup as saveAppleDeviceSetupRequest,
+  type AppleDeviceSetup,
+  type AppleSetupStatus,
+  type AndroidSetupStatus,
+} from "../lib/server-device-setup-remote";
 import { createServerRunController } from "../lib/server-run-controller";
 import {
   deleteSuite as deleteSuiteRequest,
@@ -94,6 +106,24 @@ function mergeJourneyTakes(
   return [...byId.values()].sort((a, b) => a.startedAt - b.startedAt).slice(-50);
 }
 
+function mergeJourneyConnections(
+  remote: JourneyConnection[] | undefined,
+  local: JourneyConnection[] | undefined,
+): JourneyConnection[] {
+  const byId = new Map((remote ?? []).map((connection) => [connection.id, connection]));
+  for (const connection of local ?? []) byId.set(connection.id, connection);
+  return [...byId.values()];
+}
+
+function mergeJourneyVariants(
+  remote: JourneyDeviceVariant[] | undefined,
+  local: JourneyDeviceVariant[] | undefined,
+): JourneyDeviceVariant[] {
+  const byId = new Map((remote ?? []).map((variant) => [variant.id, variant]));
+  for (const variant of local ?? []) byId.set(variant.id, variant);
+  return [...byId.values()];
+}
+
 function mergeJourneyNotes(
   remote: JourneyCanvasNote[] | undefined,
   local: JourneyCanvasNote[] | undefined,
@@ -101,6 +131,35 @@ function mergeJourneyNotes(
   const byId = new Map((remote ?? []).map((note) => [note.id, note]));
   for (const note of local ?? []) byId.set(note.id, note);
   return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt).slice(-100);
+}
+
+/**
+ * The graph is an append-friendly canvas document. On a revision conflict we
+ * retain objects created by either author and choose the newest edit for a
+ * shared id. Deletions are currently local-only actions; when real multiplayer
+ * arrives this is the one seam to extend with tombstones, not a reason to
+ * spread collaboration conditionals through the canvas.
+ */
+function mergeJourneyGraphs(
+  remote: JourneyGraph | undefined,
+  local: JourneyGraph | undefined,
+): JourneyGraph | undefined {
+  if (!remote) return local;
+  if (!local) return remote;
+  const merge = <T extends { id: string; updatedAt: number }>(left: T[], right: T[]): T[] => {
+    const byId = new Map(left.map((entry) => [entry.id, entry]));
+    for (const entry of right) {
+      const previous = byId.get(entry.id);
+      if (!previous || entry.updatedAt >= previous.updatedAt) byId.set(entry.id, entry);
+    }
+    return [...byId.values()];
+  };
+  return {
+    schemaVersion: 1,
+    screens: merge(remote.screens, local.screens),
+    transitions: merge(remote.transitions, local.transitions),
+    flows: merge(remote.flows, local.flows),
+  };
 }
 
 // Re-export API types so existing `from "../context/server"` imports keep working.
@@ -144,6 +203,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [serverUrl, setServerUrlState] = createSignal("");
     const [health, setHealth] = createSignal<HealthState>("unknown");
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
+    const [deviceDiscoveryStatus, setDeviceDiscoveryStatus] = createSignal<
+      "idle" | "scanning" | "ready"
+    >("idle");
     const [targets, setTargets] = createSignal<TargetDefinition[]>([]);
     const [targetProfiles, setTargetProfiles] = createSignal<TargetProfile[]>([]);
     const [matrices, setMatrices] = createSignal<CompatibilityMatrix[]>([]);
@@ -155,19 +217,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
     const [suites, setSuites] = createSignal<TestSuite[]>([]);
     const [selectedSuiteId, setSelectedSuiteId] = createSignal<string | null>(null);
-    // Selection is persisted (platform.storage "selectedRecipeId") so returning
-    // users land on their last test; brand-new users (no stored id) land on the
-    // first-run empty state — we never auto-select the first builtin.
+    // Journey selection is session-scoped. A live device can outlast any one
+    // journey, so restoring an old editor selection on launch makes the device
+    // look attached to work the user did not explicitly resume.
     const [selectedRecipeId, setSelectedRecipeIdState] = createSignal<string | null>(null);
     function setSelectedRecipeId(id: string | null): void {
       setSelectedRecipeIdState(id);
-      void (async () => {
-        try {
-          await platform.storage.set("selectedRecipeId", id ?? "");
-        } catch {
-          /* ignore */
-        }
-      })();
     }
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
@@ -187,7 +242,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [sseConnected, setSseConnected] = createSignal(false);
     const [showOverlays, setShowOverlays] = createSignal(true);
     const [liveFrame, setLiveFrame] = createSignal<Frame | null>(null);
+    const [liveCaptureIssue, setLiveCaptureIssue] = createSignal<string | null>(null);
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
+    const [appleDeviceSetup, setAppleDeviceSetup] = createSignal<AppleSetupStatus | null>(null);
+    const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(null);
     const [projectVariables, setProjectVariables] = createSignal<Revisioned<TestVariable[]>>({
       revision: 0,
       value: [],
@@ -201,6 +259,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     let client: RelayClient | null = null;
     let playTimer: NodeJS.Timeout | undefined;
     let clockTimer: NodeJS.Timeout | undefined;
+    let appleSetupRefreshSequence = 0;
+    let deviceRefreshSequence = 0;
 
     const fetcher = () => platform.fetch ?? fetch;
 
@@ -335,6 +395,39 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearPrivacyPolicies,
     } = createServerPrivacyController(request);
 
+    async function refreshAppleDeviceSetup(): Promise<AppleSetupStatus> {
+      const sequence = ++appleSetupRefreshSequence;
+      const status = await loadAppleDeviceSetup(request);
+      // Settings can issue a background refresh while a save is in flight.
+      // Only the newest reply may change the shared setup state.
+      if (sequence === appleSetupRefreshSequence) setAppleDeviceSetup(status);
+      return status;
+    }
+
+    async function preflightAppleDeviceSetup(): Promise<boolean> {
+      const status = await loadAppleSetupPreflight(request);
+      return status.configured;
+    }
+
+    async function refreshAndroidDeviceSetup(): Promise<AndroidSetupStatus> {
+      const status = await loadAndroidDeviceSetup(request);
+      setAndroidDeviceSetup(status);
+      return status;
+    }
+
+    async function saveAppleDeviceSetup(input: AppleDeviceSetup): Promise<void> {
+      await saveAppleDeviceSetupRequest(request, input);
+      await refreshAppleDeviceSetup();
+      // A runner setup failure belongs to the previous configuration. Once a
+      // new configuration saves successfully, let the stage retry from a
+      // clean state instead of continuing to offer its stale setup error.
+      setLiveCaptureIssue(null);
+    }
+
+    function clearLiveCaptureIssue(): void {
+      setLiveCaptureIssue(null);
+    }
+
     const {
       refreshTargets,
       refreshTargetProfiles,
@@ -369,32 +462,53 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const isEmptyDevices = () => devices().length === 0;
 
     let selectedDeviceAvailable = false;
+    let deviceRefreshInFlight: Promise<void> | null = null;
     async function refreshDevices() {
       if (health() === "offline") return;
-      try {
-        const list = (await listDevices(request)).map((d) => ({
-          ...d,
-          serial: String(d.serial ?? d.id ?? ""),
-        }));
-        setDevices(list);
-        // Preserve an explicit selection across a transient USB/Wi-Fi drop.
-        // When the same serial reappears, the stage recovers without silently
-        // switching the user to a simulator or another phone.
-        const selected = selectedDevice();
-        const selectedTarget = list.find((device) => device.serial === selected);
-        if (!selected) {
-          void selectDeviceRemote(preferredTargetSerial(list));
-        } else if (selectedTarget && !selectedDeviceAvailable) {
-          // Rebind the returning target on the server as well as in the UI.
-          void selectDeviceRequest(request, selected, selectedTarget.platform ?? "android");
+      if (deviceRefreshInFlight) return deviceRefreshInFlight;
+
+      const sequence = ++deviceRefreshSequence;
+      setDeviceDiscoveryStatus("scanning");
+      const refresh = (async () => {
+        try {
+          const list = (await listDevices(request)).map((d) => ({
+            ...d,
+            serial: String(d.serial ?? d.id ?? ""),
+          }));
+          // Device discovery runs from polling, manual refresh, and target
+          // changes. Ignore an older reply so a transient stale list cannot
+          // make the current device disappear or rebind the wrong target.
+          if (sequence !== deviceRefreshSequence) return;
+          setDevices(list);
+          // Preserve an explicit selection across a transient USB/Wi-Fi drop.
+          // When the same serial reappears, the stage recovers without silently
+          // switching the user to a simulator or another phone.
+          const selected = selectedDevice();
+          const selectedTarget = list.find((device) => device.serial === selected);
+          if (!selected) {
+            void selectDeviceRemote(preferredTargetSerial(list));
+          } else if (selectedTarget && !selectedDeviceAvailable) {
+            // Rebind the returning target on the server as well as in the UI.
+            void selectDeviceRequest(request, selected, selectedTarget.platform ?? "android");
+          }
+          selectedDeviceAvailable = Boolean(selectedTarget);
+          // clear only network-ish noise; keep explicit action errors
+          if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
+        } catch (err) {
+          if (sequence !== deviceRefreshSequence) return;
+          // calm when known offline — OfflineGate owns that UX
+          if (health() === "offline") return;
+          setError(err instanceof Error ? err.message : String(err));
         }
-        selectedDeviceAvailable = Boolean(selectedTarget);
-        // clear only network-ish noise; keep explicit action errors
-        if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
-      } catch (err) {
-        // calm when known offline — OfflineGate owns that UX
-        if (health() === "offline") return;
-        setError(err instanceof Error ? err.message : String(err));
+      })();
+      deviceRefreshInFlight = refresh;
+      try {
+        await refresh;
+      } finally {
+        if (deviceRefreshInFlight === refresh) {
+          deviceRefreshInFlight = null;
+          setDeviceDiscoveryStatus("ready");
+        }
       }
     }
 
@@ -758,12 +872,26 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
                 ...latest.value,
                 ...value,
                 positions: { ...latest.value.positions, ...value.positions },
+                screenTitles: { ...latest.value.screenTitles, ...value.screenTitles },
                 edgeLabels: { ...latest.value.edgeLabels, ...value.edgeLabels },
                 edgeKinds: { ...latest.value.edgeKinds, ...value.edgeKinds },
                 notes: mergeJourneyNotes(latest.value.notes, value.notes),
                 // A take has one stable id; keep local updates for matching
                 // ids while retaining remote takes created by collaborators.
                 takes: mergeJourneyTakes(latest.value.takes, value.takes),
+                prototype: {
+                  ...latest.value.prototype,
+                  ...value.prototype,
+                  connections: mergeJourneyConnections(
+                    latest.value.prototype?.connections,
+                    value.prototype?.connections,
+                  ),
+                  deviceVariants: mergeJourneyVariants(
+                    latest.value.prototype?.deviceVariants,
+                    value.prototype?.deviceVariants,
+                  ),
+                },
+                graph: mergeJourneyGraphs(latest.value.graph, value.graph),
               },
               idempotencyKey: crypto.randomUUID(),
             });
@@ -1007,6 +1135,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     async function selectDeviceRemote(serial: string | null) {
+      if (serial !== selectedDevice()) {
+        // Live pixels and the accessibility tree are target-specific. Clear
+        // them before accepting a new target so the stage never renders a
+        // convincing but stale screen while the new target is starting.
+        setLiveFrame(null);
+        setSnapshot(null);
+        setLiveCaptureIssue(null);
+      }
       setSelectedDevice(serial);
       selectedDeviceAvailable = devices().some((device) => device.serial === serial);
       void Promise.resolve(platform.storage.set("selectedDevice", serial ?? "")).catch(
@@ -1123,6 +1259,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runStep,
       frameUrlForPersisted,
       videoUrlForRun,
+      recordIosVideo,
+      iosVideoUrl,
     } = createServerCapture({
       request,
       serverUrl,
@@ -1133,6 +1271,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSnapshot,
       setShowOverlays,
       setLiveFrame,
+      setLiveCaptureIssue,
       pushFrame,
       copyImage: platform.copyImage,
       appendLog,
@@ -1165,14 +1304,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const savedDevice = await platform.storage.get("selectedDevice");
         if (savedDevice) setSelectedDevice(savedDevice);
-      } catch {
-        /* ignore */
-      }
-      // Restore the last-selected test BEFORE recipes load, so the recipes
-      // refresh can validate it (and a missing id falls back to null).
-      try {
-        const savedSel = await platform.storage.get("selectedRecipeId");
-        if (savedSel) setSelectedRecipeIdState(savedSel);
       } catch {
         /* ignore */
       }
@@ -1323,6 +1454,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,
+      appleDeviceSetup,
+      androidDeviceSetup,
+      refreshAppleDeviceSetup,
+      preflightAppleDeviceSetup,
+      refreshAndroidDeviceSetup,
+      saveAppleDeviceSetup,
       projectVariables,
       refreshProjectVariables,
       saveProjectVariables,
@@ -1336,6 +1473,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       health,
       isOffline,
       isEmptyDevices,
+      deviceDiscoveryStatus,
       sseConnected,
       devices,
       targets,
@@ -1459,6 +1597,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       showOverlays,
       setShowOverlays,
       liveFrame,
+      liveCaptureIssue,
+      clearLiveCaptureIssue,
       pollLiveFrame,
       pollLiveSnapshot,
       touchDevice,
@@ -1466,6 +1606,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       scrollDevice,
       frameUrlForPersisted,
       videoUrlForRun,
+      recordIosVideo,
+      iosVideoUrl,
     };
   },
 });

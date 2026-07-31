@@ -24,6 +24,7 @@ export type IconName =
   | "sliders"
   | "command"
   | "camera"
+  | "video"
   | "scan"
   | "grid"
   | "trash"
@@ -77,6 +78,10 @@ const STROKE: Record<string, Path[]> = {
       d: "M4 7h3l1.8-2.2a1 1 0 0 1 .77-.37h4.86a1 1 0 0 1 .77.37L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z",
     },
     { d: "M12 11a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" },
+  ],
+  video: [
+    { d: "M4 6h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" },
+    { d: "m17 10 5-3v10l-5-3z" },
   ],
   scan: [
     {

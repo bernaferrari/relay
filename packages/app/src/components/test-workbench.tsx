@@ -3,7 +3,6 @@ import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
-import { eyebrow } from "../lib/ui";
 import { shellStageDrawerClearance, shellStageWrap } from "../lib/shell-layout";
 import { DeviceStage } from "./stage";
 import { JourneyInspector } from "./journey-chrome";
@@ -41,37 +40,33 @@ export function TestWorkbench(props: {
       return selected;
     return workbench.activeLiveJob();
   });
+  const hasInspector = () => Boolean(props.details || execution() || draft.steps().length > 0);
   return (
     <>
-      <div class={cn(shellStageWrap, shellStageDrawerClearance, "min-h-0 flex-1")}>
+      <div
+        class={cn(
+          shellStageWrap,
+          hasInspector() && shellStageDrawerClearance,
+          "min-h-0 flex-1",
+          !hasInspector() && "col-span-full",
+        )}
+      >
         <DeviceStage onExpandBoard={props.onOpenMap} onOpenTargets={props.onOpenTargets} />
       </div>
-      <Show
-        when={props.details}
-        fallback={
-          <Show
-            when={execution()}
-            fallback={
-              <Show
-                when={draft.steps().length > 0}
-                fallback={
-                  <aside class="flex min-h-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-5 text-[12px] text-[var(--text-weak)]">
-                    <span class={eyebrow}>Step properties</span>
-                    <strong class="mt-2 text-[14px] text-[var(--text-strong)]">
-                      No step selected
-                    </strong>
-                  </aside>
-                }
-              >
-                <JourneyInspector compact onOpenTargets={props.onOpenTargets} />
-              </Show>
-            }
-          >
-            {(job) => <ExecutionInspector job={job()} onOpenReport={props.onOpenRun} />}
-          </Show>
-        }
-      >
-        {props.details}
+      <Show when={hasInspector()}>
+        <Show
+          when={props.details}
+          fallback={
+            <Show
+              when={execution()}
+              fallback={<JourneyInspector compact onOpenTargets={props.onOpenTargets} />}
+            >
+              {(job) => <ExecutionInspector job={job()} onOpenReport={props.onOpenRun} />}
+            </Show>
+          }
+        >
+          {props.details}
+        </Show>
       </Show>
     </>
   );

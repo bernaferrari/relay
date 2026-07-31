@@ -95,6 +95,27 @@ connected mobile devices (not a coding agent).
 12. Tests are canonical library assets. Suites store ordered references, not copies; every suite run
     freezes its exact suite revision, test revisions, target, and inputs before enqueueing work.
 
+## Journey graph document
+
+`JourneyMetadata` schema v6 is the authoring document for the desktop canvas. It deliberately keeps
+three concerns separate:
+
+| Concern | Owner | Purpose |
+| --- | --- | --- |
+| Screens, transitions, flow starts, layout, notes | `app/lib/journey-graph.ts` + journey metadata | The FigJam-like authoring surface |
+| A temporary device take | `app/context/recorder.tsx` | A reversible capture waiting for review |
+| Recipe steps | `core` recipe/YAML model | The target-neutral program that runs |
+
+Review commits a take atomically: the recorder returns the actual newly created recipe step IDs,
+then one metadata revision creates the corresponding graph transition. This prevents the graph from
+pointing at guessed array indexes or showing a route as recorded before it has real evidence.
+
+Legacy metadata remains readable. `ensureJourneyGraph()` performs a pure, lazy v5-to-v6 view
+migration and `withJourneyGraph()` writes the canonical version only after an intentional canvas
+edit. This keeps opening an older recording non-destructive. `journey-document.ts` uses nested
+Yjs map/array structures behind the same document seam, so a later provider can synchronize screens
+and transitions without moving recipe execution into the renderer.
+
 ## Target boundary
 
 `core/targets.ts` owns target definitions, isolated browser profiles, and preflight checks.

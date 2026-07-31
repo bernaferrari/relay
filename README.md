@@ -31,10 +31,12 @@ pnpm dev:serve             # terminal 1 — API on :8787
 pnpm dev:app               # terminal 2 — Stage UI
 ```
 
-In the UI, open **Tests** and follow the single primary action: connect a device, start recording,
-and use the app normally. Relay turns the interaction into editable steps. Review the steps and
-press **Run** to create the first report. If recording is not appropriate, **Build without
-recording** opens the same editor with manual and AI-assisted steps.
+In the UI, open **Journeys**, choose a ready device, and select **Record journey**. Use the app at
+your own pace. Stopping creates a temporary take: review its captured actions, remove anything
+accidental, choose whether it reaches a new screen, an existing screen, or the end, then add that
+transition to the journey map. Nothing is committed until that last decision. The canvas is a
+free-form, Figma-like view of screens and the actions that connect them; the compact recipe below
+it remains the target-neutral program Relay runs.
 
 For a website, open **Settings → Targets**, add its start URL, and choose **Open & sign in**. Relay
 opens a visible, isolated Chrome profile so login, MFA, consent, and CAPTCHA can be completed by a
@@ -52,6 +54,23 @@ relay test run checkout --target <target-id>
 Tests remain target-neutral: a tap/click, text entry, wait, screenshot, assertion, or reusable flow
 has one recipe representation. Adapters translate it to the selected iOS, Android, or browser
 target, and unsupported device-only operations fail explicitly instead of being silently skipped.
+
+### Journey maps
+
+Journey metadata is versioned independently of recipes. The current graph document has three small,
+stable primitives: **screens**, **transitions**, and named **flow starts**. Layout, notes, and
+planned routes are document concerns; recipe steps are execution concerns. That seam lets the
+canvas change without changing an existing test, makes every edit reversible through the journey
+history, and gives a future collaborative provider a bounded document to synchronize.
+
+```text
+Start screen ── recorded transition ──> Settings
+                 └─ return transition ─> Start screen
+```
+
+Old journey metadata is read and converted lazily on the first graph edit. A v6 journey stores the
+graph beside the existing revisioned metadata, so clients can evolve or migrate it without guessing
+from a linear action list again.
 
 ### Reusable recorded setups and app builds
 

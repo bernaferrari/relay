@@ -99,6 +99,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     openExternalSafe(url);
   });
 
+  ipcMain.handle("open-xcode", async () => {
+    if (process.platform !== "darwin") return false;
+    return !(await shell.openPath("/Applications/Xcode.app"));
+  });
+
   ipcMain.on("open-external", (_event, url: string) => {
     openExternalSafe(url);
   });

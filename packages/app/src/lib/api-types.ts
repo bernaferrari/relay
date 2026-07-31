@@ -34,6 +34,10 @@ export type DeviceInfo = {
   osVersion?: string;
   /** Android platform-tool state; unauthorized/offline hardware stays visible but cannot run. */
   connectionState?: "connected" | "unauthorized" | "offline";
+  /** iOS physical devices require this before Xcode can install Relay's runner. */
+  developerMode?: "enabled" | "disabled";
+  /** Whether Xcode's on-device developer services are available for this iOS device. */
+  developerServicesAvailable?: boolean;
   platform?: "android" | "ios" | "browser";
   targetKind?: "device" | "browser";
   [key: string]: unknown;

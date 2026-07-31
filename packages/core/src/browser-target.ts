@@ -446,6 +446,7 @@ export async function getBrowserDevice(targetId: string): Promise<Device> {
       alert: async () => unsupported("native alerts"),
       appSwitcher: async () => unsupported("app switcher"),
       rotate: async () => unsupported("rotation"),
+      prepare: async () => unsupported("native device runner"),
     },
     settings: { update: async () => unsupported("device settings") },
     observability: {

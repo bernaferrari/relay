@@ -1,4 +1,5 @@
 import { createSignal, createEffect } from "solid-js";
+import type { JourneyVideoClip } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import {
   useServer,
@@ -19,6 +20,7 @@ import {
   type PickStrategy,
 } from "../lib/snapshot";
 import { sentenceForStep } from "../lib/step-sentence";
+import { targetIsReady } from "../lib/target-presentation";
 import { useRecipeDraft } from "./recipe-draft";
 import { toast } from "./toast";
 
@@ -39,11 +41,23 @@ export type RecLevel = "smart" | "element" | "point";
 export type RecordingTake = {
   id: string;
   recipeId?: string;
+  sourceScreenId?: string;
   startedAt: number;
   finishedAt?: number;
   group: string;
   steps: RecipeStep[];
   state: "recording" | "review";
+  /** A Relay-owned XCTest video take for iPhone/iPad review. */
+  videoTakeId?: string;
+  videoClip?: JourneyVideoClip;
+};
+
+/** A recording is only real after Relay can both prepare the target and read
+ * its first screen. Keep a short, user-facing failure state separate from the
+ * take so the UI never claims to be recording when setup has failed. */
+export type RecordingIssue = {
+  kind: "setup" | "screen";
+  message: string;
 };
 
 /** Legacy localStorage step shape (pre-plan-003). */
@@ -255,8 +269,58 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     const draft = useRecipeDraft();
     const [interacting, setInteracting] = createSignal(false);
     const [recording, setRecording] = createSignal(false);
+    const [arming, setArming] = createSignal(false);
+    const [recordingIssue, setRecordingIssue] = createSignal<RecordingIssue | null>(null);
     const [recordingGroup, setRecordingGroupState] = createSignal("");
     const [take, setTake] = createSignal<RecordingTake | null>(null);
+    // Starting the Apple XCTest recorder can take a moment while the local
+    // runner is prepared. Keep the promise so Stop always waits for Start,
+    // rather than accidentally leaving an orphaned recording on the device.
+    let iosVideoStart: ReturnType<typeof server.recordIosVideo> | null = null;
+    let iosVideoTakeId: string | null = null;
+    let pendingRecordingSourceScreenId: string | undefined;
+    let recordingAttempt = 0;
+    let recordingIssueSerial: string | null = null;
+
+    const recordingTargetReady = () =>
+      targetIsReady(
+        server.devices().find((device) => device.serial === server.selectedDevice()),
+        server.health() === "online",
+      );
+
+    const recordingTargetIsIos = () =>
+      server.devices().find((device) => device.serial === server.selectedDevice())?.platform ===
+      "ios";
+
+    // The recorder is the final authority. UI entry points may change over
+    // time, but none may ever leave this state armed without a real target.
+    createEffect(() => {
+      if ((!recording() && !arming()) || recordingTargetReady()) return;
+      recordingAttempt += 1;
+      setArming(false);
+      setRecording(false);
+      setInteracting(false);
+      setRecordingGroupState("");
+      recordingIssueSerial = server.selectedDevice();
+      setRecordingIssue({
+        kind: "screen",
+        message: "The selected device disconnected before Relay could start recording.",
+      });
+      setTake((current) =>
+        current?.steps.length ? { ...current, finishedAt: Date.now(), state: "review" } : null,
+      );
+    });
+
+    // A setup problem belongs to the selected device, never to the entire
+    // workspace. Choosing another target should immediately give it a clean
+    // chance to prepare rather than carrying an old iPad's warning forward.
+    createEffect(() => {
+      const selected = server.selectedDevice();
+      if (recordingIssue() && selected !== recordingIssueSerial) {
+        recordingIssueSerial = null;
+        setRecordingIssue(null);
+      }
+    });
 
     function takeId(): string {
       const suffix =
@@ -281,6 +345,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
     function setRecordingGroup(value: string): void {
       setRecordingGroupState(value.slice(0, 96));
+    }
+
+    /** The graph chooses a source before the recorder starts. Persist it on
+     * the temporary take so review can survive a reload without guessing. */
+    function setRecordingSourceScreen(sourceScreenId: string | undefined): void {
+      pendingRecordingSourceScreenId = sourceScreenId;
+      setTake((current) => (current ? { ...current, sourceScreenId } : current));
     }
 
     function startNextRecordingGroup(): void {
@@ -352,18 +423,16 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       // makes a temporary capture gap feel like a broken recorder.
       if (now - lastMissingContextNotice < 10_000) return;
       lastMissingContextNotice = now;
-      toast(
-        recordingGesture
-          ? "Recording is waiting for the device screen"
-          : "Relay needs the device screen to map this gesture",
-        "warning",
-      );
-      server.appendLog(
-        recordingGesture
-          ? "recording skipped · no valid UI snapshot/device bounds"
-          : "interaction skipped · no valid UI snapshot/device bounds",
-        "error",
-      );
+      if (recordingGesture) {
+        // A connecting Android device often exposes video a fraction before it
+        // exposes the inspectable window tree. That is a normal preparation
+        // phase, not an error worthy of interrupting a person mid-flow.
+        server.appendLog("recording awaiting usable device screen", "info");
+        void server.captureUiSnapshot();
+        return;
+      }
+      toast("Relay needs the device screen to map this gesture", "warning");
+      server.appendLog("interaction skipped · no valid UI snapshot/device bounds", "error");
     }
 
     function noteMissingRecordingContext(): void {
@@ -423,9 +492,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
     // harmless capture race never drops an action the user just performed.
     let lastUsableSnapshot: SnapshotState = null;
 
+    function isSelectedDeviceSnapshot(snapshot: SnapshotState): boolean {
+      if (!hasUsableDeviceBounds(snapshot)) return false;
+      const selectedDevice = server.selectedDevice();
+      return !selectedDevice || !snapshot.serial || snapshot.serial === selectedDevice;
+    }
+
     async function snapshotForRecording(waitForCapture: boolean): Promise<SnapshotState> {
       const current = server.snapshot();
-      if (hasUsableDeviceBounds(current)) {
+      if (isSelectedDeviceSnapshot(current)) {
         lastUsableSnapshot = current;
         return current;
       }
@@ -433,13 +508,13 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
       // First capture can race stream setup. This happens after direct
       // control has already completed, so the retry never slows the phone.
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
         const captured = await server.captureUiSnapshot();
-        if (hasUsableDeviceBounds(captured)) {
+        if (isSelectedDeviceSnapshot(captured)) {
           lastUsableSnapshot = captured;
           return captured;
         }
-        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 90));
+        if (attempt < 5) await new Promise((resolve) => setTimeout(resolve, 120));
       }
       return lastUsableSnapshot;
     }
@@ -448,32 +523,134 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       noteMissingScreenContext(false);
     }
 
-    /** Enter Record mode: arm the flag + make sure the stage has something
-     *  to show (overlays on, a snapshot if we don't have one yet). Shared by
-     *  the stage's segmented control and the empty-state's "Record from
-     *  device" action so both paths behave identically. */
-    function enterRecordMode(): void {
-      if (recording()) return;
+    function issueForRecordingStart(error: unknown): RecordingIssue {
+      const raw = error instanceof Error ? error.message : String(error);
+      if (
+        /xcode is not signed in|could not create a development profile|turn on developer mode|manual signing override/i.test(
+          raw,
+        )
+      ) {
+        return { kind: "setup", message: raw };
+      }
+      if (/finish .*setup|sign(?:ing)?|provision|xcode|runner/i.test(raw)) {
+        return {
+          kind: "setup",
+          message: "Relay needs to finish setting up its local iPad runner before it can record.",
+        };
+      }
+      return {
+        kind: "screen",
+        message: "Relay could not read this device’s screen yet.",
+      };
+    }
+
+    async function stopStartedIosVideo(): Promise<void> {
+      if (!iosVideoTakeId) return;
+      try {
+        await server.recordIosVideo("stop");
+      } catch {
+        // The setup failure is already represented in the stage. A second,
+        // competing error toast would not help the person recover.
+      } finally {
+        iosVideoTakeId = null;
+      }
+    }
+
+    /** Prepare the target before calling it a recording. On iOS that includes
+     * signing/launching the local runner and proving that a screenshot plus a
+     * usable UI tree can be read. */
+    async function enterRecordMode(): Promise<boolean> {
+      if (recording() || arming()) return false;
+      if (!recordingTargetReady()) {
+        toast("Choose a ready device before recording", "info");
+        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+        return false;
+      }
       if (take()?.state === "review") {
         toast("Review or discard the current take before recording again", "info");
-        return;
+        return false;
       }
+      const attempt = ++recordingAttempt;
       const group = recordingGroup().trim() || nextRecordingGroup();
-      if (!recordingGroup().trim()) setRecordingGroupState(group);
-      setTake({ id: takeId(), startedAt: Date.now(), group, steps: [], state: "recording" });
-      setInteracting(true);
-      setRecording(true);
+      recordingIssueSerial = null;
+      setRecordingIssue(null);
+      // Never arm a new take from geometry captured for a different target.
+      lastUsableSnapshot = null;
+      setArming(true);
       server.setShowOverlays(true);
-      void Promise.all([
-        server.captureUiSnapshot(),
-        server.captureUiScreenshot("Recording started", undefined, undefined, true),
-      ]).catch(() => undefined);
+
+      try {
+        if (recordingTargetIsIos()) {
+          iosVideoStart = server.recordIosVideo("start");
+          const video = await iosVideoStart;
+          if (!video) throw new Error("Relay could not start the iPad recording.");
+          iosVideoTakeId = video.id;
+        }
+
+        // A visible video alone is not enough to author a reliable journey.
+        // Require fresh, selected-device evidence before exposing Record.
+        const snapshot = await snapshotForRecording(true);
+        if (!hasUsableDeviceBounds(snapshot)) {
+          throw new Error("Relay could not read an inspectable device screen.");
+        }
+        await server.captureUiScreenshot("Recording ready", undefined, undefined, true);
+        if (attempt !== recordingAttempt || !recordingTargetReady()) {
+          throw new Error("The selected device changed while Relay was preparing it.");
+        }
+
+        if (!recordingGroup().trim()) setRecordingGroupState(group);
+        setTake({
+          id: takeId(),
+          ...(pendingRecordingSourceScreenId
+            ? { sourceScreenId: pendingRecordingSourceScreenId }
+            : {}),
+          ...(iosVideoTakeId ? { videoTakeId: iosVideoTakeId } : {}),
+          startedAt: Date.now(),
+          group,
+          steps: [],
+          state: "recording",
+        });
+        setInteracting(true);
+        setRecording(true);
+        return true;
+      } catch (error) {
+        await stopStartedIosVideo();
+        setTake(null);
+        setRecording(false);
+        setInteracting(false);
+        setRecordingGroupState("");
+        recordingIssueSerial = server.selectedDevice();
+        setRecordingIssue(issueForRecordingStart(error));
+        return false;
+      } finally {
+        iosVideoStart = null;
+        setArming(false);
+      }
     }
 
     async function stopRecording(): Promise<void> {
       await flushType();
+      recordingAttempt += 1;
       setRecording(false);
       setRecordingGroupState("");
+      if (recordingTargetIsIos()) {
+        const pendingStart = iosVideoStart;
+        if (pendingStart) await pendingStart.catch(() => undefined);
+        iosVideoStart = null;
+        try {
+          if (iosVideoTakeId) {
+            const video = await server.recordIosVideo("stop");
+            if (video?.warning) {
+              setTake((current) => (current ? { ...current, videoTakeId: undefined } : current));
+              toast(video.warning, "warning");
+            }
+          }
+        } catch (error) {
+          toast(error instanceof Error ? error.message : String(error), "warning");
+        } finally {
+          iosVideoTakeId = null;
+        }
+      }
       setTake((current) =>
         current ? { ...current, finishedAt: Date.now(), state: "review" } : current,
       );
@@ -652,21 +829,28 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       );
     }
 
-    function keepTake(): boolean {
+    /** Commit a reviewed take to the executable recipe and return the exact
+     * stable ids that were inserted. Canvas code must use this result instead
+     * of guessing from recipe length, otherwise a concurrent edit can connect
+     * a transition to the wrong action. */
+    function keepTake(): RecipeStep[] | null {
       const current = take();
-      if (!current || current.steps.length === 0) return false;
-      draft.appendSteps(current.steps);
+      if (!current || current.steps.length === 0) return null;
+      const inserted = draft.appendSteps(current.steps);
+      if (!inserted.length) return null;
       setTake(null);
+      pendingRecordingSourceScreenId = undefined;
       toast(
-        `Added ${current.steps.length} action${current.steps.length === 1 ? "" : "s"} to the journey`,
+        `Added ${inserted.length} action${inserted.length === 1 ? "" : "s"} to the journey`,
         "success",
       );
-      return true;
+      return inserted;
     }
 
     function discardTake(): void {
       const current = take();
       setTake(null);
+      pendingRecordingSourceScreenId = undefined;
       if (current?.steps.length) toast("Discarded this recording take", "info");
     }
 
@@ -676,6 +860,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           ? { ...current, steps: current.steps.filter((_, position) => position !== index) }
           : current,
       );
+    }
+
+    function setTakeVideoClip(videoClip: JourneyVideoClip): void {
+      setTake((current) => (current ? { ...current, videoClip: { ...videoClip } } : current));
     }
 
     /** Rehydrate a stopped take from durable journey metadata. The caller only
@@ -896,13 +1084,17 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       interacting,
       setInteracting,
       recording,
+      arming,
+      recordingIssue,
       recordingGroup,
       take,
       keepTake,
       discardTake,
       removeTakeStep,
+      setTakeVideoClip,
       restoreTake,
       setRecordingGroup,
+      setRecordingSourceScreen,
       startNextRecordingGroup,
       setRecording,
       enterRecordMode,
