@@ -10,6 +10,7 @@ import {
   checkPackageInternalSites,
   checkRootSites,
   readWorkspacePackages,
+  rootExternalDependencyRanges,
   rootWorkspaceDependencyNames,
   specifierSites,
   type WorkspacePackage,
@@ -23,6 +24,7 @@ const kernel: WorkspacePackage = {
     ['@agent-device/kernel/device', 'packages/kernel/src/device.ts'],
   ]),
   workspaceDependencies: new Set(),
+  externalDependencies: new Map(),
 };
 
 const contracts: WorkspacePackage = {
@@ -32,6 +34,7 @@ const contracts: WorkspacePackage = {
     ['@agent-device/contracts/interaction', 'packages/contracts/src/facades/interaction.ts'],
   ]),
   workspaceDependencies: new Set(['@agent-device/kernel']),
+  externalDependencies: new Map(),
 };
 
 const ALL = [kernel, contracts];
@@ -229,6 +232,28 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/kernel',
     '@agent-device/xml',
   ]);
+  const providerLimrunPackage = packages.find(
+    (pkg) => pkg.name === '@agent-device/provider-limrun',
+  );
+  assert.ok(providerLimrunPackage, 'provider-limrun package must exist');
+  assert.deepEqual(
+    [...providerLimrunPackage.exportTargets.keys()],
+    ['@agent-device/provider-limrun'],
+  );
+  assert.deepEqual([...providerLimrunPackage.workspaceDependencies].sort(), [
+    '@agent-device/contracts',
+    '@agent-device/kernel',
+  ]);
+  const rootExternalDependencies = rootExternalDependencyRanges(repoRoot);
+  for (const pkg of packages) {
+    for (const [name, range] of pkg.externalDependencies) {
+      assert.equal(
+        rootExternalDependencies.get(name),
+        range,
+        `${pkg.name} external dependency ${name} must match the root dependency range`,
+      );
+    }
+  }
   const xmlPackage = packages.find((pkg) => pkg.name === '@agent-device/xml');
   assert.ok(xmlPackage, 'xml package must exist');
   assert.deepEqual([...xmlPackage.exportTargets.keys()], ['@agent-device/xml']);
@@ -248,6 +273,10 @@ test('the real tree parses, declares, and passes R11', () => {
   assert.ok(
     rootWorkspaceDependencyNames(repoRoot).has('@agent-device/provider-webdriver'),
     'root must declare the provider-webdriver workspace dependency',
+  );
+  assert.ok(
+    rootWorkspaceDependencyNames(repoRoot).has('@agent-device/provider-limrun'),
+    'root must declare the provider-limrun workspace dependency',
   );
   assert.ok(
     rootWorkspaceDependencyNames(repoRoot).has('@agent-device/xml'),
@@ -271,6 +300,8 @@ test('Node resolution enforces the exports map at runtime', () => {
     '@agent-device/contracts',
     '@agent-device/provider-webdriver/runtime',
     '@agent-device/provider-webdriver/src/runtime.ts',
+    '@agent-device/provider-limrun/runtime',
+    '@agent-device/provider-limrun/src/runtime.ts',
     '@agent-device/xml/internal/parser',
     '@agent-device/xml/src/index.ts',
   ]) {
@@ -290,6 +321,11 @@ test('Node resolution enforces the exports map at runtime', () => {
   assert.ok(
     providerWebDriverResolved.endsWith('packages/provider-webdriver/src/index.ts'),
     providerWebDriverResolved,
+  );
+  const providerLimrunResolved = import.meta.resolve('@agent-device/provider-limrun');
+  assert.ok(
+    providerLimrunResolved.endsWith('packages/provider-limrun/src/index.ts'),
+    providerLimrunResolved,
   );
   const xmlResolved = import.meta.resolve('@agent-device/xml');
   assert.ok(xmlResolved.endsWith('packages/xml/src/index.ts'), xmlResolved);

@@ -1,28 +1,17 @@
 import assert from 'node:assert/strict';
 import { test, vi } from 'vitest';
-import type { DeviceLease } from '@agent-device/contracts/device';
+import type { AppsFilter, DeviceLease } from '@agent-device/contracts/device';
+import type { Interactor } from '@agent-device/contracts/interaction';
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import { createAndroidInteractor } from '../../core/interactors/android.ts';
-import {
-  androidAdbResultError,
-  createAndroidPortReverseManager,
-  type AndroidAdbExecutor,
-  type AndroidAdbProvider,
-} from '../../platforms/android/adb-executor.ts';
-import {
-  getAndroidAppStateWithAdb,
-  listAndroidAppsWithAdb,
-} from '../../platforms/android/app-helpers.ts';
-import { inferAndroidAppName } from '../../platforms/android/app-lifecycle.ts';
-import {
-  dismissAndroidKeyboardWithAdb,
-  getAndroidKeyboardStatusWithAdb,
-} from '../../platforms/android/device-input-state.ts';
-import { captureAndroidLogcatWithAdb } from '../../platforms/android/logcat.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type {
+  LimrunAdbExecutor,
+  LimrunAdbProvider,
+  LimrunRuntimeDependencies,
+} from './runtime-dependencies.ts';
 import type { LimrunAndroidSession } from './android.ts';
 import { createLimrunDeviceSession, type LimrunIosCommandExecution } from './device-session.ts';
 import type { LimrunIosSession } from './ios.ts';
-import type { LimrunRuntimeDependencies } from './runtime-dependencies.ts';
 
 const IOS_APPS = [
   { bundleId: 'com.apple.Preferences', name: 'Settings', installType: 'System' },
@@ -32,28 +21,30 @@ const IOS_APPS = [
 const TEST_DEPENDENCIES = {
   clientVersion: 'test-version',
   android: {
-    createInteractor: createAndroidInteractor,
-    createPortReverse: async (adb) => createAndroidPortReverseManager(adb),
-    inferAppName: async (packageName) => inferAndroidAppName(packageName),
-    listApps: async (adb, filter) =>
-      (
-        await listAndroidAppsWithAdb(adb, {
-          filter,
-          target: 'mobile',
-        })
-      ).map((app) => ({ id: app.package, name: app.name })),
-    getForegroundApp: async (adb) => {
-      const app = await getAndroidAppStateWithAdb(adb);
-      return app.package ? { appId: app.package, activity: app.activity } : undefined;
-    },
-    getKeyboardState: getAndroidKeyboardStatusWithAdb,
-    dismissKeyboard: dismissAndroidKeyboardWithAdb,
-    readLogs: async (adb, lineLimit) =>
-      await captureAndroidLogcatWithAdb(adb, {
-        lines: lineLimit,
-        timeoutMs: 5_000,
-      }),
-    adbError: async (message, result, details) => androidAdbResultError(message, result, details),
+    createInteractor: () => ({}) as Interactor,
+    createPortReverse: async () => ({
+      ensure: async () => undefined,
+      remove: async () => undefined,
+      removeAllOwned: async () => undefined,
+    }),
+    inferAppName: async () => 'Example',
+    listApps: async (_adb: LimrunAdbExecutor, _filter: AppsFilter) => [
+      { id: 'com.example.android', name: 'Example' },
+    ],
+    getForegroundApp: async () => ({
+      appId: 'com.example.android',
+      activity: '.MainActivity',
+    }),
+    getKeyboardState: async () => ({ visible: false, inputOwner: 'unknown' as const }),
+    dismissKeyboard: async () => ({
+      visible: false,
+      inputOwner: 'unknown' as const,
+      attempts: 0,
+      wasVisible: false,
+      dismissed: false,
+    }),
+    readLogs: async () => 'log line\n',
+    adbError: async (message) => new AppError('COMMAND_FAILED', message),
   },
   host: {
     runAdb: async () => adbResult(''),
@@ -150,20 +141,9 @@ test('iOS remote install waits for eventually consistent app inventory', async (
 });
 
 test('Android device session exposes semantic ADB capabilities without its raw client', async () => {
-  const adb = vi.fn(async (args: string[]) => {
-    if (args.includes('query-activities')) return adbResult('com.example.android/.MainActivity\n');
-    if (args.includes('packages')) return adbResult('package:com.example.android\n');
-    if (args.includes('window')) {
-      return adbResult('mCurrentFocus=Window{42 u0 com.example.android/.MainActivity}\n');
-    }
-    if (args.includes('input_method')) {
-      return adbResult('mInputShown=false mCurMethodId=com.android.inputmethod.latin/.LatinIME');
-    }
-    if (args.includes('logcat')) return adbResult('log line\n');
-    return adbResult('');
-  }) as AndroidAdbExecutor;
+  const adb = vi.fn(async () => adbResult('')) as LimrunAdbExecutor;
   const removeReverse = vi.fn(async () => undefined);
-  const provider: AndroidAdbProvider = {
+  const provider: LimrunAdbProvider = {
     exec: adb,
     reverse: {
       ensure: vi.fn(async () => undefined),
@@ -220,7 +200,7 @@ function iosSession(client: Record<string, unknown>): LimrunIosSession {
 }
 
 function androidSession(
-  adbProvider: AndroidAdbProvider,
+  adbProvider: LimrunAdbProvider,
   client: Record<string, unknown>,
 ): LimrunAndroidSession {
   return {
