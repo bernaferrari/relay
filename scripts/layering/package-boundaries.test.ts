@@ -114,6 +114,20 @@ test('intra-package relative imports hold', () => {
   assert.deepEqual(checkPackageInternalSites(kernel, sites, ALL), []);
 });
 
+test('an exported package self-reference holds while a deep self-import fails', () => {
+  const exported = specifierSites(
+    'packages/kernel/src/errors.test.ts',
+    "import { AppError } from '@agent-device/kernel/errors';",
+  );
+  assert.deepEqual(checkPackageInternalSites(kernel, exported, ALL), []);
+
+  const deep = specifierSites(
+    'packages/kernel/src/errors.test.ts',
+    "import { AppError } from '@agent-device/kernel/src/errors.ts';",
+  );
+  assert.equal(checkPackageInternalSites(kernel, deep, ALL).length, 1);
+});
+
 test('a cross-package import needs a workspace:* declaration and an exported subpath', () => {
   const declared = specifierSites(
     'packages/contracts/src/gesture.ts',
@@ -202,6 +216,23 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/contracts',
     '@agent-device/kernel',
   ]);
+  const providerWebDriverPackage = packages.find(
+    (pkg) => pkg.name === '@agent-device/provider-webdriver',
+  );
+  assert.ok(providerWebDriverPackage, 'provider-webdriver package must exist');
+  assert.deepEqual(
+    [...providerWebDriverPackage.exportTargets.keys()],
+    ['@agent-device/provider-webdriver'],
+  );
+  assert.deepEqual([...providerWebDriverPackage.workspaceDependencies].sort(), [
+    '@agent-device/contracts',
+    '@agent-device/kernel',
+    '@agent-device/xml',
+  ]);
+  const xmlPackage = packages.find((pkg) => pkg.name === '@agent-device/xml');
+  assert.ok(xmlPackage, 'xml package must exist');
+  assert.deepEqual([...xmlPackage.exportTargets.keys()], ['@agent-device/xml']);
+  assert.deepEqual([...xmlPackage.workspaceDependencies], []);
   assert.ok(
     rootWorkspaceDependencyNames(repoRoot).has('@agent-device/kernel'),
     'root must declare the kernel workspace dependency',
@@ -213,6 +244,14 @@ test('the real tree parses, declares, and passes R11', () => {
   assert.ok(
     rootWorkspaceDependencyNames(repoRoot).has('@agent-device/maestro'),
     'root must declare the maestro workspace dependency',
+  );
+  assert.ok(
+    rootWorkspaceDependencyNames(repoRoot).has('@agent-device/provider-webdriver'),
+    'root must declare the provider-webdriver workspace dependency',
+  );
+  assert.ok(
+    rootWorkspaceDependencyNames(repoRoot).has('@agent-device/xml'),
+    'root must declare the xml workspace dependency',
   );
   assert.deepEqual(checkPackageBoundaries(repoRoot, new Set()), []);
 });
@@ -230,6 +269,10 @@ test('Node resolution enforces the exports map at runtime', () => {
     '@agent-device/contracts/gesture-plan',
     '@agent-device/contracts/src/gesture-plan.ts',
     '@agent-device/contracts',
+    '@agent-device/provider-webdriver/runtime',
+    '@agent-device/provider-webdriver/src/runtime.ts',
+    '@agent-device/xml/internal/parser',
+    '@agent-device/xml/src/index.ts',
   ]) {
     assert.throws(
       () => import.meta.resolve(deep),
@@ -243,4 +286,11 @@ test('Node resolution enforces the exports map at runtime', () => {
     contractsResolved.endsWith('packages/contracts/src/facades/interaction.ts'),
     contractsResolved,
   );
+  const providerWebDriverResolved = import.meta.resolve('@agent-device/provider-webdriver');
+  assert.ok(
+    providerWebDriverResolved.endsWith('packages/provider-webdriver/src/index.ts'),
+    providerWebDriverResolved,
+  );
+  const xmlResolved = import.meta.resolve('@agent-device/xml');
+  assert.ok(xmlResolved.endsWith('packages/xml/src/index.ts'), xmlResolved);
 });
