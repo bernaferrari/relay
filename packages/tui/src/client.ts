@@ -139,50 +139,41 @@ function httpClient(baseUrl: string): DeviceClient {
       process.env.RELAY_ORGANIZATION_ID ?? process.env.GROK_DEVICE_ORGANIZATION_ID ?? "local",
     projectId: process.env.RELAY_PROJECT_ID ?? process.env.GROK_DEVICE_PROJECT_ID ?? "default",
   });
-  const json = <T>(path: string, init?: RequestInit) => relay.request<T>(path, init);
   return {
     mode: "http",
     baseUrl: base,
     async listDevices() {
-      const data = await json<{ devices: ListedDevice[] }>("/devices");
-      return data.devices;
+      const data = await relay.invoke("target.devices.list", {});
+      return data.devices as ListedDevice[];
     },
     async listActions() {
-      const data = await json<{ actions: ActionMeta[] }>("/actions");
-      return data.actions;
+      const data = await relay.invoke("target.actions.list", {});
+      return data.actions as ActionMeta[];
     },
     async listJobs() {
-      const data = await json<{ jobs: TestJob[] }>("/jobs");
-      return data.jobs;
+      const data = await relay.invoke("job.list", { full: true });
+      return data.jobs as unknown as TestJob[];
     },
     async selectDevice(serial) {
-      await json("/device/select", {
-        method: "POST",
-        body: JSON.stringify({ serial }),
-      });
+      await relay.invoke("target.select", { serial });
     },
     async snapshot(serial) {
-      const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-      return json(`/snapshot${q}`);
+      return relay.invoke("target.snapshot.capture", serial ? { serial } : {});
     },
     async screenshot(serial) {
-      const q = serial ? `?serial=${encodeURIComponent(serial)}` : "";
-      const data = await json<{ path: string; bytes: number }>(`/screenshot${q}`);
-      return data;
+      return relay.invoke("target.screenshot.capture", serial ? { serial } : {});
     },
     async runAction(opts) {
       // Async job so cancel/pause work against the same server process
-      const { job } = await json<{ job: TestJob }>("/jobs", {
-        method: "POST",
-        body: JSON.stringify({
-          action: opts.action,
-          serial: opts.serial,
-        }),
+      const { job: rawJob } = await relay.invoke("job.start", {
+        action: opts.action,
+        ...(opts.serial ? { serial: opts.serial } : {}),
       });
+      const job = rawJob as TestJob;
       let seen = 0;
       for (;;) {
-        const data = await json<{ job: TestJob }>(`/jobs/${job.id}`);
-        const current = data.job;
+        const data = await relay.invoke("job.get", { jobId: job.id });
+        const current = data.job as TestJob;
         if (opts.onLog && current.logs) {
           const fresh = current.logs.slice(seen);
           for (const line of fresh) opts.onLog(line);
@@ -206,33 +197,24 @@ function httpClient(baseUrl: string): DeviceClient {
     },
     async cancel(jobId) {
       if (jobId) {
-        await json(`/jobs/${encodeURIComponent(jobId)}/cancel`, {
-          method: "POST",
-          body: "{}",
-        });
+        await relay.invoke("job.cancel", { jobId });
       } else {
-        await json(`/jobs/active/cancel`, { method: "POST", body: "{}" });
+        await relay.invoke("job.active.cancel", {});
       }
     },
     async pause(jobId) {
       const id = jobId ?? (await this.getActiveJobId());
       if (!id) throw new Error("No active job");
-      await json(`/jobs/${encodeURIComponent(id)}/pause`, {
-        method: "POST",
-        body: "{}",
-      });
+      await relay.invoke("job.pause", { jobId: id });
     },
     async resume(jobId) {
       const id = jobId ?? (await this.getActiveJobId());
       if (!id) throw new Error("No active job");
-      await json(`/jobs/${encodeURIComponent(id)}/resume`, {
-        method: "POST",
-        body: "{}",
-      });
+      await relay.invoke("job.resume", { jobId: id });
     },
     async getActiveJobId() {
-      const data = await json<{ active: TestJob | null }>("/jobs?limit=1");
-      const a = data.active;
+      const data = await relay.invoke("job.list", { limit: 1 });
+      const a = data.active as TestJob | null | undefined;
       if (a && (a.status === "running" || a.status === "paused")) return a.id;
       return null;
     },

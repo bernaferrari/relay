@@ -2,6 +2,8 @@
  * OpenCode-style command registry: every action is a command with a real keybind.
  */
 import { For, Show, createEffect, createSignal, onCleanup, type JSX } from "solid-js";
+import type { RelayClient } from "@relay/client";
+import { operationDefinition, type OperationId, type OperationInput } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import { cn } from "../lib/cn";
 import { trapFocus } from "../lib/modal";
@@ -16,6 +18,37 @@ export type Command = {
   disabled?: () => boolean;
   run: () => void | Promise<void>;
 };
+
+/**
+ * Adapt a domain operation to the visual command palette without creating a
+ * second callback-shaped domain API. Canvas-only commands (zoom, selection,
+ * panel visibility) remain ordinary local commands.
+ */
+export function operationCommand<Id extends OperationId>(options: {
+  client: () => RelayClient;
+  operation: Id;
+  input: () => OperationInput<Id>;
+  title?: string;
+  subtitle?: string;
+  keybind?: string;
+  group?: string;
+  disabled?: () => boolean;
+}): Command {
+  const definition = operationDefinition(options.operation);
+  return {
+    id: `operation.${definition.id}`,
+    title: options.title ?? definition.label,
+    subtitle: options.subtitle,
+    keybind: options.keybind,
+    group: options.group ?? definition.category,
+    disabled: options.disabled,
+    run: () =>
+      options
+        .client()
+        .invoke(options.operation, options.input())
+        .then(() => undefined),
+  };
+}
 
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;

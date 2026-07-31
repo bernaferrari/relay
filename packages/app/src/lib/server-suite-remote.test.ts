@@ -14,8 +14,8 @@ test("keeps suite persistence and execution behind one typed boundary", async ()
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     calls.push(`${init?.method ?? "GET"} ${path}`);
     return {
-      suites: [],
-      suite: { id: "release", title: "Release", sections: [] },
+      collections: [],
+      collection: { id: "release", title: "Release", sections: [] },
       history: [],
       manifest: { id: "manifest-1", entries: [] },
       jobs: [],
@@ -31,12 +31,12 @@ test("keeps suite persistence and execution behind one typed boundary", async ()
   await deleteSuite(request, "release");
 
   assert.deepEqual(calls, [
-    "GET /suites",
-    "POST /suites",
-    "PUT /suites/release",
-    "GET /suites/release/history",
-    "POST /suites/release/restore",
-    "POST /suites/release/run",
-    "DELETE /suites/release",
+    "GET /collections",
+    "POST /collections",
+    "PUT /collections/release",
+    "GET /collections/release/history",
+    "POST /collections/release/restore",
+    "POST /collections/release/run",
+    "DELETE /collections/release",
   ]);
 });

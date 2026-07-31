@@ -53,28 +53,28 @@ connected mobile devices (not a coding agent).
 | `@relay/app`      | Solid product UI (workspace / inspector / screen / activity)                                    |
 | `@relay/desktop`  | Electron shell                                                                                  |
 
-## API surface
+## Operation contract
 
-- `GET /health` `/meta` `/events` (SSE)
-- `GET/PUT /settings/privacy` for workspace redaction and `GET/PUT /settings/evidence` for
-  consent-backed sensitive collectors
-- `GET /devices` `/actions` `/jobs` `/jobs/:id`
-- `GET/POST /targets`, `DELETE /targets/:id`, `POST /targets/:id/open`, and
-  `POST /targets/:id/preflight`
-- `GET /recipes` `/recipes/:id`, `GET /recipes/:id/yaml`, and `POST /recipes/import`
-- `GET/POST /suites`, `PUT/DELETE /suites/:id`, `/suites/:id/history`, `/restore`, and `/run`
-- `GET/POST /projects` `/builds` `/device-pools` `/device-leases` `/matrices`
-- `GET /target-profiles` and `POST /matrices/:id/resolve` for frozen compatibility previews
-- `GET/PUT /project/variables` and `/recipes/:id/journey` with revision conflicts
-- `POST /generate` through provider-neutral adapters
-- `POST /recipes/:id/evidence` + `GET /recipes/:id/evidence/:evidenceId` persist recorder
-  screenshots beside recipes without embedding base64 in recipe JSON
-- `POST /jobs` `{ action, serial?, … }` → 202 job
-- `POST /jobs/soak` and `GET /reports/soak/:batchId` for bounded repeated collection campaigns
-- `POST /actions/:id/run` → wait for job (compat)
-- `GET /snapshot` `/screenshot`
-- `POST /interact` `{ kind: label|point|ref|find|text-match, … }`
-- `POST /device/select`
+`packages/protocol/src/operations.ts` is the canonical, versioned description of every public
+domain operation. Each descriptor owns its stable ID, runtime input and output parsers, HTTP
+transport, safety confirmation, target capabilities, lease requirement, idempotency, progress, and
+cancellation metadata. It contains data only and sits below the protocol barrel; it never imports a
+server handler or renderer callback.
+
+`@relay/server` binds incoming requests to those descriptors and validates both sides of the
+existing handler boundary. `GET /meta` is generated from the same registry, so CLI and MCP adapters
+can discover capabilities without scraping routes. `@relay/client.invoke(id, input)` derives the
+request and validates successful responses; malformed server output becomes `ApiError(502)`.
+High-frequency named client methods are small conveniences over `invoke`, not independent
+contracts. The app command palette can adapt an operation with `operationCommand`; visual-only
+commands such as zoom and panel visibility remain local.
+
+Public authoring vocabulary is **Journey**, **Screen**, **Connection**, **Take**, **Collection**,
+**Run**, and **Target**. HTTP authoring resources therefore use `/journeys` and `/collections`.
+`Recipe` and `Suite` may remain names for internal execution/storage structures but must not leak
+through a host contract. Non-operation resources are deliberately narrow: SSE events, live video,
+and immutable run/evidence artifacts. They use `RelayClient.resource`; all product mutations use an
+operation.
 
 ## Rules
 

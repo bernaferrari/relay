@@ -1,19 +1,22 @@
 import type { JobInfo, SaveSuiteInput, SuiteRunManifest, TestSuite } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 
-const path = (id: string) => `/suites/${encodeURIComponent(id)}`;
+const path = (id: string) => `/collections/${encodeURIComponent(id)}`;
 
 export async function listSuites(request: ServerRequest): Promise<TestSuite[]> {
-  const data = await request<{ suites: TestSuite[] }>("/suites");
-  return data.suites;
+  const data = await request<{ collections: TestSuite[] }>("/collections");
+  return data.collections;
 }
 
 export async function saveSuite(request: ServerRequest, input: SaveSuiteInput): Promise<TestSuite> {
-  const data = await request<{ suite: TestSuite }>(input.id ? path(input.id) : "/suites", {
-    method: input.id ? "PUT" : "POST",
-    body: JSON.stringify(input),
-  });
-  return data.suite;
+  const data = await request<{ collection: TestSuite }>(
+    input.id ? path(input.id) : "/collections",
+    {
+      method: input.id ? "PUT" : "POST",
+      body: JSON.stringify(input),
+    },
+  );
+  return data.collection;
 }
 
 export async function deleteSuite(request: ServerRequest, id: string): Promise<void> {
@@ -30,11 +33,11 @@ export async function restoreSuite(
   id: string,
   updatedAt: number,
 ): Promise<TestSuite> {
-  const data = await request<{ suite: TestSuite }>(`${path(id)}/restore`, {
+  const data = await request<{ collection: TestSuite }>(`${path(id)}/restore`, {
     method: "POST",
     body: JSON.stringify({ updatedAt }),
   });
-  return data.suite;
+  return data.collection;
 }
 
 export async function runSuite(

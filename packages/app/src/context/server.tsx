@@ -379,7 +379,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       timeoutMs = 20000,
     ): Promise<T> {
       if (!client) await resolveConnection();
-      return client!.request<T>(path, {
+      return client!.resource<T>(path, {
         ...init,
         signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
       });
@@ -617,8 +617,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function refreshRecipes() {
       if (health() === "offline") return;
       try {
-        const data = await request<{ recipes: RecipeInfo[] }>("/recipes");
-        const list = asArray<RecipeInfo>(data, "recipes");
+        const data = await request<{ journeys: RecipeInfo[] }>("/journeys");
+        const list = asArray<RecipeInfo>(data, "journeys");
         setRecipes(list);
         // A restored selection may point at a deleted recipe — fall back to
         // the first-run empty state, never silently to the first builtin.
@@ -1369,9 +1369,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const id = jobId ?? selectedJobId() ?? undefined;
       try {
         if (id) {
-          await request(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", body: "{}" });
+          if (!client) await resolveConnection();
+          await client!.invoke("job.cancel", { jobId: id });
         } else {
-          await request(`/jobs/active/cancel`, { method: "POST", body: "{}" });
+          if (!client) await resolveConnection();
+          await client!.invoke("job.active.cancel", {});
         }
         appendLog("cancel requested", "info", id);
         void refreshJobs();
@@ -1387,7 +1389,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         return;
       }
       try {
-        await request(`/jobs/${encodeURIComponent(id)}/pause`, { method: "POST", body: "{}" });
+        if (!client) await resolveConnection();
+        await client!.invoke("job.pause", { jobId: id });
         appendLog("paused", "info", id);
         void refreshJobs();
       } catch (err) {
@@ -1402,7 +1405,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         return;
       }
       try {
-        await request(`/jobs/${encodeURIComponent(id)}/resume`, { method: "POST", body: "{}" });
+        if (!client) await resolveConnection();
+        await client!.invoke("job.resume", { jobId: id });
         appendLog("resumed", "info", id);
         void refreshJobs();
       } catch (err) {

@@ -1,7 +1,7 @@
 import type { PersistedRun, TraceFrameRef } from "./api-types";
 
 export function recordingEvidenceUrl(base: string, recipeId: string, evidenceId: string): string {
-  return `${base}/recipes/${encodeURIComponent(recipeId)}/evidence/${encodeURIComponent(evidenceId)}`;
+  return `${base}/journeys/${encodeURIComponent(recipeId)}/evidence/${encodeURIComponent(evidenceId)}`;
 }
 
 export function frameUrlForPersisted(
