@@ -20,7 +20,7 @@ import { closeDaemonServers } from './server-shutdown.ts';
 import type { DaemonInvokeFn, SessionState } from '../types.ts';
 import { createDaemonIdleReap } from './daemon-idle-reap.ts';
 import { finalizeDaemonSessionLease } from './daemon-session-lease-finalizer.ts';
-import { clearAdvisoryDeviceClaim } from '../device-claims.ts';
+import { clearAdvisoryDeviceClaim, pruneDeadDeviceClaims } from '../device-claims.ts';
 import {
   emitDiagnostic,
   flushDiagnosticsToSessionFile,
@@ -342,6 +342,9 @@ export async function startDaemonRuntime(
     socketPort = opened.socketPort;
     httpPort = opened.httpPort;
     publishDaemonInfo(socketPort, httpPort);
+    // After publication: publishDaemonInfo truncates daemon.log, so anything
+    // written before it is lost — including the prune's own diagnostic.
+    await pruneDeviceClaimsForDaemonStartup(logPath);
     // Arms the initial idle-reap timer: a daemon that starts and never
     // receives a request must still be able to reap itself.
     idleReap.noteActivity();
@@ -446,6 +449,30 @@ export async function startDaemonRuntime(
     socketPort,
     token,
   };
+}
+
+async function pruneDeviceClaimsForDaemonStartup(logPath: string): Promise<void> {
+  // Startup runs outside any diagnostics scope, where emitDiagnostic is a no-op,
+  // so the prune has to open one of its own for its events to be recorded.
+  await withDiagnosticsScope(
+    { command: 'daemon', session: 'daemon', logPath, debug: true },
+    async () => {
+      try {
+        const { pruned } = await pruneDeadDeviceClaims();
+        if (pruned > 0) {
+          emitDiagnostic({ phase: 'device_claim_prune', data: { pruned } });
+          flushDiagnosticsToSessionFile({ force: true });
+        }
+      } catch (error) {
+        emitDiagnostic({
+          level: 'warn',
+          phase: 'device_claim_prune_failed',
+          data: { error: error instanceof Error ? error.message : String(error) },
+        });
+        flushDiagnosticsToSessionFile({ force: true });
+      }
+    },
+  );
 }
 
 export async function cleanupWebBrowserOrphansForDaemonStartup(params: {
