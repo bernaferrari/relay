@@ -32,10 +32,10 @@ export function Topbar(props: { onSettings: () => void }) {
     const s = server.selectedDevice();
     if (!s) {
       if (server.deviceDiscoveryStatus() === "scanning") return "Discovering devices…";
-      return server.isEmptyDevices() ? "No target" : "Select target";
+      return server.isEmptyDevices() ? "No device" : "Select device";
     }
     const d = server.devices().find((x) => x.serial === s);
-    return d ? presentTarget(d).displayName : "Select target";
+    return d ? presentTarget(d).displayName : "Select device";
   };
 
   const statusOn = () =>
@@ -132,15 +132,15 @@ export function Topbar(props: { onSettings: () => void }) {
                     <div class="px-3 py-3.5 text-center" aria-live="polite">
                       <p class="m-0 text-12-medium text-text-strong">Discovering devices…</p>
                       <p class="mt-1 mb-2 text-12-regular text-text-weak">
-                        Checking Android through ADB and Apple devices through Xcode.
+                        Checking connected phones and available simulators.
                       </p>
                     </div>
                   }
                 >
                   <div class="px-3 py-3.5 text-center">
-                    <p class="m-0 text-12-medium text-text-strong">No target connected</p>
+                    <p class="m-0 text-12-medium text-text-strong">No device connected</p>
                     <p class="mt-1 mb-2 text-12-regular text-text-weak">
-                      Connect a phone or add a browser target in Settings.
+                      Connect a phone or start a simulator.
                     </p>
                   </div>
                 </Show>

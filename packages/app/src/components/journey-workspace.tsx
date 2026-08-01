@@ -2,13 +2,11 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount }
 import type {
   JourneyCanvasNote,
   JourneyMetadata,
-  JourneyReviewState,
-  JourneyTake,
   JourneyVideoClip,
   Revisioned,
 } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
-import { useRecorder, type RecordingTake } from "../context/recorder";
+import { useRecorder } from "../context/recorder";
 import { useServer, type RecipeStep } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
@@ -17,7 +15,6 @@ import { createJourneyDocument, type JourneyDocument } from "../lib/journey-docu
 import {
   addPlannedConnection,
   addPlannedScreenConnection,
-  attachRecordedTake,
   attachTransitionSteps,
   canvasConnections,
   removeAuthoredConnection,
@@ -26,12 +23,12 @@ import {
 } from "../lib/journey-prototype";
 import {
   buildJourneyGraphTree,
-  commitTakeToJourneyGraph,
   ensureJourneyGraph,
+  screenForObservation,
   type TakeDestination,
   withJourneyGraph,
 } from "../lib/journey-graph";
-import { EMPTY_JOURNEY_METADATA, metadataWithTake } from "../lib/journey-metadata";
+import { EMPTY_JOURNEY_METADATA } from "../lib/journey-metadata";
 import {
   canvasBounds,
   canvasEdgeGeometry,
@@ -43,9 +40,12 @@ import {
 } from "../lib/journey-canvas-layout";
 import { zoomViewportAtPoint } from "../lib/viewport-zoom";
 import { deviceReadiness } from "../lib/device-readiness";
+import { projectJourneyRun } from "../lib/journey-run-projection";
+import { journeyRunReadiness } from "../lib/journey-run-readiness";
 import { replayTransitionSteps } from "../lib/transition-replay";
 import { toast } from "../context/toast";
 import { DeviceStage } from "./stage";
+import { DevicePicker } from "./device-picker";
 import { Icon } from "./icon";
 import { evidenceForStep } from "./journey-step-presentation";
 import {
@@ -68,7 +68,7 @@ import { JourneyHistoryPanel } from "./journey-history-panel";
  * there. Recording remains the only way to create the real transitions, so
  * the canvas never promises a route that the runner cannot execute.
  */
-export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () => void }) {
+export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOpen?: boolean }) {
   const server = useServer();
   const draft = useRecipeDraft();
   const recorder = useRecorder();
@@ -87,7 +87,28 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   const selectedDevice = createMemo(
     () => server.devices().find((device) => device.serial === server.selectedDevice()) ?? null,
   );
-  const [appleSetupCheckAttempt, setAppleSetupCheckAttempt] = createSignal(0);
+  const graphRunJob = createMemo(() => {
+    const recipeId = server.selectedRecipeId();
+    if (!recipeId) return null;
+    return (
+      server
+        .jobs()
+        .find(
+          (job) =>
+            job.action === recipeId &&
+            job.artifacts?.some((artifact) => artifact.kind === "journey-graph-plan"),
+        ) ?? null
+    );
+  });
+  const runProjection = createMemo(() => {
+    const job = graphRunJob();
+    return projectJourneyRun({
+      graph: graph(),
+      recipeSteps: job?.recipeSnapshot?.steps ?? draft.steps(),
+      job,
+    });
+  });
+  const [appleSetupCheckAttempt] = createSignal(0);
   const [appleSetupCheckFailed, setAppleSetupCheckFailed] = createSignal(false);
   let requestedAppleSetupFor = "";
   createEffect(() => {
@@ -115,18 +136,36 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   });
   const recordState = (): Parameters<typeof GraphEmptyState>[0]["recordState"] => {
     const device = selectedDevice();
-    const readiness = deviceReadiness(device, server.health() === "online");
+    if (device?.platform === "ios" && appleSetupCheckFailed()) return "setup-check-failed";
+    const liveFrame = server.liveFrame();
+    const readiness = deviceReadiness(device, server.health() === "online", {
+      ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
+      liveCaptureIssue: server.liveCaptureIssue(),
+      recordingIssue: recorder.recordingIssue(),
+      requireLiveScreen: true,
+      liveScreenAvailable:
+        Boolean(liveFrame?.base64) && (!liveFrame?.serial || liveFrame.serial === device?.serial),
+    });
     if (readiness.kind === "choose-device") return "choose-device";
     if (readiness.kind === "device-unavailable") return "device-unavailable";
     if (readiness.kind === "ios-developer-mode-disabled") return "enable-developer-mode";
     if (readiness.kind === "ios-preparing") return "preparing-ios";
-    if (!device || device.platform !== "ios") return "ready";
-    const setup = server.appleDeviceSetup();
-    if (appleSetupCheckFailed()) return "setup-check-failed";
-    if (!setup) return "checking-ios";
-    return setup.setup.ios ? "ready" : "setup-ios";
+    if (readiness.kind === "screen-preparing") return "preparing-screen";
+    if (readiness.kind === "checking-ios") return "checking-ios";
+    if (readiness.kind === "setup-ios") return "setup-ios";
+    if (readiness.kind === "capture-error") return "capture-error";
+    return "ready";
   };
   const canRecord = () => recordState() === "ready";
+  const liveScreenSrc = createMemo(() => {
+    const device = selectedDevice();
+    const liveFrame = server.liveFrame();
+    const belongsToSelectedDevice =
+      Boolean(device) && (!liveFrame?.serial || liveFrame.serial === device?.serial);
+    return liveFrame?.base64 && belongsToSelectedDevice
+      ? `data:${liveFrame.mime || "image/png"};base64,${liveFrame.base64}`
+      : undefined;
+  });
   const [view, setView] = createSignal<CanvasViewport>({ x: 72, y: 68, scale: 0.78 });
   const connections = createMemo(() => canvasConnections(tree(), draft.steps(), metadata().value));
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
@@ -172,9 +211,10 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   let pendingConnectionId: string | null = null;
   let recordingSourceScreenId: string | null = null;
   let recordRequestedAfterDeviceSelection = false;
-  let autoOpenedCaptureForRecipe = "";
+  let deviceAutoOpenedForRecipe = "";
   let fittedSignature = "";
   let metadataSaveSequence = 0;
+  let destinationResolvedForTake = "";
 
   const reviewingTake = () => recorder.take()?.state === "review";
 
@@ -188,7 +228,21 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   });
 
   createEffect(() => {
+    const take = recorder.take();
+    if (!take || take.state !== "review" || destinationResolvedForTake === take.id) return;
+    destinationResolvedForTake = take.id;
+    const match = screenForObservation(graph(), take.destinationObservation);
+    setReviewDestination(match ? { kind: "screen", screenId: match.id } : { kind: "new-screen" });
+  });
+
+  createEffect(() => {
     const recipeId = server.selectedRecipeId();
+    deviceAutoOpenedForRecipe = "";
+    setSelectedNodeId(null);
+    setSelectedConnectionId(null);
+    setRenamingNodeId(null);
+    setHistoryOpen(false);
+    setCaptureOpen(false);
     if (!recipeId) {
       journeyDocument?.destroy();
       journeyDocument = null;
@@ -219,11 +273,39 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
         }
       });
   });
+  // A blank journey starts with its device companion visible: the first screen
+  // is established there, not through a modal or a second empty-state CTA.
+  // Populated maps keep the canvas unobstructed until Device is requested.
+  createEffect(() => {
+    const recipeId = server.selectedRecipeId();
+    if (
+      !recipeId ||
+      loadedRecipeId() !== recipeId ||
+      props.navigatorOpen ||
+      hasMap() ||
+      deviceAutoOpenedForRecipe === recipeId
+    )
+      return;
+    deviceAutoOpenedForRecipe = recipeId;
+    setCaptureOpen(true);
+  });
   // Recording starts from the navigator as well as from this workspace. The
   // drawer must follow that state so a fresh journey never appears to be an
   // empty graph while it is already capturing real work.
   createEffect(() => {
     if (recorder.recording() || recorder.take()) setCaptureOpen(true);
+  });
+
+  createEffect(() => {
+    if (!props.navigatorOpen || recorder.recording()) return;
+    deviceAutoOpenedForRecipe = "";
+    setCaptureOpen(false);
+  });
+
+  createEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("relay:device-panel-state", { detail: { open: captureOpen() } }),
+    );
   });
 
   // Selecting a ready device from the first-recording prompt is not a second
@@ -257,54 +339,61 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
       setWaitingForRecordTarget(true);
     };
     window.addEventListener("relay:device-selected", onDeviceSelected);
-    onCleanup(() => window.removeEventListener("relay:device-selected", onDeviceSelected));
+    const onToggleDevicePanel = () => setCaptureOpen((open) => !open);
+    const onCloseDevicePanel = () => setCaptureOpen(false);
+    const onRunJourneyGraph = () => runJourneyGraph();
+    window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
+    window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
+    window.addEventListener("relay:run-journey-graph", onRunJourneyGraph);
+    onCleanup(() => {
+      window.removeEventListener("relay:device-selected", onDeviceSelected);
+      window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
+      window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
+      window.removeEventListener("relay:run-journey-graph", onRunJourneyGraph);
+    });
   });
 
   const positions = () => metadata().value.positions;
   const titleFor = (node: JourneyTreeNode) =>
     metadata().value.screenTitles?.[node.id]?.trim() || node.title;
   const hasCanvasContent = () => hasMap() || (metadata().value.notes?.length ?? 0) > 0;
-  createEffect(() => {
-    const recipeId = server.selectedRecipeId();
-    if (
-      !recipeId ||
-      loadedRecipeId() !== recipeId ||
-      hasCanvasContent() ||
-      draft.steps().length > 0 ||
-      recorder.recording() ||
-      recorder.take() ||
-      recordState() !== "ready" ||
-      autoOpenedCaptureForRecipe === recipeId
-    )
-      return;
-    autoOpenedCaptureForRecipe = recipeId;
-    setCaptureOpen(true);
-  });
   const positionFor = (node: JourneyTreeNode): CanvasPoint => positions()[node.id] ?? node;
   const selectedNode = createMemo(
-    () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? tree().nodes[0] ?? null,
+    () => tree().nodes.find((node) => node.id === selectedNodeId()) ?? null,
   );
   const selectedConnection = createMemo(
     () => connections().find((connection) => connection.id === selectedConnectionId()) ?? null,
   );
-  const reusableCaptures = createMemo(() => {
-    const availableStepIds = new Set(draft.steps().flatMap((step) => (step.id ? [step.id] : [])));
-    return (metadata().value.takes ?? [])
-      .filter(
-        (take) =>
-          take.state === "kept" &&
-          take.steps.length > 0 &&
-          take.steps.every((step) => Boolean(step.id && availableStepIds.has(step.id))),
-      )
-      .sort((left, right) => right.startedAt - left.startedAt)
-      .slice(0, 6)
-      .map((take) => ({
-        id: take.id,
-        label: take.group || "Recorded transition",
-        actionCount: take.steps.length,
-        hasVideo: Boolean(take.videoTakeId),
-      }));
+  const graphRunReadiness = createMemo(() =>
+    journeyRunReadiness({
+      graph: graph(),
+      recipeSteps: draft.steps(),
+      selection: {
+        screenId: selectedNodeId(),
+        transitionId: selectedConnectionId(),
+      },
+    }),
+  );
+  createEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("relay:graph-run-readiness", { detail: graphRunReadiness() }),
+    );
   });
+  const runJourneyGraph = () => {
+    const recipeId = server.selectedRecipeId();
+    const flow = graph().flows[0];
+    if (!recipeId || !flow) {
+      toast("Add and verify a connection before running this journey", "info");
+      return;
+    }
+    const readiness = graphRunReadiness();
+    const transitionPath = readiness.transitionPath;
+    if (!readiness.ready || !transitionPath) {
+      toast(readiness.reason, "info");
+      return;
+    }
+    void server.runJourneyPathRemote(recipeId, flow.name, transitionPath);
+  };
   const reusableBehaviors = createMemo(() =>
     server
       .recipes()
@@ -312,7 +401,8 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
         (recipe) =>
           recipe.source === "custom" &&
           recipe.id !== server.selectedRecipeId() &&
-          recipe.description?.startsWith("Reusable transition behavior") &&
+          (recipe.description?.startsWith("Reusable connection behavior") ||
+            recipe.description?.startsWith("Reusable transition behavior")) &&
           recipe.steps.length > 0,
       )
       .sort((left, right) => right.updatedAt - left.updatedAt)
@@ -349,8 +439,19 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
       event.preventDefault();
       undo();
     };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (renamingNodeId()) return;
+      setSelectedNodeId(null);
+      setSelectedConnectionId(null);
+      setHistoryOpen(false);
+    };
     window.addEventListener("relay:undo-request", onUndoRequest);
-    onCleanup(() => window.removeEventListener("relay:undo-request", onUndoRequest));
+    window.addEventListener("keydown", onEscape);
+    onCleanup(() => {
+      window.removeEventListener("relay:undo-request", onUndoRequest);
+      window.removeEventListener("keydown", onEscape);
+    });
   });
   createEffect(() => {
     const signature = [
@@ -361,9 +462,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
     if (!signature || signature === fittedSignature) return;
     fittedSignature = signature;
     setSelectedNodeId((current) =>
-      current && tree().nodes.some((node) => node.id === current)
-        ? current
-        : (tree().nodes[0]?.id ?? null),
+      current && tree().nodes.some((node) => node.id === current) ? current : null,
     );
     requestAnimationFrame(fit);
   });
@@ -424,14 +523,6 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   };
   const persistPositions = (next: Record<string, CanvasPoint>) =>
     persistMetadata(withJourneyGraph({ ...metadata().value, positions: next }, graph()));
-  const persistTake = (
-    take: RecordingTake,
-    state: JourneyTake["state"],
-    reviewState?: JourneyReviewState,
-  ) => {
-    const next = metadataWithTake(metadata().value, take, state, reviewState);
-    if (next !== metadata().value) persistMetadata(withJourneyGraph(next, graph()));
-  };
   const persistNotes = (notes: JourneyCanvasNote[]) => {
     if (!server.selectedRecipeId()) return;
     persistMetadata(withJourneyGraph({ ...metadata().value, notes }, graph()));
@@ -450,7 +541,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   };
   const canReplayOnDevice = () => {
     if (canRecord()) return true;
-    toast("Choose a ready device before replaying this transition", "info");
+    toast("Choose a ready device before trying this connection", "info");
     window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
     return false;
   };
@@ -458,69 +549,36 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
     const take = recorder.take();
     if (!take || !canReplayOnDevice()) return;
     setTakeReplay({ takeId: take.id, state: "running" });
-    const result = await replayTransitionSteps(take.steps, server.runStep);
+    let passed = false;
+    let error: string | undefined;
+    try {
+      passed = await recorder.replayTake();
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+    }
     setTakeReplay(
-      result.ok
+      passed
         ? { takeId: take.id, state: "passed" }
-        : { takeId: take.id, state: "failed", error: result.error },
+        : { takeId: take.id, state: "failed", error: error ?? "Replay did not pass" },
     );
   };
-  createEffect(() => {
-    const recipeId = server.selectedRecipeId();
-    const current = recorder.take();
-    if (!recipeId || !current || current.recipeId !== recipeId || current.state !== "review")
-      return;
-    persistTake(current, "review");
-  });
-  createEffect(() => {
-    const recipeId = server.selectedRecipeId();
-    if (!recipeId || recorder.take()) return;
-    const review = [...(metadata().value.takes ?? [])]
-      .reverse()
-      .find((take) => take.recipeId === recipeId && take.state === "review");
-    if (review?.state === "review") recorder.restoreTake({ ...review, state: "review" });
-  });
-  const keepTake = () => {
+  const keepTake = async () => {
     const take = recorder.take();
     if (!take || takeReplay().takeId !== take.id || takeReplay().state !== "passed") return;
-    const inserted = recorder.keepTake();
-    if (inserted) {
-      const keptTake = { ...take, steps: inserted };
-      let value = withJourneyGraph(
-        metadataWithTake(metadata().value, keptTake, "kept", "needs-review"),
-        graph(),
-      );
-      let destinationScreenId: string | undefined;
-      if (pendingConnectionId) {
-        value = attachRecordedTake(value, pendingConnectionId, {
-          id: take.id,
-          steps: inserted,
-          ...(take.videoTakeId ? { videoTakeId: take.videoTakeId } : {}),
-          ...(take.videoClip ? { videoClip: take.videoClip } : {}),
-        });
-        value = reviewTransition(value, pendingConnectionId, { status: "verified" });
-        const pending = graph().transitions.find(
-          (transition) => transition.id === pendingConnectionId,
-        );
-        if (pending?.destination.kind === "screen")
-          destinationScreenId = pending.destination.screenId;
-      } else {
-        const committed = commitTakeToJourneyGraph(graph(), {
-          sourceScreenId: take.sourceScreenId ?? recordingSourceScreenId ?? selectedNodeId(),
-          destination: reviewDestination(),
-          steps: inserted,
-          takeId: take.id,
-          ...(take.videoTakeId ? { videoTakeId: take.videoTakeId } : {}),
-          ...(take.videoClip ? { videoClip: take.videoClip } : {}),
-          mode: "interaction",
-          review: { status: "verified", updatedAt: Date.now(), verifiedAt: Date.now() },
-        });
-        value = withJourneyGraph(value, committed.graph);
-        destinationScreenId = committed.destinationScreenId;
-      }
-      persistMetadata(value);
+    const committed = await recorder.keepTake({
+      destination: reviewDestination(),
+      mode: take.steps.length ? "interaction" : "automatic",
+    });
+    if (committed) {
+      const recipeId = server.selectedRecipeId();
+      const next = recipeId ? await server.loadJourney(recipeId) : null;
+      if (next) applyRemoteMetadata(next);
+      const destinationScreenId = next?.value.graph?.transitions.find(
+        (transition) => transition.id === committed.committedTransitionId,
+      )?.destination;
       pendingConnectionId = null;
       recordingSourceScreenId = null;
+      recorder.setRecordingTransition(undefined);
       setReviewDestination({ kind: "new-screen" });
       // Review is a temporary decision point. Once the person keeps it, return
       // them to the graph and select the just-added screen so "Record from
@@ -530,32 +588,34 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
       setTakeReplay({ takeId: null, state: "idle" });
       requestAnimationFrame(() => {
         const nextTree = buildJourneyGraphTree(
-          ensureJourneyGraph(value, draft.steps()),
+          ensureJourneyGraph(next?.value ?? metadata().value, draft.steps()),
           draft.steps(),
         );
-        const addedScreen = nextTree.nodes.find((node) => node.id === destinationScreenId);
+        const addedScreen = nextTree.nodes.find(
+          (node) =>
+            destinationScreenId?.kind === "screen" && node.id === destinationScreenId.screenId,
+        );
         if (addedScreen) selectNode(addedScreen);
         fit();
       });
     }
   };
-  const discardTake = () => {
-    const take = recorder.take();
-    if (take) persistTake(take, "discarded");
+  const discardTake = async () => {
     pendingConnectionId = null;
     recordingSourceScreenId = null;
+    recorder.setRecordingTransition(undefined);
     setReviewDestination({ kind: "new-screen" });
-    recorder.discardTake();
+    await recorder.discardTake();
     setTakeReplay({ takeId: null, state: "idle" });
   };
-  const rewriteTake = () => {
+  const rewriteTake = async () => {
     const take = recorder.take();
     if (!take) return;
     const sourceScreenId = take.sourceScreenId ?? recordingSourceScreenId ?? selectedNodeId();
-    persistTake(take, "discarded");
-    recorder.discardTake();
+    await recorder.discardTake();
     recordingSourceScreenId = sourceScreenId;
     recorder.setRecordingSourceScreen(sourceScreenId ?? undefined);
+    recorder.setRecordingTransition(pendingConnectionId ?? undefined);
     const source = tree().nodes.find((node) => node.id === sourceScreenId);
     if (source) recorder.setRecordingGroup(titleFor(source));
     setTakeReplay({ takeId: null, state: "idle" });
@@ -585,7 +645,12 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
       // A selected iPad that is still preparing is not a device-picker
       // problem. Keep its current readiness explanation on the canvas rather
       // than opening a second, contradictory flow.
-      if (state === "enable-developer-mode" || state === "preparing-ios") return;
+      if (
+        state === "enable-developer-mode" ||
+        state === "preparing-ios" ||
+        state === "preparing-screen"
+      )
+        return;
       recordRequestedAfterDeviceSelection = true;
       window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
       return;
@@ -612,14 +677,8 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
   const recordConnection = (connection: CanvasConnection) => {
     const screen = tree().nodes.find((node) => node.id === connection.fromScreenId) ?? null;
     pendingConnectionId = connection.id;
+    recorder.setRecordingTransition(connection.id);
     recordFromNode(screen);
-  };
-  const attachCapture = (connection: CanvasConnection, takeId: string) => {
-    const take = (metadata().value.takes ?? []).find(
-      (candidate) => candidate.id === takeId && candidate.state === "kept",
-    );
-    if (!take) return;
-    persistMetadata(attachRecordedTake(metadata().value, connection.id, take));
   };
   const attachBehaviorStep = (
     connection: CanvasConnection,
@@ -673,7 +732,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
         reviewTransition(metadata().value, connection.id, { status: "verified" }, Date.now()),
       );
       setTransitionReplay({ connectionId: connection.id, state: "passed" });
-      toast("Transition verified on the device", "success");
+      toast("Connection verified on the device", "success");
       return;
     }
     persistMetadata(
@@ -702,7 +761,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
     const title = `${source ? titleFor(source) : "Screen"} → ${target ? titleFor(target) : "Next screen"}`;
     const saved = await server.saveRecipeRemote({
       title,
-      description: "Reusable transition behavior · saved from the journey canvas",
+      description: "Reusable connection behavior · saved from the journey canvas",
       steps,
     });
     if (saved) toast(`Saved “${saved.title}” as a reusable behavior`, "success");
@@ -783,13 +842,11 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
 
   return (
     <section
-      class="grid min-h-0 flex-1 bg-[var(--v2-background-bg-deep)]"
+      class="relative grid min-h-0 flex-1 overflow-hidden bg-[var(--v2-background-bg-deep)]"
       style={{
         "grid-template-columns": reviewingTake()
           ? "minmax(280px, 320px) minmax(0, 1fr)"
-          : captureOpen()
-            ? "minmax(0, 1fr) minmax(340px, 440px)"
-            : "minmax(0, 1fr)",
+          : "minmax(0, 1fr)",
       }}
     >
       <Show when={!reviewingTake()}>
@@ -797,7 +854,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
           ref={(element) => {
             canvas = element;
           }}
-          class="relative isolate flex min-h-0 min-w-0 select-none overflow-hidden border-r border-[var(--v2-border-border-muted)]"
+          class="relative isolate flex min-h-0 min-w-0 touch-none select-none overflow-hidden"
           aria-label="Journey graph"
           onWheel={(event) => {
             if (!hasCanvasContent() || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
@@ -805,12 +862,12 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
             zoom(event.deltaY > 0 ? -0.08 : 0.08, { x: event.clientX, y: event.clientY });
           }}
           onPointerDown={(event) => {
-            if (
-              !hasCanvasContent() ||
-              event.button !== 0 ||
-              (event.target as HTMLElement).closest("button")
-            )
-              return;
+            const target = event.target as HTMLElement;
+            if (!target.closest("[data-journey-screen-id], aside, button, input, textarea")) {
+              setSelectedNodeId(null);
+              setSelectedConnectionId(null);
+            }
+            if (!hasCanvasContent() || event.button !== 0 || target.closest("button")) return;
             pan = { x: event.clientX, y: event.clientY, view: view() };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -939,17 +996,19 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
             }}
           />
           <Show when={hasCanvasContent()}>
-            <header class="absolute top-0 right-0 left-0 z-20 flex h-12 items-center justify-between border-b border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_88%,transparent)] px-4 backdrop-blur-[12px]">
-              <div class="min-w-0">
-                <strong class="block text-[12px] font-semibold text-[var(--text-strong)]">
-                  Journey map
-                </strong>
-                <span class="text-[10.5px] text-[var(--text-weak)]">
-                  {tree().nodes.length} {tree().nodes.length === 1 ? "screen" : "screens"} ·{" "}
-                  {connections().length} {connections().length === 1 ? "route" : "routes"}
+            <header class="absolute top-4 left-4 z-20 flex min-h-11 items-center gap-1 rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[0_10px_32px_rgb(0_0_0/18%)] backdrop-blur-[14px]">
+              <div class="flex min-w-0 items-center gap-2 px-2">
+                <span class="grid size-6 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                  <Icon name="move" size={12} />
+                </span>
+                <span class="whitespace-nowrap text-[10.5px] font-medium text-[var(--text-base)]">
+                  {tree().nodes.length} {tree().nodes.length === 1 ? "screen" : "screens"}
+                  <span class="mx-1.5 text-[var(--text-weak)]">·</span>
+                  {connections().length} {connections().length === 1 ? "connection" : "connections"}
                 </span>
               </div>
-              <div class="flex items-center gap-1">
+              <span class="mx-0.5 h-5 w-px bg-[var(--v2-border-border-muted)]" />
+              <div class="flex items-center gap-0.5">
                 <Show when={hasCanvasContent()}>
                   <button
                     type="button"
@@ -985,21 +1044,10 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                   </button>
                   <Show when={!recorder.recording() && !recorder.take()}>
                     <button type="button" class={recordButton} onClick={recordFromHere}>
-                      <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" /> Record from
-                      here
+                      <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" />
+                      Record connection
                     </button>
                   </Show>
-                </Show>
-                <Show when={!captureOpen()}>
-                  <button
-                    type="button"
-                    class={mapControlButton}
-                    aria-label="Open device capture"
-                    title="Open device capture"
-                    onClick={() => setCaptureOpen(true)}
-                  >
-                    <Icon name="smartphone" size={13} />
-                  </button>
                 </Show>
               </div>
             </header>
@@ -1023,14 +1071,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                 recordState={recordState()}
                 selectedDeviceName={selectedDevice()?.name ?? server.selectedDevice() ?? undefined}
                 deviceOpen={captureOpen()}
-                onRecord={recordFromHere}
-                onSetUpDevice={() =>
-                  window.dispatchEvent(
-                    new CustomEvent("relay:open-settings", { detail: { section: "devices" } }),
-                  )
-                }
-                onRetrySetup={() => setAppleSetupCheckAttempt((attempt) => attempt + 1)}
-                onOpenDevice={() => setCaptureOpen(true)}
+                liveScreenSrc={liveScreenSrc()}
               />
             }
           >
@@ -1093,9 +1134,21 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                   >
                     <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-critical-base)]" />
                   </marker>
+                  <marker
+                    id="journey-graph-healed"
+                    viewBox="0 0 10 10"
+                    refX="8"
+                    refY="5"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-warning-base)]" />
+                  </marker>
                 </defs>
                 <For each={connections()}>
                   {(connection) => {
+                    const runState = () => runProjection().transitions[connection.id]?.state;
                     const geometry = () =>
                       canvasEdgeGeometry(
                         {
@@ -1112,15 +1165,23 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                           d={geometry().path}
                           class={cn(
                             "pointer-events-none fill-none",
-                            connection.state === "needs-recording"
-                              ? "stroke-[var(--icon-warning-base)] [stroke-dasharray:5_5]"
-                              : connection.review?.status === "verified"
-                                ? "stroke-[var(--icon-success-base)]"
-                                : connection.review?.status === "failed"
-                                  ? "stroke-[var(--icon-critical-base)]"
-                                  : connection.kind === "return"
-                                    ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
-                                    : "stroke-[var(--text-interactive-base)]",
+                            runState() === "failed"
+                              ? "stroke-[var(--icon-critical-base)]"
+                              : runState() === "running"
+                                ? "stroke-[var(--text-interactive-base)] [stroke-dasharray:7_4] motion-safe:animate-pulse"
+                                : runState() === "healed"
+                                  ? "stroke-[var(--icon-warning-base)]"
+                                  : runState() === "passed"
+                                    ? "stroke-[var(--icon-success-base)]"
+                                    : connection.state === "needs-recording"
+                                      ? "stroke-[var(--icon-warning-base)] [stroke-dasharray:5_5]"
+                                      : connection.review?.status === "verified"
+                                        ? "stroke-[var(--icon-success-base)]"
+                                        : connection.review?.status === "failed"
+                                          ? "stroke-[var(--icon-critical-base)]"
+                                          : connection.kind === "return"
+                                            ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
+                                            : "stroke-[var(--text-interactive-base)]",
                           )}
                           stroke-width={
                             connection.state === "needs-recording"
@@ -1131,13 +1192,17 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                           }
                           stroke-linecap="round"
                           marker-end={`url(#journey-graph-${
-                            connection.review?.status === "verified"
-                              ? "verified"
-                              : connection.review?.status === "failed"
-                                ? "failed"
-                                : connection.kind === "return"
-                                  ? "return"
-                                  : "arrow"
+                            runState() === "failed"
+                              ? "failed"
+                              : runState() === "healed"
+                                ? "healed"
+                                : runState() === "passed"
+                                  ? "verified"
+                                  : connection.review?.status === "failed"
+                                    ? "failed"
+                                    : connection.kind === "return"
+                                      ? "return"
+                                      : "arrow"
                           })`}
                         />
                         <path
@@ -1180,6 +1245,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                       title={titleFor(node)}
                       selected={selectedNode()?.id === node.id}
                       editing={renamingNodeId() === node.id}
+                      runState={runProjection().screens[node.id]?.state}
                       position={positionFor(node)}
                       src={() => screenshotUrl(server, draft.steps()[node.representativeStepIndex])}
                       onSelect={() => selectNode(node)}
@@ -1270,14 +1336,10 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                     tree().nodes.find((node) => node.id === connection().toScreenId)!,
                   )}
                   setup={{
-                    captures: reusableCaptures().filter(
-                      (capture) => capture.id !== connection().takeId,
-                    ),
                     behaviors: reusableBehaviors(),
                     onRecord: () => recordConnection(connection()),
                     onBack: () => attachBackBehavior(connection()),
                     onAutomatic: () => attachAutomaticBehavior(connection()),
-                    onAttachCapture: (takeId) => attachCapture(connection(), takeId),
                     onAttachBehavior: (recipeId) => attachReusableBehavior(connection(), recipeId),
                   }}
                   replay={{
@@ -1299,7 +1361,7 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                 />
               )}
             </Show>
-            <div class="absolute right-4 bottom-4 z-20 flex items-center gap-1 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
+            <div class="absolute bottom-4 left-4 z-20 flex items-center gap-1 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
               <button
                 type="button"
                 class={mapControlButton}
@@ -1343,16 +1405,16 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
               destination={reviewDestination()}
               onSelect={setReviewStepIndex}
               onDestination={setReviewDestination}
-              onKeep={keepTake}
-              onDiscard={discardTake}
+              onKeep={() => void keepTake()}
+              onDiscard={() => void discardTake()}
               onReplay={() => void replayTake()}
-              onRewrite={rewriteTake}
+              onRewrite={() => void rewriteTake()}
               replayState={takeReplay().takeId === take().id ? takeReplay().state : "idle"}
               {...(takeReplay().takeId === take().id && takeReplay().error
                 ? { replayError: takeReplay().error }
                 : {})}
               onRemove={(index) => {
-                recorder.removeTakeStep(index);
+                void recorder.removeTakeStep(index);
                 setTakeReplay({ takeId: take().id, state: "idle" });
                 setReviewStepIndex((selected) => (selected > index ? selected - 1 : selected));
               }}
@@ -1365,11 +1427,11 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                 take={take()}
                 selectedIndex={reviewStepIndex()}
                 onSelect={setReviewStepIndex}
-                screenshotFor={(step) => screenshotUrl(server, step)}
-                videoSrc={take().videoTakeId ? server.iosVideoUrl(take().videoTakeId!) : undefined}
+                screenshotFor={(_, index) => take().stepEvidenceUrls[index] ?? ""}
+                videoSrc={take().videoEvidenceUrl}
                 clip={take().videoClip}
                 onClip={(clip: JourneyVideoClip) => {
-                  recorder.setTakeVideoClip(clip);
+                  void recorder.setTakeVideoClip(clip);
                   setTakeReplay({ takeId: take().id, state: "idle" });
                 }}
               />
@@ -1379,44 +1441,64 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
       </Show>
       <Show when={captureOpen() && !reviewingTake()}>
         <aside
-          class="relative flex min-h-0 min-w-0 flex-col bg-[var(--v2-background-bg-base)]"
-          aria-label="Device capture"
+          class="absolute top-4 right-4 bottom-4 z-40 flex w-[min(400px,calc(100%-32px))] min-h-0 min-w-0 flex-col overflow-hidden rounded-[16px] border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-base)] shadow-[0_24px_72px_rgb(0_0_0/44%)]"
+          aria-label="Live device"
         >
+          <header class="flex min-h-12 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3">
+            <div class="flex min-w-0 items-center gap-2">
+              <i
+                class={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  recorder.recording()
+                    ? "bg-[var(--icon-critical-base)]"
+                    : canRecord()
+                      ? "bg-[var(--icon-success-base)]"
+                      : "bg-[var(--icon-warning-base)]",
+                )}
+              />
+              <DevicePicker onManageTargets={props.onOpenTargets} />
+            </div>
+            <Show when={!recorder.recording()}>
+              <button
+                type="button"
+                class={mapControlButton}
+                aria-label="Close live device"
+                title="Close live device"
+                onClick={() => setCaptureOpen(false)}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            </Show>
+          </header>
+          <div class="min-h-0 flex-1">
+            <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
+          </div>
           <Show
             when={recorder.recording() && recorder.take()}
             fallback={
-              <div class="flex h-10 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-4">
-                <div class="flex min-w-0 items-center gap-2">
-                  <i class="size-1.5 shrink-0 rounded-full bg-[var(--icon-success-base)]" />
-                  <strong class="truncate text-[11px] font-semibold text-[var(--text-strong)]">
-                    Live device
-                  </strong>
-                  <span class="text-[10px] text-[var(--text-weak)]">Recording off</span>
-                </div>
-                <div class="flex items-center gap-1">
-                  <button type="button" class={recordButton} onClick={recordFromHere}>
-                    <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" />
-                    Record
-                  </button>
+              <Show when={canRecord()}>
+                <footer class="flex min-h-16 shrink-0 items-center px-3 pt-1 pb-3">
                   <button
                     type="button"
-                    class={mapControlButton}
-                    aria-label="Open device workspace"
-                    title="Open device workspace"
-                    onClick={props.onLive}
+                    class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#705ff0] px-4 text-[11.5px] font-semibold text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_10px_28px_rgb(89_69_214/24%)] transition-[background-color,transform] duration-150 hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.98] disabled:cursor-wait disabled:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]"
+                    disabled={recorder.arming()}
+                    aria-busy={recorder.arming()}
+                    onClick={recordFromHere}
                   >
-                    <Icon name="arrow-right" size={13} />
+                    <Show
+                      when={recorder.arming()}
+                      fallback={<i class="size-2 rounded-full bg-white/90" />}
+                    >
+                      <Icon
+                        name="refresh"
+                        size={13}
+                        class="animate-spin motion-reduce:animate-none"
+                      />
+                    </Show>
+                    {recorder.arming() ? "Preparing device…" : "Record connection"}
                   </button>
-                  <button
-                    type="button"
-                    class={mapControlButton}
-                    aria-label="Close device capture"
-                    onClick={() => setCaptureOpen(false)}
-                  >
-                    <Icon name="x" size={13} />
-                  </button>
-                </div>
-              </div>
+                </footer>
+              </Show>
             }
           >
             {(take) => (
@@ -1424,13 +1506,9 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
                 take={take()}
                 contextLabel={captureContextLabel()}
                 onStop={() => void recorder.stopRecording()}
-                onOpenDevice={props.onLive}
               />
             )}
           </Show>
-          <div class="min-h-0 flex-1">
-            <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
-          </div>
         </aside>
       </Show>
     </section>
@@ -1438,9 +1516,9 @@ export function JourneyWorkspace(props: { onLive: () => void; onOpenTargets: () 
 }
 
 const recordButton =
-  "inline-flex h-7 items-center gap-1.5 rounded-[7px] bg-[var(--product-accent-soft)] px-2.5 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]";
+  "inline-flex h-10 items-center gap-1.5 rounded-[9px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96]";
 const mapControlButton =
-  "grid h-7 min-w-7 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
 
 function screenshotUrl(server: ReturnType<typeof useServer>, step: RecipeStep | undefined): string {
   const screenshot = evidenceForStep(step)?.screenshot;

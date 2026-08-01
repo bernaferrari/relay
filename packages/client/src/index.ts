@@ -28,6 +28,11 @@ import {
   type SoakReport,
   parseEventEnvelope,
   type EventEnvelope,
+  type AuthoringInteraction,
+  type CommitAuthoringSessionInput,
+  type ReorderAuthoringTakeInput,
+  type ReplaceAuthoringActionInput,
+  type TrimAuthoringTakeInput,
 } from "@relay/protocol";
 
 export class ApiError<T = unknown> extends Error {
@@ -385,6 +390,77 @@ export class RelayClient {
       journeyId: recipeId,
       ...write,
     }) as Promise<Revisioned<JourneyMetadata>>;
+  }
+  authoringSessions() {
+    return this.invoke("authoring.session.list", {});
+  }
+  authoringSession(sessionId: string) {
+    return this.invoke("authoring.session.get", { sessionId });
+  }
+  createAuthoringSession(input: OperationInput<"authoring.session.create">) {
+    return this.invoke("authoring.session.create", input, { authoringSessionId: undefined });
+  }
+  observeAuthoringSession(sessionId: string) {
+    return this.invoke(
+      "authoring.session.observe",
+      { sessionId },
+      { authoringSessionId: sessionId },
+    );
+  }
+  startAuthoringSession(sessionId: string) {
+    return this.invoke("authoring.session.start", { sessionId }, { authoringSessionId: sessionId });
+  }
+  interactAuthoringSession(sessionId: string, interaction: AuthoringInteraction) {
+    return this.invoke(
+      "authoring.session.interact",
+      { sessionId, interaction },
+      { authoringSessionId: sessionId },
+    );
+  }
+  stopAuthoringSession(sessionId: string) {
+    return this.invoke("authoring.session.stop", { sessionId }, { authoringSessionId: sessionId });
+  }
+  trimAuthoringTake(input: TrimAuthoringTakeInput) {
+    return this.invoke("authoring.take.trim", input, { authoringSessionId: input.sessionId });
+  }
+  reorderAuthoringTake(input: ReorderAuthoringTakeInput) {
+    return this.invoke("authoring.take.reorder", input, { authoringSessionId: input.sessionId });
+  }
+  replaceAuthoringAction(input: ReplaceAuthoringActionInput) {
+    return this.invoke("authoring.take.replace", input, { authoringSessionId: input.sessionId });
+  }
+  replayAuthoringTake(sessionId: string, signal?: AbortSignal) {
+    return this.invoke(
+      "authoring.take.replay",
+      { sessionId },
+      { authoringSessionId: sessionId, signal },
+    );
+  }
+  commitAuthoringSession(input: CommitAuthoringSessionInput) {
+    return this.invoke("authoring.session.commit", input, {
+      authoringSessionId: input.sessionId,
+    });
+  }
+  discardAuthoringSession(sessionId: string) {
+    return this.invoke(
+      "authoring.session.discard",
+      { sessionId },
+      { authoringSessionId: sessionId },
+    );
+  }
+  cancelAuthoringSession(sessionId: string) {
+    return this.invoke(
+      "authoring.session.cancel",
+      { sessionId },
+      { authoringSessionId: sessionId },
+    );
+  }
+  cleanupAuthoringSession(sessionId: string) {
+    return this.invoke(
+      "authoring.session.cleanup",
+      { sessionId },
+      { authoringSessionId: sessionId },
+    );
   }
   generate(input: GenerationRequest): Promise<GenerationResult> {
     return this.invoke("generation.create", input);

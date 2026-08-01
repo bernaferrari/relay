@@ -76,5 +76,38 @@ test("a replay gap requests one scoped refresh of every live projection", () => 
     "variables",
     "matrices",
     "discoveries",
+    "authoring",
   ]);
+});
+
+test("recording activity refreshes Authoring Sessions without replacing Journey focus", () => {
+  const projection = projectRelayEvent(
+    0,
+    event(1, {
+      type: "resource.updated",
+      at: 1,
+      projectId: "default",
+      resource: "recording-session",
+      resourceId: "authoring-1",
+      revision: 4,
+    }),
+  );
+  assert.deepEqual(projection.refresh, ["authoring"]);
+  assert.equal(projection.activity?.actorId, "agent:indexer");
+});
+
+test("one authoring commit event refreshes both the session and Journey projections", () => {
+  const projection = projectRelayEvent(
+    0,
+    event(1, {
+      type: "authoring.committed",
+      at: 1,
+      projectId: "default",
+      sessionId: "authoring-1",
+      journeyId: "journey-1",
+      transitionId: "transition-1",
+      revision: 2,
+    }),
+  );
+  assert.deepEqual(projection.refresh, ["authoring", "journeys"]);
 });

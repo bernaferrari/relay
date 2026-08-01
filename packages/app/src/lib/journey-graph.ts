@@ -4,6 +4,7 @@ import type {
   JourneyGraphScreen,
   JourneyGraphTransition,
   JourneyMetadata,
+  JourneyScreenObservation,
   JourneyTransitionReview,
   JourneyVideoClip,
   RecipeStep,
@@ -31,6 +32,8 @@ export type TakeDestination =
 
 export type CommitTakeInput = {
   sourceScreenId?: string | null;
+  sourceObservation?: JourneyScreenObservation;
+  destinationObservation?: JourneyScreenObservation;
   destination?: TakeDestination;
   steps: RecipeStep[];
   takeId?: string;
@@ -49,6 +52,67 @@ function id(prefix: string, at: number): string {
 
 function cloneGraph(graph: JourneyGraph): JourneyGraph {
   return structuredClone(graph);
+}
+
+function withObservation(
+  screen: JourneyGraphScreen,
+  observation: JourneyScreenObservation | undefined,
+): JourneyGraphScreen {
+  if (!observation) return screen;
+  const observations = screen.observations ?? [];
+  const next = observations.some((item) => item.id === observation.id)
+    ? observations
+    : [...observations, structuredClone(observation)];
+  const aliases = new Set(screen.identity?.aliases ?? []);
+  if (screen.identity?.fingerprint && screen.identity.fingerprint !== observation.fingerprint) {
+    aliases.add(observation.fingerprint);
+  }
+  return {
+    ...screen,
+    identity: screen.identity ?? {
+      schemaVersion: 1,
+      fingerprint: observation.fingerprint,
+    },
+    ...(aliases.size
+      ? {
+          identity: {
+            ...(screen.identity ?? {
+              schemaVersion: 1 as const,
+              fingerprint: observation.fingerprint,
+            }),
+            aliases: [...aliases].sort(),
+          },
+        }
+      : {}),
+    observations: next,
+    updatedAt: Math.max(screen.updatedAt, observation.capturedAt),
+  };
+}
+
+export function screenForObservation(
+  graph: JourneyGraph,
+  observation: JourneyScreenObservation | undefined,
+): JourneyGraphScreen | undefined {
+  if (!observation) return undefined;
+  return graph.screens.find(
+    (screen) =>
+      screen.identity?.fingerprint === observation.fingerprint ||
+      screen.identity?.aliases?.includes(observation.fingerprint) ||
+      screen.observations?.some((item) => item.fingerprint === observation.fingerprint),
+  );
+}
+
+export function observeJourneyGraphScreen(
+  graph: JourneyGraph,
+  screenId: string,
+  observation: JourneyScreenObservation | undefined,
+): JourneyGraph {
+  if (!observation) return cloneGraph(graph);
+  const copy = cloneGraph(graph);
+  copy.screens = copy.screens.map((screen) =>
+    screen.id === screenId ? withObservation(screen, observation) : screen,
+  );
+  return copy;
 }
 
 export function emptyJourneyGraph(): JourneyGraph {
@@ -94,6 +158,12 @@ export function ensureJourneyGraph(metadata: JourneyMetadata, steps: RecipeStep[
       stepIds: step?.id ? [step.id] : [],
       label: saved?.label?.trim() || metadata.edgeLabels[edge.id] || edge.label,
       state: "recorded",
+      review: {
+        status: "verified",
+        updatedAt: saved?.updatedAt ?? 0,
+        verifiedAt: saved?.updatedAt ?? 0,
+      },
+      provenance: { source: "migration" },
       kind: edge.kind,
       createdAt: saved?.createdAt ?? 0,
       updatedAt: saved?.updatedAt ?? 0,
@@ -116,6 +186,16 @@ export function ensureJourneyGraph(metadata: JourneyMetadata, steps: RecipeStep[
       ...(connection.videoClip ? { videoClip: { ...connection.videoClip } } : {}),
       ...(connection.label?.trim() ? { label: connection.label.trim() } : {}),
       state: connection.stepId ? "recorded" : "needs-recording",
+      ...(connection.stepId
+        ? {
+            review: {
+              status: "verified" as const,
+              updatedAt: connection.updatedAt,
+              verifiedAt: connection.updatedAt,
+            },
+          }
+        : {}),
+      provenance: { source: "migration" },
       kind: "forward",
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
@@ -140,6 +220,7 @@ export function withJourneyGraph(metadata: JourneyMetadata, graph: JourneyGraph)
 function sourceForTake(
   graph: JourneyGraph,
   requested: string | null | undefined,
+  observation: JourneyScreenObservation | undefined,
   at: number,
 ): {
   graph: JourneyGraph;
@@ -147,7 +228,17 @@ function sourceForTake(
 } {
   const copy = cloneGraph(graph);
   const existing = requested ? copy.screens.find((screen) => screen.id === requested) : undefined;
-  if (existing) return { graph: copy, source: existing };
+  if (existing) {
+    const source = withObservation(existing, observation);
+    copy.screens = copy.screens.map((screen) => (screen.id === source.id ? source : screen));
+    return { graph: copy, source };
+  }
+  const observed = screenForObservation(copy, observation);
+  if (observed) {
+    const source = withObservation(observed, observation);
+    copy.screens = copy.screens.map((screen) => (screen.id === source.id ? source : screen));
+    return { graph: copy, source };
+  }
   const currentFlow = copy.flows[0];
   const flowScreen = currentFlow
     ? copy.screens.find((screen) => screen.id === currentFlow.screenId)
@@ -157,6 +248,12 @@ function sourceForTake(
   const source: JourneyGraphScreen = {
     id: id("screen-start", at),
     title: "Start",
+    ...(observation
+      ? {
+          identity: { schemaVersion: 1, fingerprint: observation.fingerprint },
+          observations: [structuredClone(observation)],
+        }
+      : {}),
     createdAt: at,
     updatedAt: at,
   };
@@ -181,8 +278,20 @@ export function commitTakeToJourneyGraph(
   input: CommitTakeInput,
 ): { graph: JourneyGraph; transition: JourneyGraphTransition; destinationScreenId?: string } {
   const at = input.at ?? Date.now();
-  const { graph, source } = sourceForTake(current, input.sourceScreenId, at);
-  const destination = input.destination ?? { kind: "new-screen" as const };
+  const { graph, source } = sourceForTake(
+    current,
+    input.sourceScreenId,
+    input.sourceObservation,
+    at,
+  );
+  const observedDestination = screenForObservation(graph, input.destinationObservation);
+  const destination: TakeDestination =
+    input.destination?.kind === "new-screen" && observedDestination
+      ? { kind: "screen", screenId: observedDestination.id }
+      : (input.destination ??
+        (observedDestination
+          ? { kind: "screen", screenId: observedDestination.id }
+          : { kind: "new-screen" }));
   const lastStep = input.steps.at(-1);
   let target: JourneyGraphDestination;
   let destinationScreenId: string | undefined;
@@ -192,12 +301,23 @@ export function commitTakeToJourneyGraph(
   } else if (destination.kind === "screen") {
     const destinationScreen = graph.screens.find((screen) => screen.id === destination.screenId);
     if (!destinationScreen) throw new Error("The selected destination screen no longer exists");
-    target = { kind: "screen", screenId: destinationScreen.id };
+    const observed = withObservation(destinationScreen, input.destinationObservation);
+    graph.screens = graph.screens.map((screen) => (screen.id === observed.id ? observed : screen));
+    target = { kind: "screen", screenId: observed.id };
     destinationScreenId = destinationScreen.id;
   } else {
     const screen: JourneyGraphScreen = {
       id: id("screen", at),
       title: destination.title?.trim() || screenTitle(lastStep, graph.screens.length),
+      ...(input.destinationObservation
+        ? {
+            identity: {
+              schemaVersion: 1,
+              fingerprint: input.destinationObservation.fingerprint,
+            },
+            observations: [structuredClone(input.destinationObservation)],
+          }
+        : {}),
       ...(lastStep?.id ? { representativeStepId: lastStep.id } : {}),
       createdAt: at,
       updatedAt: at,
@@ -224,6 +344,7 @@ export function commitTakeToJourneyGraph(
     ...(input.videoTakeId ? { videoTakeId: input.videoTakeId } : {}),
     ...(input.videoClip ? { videoClip: { ...input.videoClip } } : {}),
     mode: input.mode ?? "interaction",
+    provenance: { source: "recording" },
     ...(input.review ? { review: { ...input.review } } : {}),
     label: lastStep ? transitionLabel(lastStep) : "Continue",
     state: input.steps.length ? "recorded" : "needs-recording",
@@ -252,6 +373,7 @@ export function addGraphConnection(
     stepIds: [],
     ...(input.label?.trim() ? { label: input.label.trim() } : {}),
     state: "needs-recording",
+    provenance: { source: "manual" },
     kind: "forward",
     createdAt: at,
     updatedAt: at,
@@ -326,6 +448,7 @@ export function attachGraphConnectionSteps(
           ...(capture?.videoTakeId ? { videoTakeId: capture.videoTakeId } : {}),
           ...(capture?.videoClip ? { videoClip: { ...capture.videoClip } } : {}),
           mode: capture?.mode ?? transition.mode ?? "interaction",
+          ...(capture?.takeId ? { provenance: { source: "recording" as const } } : {}),
           review: { status: "draft", updatedAt: at },
           label: transition.label || (steps[0] ? transitionLabel(steps[0]) : "Continue"),
           state: steps.length ? "recorded" : "needs-recording",

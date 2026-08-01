@@ -33,7 +33,11 @@
     "./suites": "./src/suites.ts",
     "./targets": "./src/targets.ts",
     "./browser-target": "./src/browser-target.ts",
-    "./device-setup": "./src/device-setup.ts"
+    "./device-setup": "./src/device-setup.ts",
+    "./screen-identity": "./src/screen-identity.ts",
+    "./journey-graph-compiler": "./src/journey-graph-compiler.ts",
+    "./journey-aggregate": "./src/journey-aggregate.ts",
+    "./authoring-sessions": "./src/authoring-sessions.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

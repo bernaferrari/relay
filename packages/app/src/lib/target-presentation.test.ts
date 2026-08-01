@@ -8,6 +8,7 @@ import {
   targetIsReady,
   targetSearchText,
 } from "./target-presentation";
+import { deviceReadiness } from "./device-readiness";
 
 test("uses readable platform labels in settings and target details", () => {
   assert.equal(platformLabel("ios"), "iOS");
@@ -121,5 +122,48 @@ test("prefers a controllable target instead of selecting the first stopped simul
       },
     ]),
     null,
+  );
+});
+
+test("one session-readiness rule blocks recording for Apple setup and capture failures", () => {
+  const ipad = { serial: "ipad", name: "iPad", platform: "ios" as const, booted: true };
+  assert.equal(deviceReadiness(ipad, true, { appleSetup: null }).kind, "checking-ios");
+  assert.equal(
+    deviceReadiness(ipad, true, {
+      appleSetup: {
+        setup: { ios: {} },
+        checks: [{ status: "needs-attention", detail: "Sign in to Xcode" }],
+      },
+    }).kind,
+    "setup-ios",
+  );
+  assert.equal(
+    deviceReadiness(ipad, true, {
+      appleSetup: { setup: { ios: {} }, checks: [] },
+      requireLiveScreen: true,
+      liveScreenAvailable: false,
+    }).kind,
+    "screen-preparing",
+  );
+  assert.equal(
+    deviceReadiness(ipad, true, {
+      appleSetup: { setup: { ios: {} }, checks: [] },
+      recordingIssue: { kind: "setup", message: "Xcode signing failed" },
+      liveScreenAvailable: true,
+    }).kind,
+    "setup-ios",
+  );
+  assert.equal(
+    deviceReadiness({ serial: "android", name: "Pixel", platform: "android", booted: true }, true, {
+      requireLiveScreen: true,
+      liveScreenAvailable: false,
+    }).kind,
+    "screen-preparing",
+  );
+  assert.equal(
+    deviceReadiness({ serial: "android", platform: "android", booted: true }, true, {
+      liveCaptureIssue: "The screen stream stopped",
+    }).kind,
+    "capture-error",
   );
 });

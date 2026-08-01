@@ -52,7 +52,7 @@ function fromYValue(value: unknown): unknown {
 
 /** Reconcile objects in-place so existing Yjs child types retain identity. */
 function syncMap(target: Y.Map<unknown>, value: Record<string, unknown>): void {
-  for (const key of [...target.keys()]) if (!(key in value)) target.delete(key);
+  for (const key of target.keys()) if (!(key in value)) target.delete(key);
   for (const [key, next] of Object.entries(value)) {
     const current = target.get(key);
     if (isRecord(next) && current instanceof Y.Map) {
@@ -83,8 +83,7 @@ export function createJourneyDocument(initial: JourneyMetadata): JourneyDocument
     root.set(METADATA, next);
     return next;
   };
-  const read = (): JourneyMetadata =>
-    structuredClone(fromYValue(metadataMap())) as JourneyMetadata;
+  const read = (): JourneyMetadata => structuredClone(fromYValue(metadataMap())) as JourneyMetadata;
 
   const replace = (value: JourneyMetadata, origin?: unknown): JourneyMetadata => {
     doc.transact(

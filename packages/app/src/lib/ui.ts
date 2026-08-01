@@ -288,9 +288,9 @@ export const productSecondary = cn(
   "disabled:bg-background-base disabled:text-text-weaker disabled:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
 );
 
-/** 34×34 chrome icon button */
+/** 36×36 chrome icon button with a 40×40 effective pointer target. */
 export const productIconButton = cn(
-  "inline-grid size-[34px] shrink-0 place-items-center rounded-[9px] text-text-base select-none",
+  "relative inline-grid size-9 shrink-0 place-items-center rounded-[9px] text-text-base select-none before:absolute before:-inset-0.5 before:content-['']",
   "transition-[color,background-color,transform] duration-150",
   "hover:enabled:bg-surface-base-hover hover:enabled:text-text-strong",
   "active:enabled:scale-[0.97]",

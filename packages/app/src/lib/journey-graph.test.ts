@@ -128,6 +128,42 @@ test("a reviewed take can explicitly return to an existing screen or end a flow"
   assert.equal(ended.destinationScreenId, undefined);
 });
 
+test("recording observations resolve repeated screens without creating duplicate nodes", () => {
+  const home = {
+    id: "observation-home-1",
+    fingerprint: "home-fingerprint",
+    capturedAt: 10,
+    source: "recording" as const,
+  };
+  const settings = {
+    id: "observation-settings-1",
+    fingerprint: "settings-fingerprint",
+    capturedAt: 20,
+    source: "recording" as const,
+  };
+  const first = commitTakeToJourneyGraph(emptyJourneyGraph(), {
+    sourceObservation: home,
+    destinationObservation: settings,
+    steps: [steps[0]!],
+    at: 10,
+  });
+  const returned = commitTakeToJourneyGraph(first.graph, {
+    sourceScreenId: first.destinationScreenId,
+    sourceObservation: settings,
+    destinationObservation: { ...home, id: "observation-home-2", capturedAt: 30 },
+    steps: [steps[1]!],
+    at: 30,
+  });
+
+  assert.equal(returned.graph.screens.length, 2);
+  assert.equal(returned.transition.kind, "return");
+  assert.deepEqual(returned.transition.destination, {
+    kind: "screen",
+    screenId: returned.graph.flows[0]!.screenId,
+  });
+  assert.equal(returned.graph.screens[0]?.observations?.length, 2);
+});
+
 test("graph layout and recipe execution stay separate", () => {
   const first = commitTakeToJourneyGraph(emptyJourneyGraph(), { steps: [steps[0]!], at: 10 });
   const stored = withJourneyGraph(metadata, first.graph);

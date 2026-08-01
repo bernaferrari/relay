@@ -6,7 +6,7 @@
  * `live-video.ts` prevents a future Android streaming change from changing
  * Apple capture semantics.
  */
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { captureDeviceVideo, runsRoot } from "@relay/core";
 
@@ -119,4 +119,45 @@ export async function readIosVideoTake(takeId: string): Promise<IosVideoTake | n
   } catch {
     return null;
   }
+}
+
+/** Stop an XCTest recorder left active by a server process exit. Failure is
+ * intentionally propagated so startup never releases a device lease while a
+ * recorder may still own the target. */
+export async function reconcileIosVideoTake(serial: string): Promise<IosVideoTake | null> {
+  let files: string[];
+  try {
+    files = await readdir(takeDirectory());
+  } catch {
+    return null;
+  }
+  const candidates: IosVideoTake[] = [];
+  for (const file of files.filter((name) => name.endsWith(".json"))) {
+    const takeId = file.slice(0, -5);
+    if (!isTakeId(takeId)) continue;
+    try {
+      const value = JSON.parse(await readFile(metadataPath(takeId), "utf8")) as unknown;
+      if (isStoredTake(value, takeId) && value.serial === serial && value.state === "recording") {
+        candidates.push(value);
+      }
+    } catch {
+      // An unrelated damaged metadata file cannot hide a valid active Take.
+    }
+  }
+  const take = candidates.sort((left, right) => right.startedAt - left.startedAt)[0];
+  if (!take) return null;
+  const result = await captureDeviceVideo({ serial, action: "stop" });
+  const path = result.path ?? take.path;
+  await access(path);
+  const complete: IosVideoTake = {
+    ...take,
+    path,
+    state: "ready",
+    finishedAt: Date.now(),
+    ...(result.warning ? { warning: result.warning } : {}),
+  };
+  takesById.set(complete.id, complete);
+  activeTakeBySerial.delete(serial);
+  await persistTake(complete);
+  return complete;
 }

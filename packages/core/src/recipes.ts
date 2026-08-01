@@ -40,6 +40,12 @@ import {
   payloadFingerprint,
   scopedIdempotencyKey,
 } from "./coordination-store.js";
+import {
+  commitJourneyAggregate,
+  deleteJourneyAggregate,
+  listJourneyAggregates,
+  readJourneyAggregate,
+} from "./journey-aggregate.js";
 export type {
   HumanCheckpointReason,
   HorizontalCoordinateAnchor,
@@ -1286,10 +1292,7 @@ export async function listRecipes(): Promise<Recipe[]> {
   try {
     entries = await readdir(recipesRoot());
   } catch {
-    return [
-      ...builtins.map((recipe) => yamlRecipes.get(recipe.id) ?? recipe),
-      ...yamlRecipes.values(),
-    ];
+    entries = [];
   }
   const customs = new Map<string, Recipe>();
   const overrides = new Map<string, Recipe>();
@@ -1316,6 +1319,12 @@ export async function listRecipes(): Promise<Recipe[]> {
     if (isActionId(id)) overrides.set(id, recipe);
     else customs.set(id, recipe);
   }
+  for (const aggregate of await listJourneyAggregates(
+    currentOperationContext()?.projectId ?? "default",
+  )) {
+    if (isActionId(aggregate.recipe.id)) overrides.set(aggregate.recipe.id, aggregate.recipe);
+    else customs.set(aggregate.recipe.id, aggregate.recipe);
+  }
   const customList = [...customs.values()].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const included = builtins
     .filter((recipe) => !hidden.has(recipe.id))
@@ -1324,6 +1333,11 @@ export async function listRecipes(): Promise<Recipe[]> {
 }
 
 export async function readRecipe(id: string): Promise<Recipe | null> {
+  const aggregate = await readJourneyAggregate(
+    currentOperationContext()?.projectId ?? "default",
+    id,
+  );
+  if (aggregate) return structuredClone(aggregate.recipe);
   const stored = await readStoredRecipe(id);
   if (stored) return "hidden" in stored ? null : stored;
   const builtin = builtinRecipes().find((r) => r.id === id);
@@ -1442,7 +1456,11 @@ async function saveRecipeUnchecked(input: SaveRecipeInput): Promise<Recipe> {
     id = `custom-${slugify(input.title)}-${requestedAt.toString(36)}`;
   }
   // If overwriting, preserve createdAt.
-  const stored = await readStoredRecipe(id);
+  const aggregate = await readJourneyAggregate(
+    currentOperationContext()?.projectId ?? "default",
+    id,
+  );
+  const stored = aggregate?.recipe ?? (await readStoredRecipe(id));
   const existing = stored && !("hidden" in stored) ? stored : null;
   const ts = Math.max(requestedAt, (existing?.updatedAt ?? 0) + 1);
   const quarantineReason = input.quarantineReason ?? existing?.quarantineReason;
@@ -1541,6 +1559,17 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
       throw recipeConflict(current);
     }
     const saved = await saveRecipeUnchecked(normalizedInput);
+    const aggregate = await readJourneyAggregate(operation?.projectId ?? "default", saved.id);
+    if (aggregate) {
+      await commitJourneyAggregate({
+        organizationId: operation?.organizationId ?? aggregate.organizationId,
+        projectId: operation?.projectId ?? aggregate.projectId,
+        journeyId: saved.id,
+        recipe: saved,
+        document: aggregate.document,
+        evidence: aggregate.evidence,
+      });
+    }
     publish({
       type: current ? "resource.updated" : "resource.created",
       at: saved.updatedAt,
@@ -1603,6 +1632,7 @@ export async function restoreRecipeHistory(id: string, updatedAt: number): Promi
 export async function deleteRecipe(id: string): Promise<void> {
   await ensureRecipesRoot();
   await ensureTestsRoot();
+  await deleteJourneyAggregate(currentOperationContext()?.projectId ?? "default", id);
   await rm(evidenceDir(id), { recursive: true, force: true });
   const yamlPath = recipeYamlPath(testsRoot(), id);
   await unlink(yamlPath).catch((error: unknown) => {

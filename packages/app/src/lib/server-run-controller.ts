@@ -3,7 +3,13 @@ import type { CompatibilityMatrix } from "@relay/protocol";
 import { toast } from "../context/toast";
 import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine, RecipeInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
-import { enqueueMatrix, enqueueRecipe, loadMatrixReport, retryJob } from "./server-run-remote";
+import {
+  enqueueJourneyGraphPath,
+  enqueueMatrix,
+  enqueueRecipe,
+  loadMatrixReport,
+  retryJob,
+} from "./server-run-remote";
 
 type RunControllerDependencies = {
   request: ServerRequest;
@@ -23,10 +29,47 @@ type RunControllerDependencies = {
   setSelectedAction: (id: string) => void;
   setError: (message: string) => void;
   refreshJobs: () => Promise<void>;
+  rememberJob: (job: JobInfo) => void;
   notify?: (title: string, body: string) => void | Promise<void>;
 };
 
 export function createServerRunController(deps: RunControllerDependencies) {
+  async function runJourneyPath(
+    id: string,
+    flowName: string,
+    transitionPath?: string[],
+  ): Promise<void> {
+    if (deps.health() !== "online") {
+      toast("Relay isn’t connected — can’t run yet", "warning");
+      return;
+    }
+    const serial = deps.selectedDevice() ?? undefined;
+    const targetPlatform =
+      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
+    try {
+      await deps.captureBeforeRun(`before · ${flowName}`, id).catch(() => undefined);
+      const { job } = await enqueueJourneyGraphPath(deps.request, {
+        recipe: id,
+        flowName,
+        ...(transitionPath ? { transitionPath } : {}),
+        ...(serial ? { serial } : {}),
+        ...(targetPlatform === "browser"
+          ? { targetKind: "browser" as const, browserTargetId: serial }
+          : { targetKind: "device" as const, platform: targetPlatform }),
+      });
+      deps.setSelectedJobId(job.id);
+      deps.setSelectedAction(id);
+      deps.rememberJob(job);
+      toast(`Running ${flowName}`, "success");
+      void deps.refreshJobs();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.appendLog(message, "error");
+      toast(message, "warning");
+      deps.setError(message);
+    }
+  }
+
   async function runRecipe(id: string, repetitions = 1): Promise<void> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
@@ -127,5 +170,11 @@ export function createServerRunController(deps: RunControllerDependencies) {
     }
   }
 
-  return { runRecipe, runCompatibilityMatrix, loadCompatibilityReport, retrySelectedJob };
+  return {
+    runRecipe,
+    runJourneyPath,
+    runCompatibilityMatrix,
+    loadCompatibilityReport,
+    retrySelectedJob,
+  };
 }

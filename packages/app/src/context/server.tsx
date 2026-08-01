@@ -21,6 +21,9 @@ import type {
   TargetProfile,
   TargetDefinition,
   EventEnvelope,
+  AuthoringSession,
+  AuthoringInteraction,
+  AuthoringCommitDestination,
 } from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
@@ -202,6 +205,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const pollMs = props.pollMs ?? 5000;
 
     const [serverUrl, setServerUrlState] = createSignal("");
+    const [actorId, setActorId] = createSignal("");
     const [health, setHealth] = createSignal<HealthState>("unknown");
     const [devices, setDevices] = createSignal<DeviceInfo[]>([]);
     const [deviceDiscoveryStatus, setDeviceDiscoveryStatus] = createSignal<
@@ -216,14 +220,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     );
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
+    const [authoringSessions, setAuthoringSessions] = createSignal<AuthoringSession[]>([]);
     const [suites, setSuites] = createSignal<TestSuite[]>([]);
     const [selectedSuiteId, setSelectedSuiteId] = createSignal<string | null>(null);
-    // Journey selection is session-scoped. A live device can outlast any one
-    // journey, so restoring an old editor selection on launch makes the device
-    // look attached to work the user did not explicitly resume.
+    // Reopen the last journey like a document editor. Hardware selection and
+    // the live-device panel remain separate state, so resuming the canvas does
+    // not imply that a recording has started.
     const [selectedRecipeId, setSelectedRecipeIdState] = createSignal<string | null>(null);
     function setSelectedRecipeId(id: string | null): void {
       setSelectedRecipeIdState(id);
+      void Promise.resolve(platform.storage.set("selectedRecipe", id ?? "")).catch(() => undefined);
     }
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
@@ -292,6 +298,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       connection = { ...connection, url: normalizeLocalBase(connection.url) };
       client = new RelayClient(connection, { fetch: fetcher() });
       setServerUrlState(connection.url);
+      setActorId(connection.actorId);
       return connection;
     }
 
@@ -646,6 +653,134 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    function projectAuthoringSession(session: AuthoringSession): AuthoringSession {
+      setAuthoringSessions((current) => [
+        session,
+        ...current.filter((item) => item.id !== session.id),
+      ]);
+      return session;
+    }
+
+    async function refreshAuthoringSessions(): Promise<AuthoringSession[]> {
+      if (!client) await resolveConnection();
+      const result = await client!.authoringSessions();
+      setAuthoringSessions(result.sessions);
+      return result.sessions;
+    }
+
+    async function createAuthoringSession(input: {
+      journeyId: string;
+      target:
+        | { kind: "device"; platform: "android" | "ios"; targetId: string }
+        | {
+            kind: "browser";
+            platform: "browser";
+            targetId: string;
+          };
+      leaseId: string;
+      expectedJourneyRevision: number;
+      expectedRecipeRevision: number;
+      sourceScreenId?: string;
+      pendingTransitionId?: string;
+      group?: string;
+    }): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession((await client!.createAuthoringSession(input)).session);
+    }
+
+    async function observeAuthoringSession(id: string): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession((await client!.observeAuthoringSession(id)).session);
+    }
+
+    async function startAuthoringSession(id: string): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession((await client!.startAuthoringSession(id)).session);
+    }
+
+    async function interactAuthoringSession(
+      id: string,
+      interaction: AuthoringInteraction,
+    ): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession(
+        (await client!.interactAuthoringSession(id, interaction)).session,
+      );
+    }
+
+    async function stopAuthoringSession(id: string): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession((await client!.stopAuthoringSession(id)).session);
+    }
+
+    async function trimAuthoringTake(
+      id: string,
+      input: { fromMs?: number; toMs?: number; actionIds?: string[] },
+    ): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession(
+        (await client!.trimAuthoringTake({ sessionId: id, ...input })).session,
+      );
+    }
+
+    async function reorderAuthoringTake(
+      id: string,
+      actionIds: string[],
+    ): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession(
+        (await client!.reorderAuthoringTake({ sessionId: id, actionIds })).session,
+      );
+    }
+
+    async function replaceAuthoringAction(
+      id: string,
+      actionId: string,
+      interaction: AuthoringInteraction,
+    ): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession(
+        (await client!.replaceAuthoringAction({ sessionId: id, actionId, interaction })).session,
+      );
+    }
+
+    async function replayAuthoringTake(id: string): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession((await client!.replayAuthoringTake(id)).session);
+    }
+
+    async function commitAuthoringSession(
+      id: string,
+      input: {
+        destination?: AuthoringCommitDestination;
+        mode?: "interaction" | "automatic" | "reusable";
+      },
+    ): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      const session = projectAuthoringSession(
+        (await client!.commitAuthoringSession({ sessionId: id, ...input })).session,
+      );
+      await Promise.all([refreshRecipes(), loadJourney(session.journeyId)]);
+      return session;
+    }
+
+    async function discardAuthoringSession(id: string): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession((await client!.discardAuthoringSession(id)).session);
+    }
+
+    async function cancelAuthoringSession(id: string): Promise<AuthoringSession> {
+      if (!client) await resolveConnection();
+      return projectAuthoringSession((await client!.cancelAuthoringSession(id)).session);
+    }
+
+    function authoringEvidenceUrl(uri: string, mime?: string): string {
+      const sha256 = uri.match(/^relay-evidence:\/\/([a-f0-9]{64})$/)?.[1];
+      if (!sha256) return "";
+      const query = mime ? `?mime=${encodeURIComponent(mime)}` : "";
+      return `${serverUrl()}/authoring-evidence/${sha256}${query}`;
+    }
+
     async function refreshSuites() {
       if (health() === "offline") return;
       try {
@@ -723,8 +858,19 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const data = await request<{ jobs: JobInfo[]; active: JobInfo | null }>("/jobs?full=0");
         const list = asArray<JobInfo>(data, "jobs");
-        setJobs(list);
         const active = data.active;
+        setJobs((current) => {
+          const detailed = new Map(
+            current
+              .filter((job) => job.recipeSnapshot || job.artifacts?.length || job.steps?.length)
+              .map((job) => [job.id, job]),
+          );
+          return list.map((summary) => {
+            if (active?.id === summary.id) return active;
+            const richer = detailed.get(summary.id);
+            return richer ? { ...richer, ...summary } : summary;
+          });
+        });
         setRunning(Boolean(active && (active.status === "running" || active.status === "paused")));
       } catch {
         /* ignore */
@@ -997,6 +1143,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshRuns(),
         refreshSchedules(),
         refreshProjectVariables(),
+        refreshAuthoringSessions(),
         refreshRedactionPolicy(),
         refreshEvidenceCollectionPolicy(),
       ]);
@@ -1013,6 +1160,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         variables: refreshProjectVariables,
         matrices: refreshMatrices,
         discoveries: refreshDiscoverySessions,
+        authoring: refreshAuthoringSessions,
       };
       void refreshers[kind]();
     }
@@ -1061,6 +1209,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           setRunning(false);
           void refreshJobs();
           void refreshRuns();
+          void loadRunDetail(ev.jobId as string);
           break;
         case "job.finished":
           appendLog(
@@ -1379,6 +1528,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       } catch {
         /* ignore */
       }
+      try {
+        const savedRecipe = await platform.storage.get("selectedRecipe");
+        if (savedRecipe) setSelectedRecipeIdState(savedRecipe);
+      } catch {
+        /* ignore */
+      }
       await pollHealth();
       if (health() === "online") {
         await Promise.all([
@@ -1391,9 +1546,24 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshRuns(),
           refreshSchedules(),
           refreshProjectVariables(),
+          refreshAuthoringSessions(),
           refreshRedactionPolicy(),
           refreshEvidenceCollectionPolicy(),
         ]);
+        if (!selectedRecipeId()) {
+          const latestJourney = recipes()
+            .filter((recipe) => recipe.source === "custom")
+            .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+          if (latestJourney) {
+            setSelectedRecipeId(latestJourney.id);
+          } else {
+            const firstJourney = await saveRecipeRemote({
+              title: "Untitled journey",
+              steps: [],
+            });
+            if (firstJourney) setSelectedRecipeId(firstJourney.id);
+          }
+        }
         connectSse();
       }
     })();
@@ -1412,6 +1582,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             void refreshRecipes();
             void refreshSuites();
             void refreshRuns();
+            void refreshAuthoringSessions();
             void refreshRedactionPolicy();
             void refreshEvidenceCollectionPolicy();
             connectSse();
@@ -1498,6 +1669,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         .reverse();
     const {
       runRecipe: runRecipeRemote,
+      runJourneyPath: runJourneyPathRemote,
       runCompatibilityMatrix: runCompatibilityMatrixRemote,
       loadCompatibilityReport,
       retrySelectedJob,
@@ -1519,6 +1691,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSelectedAction,
       setError,
       refreshJobs,
+      rememberJob: (job) =>
+        setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]),
       notify: platform.notify,
     });
 
@@ -1528,6 +1702,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     return {
       serverUrl,
+      actorId,
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,
@@ -1562,6 +1737,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setActiveDiscoverySessionId,
       actions,
       recipes,
+      authoringSessions,
       suites,
       selectedSuiteId,
       setSelectedSuiteId,
@@ -1601,6 +1777,20 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       runStep,
       refreshActions,
       refreshRecipes,
+      refreshAuthoringSessions,
+      createAuthoringSession,
+      observeAuthoringSession,
+      startAuthoringSession,
+      interactAuthoringSession,
+      stopAuthoringSession,
+      trimAuthoringTake,
+      reorderAuthoringTake,
+      replaceAuthoringAction,
+      replayAuthoringTake,
+      commitAuthoringSession,
+      discardAuthoringSession,
+      cancelAuthoringSession,
+      authoringEvidenceUrl,
       refreshSuites,
       refreshDevices,
       refreshTargets,
@@ -1635,6 +1825,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       pollHealth,
       retryConnection,
       runRecipeRemote,
+      runJourneyPathRemote,
       runCompatibilityMatrixRemote,
       loadCompatibilityReport,
       saveRecipeRemote,

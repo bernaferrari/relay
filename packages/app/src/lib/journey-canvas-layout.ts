@@ -68,13 +68,17 @@ export function canvasEdgeGeometry(
     const endX = toPosition.x + SCREEN_CARD_WIDTH / 2;
     const endY = toPosition.y;
     const railY = Math.min(startY, endY) - 34;
-    return { path: `M ${startX} ${startY} C ${startX} ${railY}, ${endX} ${railY}, ${endX} ${endY}` };
+    return {
+      path: `M ${startX} ${startY} C ${startX} ${railY}, ${endX} ${railY}, ${endX} ${endY}`,
+    };
   }
   const startX = fromPosition.x + SCREEN_CARD_WIDTH;
   const startY = fromPosition.y + SCREEN_CARD_HEIGHT / 2;
   const endX = toPosition.x;
   const endY = toPosition.y + SCREEN_CARD_HEIGHT / 2;
-  return { path: `M ${startX} ${startY} C ${startX + 48} ${startY}, ${endX - 48} ${endY}, ${endX} ${endY}` };
+  return {
+    path: `M ${startX} ${startY} C ${startX + 48} ${startY}, ${endX - 48} ${endY}, ${endX} ${endY}`,
+  };
 }
 
 export function draftCanvasConnectionPath(

@@ -3,17 +3,13 @@ import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { JourneyWorkspace } from "./journey-workspace";
-import { DevicePicker } from "./device-picker";
 import { JourneyNavigator, type NavigatorArea } from "./journey-navigator";
 import { TestWelcome } from "./test-onboarding";
-import { RunsWorkspace } from "./runs-workspace";
-import { TestWorkbench } from "./test-workbench";
 import { TestSettingsPanel } from "./test-details-panel";
-import { SuitesWorkspace } from "./suites-workspace";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { displayTitle } from "../lib/job";
-import { targetIsReady } from "../lib/target-presentation";
+import { deviceReadiness } from "../lib/device-readiness";
 import { toast } from "../context/toast";
 import { confirmAction } from "./confirm-dialog";
 import {
@@ -39,17 +35,36 @@ import {
   shellDragStrip,
 } from "../lib/shell-layout";
 import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
+import { ensureJourneyGraph } from "../lib/journey-graph";
+import type { JourneyRunReadiness as GraphRunReadiness } from "../lib/journey-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "suites" | "runs" | "map";
 type StudioView = "workbench" | "map";
-
 const DataWorkspace = lazy(() =>
   import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
 );
 const MapsWorkspace = lazy(() =>
   import("./workspaces/maps-workspace").then((module) => ({ default: module.MapsWorkspace })),
 );
+const RunsWorkspace = lazy(() =>
+  import("./runs-workspace").then((module) => ({ default: module.RunsWorkspace })),
+);
+const SuitesWorkspace = lazy(() =>
+  import("./suites-workspace").then((module) => ({ default: module.SuitesWorkspace })),
+);
+const TestWorkbench = lazy(() =>
+  import("./test-workbench").then((module) => ({ default: module.TestWorkbench })),
+);
+
+function WorkspaceLoading(props: { label: string }) {
+  return (
+    <div class="grid min-h-0 flex-1 place-items-center bg-[var(--v2-background-bg-deep)] text-[12px] text-[var(--text-weak)]">
+      Loading {props.label}…
+    </div>
+  );
+}
+
 export function StudioShell(props: { onOpenSettings: (section?: SettingsSection) => void }) {
   const server = useServer();
   const draft = useRecipeDraft();
@@ -64,8 +79,16 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
-  const [navOpen, setNavOpen] = createSignal(true);
+  const [navOpen, setNavOpen] = createSignal(false);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
+  const [devicePanelOpen, setDevicePanelOpen] = createSignal(false);
+  const [graphRunReadiness, setGraphRunReadiness] = createSignal<GraphRunReadiness>({
+    visible: false,
+    ready: false,
+    reason: "Record a connection before running this journey",
+    label: "Run journey",
+    transitionPath: null,
+  });
   const [importReview, setImportReview] = createSignal<{
     yaml: string;
     recipe: RecipeInfo;
@@ -74,6 +97,27 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   } | null>(null);
 
   const selected = createMemo(() => server.selectedRecipe());
+  // Opening Relay should feel like reopening a design file, not entering a
+  // creation wizard. The provider restores the persisted id during startup;
+  // this reactive fallback closes the small renderer race where recipes can
+  // become visible before that asynchronous restore has selected a canvas.
+  // It also gives browser-only sessions (with empty storage) the most recent
+  // authored journey immediately.
+  let restoredInitialJourney = false;
+  createEffect(() => {
+    if (restoredInitialJourney || server.health() !== "online") return;
+    if (server.selectedRecipeId()) {
+      restoredInitialJourney = true;
+      return;
+    }
+    const latestJourney = server
+      .recipes()
+      .filter((recipe) => recipe.source === "custom")
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+    if (!latestJourney) return;
+    restoredInitialJourney = true;
+    server.setSelectedRecipeId(latestJourney.id);
+  });
   // Atlas is reached from a journey's own menu, not the navigator tabs, so it
   // shows as Journeys rather than leaving every tab unselected.
   const navigatorArea = createMemo<NavigatorArea>(() => {
@@ -91,6 +135,23 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     onCleanup(() => window.removeEventListener("relay:open-settings", openSettings));
   });
   createEffect(() => {
+    const updateDevicePanel = (event: Event) => {
+      const detail = (event as CustomEvent<{ open?: boolean }>).detail;
+      setDevicePanelOpen(detail?.open === true);
+    };
+    window.addEventListener("relay:device-panel-state", updateDevicePanel);
+    onCleanup(() => window.removeEventListener("relay:device-panel-state", updateDevicePanel));
+  });
+  createEffect(() => {
+    const updateGraphRunReadiness = (event: Event) => {
+      setGraphRunReadiness((event as CustomEvent<GraphRunReadiness>).detail);
+    };
+    window.addEventListener("relay:graph-run-readiness", updateGraphRunReadiness);
+    onCleanup(() =>
+      window.removeEventListener("relay:graph-run-readiness", updateGraphRunReadiness),
+    );
+  });
+  createEffect(() => {
     if (!variablesOpen()) return;
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") setVariablesOpen(false);
@@ -98,6 +159,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     window.addEventListener("keydown", close);
     requestAnimationFrame(() => variablesDialog?.focus({ preventScroll: true }));
     onCleanup(() => window.removeEventListener("keydown", close));
+  });
+  // Navigator, Device, and Properties are three contextual side surfaces.
+  // Showing more than one at once makes the canvas feel boxed in and leaves
+  // no obvious answer to which context is active.
+  createEffect(() => {
+    if (!navOpen()) return;
+    setSettingsOpen(false);
+    window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
   });
   // A journey is authored on its graph. The live device remains available
   // inside that workspace, but merely connecting hardware must never change
@@ -110,7 +179,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setStudioView("map");
     setSettingsOpen(false);
     setVariablesOpen(false);
-    if (area() === "tests") setNavOpen(!id);
+    if (id) setNavOpen(false);
   });
   const readinessState = () => ({
     health: server.health(),
@@ -119,18 +188,39 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     stepCount: draft.steps().length,
     invalidCount: draft.invalidCount(),
   });
-  const selectedTargetIsReady = () =>
-    targetIsReady(
-      server.devices().find((device) => device.serial === server.selectedDevice()),
-      server.health() === "online",
-    );
+  const selectedDeviceReadiness = createMemo(() => {
+    const device = server
+      .devices()
+      .find((candidate) => candidate.serial === server.selectedDevice());
+    const liveFrame = server.liveFrame();
+    return deviceReadiness(device, server.health() === "online", {
+      ...(device?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
+      liveCaptureIssue: server.liveCaptureIssue(),
+      recordingIssue: recorder.recordingIssue(),
+      requireLiveScreen: true,
+      liveScreenAvailable:
+        Boolean(liveFrame?.base64) && (!liveFrame?.serial || liveFrame.serial === device?.serial),
+    });
+  });
+  const selectedTargetIsReady = () => selectedDeviceReadiness().kind === "ready";
   const openDevicePicker = () => window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
   const testBlockedReason = () => testRunBlocker(readinessState());
+  const graphBlockedReason = () => {
+    if (server.health() !== "online") return "Server offline";
+    if (!selectedTargetIsReady()) return "Choose a ready device";
+    if (draft.saveState() === "invalid") return "Fix incomplete actions";
+    if (draft.saveState() === "saving") return "Saving…";
+    return graphRunReadiness().ready ? "" : graphRunReadiness().reason;
+  };
   const runSelectedTest = () => {
-    const blocker = testBlockedReason();
+    const blocker = studioView() === "map" ? graphBlockedReason() : testBlockedReason();
     if (blocker) {
       toast(blocker, "warning");
-      if (server.isEmptyDevices() || blockerIsDeviceRelated(readinessState())) {
+      if (
+        server.isEmptyDevices() ||
+        blocker === "Choose a ready device" ||
+        blockerIsDeviceRelated(readinessState())
+      ) {
         // Hardware selection is a direct, lightweight decision. Settings is
         // reserved for managing target configuration, never a detour before a
         // normal record or run.
@@ -139,7 +229,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       return;
     }
     const recipe = selected();
-    if (recipe) void server.runRecipeRemote(recipe.id);
+    if (!recipe) return;
+    if (studioView() === "map") {
+      window.dispatchEvent(new CustomEvent("relay:run-journey-graph"));
+      return;
+    }
+    void server.runRecipeRemote(recipe.id);
   };
   const filteredRecipes = createMemo(() => {
     const needle = query().trim().toLowerCase();
@@ -170,8 +265,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setSettingsOpen(false);
     setNavOpen(false);
     if (record) {
-      const target = server.devices().find((device) => device.serial === server.selectedDevice());
-      if (targetIsReady(target, server.health() === "online")) recorder.enterRecordMode();
+      if (selectedTargetIsReady()) recorder.enterRecordMode();
       else window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
     }
     return saved;
@@ -267,7 +361,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
   async function createFlow(): Promise<void> {
     const suite = await server.saveSuiteRemote({
-      title: `Flow ${server.suites().length + 1}`,
+      title: `Collection ${server.suites().length + 1}`,
       sections: [{ title: "Main path", entries: [] }],
     });
     if (!suite) return;
@@ -275,21 +369,42 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     server.setSelectedSuiteId(suite.id);
   }
 
-  /**
-   * A new journey starts on the device, recording. Describing one in words is
-   * a refinement you reach for *with* the device in front of you — never a
-   * separate screen you fill in before the device is involved.
-   */
-  function startNewJourney(): void {
+  async function reusableEmptyJourney(): Promise<RecipeInfo | null> {
+    const candidates = server
+      .recipes()
+      .filter((recipe) => recipe.source === "custom" && recipe.steps.length === 0)
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    for (const candidate of candidates) {
+      try {
+        const metadata = await server.loadJourney(candidate.id);
+        const graph = ensureJourneyGraph(metadata.value, candidate.steps);
+        const hasAuthoredContent =
+          graph.screens.length > 0 ||
+          graph.transitions.length > 0 ||
+          Boolean(metadata.value.notes?.length) ||
+          Boolean(metadata.value.takes?.length);
+        if (!hasAuthoredContent) return candidate;
+      } catch {
+        // A failed metadata read is not proof that a journey is empty.
+      }
+    }
+    return null;
+  }
+
+  /** New journey reuses an untouched blank canvas before creating another
+   * durable document. This keeps instant creation without filling the library
+   * with abandoned “Untitled journey 19, 20, 21…” entries. */
+  async function startNewJourney(): Promise<void> {
     setArea("tests");
-    setNavOpen(true);
-    // Choosing hardware is setup, not a failed attempt to record. Do not
-    // create an empty journey until Relay actually has somewhere to record.
-    if (!selectedTargetIsReady()) {
-      openDevicePicker();
+    const reusable = await reusableEmptyJourney();
+    if (reusable) {
+      server.setSelectedRecipeId(reusable.id);
+      setStudioView("map");
+      setSettingsOpen(false);
+      setNavOpen(false);
       return;
     }
-    void createTest(true);
+    await createTest(false);
   }
 
   return (
@@ -303,7 +418,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       <JourneyNavigator
         open={navOpen()}
         area={navigatorArea()}
-        onArea={setArea}
+        onArea={(nextArea) => {
+          setArea(nextArea);
+          // Run history already owns its own filters and result list. Keeping
+          // the navigator's second copy open makes the same runs compete in
+          // two columns, so the report surface takes focus immediately.
+          if (nextArea === "runs") setNavOpen(false);
+        }}
         query={query()}
         onQuery={setQuery}
         items={filteredRecipes()}
@@ -316,6 +437,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         onImport={importTestYaml}
         onOpenSettings={() => props.onOpenSettings()}
       />
+      <Show when={navOpen()}>
+        <button
+          type="button"
+          class="fixed inset-0 z-[70] cursor-default bg-black/10 backdrop-blur-[1px]"
+          aria-label="Close navigator"
+          onClick={() => setNavOpen(false)}
+        />
+      </Show>
 
       <main class={shellMain}>
         {/* One toolbar. The journey's name, its view, and its actions used to
@@ -339,7 +468,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     {area() === "runs"
                       ? "Run history"
                       : area() === "suites"
-                        ? "Flows"
+                        ? "Collections"
                         : area() === "map"
                           ? "Atlas"
                           : "Journeys"}
@@ -398,10 +527,42 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </button>
               </Show>
             </Show>
-            <Show when={area() === "suites" || area() === "map" || area() === "tests"}>
-              <DevicePicker onManageTargets={() => props.onOpenSettings("targets")} />
-            </Show>
             <Show when={area() === "tests" && selected()}>
+              <Show when={studioView() === "map"}>
+                <button
+                  type="button"
+                  aria-pressed={devicePanelOpen()}
+                  class={cn(
+                    productSecondary,
+                    "relative min-h-9 gap-2 px-3 text-[12px] before:absolute before:-inset-y-1 before:inset-x-0 before:content-['']",
+                    devicePanelOpen() &&
+                      "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+                  )}
+                  aria-label={devicePanelOpen() ? "Hide device" : "Show device"}
+                  data-tip={
+                    selectedDeviceReadiness().kind === "ready"
+                      ? devicePanelOpen()
+                        ? "Hide device"
+                        : "Show device"
+                      : "Device needs attention"
+                  }
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+                  }}
+                >
+                  <i
+                    class={cn(
+                      "size-1.5 rounded-full",
+                      selectedTargetIsReady()
+                        ? "bg-[var(--icon-success-base)]"
+                        : "bg-[var(--icon-warning-base)]",
+                    )}
+                    aria-hidden="true"
+                  />
+                  <Icon name="smartphone" size={14} /> Device
+                </button>
+              </Show>
               <div class="relative flex items-center gap-1.5">
                 <button
                   type="button"
@@ -410,8 +571,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   aria-label="Journey properties"
                   data-tip="Journey properties"
                   onClick={() => {
-                    setStudioView("workbench");
-                    setSettingsOpen((open) => !open);
+                    const opening = !settingsOpen();
+                    if (opening) {
+                      window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
+                    }
+                    setSettingsOpen(opening);
                   }}
                 >
                   <Icon name="sliders" size={16} />
@@ -466,16 +630,38 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   </div>
                 </Show>
               </div>
-              <button
-                type="button"
-                class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
-                data-blocked={testBlockedReason() ? "" : undefined}
-                data-tip={testBlockedReason() || "Run this journey"}
-                aria-label={testBlockedReason() || "Run this journey"}
-                onClick={runSelectedTest}
+              <Show
+                when={
+                  studioView() === "map" ? graphRunReadiness().visible : draft.steps().length > 0
+                }
               >
-                <Icon name="play" size={13} /> Run
-              </button>
+                <button
+                  type="button"
+                  class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
+                  aria-disabled={
+                    (studioView() === "map" ? graphBlockedReason() : testBlockedReason())
+                      ? "true"
+                      : undefined
+                  }
+                  data-blocked={
+                    (studioView() === "map" ? graphBlockedReason() : testBlockedReason())
+                      ? ""
+                      : undefined
+                  }
+                  data-tip={
+                    (studioView() === "map" ? graphBlockedReason() : testBlockedReason()) ||
+                    graphRunReadiness().label
+                  }
+                  aria-label={
+                    (studioView() === "map" ? graphBlockedReason() : testBlockedReason()) ||
+                    graphRunReadiness().label
+                  }
+                  onClick={runSelectedTest}
+                >
+                  <Icon name="play" size={13} />
+                  {studioView() === "map" ? graphRunReadiness().label : "Run"}
+                </button>
+              </Show>
             </Show>
           </div>
         </header>
@@ -494,38 +680,43 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <Show
                 when={selected()}
                 fallback={
-                  <TestWelcome
-                    onChooseDevice={openDevicePicker}
-                    onStartJourney={startNewJourney}
-                    onOpenTargets={() => props.onOpenSettings("targets")}
-                  />
+                  <TestWelcome onStartJourney={startNewJourney} onBrowse={() => setNavOpen(true)} />
                 }
               >
                 <Show when={studioView() === "workbench"}>
-                  <TestWorkbench
-                    onOpenMap={() => setStudioView("map")}
-                    onOpenTargets={() => props.onOpenSettings("targets")}
-                    onOpenRun={(id) => {
-                      server.setSelectedJobId(id);
-                      setArea("runs");
-                    }}
-                    details={
-                      settingsOpen() ? (
-                        <TestSettingsPanel
-                          onClose={() => setSettingsOpen(false)}
-                          onOpenVariables={() => setVariablesOpen(true)}
-                        />
-                      ) : undefined
-                    }
-                  />
+                  <Suspense fallback={<WorkspaceLoading label="actions" />}>
+                    <TestWorkbench
+                      onOpenMap={() => setStudioView("map")}
+                      onOpenTargets={() => props.onOpenSettings("targets")}
+                      onOpenRun={(id) => {
+                        server.setSelectedJobId(id);
+                        setArea("runs");
+                      }}
+                      details={
+                        settingsOpen() ? (
+                          <TestSettingsPanel
+                            onClose={() => setSettingsOpen(false)}
+                            onOpenVariables={() => setVariablesOpen(true)}
+                          />
+                        ) : undefined
+                      }
+                    />
+                  </Suspense>
                 </Show>
                 <Show when={studioView() === "map"}>
                   <div class={cn(shellStageWrap, "flex flex-1")}>
                     <JourneyWorkspace
-                      onLive={() => setStudioView("workbench")}
+                      navigatorOpen={navOpen()}
                       onOpenTargets={() => props.onOpenSettings("targets")}
                     />
                   </div>
+                  <Show when={settingsOpen()}>
+                    <TestSettingsPanel
+                      presentation="floating"
+                      onClose={() => setSettingsOpen(false)}
+                      onOpenVariables={() => setVariablesOpen(true)}
+                    />
+                  </Show>
                 </Show>
               </Show>
             </div>
@@ -533,18 +724,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         </Show>
 
         <Show when={area() === "runs"}>
-          <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
+          <Suspense fallback={<WorkspaceLoading label="runs" />}>
+            <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
+          </Suspense>
         </Show>
         <Show when={area() === "suites"}>
-          <SuitesWorkspace
-            onOpenTest={openRecipe}
-            onOpenRun={(id) => {
-              server.setSelectedJobId(id);
-              setArea("runs");
-            }}
-            onOpenTargets={() => props.onOpenSettings("targets")}
-            onRecordTest={(suiteId, sectionId) => void recordTestForSuite(suiteId, sectionId)}
-          />
+          <Suspense fallback={<WorkspaceLoading label="collections" />}>
+            <SuitesWorkspace
+              onOpenTest={openRecipe}
+              onOpenRun={(id) => {
+                server.setSelectedJobId(id);
+                setArea("runs");
+              }}
+              onOpenTargets={() => props.onOpenSettings("targets")}
+              onRecordTest={(suiteId, sectionId) => void recordTestForSuite(suiteId, sectionId)}
+            />
+          </Suspense>
         </Show>
         <Show when={area() === "map"}>
           <Suspense

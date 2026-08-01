@@ -13,7 +13,6 @@ import { useRecorder } from "../context/recorder";
 import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
-import { DeviceEvidenceEmptyState } from "./device-evidence-empty-state";
 import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
 import { IconButton } from "@relay/ui/icon-button";
 import { Switch } from "@relay/ui/switch";
@@ -34,7 +33,6 @@ import {
 } from "../lib/target-inspector";
 import { cn } from "../lib/cn";
 import { evidenceForStep } from "./journey-step-presentation";
-import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { targetIsReady } from "../lib/target-presentation";
 import { deviceReadiness } from "../lib/device-readiness";
 import { RECORDED_OTHER_ELEMENT_PICKING } from "../lib/product-capabilities";
@@ -47,15 +45,7 @@ import { DeviceVideoStream } from "./device-video-stream";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { SwipePathPreview, type SwipeEndpoint } from "./swipe-path-preview";
 import { StepPlaybackPreview } from "./step-playback-preview";
-import {
-  deviceCaption,
-  deviceIconWell,
-  deviceTitle,
-  mono,
-  phoneBezel,
-  phoneScreen,
-  popover,
-} from "../lib/ui";
+import { deviceCaption, deviceIconWell, deviceTitle, mono, phoneScreen, popover } from "../lib/ui";
 
 type CoordinateGuide = NonNullable<ReturnType<typeof targetPointGuide>>;
 type DeviceBounds = { width: number; height: number };
@@ -200,19 +190,6 @@ export function DeviceStage(_props: {
   const wb = useWorkbench();
   const draft = useRecipeDraft();
   const embeddedRecordingControls = () => _props.recordingControls === "embedded";
-  const [refreshingTarget, setRefreshingTarget] = createSignal(false);
-  async function refreshTarget(): Promise<void> {
-    if (refreshingTarget()) return;
-    setRefreshingTarget(true);
-    try {
-      await withRefreshFeedback(async () => {
-        await server.pollHealth();
-        if (server.health() === "online") await server.refreshDevices();
-      });
-    } finally {
-      setRefreshingTarget(false);
-    }
-  }
 
   /** What the artboard is “about” when a step is selected (Uber-style selection). */
   const focusedStep = createMemo(() => {
@@ -1316,7 +1293,8 @@ export function DeviceStage(_props: {
    * Abstract device viewport — thin always-dark frame, no hardware gimmicks.
    * Never stack workbench light-theme color recipes on the frame.
    */
-  const phoneShell = cn(phoneBezel, "relative rounded-[18px]");
+  const phoneShell =
+    "relative rounded-[22px] bg-[var(--phone-bezel)] shadow-[0_0_0_3px_var(--phone-bezel),0_0_0_4px_var(--phone-rim-soft),0_28px_64px_-22px_rgb(0_0_0/84%),0_12px_28px_-16px_rgb(255_255_255/10%)]";
 
   return (
     <section
@@ -1324,7 +1302,10 @@ export function DeviceStage(_props: {
         stageEl = el;
       }}
       aria-label="Device stage"
-      class="relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6 py-5"
+      class={cn(
+        "relative flex h-full min-h-0 flex-1 flex-col items-center justify-center overflow-hidden",
+        embeddedRecordingControls() ? "px-4 py-3" : "px-6 py-5",
+      )}
     >
       <Show when={!embeddedRecordingControls() && (targetReady() || recordedEvidenceSrc())}>
         <div class="absolute top-4 z-[4] flex h-8 items-center justify-center text-text-base">
@@ -1433,21 +1414,31 @@ export function DeviceStage(_props: {
           />
         }
       >
+        <Show when={embeddedRecordingControls()}>
+          <div
+            class="pointer-events-none absolute inset-[8%] -z-[1] rounded-full opacity-70 blur-3xl"
+            style={{
+              background:
+                "radial-gradient(circle,color-mix(in srgb,var(--v2-background-bg-accent) 9%,transparent),transparent 68%)",
+            }}
+            aria-hidden="true"
+          />
+        </Show>
         <div
           data-device-chrome
           class={cn(
             phoneShell,
-            "relative z-[2] w-auto max-w-[min(440px,calc(100%-56px))] shrink-0",
+            "relative z-[2] w-auto max-w-[min(440px,calc(100%-40px))] shrink-0",
             embeddedRecordingControls()
-              ? "h-[min(790px,calc(100%-108px))]"
+              ? "h-[min(790px,calc(100%-32px))]"
               : "h-[min(760px,calc(100%-148px))]",
           )}
           style={{ "aspect-ratio": frameAspect() }}
         >
-          <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[18px]")}>
-            {/* The plan is the hero even before evidence exists: the selected
-                step renders inside the screen, so the frame never reads as a
-                dead end — only as "not captured yet". */}
+          <div class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[20px]")}>
+            {/* The workbench can preview an uncaptured plan. Embedded Live
+                Device instead owns real target readiness, so it never masks a
+                setup or capture state with unrelated planned-step content. */}
             <Show
               when={!rec.arming() && !rec.recordingIssue() && displayImageSrc()}
               fallback={
@@ -1458,7 +1449,7 @@ export function DeviceStage(_props: {
                       when={rec.recordingIssue()}
                       fallback={
                         <Show
-                          when={plannedFocus()}
+                          when={!embeddedRecordingControls() ? plannedFocus() : undefined}
                           fallback={
                             <div class="grid h-full w-full place-items-center px-6 text-center">
                               <Show
@@ -2166,26 +2157,6 @@ export function DeviceStage(_props: {
             </footer>
           </div>
         </div>
-      </Show>
-
-      {/* Device plumbing lives in a slim strip below the stage — never as a
-            hero card blocking the content. */}
-      <Show when={currentDevice() && !targetReady()}>
-        <DeviceEvidenceEmptyState
-          deviceName={currentDevice()?.name}
-          refreshing={refreshingTarget()}
-          starting={server.bootingSerial() === currentDevice()?.serial}
-          onStartDevice={
-            currentDevice() && currentDevice()?.platform !== "browser"
-              ? () => {
-                  const serial = currentDevice()?.serial;
-                  if (serial) void server.bootDevice(serial);
-                }
-              : undefined
-          }
-          onChooseDevice={() => window.dispatchEvent(new CustomEvent("relay:open-device-picker"))}
-          onRefresh={() => void refreshTarget()}
-        />
       </Show>
 
       {/* Device-only utilities stay outside embedded capture, where the

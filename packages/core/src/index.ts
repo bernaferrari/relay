@@ -43,3 +43,7 @@ export * from "./compatibility-report.js";
 export * from "./soak-report.js";
 export * from "./discovery.js";
 export * from "./discovery-coverage.js";
+export * from "./screen-identity.js";
+export * from "./journey-graph-compiler.js";
+export * from "./journey-aggregate.js";
+export * from "./authoring-sessions.js";

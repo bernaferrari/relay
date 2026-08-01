@@ -8,7 +8,8 @@ export type EventRefresh =
   | "runs"
   | "variables"
   | "matrices"
-  | "discoveries";
+  | "discoveries"
+  | "authoring";
 
 export type EventActivity = {
   actorId: string;
@@ -31,7 +32,7 @@ const RESOURCE_REFRESH: Partial<Record<ResourceKind, EventRefresh>> = {
   collection: "collections",
   matrix: "matrices",
   "discovery-session": "discoveries",
-  "recording-session": "journeys",
+  "recording-session": "authoring",
 };
 
 const GAP_REFRESH: EventRefresh[] = [
@@ -43,6 +44,7 @@ const GAP_REFRESH: EventRefresh[] = [
   "variables",
   "matrices",
   "discoveries",
+  "authoring",
 ];
 
 export function projectRelayEvent(cursor: number, event: EventEnvelope): EventProjection {
@@ -56,6 +58,14 @@ export function projectRelayEvent(cursor: number, event: EventEnvelope): EventPr
   };
   if (event.payload.type === "stream.gap") {
     return { cursor: event.sequence, accepted: true, refresh: GAP_REFRESH, activity };
+  }
+  if (event.payload.type === "authoring.committed") {
+    return {
+      cursor: event.sequence,
+      accepted: true,
+      refresh: ["authoring", "journeys"],
+      activity,
+    };
   }
   if (
     event.payload.type === "resource.created" ||

@@ -13,9 +13,7 @@ import { cn } from "./cn";
  */
 export const shellRoot = cn(
   "grid h-full w-full min-h-0 overflow-hidden text-[var(--text-strong)] bg-[var(--v2-background-bg-deep)] isolation-isolate",
-  "grid-cols-[var(--shell-nav,var(--shell-nav-width))_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
-  "max-[900px]:grid-cols-[0_minmax(0,1fr)]",
-  "transition-[grid-template-columns] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
+  "grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]",
 );
 
 /** Inline-style value for the root: pass to `style` so it always wins. */
@@ -29,11 +27,10 @@ export function shellRootNavVar(open: boolean): Record<string, string> {
  * means one selection model and one place to look for anything nameable.
  */
 export const shellNav = cn(
-  "relative z-[2] col-start-1 row-start-1 flex min-h-0 flex-col overflow-hidden",
+  "fixed top-0 bottom-0 left-0 z-[80] flex min-h-0 w-[var(--shell-nav-width)] flex-col overflow-hidden",
   "border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]",
-  "transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
+  "shadow-[18px_0_56px_rgb(0_0_0/32%)] transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.65,0,0.35,1)]",
   "will-change-transform",
-  "max-[900px]:fixed max-[900px]:top-0 max-[900px]:bottom-0 max-[900px]:left-0 max-[900px]:z-[60] max-[900px]:w-[var(--shell-nav-width)] max-[900px]:shadow-[24px_0_60px_rgb(0_0_0/42%)]",
   // Inner content keeps its width during the collapse so text does not reflow.
   "[&>*]:w-[var(--shell-nav-width)]",
 );
@@ -42,7 +39,7 @@ export const shellNavClosed =
   "pointer-events-none -translate-x-3.5 opacity-0 border-r-0 max-[900px]:-translate-x-full";
 
 export const shellMain =
-  "col-start-2 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--v2-background-bg-deep)]";
+  "col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col bg-[var(--v2-background-bg-deep)]";
 
 export const shellTopbar = cn(
   "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--v2-border-border-muted)]",

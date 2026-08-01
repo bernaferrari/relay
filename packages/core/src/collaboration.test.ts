@@ -113,7 +113,10 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
     });
     assert.equal((await readJourney("project-a", "login")).value.takes?.[0]?.state, "review");
     assert.equal((await readJourney("project-a", "login")).value.review?.state, "needs-review");
-    assert.equal((await readJourney("project-a", "login")).value.graph?.transitions[0]?.id, "open-settings");
+    assert.equal(
+      (await readJourney("project-a", "login")).value.graph?.transitions[0]?.id,
+      "open-settings",
+    );
   } finally {
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
     else process.env.GROK_DEVICE_STATE_DIR = previous;

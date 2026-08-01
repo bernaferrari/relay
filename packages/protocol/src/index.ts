@@ -2,6 +2,7 @@ export * from "./suites.js";
 export * from "./recipes.js";
 export * from "./operations.js";
 export * from "./coordination.js";
+export * from "./authoring.js";
 import type { RecipeStep } from "./recipes.js";
 import type { ActorKind, ResourceEventPayload } from "./coordination.js";
 
@@ -463,9 +464,36 @@ export type DiscoveryScope = {
 
 export type DiscoveryStatus = "draft" | "running" | "paused" | "complete" | "stopped";
 
+/** Stable, explainable identity for one semantic application screen. Pixels
+ * are observations of this identity, not the identity itself: clocks,
+ * counters, animation, and device dimensions may change between captures. */
+export type ScreenIdentity = {
+  schemaVersion: 1;
+  fingerprint: string;
+  /** Additional fingerprints that a person or a high-confidence matcher has
+   * approved as the same screen. */
+  aliases?: string[];
+};
+
+/** One concrete observation of a semantic screen. A node can accumulate many
+ * observations across recordings, discovery sessions, devices, and runs. */
+export type JourneyScreenObservation = {
+  id: string;
+  fingerprint: string;
+  capturedAt: number;
+  source: "recording" | "discovery" | "run" | "manual";
+  externalId?: string;
+  sessionId?: string;
+  deviceId?: string;
+  platform?: "android" | "ios" | "browser";
+  snapshotDigest?: string;
+  representativeStepId?: string;
+};
+
 export type ObservedScreen = {
   id: string;
   fingerprint: string;
+  identity?: ScreenIdentity;
   title?: string;
   capturedAt: number;
   screenshotPath?: string;
@@ -627,6 +655,8 @@ export type JourneyTake = {
    * the person actually recorded from, rather than whichever card is selected
    * when they return. */
   sourceScreenId?: string;
+  sourceObservation?: JourneyScreenObservation;
+  destinationObservation?: JourneyScreenObservation;
   startedAt: number;
   finishedAt?: number;
   group: string;
@@ -680,6 +710,11 @@ export type JourneyConnection = {
 export type JourneyGraphScreen = {
   id: string;
   title: string;
+  /** Canonical semantic identity. Optional for migrated journeys whose older
+   * evidence is insufficient; future observations can establish it. */
+  identity?: ScreenIdentity;
+  /** Concrete captures known to represent this screen. */
+  observations?: JourneyScreenObservation[];
   /** The post-action capture used to render this card, when one exists. */
   representativeStepId?: string;
   createdAt: number;
@@ -694,6 +729,8 @@ export type JourneyGraphTransition = {
   destination: JourneyGraphDestination;
   /** Stable recipe action ids, in the exact order a person recorded them. */
   stepIds: string[];
+  /** Immutable evidence committed in the same aggregate as this connection. */
+  evidenceIds?: string[];
   /** The full take is evidence for the edge, not merely for either endpoint.
    * A video may contain loading, animation, or navigation that no single
    * discrete action can describe. */
@@ -703,6 +740,14 @@ export type JourneyGraphTransition = {
   /** How the transition was authored. All modes still compile to recipe steps. */
   mode?: "interaction" | "automatic" | "reusable";
   review?: JourneyTransitionReview;
+  /** Where this edge came from. This makes repeated discovery imports
+   * idempotent and keeps generated maps auditable without coupling execution
+   * to a discovery session. */
+  provenance?: {
+    source: "recording" | "discovery" | "manual" | "migration";
+    externalId?: string;
+    sessionId?: string;
+  };
   label?: string;
   state: "recorded" | "needs-recording";
   kind: "forward" | "return";

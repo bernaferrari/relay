@@ -23,6 +23,24 @@ export async function enqueueRecipe(
   });
 }
 
+export async function enqueueJourneyGraphPath(
+  request: ServerRequest,
+  input: {
+    recipe: string;
+    flowName: string;
+    transitionPath?: string[];
+    serial?: string;
+    targetKind: "browser" | "device";
+    browserTargetId?: string;
+    platform?: string;
+  },
+): Promise<{ job: JobInfo }> {
+  return request<{ job: JobInfo }>("/jobs/graph-path", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function enqueueMatrix(
   request: ServerRequest,
   input: { recipe: string; matrixId: string; repetitions: number; prodAccountMatch?: string },

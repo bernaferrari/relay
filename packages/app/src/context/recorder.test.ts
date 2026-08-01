@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SnapshotNode, SnapshotState } from "../lib/api-types";
-import { buildTapTarget, semanticTapNode } from "./recorder";
+import type { AuthoringSession } from "@relay/protocol";
+import { buildTapTarget, selectProjectedAuthoringSession, semanticTapNode } from "./recorder";
 
 test("resource identifiers are not recorded as accessibility labels", () => {
   assert.deepEqual(
@@ -56,4 +57,35 @@ test("an unlabeled tapped child inherits the closest accessibility label", () =>
       referenceBounds: { width: 100, height: 200 },
     },
   });
+});
+
+test("remote authoring activity is visible without replacing local Journey or Target focus", () => {
+  const session = (
+    id: string,
+    actorId: string,
+    targetId: string,
+    updatedAt: number,
+  ): AuthoringSession => ({
+    schemaVersion: 1,
+    id,
+    organizationId: "local",
+    projectId: "default",
+    actorId,
+    actorKind: actorId.startsWith("agent:") ? "agent" : "human",
+    journeyId: "journey-a",
+    state: "recording",
+    target: { kind: "device", platform: "android", targetId },
+    leaseId: `lease-${id}`,
+    expectedJourneyRevision: 1,
+    expectedRecipeRevision: 1,
+    createdAt: 1,
+    updatedAt,
+  });
+  const selectedTarget = "device-a";
+  const projected = selectProjectedAuthoringSession(
+    [session("remote", "agent:indexer", "device-a", 3), session("other", "agent:b", "device-b", 4)],
+    { journeyId: "journey-a", targetId: selectedTarget, actorId: "human:me" },
+  );
+  assert.equal(projected?.id, "remote");
+  assert.equal(selectedTarget, "device-a");
 });

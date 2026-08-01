@@ -231,7 +231,10 @@ export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
       {
         id: "account",
         label: "Xcode signing identity",
-        status: matchingIdentity || (!setup.ios && availableIdentities.length > 0) ? "ready" : "needs-attention",
+        status:
+          matchingIdentity || (!setup.ios && availableIdentities.length > 0)
+            ? "ready"
+            : "needs-attention",
         detail: matchingIdentity
           ? `Xcode can sign with ${matchingIdentity.name}.`
           : setup.ios

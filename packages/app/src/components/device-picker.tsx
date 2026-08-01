@@ -146,7 +146,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
         ref={(element) => (trigger = element)}
         type="button"
         class={cn(
-          "inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--text-base)] transition-colors",
+          "relative inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--text-base)] transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
           "shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]",
           "hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
           "active:scale-[0.98] motion-reduce:active:scale-100",
@@ -205,19 +205,22 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
             options[next]?.focus();
           }}
         >
-          <header class="flex shrink-0 items-center justify-between gap-2 px-3 pt-2.5 pb-2">
+          <header class="flex h-12 shrink-0 items-center justify-between gap-3 px-3">
             <span
               id="target-picker-title"
-              class="text-[12px] font-semibold text-[var(--text-base)]"
+              class="inline-flex min-w-0 items-center gap-3 text-[12px] font-semibold text-[var(--text-base)]"
             >
               <span>Devices</span>
               <Show when={scanning()}>
-                <span class="text-[10px] font-normal text-[var(--text-weak)]">Scanning…</span>
+                <span class="inline-flex items-center gap-2 text-[10px] leading-none font-normal text-[var(--text-weak)]">
+                  <i class="size-1 rounded-full bg-[var(--text-interactive-base)] motion-safe:animate-pulse" />
+                  Scanning…
+                </span>
               </Show>
             </span>
             <button
               type="button"
-              class="grid size-7 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+              class="relative grid size-7 shrink-0 place-items-center rounded-md text-[var(--text-weak)] transition-colors before:absolute before:-inset-2 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
               disabled={refreshing() || scanning()}
               aria-busy={refreshing() || scanning()}
               aria-label="Refresh devices"
@@ -228,19 +231,19 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                 name="refresh"
                 size={13}
                 class={cn(
-                  refreshing() &&
+                  (refreshing() || scanning()) &&
                     "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70",
                 )}
               />
             </button>
           </header>
           <Show when={server.devices().length > 0}>
-            <label class="mx-2.5 mb-2 flex h-8 shrink-0 items-center gap-2 rounded-lg bg-[var(--v2-background-bg-deep)] px-2.5 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] focus-within:shadow-[inset_0_0_0_1px_var(--text-interactive-base)]">
+            <label class="mx-2.5 mb-2 flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[var(--v2-background-bg-deep)] px-2.5 text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] focus-within:shadow-[inset_0_0_0_1px_var(--text-interactive-base)]">
               <Icon name="search" size={14} />
               <span class="sr-only">Filter devices</span>
               <input
                 ref={(element) => (searchInput = element)}
-                class="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
+                class="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-[var(--text-strong)] outline-none placeholder:text-[var(--text-weak)]"
                 type="search"
                 value={query()}
                 placeholder="Search devices"
@@ -270,7 +273,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                         Looking for devices…
                       </strong>
                       <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
-                        Checking Android through ADB and Apple devices through Xcode.
+                        Checking connected phones and available simulators.
                       </p>
                     </div>
                   }
@@ -283,7 +286,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                       No devices found
                     </strong>
                     <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
-                      Connect by USB, Wi-Fi, or browser.
+                      Connect a phone or start a simulator.
                     </p>
                   </div>
                 </Show>
@@ -312,7 +315,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
               <Show when={virtualGroups().length > 0}>
                 <button
                   type="button"
-                  class="mt-0.5 flex min-h-8 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-[11px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.99] motion-reduce:active:scale-100"
+                  class="mt-0.5 flex min-h-10 w-full items-center justify-between gap-1.5 rounded-lg px-2.5 text-left text-[11px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.99] motion-reduce:active:scale-100"
                   aria-expanded={virtualExpanded()}
                   onClick={() => setShowVirtualDevices((value) => !value)}
                 >
@@ -362,14 +365,14 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
             <footer class="shrink-0 border-t border-[var(--v2-border-border-muted)] p-1">
               <button
                 type="button"
-                class="flex min-h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={() => {
                   closePicker();
                   props.onManageTargets!();
                 }}
               >
                 <Icon name="sliders" size={14} />
-                Manage browser targets…
+                Device settings…
               </button>
             </footer>
           </Show>
@@ -410,7 +413,7 @@ function TargetRow(props: {
   return (
     <div
       class={cn(
-        "group/target relative grid min-h-9 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 transition-colors",
+        "group/target relative grid min-h-11 w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2 py-1 transition-colors",
         "hover:bg-[var(--v2-background-bg-layer-02)] focus-within:bg-[var(--v2-background-bg-layer-02)]",
         props.selected && "bg-[var(--v2-background-bg-layer-02)]",
       )}
@@ -429,7 +432,6 @@ function TargetRow(props: {
         data-target-option={available() || authorizable() ? "" : undefined}
         aria-current={props.selected ? "true" : undefined}
         aria-label={`${target().displayName}, ${status()}`}
-        title={props.group.item.serial}
         disabled={!available() && !authorizable()}
         class="min-w-0 truncate rounded text-left text-[12px]/[1.3] font-medium text-[var(--text-base)] enabled:cursor-pointer enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] enabled:hover:text-[var(--text-strong)] enabled:active:scale-[0.99] disabled:cursor-default focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-[var(--v2-border-border-strong)] motion-reduce:enabled:active:scale-100"
         onClick={() => (available() ? props.onPick() : props.onAuthorize?.())}

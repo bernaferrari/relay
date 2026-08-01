@@ -1,0 +1,235 @@
+import type { RecipeStep, StepTarget } from "./recipes.js";
+
+export const AUTHORING_SESSION_STATES = [
+  "preparing",
+  "ready",
+  "recording",
+  "reviewing",
+  "committing",
+  "committed",
+  "failed",
+  "cancelled",
+] as const;
+
+export type AuthoringSessionState = (typeof AUTHORING_SESSION_STATES)[number];
+
+export type AuthoringTarget =
+  | { kind: "device"; platform: "android" | "ios"; targetId: string }
+  | { kind: "browser"; platform: "browser"; targetId: string };
+
+export type AuthoringEvidence = {
+  id: string;
+  kind: "screenshot" | "snapshot" | "video";
+  capturedAt: number;
+  /** Immutable server-side content reference. Clients never execute this path. */
+  uri: string;
+  mime?: string;
+  bytes?: number;
+  sha256?: string;
+  startMs?: number;
+  endMs?: number;
+};
+
+export type AuthoringScreenObservation = {
+  id: string;
+  fingerprint: string;
+  capturedAt: number;
+  source: "recording" | "discovery" | "run" | "manual";
+  deviceId?: string;
+};
+
+export type AuthoringObservation = {
+  id: string;
+  capturedAt: number;
+  screen: AuthoringScreenObservation;
+  evidenceIds: string[];
+  bounds?: { width: number; height: number };
+  /** A bounded semantic snapshot retained for selector repair and screen identity. */
+  nodes?: Array<Record<string, unknown>>;
+};
+
+export type AuthoringActionSource = "captured" | "manual" | "reusable";
+
+export type AuthoringAction = {
+  id: string;
+  source: AuthoringActionSource;
+  recordedAt: number;
+  startedAt: number;
+  finishedAt: number;
+  /** Empty means an intentional observe-only/no-op transition. */
+  steps: RecipeStep[];
+  evidenceIds: string[];
+  label?: string;
+};
+
+export type AuthoringInteraction =
+  | { kind: "tap"; target: StepTarget; applied?: boolean }
+  | { kind: "type"; text: string; target?: StepTarget; applied?: boolean }
+  | {
+      kind: "swipe";
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      durationMs?: number;
+      applied?: boolean;
+    }
+  | { kind: "key"; key: "back" | "home"; applied?: boolean }
+  | { kind: "wait"; ms: number }
+  | { kind: "observe"; label?: string }
+  | { kind: "screenshot"; label?: string }
+  | { kind: "reusable"; recipeId: string; bindings?: Record<string, string> }
+  | { kind: "steps"; steps: RecipeStep[]; label?: string };
+
+export type AuthoringTakeRevision = {
+  id: string;
+  takeId: string;
+  revision: number;
+  createdAt: number;
+  createdBy: string;
+  reason: "recording" | "trim" | "reorder" | "replace" | "manual";
+  actions: AuthoringAction[];
+  evidence: AuthoringEvidence[];
+  before?: AuthoringObservation;
+  after?: AuthoringObservation;
+  videoClip?: { startMs: number; endMs: number };
+};
+
+export type AuthoringReplayAttempt = {
+  id: string;
+  takeId: string;
+  takeRevision: number;
+  startedAt: number;
+  finishedAt: number;
+  outcome: "passed" | "failed" | "cancelled";
+  evidence: AuthoringEvidence[];
+  error?: string;
+};
+
+export type AuthoringTake = {
+  id: string;
+  state: "recording" | "reviewing" | "committed" | "discarded";
+  createdAt: number;
+  updatedAt: number;
+  currentRevision: number;
+  revisions: AuthoringTakeRevision[];
+  replayAttempts: AuthoringReplayAttempt[];
+};
+
+export type AuthoringCommitDestination =
+  | { kind: "new-screen"; title?: string }
+  | { kind: "screen"; screenId: string }
+  | { kind: "end" };
+
+export type AuthoringSession = {
+  schemaVersion: 1;
+  id: string;
+  organizationId: string;
+  projectId: string;
+  actorId: string;
+  actorKind: "human" | "agent" | "system";
+  journeyId: string;
+  state: AuthoringSessionState;
+  target: AuthoringTarget;
+  leaseId: string;
+  expectedJourneyRevision: number;
+  expectedRecipeRevision: number;
+  sourceScreenId?: string;
+  pendingTransitionId?: string;
+  destination?: AuthoringCommitDestination;
+  group?: string;
+  take?: AuthoringTake;
+  createdAt: number;
+  updatedAt: number;
+  recoveredAt?: number;
+  recoverable?: boolean;
+  error?: string;
+  commitTransactionId?: string;
+  committedTransitionId?: string;
+};
+
+export type CreateAuthoringSessionInput = {
+  journeyId: string;
+  target: AuthoringTarget;
+  leaseId: string;
+  expectedJourneyRevision: number;
+  expectedRecipeRevision: number;
+  sourceScreenId?: string;
+  pendingTransitionId?: string;
+  group?: string;
+};
+
+export type AuthoringSessionRef = { sessionId: string };
+
+export type TrimAuthoringTakeInput = AuthoringSessionRef & {
+  fromMs?: number;
+  toMs?: number;
+  actionIds?: string[];
+};
+
+export type ReorderAuthoringTakeInput = AuthoringSessionRef & { actionIds: string[] };
+
+export type ReplaceAuthoringActionInput = AuthoringSessionRef & {
+  actionId: string;
+  interaction: AuthoringInteraction;
+};
+
+export type CommitAuthoringSessionInput = AuthoringSessionRef & {
+  destination?: AuthoringCommitDestination;
+  mode?: "interaction" | "automatic" | "reusable";
+};
+
+export type AuthoringSessionResponse = { session: AuthoringSession };
+export type AuthoringSessionListResponse = { sessions: AuthoringSession[] };
+
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function nonEmpty(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new TypeError(`${label} is required`);
+  return value.trim();
+}
+
+export function parseAuthoringSession(value: unknown): AuthoringSession {
+  const input = object(value, "authoring session");
+  if (input.schemaVersion !== 1) throw new TypeError("authoring session schemaVersion must be 1");
+  const state = nonEmpty(input.state, "authoring session state") as AuthoringSessionState;
+  if (!AUTHORING_SESSION_STATES.includes(state)) {
+    throw new TypeError(`unsupported authoring session state ${state}`);
+  }
+  object(input.target, "authoring session target");
+  return input as AuthoringSession;
+}
+
+export function parseAuthoringSessionResponse(value: unknown): AuthoringSessionResponse {
+  const input = object(value, "authoring session response");
+  return { session: parseAuthoringSession(input.session) };
+}
+
+export function parseAuthoringSessionListResponse(value: unknown): AuthoringSessionListResponse {
+  const input = object(value, "authoring session list response");
+  if (!Array.isArray(input.sessions)) throw new TypeError("sessions must be an array");
+  return { sessions: input.sessions.map(parseAuthoringSession) };
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  return `{${Object.entries(value as Record<string, unknown>)
+    .filter(([, item]) => item !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+    .join(",")}}`;
+}
+
+/** Stable wire/disk representation for signatures, snapshots, and recovery tests. */
+export function serializeAuthoringSession(session: AuthoringSession): string {
+  return canonicalJson(parseAuthoringSession(session));
+}
+
+export function assertAuthoringSessionRef(value: unknown): void {
+  const input = object(value, "authoring session input");
+  nonEmpty(input.sessionId, "sessionId");
+}

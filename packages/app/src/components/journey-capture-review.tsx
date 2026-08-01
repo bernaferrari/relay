@@ -3,17 +3,18 @@ import type { JourneyGraphScreen, JourneyVideoClip } from "@relay/protocol";
 import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
 import type { TakeDestination } from "../lib/journey-graph";
-import { phoneBezel, phoneScreen } from "../lib/ui";
+import { phoneScreen } from "../lib/ui";
 import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
-import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
 
 const controlButton =
-  "grid h-7 min-w-7 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "grid h-9 min-w-9 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
 const primaryButton =
-  "inline-flex h-7 items-center gap-1.5 rounded-[7px] bg-[var(--product-accent-soft)] px-2.5 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-35";
+  "inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 const secondaryButton =
-  "inline-flex h-8 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "inline-flex h-10 items-center gap-1.5 rounded-[8px] px-2.5 text-[10px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+const reviewPhoneShell =
+  "relative rounded-[22px] bg-[var(--phone-bezel)] shadow-[0_0_0_3px_var(--phone-bezel),0_0_0_4px_var(--phone-rim-soft),0_28px_64px_-22px_rgb(0_0_0/84%),0_12px_28px_-16px_rgb(255_255_255/10%)]";
 
 /** A compact capture status for the live device drawer. Once stopped, review
  * moves into TakeReviewWorkspace so it never competes with the live device. */
@@ -21,38 +22,30 @@ export function TakeCaptureBar(props: {
   take: RecordingTake;
   contextLabel?: string;
   onStop: () => void;
-  onOpenDevice: () => void;
 }) {
   const count = () => props.take.steps.length;
   const actionLabel = () =>
     count() === 0 ? "No actions yet" : `${count()} action${count() === 1 ? "" : "s"}`;
   return (
-    <section class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-4">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex min-w-0 items-center gap-2 text-[11px]">
-          <i class="size-1.5 shrink-0 rounded-full bg-[var(--icon-critical-base)]" />
-          <strong class="shrink-0 font-semibold text-[var(--text-strong)]">
-            {props.contextLabel ? "Recording transition" : "Recording"}
+    <section class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3">
+      <div class="flex min-w-0 items-center gap-2.5">
+        <i class="size-2 shrink-0 rounded-full bg-[var(--icon-critical-base)] motion-safe:animate-pulse" />
+        <div class="min-w-0 text-[10.5px]/[1.35]">
+          <strong class="block font-semibold text-[var(--text-strong)]">
+            {props.contextLabel ? "Recording connection" : "Recording"}
           </strong>
-          <span class="truncate text-[var(--text-weak)]">
+          <span class="block truncate text-[var(--text-weak)]">
             {props.contextLabel ? `${props.contextLabel} · ${actionLabel()}` : actionLabel()}
           </span>
         </div>
       </div>
-      <div class="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          class={controlButton}
-          aria-label="Open device workspace"
-          title="Open device workspace"
-          onClick={props.onOpenDevice}
-        >
-          <Icon name="arrow-right" size={13} />
-        </button>
-        <button type="button" class={primaryButton} onClick={props.onStop}>
-          <Icon name="square" size={11} /> Stop
-        </button>
-      </div>
+      <button
+        type="button"
+        class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] px-3 text-[11px] font-semibold text-[var(--icon-critical-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_20%,transparent)] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]"
+        onClick={props.onStop}
+      >
+        <Icon name="square" size={10} /> Stop
+      </button>
     </section>
   );
 }
@@ -100,7 +93,7 @@ export function TakeReviewSidebar(props: {
           when={count() > 0}
           fallback={
             <div class="grid h-full place-items-center px-5 text-center text-[11px]/[1.5] text-[var(--text-weak)]">
-              No actions left. Discard this recording or go back to the device and record again.
+              No device action. This connection observes a transition that happens on its own.
             </div>
           }
         >
@@ -120,7 +113,7 @@ export function TakeReviewSidebar(props: {
                   >
                     <button
                       type="button"
-                      class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                      class="flex min-w-0 flex-1 self-stretch items-center gap-2.5 text-left"
                       aria-current={props.selectedIndex === index() ? "step" : undefined}
                       onClick={() => props.onSelect(index())}
                     >
@@ -138,7 +131,7 @@ export function TakeReviewSidebar(props: {
                     </button>
                     <button
                       type="button"
-                      class="grid size-6 shrink-0 place-items-center rounded-[6px] text-[var(--text-weak)] opacity-0 transition-[background-color,color,opacity] duration-150 group-hover:opacity-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--icon-critical-base)] focus-visible:opacity-100"
+                      class="grid size-10 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] opacity-0 transition-[background-color,color,opacity] duration-150 group-hover:opacity-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--icon-critical-base)] focus-visible:opacity-100"
                       aria-label={`Remove ${description()}`}
                       title="Remove action"
                       onClick={() => props.onRemove(index())}
@@ -152,7 +145,7 @@ export function TakeReviewSidebar(props: {
           </ol>
           <section class="mt-4 border-t border-[var(--v2-border-border-muted)] px-1 pt-3">
             <span class="block text-[9.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
-              Transition
+              Connection
             </span>
             <span class="mt-1 block text-[10.5px] text-[var(--text-weak)]">
               From <span class="font-medium text-[var(--text-base)]">{props.sourceTitle}</span>
@@ -229,8 +222,8 @@ export function TakeReviewSidebar(props: {
               {props.replayState === "passed"
                 ? "Approve it if the device reached the right screen."
                 : props.replayState === "failed"
-                  ? props.replayError || "The transition stopped before it finished."
-                  : "Relay will reproduce only this transition before you add it to the journey."}
+                  ? props.replayError || "The connection stopped before it finished."
+                  : "Relay will try only this connection before you add it to the journey."}
             </p>
           </section>
         </Show>
@@ -239,8 +232,8 @@ export function TakeReviewSidebar(props: {
       <footer class="grid shrink-0 gap-2 border-t border-[var(--v2-border-border-muted)] p-3">
         <button
           type="button"
-          class={cn(primaryButton, "h-9 justify-center")}
-          disabled={count() === 0 || props.replayState === "running"}
+          class={cn(primaryButton, "justify-center")}
+          disabled={props.replayState === "running"}
           onClick={props.replayState === "passed" ? props.onKeep : props.onReplay}
         >
           <Icon
@@ -255,7 +248,7 @@ export function TakeReviewSidebar(props: {
             class={props.replayState === "running" ? "animate-spin motion-reduce:animate-none" : ""}
           />
           {props.replayState === "passed"
-            ? "Approve transition"
+            ? "Approve connection"
             : props.replayState === "running"
               ? "Replaying…"
               : props.replayState === "failed"
@@ -267,7 +260,7 @@ export function TakeReviewSidebar(props: {
             Discard
           </button>
           <button type="button" class={secondaryButton} onClick={props.onRewrite}>
-            <Icon name="refresh" size={11} /> Record again
+            <Icon name="refresh" size={11} /> Rewrite connection
           </button>
         </div>
       </footer>
@@ -281,7 +274,7 @@ export function RecordedTakePlayer(props: {
   take: RecordingTake;
   selectedIndex: number;
   onSelect: (index: number) => void;
-  screenshotFor: (step: RecipeStep | undefined) => string;
+  screenshotFor: (step: RecipeStep | undefined, index: number) => string;
   videoSrc?: string;
   clip?: JourneyVideoClip;
   onClip?: (clip: JourneyVideoClip) => void;
@@ -291,7 +284,7 @@ export function RecordedTakePlayer(props: {
   const lastIndex = () => Math.max(0, props.take.steps.length - 1);
   const selectedIndex = () => Math.min(lastIndex(), Math.max(0, props.selectedIndex));
   const step = () => props.take.steps[selectedIndex()];
-  const imageSrc = () => props.screenshotFor(step());
+  const imageSrc = () => props.screenshotFor(step(), selectedIndex());
   const title = () => (step() ? describeStep(step()!) : "No recorded action");
   const previous = () => props.onSelect(Math.max(0, selectedIndex() - 1));
   const next = () => props.onSelect(Math.min(lastIndex(), selectedIndex() + 1));
@@ -317,13 +310,13 @@ export function RecordedTakePlayer(props: {
       <div
         data-device-chrome
         class={cn(
-          phoneBezel,
-          "relative z-[1] h-[min(790px,calc(100%-136px))] max-w-[min(440px,calc(100%-56px))] shrink-0 rounded-[18px]",
+          reviewPhoneShell,
+          "relative z-[1] h-[min(790px,calc(100%-136px))] max-w-[min(440px,calc(100%-56px))] shrink-0",
         )}
         style={{ "aspect-ratio": "9 / 19.5" }}
       >
         <div
-          class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[18px] bg-black")}
+          class={cn(phoneScreen, "relative h-full w-full overflow-hidden rounded-[20px] bg-black")}
         >
           <Show
             when={props.videoSrc}
@@ -359,7 +352,9 @@ export function RecordedTakePlayer(props: {
           >
             {(src) => (
               <video
-                ref={video}
+                ref={(element) => {
+                  video = element;
+                }}
                 class="h-full w-full object-contain"
                 src={src()}
                 controls
@@ -494,188 +489,133 @@ export function GraphEmptyState(props: {
     | "choose-device"
     | "checking-ios"
     | "preparing-ios"
+    | "preparing-screen"
     | "setup-check-failed"
     | "setup-ios"
     | "enable-developer-mode"
+    | "capture-error"
     | "device-unavailable";
   selectedDeviceName?: string;
   deviceOpen: boolean;
-  onRecord: () => void;
-  onSetUpDevice: () => void;
-  onRetrySetup: () => void;
-  onOpenDevice: () => void;
+  liveScreenSrc?: string;
 }) {
   const isRecording = () => props.take?.state === "recording";
   const count = () => props.take?.steps.length ?? 0;
-  if (!props.take && props.recordState === "setup-ios") {
-    return (
-      <div class="absolute inset-0 z-[1] grid place-items-center px-5 text-center">
-        <div class="flex flex-col items-center">
-          <span class="mb-3 grid size-9 place-items-center rounded-[11px] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)]">
-            <Icon name="smartphone" size={16} />
-          </span>
-          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-            Set up this iPad
-          </h2>
-          <p class="m-0 mt-1.5 max-w-[31ch] text-[12px]/[1.5] text-[var(--text-weak)]">
-            Relay needs its local runner before it can read{" "}
-            {props.selectedDeviceName ?? "this device"}.
-          </p>
-          <button type="button" class={cn(primaryButton, "mt-4")} onClick={props.onSetUpDevice}>
-            Set up iPad
-          </button>
-        </div>
-      </div>
-    );
-  }
-  if (!props.take && props.recordState === "enable-developer-mode") {
-    return (
-      <div class="absolute inset-0 z-[1] grid place-items-center px-5 text-center">
-        <div class="flex flex-col items-center">
-          <span class="mb-3 grid size-9 place-items-center rounded-[11px] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)]">
-            <Icon name="smartphone" size={16} />
-          </span>
-          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-            Turn on Developer Mode
-          </h2>
-          <p class="m-0 mt-1.5 max-w-[32ch] text-[12px]/[1.5] text-[var(--text-weak)]">
-            On your iPad: Settings → Privacy &amp; Security → Developer Mode. Restart when prompted,
-            then turn it on.
-          </p>
-        </div>
-      </div>
-    );
-  }
-  if (!props.take && props.recordState === "preparing-ios") {
-    return (
-      <div class="absolute inset-0 z-[1] grid place-items-center px-5 text-center">
-        <div class="flex flex-col items-center">
-          <span
-            class="mb-3 size-6 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none"
-            role="status"
-            aria-label="Preparing iPad"
-          />
-          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-            Preparing this iPad
-          </h2>
-          <p class="m-0 mt-1.5 max-w-[32ch] text-[12px]/[1.5] text-[var(--text-weak)]">
-            Keep it unlocked while macOS enables Apple device support. This can take a minute after
-            Developer Mode is turned on.
-          </p>
-        </div>
-      </div>
-    );
-  }
-  if (!props.take && props.recordState === "checking-ios") {
-    return (
-      <div class="absolute inset-0 z-[1] grid place-items-center px-5 text-center">
-        <div class="flex flex-col items-center">
-          <span
-            class="mb-3 size-6 animate-spin rounded-full border-2 border-[var(--text-weak)] border-t-transparent motion-reduce:animate-none"
-            role="status"
-            aria-label="Checking iPad setup"
-          />
-          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-            Checking iPad setup
-          </h2>
-        </div>
-      </div>
-    );
-  }
-  if (!props.take && props.recordState === "setup-check-failed") {
-    return (
-      <div class="absolute inset-0 z-[1] grid place-items-center px-5 text-center">
-        <div class="flex flex-col items-center">
-          <span class="mb-3 grid size-9 place-items-center rounded-[11px] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)]">
-            <Icon name="smartphone" size={16} />
-          </span>
-          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-            Can’t check this iPad yet
-          </h2>
-          <p class="m-0 mt-1.5 max-w-[31ch] text-[12px]/[1.5] text-[var(--text-weak)]">
-            Try again once the local Relay service is ready.
-          </p>
-          <button type="button" class={cn(primaryButton, "mt-4")} onClick={props.onRetrySetup}>
-            Try again
-          </button>
-        </div>
-      </div>
-    );
-  }
-  if (!props.take && props.recordState === "device-unavailable") {
-    return (
-      <div class="absolute inset-0 z-[1] grid place-items-center px-5 text-center">
-        <div class="flex flex-col items-center">
-          <span class="mb-3 grid size-9 place-items-center rounded-[11px] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)]">
-            <Icon name="smartphone" size={16} />
-          </span>
-          <h2 class="m-0 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-            Reconnect {props.selectedDeviceName}
-          </h2>
-          <p class="m-0 mt-1.5 max-w-[30ch] text-[12px]/[1.5] text-[var(--text-weak)]">
-            Relay will be ready to record when it can reach this device again.
-          </p>
-        </div>
-      </div>
-    );
-  }
-  if (!props.take && props.recordState === "choose-device") {
-    return (
-      <div class="absolute inset-0 z-[1] grid place-items-center px-5">
-        <ChooseDeviceEmptyState onChooseDevice={props.onRecord} />
-      </div>
-    );
-  }
+  const guidance = () => {
+    if (isRecording()) {
+      return {
+        title: "Record one connection",
+        detail: `${count()} action${count() === 1 ? "" : "s"} captured. Stop when the destination screen is visible.`,
+      };
+    }
+    if (props.take) {
+      return {
+        title: "Review this connection",
+        detail: "Trim its actions, try it on the device, then approve it for the journey.",
+      };
+    }
+    if (!props.deviceOpen) {
+      return {
+        title: "Set the entry screen",
+        detail:
+          "Choose Device in the toolbar, navigate to where this journey begins, then record one connection.",
+      };
+    }
+    switch (props.recordState) {
+      case "choose-device":
+        return {
+          title: "Choose a device",
+          detail: "Select a connected phone or simulator in the device panel.",
+        };
+      case "setup-ios":
+      case "enable-developer-mode":
+      case "setup-check-failed":
+      case "capture-error":
+        return {
+          title: "Finish device setup",
+          detail:
+            "Follow the guidance in the device panel, then return here to record the first connection.",
+        };
+      case "checking-ios":
+      case "preparing-ios":
+      case "preparing-screen":
+        return {
+          title: "Preparing the device",
+          detail: `Keep ${props.selectedDeviceName ?? "the device"} unlocked. Relay will enable recording when its screen is ready.`,
+        };
+      case "device-unavailable":
+        return {
+          title: "Reconnect the device",
+          detail: "Relay will continue as soon as the selected device is available again.",
+        };
+      default:
+        return {
+          title: "Set the entry screen",
+          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this journey begins, then choose Record connection.`,
+        };
+    }
+  };
   return (
-    <div class="absolute inset-0 z-[1] grid place-items-center px-5 text-center">
-      <div class="flex flex-col items-center">
-        <span class="mb-3 grid size-9 place-items-center rounded-[11px] bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)]">
-          <Icon name="move" size={16} />
-        </span>
-        <h2 class="m-0 text-[18px] font-semibold tracking-[-0.025em] text-[var(--text-strong)]">
-          {isRecording()
-            ? "Recording this journey"
-            : props.take
-              ? "Review this recording"
-              : props.deviceOpen
-                ? "Record your first path"
-                : "Start this journey"}
-        </h2>
-        <p class="m-0 mt-1.5 max-w-[34ch] text-[12px]/[1.5] text-[var(--text-weak)]">
-          {isRecording()
-            ? `${count()} captured action${count() === 1 ? "" : "s"}. Use the device normally, then stop to review before anything is added here.`
-            : props.take
-              ? `${count()} action${count() === 1 ? "" : "s"} is ready to review. Keep it to turn the recording into your first screen.`
-              : props.deviceOpen
-                ? `${props.selectedDeviceName ?? "Your device"} is live on the right. Explore freely, then record when you are ready to capture actions here.`
-                : `Open ${props.selectedDeviceName ?? "your device"} to explore it, or start recording to capture the first path.`}
-        </p>
-        <Show when={!props.take}>
-          <div class="mt-4 flex items-center gap-2">
-            <button type="button" class={cn(primaryButton, "h-9 px-3")} onClick={props.onRecord}>
-              <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" />
-              Start recording
-            </button>
-            <Show when={!props.deviceOpen}>
-              <button
-                type="button"
-                class={cn(controlButton, "h-9 px-3")}
-                onClick={props.onOpenDevice}
+    <div
+      class="absolute inset-0 z-[1] grid place-items-center px-6 text-center"
+      style={{ right: props.deviceOpen ? "min(432px, 50vw)" : "0" }}
+    >
+      <div class="grid max-w-[560px] justify-items-center">
+        <div class="mb-6 flex items-center justify-center gap-3" aria-hidden="true">
+          <article class="grid h-[224px] w-[132px] grid-rows-[34px_1fr_28px] overflow-hidden rounded-[15px] border border-dashed border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_82%,transparent)] shadow-[0_14px_38px_rgb(0_0_0/18%)] max-[1050px]:h-[208px] max-[1050px]:w-[116px]">
+            <header class="flex items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-2.5 text-left text-[10px] font-semibold text-[var(--text-base)]">
+              <i class="size-1.5 rounded-full bg-[var(--text-interactive-base)]" /> Entry screen
+            </header>
+            <div class="grid min-h-0 place-items-center overflow-hidden bg-[#080a0f]">
+              <Show
+                when={props.liveScreenSrc}
+                fallback={
+                  <span class="grid size-10 place-items-center rounded-[12px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                    <Icon name="smartphone" size={18} />
+                  </span>
+                }
               >
-                <Icon name="smartphone" size={12} /> Open live device
-              </button>
-            </Show>
+                {(src) => (
+                  <img
+                    src={src()}
+                    alt=""
+                    class="size-full object-contain object-top opacity-90"
+                    draggable={false}
+                  />
+                )}
+              </Show>
+            </div>
+            <footer class="grid place-items-center text-[9px] font-medium text-[var(--text-weak)]">
+              {isRecording()
+                ? "Recording"
+                : props.liveScreenSrc
+                  ? "Current screen"
+                  : "Not saved yet"}
+            </footer>
+          </article>
+          <div class="flex w-12 items-center max-[1050px]:w-7">
+            <span class="h-px flex-1 border-t border-dashed border-[var(--text-interactive-base)]" />
+            <Icon
+              name="chevron-right"
+              size={13}
+              class="-ml-0.5 text-[var(--text-interactive-base)]"
+            />
           </div>
-        </Show>
-        <Show when={props.take && !isRecording()}>
-          <button
-            type="button"
-            class={cn(controlButton, "mt-4 px-2.5")}
-            onClick={props.onOpenDevice}
-          >
-            Review capture
-          </button>
-        </Show>
+          <article class="grid h-[224px] w-[132px] place-items-center rounded-[15px] border border-dashed border-[var(--v2-border-border-strong)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_46%,transparent)] text-[var(--text-weak)] opacity-70 max-[1050px]:h-[208px] max-[1050px]:w-[116px]">
+            <div class="grid justify-items-center gap-2">
+              <span class="grid size-9 place-items-center rounded-[11px] bg-[var(--v2-background-bg-layer-01)]">
+                <Icon name="camera" size={16} />
+              </span>
+              <span class="text-[10px] font-medium">Next screen</span>
+            </div>
+          </article>
+        </div>
+        <h2 class="m-0 text-[24px] font-semibold tracking-[-0.04em] text-[var(--text-strong)] text-balance">
+          {guidance().title}
+        </h2>
+        <p class="m-0 mt-2 max-w-[42ch] text-[12.5px]/[1.55] text-[var(--text-weak)] text-pretty">
+          {guidance().detail}
+        </p>
       </div>
     </div>
   );

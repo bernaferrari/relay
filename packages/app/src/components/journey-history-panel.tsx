@@ -29,11 +29,19 @@ export function JourneyHistoryPanel(props: {
       <div class="max-h-60 overflow-auto p-1.5">
         <Show
           when={!props.loading}
-          fallback={<p class="m-0 px-2 py-3 text-[10.5px] text-[var(--text-weak)]">Loading saved versions…</p>}
+          fallback={
+            <p class="m-0 px-2 py-3 text-[10.5px] text-[var(--text-weak)]">
+              Loading saved versions…
+            </p>
+          }
         >
           <Show
             when={props.entries.length}
-            fallback={<p class="m-0 px-2 py-3 text-[10.5px] text-[var(--text-weak)]">Your first meaningful edit will appear here.</p>}
+            fallback={
+              <p class="m-0 px-2 py-3 text-[10.5px] text-[var(--text-weak)]">
+                Your first meaningful edit will appear here.
+              </p>
+            }
           >
             <For each={props.entries}>
               {(entry) => (
@@ -43,13 +51,18 @@ export function JourneyHistoryPanel(props: {
                   onClick={() => props.onRestore(entry.updatedAt)}
                 >
                   <span class="min-w-0">
-                    <strong class="block truncate text-[10.5px] font-medium text-[var(--text-strong)]">{entry.title}</strong>
+                    <strong class="block truncate text-[10.5px] font-medium text-[var(--text-strong)]">
+                      {entry.title}
+                    </strong>
                     <span class="text-[9.5px] text-[var(--text-weak)]">
                       {entry.steps.length} {entry.steps.length === 1 ? "action" : "actions"}
                     </span>
                   </span>
                   <span class="shrink-0 text-[9.5px] text-[var(--text-weak)]">
-                    {new Date(entry.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                    {new Date(entry.updatedAt).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
                   </span>
                 </button>
               )}

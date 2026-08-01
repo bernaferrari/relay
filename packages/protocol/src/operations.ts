@@ -2,6 +2,19 @@
 // In particular, do not import from `index.ts`: it re-exports this module and
 // doing so creates a public-barrel cycle. These transport DTOs intentionally
 // describe only the stable wire fields needed by every host.
+import {
+  assertAuthoringSessionRef,
+  parseAuthoringSessionListResponse,
+  parseAuthoringSessionResponse,
+  type AuthoringInteraction,
+  type AuthoringSessionListResponse,
+  type AuthoringSessionResponse,
+  type CommitAuthoringSessionInput,
+  type CreateAuthoringSessionInput,
+  type ReorderAuthoringTakeInput,
+  type ReplaceAuthoringActionInput,
+  type TrimAuthoringTakeInput,
+} from "./authoring.js";
 type RedactionPolicyDto = {
   enabled: boolean;
   source: "default" | "workspace" | "environment";
@@ -268,6 +281,66 @@ type SpecificOperationMap = {
   "journey.document.update": {
     input: { journeyId: string } & RevisionWriteDto<unknown>;
     output: RevisionedDto<unknown>;
+  };
+  "authoring.session.list": {
+    input: Record<string, never>;
+    output: AuthoringSessionListResponse;
+  };
+  "authoring.session.get": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.create": {
+    input: CreateAuthoringSessionInput;
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.observe": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.start": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.interact": {
+    input: { sessionId: string; interaction: AuthoringInteraction };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.stop": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.take.trim": {
+    input: TrimAuthoringTakeInput;
+    output: AuthoringSessionResponse;
+  };
+  "authoring.take.reorder": {
+    input: ReorderAuthoringTakeInput;
+    output: AuthoringSessionResponse;
+  };
+  "authoring.take.replace": {
+    input: ReplaceAuthoringActionInput;
+    output: AuthoringSessionResponse;
+  };
+  "authoring.take.replay": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.commit": {
+    input: CommitAuthoringSessionInput;
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.discard": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.cancel": {
+    input: { sessionId: string };
+    output: AuthoringSessionResponse;
+  };
+  "authoring.session.cleanup": {
+    input: { sessionId: string };
+    output: { ok: true };
   };
   "generation.create": { input: GenerationRequestDto; output: GenerationResultDto };
   "project.list": { input: Record<string, never>; output: { projects: ProjectDto[] } };
@@ -595,6 +668,164 @@ const revisionWriteInputParser = objectParser<OperationRecord>("revisioned write
   }
 });
 
+const authoringSessionRefParser = objectParser<OperationRecord>(
+  "authoring session input",
+  assertAuthoringSessionRef,
+);
+
+const createAuthoringSessionParser = objectParser<CreateAuthoringSessionInput>(
+  "create authoring session input",
+  (input) => {
+    string(input.journeyId, "journeyId");
+    string(input.leaseId, "leaseId");
+    const target = record(input.target, "authoring target");
+    string(target.targetId, "authoring target targetId");
+    if (target.kind !== "device" && target.kind !== "browser") {
+      fail("authoring target kind", "must be device or browser");
+    }
+    if (!(["android", "ios", "browser"] as unknown[]).includes(target.platform)) {
+      fail("authoring target platform", "must be android, ios, or browser");
+    }
+    if (
+      (target.kind === "browser" && target.platform !== "browser") ||
+      (target.kind === "device" && target.platform === "browser")
+    ) {
+      fail("authoring target", "kind and platform do not describe the same target");
+    }
+    if (number(input.expectedJourneyRevision, "expectedJourneyRevision") < 0) {
+      fail("expectedJourneyRevision", "must be non-negative");
+    }
+    if (number(input.expectedRecipeRevision, "expectedRecipeRevision") < 0) {
+      fail("expectedRecipeRevision", "must be non-negative");
+    }
+  },
+);
+
+function assertAuthoringInteraction(value: unknown): void {
+  const interaction = record(value, "authoring interaction");
+  const kind = string(interaction.kind, "authoring interaction kind");
+  if (interaction.applied !== undefined)
+    boolean(interaction.applied, "authoring interaction applied");
+  switch (kind) {
+    case "tap":
+      record(interaction.target, "tap target");
+      return;
+    case "type":
+      string(interaction.text, "type text");
+      if (interaction.target !== undefined) record(interaction.target, "type target");
+      return;
+    case "swipe":
+      record(interaction.from, "swipe from");
+      record(interaction.to, "swipe to");
+      if (
+        interaction.durationMs !== undefined &&
+        number(interaction.durationMs, "swipe duration") < 0
+      )
+        fail("swipe duration", "must be non-negative");
+      return;
+    case "key":
+      if (interaction.key !== "back" && interaction.key !== "home")
+        fail("authoring key", "must be back or home");
+      return;
+    case "wait":
+      if (number(interaction.ms, "wait ms") < 0) fail("wait ms", "must be non-negative");
+      return;
+    case "observe":
+    case "screenshot":
+      if (interaction.label !== undefined) string(interaction.label, "observe label");
+      return;
+    case "reusable":
+      string(interaction.recipeId, "reusable recipeId");
+      if (interaction.bindings !== undefined) record(interaction.bindings, "reusable bindings");
+      return;
+    case "steps":
+      if (!Array.isArray(interaction.steps)) fail("manual steps", "must be an array");
+      for (const step of interaction.steps) record(step, "manual step");
+      if (interaction.label !== undefined) string(interaction.label, "manual step label");
+      return;
+    default:
+      fail("authoring interaction kind", `unsupported kind ${kind}`);
+  }
+}
+
+const authoringInteractionParser = objectParser<{
+  sessionId: string;
+  interaction: AuthoringInteraction;
+}>("authoring interaction input", (input) => {
+  assertAuthoringSessionRef(input);
+  assertAuthoringInteraction(input.interaction);
+});
+
+const trimAuthoringTakeParser = objectParser<TrimAuthoringTakeInput>(
+  "trim authoring Take input",
+  (input) => {
+    assertAuthoringSessionRef(input);
+    const fromMs = input.fromMs === undefined ? undefined : number(input.fromMs, "trim fromMs");
+    const toMs = input.toMs === undefined ? undefined : number(input.toMs, "trim toMs");
+    if (fromMs !== undefined && fromMs < 0) fail("trim fromMs", "must be non-negative");
+    if (toMs !== undefined && toMs < 0) fail("trim toMs", "must be non-negative");
+    if (fromMs !== undefined && toMs !== undefined && fromMs > toMs)
+      fail("trim range", "fromMs must not exceed toMs");
+    if (
+      input.actionIds !== undefined &&
+      (!Array.isArray(input.actionIds) ||
+        input.actionIds.some((id) => typeof id !== "string" || !id))
+    )
+      fail("trim actionIds", "must be non-empty strings");
+  },
+);
+
+const reorderAuthoringTakeParser = objectParser<ReorderAuthoringTakeInput>(
+  "reorder authoring Take input",
+  (input) => {
+    assertAuthoringSessionRef(input);
+    if (
+      !Array.isArray(input.actionIds) ||
+      input.actionIds.some((id) => typeof id !== "string" || !id)
+    )
+      fail("reorder actionIds", "must be non-empty strings");
+  },
+);
+
+const replaceAuthoringActionParser = objectParser<ReplaceAuthoringActionInput>(
+  "replace authoring action input",
+  (input) => {
+    assertAuthoringSessionRef(input);
+    string(input.actionId, "actionId");
+    assertAuthoringInteraction(input.interaction);
+  },
+);
+
+const commitAuthoringSessionParser = objectParser<CommitAuthoringSessionInput>(
+  "commit authoring session input",
+  (input) => {
+    assertAuthoringSessionRef(input);
+    if (
+      input.mode !== undefined &&
+      !["interaction", "automatic", "reusable"].includes(String(input.mode))
+    )
+      fail("authoring mode", "must be interaction, automatic, or reusable");
+    if (input.destination !== undefined) {
+      const destination = record(input.destination, "authoring destination");
+      if (!["new-screen", "screen", "end"].includes(String(destination.kind)))
+        fail("authoring destination kind", "must be new-screen, screen, or end");
+      if (destination.kind === "screen") string(destination.screenId, "destination screenId");
+      if (destination.kind === "new-screen" && destination.title !== undefined)
+        string(destination.title, "destination title");
+    }
+  },
+);
+
+const authoringSessionResponseParser: RuntimeParser<AuthoringSessionResponse> = {
+  description: "authoring session response",
+  parse: parseAuthoringSessionResponse,
+};
+
+const authoringSessionListParser: RuntimeParser<AuthoringSessionListResponse> = {
+  description: "authoring session list response",
+  parse: parseAuthoringSessionListResponse,
+};
+
 const generic = operationRecordParser;
 
 type DefinitionOptions = Omit<OperationDefinition<OperationId>, "version" | "input" | "output"> & {
@@ -867,6 +1098,163 @@ export const operationDefinitions = [
       category: "authoring",
       output: revisionedJourneyParser,
     },
+  ),
+  query("authoring.session.list", "List Authoring Sessions", "/authoring-sessions", {
+    category: "authoring",
+    input: emptyInputParser,
+    output: authoringSessionListParser,
+  }),
+  query("authoring.session.get", "Get Authoring Session", "/authoring-sessions/:sessionId", {
+    category: "authoring",
+    input: authoringSessionRefParser,
+    output: authoringSessionResponseParser,
+  }),
+  command("authoring.session.create", "Create Authoring Session", "POST", "/authoring-sessions", {
+    category: "authoring",
+    input: createAuthoringSessionParser,
+    output: authoringSessionResponseParser,
+    targetCapabilities: ["snapshot", "screenshot"],
+    lease: "exclusive",
+  }),
+  command(
+    "authoring.session.observe",
+    "Observe Authoring Target",
+    "POST",
+    "/authoring-sessions/:sessionId/observe",
+    {
+      category: "authoring",
+      input: authoringSessionRefParser,
+      output: authoringSessionResponseParser,
+      targetCapabilities: ["snapshot", "screenshot"],
+      lease: "exclusive",
+    },
+  ),
+  command(
+    "authoring.session.start",
+    "Start Authoring Take",
+    "POST",
+    "/authoring-sessions/:sessionId/start",
+    {
+      category: "authoring",
+      input: authoringSessionRefParser,
+      output: authoringSessionResponseParser,
+      targetCapabilities: ["snapshot", "screenshot"],
+      lease: "exclusive",
+    },
+  ),
+  command(
+    "authoring.session.interact",
+    "Interact During Authoring",
+    "POST",
+    "/authoring-sessions/:sessionId/interact",
+    {
+      category: "authoring",
+      input: authoringInteractionParser,
+      output: authoringSessionResponseParser,
+      targetCapabilities: ["tap", "type", "scroll"],
+      lease: "exclusive",
+    },
+  ),
+  command(
+    "authoring.session.stop",
+    "Stop Authoring Take",
+    "POST",
+    "/authoring-sessions/:sessionId/stop",
+    {
+      category: "authoring",
+      input: authoringSessionRefParser,
+      output: authoringSessionResponseParser,
+      targetCapabilities: ["snapshot", "screenshot"],
+      lease: "exclusive",
+    },
+  ),
+  command(
+    "authoring.take.trim",
+    "Trim Authoring Take",
+    "POST",
+    "/authoring-sessions/:sessionId/trim",
+    {
+      category: "authoring",
+      input: trimAuthoringTakeParser,
+      output: authoringSessionResponseParser,
+    },
+  ),
+  command(
+    "authoring.take.reorder",
+    "Reorder Authoring Take",
+    "POST",
+    "/authoring-sessions/:sessionId/reorder",
+    {
+      category: "authoring",
+      input: reorderAuthoringTakeParser,
+      output: authoringSessionResponseParser,
+    },
+  ),
+  command(
+    "authoring.take.replace",
+    "Replace Authoring Action",
+    "POST",
+    "/authoring-sessions/:sessionId/actions/:actionId",
+    {
+      category: "authoring",
+      input: replaceAuthoringActionParser,
+      output: authoringSessionResponseParser,
+    },
+  ),
+  command(
+    "authoring.take.replay",
+    "Replay Authoring Take",
+    "POST",
+    "/authoring-sessions/:sessionId/replay",
+    {
+      category: "authoring",
+      input: authoringSessionRefParser,
+      output: authoringSessionResponseParser,
+      targetCapabilities: ["tap", "type", "scroll", "snapshot", "screenshot"],
+      lease: "exclusive",
+      progress: true,
+      cancellable: true,
+    },
+  ),
+  command(
+    "authoring.session.commit",
+    "Commit Authoring Take",
+    "POST",
+    "/authoring-sessions/:sessionId/commit",
+    {
+      category: "authoring",
+      input: commitAuthoringSessionParser,
+      output: authoringSessionResponseParser,
+    },
+  ),
+  command(
+    "authoring.session.discard",
+    "Discard Authoring Take",
+    "POST",
+    "/authoring-sessions/:sessionId/discard",
+    {
+      category: "authoring",
+      input: authoringSessionRefParser,
+      output: authoringSessionResponseParser,
+    },
+  ),
+  command(
+    "authoring.session.cancel",
+    "Cancel Authoring Session",
+    "POST",
+    "/authoring-sessions/:sessionId/cancel",
+    {
+      category: "authoring",
+      input: authoringSessionRefParser,
+      output: authoringSessionResponseParser,
+    },
+  ),
+  command(
+    "authoring.session.cleanup",
+    "Remove Authoring Session",
+    "DELETE",
+    "/authoring-sessions/:sessionId",
+    { category: "authoring", input: authoringSessionRefParser, output: okParser },
   ),
   query("collection.list", "List Collections", "/collections", {
     category: "authoring",

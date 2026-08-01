@@ -82,10 +82,14 @@ export function createServerCapture(deps: CaptureServerDeps) {
   async function recordIosVideo(action: "start" | "stop"): Promise<DeviceVideoTake | null> {
     const serial = serialFor(deps);
     if (!serial) return null;
-    const result = await deps.request<{ take: DeviceVideoTake | null }>("/device/video", {
-      method: "POST",
-      body: JSON.stringify({ serial, action }),
-    }, 250_000);
+    const result = await deps.request<{ take: DeviceVideoTake | null }>(
+      "/device/video",
+      {
+        method: "POST",
+        body: JSON.stringify({ serial, action }),
+      },
+      250_000,
+    );
     return result.take;
   }
 

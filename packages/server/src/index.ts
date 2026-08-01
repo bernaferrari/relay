@@ -4,6 +4,7 @@
  */
 import http from "node:http";
 import { URL } from "node:url";
+import { readFile } from "node:fs/promises";
 import {
   allowedBrowserOrigin,
   isLocalWorkspacePath,
@@ -122,6 +123,10 @@ import {
   readDeviceSetup,
   runWithTargetContext,
   saveAppleDeviceSetup,
+  authoringSessions,
+  runWithOperationContext,
+  readAuthoringEvidence,
+  listJourneyAggregates,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
@@ -146,12 +151,18 @@ import {
   type AndroidKeyboardInput,
   type AndroidTouchAction,
 } from "./live-video.js";
-import { readIosVideoTake, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
+import {
+  readIosVideoTake,
+  reconcileIosVideoTake,
+  startIosVideoTake,
+  stopIosVideoTake,
+} from "./ios-video-capture.js";
 import {
   bindOperationRequest,
   OperationContractError,
   serverOperationManifest,
 } from "./operations.js";
+import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
 import { createReadStream } from "node:fs";
 import type {
   Build,
@@ -277,6 +288,18 @@ async function handleRequest(
       throw new HttpError(403, "This workspace asset is available only from the local Relay host");
     }
     bindOperationRequest(req, res, method, pathname, url, scope);
+    if (
+      await handleAuthoringActionReplace({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+      })
+    )
+      return;
+    if (await handleAuthoringRoute({ method, pathname, request: req, response: res, scope }))
+      return;
     if (method === "GET" && pathname === "/settings/privacy") {
       json(res, 200, { policy: getRedactionPolicy() });
       return;
@@ -1202,6 +1225,45 @@ async function handleRequest(
       return;
     }
 
+    const authoringEvidenceMatch = matchPath(pathname, "/authoring-evidence/:sha256");
+    if (method === "GET" && authoringEvidenceMatch) {
+      const sha256 = authoringEvidenceMatch.sha256!;
+      const uri = `relay-evidence://${sha256}`;
+      const [sessions, aggregates] = await Promise.all([
+        authoringSessions.list(scope.projectId),
+        listJourneyAggregates(scope.projectId),
+      ]);
+      const permitted =
+        sessions.some((session) =>
+          session.take?.revisions.some((revision) =>
+            revision.evidence.some((evidence) => evidence.uri === uri),
+          ),
+        ) ||
+        sessions.some((session) =>
+          session.take?.replayAttempts.some((attempt) =>
+            attempt.evidence.some((evidence) => evidence.uri === uri),
+          ),
+        ) ||
+        aggregates.some((aggregate) => aggregate.evidence.some((evidence) => evidence.uri === uri));
+      if (!permitted) throw new HttpError(404, "Authoring evidence not found");
+      const artifact = await readAuthoringEvidence(sha256);
+      if (!artifact) throw new HttpError(404, "Authoring evidence not found");
+      const requestedMime = url.searchParams.get("mime") ?? "";
+      const contentType = requestedMime.startsWith("video/")
+        ? requestedMime
+        : requestedMime === "application/json"
+          ? requestedMime
+          : "image/png";
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        "Content-Length": artifact.byteLength,
+        "Cache-Control": "private, max-age=31536000, immutable",
+        ...CORS_HEADERS,
+      });
+      res.end(artifact);
+      return;
+    }
+
     const recipeHistoryMatch = matchPath(pathname, "/journeys/:id/history");
     if (method === "GET" && recipeHistoryMatch) {
       json(res, 200, { versions: await listRecipeHistory(recipeHistoryMatch.id!) });
@@ -1761,6 +1823,7 @@ async function handleRequest(
           { method: "GET", path: "/device/stream", mediaType: "multipart/x-mixed-replace" },
           { method: "GET", path: "/runs/:id/frames/:file", mediaType: "image/*" },
           { method: "GET", path: "/runs/:id/video/:file", mediaType: "video/*" },
+          { method: "GET", path: "/authoring-evidence/:sha256", mediaType: "image/*|video/*" },
         ],
       });
       return;
@@ -1808,6 +1871,37 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN;
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
+  for (const recoveryScope of await authoringSessions.recoveryScopes()) {
+    const recoveryRequestId = crypto.randomUUID();
+    await runWithOperationContext(
+      {
+        schemaVersion: 1,
+        actorId: "system:authoring-recovery",
+        actorKind: "system",
+        organizationId: recoveryScope.organizationId,
+        projectId: recoveryScope.projectId,
+        operationId: "authoring.session.recover",
+        requestId: recoveryRequestId,
+        idempotencyKey: recoveryRequestId,
+        issuedAt: now(),
+      },
+      () =>
+        authoringSessions.recover({
+          async releaseLease(session) {
+            await releaseDeviceLease(session.leaseId, {
+              projectId: session.projectId,
+              ownerId: session.actorId,
+            });
+          },
+          async reconcileRecording(session) {
+            if (session.target.kind !== "device" || session.target.platform !== "ios") return;
+            const take = await reconcileIosVideoTake(session.target.targetId);
+            if (!take) return;
+            return { data: await readFile(take.path), mime: "video/mp4" };
+          },
+        }),
+    );
+  }
   assertSafeBinding(host, token);
   if (!isLoopbackHost(host) && !redaction.enabled) {
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");

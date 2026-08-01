@@ -18,7 +18,9 @@ test("maps disabled Developer Mode to the Relay iOS setup action", () => {
 
 test("explains automatic and manual signing conflicts directly", () => {
   const error = normalizeIosRunnerError(
-    new Error("AgentDeviceRunner is automatically signed, but code signing identity has been manually specified"),
+    new Error(
+      "AgentDeviceRunner is automatically signed, but code signing identity has been manually specified",
+    ),
   );
   assert.ok(error instanceof IosRunnerSetupError);
   assert.match(error.message, /manual signing override/);

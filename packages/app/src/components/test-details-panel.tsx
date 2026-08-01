@@ -9,7 +9,11 @@ import { Icon } from "./icon";
 
 type DetailsTab = "properties" | "source";
 
-export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables: () => void }) {
+export function TestSettingsPanel(props: {
+  onClose: () => void;
+  onOpenVariables: () => void;
+  presentation?: "drawer" | "floating";
+}) {
   const server = useServer();
   const draft = useRecipeDraft();
   const [tab, setTab] = createSignal<DetailsTab>("properties");
@@ -50,7 +54,9 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
     try {
       const preview = await server.previewRecipeYaml(source);
       if (preview.recipe.id !== recipe.id) {
-        throw new Error("The test id cannot change here. Duplicate the test to create a new id.");
+        throw new Error(
+          "The journey id cannot change here. Duplicate the journey to create a new id.",
+        );
       }
       const saved = await server.importRecipeYaml(source, "replace");
       if (!saved) throw new Error("Relay could not save this YAML.");
@@ -69,9 +75,17 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
   };
 
   return (
-    <aside class={cn(shellSteps, shellAsideDrawer)} aria-label="Test details">
+    <aside
+      class={cn(
+        shellSteps,
+        props.presentation === "floating"
+          ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-[16px] border border-[var(--v2-border-border-strong)] shadow-[0_24px_72px_rgb(0_0_0/40%)]"
+          : shellAsideDrawer,
+      )}
+      aria-label="Journey details"
+    >
       <header class="flex h-12 shrink-0 items-end justify-between border-b border-[var(--v2-border-border-muted)] px-3">
-        <div class="flex h-full items-end" role="tablist" aria-label="Test detail panels">
+        <div class="flex h-full items-end" role="tablist" aria-label="Journey detail panels">
           <For each={["properties", "source"] as const}>
             {(item) => (
               <button
@@ -90,7 +104,7 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
           <button
             type="button"
             class={productIconButton}
-            aria-label="Close test details"
+            aria-label="Close journey details"
             onClick={props.onClose}
           >
             <Icon name="x" size={14} />
@@ -107,7 +121,7 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
                 <textarea
                   class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
                   value={draft.description()}
-                  placeholder="What this test verifies"
+                  placeholder="What this journey verifies"
                   onInput={(event) => draft.setDescription(event.currentTarget.value)}
                 />
               </label>
@@ -152,7 +166,7 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
                 <Show when={!yamlEditing()}>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => void navigator.clipboard?.writeText(yamlSource() ?? "")}
                   >
@@ -160,7 +174,7 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
                   </button>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
                     disabled={!yamlSource()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -174,7 +188,7 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
                 <Show when={yamlEditing()}>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center rounded-md px-2 text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
+                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] text-[var(--text-base)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)]"
                     disabled={yamlSaving()}
                     onClick={() => {
                       setYamlDraft(yamlSource() ?? "");
@@ -186,7 +200,7 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
                   </button>
                   <button
                     type="button"
-                    class="inline-flex h-7 items-center rounded-md px-2 text-[11px] font-semibold text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
+                    class="relative inline-flex h-8 items-center rounded-md px-2 text-[11px] font-semibold text-[var(--text-strong)] before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-[var(--v2-background-bg-layer-02)] disabled:opacity-40"
                     disabled={yamlSaving()}
                     onClick={() => void saveYaml()}
                   >
@@ -213,7 +227,7 @@ export function TestSettingsPanel(props: { onClose: () => void; onOpenVariables:
               >
                 <textarea
                   class="min-h-0 flex-1 resize-none border-0 bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-strong)] outline-none"
-                  aria-label="Test YAML"
+                  aria-label="Journey YAML"
                   spellcheck={false}
                   value={yamlDraft()}
                   onInput={(event) => {

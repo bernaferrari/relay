@@ -29,6 +29,7 @@ import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
 import { getBrowserDevice } from "./browser-target.js";
 import { readTarget } from "./targets.js";
+import { observeScreenIdentity } from "./screen-identity.js";
 import {
   listAdbDevices,
   type AndroidConnectionState,
@@ -494,6 +495,7 @@ export type SnapshotPayload = {
   /** Capture implementation, useful for diagnostics without leaking host details to UI logic. */
   source: "sdk" | "android-system";
   inspectionState?: AndroidInspectionState;
+  screenIdentity: import("@relay/protocol").ScreenIdentity;
 };
 
 function inferBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
@@ -576,7 +578,16 @@ export async function captureSnapshot(opts?: {
     const bounds = inferBounds(nodes);
     const serial = targetIdentity();
     publish({ type: "snapshot.captured", at: now(), serial, nodeCount: nodes.length });
-    return { serial, capturedAt: now(), nodes, interactive, bounds, ...capture };
+    const observedIdentity = observeScreenIdentity(nodes);
+    return {
+      serial,
+      capturedAt: now(),
+      nodes,
+      interactive,
+      bounds,
+      screenIdentity: { schemaVersion: 1, fingerprint: observedIdentity.fingerprint },
+      ...capture,
+    };
   });
 }
 

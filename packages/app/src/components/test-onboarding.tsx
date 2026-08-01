@@ -1,112 +1,63 @@
 import { Show } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
-import { shellStageWrap } from "../lib/shell-layout";
-import { presentTarget, targetIsReady } from "../lib/target-presentation";
 import { productPrimary, productSecondary } from "../lib/ui";
-import { DeviceStage } from "./stage";
 import { Icon } from "./icon";
 
 /**
- * The launch surface is a live session, not a silently-restored journey.
- * Device control is always available; recording only begins after the user
- * explicitly creates a journey.
+ * The launch surface offers only the two useful choices: create work or find
+ * existing work. Device control belongs inside a journey, where it has context.
  */
-export function TestWelcome(props: {
-  onChooseDevice: () => void;
-  onStartJourney: () => void;
-  onOpenTargets: () => void;
-}) {
+export function TestWelcome(props: { onStartJourney: () => void; onBrowse: () => void }) {
   const server = useServer();
-  const target = () =>
-    server.devices().find((device) => device.serial === server.selectedDevice()) ?? null;
-  const ready = () => targetIsReady(target() ?? undefined, server.health() === "online");
-  const targetName = () => (target() ? presentTarget(target()!).displayName : "your device");
   const journeyCount = () => server.recipes().filter((recipe) => recipe.source === "custom").length;
 
   return (
     <section
-      class="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(300px,0.72fr)_minmax(420px,1fr)] bg-[var(--v2-background-bg-deep)] max-[980px]:grid-cols-1"
+      class="relative isolate flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden bg-[var(--v2-background-bg-deep)] px-6 py-10"
       aria-labelledby="session-home-title"
     >
-      <div class="flex min-h-0 min-w-0 items-center border-r border-[var(--v2-border-border-muted)] px-[clamp(28px,5vw,72px)] py-10 max-[980px]:border-r-0 max-[980px]:border-b">
-        <div class="grid w-full max-w-[460px] gap-5">
-          <div>
-            <span class="text-[10px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
-              Live session
-            </span>
-            <h2
-              id="session-home-title"
-              class="m-0 mt-2 text-[clamp(22px,2.4vw,32px)] leading-[1.04] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance"
-            >
-              <Show when={ready()} fallback={<>Choose a device to begin</>}>
-                Explore {targetName()}
-              </Show>
-            </h2>
-            <p class="m-0 mt-2.5 max-w-[44ch] text-[13px]/[1.6] text-[var(--text-weak)] text-pretty">
-              <Show
-                when={ready()}
-                fallback={
-                  <>
-                    Connect a phone, emulator, or browser target. Relay keeps the live session
-                    separate from journeys until you choose to record.
-                  </>
-                }
-              >
-                Tap, swipe, and type freely. Recording is off until you explicitly start a new
-                journey.
-              </Show>
-            </p>
-          </div>
+      <div
+        class="pointer-events-none absolute inset-0 opacity-40"
+        style={{
+          "background-image":
+            "radial-gradient(circle at 1px 1px,color-mix(in srgb,var(--text-strong) 8%,transparent) 1px,transparent 0)",
+          "background-size": "22px 22px",
+        }}
+      />
 
-          <div class="flex flex-wrap items-center gap-2">
+      <div class="relative z-10 grid max-w-[560px] justify-items-center text-center">
+        <span class="grid size-11 place-items-center rounded-[14px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent),0_10px_28px_rgb(0_0_0/18%)]">
+          <Icon name="move" size={19} />
+        </span>
+        <h2
+          id="session-home-title"
+          class="m-0 mt-5 max-w-[18ch] text-[clamp(28px,4vw,46px)] leading-[1.02] font-semibold tracking-[-0.048em] text-[var(--text-strong)] text-balance"
+        >
+          Map what should happen on your device
+        </h2>
+        <p class="m-0 mt-3 max-w-[48ch] text-[13px]/[1.6] text-[var(--text-weak)] text-pretty">
+          Add screens, connect them, then try each connection on a real device. Start anywhere and
+          change anything later.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            class={cn(productPrimary, "min-h-11 gap-2 px-4 text-[12.5px]")}
+            onClick={props.onStartJourney}
+          >
+            <Icon name="plus" size={14} /> New journey
+          </button>
+          <Show when={journeyCount() > 0}>
             <button
               type="button"
-              class={cn(productPrimary, "min-h-10 gap-2 px-3.5 text-[12px]")}
-              onClick={() => (ready() ? props.onStartJourney() : props.onChooseDevice())}
+              class={cn(productSecondary, "min-h-11 gap-2 px-4 text-[12.5px]")}
+              onClick={props.onBrowse}
             >
-              <Icon name={ready() ? "circle" : "smartphone"} size={13} />
-              {ready() ? "Record new journey" : "Choose a device"}
+              Browse journeys
             </button>
-            <button
-              type="button"
-              class={cn(productSecondary, "min-h-10 px-3 text-[12px]")}
-              onClick={props.onOpenTargets}
-            >
-              Manage targets
-            </button>
-          </div>
-
-          <div class="flex items-center gap-2 border-t border-[var(--v2-border-border-muted)] pt-4 text-[11px] text-[var(--text-weak)]">
-            <i
-              class={cn(
-                "size-1.5 shrink-0 rounded-full",
-                ready() ? "bg-[var(--icon-success-base)]" : "bg-[var(--v2-border-border-strong)]",
-              )}
-              aria-hidden="true"
-            />
-            <span>
-              {ready()
-                ? `Live control · recording off · ${journeyCount()} ${
-                    journeyCount() === 1 ? "journey" : "journeys"
-                  }`
-                : "No live target selected"}
-            </span>
-          </div>
+          </Show>
         </div>
-      </div>
-
-      <div class={cn(shellStageWrap, "min-h-[420px] min-w-0")}>
-        <div class="pointer-events-none absolute top-4 left-4 z-10 flex items-center gap-2 rounded-full border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_88%,transparent)] px-2.5 py-1.5 text-[10.5px] text-[var(--text-base)] shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
-          <i
-            class={cn(
-              "size-1.5 rounded-full",
-              ready() ? "bg-[var(--icon-success-base)]" : "bg-[var(--text-weak)]",
-            )}
-          />
-          {ready() ? targetName() : "Live device"}
-        </div>
-        <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
       </div>
     </section>
   );

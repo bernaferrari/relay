@@ -3,10 +3,10 @@ import { useRecorder } from "../context/recorder";
 import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo, fmtDur, titleize } from "../lib/job";
+import { persistedAsJob } from "../lib/persisted-run";
 import { shellNav, shellNavClosed } from "../lib/shell-layout";
 import { mono } from "../lib/ui";
 import { RelayMark } from "./relay-mark";
-import { persistedAsJob } from "./runs-workspace";
 import { Icon, type IconName } from "./icon";
 
 export type NavigatorArea = "tests" | "suites" | "runs";
@@ -14,7 +14,7 @@ type RunFilter = "all" | "attention" | "active";
 
 const AREA_TABS: { id: NavigatorArea; label: string }[] = [
   { id: "tests", label: "Journeys" },
-  { id: "suites", label: "Flows" },
+  { id: "suites", label: "Collections" },
   { id: "runs", label: "Runs" },
 ];
 
@@ -43,7 +43,7 @@ const groupLabel = cn(
  * One navigator for every area.
  *
  * The rail, the journey library, and the step outline used to be separate
- * columns showing the same row grammar at three zoom levels — and Flows and
+ * columns showing the same row grammar at three zoom levels — and Collections and
  * Runs then opened a *fourth* list inside the main pane. Everything nameable
  * lives here instead: areas at the top and journeys below. A journey's actual
  * screen/action structure belongs to the center canvas, its only source of
@@ -68,8 +68,19 @@ export function JourneyNavigator(props: {
   let searchInput: HTMLInputElement | undefined;
   const recorder = useRecorder();
   const [draftsOpen, setDraftsOpen] = createSignal(false);
+  const [allDraftsVisible, setAllDraftsVisible] = createSignal(false);
   const journeys = () => props.items.filter((recipe) => recipe.steps.length > 0);
   const drafts = () => props.items.filter((recipe) => recipe.steps.length === 0);
+  const visibleDrafts = createMemo(() => {
+    const items = drafts();
+    if (allDraftsVisible() || props.query.trim()) return items;
+    const recent = items.slice(0, 6);
+    const selected = items.find((recipe) => recipe.id === props.selectedId);
+    return selected && !recent.some((recipe) => recipe.id === selected.id)
+      ? [selected, ...recent.slice(0, 5)]
+      : recent;
+  });
+  const hiddenDraftCount = () => Math.max(0, drafts().length - visibleDrafts().length);
 
   createEffect(() => {
     if (drafts().some((recipe) => recipe.id === props.selectedId)) setDraftsOpen(true);
@@ -186,7 +197,7 @@ export function JourneyNavigator(props: {
                 <Icon name={draftsOpen() ? "chevron-up" : "chevron-down"} size={13} />
               </button>
               <Show when={draftsOpen()}>
-                <For each={drafts()}>
+                <For each={visibleDrafts()}>
                   {(recipe) => (
                     <JourneyBranch
                       recipe={recipe}
@@ -196,6 +207,24 @@ export function JourneyNavigator(props: {
                     />
                   )}
                 </For>
+                <Show when={hiddenDraftCount() > 0}>
+                  <button
+                    type="button"
+                    class="flex min-h-9 w-full items-center justify-center rounded-lg text-[11px] font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                    onClick={() => setAllDraftsVisible(true)}
+                  >
+                    Show {hiddenDraftCount()} more
+                  </button>
+                </Show>
+                <Show when={allDraftsVisible() && drafts().length > 6 && !props.query.trim()}>
+                  <button
+                    type="button"
+                    class="flex min-h-9 w-full items-center justify-center rounded-lg text-[11px] font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
+                    onClick={() => setAllDraftsVisible(false)}
+                  >
+                    Show fewer
+                  </button>
+                </Show>
               </Show>
             </section>
           </Show>
@@ -218,9 +247,8 @@ export function JourneyNavigator(props: {
 
       <footer class="shrink-0 border-t border-border-weak-base p-1.5">
         <Show when={props.area === "tests" && !recorder.recording() && !recorder.take()}>
-          {/* Recording creates a new journey immediately. It lives beside the
-              persistent footer actions instead of masquerading as a library
-              row, so its affordance remains clear however long the list gets. */}
+          {/* Creating a board is instant; recording is a contextual action on
+              the board once a device is involved. */}
           <button
             type="button"
             class={cn(
@@ -233,13 +261,8 @@ export function JourneyNavigator(props: {
             )}
             onClick={props.onCreate}
           >
-            <span
-              class="grid size-[18px] place-items-center rounded-full bg-[color-mix(in_srgb,var(--icon-critical-base)_15%,transparent)]"
-              aria-hidden="true"
-            >
-              <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)]" />
-            </span>
-            <span class="text-[12px] font-semibold">Record journey</span>
+            <Icon name="plus" size={14} />
+            <span class="text-[12px] font-semibold">New journey</span>
             <Icon
               name="arrow-right"
               size={13}
@@ -284,17 +307,24 @@ function JourneyBranch(props: {
         onClick={() => props.onSelect(props.recipe.id)}
       >
         <span
-          class={cn("justify-self-center text-text-weaker", props.selected && "text-text-interactive-base")}
+          class={cn(
+            "justify-self-center text-text-weaker",
+            props.selected && "text-text-interactive-base",
+          )}
           aria-hidden="true"
         >
           <Icon name={recipeIcon(props.recipe)} size={13} />
         </span>
-        <span class={cn("truncate text-[12.5px]/[1.3] font-[550]", !props.selected && "text-text-weak")}>
+        <span
+          class={cn("truncate text-[12.5px]/[1.3] font-[550]", !props.selected && "text-text-weak")}
+        >
           {displayTitle(props.recipe.title)}
         </span>
-        <small class={cn("shrink-0 text-[10px] text-text-weaker", mono)}>
-          {props.recipe.steps.length || "—"}
-        </small>
+        <Show when={props.recipe.steps.length > 0}>
+          <small class={cn("shrink-0 text-[10px] text-text-weaker", mono)}>
+            {props.recipe.steps.length}
+          </small>
+        </Show>
       </button>
       <Show when={props.selected}>
         <button
@@ -311,20 +341,20 @@ function JourneyBranch(props: {
   );
 }
 
-/** Saved flows — the list the Flows workspace used to render for itself. */
+/** Saved collections — ordered groups of journeys. */
 function FlowList(props: { onCreate: () => void }) {
   const server = useServer();
   return (
     <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
       <button type="button" class={cn(createRow, "mb-1")} onClick={props.onCreate}>
         <Icon name="plus" size={14} class="justify-self-center" />
-        <span>New flow</span>
+        <span>New collection</span>
       </button>
       <For
         each={server.suites()}
         fallback={
           <p class="px-3 py-6 text-center text-[11.5px]/[1.5] text-text-weak">
-            No flows yet. A flow runs named journeys in order.
+            No collections yet. A collection runs journeys in order.
           </p>
         }
       >

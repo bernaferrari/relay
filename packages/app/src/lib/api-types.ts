@@ -2,7 +2,7 @@
  * Client-side shapes matching the HTTP/SSE API from @relay/server.
  * Kept in the app package (no core import) so the UI stays host-agnostic.
  */
-import type { RecipeParameter, RecipeStep, StepTarget } from "@relay/protocol";
+import type { RecipeParameter, RecipeStep, ScreenIdentity, StepTarget } from "@relay/protocol";
 
 export type {
   HumanCheckpointReason,
@@ -271,6 +271,7 @@ export type SnapshotState = {
   inspectable?: boolean;
   source?: "sdk" | "android-system";
   inspectionState?: "active" | "keyguard" | "asleep" | "unknown";
+  screenIdentity?: ScreenIdentity;
 } | null;
 
 export type Frame = {

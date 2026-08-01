@@ -47,6 +47,15 @@ export type DeviceEventPayload =
   | { type: "job.frame"; at: number; jobId: string; frame: unknown }
   | { type: "snapshot.captured"; at: number; serial?: string; nodeCount: number }
   | { type: "screenshot.captured"; at: number; serial?: string; bytes: number }
+  | {
+      type: "authoring.committed";
+      at: number;
+      projectId: string;
+      sessionId: string;
+      journeyId: string;
+      transitionId: string;
+      revision: number;
+    }
   | { type: "error"; at: number; message: string; where?: string };
 
 export type DeviceEvent = EventEnvelope<DeviceEventPayload>;

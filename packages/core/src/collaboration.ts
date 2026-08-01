@@ -15,6 +15,8 @@ import {
 } from "@relay/protocol";
 import { now, publish } from "./events.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import { commitJourneyAggregate, readJourneyAggregate } from "./journey-aggregate.js";
+import { currentOperationContext } from "./operation-context.js";
 
 type CollaborationState = {
   projects: Project[];
@@ -358,6 +360,8 @@ export async function readJourney(
   projectId: string,
   recipeId: string,
 ): Promise<Revisioned<JourneyMetadata>> {
+  const aggregate = await readJourneyAggregate(projectId, recipeId);
+  if (aggregate) return structuredClone(aggregate.document);
   return (await readState()).journeys[`${projectId}:${recipeId}`] ?? revisioned(EMPTY_JOURNEY);
 }
 
@@ -366,6 +370,33 @@ export async function writeJourney(
   recipeId: string,
   write: RevisionWrite<JourneyMetadata>,
 ): Promise<Revisioned<JourneyMetadata>> {
+  const aggregate = await readJourneyAggregate(projectId, recipeId);
+  if (aggregate) {
+    const replayKey = write.idempotencyKey;
+    if (aggregate.document.revision !== write.expectedRevision) {
+      throw new RevisionConflict(aggregate.document);
+    }
+    const next = writeRevision(aggregate.document, write);
+    const operation = currentOperationContext();
+    await commitJourneyAggregate({
+      organizationId: operation?.organizationId ?? aggregate.organizationId,
+      projectId,
+      journeyId: recipeId,
+      recipe: aggregate.recipe,
+      document: next,
+      evidence: aggregate.evidence,
+      ...(replayKey ? { transactionId: `${recipeId}:document:${replayKey}` } : {}),
+    });
+    emit({
+      type: "resource.updated",
+      at: next.updatedAt,
+      projectId,
+      resource: "journey",
+      resourceId: recipeId,
+      revision: next.revision,
+    });
+    return next;
+  }
   return mutate((state) => {
     const key = `${projectId}:${recipeId}`;
     if (write.idempotencyKey && state.idempotency[`${key}:${write.idempotencyKey}`])

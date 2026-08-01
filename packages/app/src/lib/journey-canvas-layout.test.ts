@@ -17,11 +17,19 @@ const settings: JourneyTreeNode = { ...start, id: "settings", title: "Settings",
 
 test("canvas geometry is total while a graph is mid-edit", () => {
   assert.equal(
-    canvasEdgeGeometry({ from: "missing", to: "settings", kind: "forward" }, [start, settings], (node) => node).path,
+    canvasEdgeGeometry(
+      { from: "missing", to: "settings", kind: "forward" },
+      [start, settings],
+      (node) => node,
+    ).path,
     "",
   );
   assert.match(
-    canvasEdgeGeometry({ from: "start", to: "settings", kind: "forward" }, [start, settings], (node) => node).path,
+    canvasEdgeGeometry(
+      { from: "start", to: "settings", kind: "forward" },
+      [start, settings],
+      (node) => node,
+    ).path,
     /^M 196 124 C/,
   );
 });

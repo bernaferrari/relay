@@ -119,15 +119,22 @@ original result without emitting another resource mutation.
 `JourneyMetadata` schema v6 is the authoring document for the desktop canvas. It deliberately keeps
 three concerns separate:
 
-| Concern | Owner | Purpose |
-| --- | --- | --- |
-| Screens, transitions, flow starts, layout, notes | `app/lib/journey-graph.ts` + journey metadata | The FigJam-like authoring surface |
-| A temporary device take | `app/context/recorder.tsx` | A reversible capture waiting for review |
-| Recipe steps | `core` recipe/YAML model | The target-neutral program that runs |
+| Concern                                            | Owner                                            | Purpose                                                 |
+| -------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------- |
+| Screens, connections, flow starts, layout, notes   | Revisioned Journey document                      | The FigJam-like authoring surface                       |
+| Authoring Session, Take revisions, replay history  | `core/authoring-sessions.ts`                     | Shared lifecycle for humans, agents, CLI, and UI        |
+| Live target control and capture                    | Server Authoring Session routes + explicit lease | One attributable device-control path                    |
+| Recorder controls and review                       | `app/context/recorder.tsx` projection            | A thin view of server state; never lifecycle authority  |
+| Semantic screen identity                           | `core/screen-identity.ts`                        | Stable matching across recording, discovery, and replay |
+| Recipe steps, graph connection, immutable evidence | `core/journey-aggregate.ts`                      | One recoverable atomic visibility point                 |
 
-Review commits a take atomically: the recorder returns the actual newly created recipe step IDs,
-then one metadata revision creates the corresponding graph transition. This prevents the graph from
-pointing at guessed array indexes or showing a route as recorded before it has real evidence.
+Review commits through one core service. It verifies the expected Journey and Recipe revisions,
+resolves the observed destination, assigns stable executable step IDs, preserves content-addressed
+evidence, and writes the Recipe plus graph connection as one fsynced aggregate rename. A connection
+therefore cannot become visible before its steps and evidence are durable. A crash before the rename
+returns the Session to review; a crash after it completes the Session from the committed aggregate.
+Only the server emits the final `authoring.committed` event. Renderer signals and progress UI are
+projections of persisted Session state.
 
 Legacy metadata remains readable. `ensureJourneyGraph()` performs a pure, lazy v5-to-v6 view
 migration and `withJourneyGraph()` writes the canonical version only after an intentional canvas

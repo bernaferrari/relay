@@ -45,7 +45,11 @@ function iosRunnerSetupMessage(cause: string): string {
   if (/no profiles? for|provisioning profiles? matching/i.test(cause)) {
     return "Xcode could not create a development profile for Relay’s local runner. Sign in to the Apple team in Xcode, then try again.";
   }
-  if (/provisioning profile|code sign|signing identity|apple team|AGENT_DEVICE_IOS_|build-for-testing|xcodebuild/i.test(cause)) {
+  if (
+    /provisioning profile|code sign|signing identity|apple team|AGENT_DEVICE_IOS_|build-for-testing|xcodebuild/i.test(
+      cause,
+    )
+  ) {
     return "Relay could not sign its local iPad runner. Check the Apple setup in Settings, then try again.";
   }
   return "Relay could not prepare this iPad yet. Reconnect it and try again.";
@@ -121,10 +125,7 @@ export async function diagnoseIosRunnerError(error: unknown): Promise<Error> {
  * Build and health-check the locally signed XCTest runner. This is deliberate:
  * discovery alone never writes to Xcode or asks for signing access.
  */
-export async function prepareIosRunner(
-  device: Device,
-  selection: { udid: string },
-): Promise<void> {
+export async function prepareIosRunner(device: Device, selection: { udid: string }): Promise<void> {
   try {
     await device.command.prepare({
       platform: "ios",
@@ -149,17 +150,15 @@ export async function recordIosVideo(
   input: { udid: string; action: "start" | "stop"; path?: string },
 ): Promise<IosVideoCaptureResult> {
   try {
-    const result = await device.recording.record(
-      {
-        platform: "ios",
-        udid: input.udid,
-        device: input.udid,
-        action: input.action,
-        ...(input.path ? { path: input.path } : {}),
-        fps: 30,
-        quality: "high",
-      } as Parameters<Device["recording"]["record"]>[0],
-    );
+    const result = await device.recording.record({
+      platform: "ios",
+      udid: input.udid,
+      device: input.udid,
+      action: input.action,
+      ...(input.path ? { path: input.path } : {}),
+      fps: 30,
+      quality: "high",
+    } as Parameters<Device["recording"]["record"]>[0]);
     return {
       mode: "recorded-video",
       ...(valueFrom(result, "path") || input.path

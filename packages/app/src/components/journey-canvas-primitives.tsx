@@ -4,6 +4,7 @@ import type { RecipeStep } from "../context/server";
 import type { CanvasConnection } from "../lib/journey-prototype";
 import type { JourneyTreeNode } from "../lib/journey-tree";
 import { cn } from "../lib/cn";
+import type { JourneyRunPresentationState } from "../lib/journey-run-projection";
 import { accentForStep, iconForStep } from "./journey-step-presentation";
 import { Icon } from "./icon";
 
@@ -59,6 +60,7 @@ export function ScreenCard(props: {
   title: string;
   selected: boolean;
   editing: boolean;
+  runState?: JourneyRunPresentationState;
   position: { x: number; y: number };
   src: () => string;
   onSelect: () => void;
@@ -70,14 +72,22 @@ export function ScreenCard(props: {
 }) {
   return (
     <article
-      role="button"
       tabIndex={0}
+      aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
       data-journey-screen-id={props.node.id}
       class={cn(
-        "absolute grid h-[248px] w-[196px] grid-rows-[34px_minmax(0,1fr)_30px] overflow-visible rounded-[14px] border bg-[var(--v2-background-bg-base)] text-left shadow-[0_8px_28px_rgb(0_0_0/20%)] transition-[border-color,box-shadow] duration-150",
-        props.selected
-          ? "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent),0_8px_28px_rgb(0_0_0/24%)]"
-          : "border-[var(--v2-border-border-muted)] hover:border-[var(--v2-border-border-strong)]",
+        "group/screen absolute grid h-[248px] w-[196px] grid-rows-[34px_minmax(0,1fr)_30px] overflow-visible rounded-[14px] border bg-[var(--v2-background-bg-base)] text-left shadow-[0_8px_28px_rgb(0_0_0/20%)] outline-none transition-[border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--v2-background-bg-deep)]",
+        props.runState === "failed"
+          ? "border-[var(--icon-critical-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-critical-base)_18%,transparent),0_8px_28px_rgb(0_0_0/24%)]"
+          : props.runState === "running"
+            ? "border-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent),0_8px_28px_rgb(0_0_0/24%)]"
+            : props.runState === "healed"
+              ? "border-[var(--icon-warning-base)]"
+              : props.runState === "passed"
+                ? "border-[var(--icon-success-base)]"
+                : props.selected
+                  ? "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent),0_8px_28px_rgb(0_0_0/24%)]"
+                  : "border-[var(--v2-border-border-muted)] hover:border-[var(--v2-border-border-strong)]",
       )}
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
       onClick={props.onSelect}
@@ -138,7 +148,7 @@ export function ScreenCard(props: {
               </span>
               <Show when={props.isFlowStart}>
                 <span class="text-[10px] font-medium text-[var(--text-base)]">
-                  Flow starts here
+                  Journey starts here
                 </span>
               </Show>
             </div>
@@ -157,35 +167,60 @@ export function ScreenCard(props: {
         )}
       </Show>
       <footer class="flex items-center justify-between px-2.5 text-[9.5px] text-[var(--text-weak)]">
-        <span>
-          {props.isFlowStart && !props.node.stepIndexes.length
-            ? "Entry point"
-            : `${props.node.stepIndexes.length} ${props.node.stepIndexes.length === 1 ? "connection" : "connections"}`}
+        <span class="inline-flex items-center gap-1.5">
+          <Show when={props.runState && props.runState !== "idle"}>
+            <i
+              class={cn(
+                "size-1.5 rounded-full",
+                props.runState === "failed"
+                  ? "bg-[var(--icon-critical-base)]"
+                  : props.runState === "running"
+                    ? "bg-[var(--text-interactive-base)] motion-safe:animate-pulse"
+                    : props.runState === "healed"
+                      ? "bg-[var(--icon-warning-base)]"
+                      : props.runState === "passed"
+                        ? "bg-[var(--icon-success-base)]"
+                        : "bg-[var(--text-weak)]",
+              )}
+            />
+            <span class="capitalize">{props.runState}</span>
+          </Show>
+          <Show when={!props.runState || props.runState === "idle"}>
+            {props.isFlowStart && !props.node.stepIndexes.length
+              ? "Entry point"
+              : `${props.node.stepIndexes.length} ${props.node.stepIndexes.length === 1 ? "connection" : "connections"}`}
+          </Show>
         </span>
         <span class="flex items-center">
           <button
             type="button"
-            class="rounded-[5px] px-1 py-0.5 font-medium text-[var(--text-interactive-base)] transition-colors hover:bg-[var(--product-accent-soft)]"
-            aria-label={`Record a route from ${props.title}`}
+            class={cn(
+              "relative rounded-[5px] px-1 py-0.5 font-medium text-[var(--text-interactive-base)] opacity-0 transition-[background-color,opacity] duration-150 before:absolute before:-inset-x-1 before:-inset-y-2 before:content-[''] hover:bg-[var(--product-accent-soft)] group-hover/screen:opacity-100 focus-visible:opacity-100",
+              props.selected && "opacity-100",
+            )}
+            aria-label={`Record a connection from ${props.title}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               props.onRecord();
             }}
           >
-            Record
+            Record connection
           </button>
         </span>
       </footer>
       <button
         type="button"
-        class="group absolute top-1/2 right-[-17px] z-10 grid size-8 -translate-y-1/2 cursor-crosshair place-items-center rounded-full outline-none"
+        class={cn(
+          "group absolute top-1/2 right-[-20px] z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
+          props.selected && "opacity-100",
+        )}
         aria-label={`Connect ${props.title} to another screen`}
         title="Drag to connect"
         onPointerDown={props.onConnectStart}
         onClick={(event) => event.stopPropagation()}
       >
-        <span class="grid size-[22px] place-items-center rounded-full border border-[var(--text-interactive-base)] bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[0_3px_12px_rgb(0_0_0/28%)] transition-[background-color,transform] duration-150 group-hover:scale-110 group-hover:bg-[var(--product-accent-soft)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
+        <span class="grid size-[24px] place-items-center rounded-full border border-[var(--text-interactive-base)] bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[0_3px_12px_rgb(0_0_0/28%)] transition-[background-color,transform] duration-150 group-hover:scale-110 group-hover:bg-[var(--product-accent-soft)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
           <Icon name="arrow-right" size={11} />
         </span>
       </button>
@@ -203,7 +238,7 @@ export function ScreenInspector(props: {
   return (
     <Show when={props.node}>
       {(_node) => (
-        <aside class="absolute top-[62px] right-4 z-20 w-[min(272px,calc(100%-32px))] rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-2 shadow-[0_8px_30px_rgb(0_0_0/18%)] backdrop-blur-[12px]">
+        <aside class="absolute bottom-5 left-1/2 z-30 w-[min(520px,calc(100%-32px))] -translate-x-1/2 rounded-[14px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-2.5 shadow-[0_16px_46px_rgb(0_0_0/28%)] backdrop-blur-[14px]">
           <div class="flex items-start justify-between gap-3 px-1.5 pt-0.5">
             <div>
               <span class="block text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)]">
@@ -215,10 +250,10 @@ export function ScreenInspector(props: {
             </div>
             <button
               type="button"
-              class="inline-flex h-7 items-center gap-1.5 rounded-[7px] bg-[var(--product-accent-soft)] px-2.5 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]"
+              class="inline-flex h-9 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96]"
               onClick={props.onRecord}
             >
-              <Icon name="smartphone" size={11} /> Record from here
+              <Icon name="smartphone" size={11} /> Record connection
             </button>
           </div>
           <div class="mt-2 grid gap-0.5 border-t border-[var(--v2-border-border-muted)] pt-1.5">
@@ -229,7 +264,7 @@ export function ScreenInspector(props: {
               when={props.connections.length}
               fallback={
                 <p class="m-0 px-1.5 py-2 text-[10px]/[1.4] text-[var(--text-weak)]">
-                  No routes yet. Record an interaction, or drag the arrow on the screen card to
+                  No connections yet. Record an interaction, or drag the arrow on the screen card to
                   sketch one.
                 </p>
               }
@@ -277,17 +312,10 @@ export function ConnectionInspector(props: {
   sourceTitle: string;
   targetTitle: string;
   setup: {
-    captures: Array<{
-      id: string;
-      label: string;
-      actionCount: number;
-      hasVideo: boolean;
-    }>;
     behaviors: Array<{ id: string; label: string; actionCount: number }>;
     onRecord: () => void;
     onBack: () => void;
     onAutomatic: () => void;
-    onAttachCapture: (takeId: string) => void;
     onAttachBehavior: (recipeId: string) => void;
   };
   replay: {
@@ -314,10 +342,10 @@ export function ConnectionInspector(props: {
         ? "Reusable"
         : "Device interaction";
   return (
-    <aside class="absolute top-[62px] right-4 z-20 w-[min(292px,calc(100%-32px))] rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-3 shadow-[0_8px_30px_rgb(0_0_0/18%)] backdrop-blur-[12px]">
+    <aside class="absolute bottom-5 left-1/2 z-30 w-[min(360px,calc(100%-32px))] -translate-x-1/2 rounded-[14px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-3.5 shadow-[0_16px_46px_rgb(0_0_0/28%)] backdrop-blur-[14px]">
       <div class="flex items-center justify-between gap-3">
         <span class="text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)]">
-          TRANSITION
+          CONNECTION
         </span>
         <span
           class={cn(
@@ -387,7 +415,7 @@ export function ConnectionInspector(props: {
                 class="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={props.replay.onRewrite}
               >
-                <Icon name="refresh" size={10} /> Record again
+                <Icon name="refresh" size={10} /> Rewrite
               </button>
               <button
                 type="button"
@@ -400,8 +428,8 @@ export function ConnectionInspector(props: {
                 <button
                   type="button"
                   class="ml-auto grid size-7 place-items-center rounded-[7px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
-                  aria-label="Remove transition"
-                  title="Remove transition"
+                  aria-label="Remove connection"
+                  title="Remove connection"
                   onClick={props.onRemove}
                 >
                   <Icon name="trash" size={11} />
@@ -486,40 +514,13 @@ export function ConnectionInspector(props: {
                   )}
                 </For>
               </Show>
-              <Show when={props.setup.captures.length > 0}>
-                <span class="px-2 pt-1 text-[9px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase">
-                  Recent captures
-                </span>
-                <For each={props.setup.captures}>
-                  {(capture) => (
-                    <button
-                      type="button"
-                      class="flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10.5px] transition-colors hover:bg-[var(--v2-background-bg-layer-02)]"
-                      onClick={() => props.setup.onAttachCapture(capture.id)}
-                    >
-                      <span class="grid size-6 shrink-0 place-items-center rounded-[6px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
-                        <Icon name={capture.hasVideo ? "video" : "pointer"} size={11} />
-                      </span>
-                      <span class="min-w-0 flex-1">
-                        <strong class="block truncate font-medium text-[var(--text-strong)]">
-                          {capture.label}
-                        </strong>
-                        <span class="text-[9.5px] text-[var(--text-weak)]">
-                          {capture.actionCount} action{capture.actionCount === 1 ? "" : "s"}
-                          {capture.hasVideo ? " · video" : ""}
-                        </span>
-                      </span>
-                    </button>
-                  )}
-                </For>
-              </Show>
               <Show when={props.connection.source === "authored"}>
                 <button
                   type="button"
                   class="mt-1 inline-flex h-8 items-center gap-1.5 rounded-[7px] px-2 text-[10px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
                   onClick={props.onRemove}
                 >
-                  <Icon name="trash" size={10} /> Remove transition
+                  <Icon name="trash" size={10} /> Remove connection
                 </button>
               </Show>
             </div>

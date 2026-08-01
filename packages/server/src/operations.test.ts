@@ -58,7 +58,7 @@ function normalizedRoute(method: string, path: string): string {
 }
 
 async function discoverPublicMutationRoutes(): Promise<Set<string>> {
-  const files = ["index.ts", "job-routes.ts", "run-routes.ts"];
+  const files = ["index.ts", "job-routes.ts", "run-routes.ts", "authoring-routes.ts"];
   const routes = new Set<string>();
   for (const file of files) {
     const source = await readFile(new URL(file, import.meta.url), "utf8");
