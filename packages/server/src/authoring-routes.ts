@@ -191,6 +191,7 @@ export async function handleAuthoringRoute(input: {
   request: http.IncomingMessage;
   response: http.ServerResponse;
   scope: RequestContext;
+  authoringRuntime?: AuthoringRuntime;
 }): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
   try {
@@ -226,7 +227,7 @@ export async function handleAuthoringRoute(input: {
     } else {
       await authoringSessions.get(sessionId);
     }
-    const authoringRuntime = runtime();
+    const authoringRuntime = input.authoringRuntime ?? runtime();
     if (action === "observe") {
       await body(request);
       json(response, 200, {

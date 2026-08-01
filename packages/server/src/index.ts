@@ -127,6 +127,7 @@ import {
   runWithOperationContext,
   readAuthoringEvidence,
   listJourneyAggregates,
+  type AuthoringRuntime,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
@@ -179,6 +180,7 @@ export type StartServerOptions = {
   port?: number;
   host?: string;
   token?: string;
+  authoringRuntime?: AuthoringRuntime;
 };
 
 export type StartedServer = {
@@ -243,6 +245,7 @@ async function handleRequest(
   token?: string,
   localTrusted = true,
   sse = createSseHub(CORS_HEADERS),
+  authoringRuntime?: AuthoringRuntime,
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -298,7 +301,16 @@ async function handleRequest(
       })
     )
       return;
-    if (await handleAuthoringRoute({ method, pathname, request: req, response: res, scope }))
+    if (
+      await handleAuthoringRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+        authoringRuntime,
+      })
+    )
       return;
     if (method === "GET" && pathname === "/settings/privacy") {
       json(res, 200, { policy: getRedactionPolicy() });
@@ -1909,7 +1921,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
   const sse = createSseHub(CORS_HEADERS);
 
   const server = http.createServer((req, res) => {
-    void handleRequest(req, res, token, isLoopbackHost(host), sse);
+    void handleRequest(req, res, token, isLoopbackHost(host), sse, opts.authoringRuntime);
   });
   const scheduler = startScheduler();
 
