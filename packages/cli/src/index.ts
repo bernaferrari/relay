@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import type { GlobalConfig, OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
 import { classifyError, ExitCode } from "./errors.js";
-import { HELP } from "./help.js";
+import { renderHelp } from "./help.js";
 import {
   createClient,
   invokeOperation,
@@ -56,10 +56,10 @@ export async function runCli(
     const parsed = parseCli(argv, dependencies.env ?? process.env);
     output = new CliOutput(parsed.config.output, parsed.config.quiet, streams);
     if (parsed.command === "help") {
-      streams.stdout.write(HELP);
+      streams.stdout.write(renderHelp(parsed.helpFamily));
       return ExitCode.success;
     }
-    operationId = parsed.operationId!;
+    operationId = parsed.operationId;
     const abort = new AbortController();
     const cancel = () => abort.abort();
     if (dependencies.registerSignalHandlers !== false) {

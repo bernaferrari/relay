@@ -1,4 +1,5 @@
 import type { ActorKind, ServerConnection } from "@relay/protocol";
+import { resolveCommand } from "./commands.js";
 import { UsageError } from "./errors.js";
 
 export type OutputMode = "human" | "json" | "ndjson";
@@ -13,12 +14,18 @@ export type GlobalConfig = {
   wait: boolean;
 };
 
-export type ParsedCli = {
-  config: GlobalConfig;
-  command: "help" | "invoke";
-  operationId?: string;
-  input?: unknown;
-};
+export type ParsedCli =
+  | {
+      config: GlobalConfig;
+      command: "help";
+      helpFamily?: string;
+    }
+  | {
+      config: GlobalConfig;
+      command: "invoke";
+      operationId: string;
+      input: Record<string, unknown>;
+    };
 
 type Environment = Record<string, string | undefined>;
 
@@ -105,6 +112,20 @@ function booleanEnv(value: string | undefined, fallback: boolean): boolean {
   throw new UsageError("RELAY_WAIT must be true, false, 1, or 0");
 }
 
+function parseInput(rawInput: string | undefined): Record<string, unknown> {
+  if (rawInput === undefined) return {};
+  let input: unknown;
+  try {
+    input = JSON.parse(rawInput) as unknown;
+  } catch {
+    throw new UsageError("--input must be valid JSON");
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new UsageError("--input must be a JSON object");
+  }
+  return input as Record<string, unknown>;
+}
+
 export function parseCli(argv: readonly string[], env: Environment = process.env): ParsedCli {
   const tokens = tokenize(argv);
   if (tokens.switches.has("--json") && tokens.switches.has("--ndjson")) {
@@ -154,12 +175,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   };
 
   const [group, action, operationId, ...extra] = tokens.positionals;
-  const help =
-    tokens.switches.has("-h") ||
-    tokens.switches.has("--help") ||
-    group === undefined ||
-    group === "help";
-  if (help)
+  const helpSwitch = tokens.switches.has("-h") || tokens.switches.has("--help");
+  if (group === undefined || helpSwitch || group === "help") {
+    if (group === "help" && operationId !== undefined) {
+      throw new UsageError("Expected: relay help [family]");
+    }
     return {
       config: {
         connection,
@@ -170,21 +190,38 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         wait,
       },
       command: "help",
+      ...(group === "help"
+        ? action
+          ? { helpFamily: action }
+          : {}
+        : group
+          ? { helpFamily: group }
+          : {}),
     };
-  if (group !== "operation" || action !== "invoke" || !operationId || extra.length > 0) {
-    throw new UsageError("Expected: relay operation invoke <operationId> --input <json>");
   }
+
   const rawInput = tokens.values.get("--input");
-  if (rawInput === undefined) throw new UsageError("operation invoke requires --input <json>");
-  let input: unknown;
-  try {
-    input = JSON.parse(rawInput) as unknown;
-  } catch {
-    throw new UsageError("--input must be valid JSON");
+  if (group === "operation") {
+    if (action !== "invoke" || !operationId || extra.length > 0) {
+      throw new UsageError("Expected: relay operation invoke <operationId> --input <json>");
+    }
+    if (rawInput === undefined) throw new UsageError("operation invoke requires --input <json>");
+    return {
+      config: {
+        connection,
+        credentialSource,
+        output,
+        quiet: tokens.switches.has("--quiet"),
+        timeoutMs,
+        wait,
+      },
+      command: "invoke",
+      operationId,
+      input: parseInput(rawInput),
+    };
   }
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw new UsageError("--input must be a JSON object");
-  }
+
+  const resolved = resolveCommand(tokens.positionals, parseInput(rawInput));
   return {
     config: {
       connection,
@@ -195,8 +232,8 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       wait,
     },
     command: "invoke",
-    operationId,
-    input,
+    operationId: resolved.operationId,
+    input: resolved.input,
   };
 }
 

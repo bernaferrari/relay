@@ -25,6 +25,17 @@ test("friendly command paths are unique", () => {
   assert.equal(new Set(paths).size, paths.length);
 });
 
+test("every friendly path resolves with its declared arguments", () => {
+  for (const descriptor of mappedCommandDescriptors) {
+    for (const candidate of descriptor.paths) {
+      const arguments_ = (candidate.arguments ?? []).map((key) => `${key}-value`);
+      const resolved = resolveCommand([...candidate.command.split(" "), ...arguments_]);
+      assert.equal(resolved.operationId, descriptor.operationId, candidate.command);
+      assert.equal(resolved.commandPath, candidate.command);
+    }
+  }
+});
+
 test("all plan-035 authoring operations have friendly command paths", () => {
   const authoringOperationIds = [
     "authoring.session.list",

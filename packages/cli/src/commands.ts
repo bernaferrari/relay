@@ -249,6 +249,22 @@ export function resolveCommand(
     }
   }
 
+  const incomplete = mappedCommandDescriptors
+    .flatMap((descriptor) => descriptor.paths)
+    .map((candidate) => ({ candidate, tokens: candidate.command.split(" ") }))
+    .filter(({ tokens }) => tokens.every((token, index) => positionals[index] === token))
+    .sort((left, right) => right.tokens.length - left.tokens.length)[0];
+  if (incomplete) {
+    const argumentKeys = incomplete.candidate.arguments ?? [];
+    const providedArguments = Math.max(0, positionals.length - incomplete.tokens.length);
+    const missingArguments = argumentKeys.slice(providedArguments);
+    if (missingArguments.length) {
+      const required = missingArguments.map((key) => `<${key.split(".").at(-1)}>`).join(", ");
+      throw new UsageError(`${incomplete.candidate.command} requires ${required}`);
+    }
+    throw new UsageError(`Expected: relay ${formatCommandUsage(incomplete.candidate)}`);
+  }
+
   const family = positionals[0];
   const familyPaths = mappedCommandDescriptors.flatMap((descriptor) =>
     descriptor.paths.filter((candidate) => candidate.command.split(" ")[0] === family),

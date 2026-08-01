@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mappedCommandDescriptors } from "./commands.js";
 import { parseCli, redactedConfig } from "./config.js";
 
 test("global configuration uses CLI over environment over defaults", () => {
@@ -107,13 +108,129 @@ test("the absent default credential source remains unauthenticated", () => {
 });
 
 test("--help and -h are accepted as global switches", () => {
-  assert.equal(parseCli(["--help"], {}).command, "help");
-  assert.equal(parseCli(["-h"], {}).command, "help");
-  assert.equal(parseCli(["operation", "--help"], {}).command, "help");
-  assert.equal(parseCli(["operation", "-h"], {}).command, "help");
+  assert.deepEqual(parseCli(["--help"], {}).command, "help");
+  assert.deepEqual(parseCli(["-h"], {}).command, "help");
+  for (const [argv, family] of [
+    [["operation", "--help"], "operation"],
+    [["operation", "-h"], "operation"],
+    [["help", "target"], "target"],
+    [["session", "--help"], "session"],
+  ] as const) {
+    const parsed = parseCli(argv, {});
+    assert.equal(parsed.command, "help");
+    if (parsed.command === "help") assert.equal(parsed.helpFamily, family);
+  }
 });
 
 test("machine output modes and wait switches reject ambiguous combinations", () => {
   assert.throws(() => parseCli(["help", "--json", "--ndjson"], {}), /only one/);
   assert.throws(() => parseCli(["help", "--wait", "--no-wait"], {}), /only one/);
+});
+
+test("every friendly command path parses to its descriptor operation", () => {
+  for (const descriptor of mappedCommandDescriptors) {
+    for (const candidate of descriptor.paths) {
+      const arguments_ = (candidate.arguments ?? []).map((key) => `${key}-value`);
+      const parsed = parseCli([...candidate.command.split(" "), ...arguments_], {});
+      assert.equal(parsed.command, "invoke", candidate.command);
+      if (parsed.command !== "invoke") continue;
+      assert.equal(parsed.operationId, descriptor.operationId, candidate.command);
+    }
+  }
+});
+
+test("friendly inputs default to an object and path arguments override JSON fields", () => {
+  const list = parseCli(["journey", "list"], {});
+  assert.equal(list.command, "invoke");
+  if (list.command === "invoke") assert.deepEqual(list.input, {});
+
+  const screenshot = parseCli(["target", "screenshot", "pixel-9"], {});
+  assert.equal(screenshot.command, "invoke");
+  if (screenshot.command === "invoke") {
+    assert.equal(screenshot.operationId, "target.screenshot.capture");
+    assert.deepEqual(screenshot.input, { serial: "pixel-9" });
+  }
+
+  const journey = parseCli(
+    [
+      "journey",
+      "update",
+      "checkout",
+      "--input",
+      '{"journeyId":"wrong","expectedRevision":7,"value":{"title":"Checkout"}}',
+    ],
+    {},
+  );
+  assert.equal(journey.command, "invoke");
+  if (journey.command === "invoke") {
+    assert.deepEqual(journey.input, {
+      journeyId: "checkout",
+      expectedRevision: 7,
+      value: { title: "Checkout" },
+    });
+  }
+});
+
+test("friendly aliases and lifecycle commands construct operation inputs", () => {
+  const cases = [
+    [["screen", "list", "journey-1"], "journey.document.get", { journeyId: "journey-1" }],
+    [
+      ["connection", "update", "journey-1", "--input", '{"expectedRevision":3}'],
+      "journey.document.update",
+      { journeyId: "journey-1", expectedRevision: 3 },
+    ],
+    [
+      ["session", "tap", "session-1", "--input", '{"interaction":{"target":{"x":4,"y":8}}}'],
+      "authoring.session.interact",
+      { sessionId: "session-1", interaction: { kind: "tap", target: { x: 4, y: 8 } } },
+    ],
+    [
+      ["take", "replace", "session-1", "action-2"],
+      "authoring.take.replace",
+      { sessionId: "session-1", actionId: "action-2" },
+    ],
+    [["collection", "run", "smoke"], "collection.run", { collectionId: "smoke" }],
+    [["run", "pin", "update", "run-1"], "run.pin.update", { runId: "run-1" }],
+    [
+      ["discovery", "capture", "discovery-1", "pixel-9"],
+      "discovery.capture",
+      { sessionId: "discovery-1", serial: "pixel-9" },
+    ],
+    [
+      ["policy", "privacy", "update", "--input", '{"enabled":true}'],
+      "workspace.privacy.update",
+      { enabled: true },
+    ],
+  ] as const;
+
+  for (const [argv, operationId, input] of cases) {
+    const parsed = parseCli(argv, {});
+    assert.equal(parsed.command, "invoke");
+    if (parsed.command !== "invoke") continue;
+    assert.equal(parsed.operationId, operationId);
+    assert.deepEqual(parsed.input, input);
+  }
+});
+
+test("generic invocation still requires explicit object input", () => {
+  assert.throws(
+    () => parseCli(["operation", "invoke", "system.health.get"], {}),
+    /requires --input/,
+  );
+  assert.throws(
+    () => parseCli(["operation", "invoke", "system.health.get", "--input", "[]"], {}),
+    /JSON object/,
+  );
+});
+
+test("target and session mutations report missing explicit identities", () => {
+  assert.throws(
+    () => parseCli(["target", "screenshot"], {}),
+    /target screenshot requires <serial>/,
+  );
+  assert.throws(() => parseCli(["session", "tap"], {}), /session tap requires <sessionId>/);
+  assert.throws(
+    () => parseCli(["take", "replace", "session-1"], {}),
+    /take replace requires <actionId>/,
+  );
 });
