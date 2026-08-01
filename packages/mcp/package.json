@@ -1,0 +1,29 @@
+{
+  "name": "@relay/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "relay-mcp": "./src/index.ts"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/server.ts",
+    "./config": "./src/config.ts"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "@relay/client": "workspace:*",
+    "@relay/protocol": "workspace:*",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.20.0",
+    "typescript": "catalog:"
+  }
+}
