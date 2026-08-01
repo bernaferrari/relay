@@ -370,6 +370,7 @@ export type CollaborativeJourneyStoreErrorCode =
   | "invalid-scope"
   | "missing-document"
   | "rate-limited"
+  | "stale-document"
   | "update-too-large";
 
 export class CollaborativeJourneyStoreError extends Error {
@@ -490,6 +491,7 @@ export class DurableCollaborativeJourneyStore {
     scope: CollaborativeJourneyScope;
     actorId: string;
     update: Uint8Array;
+    expectedStateVector?: Uint8Array;
   }): Promise<ApplyCollaborativeJourneyUpdateResult> {
     return this.#withScopeLock(input.scope, async () => {
       assertActorId(input.actorId);
@@ -506,6 +508,15 @@ export class DurableCollaborativeJourneyStore {
         );
       }
       const loaded = await this.#load(input.scope);
+      if (input.expectedStateVector) {
+        const current = await this.#state(loaded);
+        if (!Buffer.from(current.stateVector).equals(Buffer.from(input.expectedStateVector))) {
+          throw new CollaborativeJourneyStoreError(
+            "stale-document",
+            "collaborative document changed before the update could be appended",
+          );
+        }
+      }
       const updateDigest = digest(input.update);
       if (loaded.seenUpdateDigestSet.has(updateDigest)) {
         return { ...(await this.#state(loaded)), applied: false, duplicate: true };

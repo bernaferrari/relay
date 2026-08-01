@@ -7,6 +7,8 @@ import {
   captureSnapshot,
   createDevice,
   getBrowserDevice,
+  publish,
+  readJourney,
   runRecipeStep,
   runWithTargetContext,
   type AuthoringRuntime,
@@ -27,6 +29,7 @@ import type {
   TrimAuthoringTakeInput,
 } from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
+import type { CollaborationRouteService } from "./collaboration-routes.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
 import type { RequestContext } from "./security.js";
@@ -185,6 +188,31 @@ function mapError(error: unknown): never {
   throw error;
 }
 
+type AuthoringMaterializationResult =
+  | { status: "updated" | "unchanged"; updateBytes: number }
+  | { status: "failed"; diagnostic: { code: string; message: string } };
+
+function publishAuthoringMaterializationEvent(
+  payload: { type: string; at: number } & Record<string, unknown>,
+): void {
+  publish(payload as unknown as Parameters<typeof publish>[0]);
+}
+
+function boundedMaterializationDiagnostic(error: unknown): {
+  code: string;
+  message: string;
+} {
+  const candidate =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code: unknown }).code)
+      : "internal-error";
+  const code = /^[a-z][a-z0-9-]{0,63}$/.test(candidate) ? candidate : "internal-error";
+  return {
+    code,
+    message: "The canonical Take committed, but the collaborative canvas has not caught up yet.",
+  };
+}
+
 export async function handleAuthoringRoute(input: {
   method: string;
   pathname: string;
@@ -192,6 +220,7 @@ export async function handleAuthoringRoute(input: {
   response: http.ServerResponse;
   scope: RequestContext;
   authoringRuntime?: AuthoringRuntime;
+  collaboration?: CollaborationRouteService;
 }): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
   try {
@@ -269,11 +298,51 @@ export async function handleAuthoringRoute(input: {
     }
     if (action === "commit") {
       const value = await body<CommitAuthoringSessionInput>(request);
+      const session = await authoringSessions.commit(sessionId, {
+        destination: value.destination,
+        mode: value.mode,
+      });
+      let materialization: AuthoringMaterializationResult | undefined;
+      if (input.collaboration) {
+        try {
+          const canonical = await readJourney(scope.projectId, session.journeyId);
+          const result = await input.collaboration.projectCanonicalJourney({
+            scope: {
+              organizationId: session.organizationId,
+              projectId: session.projectId,
+              journeyId: session.journeyId,
+            },
+            metadata: canonical.value,
+            causationId: session.id,
+          });
+          materialization = {
+            status: result.applied ? "updated" : "unchanged",
+            updateBytes: result.updateBytes,
+          };
+          publishAuthoringMaterializationEvent({
+            type: "collaboration.materialization.completed",
+            at: Date.now(),
+            projectId: session.projectId,
+            journeyId: session.journeyId,
+            sessionId: session.id,
+            status: materialization.status,
+          });
+        } catch (error) {
+          const diagnostic = boundedMaterializationDiagnostic(error);
+          materialization = { status: "failed", diagnostic };
+          publishAuthoringMaterializationEvent({
+            type: "collaboration.materialization.failed",
+            at: Date.now(),
+            projectId: session.projectId,
+            journeyId: session.journeyId,
+            sessionId: session.id,
+            diagnostic,
+          });
+        }
+      }
       json(response, 200, {
-        session: await authoringSessions.commit(sessionId, {
-          destination: value.destination,
-          mode: value.mode,
-        }),
+        session,
+        ...(materialization ? { materialization } : {}),
       });
       return true;
     }

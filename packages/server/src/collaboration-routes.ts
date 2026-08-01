@@ -3,10 +3,12 @@ import type http from "node:http";
 import {
   applyCollaborativeJourneyUpdate,
   createCollaborativeJourneyDoc,
+  encodeCollaborativeJourneyStateVector,
   encodeCollaborativeJourneyUpdate,
   materializeCollaborativeJourney,
+  reconcileCollaborativeJourney,
 } from "@relay/collaboration";
-import { currentOperationContext, publish, readJourney } from "@relay/core";
+import { publish, readJourney } from "@relay/core";
 import {
   parseCollaborationAppendInput,
   parseCollaborationAwarenessPublishInput,
@@ -14,6 +16,7 @@ import {
   parseCollaborationSyncInput,
   type CollaborationAppendResponse,
   type CollaborationDocumentResponse,
+  type JourneyMetadata,
 } from "@relay/protocol";
 import * as Y from "yjs";
 import {
@@ -97,6 +100,67 @@ function syncUpdate(state: CollaborativeJourneyDocumentState, stateVector: Uint8
   }
 }
 
+function safeProjection(metadata: JourneyMetadata): JourneyMetadata {
+  const source = createCollaborativeJourneyDoc(metadata);
+  try {
+    return materializeCollaborativeJourney(source);
+  } finally {
+    source.destroy();
+  }
+}
+
+function mergeEntities<T extends { id: string }>(
+  canonical: readonly T[],
+  collaborative: readonly T[],
+): T[] {
+  const canonicalById = new Map(canonical.map((entity) => [entity.id, entity]));
+  const merged = collaborative.map((entity) => ({
+    ...canonicalById.get(entity.id),
+    ...entity,
+    id: entity.id,
+  })) as T[];
+  const collaborativeIds = new Set(collaborative.map(({ id }) => id));
+  for (const entity of canonical) {
+    if (!collaborativeIds.has(entity.id)) merged.push(structuredClone(entity));
+  }
+  return merged;
+}
+
+/**
+ * Adds the latest canonical graph to the editable canvas without replacing
+ * retained collaborative entities. Both inputs have already crossed the
+ * collaboration authority boundary, so neither can contain executable or
+ * evidence-bearing fields here.
+ */
+function mergeSafeProjection(
+  canonical: JourneyMetadata,
+  collaborative: JourneyMetadata,
+): JourneyMetadata {
+  const canonicalGraph = canonical.graph!;
+  const collaborativeGraph = collaborative.graph!;
+  return {
+    schemaVersion: 6,
+    positions: { ...canonical.positions, ...collaborative.positions },
+    ...(canonical.screenTitles || collaborative.screenTitles
+      ? {
+          screenTitles: {
+            ...canonical.screenTitles,
+            ...collaborative.screenTitles,
+          },
+        }
+      : {}),
+    edgeLabels: { ...canonical.edgeLabels, ...collaborative.edgeLabels },
+    edgeKinds: { ...canonical.edgeKinds, ...collaborative.edgeKinds },
+    notes: mergeEntities(canonical.notes ?? [], collaborative.notes ?? []),
+    graph: {
+      schemaVersion: 1,
+      screens: mergeEntities(canonicalGraph.screens, collaborativeGraph.screens),
+      transitions: mergeEntities(canonicalGraph.transitions, collaborativeGraph.transitions),
+      flows: mergeEntities(canonicalGraph.flows, collaborativeGraph.flows),
+    },
+  };
+}
+
 /**
  * Existing canonical Journeys may legitimately reference executable steps,
  * review, and evidence. Project through the default-stripping materializer
@@ -134,6 +198,8 @@ function mapStoreError(error: unknown): never {
       throw new HttpError(422, error.message);
     case "missing-document":
       throw new HttpError(404, error.message);
+    case "stale-document":
+      throw new HttpError(409, error.message);
     case "corrupt-snapshot":
       throw new HttpError(500, error.message);
   }
@@ -165,6 +231,61 @@ export function createCollaborationRouteService(options: CollaborationRouteServi
 
   return {
     awareness,
+    async projectCanonicalJourney(input: {
+      scope: CollaborativeJourneyScope;
+      metadata: JourneyMetadata;
+      causationId: string;
+    }): Promise<{ applied: boolean; duplicate: boolean; updateBytes: number }> {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const state = await open(input.scope);
+        const doc = new Y.Doc({ gc: true });
+        try {
+          applyCollaborativeJourneyUpdate(
+            doc,
+            state.documentUpdate,
+            "relay:server-materialization-bootstrap",
+          );
+          const before = encodeCollaborativeJourneyStateVector(doc);
+          const current = materializeCollaborativeJourney(doc, {
+            validateServerOwnedField: () => "reject",
+          });
+          const desired = mergeSafeProjection(safeProjection(input.metadata), current);
+          reconcileCollaborativeJourney(doc, desired, {
+            origin: `relay:server-authoring:${input.causationId}`,
+          });
+          const after = encodeCollaborativeJourneyStateVector(doc);
+          if (Buffer.from(before).equals(Buffer.from(after))) {
+            return { applied: false, duplicate: true, updateBytes: 0 };
+          }
+          const update = encodeCollaborativeJourneyUpdate(doc, before);
+          try {
+            const result = await options.store.applyUpdate({
+              scope: input.scope,
+              actorId: "system:authoring-materializer",
+              update,
+              expectedStateVector: before,
+            });
+            return {
+              applied: result.applied,
+              duplicate: result.duplicate,
+              updateBytes: update.byteLength,
+            };
+          } catch (error) {
+            if (
+              error instanceof CollaborativeJourneyStoreError &&
+              error.code === "stale-document" &&
+              attempt < 2
+            ) {
+              continue;
+            }
+            throw error;
+          }
+        } finally {
+          doc.destroy();
+        }
+      }
+      throw new Error("Collaborative Journey materialization retry limit was exceeded");
+    },
     async bootstrap(scope: CollaborativeJourneyScope): Promise<CollaborationDocumentResponse> {
       return response(scope.journeyId, await open(scope));
     },

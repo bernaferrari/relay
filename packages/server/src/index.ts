@@ -334,6 +334,7 @@ async function handleRequest(
         response: res,
         scope,
         authoringRuntime,
+        collaboration,
       })
     )
       return;
