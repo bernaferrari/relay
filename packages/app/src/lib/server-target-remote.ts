@@ -22,17 +22,6 @@ export async function listTargetProfiles(request: ServerRequest): Promise<Target
   return data.profiles ?? [];
 }
 
-export async function selectDevice(
-  request: ServerRequest,
-  serial: string | null,
-  platform: string = "android",
-): Promise<void> {
-  await request("/device/select", {
-    method: "POST",
-    body: JSON.stringify({ serial, platform }),
-  });
-}
-
 export async function bootDevice(
   request: ServerRequest,
   serial: string,

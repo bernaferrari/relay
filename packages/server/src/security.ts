@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import { redactText } from "@relay/core";
+import type { ActorIdentity, ActorKind } from "@relay/protocol";
 
 const MIN_TOKEN_LENGTH = 24;
 
@@ -85,6 +86,38 @@ export type RequestContext = {
   tokenKind: "local" | "service";
   localTrusted: boolean;
 };
+
+const REMOTE_ACTOR_KIND: ActorKind = "agent";
+
+/** Derive audit identity from the trust boundary. Local, unauthenticated hosts
+ * may identify the human or agent using them. Authenticated service tokens are
+ * the actor and cannot claim to be an arbitrary human or system process. */
+export function resolveCommandActor(
+  headers: IncomingHttpHeaders,
+  context: RequestContext,
+): ActorIdentity {
+  const requestedId = header(headers, "x-relay-actor-id");
+  const requestedKind = header(headers, "x-relay-actor-kind");
+  if (!context.localTrusted) {
+    if (requestedId && requestedId !== context.subject) {
+      throw new Error("Authenticated actorId must match the service subject");
+    }
+    if (requestedKind && requestedKind !== REMOTE_ACTOR_KIND) {
+      throw new Error("Authenticated service actors must use actorKind agent");
+    }
+    return { actorId: context.subject, actorKind: REMOTE_ACTOR_KIND };
+  }
+
+  const actorId = requestedId ?? context.subject;
+  if (!/^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/.test(actorId)) {
+    throw new Error("Local actorId contains unsupported characters");
+  }
+  const actorKind = requestedKind ?? "human";
+  if (actorKind !== "human" && actorKind !== "agent" && actorKind !== "system") {
+    throw new Error("Local actorKind must be human, agent, or system");
+  }
+  return { actorId, actorKind };
+}
 
 function header(headers: IncomingHttpHeaders, name: string): string | undefined {
   const value = headers[name];

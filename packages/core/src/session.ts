@@ -57,6 +57,12 @@ import {
 import { getBrowserDevice } from "./browser-target.js";
 import { preflightTarget, readTarget } from "./targets.js";
 import { runWithTargetContext, type TargetContext } from "./target-context.js";
+import {
+  currentOperationContext,
+  requireOperationContext,
+  runWithOperationContext,
+  type OperationContext,
+} from "./operation-context.js";
 import type {
   EvidenceCollectionPolicy,
   EvidenceManifest,
@@ -107,6 +113,9 @@ export type TestJob = {
   id: string;
   projectId?: string;
   ownerId?: string;
+  operationContext?: OperationContext;
+  /** Immutable execution target captured when the job is accepted. */
+  targetContext: TargetContext;
   action: string;
   /** recipe id when this job runs a recipe (action == recipeId for naming) */
   recipeId?: string;
@@ -270,15 +279,42 @@ export type EnqueueJobInput = {
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
   const parent = input.retryOf ? jobs.get(input.retryOf) : undefined;
   const id = randomUUID();
+  const targetKind = input.targetKind ?? parent?.targetKind ?? "device";
+  const targetContext: TargetContext =
+    targetKind === "browser"
+      ? Object.freeze({
+          kind: "browser" as const,
+          platform: "browser" as const,
+          targetId:
+            input.browserTargetId?.trim() ||
+            (parent?.targetContext.kind === "browser" ? parent.targetContext.targetId : "") ||
+            input.serial?.trim() ||
+            "",
+        })
+      : Object.freeze({
+          kind: "device" as const,
+          platform: input.platform ?? parent?.platform ?? ("android" as const),
+          serial:
+            input.serial?.trim() ||
+            (parent?.targetContext.kind === "device" ? parent.targetContext.serial : "") ||
+            "",
+        });
+  const targetId = targetContext.kind === "browser" ? targetContext.targetId : targetContext.serial;
+  if (!targetId) throw new Error("Every Relay job requires an explicit target");
+  const operationContext = currentOperationContext() ?? parent?.operationContext;
   const baseJob = {
     id,
     projectId: input.projectId ?? parent?.projectId,
     ownerId: input.ownerId ?? parent?.ownerId,
-    serial: input.serial?.trim() || parent?.serial || undefined,
+    operationContext: operationContext
+      ? Object.freeze(structuredClone(operationContext))
+      : undefined,
+    targetContext,
+    serial: targetContext.kind === "device" ? targetContext.serial : undefined,
     deviceName: parent?.deviceName,
-    platform: input.platform ?? parent?.platform ?? ("android" as const),
-    targetKind: input.targetKind ?? parent?.targetKind ?? "device",
-    browserTargetId: input.browserTargetId ?? parent?.browserTargetId,
+    platform: targetContext.kind === "device" ? targetContext.platform : ("android" as const),
+    targetKind,
+    browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     targetProfile: input.targetProfile ?? parent?.targetProfile,
     status: "queued" as const,
     queuedAt: now(),
@@ -340,6 +376,7 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
 }
 
 export function enqueueJob(input: EnqueueJobInput): TestJob {
+  requireOperationContext();
   const job = makeJob(input);
   if (input.retryOf) {
     const parent = jobs.get(input.retryOf);
@@ -452,15 +489,9 @@ async function drainQueue(): Promise<void> {
       const job = jobs.get(id);
       // skipped if cancelled while still queued
       if (!job || job.status === "cancelled") continue;
-      const context: TargetContext =
-        job.targetKind === "browser" && job.browserTargetId
-          ? { kind: "browser", platform: "browser", targetId: job.browserTargetId }
-          : {
-              kind: "device",
-              platform: job.platform,
-              ...(job.serial ? { serial: job.serial } : {}),
-            };
-      await runWithTargetContext(context, () => executeJob(id));
+      const execute = () => runWithTargetContext(job.targetContext, () => executeJob(id));
+      if (job.operationContext) await runWithOperationContext(job.operationContext, execute);
+      else await execute();
     }
   } finally {
     draining = false;

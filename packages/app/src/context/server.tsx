@@ -20,6 +20,7 @@ import type {
   TestVariable,
   TargetProfile,
   TargetDefinition,
+  EventEnvelope,
 } from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
@@ -44,9 +45,9 @@ import {
   listDevices,
   bootDevice as bootDeviceRequest,
   authorizeDevice as authorizeDeviceRequest,
-  selectDevice as selectDeviceRequest,
 } from "../lib/server-target-remote";
 import { preferredTargetSerial } from "../lib/target-presentation";
+import { projectRelayEvent, type EventActivity, type EventRefresh } from "../lib/event-projection";
 import {
   deleteRecipe,
   importRecipeYaml as importRecipeYamlRemote,
@@ -245,22 +246,28 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [liveCaptureIssue, setLiveCaptureIssue] = createSignal<string | null>(null);
     const [prodAccountMatch, setProdAccountMatchState] = createSignal("");
     const [appleDeviceSetup, setAppleDeviceSetup] = createSignal<AppleSetupStatus | null>(null);
-    const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(null);
+    const [androidDeviceSetup, setAndroidDeviceSetup] = createSignal<AndroidSetupStatus | null>(
+      null,
+    );
     const [projectVariables, setProjectVariables] = createSignal<Revisioned<TestVariable[]>>({
       revision: 0,
       value: [],
       updatedAt: 0,
     });
     const [clock, setClock] = createSignal(Date.now());
+    const [eventActivity, setEventActivity] = createSignal<EventActivity | null>(null);
+    const [selectedLeaseId, setSelectedLeaseId] = createSignal<string | null>(null);
 
     let logSeq = 0;
     let eventAbort: AbortController | null = null;
+    let eventReconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let connection: ServerConnection | null = null;
     let client: RelayClient | null = null;
     let playTimer: NodeJS.Timeout | undefined;
     let clockTimer: NodeJS.Timeout | undefined;
     let appleSetupRefreshSequence = 0;
     let deviceRefreshSequence = 0;
+    let eventCursor = 0;
 
     const fetcher = () => platform.fetch ?? fetch;
 
@@ -279,6 +286,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             auth: { type: "none" },
             organizationId: "local",
             projectId: "default",
+            actorId: `human:${crypto.randomUUID()}`,
+            actorKind: "human",
           };
       connection = { ...connection, url: normalizeLocalBase(connection.url) };
       client = new RelayClient(connection, { fetch: fetcher() });
@@ -488,8 +497,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           if (!selected) {
             void selectDeviceRemote(preferredTargetSerial(list));
           } else if (selectedTarget && !selectedDeviceAvailable) {
-            // Rebind the returning target on the server as well as in the UI.
-            void selectDeviceRequest(request, selected, selectedTarget.platform ?? "android");
+            // Reacquire this actor's lease when the intentionally focused
+            // target returns. Focus itself remains entirely renderer-local.
+            void selectDeviceRemote(selected);
+          } else if (!selectedTarget && selectedDeviceAvailable) {
+            // A cached screen is evidence from a device that is no longer
+            // present. Keep the intentional selection for auto-recovery, but
+            // never present its pixels as the current live screen.
+            setLiveFrame(null);
+            setSnapshot(null);
+            setLiveCaptureIssue(null);
           }
           selectedDeviceAvailable = Boolean(selectedTarget);
           // clear only network-ish noise; keep explicit action errors
@@ -641,9 +658,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function saveSuiteRemote(input: SaveSuiteInput): Promise<TestSuite | null> {
+    async function saveSuiteRemote(
+      input: Omit<SaveSuiteInput, "expectedRevision">,
+    ): Promise<TestSuite | null> {
       try {
-        const suite = await saveSuiteRequest(request, input);
+        const suite = await saveSuiteRequest(request, {
+          ...input,
+          expectedRevision: suites().find((item) => item.id === input.id)?.updatedAt ?? 0,
+        });
         await refreshSuites();
         setSelectedSuiteId(suite.id);
         return suite;
@@ -981,9 +1003,27 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       connectSse();
     }
 
-    function handleBusEvent(raw: unknown) {
-      if (!raw || typeof raw !== "object") return;
-      const ev = raw as Record<string, unknown>;
+    function refreshFromEvent(kind: EventRefresh) {
+      const refreshers: Record<EventRefresh, () => Promise<unknown>> = {
+        devices: refreshDevices,
+        journeys: refreshRecipes,
+        collections: refreshSuites,
+        jobs: refreshJobs,
+        runs: refreshRuns,
+        variables: refreshProjectVariables,
+        matrices: refreshMatrices,
+        discoveries: refreshDiscoverySessions,
+      };
+      void refreshers[kind]();
+    }
+
+    function handleBusEvent(envelope: EventEnvelope) {
+      const projection = projectRelayEvent(eventCursor, envelope);
+      if (!projection.accepted) return;
+      eventCursor = projection.cursor;
+      if (projection.activity) setEventActivity(projection.activity);
+      for (const refresh of new Set(projection.refresh)) refreshFromEvent(refresh);
+      const ev = envelope.payload as Record<string, unknown>;
       const type = String(ev.type ?? "");
       switch (type) {
         case "job.queued":
@@ -1071,7 +1111,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           break;
         }
         case "device.selected":
-          if (ev.serial) setSelectedDevice(String(ev.serial));
+          // Selection is client-local focus. Other actors remain visible via
+          // eventActivity, but can never retarget this renderer.
           break;
         case "error":
           appendLog(String(ev.message ?? "error"), "error");
@@ -1083,16 +1124,23 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     function connectSse() {
       eventAbort?.abort();
+      if (eventReconnectTimer) clearTimeout(eventReconnectTimer);
       if (!client) return;
-      eventAbort = new AbortController();
+      const controller = new AbortController();
+      eventAbort = controller;
       setSseConnected(false);
       void client
         .events(handleBusEvent, {
-          signal: eventAbort.signal,
+          signal: controller.signal,
+          afterSequence: eventCursor,
           onOpen: () => setSseConnected(true),
         })
         .catch((error: unknown) => {
-          if ((error as { name?: string }).name !== "AbortError") setSseConnected(false);
+          if ((error as { name?: string }).name === "AbortError" || controller.signal.aborted) {
+            return;
+          }
+          setSseConnected(false);
+          eventReconnectTimer = setTimeout(() => connectSse(), 1_000);
         });
     }
 
@@ -1148,12 +1196,33 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       void Promise.resolve(platform.storage.set("selectedDevice", serial ?? "")).catch(
         () => undefined,
       );
-      const targetPlatform =
-        devices().find((device) => device.serial === serial)?.platform ?? "android";
+      if (!client || !connection) return;
       try {
-        await selectDeviceRequest(request, serial, targetPlatform);
-      } catch {
-        /* offline ok */
+        if (selectedLeaseId()) {
+          await client.releaseLease(selectedLeaseId()!).catch(() => undefined);
+          setSelectedLeaseId(null);
+        }
+        if (serial) {
+          const active = (await client.leases()).leases.find(
+            (lease) =>
+              lease.deviceSerial === serial &&
+              lease.ownerId === connection!.actorId &&
+              lease.status === "leased" &&
+              lease.expiresAt > Date.now(),
+          );
+          setSelectedLeaseId(
+            active?.id ??
+              (
+                await client.lease({
+                  poolId: "local",
+                  deviceSerial: serial,
+                  expiresAt: Date.now() + 24 * 60 * 60_000,
+                })
+              ).lease.id,
+          );
+        }
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
       }
     }
 
@@ -1168,7 +1237,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       quarantineReason?: string;
     }): Promise<RecipeInfo | null> {
       try {
-        const recipe = await saveRecipeRemoteRequest(request, input);
+        const recipe = await saveRecipeRemoteRequest(request, {
+          ...input,
+          expectedRevision: recipes().find((item) => item.id === input.id)?.updatedAt ?? 0,
+        });
         await refreshRecipes();
         return recipe;
       } catch (err) {
@@ -1363,6 +1435,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       clearInterval(clockTimer);
       stopPlayback();
       eventAbort?.abort();
+      if (eventReconnectTimer) clearTimeout(eventReconnectTimer);
     });
 
     async function cancelJobRemote(jobId?: string) {
@@ -1479,6 +1552,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       isEmptyDevices,
       deviceDiscoveryStatus,
       sseConnected,
+      eventActivity,
       devices,
       targets,
       targetProfiles,
@@ -1505,6 +1579,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setRedactionEnabled: updateRedactionEnabled,
       setSensitiveEvidenceConsent: updateSensitiveEvidenceConsent,
       selectedDevice,
+      selectedLeaseId,
       setSelectedDevice: selectDeviceRemote,
       bootDevice: bootDeviceRemote,
       bootingSerial,

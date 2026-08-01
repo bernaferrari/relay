@@ -3,12 +3,21 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
+import {
+  resolveRecipeStep,
+  runRecipeStep as runRecipeStepWithoutContext,
+} from "./recipe-runner.js";
 import type { Device } from "./device.js";
 import type { TestJob } from "./session.js";
 import { registerEvaluationProvider } from "./evaluation.js";
 import { saveRecipe } from "./recipes.js";
 import { clearControl, requestResume } from "./control.js";
+import { runWithTargetContext } from "./target-context.js";
+
+const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
+  runWithTargetContext({ kind: "device", platform: "android", serial: "recipe-runner-test" }, () =>
+    runRecipeStepWithoutContext(...args),
+  );
 
 // Keep controlled() single-attempt so error paths are fast and deterministic.
 before(() => {
@@ -97,7 +106,15 @@ describe("runRecipeStep tap gestures", () => {
       noLog,
     );
 
-    assert.deepEqual(presses, [{ platform: "android", x: 190, y: 380 }]);
+    assert.deepEqual(presses, [
+      {
+        platform: "android",
+        serial: "recipe-runner-test",
+        device: "recipe-runner-test",
+        x: 190,
+        y: 380,
+      },
+    ]);
   });
 
   it("holds the same target for the configured duration", async () => {
@@ -114,7 +131,13 @@ describe("runRecipeStep tap gestures", () => {
       noLog,
     );
     assert.equal(holds.length, 1);
-    assert.deepEqual(holds[0], { platform: "android", ref: "@e53", durationMs: 900 });
+    assert.deepEqual(holds[0], {
+      platform: "android",
+      serial: "recipe-runner-test",
+      device: "recipe-runner-test",
+      ref: "@e53",
+      durationMs: 900,
+    });
   });
 });
 
@@ -154,6 +177,8 @@ describe("runRecipeStep swipe", () => {
     assert.deepEqual(swipes, [
       {
         platform: "android",
+        serial: "recipe-runner-test",
+        device: "recipe-runner-test",
         from: { x: 10, y: 20 },
         to: { x: 190, y: 380 },
         durationMs: 330,
@@ -508,6 +533,7 @@ describe("runRecipeStep conversational evidence", () => {
     process.env.RELAY_TESTS_DIR = join(root, "tests");
     try {
       const flow = await saveRecipe({
+        expectedRevision: 0,
         title: "Recorded email sign-in",
         parameters: [
           {
@@ -559,6 +585,7 @@ describe("runRecipeStep conversational evidence", () => {
     process.env.RELAY_TESTS_DIR = join(root, "tests");
     try {
       const flow = await saveRecipe({
+        expectedRevision: 0,
         title: "Required input flow",
         parameters: [{ name: "account", required: true }],
         steps: [],

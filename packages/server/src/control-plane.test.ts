@@ -6,6 +6,20 @@ import test from "node:test";
 import { RelayClient, ApiError } from "@relay/client";
 import { startServer } from "./index.js";
 
+function operationHeaders(
+  operationId: string,
+  actorId = "human:control-plane-test",
+): Record<string, string> {
+  return {
+    "x-relay-actor-id": actorId,
+    "x-relay-actor-kind": actorId.startsWith("human:") ? "human" : "agent",
+    "x-relay-operation-id": operationId,
+    "x-relay-request-id": crypto.randomUUID(),
+    "x-relay-command-at": String(Date.now()),
+    "idempotency-key": crypto.randomUUID(),
+  };
+}
+
 test("project-scoped variables persist and expose revision conflicts", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-server-state-"));
   const previous = process.env.GROK_DEVICE_STATE_DIR;
@@ -17,6 +31,8 @@ test("project-scoped variables persist and expose revision conflicts", async () 
       auth: { type: "none" },
       organizationId: "acme",
       projectId: "chatgpt-ios",
+      actorId: "human:test",
+      actorKind: "human",
     });
     const initial = await client.variables();
     assert.equal(initial.revision, 0);
@@ -54,7 +70,9 @@ test("loopback API rejects hostile browser origins and reflects Relay origins", 
     assert.equal(denied.headers.get("access-control-allow-origin"), null);
 
     const origin = "http://localhost:5173";
-    const allowed = await fetch(url, { headers: { Origin: origin } });
+    const allowed = await fetch(url, {
+      headers: { Origin: origin, ...operationHeaders("system.health.get") },
+    });
     assert.equal(allowed.status, 200);
     assert.equal(allowed.headers.get("access-control-allow-origin"), origin);
   } finally {
@@ -82,7 +100,10 @@ test("mobile setup endpoints report prerequisites and persist Apple runner setti
 
     const saved = await fetch(`${baseUrl}/settings/devices/apple`, {
       method: "PUT",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...operationHeaders("workspace.apple-device.update"),
+      },
       body: JSON.stringify({
         teamId: "ABCDE12345",
         bundleId: "com.example.relay.runner",
@@ -120,12 +141,17 @@ test("authenticated network service cannot read unowned workspace assets", async
       headers: {
         Authorization: `Bearer ${token}`,
         "x-project-id": "project-a",
+        ...operationHeaders("journey.list", "configured-service"),
       },
     });
     assert.equal(response.status, 403);
 
     const health = await fetch(`http://127.0.0.1:${server.port}/health`, {
-      headers: { Authorization: `Bearer ${token}`, "x-project-id": "project-a" },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "x-project-id": "project-a",
+        ...operationHeaders("system.health.get", "configured-service"),
+      },
     });
     assert.equal(health.status, 200);
   } finally {

@@ -142,11 +142,18 @@ export function createWebPlatform(opts?: {
       const token = await Promise.resolve(storage.get("authToken"));
       const organizationId = (await Promise.resolve(storage.get("organizationId"))) || "local";
       const projectId = (await Promise.resolve(storage.get("projectId"))) || "default";
+      let actorId = await Promise.resolve(storage.get("actorId"));
+      if (!actorId) {
+        actorId = `human:${crypto.randomUUID()}`;
+        await Promise.resolve(storage.set("actorId", actorId));
+      }
       return {
         url,
         auth: token ? { type: "bearer" as const, token } : { type: "none" as const },
         organizationId,
         projectId,
+        actorId,
+        actorKind: "human" as const,
       };
     },
     async setServerConnection(connection) {
@@ -154,6 +161,7 @@ export function createWebPlatform(opts?: {
         Promise.resolve(storage.set("serverUrl", normalizeLocalBase(connection.url))),
         Promise.resolve(storage.set("organizationId", connection.organizationId)),
         Promise.resolve(storage.set("projectId", connection.projectId)),
+        Promise.resolve(storage.set("actorId", connection.actorId)),
         connection.auth.type === "none"
           ? Promise.resolve(storage.remove?.("authToken"))
           : Promise.resolve(storage.set("authToken", connection.auth.token)),

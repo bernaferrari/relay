@@ -12,6 +12,7 @@ function job(root: string, status: TestJob["status"] = "ok"): TestJob {
     id: `run-${Math.random().toString(36).slice(2)}`,
     action: "evidence-test",
     platform: "android",
+    targetContext: { kind: "device", platform: "android", serial: "runs-test" },
     targetKind: "device",
     status,
     queuedAt: at - 20,

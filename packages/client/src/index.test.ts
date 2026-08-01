@@ -24,6 +24,8 @@ test("RelayClient applies scope and bearer authentication", async () => {
       auth: { type: "bearer", token: "secret" },
       organizationId: "acme",
       projectId: "gemini",
+      actorId: "human:test",
+      actorKind: "human",
     },
     {
       fetch: async (input, init) => {
@@ -39,6 +41,11 @@ test("RelayClient applies scope and bearer authentication", async () => {
   assert.equal(request?.headers.get("authorization"), "Bearer secret");
   assert.equal(request?.headers.get("x-organization-id"), "acme");
   assert.equal(request?.headers.get("x-project-id"), "gemini");
+  assert.equal(request?.headers.get("x-relay-actor-id"), "human:test");
+  assert.equal(request?.headers.get("x-relay-actor-kind"), "human");
+  assert.equal(request?.headers.get("x-relay-operation-id"), "system.health.get");
+  assert.ok(request?.headers.get("x-relay-request-id"));
+  assert.ok(request?.headers.get("idempotency-key"));
 });
 
 test("RelayClient never invokes a supplied fetch with itself as the receiver", async () => {
@@ -52,6 +59,8 @@ test("RelayClient never invokes a supplied fetch with itself as the receiver", a
       auth: { type: "none" },
       organizationId: "local",
       projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
     },
     { fetch: browserLikeFetch as typeof fetch },
   );
@@ -66,6 +75,8 @@ test("invoke derives path, query, and method from the operation registry", async
       auth: { type: "none" },
       organizationId: "local",
       projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
     },
     {
       fetch: async (input, init) => {
@@ -93,6 +104,8 @@ test("invoke rejects malformed successful responses as an upstream contract erro
       auth: { type: "none" },
       organizationId: "local",
       projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
     },
     { fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }) },
   );
@@ -111,6 +124,8 @@ test("resource transport cannot bypass the registry for mutations", async () => 
       auth: { type: "none" },
       organizationId: "local",
       projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
     },
     { fetch: async () => new Response("{}", { status: 200 }) },
   );
@@ -119,4 +134,80 @@ test("resource transport cannot bypass the registry for mutations", async () => 
     () => client.resource("/unregistered", { method: "POST", body: "{}" }),
     /Unregistered mutation transport/,
   );
+});
+
+test("event streams parse canonical envelopes, deduplicate cursors, and surface gaps", async () => {
+  let request: Request | undefined;
+  const base = {
+    schemaVersion: 1,
+    actorId: "agent:indexer",
+    actorKind: "agent",
+    organizationId: "local",
+    projectId: "default",
+    operationId: "journey.update",
+    requestId: "request-event",
+    occurredAt: 2,
+  } as const;
+  const resource = {
+    ...base,
+    eventId: "event-2",
+    sequence: 2,
+    payload: {
+      type: "resource.updated",
+      at: 2,
+      projectId: "default",
+      resource: "journey",
+      resourceId: "login",
+      revision: 2,
+    },
+  };
+  const gap = {
+    ...base,
+    eventId: "event-3",
+    sequence: 3,
+    occurredAt: 3,
+    payload: {
+      type: "stream.gap",
+      at: 3,
+      requestedAfter: 1,
+      oldestAvailable: 2,
+      latestAvailable: 2,
+      requiresRefresh: true,
+    },
+  };
+  const frames = [resource, resource, gap]
+    .map(
+      (event) =>
+        `id: ${event.sequence}\nevent: ${event.payload.type}\ndata: ${JSON.stringify(event)}\n\n`,
+    )
+    .join("");
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async (input, init) => {
+        request = new Request(input, init);
+        return new Response(frames, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      },
+    },
+  );
+  const received: number[] = [];
+  const gaps: number[] = [];
+  await client.events((event) => received.push(event.sequence), {
+    afterSequence: 1,
+    onGap: (event) => gaps.push(event.sequence),
+  });
+  assert.deepEqual(received, [2, 3]);
+  assert.deepEqual(gaps, [3]);
+  assert.equal(request?.headers.get("last-event-id"), "1");
+  assert.equal(request?.headers.get("x-relay-operation-id"), "event.stream");
 });

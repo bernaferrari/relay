@@ -1260,7 +1260,9 @@ export function DeviceStage(_props: {
     const separator = identity.lastIndexOf("|");
     const base = identity.slice(0, separator);
     const serial = identity.slice(separator + 1);
-    return `${base}/device/stream?serial=${encodeURIComponent(serial)}&attempt=${videoAttempt()}`;
+    const lease = server.selectedLeaseId();
+    if (!lease) return null;
+    return `${base}/device/stream?serial=${encodeURIComponent(serial)}&lease=${encodeURIComponent(lease)}&attempt=${videoAttempt()}`;
   });
   let videoRetryTimer: number | undefined;
   createEffect(() => {

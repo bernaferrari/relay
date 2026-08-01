@@ -12,6 +12,8 @@ function clientFor(port: number): RelayClient {
     auth: { type: "none" },
     organizationId: "local",
     projectId: "default",
+    actorId: "human:test",
+    actorKind: "human",
   });
 }
 

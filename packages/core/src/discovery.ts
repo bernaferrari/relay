@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { publish } from "./events.js";
+import { currentOperationContext } from "./operation-context.js";
 import type {
   DiscoveryScope,
   DiscoveryControl,
@@ -20,6 +22,17 @@ const DEFAULT_SCOPE: DiscoveryScope = {
   maxDurationMs: 15 * 60_000,
   allowSensitiveControls: false,
 };
+
+function emitDiscovery(session: DiscoverySession, created = false): void {
+  publish({
+    type: created ? "resource.created" : "resource.updated",
+    at: session.updatedAt,
+    projectId: currentOperationContext()?.projectId ?? "default",
+    resource: "discovery-session",
+    resourceId: session.id,
+    revision: session.updatedAt,
+  });
+}
 
 function discoveryRoot(): string {
   return join(
@@ -156,6 +169,7 @@ export async function createDiscoverySession(input: {
     transitions: [],
   };
   await writeSession(session);
+  emitDiscovery(session, true);
   return session;
 }
 
@@ -176,6 +190,7 @@ export async function renameDiscoverySession(id: string, name: string): Promise<
   if (nextName.length > 120) throw new Error("Map name is too long");
   const renamed = { ...session, name: nextName, updatedAt: Date.now() };
   await writeSession(renamed);
+  emitDiscovery(renamed);
   return renamed;
 }
 
@@ -212,6 +227,7 @@ export async function setDiscoveryStatus(
   session.status = status;
   session.updatedAt = Date.now();
   await writeSession(session);
+  emitDiscovery(session);
   return session;
 }
 
@@ -234,6 +250,7 @@ export async function recordObservedScreen(input: {
       session.currentScreenId = existing.id;
       session.updatedAt = Date.now();
       await writeSession(session);
+      emitDiscovery(session);
     }
     return { session, screen: existing, isNew: false };
   }
@@ -257,6 +274,7 @@ export async function recordObservedScreen(input: {
   if (input.makeCurrent) session.currentScreenId = screen.id;
   session.updatedAt = screen.capturedAt;
   await writeSession(session);
+  emitDiscovery(session);
   return { session, screen, isNew: true };
 }
 
@@ -329,6 +347,7 @@ export async function recordObservedTransition(
   session.currentScreenId = input.toScreenId ?? input.fromScreenId;
   session.updatedAt = transition.capturedAt;
   await writeSession(session);
+  emitDiscovery(session);
   return transition;
 }
 
@@ -411,6 +430,7 @@ export async function promoteDiscoveryPath(input: {
   const compiled = pathSteps(reviewed);
   const recipe = await saveRecipe({
     id: input.recipeId,
+    expectedRevision: (await readRecipe(input.recipeId))?.updatedAt ?? 0,
     title: input.title,
     description: input.description ?? `Observed path from Discovery Map · ${session.name}`,
     steps: compiled.steps,

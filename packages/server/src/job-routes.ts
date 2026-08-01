@@ -2,6 +2,7 @@ import http from "node:http";
 import {
   cancelActiveJob,
   cancelJob,
+  currentOperationContext,
   enqueueJob,
   freezeRecipeExecution,
   getActiveJob,
@@ -155,7 +156,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           },
         ],
         projectId: scope.projectId,
-        ownerId: scope.subject,
+        ownerId: currentOperationContext()!.actorId,
       }),
     );
     json(res, 202, { matrix, jobs });
@@ -228,7 +229,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             prodAccountMatch: body.prodAccountMatch,
             variables: body.variables,
             projectId: scope.projectId,
-            ownerId: scope.subject,
+            ownerId: currentOperationContext()!.actorId,
           });
     } catch (err) {
       // enqueueJob throws "Unknown action: <id>" for bad action ids — surface as 400, not 500.

@@ -1,5 +1,5 @@
 import type http from "node:http";
-import { now, recentEvents, subscribe, type DeviceEvent } from "@relay/core";
+import { envelopeEvent, eventsAfter, now, subscribe, type DeviceEvent } from "@relay/core";
 
 type Client = {
   res: http.ServerResponse;
@@ -19,7 +19,8 @@ export function createSseHub(headers: Record<string, string>): {
   const clients = new Set<Client>();
 
   const write = (res: http.ServerResponse, event: DeviceEvent) => {
-    res.write(`event: ${event.type}\n`);
+    res.write(`id: ${event.sequence}\n`);
+    res.write(`event: ${event.payload.type}\n`);
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
   const unsubscribe = subscribe((event) => {
@@ -42,9 +43,27 @@ export function createSseHub(headers: Record<string, string>): {
         Connection: "keep-alive",
         ...headers,
       });
-      res.write(`event: hello\ndata: ${JSON.stringify({ ok: true, at: now() })}\n\n`);
-      for (const event of recentEvents(30)) {
+      res.write(`: connected ${now()}\n\n`);
+      const headerCursor = Array.isArray(req.headers["last-event-id"])
+        ? req.headers["last-event-id"][0]
+        : req.headers["last-event-id"];
+      const requestedAfter = Number(headerCursor ?? 0);
+      const replay = eventsAfter(Number.isFinite(requestedAfter) ? requestedAfter : 0);
+      for (const event of replay.events) {
         if (visible(event)) write(res, event);
+      }
+      if (replay.gap) {
+        write(
+          res,
+          envelopeEvent({
+            type: "stream.gap",
+            at: now(),
+            requestedAfter,
+            oldestAvailable: replay.oldestAvailable,
+            latestAvailable: replay.latestAvailable,
+            requiresRefresh: true as const,
+          }),
+        );
       }
 
       const client: Client = {

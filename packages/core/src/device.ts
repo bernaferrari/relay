@@ -8,7 +8,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry } from "./retry.js";
-import { currentTargetContext } from "./target-context.js";
+import { currentTargetContext, targetIdentity } from "./target-context.js";
 import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
 
 export type DevicePlatform = "android" | "ios";
@@ -306,8 +306,8 @@ export type AndroidAppBuild = {
 };
 
 function androidAdbArgs(args: string[]): string[] {
-  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
-  return [...(serial ? ["-s", serial] : []), ...args];
+  const serial = targetIdentity();
+  return ["-s", serial, ...args];
 }
 
 function requireAndroidBuildControl(): void {
@@ -448,21 +448,13 @@ export async function setAndroidLockState(action: "lock" | "unlock"): Promise<vo
       "capability unavailable: lock-screen control is not supported by this iOS runner",
     );
   }
-  const serial = process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
-  const args = [
-    ...(serial ? ["-s", serial] : []),
-    "shell",
-    "input",
-    "keyevent",
-    action === "lock" ? "223" : "224",
-  ];
+  const serial = targetIdentity();
+  const args = ["-s", serial, "shell", "input", "keyevent", action === "lock" ? "223" : "224"];
   await cooperativeCheckpoint();
   throwIfCancelled();
   await raceCancel(execFileAsync("adb", args));
   if (action === "unlock") {
-    await raceCancel(
-      execFileAsync("adb", [...(serial ? ["-s", serial] : []), "shell", "input", "keyevent", "82"]),
-    );
+    await raceCancel(execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "82"]));
   }
 }
 

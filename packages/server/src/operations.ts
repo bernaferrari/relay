@@ -2,15 +2,20 @@ import type http from "node:http";
 import {
   operationDefinitions,
   operationManifest,
+  parseCommandEnvelope,
+  type CommandIdentity,
   type OperationDefinition,
   type OperationId,
   type OperationManifestItem,
 } from "@relay/protocol";
+import { enterOperationContext } from "@relay/core";
+import { resolveCommandActor, type RequestContext } from "./security.js";
 
 type RequestOperationContext = {
   definition: OperationDefinition<OperationId>;
   params: Record<string, string>;
   query: Record<string, string | string[]>;
+  command: CommandIdentity;
 };
 
 const requestContexts = new WeakMap<http.IncomingMessage, RequestOperationContext>();
@@ -84,16 +89,58 @@ export function bindOperationRequest(
   method: string,
   pathname: string,
   url: URL,
+  scope: RequestContext,
 ): OperationHandlerRegistration | null {
   const registration = findOperationHandler(method, pathname);
   if (!registration) return null;
+  const header = (name: string): string | undefined => {
+    const value = request.headers[name];
+    return (Array.isArray(value) ? value[0] : value)?.trim() || undefined;
+  };
+  const operationId = header("x-relay-operation-id");
+  if (operationId !== registration.id) {
+    throw new OperationContractError(
+      "input",
+      registration.id,
+      `x-relay-operation-id must be ${registration.id}`,
+    );
+  }
+  let actor;
+  try {
+    actor = resolveCommandActor(request.headers, scope);
+  } catch (error) {
+    throw new OperationContractError(
+      "input",
+      registration.id,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  const command = parseCommandEnvelope(
+    {
+      schemaVersion: 1,
+      ...actor,
+      organizationId: scope.organizationId,
+      projectId: scope.projectId,
+      operationId,
+      requestId: header("x-relay-request-id"),
+      idempotencyKey: header("idempotency-key"),
+      issuedAt: Number(header("x-relay-command-at")),
+      causationId: header("x-relay-causation-id"),
+      correlationId: header("x-relay-correlation-id"),
+      authoringSessionId: header("x-relay-authoring-session-id"),
+      payload: {},
+    },
+    (payload) => payload,
+  );
   const context: RequestOperationContext = {
     definition: registration.definition,
     params: registration.params,
     query: queryRecord(url),
+    command,
   };
   requestContexts.set(request, context);
   responseContexts.set(response, context);
+  enterOperationContext(command);
 
   if (method === "GET" || method === "DELETE") {
     try {
@@ -107,6 +154,12 @@ export function bindOperationRequest(
     }
   }
   return registration;
+}
+
+export function operationRequestContext(
+  request: http.IncomingMessage,
+): RequestOperationContext | undefined {
+  return requestContexts.get(request);
 }
 
 export function validateOperationBody(request: http.IncomingMessage, body: unknown): void {

@@ -1,14 +1,26 @@
-import { listDeviceLeases, now, type TestJob } from "@relay/core";
+import {
+  currentOperationContext,
+  listDeviceLeases,
+  now,
+  setOperationLease,
+  type TestJob,
+} from "@relay/core";
+import type { DeviceLease } from "@relay/protocol";
 import { HttpError } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
 
-export async function assertTargetControl(scope: RequestContext, targetId?: string): Promise<void> {
-  if (!targetId || scope.localTrusted) return;
+export async function assertTargetControl(
+  scope: RequestContext,
+  targetId?: string,
+): Promise<DeviceLease> {
+  if (!targetId) throw new HttpError(400, "Explicit target identity is required");
+  const operation = currentOperationContext();
+  if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
   const at = now();
   const active = (await listDeviceLeases(scope.projectId)).find(
     (lease) =>
       lease.deviceSerial === targetId &&
-      lease.ownerId === scope.subject &&
+      lease.ownerId === operation.actorId &&
       lease.status === "leased" &&
       lease.expiresAt > at,
   );
@@ -21,12 +33,35 @@ export async function assertTargetControl(scope: RequestContext, targetId?: stri
     });
     throw new HttpError(403, "An active lease owned by this caller is required for target control");
   }
+  setOperationLease(active.id);
   recordAudit(scope, {
     action: "target.control",
     resource: "lease",
     target: targetId,
     result: "allow",
   });
+  return active;
+}
+
+export async function assertTargetLease(
+  scope: RequestContext,
+  targetId: string,
+  leaseId: string | undefined,
+): Promise<void> {
+  if (!leaseId) throw new HttpError(403, "A target lease is required for live streaming");
+  const operation = currentOperationContext();
+  if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
+  const at = now();
+  const active = (await listDeviceLeases(scope.projectId)).find(
+    (lease) =>
+      lease.id === leaseId &&
+      lease.deviceSerial === targetId &&
+      lease.ownerId === operation.actorId &&
+      lease.status === "leased" &&
+      lease.expiresAt > at,
+  );
+  if (!active) throw new HttpError(403, "The live-stream target lease is unavailable");
+  setOperationLease(active.id);
 }
 
 export function assertJobAccess(

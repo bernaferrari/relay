@@ -9,7 +9,7 @@ test("keeps recipe persistence endpoint construction in one module", async () =>
     if (path.endsWith("/yaml")) return { yaml: "schemaVersion: 1" } as T;
     return { journey: { id: "login", title: "Login", steps: [] } } as T;
   };
-  await saveRecipe(request, { id: "login", title: "Login", steps: [] });
+  await saveRecipe(request, { id: "login", expectedRevision: 12, title: "Login", steps: [] });
   assert.equal(await loadRecipeYaml(request, "login"), "schemaVersion: 1");
   assert.deepEqual(calls, ["PUT /journeys/login", "GET /journeys/login/yaml"]);
 });

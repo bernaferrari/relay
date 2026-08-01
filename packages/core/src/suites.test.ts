@@ -29,6 +29,7 @@ after(async () => {
 describe("test suites", () => {
   it("stores reusable test references and preserves edit history", async () => {
     const created = await saveSuite({
+      expectedRevision: 0,
       title: "Release confidence",
       sections: [
         {
@@ -42,6 +43,7 @@ describe("test suites", () => {
 
     const edited = await saveSuite({
       id: created.id,
+      expectedRevision: created.updatedAt,
       title: created.title,
       sections: [...created.sections, { title: "Settings", entries: [] }],
     });
@@ -56,12 +58,13 @@ describe("test suites", () => {
   });
 
   it("allows every section to be removed before a suite is rebuilt", async () => {
-    const suite = await saveSuite({ title: "Empty release", sections: [] });
+    const suite = await saveSuite({ expectedRevision: 0, title: "Empty release", sections: [] });
     assert.deepEqual(suite.sections, []);
   });
 
   it("freezes enabled test revisions into a run manifest", async () => {
     const suite = await saveSuite({
+      expectedRevision: 0,
       title: "Smoke",
       sections: [
         {

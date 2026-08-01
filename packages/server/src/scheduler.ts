@@ -10,6 +10,7 @@ import {
   readProjectVariables,
   readRecipe,
   resolveScheduledTargetProfile,
+  runWithOperationContext,
 } from "@relay/core";
 
 export async function runDueSchedules(at = Date.now()): Promise<void> {
@@ -33,38 +34,52 @@ export async function runDueSchedules(at = Date.now()): Promise<void> {
     });
     const targetProfile = resolveScheduledTargetProfile(schedule, targetProfiles);
     for (const item of matrix.cases) {
-      enqueueJob({
-        recipe: schedule.recipeId,
-        recipeSnapshot: recipe,
-        recipeGraph,
-        ...(schedule.targetKind === "browser"
-          ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
-          : {
-              targetKind: "device" as const,
-              serial: schedule.targetId,
-              platform: schedule.platform === "ios" ? "ios" : "android",
-            }),
-        variables: item.values,
-        ...(targetProfile ? { targetProfile } : {}),
-        batchId: matrix.id,
-        caseIndex: item.index,
-        caseCount: matrix.cases.length,
-        artifacts: [
-          {
-            kind: "schedule",
-            capturedAt: at,
-            data: {
-              scheduleId: schedule.id,
-              matrixId: matrix.id,
-              provenance: item.provenance,
-              targetProfile: targetProfile ?? null,
-              targetProfileStatus: targetProfile ? "observed" : "unavailable",
-            },
-          },
-        ],
-        projectId: schedule.projectId,
-        ownerId: "scheduler",
-      });
+      runWithOperationContext(
+        {
+          schemaVersion: 1,
+          actorId: "system:scheduler",
+          actorKind: "system",
+          organizationId: "local",
+          projectId: schedule.projectId,
+          operationId: "job.create",
+          requestId: `schedule:${schedule.id}:${at}:${item.index}`,
+          idempotencyKey: `schedule:${schedule.id}:${at}:${item.index}`,
+          issuedAt: at,
+        },
+        () =>
+          enqueueJob({
+            recipe: schedule.recipeId,
+            recipeSnapshot: recipe,
+            recipeGraph,
+            ...(schedule.targetKind === "browser"
+              ? { targetKind: "browser" as const, browserTargetId: schedule.targetId }
+              : {
+                  targetKind: "device" as const,
+                  serial: schedule.targetId,
+                  platform: schedule.platform === "ios" ? "ios" : "android",
+                }),
+            variables: item.values,
+            ...(targetProfile ? { targetProfile } : {}),
+            batchId: matrix.id,
+            caseIndex: item.index,
+            caseCount: matrix.cases.length,
+            artifacts: [
+              {
+                kind: "schedule",
+                capturedAt: at,
+                data: {
+                  scheduleId: schedule.id,
+                  matrixId: matrix.id,
+                  provenance: item.provenance,
+                  targetProfile: targetProfile ?? null,
+                  targetProfileStatus: targetProfile ? "observed" : "unavailable",
+                },
+              },
+            ],
+            projectId: schedule.projectId,
+            ownerId: "scheduler",
+          }),
+      );
     }
   }
 }

@@ -39,7 +39,6 @@ import {
   type AndroidInspectionState,
 } from "./android-ui-snapshot.js";
 import {
-  configuredTargetContext,
   currentTargetContext,
   runWithTargetContext,
   targetIdentity,
@@ -119,20 +118,16 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
  * Used as a fallback when the SDK reports "No active session".
  */
 function rawScreenshot(path: string, serial?: string): void {
-  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
-  const args = serial
-    ? ["-s", serial, "exec-out", "screencap", "-p"]
-    : ["exec-out", "screencap", "-p"];
+  if (!serial) throw new Error("Explicit Android target serial is required");
+  const args = ["-s", serial, "exec-out", "screencap", "-p"];
   const buf = execFileSync("adb", args, { maxBuffer: 20 * 1024 * 1024 });
   writeFileSync(path, buf);
 }
 
 /** Raw adb input tap — works without a session, on any app. */
 function rawTap(x: number, y: number, serial?: string): void {
-  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
-  const args = serial
-    ? ["-s", serial, "shell", "input", "tap", String(x), String(y)]
-    : ["shell", "input", "tap", String(x), String(y)];
+  if (!serial) throw new Error("Explicit Android target serial is required");
+  const args = ["-s", serial, "shell", "input", "tap", String(x), String(y)];
   execFileSync("adb", args, { timeout: 5000 });
 }
 /** Raw adb input swipe — works without a session, on any app. */
@@ -142,19 +137,17 @@ function rawSwipe(
   durationMs: number,
   serial?: string,
 ): void {
-  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  if (!serial) throw new Error("Explicit Android target serial is required");
   const inputArgs = adbSwipeInputArgs(from, to, durationMs);
-  const args = serial ? ["-s", serial, "shell", ...inputArgs] : ["shell", ...inputArgs];
+  const args = ["-s", serial, "shell", ...inputArgs];
   execFileSync("adb", args, { timeout: 8000 });
 }
 
 /** Raw adb text input — keeps manual mirroring alive without an SDK app session. */
 function rawType(text: string, serial?: string): void {
-  serial ??= process.env.AGENT_DEVICE_SERIAL?.trim() || process.env.ANDROID_SERIAL?.trim();
+  if (!serial) throw new Error("Explicit Android target serial is required");
   const encoded = text.replaceAll(" ", "%s");
-  const args = serial
-    ? ["-s", serial, "shell", "input", "text", encoded]
-    : ["shell", "input", "text", encoded];
+  const args = ["-s", serial, "shell", "input", "text", encoded];
   execFileSync("adb", args, { timeout: 8000 });
 }
 
@@ -447,30 +440,6 @@ export async function requestAndroidAuthorization(serial: string): Promise<void>
   publish({ type: "device.authorization-requested", at: now(), serial: target });
 }
 
-export function selectDevice(serial: string | null, platform: DevicePlatform = "android"): void {
-  delete process.env.RELAY_TARGET_ID;
-  if (serial?.trim()) {
-    process.env.AGENT_DEVICE_SERIAL = serial.trim();
-    process.env.AGENT_DEVICE_PLATFORM = platform;
-    if (platform === "android") process.env.ANDROID_SERIAL = serial.trim();
-    else delete process.env.ANDROID_SERIAL;
-  } else {
-    delete process.env.AGENT_DEVICE_SERIAL;
-    delete process.env.ANDROID_SERIAL;
-    delete process.env.AGENT_DEVICE_PLATFORM;
-  }
-  publish({ type: "device.selected", at: now(), serial: serial?.trim() || null });
-}
-
-export function selectBrowserTarget(targetId: string | null): void {
-  delete process.env.AGENT_DEVICE_SERIAL;
-  delete process.env.ANDROID_SERIAL;
-  delete process.env.AGENT_DEVICE_PLATFORM;
-  if (targetId?.trim()) process.env.RELAY_TARGET_ID = targetId.trim();
-  else delete process.env.RELAY_TARGET_ID;
-  publish({ type: "device.selected", at: now(), serial: targetId?.trim() || null });
-}
-
 /**
  * Resolve a physical platform without repeatedly invoking the comparatively
  * expensive Apple device discovery command. The cache is refreshed by every
@@ -495,14 +464,12 @@ async function resolveRuntimeTarget(
         device: await getBrowserDevice(serial),
       };
     }
-    const configured = configuredTargetContext();
     // HTTP callers identify a device by serial, but they do not share the
     // desktop process's selected-target environment. Never infer a platform
     // from that process-global fallback here: an iPad serial would otherwise
     // be routed through Android's adb screenshot/input paths.
-    const platform =
-      (await devicePlatformForSerial(serial)) ??
-      (configured.kind === "device" ? configured.platform : "android");
+    const platform = (await devicePlatformForSerial(serial)) ?? undefined;
+    if (!platform) throw new Error(`Target ${serial} is not connected or configured`);
     return {
       context: { kind: "device", platform, serial },
       device: createDevice(),

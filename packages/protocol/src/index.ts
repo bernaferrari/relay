@@ -1,7 +1,9 @@
 export * from "./suites.js";
 export * from "./recipes.js";
 export * from "./operations.js";
+export * from "./coordination.js";
 import type { RecipeStep } from "./recipes.js";
+import type { ActorKind, ResourceEventPayload } from "./coordination.js";
 
 export type ConnectionAuth =
   | { type: "none" }
@@ -13,6 +15,8 @@ export type ServerConnection = {
   auth: ConnectionAuth;
   organizationId: string;
   projectId: string;
+  actorId: string;
+  actorKind: ActorKind;
 };
 
 export type TargetKind = "android" | "ios" | "browser";
@@ -867,14 +871,7 @@ export type SemanticEvaluationResult = {
   evaluatedAt: number;
 };
 
-export type ResourceEvent = {
-  type: "resource.created" | "resource.updated" | "resource.deleted" | "lease.changed";
-  at: number;
-  projectId: string;
-  resource: "project" | "build" | "device-pool" | "lease" | "variables" | "journey" | "matrix";
-  resourceId: string;
-  revision?: number;
-};
+export type ResourceEvent = ResourceEventPayload;
 
 export class RevisionConflict<T = unknown> extends Error {
   readonly status = 409;
@@ -885,10 +882,12 @@ export class RevisionConflict<T = unknown> extends Error {
 }
 
 export function normalizeConnection(connection: ServerConnection): ServerConnection {
+  if (!connection.actorId.trim()) throw new TypeError("Server connection actorId is required");
   return {
     ...connection,
     url: connection.url.replace(/\/+$/, ""),
     organizationId: connection.organizationId.trim() || "local",
     projectId: connection.projectId.trim() || "default",
+    actorId: connection.actorId.trim(),
   };
 }

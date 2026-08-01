@@ -22,7 +22,7 @@ test("dynamic canonical routes resolve to their registered operation", () => {
     findOperationHandler("PUT", "/journeys/onboarding/document")?.id,
     "journey.document.update",
   );
-  assert.equal(findOperationHandler("GET", "/events"), null);
+  assert.equal(findOperationHandler("GET", "/events")?.id, "event.stream");
 });
 
 test("server manifest is generated from the registry", () => {

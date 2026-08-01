@@ -14,7 +14,7 @@ import {
   loadEvidenceCollectionPolicy,
   pauseJob,
   resumeJob,
-  selectDevice,
+  runWithOperationContext,
   type ActionMeta,
   type ListedDevice,
   type TestJob,
@@ -28,12 +28,12 @@ export type DeviceClient = {
   listActions: () => Promise<ActionMeta[]>;
   listJobs: () => Promise<TestJob[]>;
   selectDevice: (serial: string | null) => Promise<void>;
-  snapshot: (serial?: string) => Promise<{
+  snapshot: (serial: string) => Promise<{
     nodes: unknown[];
     interactive: unknown[];
     tree: string;
   }>;
-  screenshot: (serial?: string) => Promise<{ path: string; bytes: number }>;
+  screenshot: (serial: string) => Promise<{ path: string; bytes: number }>;
   runAction: (opts: {
     action: string;
     serial?: string;
@@ -48,6 +48,14 @@ export type DeviceClient = {
 async function probe(url: string): Promise<boolean> {
   try {
     const res = await fetch(`${url.replace(/\/+$/, "")}/health`, {
+      headers: {
+        "X-Relay-Actor-Id": "human:local-tui",
+        "X-Relay-Actor-Kind": "human",
+        "X-Relay-Operation-Id": "system.health.get",
+        "X-Relay-Request-Id": crypto.randomUUID(),
+        "X-Relay-Command-At": String(Date.now()),
+        "Idempotency-Key": crypto.randomUUID(),
+      },
       signal: AbortSignal.timeout(800),
     });
     return res.ok;
@@ -69,7 +77,7 @@ function inProcessClient(): DeviceClient {
       return listJobs(30);
     },
     async selectDevice(serial) {
-      selectDevice(serial);
+      void serial;
     },
     async snapshot(serial) {
       const snap = await captureSnapshot({ serial });
@@ -80,10 +88,32 @@ function inProcessClient(): DeviceClient {
       return { path: shot.path, bytes: shot.bytes };
     },
     async runAction(opts) {
-      const job = enqueueJob({
-        action: opts.action,
-        serial: opts.serial,
-      });
+      const platform = (await listDevices()).find(
+        (device) => device.serial === opts.serial,
+      )?.platform;
+      if (platform !== "android" && platform !== "ios") {
+        throw new Error(`Target ${opts.serial} is not connected`);
+      }
+      const requestId = crypto.randomUUID();
+      const job = runWithOperationContext(
+        {
+          schemaVersion: 1,
+          actorId: "human:local-tui",
+          actorKind: "human",
+          organizationId: "local",
+          projectId: "default",
+          operationId: "job.create",
+          requestId,
+          idempotencyKey: requestId,
+          issuedAt: Date.now(),
+        },
+        () =>
+          enqueueJob({
+            action: opts.action,
+            serial: opts.serial,
+            platform,
+          }),
+      );
       let seen = 0;
       for (;;) {
         const current = getJob(job.id)!;
@@ -138,6 +168,8 @@ function httpClient(baseUrl: string): DeviceClient {
     organizationId:
       process.env.RELAY_ORGANIZATION_ID ?? process.env.GROK_DEVICE_ORGANIZATION_ID ?? "local",
     projectId: process.env.RELAY_PROJECT_ID ?? process.env.GROK_DEVICE_PROJECT_ID ?? "default",
+    actorId: process.env.RELAY_ACTOR_ID ?? "human:local-tui",
+    actorKind: "human",
   });
   return {
     mode: "http",
@@ -155,13 +187,13 @@ function httpClient(baseUrl: string): DeviceClient {
       return data.jobs as unknown as TestJob[];
     },
     async selectDevice(serial) {
-      await relay.invoke("target.select", { serial });
+      void serial;
     },
     async snapshot(serial) {
-      return relay.invoke("target.snapshot.capture", serial ? { serial } : {});
+      return relay.invoke("target.snapshot.capture", { serial });
     },
     async screenshot(serial) {
-      return relay.invoke("target.screenshot.capture", serial ? { serial } : {});
+      return relay.invoke("target.screenshot.capture", { serial });
     },
     async runAction(opts) {
       // Async job so cancel/pause work against the same server process

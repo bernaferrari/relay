@@ -10,6 +10,8 @@ import {
   PLATFORM,
   WORK_ACCOUNT_MATCH,
   runAction,
+  runWithOperationContext,
+  runWithTargetContext,
   type ActionMeta,
 } from "@relay/core";
 
@@ -73,8 +75,6 @@ export async function runInteractive(): Promise<void> {
       devices.map((d) => d.label),
     );
     const selected = devices[deviceIdx]!;
-    process.env.AGENT_DEVICE_SERIAL = selected.serial;
-    process.env.ANDROID_SERIAL = selected.serial;
     console.log(`\n→ Device: ${selected.name} (${selected.serial})`);
 
     const actionIdx = await pickIndex(rl, "Actions / tests:", ACTIONS.map(actionLabel));
@@ -97,7 +97,24 @@ export async function runInteractive(): Promise<void> {
     console.log(`\n→ Running ${action} on ${selected.serial}…\n`);
 
     const device = createDevice();
-    const result = await runAction(device, action);
+    const requestId = crypto.randomUUID();
+    const result = await runWithOperationContext(
+      {
+        schemaVersion: 1,
+        actorId: "human:local-cli",
+        actorKind: "human",
+        organizationId: "local",
+        projectId: "default",
+        operationId: "job.create",
+        requestId,
+        idempotencyKey: requestId,
+        issuedAt: Date.now(),
+      },
+      () =>
+        runWithTargetContext({ kind: "device", platform: "android", serial: selected.serial }, () =>
+          runAction(device, action),
+        ),
+    );
     if (!result.ok) {
       throw new Error(result.error);
     }

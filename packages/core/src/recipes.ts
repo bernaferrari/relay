@@ -17,7 +17,9 @@ import {
   type RecordingFormatVersion,
 } from "./recording-format.js";
 import type { Glyph } from "./trace.js";
-import type {
+import {
+  RevisionConflict,
+  type Revisioned,
   HumanCheckpointReason,
   HorizontalCoordinateAnchor,
   RecipeParameter,
@@ -29,6 +31,15 @@ import type {
   StepTarget,
   VerticalCoordinateAnchor,
 } from "@relay/protocol";
+import { currentOperationContext } from "./operation-context.js";
+import { publish } from "./events.js";
+import {
+  atomicWriteFile,
+  BoundedIdempotencyStore,
+  KeyedSerialQueue,
+  payloadFingerprint,
+  scopedIdempotencyKey,
+} from "./coordination-store.js";
 export type {
   HumanCheckpointReason,
   HorizontalCoordinateAnchor,
@@ -1387,6 +1398,7 @@ async function ensureTestsRoot(): Promise<void> {
 
 export type SaveRecipeInput = {
   id?: string;
+  expectedRevision: number;
   title: string;
   description?: string;
   variables?: Record<string, string>;
@@ -1397,25 +1409,42 @@ export type SaveRecipeInput = {
   recordingFormatVersion?: RecordingFormatVersion;
 };
 
+const recipeWrites = new KeyedSerialQueue();
+const recipeIdempotency = new BoundedIdempotencyStore<Recipe>();
+
+function recipeConflict(current: Recipe | null): RevisionConflict<Recipe | null> {
+  const revision = current?.updatedAt ?? 0;
+  const snapshot: Revisioned<Recipe | null> = {
+    revision,
+    value: current,
+    updatedAt: revision,
+    ...(currentOperationContext()?.actorId
+      ? { updatedBy: currentOperationContext()!.actorId }
+      : {}),
+  };
+  return new RevisionConflict(snapshot);
+}
+
 /**
  * Create or overwrite a recipe. Packaged ids are persisted as user overrides,
  * so every catalog item has the same edit semantics.
  */
-export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
+async function saveRecipeUnchecked(input: SaveRecipeInput): Promise<Recipe> {
   const steps = validateRecipeSteps(input.steps);
   const variables = validateRecipeVariables(input.variables ?? undefined);
   const parameters = validateRecipeParameters(input.parameters ?? undefined);
   if (!isString(input.title) || input.title.trim().length === 0) {
     throw new Error("title is required");
   }
-  const ts = now();
+  const requestedAt = now();
   let id = input.id?.trim();
   if (!id) {
-    id = `custom-${slugify(input.title)}-${ts.toString(36)}`;
+    id = `custom-${slugify(input.title)}-${requestedAt.toString(36)}`;
   }
   // If overwriting, preserve createdAt.
   const stored = await readStoredRecipe(id);
   const existing = stored && !("hidden" in stored) ? stored : null;
+  const ts = Math.max(requestedAt, (existing?.updatedAt ?? 0) + 1);
   const quarantineReason = input.quarantineReason ?? existing?.quarantineReason;
   const recipe: Recipe = {
     id,
@@ -1470,8 +1499,59 @@ export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
         .map((file) => unlink(join(historyDir, file)).catch(() => undefined)),
     );
   }
-  await writeFile(recipeYamlPath(testsRoot(), id), formatRecipeYaml(recipe), "utf8");
+  const destination = recipeYamlPath(testsRoot(), id);
+  await atomicWriteFile(destination, formatRecipeYaml(recipe));
+  const persisted = await stat(destination);
+  recipe.updatedAt = persisted.mtimeMs;
   return recipe;
+}
+
+export async function saveRecipe(input: SaveRecipeInput): Promise<Recipe> {
+  const operation = currentOperationContext();
+  const fingerprint = payloadFingerprint(input);
+  const requestedId = input.id?.trim();
+  const generatedSuffix = operation
+    ? payloadFingerprint({
+        organizationId: operation.organizationId,
+        projectId: operation.projectId,
+        operationId: operation.operationId,
+        idempotencyKey: operation.idempotencyKey,
+      }).slice(0, 12)
+    : `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+  const id = requestedId || `custom-${slugify(input.title)}-${generatedSuffix}`;
+  const normalizedInput = { ...input, id };
+  const resourceIdentity = `${testsRoot()}:${requestedId ?? `create:${operation?.idempotencyKey ?? id}`}`;
+  const queueKey = `${operation?.organizationId ?? "local"}\u0000${operation?.projectId ?? "default"}\u0000journey\u0000${resourceIdentity}`;
+  const replayKey = operation
+    ? scopedIdempotencyKey({
+        organizationId: operation.organizationId,
+        projectId: operation.projectId,
+        operationId: operation.operationId,
+        idempotencyKey: operation.idempotencyKey,
+        resourceKind: "journey",
+        resourceId: resourceIdentity,
+      })
+    : undefined;
+  return recipeWrites.run(queueKey, async () => {
+    const replay = replayKey ? recipeIdempotency.get(replayKey, fingerprint) : undefined;
+    if (replay) return structuredClone(replay);
+    const current = await readRecipe(id);
+    const revision = current?.updatedAt ?? 0;
+    if (normalizedInput.expectedRevision !== revision) {
+      throw recipeConflict(current);
+    }
+    const saved = await saveRecipeUnchecked(normalizedInput);
+    publish({
+      type: current ? "resource.updated" : "resource.created",
+      at: saved.updatedAt,
+      projectId: currentOperationContext()?.projectId ?? "default",
+      resource: "journey",
+      resourceId: saved.id,
+      revision: saved.updatedAt,
+    });
+    if (replayKey) recipeIdempotency.set(replayKey, fingerprint, saved);
+    return saved;
+  });
 }
 
 export async function listRecipeHistory(id: string): Promise<Recipe[]> {
@@ -1504,6 +1584,7 @@ export async function restoreRecipeHistory(id: string, updatedAt: number): Promi
   const versions = await listRecipeHistory(id);
   const version = versions.find((item) => item.updatedAt === updatedAt);
   if (!version) throw new Error("recipe version not found");
+  const current = await readRecipe(id);
   return saveRecipe({
     id,
     title: version.title,
@@ -1513,6 +1594,7 @@ export async function restoreRecipeHistory(id: string, updatedAt: number): Promi
     steps: version.steps,
     quarantined: version.quarantined,
     quarantineReason: version.quarantineReason,
+    expectedRevision: current?.updatedAt ?? 0,
   });
 }
 
@@ -1534,6 +1616,13 @@ export async function deleteRecipe(id: string): Promise<void> {
     );
     return;
   }
+  publish({
+    type: "resource.deleted",
+    at: now(),
+    projectId: currentOperationContext()?.projectId ?? "default",
+    resource: "journey",
+    resourceId: id,
+  });
   const path = join(recipesRoot(), `${id}.json`);
   if (existsSync(path)) {
     await unlink(path);

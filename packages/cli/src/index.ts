@@ -49,7 +49,8 @@ import {
   resolveCompatibilityMatrix,
   setDiscoveryStatus,
   runDoctor,
-  runJobSync,
+  runJobSync as runJobSyncWithoutContext,
+  runWithOperationContext,
   toJobReport,
   toJunitXml,
   formatRecipeYaml,
@@ -60,12 +61,31 @@ import {
   saveRecipe,
   testsRoot,
   type ActionId,
+  type EnqueueJobInput,
   type TestJob,
   saveCompatibilityMatrix,
 } from "@relay/core";
 import { runInteractive } from "./interactive.js";
 
 const DEFAULT_SERVE_PORT = 8787;
+
+function runJobSync(input: EnqueueJobInput): Promise<TestJob> {
+  const requestId = crypto.randomUUID();
+  return runWithOperationContext(
+    {
+      schemaVersion: 1,
+      actorId: "human:local-cli",
+      actorKind: "human",
+      organizationId: "local",
+      projectId: input.projectId ?? "default",
+      operationId: "job.create",
+      requestId,
+      idempotencyKey: requestId,
+      issuedAt: Date.now(),
+    },
+    () => runJobSyncWithoutContext(input),
+  );
+}
 
 function usage(exitCode = 2): never {
   const actionLines = ACTIONS.map((a) => `  ${a.id.padEnd(22)} ${a.description}`).join("\n");
@@ -134,7 +154,6 @@ Env:
   WORK_ACCOUNT_MATCH=${WORK_ACCOUNT_MATCH}
   HOME_ACCOUNT_MATCH=${HOME_ACCOUNT_MATCH}
   PROD_ACCOUNT_MATCH         required for *-prod actions
-  AGENT_DEVICE_SERIAL        default device serial
   RELAY_RUNS_DIR             override runs/ directory
   RELAY_AUTH_TOKEN           HTTP bearer token for non-loopback serving
 `);
@@ -230,9 +249,10 @@ async function runOneJob(
   process.on("SIGINT", onSigInt);
   process.on("SIGTERM", onSigInt);
   try {
+    const target = await resolveTarget(opts.serial);
     return await runJobSync({
       action,
-      serial: opts.serial,
+      ...target,
     });
   } finally {
     process.off("SIGINT", onSigInt);
@@ -299,14 +319,35 @@ function parsePositiveInt(raw: string | undefined, flag: string, max = 20): numb
 
 async function resolveTarget(target?: string): Promise<{
   serial?: string;
+  platform?: "android" | "ios";
   targetKind?: "device" | "browser";
   browserTargetId?: string;
 }> {
-  if (!target) return {};
-  const browser = await readTarget(target);
-  return browser?.kind === "browser"
-    ? { serial: target, targetKind: "browser", browserTargetId: target }
-    : { serial: target, targetKind: "device" };
+  if (target) {
+    const browser = await readTarget(target);
+    if (browser?.kind === "browser") {
+      return { serial: target, targetKind: "browser", browserTargetId: target };
+    }
+    const device = (await listDevices()).find((item) => item.serial === target);
+    if (!device) throw new Error(`Target ${target} is not connected or configured`);
+    return { serial: target, platform: device.platform, targetKind: "device" };
+  }
+  const [devices, browsers] = await Promise.all([listDevices().catch(() => []), listTargets()]);
+  const available = [
+    ...devices.map((device) => ({
+      serial: device.serial,
+      platform: device.platform,
+      targetKind: "device" as const,
+    })),
+    ...browsers.map((browser) => ({
+      serial: browser.id,
+      targetKind: "browser" as const,
+      browserTargetId: browser.id,
+    })),
+  ];
+  if (available.length === 1) return available[0]!;
+  if (available.length === 0) throw new Error("No target is connected or configured");
+  throw new Error("More than one target is available; pass --target or --serial");
 }
 
 async function cmdTarget(argv: string[]): Promise<void> {
@@ -767,6 +808,7 @@ async function cmdTestImport(file: string, argv: string[]): Promise<void> {
   }
   const saved = await saveRecipe({
     id: recipe.id,
+    expectedRevision: existing?.updatedAt ?? 0,
     title: recipe.title,
     description: recipe.description,
     variables: recipe.variables,
@@ -859,7 +901,7 @@ async function runServe(argv: string[]): Promise<void> {
   console.log("  GET  /health  /doctor  /meta  /events(SSE)");
   console.log("  GET  /report  /report/:id  /report/junit");
   console.log("  GET  /devices  /actions  /jobs  /snapshot  /screenshot  /runs");
-  console.log("  POST /jobs  /actions/:id/run  /interact  /device/select");
+  console.log("  POST /jobs  /actions/:id/run  /interact  /device-leases");
   console.log("Press Ctrl+C to stop.");
 
   await new Promise<void>((resolve) => {

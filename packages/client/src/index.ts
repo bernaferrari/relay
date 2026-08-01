@@ -26,6 +26,8 @@ import {
   type OperationInput,
   type OperationOutput,
   type SoakReport,
+  parseEventEnvelope,
+  type EventEnvelope,
 } from "@relay/protocol";
 
 export class ApiError<T = unknown> extends Error {
@@ -46,6 +48,11 @@ export type RelayClientOptions = {
 
 export type InvokeOptions = {
   signal?: AbortSignal;
+  requestId?: string;
+  idempotencyKey?: string;
+  causationId?: string;
+  correlationId?: string;
+  authoringSessionId?: string;
 };
 
 function operationRequest<Id extends OperationId>(
@@ -92,7 +99,7 @@ function operationRequest<Id extends OperationId>(
 function registeredTransport(
   path: string,
   method: string,
-): { definition: OperationDefinition; input: Record<string, unknown> } | null {
+): { definition: OperationDefinition<OperationId>; input: Record<string, unknown> } | null {
   const url = new URL(path, "http://relay.local");
   const actual = url.pathname.split("/").filter(Boolean);
   for (const definition of operationDefinitions) {
@@ -139,6 +146,8 @@ export class RelayClient {
     headers.set("Accept", "application/json");
     headers.set("X-Organization-Id", this.connection.organizationId);
     headers.set("X-Project-Id", this.connection.projectId);
+    headers.set("X-Relay-Actor-Id", this.connection.actorId);
+    headers.set("X-Relay-Actor-Kind", this.connection.actorKind);
     if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     if (this.connection.auth.type !== "none") {
       headers.set("Authorization", `Bearer ${this.connection.auth.token}`);
@@ -164,6 +173,20 @@ export class RelayClient {
       throw new ApiError(response.status, message, body);
     }
     return body;
+  }
+
+  private operationHeaders(id: OperationId, options: InvokeOptions = {}): Headers {
+    const headers = new Headers();
+    headers.set("X-Relay-Operation-Id", id);
+    headers.set("X-Relay-Request-Id", options.requestId ?? crypto.randomUUID());
+    headers.set("X-Relay-Command-At", String(Date.now()));
+    headers.set("Idempotency-Key", options.idempotencyKey ?? crypto.randomUUID());
+    if (options.causationId) headers.set("X-Relay-Causation-Id", options.causationId);
+    if (options.correlationId) headers.set("X-Relay-Correlation-Id", options.correlationId);
+    if (options.authoringSessionId) {
+      headers.set("X-Relay-Authoring-Session-Id", options.authoringSessionId);
+    }
+    return headers;
   }
 
   /**
@@ -198,7 +221,10 @@ export class RelayClient {
         );
       }
     }
-    const response = await this.requestUnknown(path, init);
+    const response = await this.requestUnknown(path, {
+      ...init,
+      ...(registered ? { headers: this.operationHeaders(registered.definition.id) } : {}),
+    });
     if (registered) {
       try {
         registered.definition.output.parse(response);
@@ -222,6 +248,7 @@ export class RelayClient {
     const request = operationRequest(id, input);
     const body = await this.requestUnknown(request.path, {
       ...request.init,
+      headers: this.operationHeaders(id, options),
       ...(options.signal ? { signal: options.signal } : {}),
     });
     try {
@@ -332,7 +359,7 @@ export class RelayClient {
     return this.invoke("lease.list", {}) as Promise<{ leases: DeviceLease[] }>;
   }
   lease(
-    input: Pick<DeviceLease, "poolId" | "deviceSerial" | "ownerId" | "expiresAt">,
+    input: Pick<DeviceLease, "poolId" | "deviceSerial" | "expiresAt">,
   ): Promise<{ lease: DeviceLease }> {
     return this.invoke("lease.create", input) as Promise<{ lease: DeviceLease }>;
   }
@@ -364,14 +391,25 @@ export class RelayClient {
   }
 
   async events(
-    onEvent: (event: unknown) => void,
-    options: { signal?: AbortSignal; onOpen?: () => void } = {},
+    onEvent: (event: EventEnvelope) => void,
+    options: {
+      signal?: AbortSignal;
+      onOpen?: () => void;
+      afterSequence?: number;
+      onGap?: (event: EventEnvelope) => void;
+    } = {},
   ): Promise<void> {
     const headers = new Headers({
       Accept: "text/event-stream",
       "X-Organization-Id": this.connection.organizationId,
       "X-Project-Id": this.connection.projectId,
+      "X-Relay-Actor-Id": this.connection.actorId,
+      "X-Relay-Actor-Kind": this.connection.actorKind,
     });
+    for (const [key, value] of this.operationHeaders("event.stream")) headers.set(key, value);
+    if (options.afterSequence && options.afterSequence > 0) {
+      headers.set("Last-Event-ID", String(options.afterSequence));
+    }
     if (this.connection.auth.type !== "none")
       headers.set("Authorization", `Bearer ${this.connection.auth.token}`);
     const response = await this.fetcher(`${this.connection.url}/events`, {
@@ -384,6 +422,7 @@ export class RelayClient {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let cursor = options.afterSequence ?? 0;
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
@@ -399,7 +438,12 @@ export class RelayClient {
           .join("\n");
         if (data) {
           try {
-            onEvent(JSON.parse(data));
+            const event = parseEventEnvelope(JSON.parse(data));
+            if (event.sequence > cursor) {
+              cursor = event.sequence;
+              if (event.payload.type === "stream.gap") options.onGap?.(event);
+              onEvent(event);
+            }
           } catch {
             /* ignore malformed event */
           }

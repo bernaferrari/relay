@@ -44,11 +44,18 @@ function createDesktopPlatform(): Platform {
     async getServerConnection() {
       const url = await Promise.resolve(this.getServerUrl());
       const token = await storage.get("authToken");
+      let actorId = await storage.get("actorId");
+      if (!actorId) {
+        actorId = `human:${crypto.randomUUID()}`;
+        await storage.set("actorId", actorId);
+      }
       return {
         url,
         auth: token ? { type: "bearer" as const, token } : { type: "none" as const },
         organizationId: (await storage.get("organizationId")) || "local",
         projectId: (await storage.get("projectId")) || "default",
+        actorId,
+        actorKind: "human" as const,
       };
     },
     async setServerConnection(connection) {
@@ -56,6 +63,7 @@ function createDesktopPlatform(): Platform {
         api.storeSet("desktop", "serverUrl", connection.url.replace(/\/+$/, "")),
         api.storeSet("desktop", "organizationId", connection.organizationId),
         api.storeSet("desktop", "projectId", connection.projectId),
+        api.storeSet("desktop", "actorId", connection.actorId),
         connection.auth.type === "none"
           ? api.storeDelete("desktop", "authToken")
           : api.storeSet("desktop", "authToken", connection.auth.token),

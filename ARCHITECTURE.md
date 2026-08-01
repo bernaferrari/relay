@@ -95,6 +95,25 @@ operation.
 12. Tests are canonical library assets. Suites store ordered references, not copies; every suite run
     freezes its exact suite revision, test revisions, target, and inputs before enqueueing work.
 
+## Actor, command, and event invariants
+
+Every registered request carries one canonical command identity: actor ID and kind, organization,
+project, operation, request, timestamp, and idempotency key. The server validates that identity at
+the operation boundary and installs it in async-local context before core code runs. Local desktop,
+TUI, CLI, and future MCP callers use this same path; “local” is a trust scope, not an alternate
+mutation implementation.
+
+Core publishes only versioned event envelopes. The envelope retains the command's actor,
+operation, request, correlation, causation, authoring-session, and lease identity while its payload
+describes the domain event. SSE assigns monotonic cursors, replays from `Last-Event-ID`, reports a
+typed gap when its bounded window cannot satisfy a cursor, and clients deduplicate before
+projection. A gap refreshes the client's scoped projections; it never changes local UI focus.
+
+Journey and Collection writes use their persisted `updatedAt` value as the expected revision,
+serialize competing writes, and atomically rename a complete temporary file into place. A stale
+write receives `409` with the current resource, while replaying an idempotency key returns the
+original result without emitting another resource mutation.
+
 ## Journey graph document
 
 `JourneyMetadata` schema v6 is the authoring document for the desktop canvas. It deliberately keeps
@@ -123,6 +142,11 @@ and transitions without moving recipe execution into the renderer.
 recipe IR stays independent of Playwright and agent-device. A run freezes target preflight,
 performance, screenshots, logs, network activity, and video into immutable evidence. Managed
 browser profiles live under `.relay/browser-profiles/` and never reuse personal browser data.
+Target focus belongs to each client and is never published as shared selection. Every observation
+or control operation carries an explicit target context. Control additionally requires an active
+lease owned by the command actor; the lease ID is retained on resulting events. Core target code
+does not inspect or mutate target-selection environment variables, so concurrent human and agent
+operations cannot retarget each other or a queued background run.
 `POST /targets/:id/open` always launches a headed browser for human login, MFA, consent, or other
 setup. Closing that session flushes the isolated profile; future UI, CLI, scheduled, and matrix
 runs reuse it. Direct attachment to a personal browser profile is intentionally not the default

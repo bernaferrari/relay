@@ -23,8 +23,8 @@ test("keeps suite persistence and execution behind one typed boundary", async ()
   };
 
   await listSuites(request);
-  await saveSuite(request, { title: "Release" });
-  await saveSuite(request, { id: "release", title: "Release" });
+  await saveSuite(request, { expectedRevision: 0, title: "Release" });
+  await saveSuite(request, { id: "release", expectedRevision: 14, title: "Release" });
   await loadSuiteHistory(request, "release");
   await restoreSuite(request, "release", 123);
   await runSuite(request, "release", { serial: "pixel", platform: "android" });

@@ -1,8 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { SaveSuiteInput, SuiteRunManifest, SuiteSection, TestSuite } from "@relay/protocol";
+import {
+  RevisionConflict,
+  type SaveSuiteInput,
+  type SuiteRunManifest,
+  type SuiteSection,
+  type TestSuite,
+} from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import { now, publish } from "./events.js";
+import { currentOperationContext } from "./operation-context.js";
+import {
+  atomicWriteFile,
+  BoundedIdempotencyStore,
+  KeyedSerialQueue,
+  payloadFingerprint,
+  scopedIdempotencyKey,
+} from "./coordination-store.js";
 
 export type {
   SaveSuiteInput,
@@ -15,7 +30,7 @@ export type {
 } from "@relay/protocol";
 
 function suitesRoot(): string {
-  return join(findWorkspaceRoot(), ".relay", "suites");
+  return join(process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot(), ".relay", "suites");
 }
 
 function historyRoot(id: string): string {
@@ -128,46 +143,97 @@ export async function readSuite(id: string): Promise<TestSuite | null> {
   }
 }
 
+const suiteWrites = new KeyedSerialQueue();
+const suiteIdempotency = new BoundedIdempotencyStore<TestSuite>();
+
 export async function saveSuite(input: SaveSuiteInput): Promise<TestSuite> {
+  const operation = currentOperationContext();
   const title = input.title?.trim();
   if (!title) throw new Error("suite title is required");
   const requestedAt = Date.now();
-  const id = safeId(input.id?.trim() || `${slugify(title)}-${requestedAt.toString(36)}`);
-  const existing = await readSuite(id);
-  const now = Math.max(requestedAt, (existing?.updatedAt ?? 0) + 1);
-  const suite: TestSuite = {
-    id,
-    title,
-    ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-    sections: normalizeSections(input.sections),
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
-  await mkdir(suitesRoot(), { recursive: true });
-  if (existing) {
-    await mkdir(historyRoot(id), { recursive: true });
-    await writeFile(
-      join(historyRoot(id), `${existing.updatedAt}.json`),
-      JSON.stringify(existing, null, 2),
-      { encoding: "utf8", flag: "wx" },
-    ).catch((error: unknown) => {
-      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+  const requestedId = input.id?.trim();
+  const generatedSuffix = operation
+    ? payloadFingerprint({
+        organizationId: operation.organizationId,
+        projectId: operation.projectId,
+        operationId: operation.operationId,
+        idempotencyKey: operation.idempotencyKey,
+      }).slice(0, 12)
+    : `${requestedAt.toString(36)}-${randomUUID().slice(0, 8)}`;
+  const id = safeId(requestedId || `${slugify(title)}-${generatedSuffix}`);
+  const fingerprint = payloadFingerprint(input);
+  const resourceIdentity = `${suitesRoot()}:${requestedId ?? `create:${operation?.idempotencyKey ?? id}`}`;
+  const queueKey = `${operation?.organizationId ?? "local"}\u0000${operation?.projectId ?? "default"}\u0000collection\u0000${resourceIdentity}`;
+  const replayKey = operation
+    ? scopedIdempotencyKey({
+        organizationId: operation.organizationId,
+        projectId: operation.projectId,
+        operationId: operation.operationId,
+        idempotencyKey: operation.idempotencyKey,
+        resourceKind: "collection",
+        resourceId: resourceIdentity,
+      })
+    : undefined;
+  return suiteWrites.run(queueKey, async () => {
+    const replay = replayKey ? suiteIdempotency.get(replayKey, fingerprint) : undefined;
+    if (replay) return replay;
+    const existing = await readSuite(id);
+    const revision = existing?.updatedAt ?? 0;
+    if (input.expectedRevision !== revision) {
+      throw new RevisionConflict({ revision, value: existing, updatedAt: revision });
+    }
+    const now = Math.max(requestedAt, (existing?.updatedAt ?? 0) + 1);
+    const suite: TestSuite = {
+      id,
+      title,
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      sections: normalizeSections(input.sections),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await mkdir(suitesRoot(), { recursive: true });
+    if (existing) {
+      await mkdir(historyRoot(id), { recursive: true });
+      await writeFile(
+        join(historyRoot(id), `${existing.updatedAt}.json`),
+        JSON.stringify(existing, null, 2),
+        { encoding: "utf8", flag: "wx" },
+      ).catch((error: unknown) => {
+        if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      });
+      const historyLimit = Math.max(1, Number(process.env.RELAY_SUITE_HISTORY_LIMIT ?? 100));
+      const historyFiles = (await readdir(historyRoot(id))).sort().reverse();
+      await Promise.all(
+        historyFiles
+          .slice(historyLimit)
+          .map((file) => unlink(join(historyRoot(id), file)).catch(() => undefined)),
+      );
+    }
+    const destination = suitePath(id);
+    await atomicWriteFile(destination, JSON.stringify(suite, null, 2));
+    publish({
+      type: existing ? "resource.updated" : "resource.created",
+      at: suite.updatedAt,
+      projectId: currentOperationContext()?.projectId ?? "default",
+      resource: "collection",
+      resourceId: suite.id,
+      revision: suite.updatedAt,
     });
-    const historyLimit = Math.max(1, Number(process.env.RELAY_SUITE_HISTORY_LIMIT ?? 100));
-    const historyFiles = (await readdir(historyRoot(id))).sort().reverse();
-    await Promise.all(
-      historyFiles
-        .slice(historyLimit)
-        .map((file) => unlink(join(historyRoot(id), file)).catch(() => undefined)),
-    );
-  }
-  await writeFile(suitePath(id), JSON.stringify(suite, null, 2), "utf8");
-  return suite;
+    if (replayKey) suiteIdempotency.set(replayKey, fingerprint, suite);
+    return suite;
+  });
 }
 
 export async function deleteSuite(id: string): Promise<void> {
   await unlink(suitePath(id)).catch((error: unknown) => {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  });
+  publish({
+    type: "resource.deleted",
+    at: now(),
+    projectId: currentOperationContext()?.projectId ?? "default",
+    resource: "collection",
+    resourceId: id,
   });
 }
 
@@ -192,11 +258,13 @@ export async function listSuiteHistory(id: string): Promise<TestSuite[]> {
 export async function restoreSuiteHistory(id: string, updatedAt: number): Promise<TestSuite> {
   const version = (await listSuiteHistory(id)).find((item) => item.updatedAt === updatedAt);
   if (!version) throw new Error("suite version not found");
+  const current = await readSuite(id);
   return saveSuite({
     id,
     title: version.title,
     description: version.description,
     sections: version.sections,
+    expectedRevision: current?.updatedAt ?? 0,
   });
 }
 

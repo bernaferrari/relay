@@ -1,12 +1,15 @@
 import {
   buildTargetProfiles,
+  currentOperationContext,
   enqueueJob,
   freezeRecipeExecution,
   listDevices,
   listTargets,
   now,
   readCompatibilityMatrix,
+  requireOperationContext,
   resolveCompatibilityMatrix,
+  runWithOperationContext,
 } from "@relay/core";
 import type { RequestContext } from "./security.js";
 import { assertTargetControl } from "./access-control.js";
@@ -46,7 +49,10 @@ export async function enqueueCompatibilityBatch(
       `Compatibility matrix “${matrix.name}” matched no targets${details ? ` (${details})` : ""}`,
     );
   }
-  for (const profile of expansion.profiles) await assertTargetControl(scope, profile.targetId);
+  const leases = new Map<string, string>();
+  for (const profile of expansion.profiles) {
+    leases.set(profile.targetId, (await assertTargetControl(scope, profile.targetId)).id);
+  }
   const repetitions = Math.min(
     Math.max(Math.floor(body.repetitions ?? 1), 1),
     options.maxRepetitions,
@@ -61,37 +67,41 @@ export async function enqueueCompatibilityBatch(
   const batchId = `${options.kind}-${matrix.id}-${now()}`;
   const jobs = expansion.profiles.flatMap((profile) =>
     Array.from({ length: repetitions }, (_, repetition) =>
-      enqueueJob({
-        recipe: body.recipe,
-        ...frozenRecipe,
-        serial: profile.targetId,
-        platform: profile.platform === "ios" ? "ios" : "android",
-        targetKind: profile.source === "browser" ? "browser" : "device",
-        ...(profile.source === "browser" ? { browserTargetId: profile.targetId } : {}),
-        targetProfile: profile,
-        prodAccountMatch: body.prodAccountMatch,
-        batchId,
-        caseIndex: repetition,
-        caseCount: repetitions,
-        artifacts: [
-          {
-            kind: "compatibility-profile",
-            capturedAt: expansion.resolvedAt,
-            data: { matrixId: matrix.id, matrixName: matrix.name, profile },
-          },
-          ...(options.kind === "soak"
-            ? [
-                {
-                  kind: "soak-campaign",
-                  capturedAt: expansion.resolvedAt,
-                  data: { repetitions, totalJobs: jobCount },
-                },
-              ]
-            : []),
-        ],
-        projectId: scope.projectId,
-        ownerId: scope.subject,
-      }),
+      runWithOperationContext(
+        { ...requireOperationContext(), leaseId: leases.get(profile.targetId) },
+        () =>
+          enqueueJob({
+            recipe: body.recipe,
+            ...frozenRecipe,
+            serial: profile.targetId,
+            platform: profile.platform === "ios" ? "ios" : "android",
+            targetKind: profile.source === "browser" ? "browser" : "device",
+            ...(profile.source === "browser" ? { browserTargetId: profile.targetId } : {}),
+            targetProfile: profile,
+            prodAccountMatch: body.prodAccountMatch,
+            batchId,
+            caseIndex: repetition,
+            caseCount: repetitions,
+            artifacts: [
+              {
+                kind: "compatibility-profile",
+                capturedAt: expansion.resolvedAt,
+                data: { matrixId: matrix.id, matrixName: matrix.name, profile },
+              },
+              ...(options.kind === "soak"
+                ? [
+                    {
+                      kind: "soak-campaign",
+                      capturedAt: expansion.resolvedAt,
+                      data: { repetitions, totalJobs: jobCount },
+                    },
+                  ]
+                : []),
+            ],
+            projectId: scope.projectId,
+            ownerId: currentOperationContext()!.actorId,
+          }),
+      ),
     ),
   );
   return { matrix: expansion, jobs, batchId, repetitions };

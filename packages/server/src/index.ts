@@ -17,6 +17,7 @@ import {
 } from "./security.js";
 import {
   captureScreenshot,
+  currentOperationContext,
   cleanupScreenshot,
   captureSnapshot,
   createDevice,
@@ -29,6 +30,7 @@ import {
   getActiveJob,
   getJob,
   interact,
+  IdempotencyConflict,
   listActionsWithTrace,
   listDevices,
   devicePlatformForSerial,
@@ -47,7 +49,6 @@ import {
   publish,
   parseRecipeYaml,
   runsRoot,
-  selectDevice,
   runDoctor,
   toJobReport,
   toJunitXml,
@@ -98,7 +99,6 @@ import {
   promoteDiscoveryPath,
   suggestDiscoveryControl,
   resolveCompatibilityMatrix,
-  selectBrowserTarget,
   buildDiscoveryCoverage,
   type RecipeParameter,
   createSuiteRunManifest,
@@ -120,13 +120,14 @@ import {
   inspectAndroidDeviceSetup,
   loadDeviceSetup,
   readDeviceSetup,
+  runWithTargetContext,
   saveAppleDeviceSetup,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
 import { handleRunRoute } from "./run-routes.js";
 import { handleJobRoute } from "./job-routes.js";
-import { assertTargetControl } from "./access-control.js";
+import { assertTargetControl, assertTargetLease } from "./access-control.js";
 import {
   CORS_HEADERS,
   HttpError,
@@ -275,7 +276,7 @@ async function handleRequest(
       recordAudit(scope, { action: "workspace.access", resource: pathname, result: "deny" });
       throw new HttpError(403, "This workspace asset is available only from the local Relay host");
     }
-    bindOperationRequest(req, res, method, pathname, url);
+    bindOperationRequest(req, res, method, pathname, url, scope);
     if (method === "GET" && pathname === "/settings/privacy") {
       json(res, 200, { policy: getRedactionPolicy() });
       return;
@@ -430,9 +431,13 @@ async function handleRequest(
 
     if (method === "GET" && pathname === "/events") {
       sse.attach(req, res, (event) => {
+        if (event.organizationId !== scope.organizationId || event.projectId !== scope.projectId) {
+          return false;
+        }
         if (scope.localTrusted) return true;
-        if (!("jobId" in event) || typeof event.jobId !== "string") return false;
-        const job = getJob(event.jobId);
+        const jobId = "jobId" in event.payload ? event.payload.jobId : undefined;
+        if (typeof jobId !== "string") return true;
+        const job = getJob(jobId);
         return job?.projectId === scope.projectId && job.ownerId === scope.subject;
       });
       return;
@@ -885,30 +890,38 @@ async function handleRequest(
       const body = (await parseJsonBody(req)) as {
         poolId?: string;
         deviceSerial?: string;
-        ownerId?: string;
         expiresAt?: number;
       };
       if (!body.poolId || !body.deviceSerial)
         throw new HttpError(400, "poolId and deviceSerial are required");
-      const lease = await leaseDevice({
-        projectId: scope.projectId,
-        poolId: body.poolId,
-        deviceSerial: body.deviceSerial,
-        ownerId: scope.subject,
-        expiresAt: body.expiresAt ?? now() + 15 * 60_000,
-      });
+      let lease;
+      try {
+        lease = await leaseDevice({
+          projectId: scope.projectId,
+          poolId: body.poolId,
+          deviceSerial: body.deviceSerial,
+          ownerId: currentOperationContext()!.actorId,
+          expiresAt: body.expiresAt ?? now() + 15 * 60_000,
+        });
+      } catch (error) {
+        throw new HttpError(409, error instanceof Error ? error.message : String(error));
+      }
       json(res, 201, { lease });
       return;
     }
 
     const releaseLeaseMatch = matchPath(pathname, "/device-leases/:id/release");
     if (method === "POST" && releaseLeaseMatch) {
-      json(res, 200, {
-        lease: await releaseDeviceLease(releaseLeaseMatch.id!, {
-          projectId: scope.projectId,
-          ownerId: scope.subject,
-        }),
-      });
+      try {
+        json(res, 200, {
+          lease: await releaseDeviceLease(releaseLeaseMatch.id!, {
+            projectId: scope.projectId,
+            ownerId: currentOperationContext()!.actorId,
+          }),
+        });
+      } catch (error) {
+        throw new HttpError(404, error instanceof Error ? error.message : String(error));
+      }
       return;
     }
 
@@ -953,22 +966,6 @@ async function handleRequest(
         throw new HttpError(400, "purpose and prompt are required");
       }
       json(res, 200, await generateValues(body));
-      return;
-    }
-
-    if (method === "POST" && pathname === "/device/select") {
-      const body = (await parseJsonBody(req)) as {
-        serial?: string | null;
-        platform?: "android" | "ios" | "browser";
-      };
-      await assertTargetControl(scope, body.serial ?? undefined);
-      if (body.platform === "browser") selectBrowserTarget(body.serial ?? null);
-      else selectDevice(body.serial ?? null, body.platform ?? "android");
-      json(res, 200, {
-        ok: true,
-        serial: body.serial ?? null,
-        platform: body.platform ?? "android",
-      });
       return;
     }
 
@@ -1026,10 +1023,13 @@ async function handleRequest(
 
     if (method === "POST" && pathname === "/collections") {
       const body = (await parseJsonBody(req)) as SaveSuiteInput;
+      if (body.expectedRevision !== 0)
+        throw new HttpError(409, "New Collections require revision 0");
       try {
         const collection = await saveSuite(body);
         json(res, 201, { collection });
       } catch (error) {
+        if (error instanceof RevisionConflict || error instanceof IdempotencyConflict) throw error;
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
       }
       return;
@@ -1115,7 +1115,7 @@ async function handleRequest(
             },
           ],
           projectId: scope.projectId,
-          ownerId: scope.subject,
+          ownerId: currentOperationContext()!.actorId,
         });
       });
       json(res, 202, { manifest, jobs });
@@ -1135,6 +1135,7 @@ async function handleRequest(
         const collection = await saveSuite({ ...body, id: suiteMatch.id! });
         json(res, 200, { collection });
       } catch (error) {
+        if (error instanceof RevisionConflict || error instanceof IdempotencyConflict) throw error;
         throw new HttpError(400, error instanceof Error ? error.message : String(error));
       }
       return;
@@ -1272,6 +1273,7 @@ async function handleRequest(
         }
         const recipe = await saveRecipe({
           id,
+          expectedRevision: existing && conflict === "replace" ? existing.updatedAt : 0,
           title,
           description: parsed.description,
           variables: parsed.variables,
@@ -1324,6 +1326,7 @@ async function handleRequest(
 
     if (method === "POST" && pathname === "/journeys") {
       const body = (await parseJsonBody(req)) as {
+        expectedRevision?: number;
         title?: string;
         description?: string;
         variables?: Record<string, string>;
@@ -1332,6 +1335,7 @@ async function handleRequest(
         quarantined?: boolean;
         quarantineReason?: string;
       };
+      if (body.expectedRevision !== 0) throw new HttpError(409, "New Journeys require revision 0");
       if (!body.title || !body.title.trim()) throw new HttpError(400, "title is required");
       let steps;
       try {
@@ -1340,6 +1344,7 @@ async function handleRequest(
         throw new HttpError(400, err instanceof Error ? err.message : String(err));
       }
       const recipe = await saveRecipe({
+        expectedRevision: 0,
         title: body.title,
         description: body.description,
         variables: body.variables,
@@ -1356,6 +1361,7 @@ async function handleRequest(
       const id = recipeMatch.id!;
       // saveRecipe refuses builtin ids with a clear message.
       const body = (await parseJsonBody(req)) as {
+        expectedRevision?: number;
         title?: string;
         description?: string;
         variables?: Record<string, string>;
@@ -1364,6 +1370,9 @@ async function handleRequest(
         quarantined?: boolean;
         quarantineReason?: string;
       };
+      if (!Number.isFinite(body.expectedRevision) || body.expectedRevision! < 0) {
+        throw new HttpError(400, "expectedRevision is required");
+      }
       let steps;
       try {
         steps = validateRecipeSteps(body.steps);
@@ -1374,6 +1383,7 @@ async function handleRequest(
       try {
         recipe = await saveRecipe({
           id,
+          expectedRevision: body.expectedRevision!,
           title: body.title ?? id,
           description: body.description,
           variables: body.variables,
@@ -1383,6 +1393,7 @@ async function handleRequest(
           quarantineReason: body.quarantineReason,
         });
       } catch (err) {
+        if (err instanceof RevisionConflict || err instanceof IdempotencyConflict) throw err;
         const message = err instanceof Error ? err.message : String(err);
         throw new HttpError(400, message);
       }
@@ -1416,7 +1427,7 @@ async function handleRequest(
         platform: body.platform,
         prodAccountMatch: body.prodAccountMatch,
         projectId: scope.projectId,
-        ownerId: scope.subject,
+        ownerId: currentOperationContext()!.actorId,
       });
       if (body.wait === false) {
         json(res, 202, { job });
@@ -1480,7 +1491,7 @@ async function handleRequest(
     if (method === "GET" && pathname === "/device/stream") {
       const serial = url.searchParams.get("serial")?.trim();
       if (!serial) throw new HttpError(400, "serial is required");
-      await assertTargetControl(scope, serial);
+      await assertTargetLease(scope, serial, url.searchParams.get("lease") ?? undefined);
       await streamAndroidVideo(res, serial);
       return;
     }
@@ -1686,12 +1697,15 @@ async function handleRequest(
         json(res, 200, { ok: false, error: "No device connected", durationMs: 0, logs: [] });
         return;
       }
-      if (body.serial) selectDevice(body.serial);
-      const device = createDevice();
       const logs: string[] = [];
       const started = now();
       try {
-        await runRecipeStep(device, step, { log: (line) => logs.push(line) });
+        const serial = body.serial!;
+        const platform = await devicePlatformForSerial(serial);
+        if (!platform) throw new Error(`Target ${serial} is not connected`);
+        await runWithTargetContext({ kind: "device", platform, serial }, async () => {
+          await runRecipeStep(createDevice(), step, { log: (line) => logs.push(line) });
+        });
         json(res, 200, { ok: true, durationMs: now() - started, logs });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1765,6 +1779,10 @@ async function handleRequest(
     }
     if (err instanceof RevisionConflict) {
       json(res, 409, { error: err.message, current: err.current });
+      return;
+    }
+    if (err instanceof IdempotencyConflict) {
+      json(res, 409, { error: err.message });
       return;
     }
     if (err instanceof OperationContractError) {

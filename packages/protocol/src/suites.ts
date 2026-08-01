@@ -25,6 +25,7 @@ export type TestSuite = {
 
 export type SaveSuiteInput = {
   id?: string;
+  expectedRevision: number;
   title: string;
   description?: string;
   sections?: Array<{

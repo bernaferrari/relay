@@ -3,6 +3,7 @@ import type { ServerRequest } from "./server-matrix-remote";
 
 export type RecipeSaveInput = {
   id?: string;
+  expectedRevision: number;
   title: string;
   description?: string;
   variables?: Record<string, string>;
@@ -17,6 +18,7 @@ export async function saveRecipe(
   input: RecipeSaveInput,
 ): Promise<RecipeInfo> {
   const body = {
+    expectedRevision: input.expectedRevision,
     title: input.title,
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.variables !== undefined ? { variables: input.variables } : {}),

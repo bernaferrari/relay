@@ -6,6 +6,7 @@ import {
   authorizationMatches,
   isLoopbackHost,
   isLocalWorkspacePath,
+  resolveCommandActor,
   resolveRequestContext,
 } from "./security.js";
 
@@ -74,5 +75,58 @@ describe("server security", () => {
       if (previous.projects === undefined) delete process.env.RELAY_AUTH_PROJECT_IDS;
       else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
     }
+  });
+
+  it("accepts normalized local human, agent, and system identities", () => {
+    const context = resolveRequestContext({}, { authenticated: false, localTrusted: true });
+    assert.deepEqual(
+      resolveCommandActor(
+        { "x-relay-actor-id": "agent:explorer-1", "x-relay-actor-kind": "agent" },
+        context,
+      ),
+      { actorId: "agent:explorer-1", actorKind: "agent" },
+    );
+    assert.throws(
+      () =>
+        resolveCommandActor(
+          { "x-relay-actor-id": "bad actor", "x-relay-actor-kind": "human" },
+          context,
+        ),
+      /unsupported characters/,
+    );
+    assert.deepEqual(
+      resolveCommandActor(
+        { "x-relay-actor-id": "system:desktop-main", "x-relay-actor-kind": "system" },
+        context,
+      ),
+      { actorId: "system:desktop-main", actorKind: "system" },
+    );
+  });
+
+  it("binds authenticated requests to the configured service actor", () => {
+    const context = {
+      subject: "service:indexer",
+      organizationId: "org-a",
+      projectId: "project-a",
+      allowedProjects: ["project-a"],
+      tokenKind: "service" as const,
+      localTrusted: false,
+    };
+    assert.deepEqual(resolveCommandActor({}, context), {
+      actorId: "service:indexer",
+      actorKind: "agent",
+    });
+    assert.throws(
+      () =>
+        resolveCommandActor(
+          { "x-relay-actor-id": "human:admin", "x-relay-actor-kind": "human" },
+          context,
+        ),
+      /must match the service subject/,
+    );
+    assert.throws(
+      () => resolveCommandActor({ "x-relay-actor-kind": "system" }, context),
+      /must use actorKind agent/,
+    );
   });
 });

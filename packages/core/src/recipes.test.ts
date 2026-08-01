@@ -36,6 +36,7 @@ after(async () => {
 describe("recipe store roundtrip", () => {
   it("save → list (custom after builtins) → read → delete → gone", async () => {
     const saved = await saveRecipe({
+      expectedRevision: 0,
       title: "My Recipe",
       description: "a test",
       steps: [{ kind: "sleep", ms: 50 }],
@@ -73,7 +74,7 @@ describe("recipe store roundtrip", () => {
   });
 
   it("persists recorder screenshots outside recipe JSON", async () => {
-    const saved = await saveRecipe({ title: "Evidence", steps: [] });
+    const saved = await saveRecipe({ expectedRevision: 0, title: "Evidence", steps: [] });
     const image = Buffer.from("recorded-image");
     const result = await saveRecipeEvidenceImage({
       recipeId: saved.id,
@@ -98,6 +99,7 @@ describe("recipe store roundtrip", () => {
 
   it("writes new custom recipes as deterministic, editable YAML", async () => {
     const saved = await saveRecipe({
+      expectedRevision: 0,
       title: "YAML smoke",
       variables: { account_tier: "Pro" },
       steps: [{ kind: "type", text: "{{account_tier}}" }],
@@ -113,7 +115,12 @@ describe("recipe store roundtrip", () => {
   });
 
   it("keeps legacy JSON readable but lets YAML with the same id win", async () => {
-    const saved = await saveRecipe({ id: "custom-precedence", title: "YAML version", steps: [] });
+    const saved = await saveRecipe({
+      id: "custom-precedence",
+      expectedRevision: 0,
+      title: "YAML version",
+      steps: [],
+    });
     await writeFile(
       join(tmp, "custom-precedence.json"),
       JSON.stringify({ ...saved, title: "Legacy JSON version" }),
@@ -125,12 +132,14 @@ describe("recipe store roundtrip", () => {
   it("lists YAML history when a git-native test is edited", async () => {
     const first = await saveRecipe({
       id: "history-yaml",
+      expectedRevision: 0,
       title: "First draft",
       steps: [{ kind: "sleep", ms: 10 }],
     });
     await new Promise((resolve) => setTimeout(resolve, 5));
     await saveRecipe({
       id: first.id,
+      expectedRevision: first.updatedAt,
       title: "Second draft",
       steps: [{ kind: "sleep", ms: 20 }],
     });
@@ -147,16 +156,22 @@ describe("frozen recipe execution", () => {
   it("captures transitive reusable flows before queueing", async () => {
     const child = await saveRecipe({
       id: "custom-frozen-child",
+      expectedRevision: 0,
       title: "Frozen child",
       steps: [{ kind: "sleep", ms: 10 }],
     });
     const root = await saveRecipe({
       id: "custom-frozen-root",
+      expectedRevision: 0,
       title: "Frozen root",
       steps: [{ kind: "module", recipeId: child.id }],
     });
     const frozen = await freezeRecipeExecution(root.id);
-    await saveRecipe({ ...child, steps: [{ kind: "sleep", ms: 999 }] });
+    await saveRecipe({
+      ...child,
+      expectedRevision: child.updatedAt,
+      steps: [{ kind: "sleep", ms: 999 }],
+    });
     assert.deepEqual(frozen.recipeGraph[child.id]?.steps, [{ kind: "sleep", ms: 10 }]);
   });
 });
@@ -275,7 +290,13 @@ describe("recipe YAML", () => {
 
 describe("packaged recipe CRUD", () => {
   it("allows a packaged recipe to be edited in place", async () => {
-    const saved = await saveRecipe({ id: "logout", title: "Custom logout", steps: [] });
+    const builtin = await readRecipe("logout");
+    const saved = await saveRecipe({
+      id: "logout",
+      expectedRevision: builtin?.updatedAt ?? 0,
+      title: "Custom logout",
+      steps: [],
+    });
     assert.equal(saved.id, "logout");
     assert.equal(saved.source, "custom");
     assert.equal((await readRecipe("logout"))?.title, "Custom logout");

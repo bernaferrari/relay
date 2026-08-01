@@ -19,7 +19,17 @@ try {
   let healthy = false;
   for (let attempt = 0; attempt < 40; attempt++) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/health`);
+      const requestId = crypto.randomUUID();
+      const response = await fetch(`http://127.0.0.1:${port}/health`, {
+        headers: {
+          "X-Relay-Actor-Id": "system:desktop-verifier",
+          "X-Relay-Actor-Kind": "system",
+          "X-Relay-Operation-Id": "system.health.get",
+          "X-Relay-Request-Id": requestId,
+          "X-Relay-Command-At": String(Date.now()),
+          "Idempotency-Key": requestId,
+        },
+      });
       const body = await response.json();
       if (response.ok && body.product === "relay" && body.version === "0.1.0") {
         healthy = true;

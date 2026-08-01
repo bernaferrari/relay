@@ -4,8 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Device } from "./device.js";
-import { startRunEvidence, stopRunEvidence, withTimeout } from "./run-evidence.js";
+import {
+  startRunEvidence as startRunEvidenceWithoutContext,
+  stopRunEvidence as stopRunEvidenceWithoutContext,
+  withTimeout,
+} from "./run-evidence.js";
 import type { TestJob } from "./session.js";
+import { runWithTargetContext } from "./target-context.js";
+
+const testTarget = { kind: "device", platform: "android", serial: "run-evidence-test" } as const;
+const startRunEvidence: typeof startRunEvidenceWithoutContext = (...args) =>
+  runWithTargetContext(testTarget, () => startRunEvidenceWithoutContext(...args));
+const stopRunEvidence: typeof stopRunEvidenceWithoutContext = (...args) =>
+  runWithTargetContext(testTarget, () => stopRunEvidenceWithoutContext(...args));
 
 test("run evidence records video and performance without affecting the run", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-evidence-"));
@@ -37,6 +48,7 @@ test("run evidence records video and performance without affecting the run", asy
     id: "evidence-run",
     action: "chat-smoke",
     platform: "android",
+    targetContext: testTarget,
     status: "running",
     queuedAt: Date.now(),
     attempts: 1,
@@ -80,6 +92,7 @@ test("run evidence capture failures remain warnings", async () => {
     id: "evidence-warning",
     action: "chat-smoke",
     platform: "android",
+    targetContext: testTarget,
     status: "running",
     queuedAt: Date.now(),
     attempts: 1,
@@ -116,6 +129,7 @@ test("run evidence keeps the run healthy when a recorder reports no encoder", as
     id: "evidence-no-encoder",
     action: "chat-smoke",
     platform: "android",
+    targetContext: testTarget,
     status: "running",
     queuedAt: Date.now(),
     attempts: 1,
@@ -169,6 +183,7 @@ test("consent grants activate audio, crash, and network-body collectors", async 
     id: "evidence-sensitive",
     action: "chat-smoke",
     platform: "android",
+    targetContext: testTarget,
     status: "running",
     queuedAt: Date.now(),
     attempts: 1,

@@ -121,12 +121,16 @@ type JourneyDto = {
   id: string;
   title: string;
   steps: unknown[];
+  createdAt: number;
+  updatedAt: number;
   [key: string]: unknown;
 };
 
 type CollectionDto = {
   id: string;
   title: string;
+  createdAt: number;
+  updatedAt: number;
   [key: string]: unknown;
 };
 
@@ -209,6 +213,7 @@ export type HealthSummary = {
 
 type SpecificOperationMap = {
   "system.health.get": { input: Record<string, never>; output: HealthSummary };
+  "event.stream": { input: Record<string, never>; output: OperationRecord };
   "workspace.privacy.get": {
     input: Record<string, never>;
     output: { policy: RedactionPolicyDto };
@@ -227,16 +232,12 @@ type SpecificOperationMap = {
   };
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
   "target.devices.list": { input: Record<string, never>; output: { devices: DeviceSummary[] } };
-  "target.select": {
-    input: { serial: string | null };
-    output: { ok: true; serial: string | null };
-  };
   "target.snapshot.capture": {
-    input: { serial?: string };
+    input: { serial: string };
     output: { nodes: unknown[]; interactive: unknown[]; tree: string };
   };
   "target.screenshot.capture": {
-    input: { serial?: string };
+    input: { serial: string };
     output: { path: string; bytes: number; base64?: string; mime?: string };
   };
   "job.list": {
@@ -286,15 +287,18 @@ type SpecificOperationMap = {
   };
   "lease.list": { input: Record<string, never>; output: { leases: DeviceLeaseDto[] } };
   "lease.create": {
-    input: Pick<DeviceLeaseDto, "poolId" | "deviceSerial" | "ownerId" | "expiresAt">;
+    input: Pick<DeviceLeaseDto, "poolId" | "deviceSerial" | "expiresAt">;
     output: { lease: DeviceLeaseDto };
   };
   "lease.release": { input: { leaseId: string }; output: { lease: DeviceLeaseDto } };
   "journey.list": { input: Record<string, never>; output: { journeys: JourneyDto[] } };
   "journey.get": { input: { journeyId: string }; output: { journey: JourneyDto } };
-  "journey.create": { input: OperationRecord; output: { journey: JourneyDto } };
+  "journey.create": {
+    input: OperationRecord & { expectedRevision: number };
+    output: { journey: JourneyDto };
+  };
   "journey.update": {
-    input: { journeyId: string } & OperationRecord;
+    input: { journeyId: string; expectedRevision: number } & OperationRecord;
     output: { journey: JourneyDto };
   };
   "journey.delete": { input: { journeyId: string }; output: { ok: true } };
@@ -307,9 +311,12 @@ type SpecificOperationMap = {
     input: { collectionId: string };
     output: { collection: CollectionDto };
   };
-  "collection.create": { input: OperationRecord; output: { collection: CollectionDto } };
+  "collection.create": {
+    input: OperationRecord & { expectedRevision: number };
+    output: { collection: CollectionDto };
+  };
   "collection.update": {
-    input: { collectionId: string } & OperationRecord;
+    input: { collectionId: string; expectedRevision: number } & OperationRecord;
     output: { collection: CollectionDto };
   };
   "collection.delete": { input: { collectionId: string }; output: { ok: true } };
@@ -512,12 +519,12 @@ const runsParser = objectParser<OperationOutput<"run.list">>("runs response", (i
   }
 });
 
-const serialInputParser = objectParser<{ serial: string | null }>("target selection", (input) => {
-  if (input.serial !== null) string(input.serial, "target serial");
-});
-
 const jobIdInputParser = objectParser<{ jobId: string }>("job input", (input) => {
   string(input.jobId, "job id");
+});
+
+const targetInputParser = objectParser<OperationRecord>("target operation", (input) => {
+  string(input.serial, "target serial");
 });
 
 const startJobInputParser = objectParser<OperationInput<"job.start">>("job input", (input) => {
@@ -579,6 +586,13 @@ const generationOutputParser = objectParser<GenerationResultDto>("generation res
     fail("generation values", "must be an array of strings");
   }
   number(input.generatedAt, "generation generatedAt");
+});
+
+const revisionWriteInputParser = objectParser<OperationRecord>("revisioned write", (input) => {
+  const revision = number(input.expectedRevision, "expectedRevision");
+  if (revision < 0) {
+    fail("expectedRevision", "must be non-negative");
+  }
 });
 
 const generic = operationRecordParser;
@@ -648,6 +662,10 @@ export const operationDefinitions = [
   }),
   query("system.doctor.get", "Inspect Relay prerequisites", "/doctor", { category: "system" }),
   query("system.audit.list", "List audit events", "/audit", { category: "system" }),
+  query("event.stream", "Stream Relay events", "/events", {
+    category: "system",
+    mode: "stream",
+  }),
   query("workspace.privacy.get", "Get privacy policy", "/settings/privacy", {
     input: emptyInputParser,
     output: redactionPolicyParser,
@@ -698,11 +716,6 @@ export const operationDefinitions = [
     category: "target",
     confirmation: "confirm",
   }),
-  command("target.select", "Select target", "POST", "/device/select", {
-    category: "target",
-    input: serialInputParser,
-    output: generic,
-  }),
   command("target.boot", "Boot target", "POST", "/device/boot", { category: "target" }),
   command("target.authorize", "Authorize target", "POST", "/device/authorize", {
     category: "target",
@@ -711,36 +724,45 @@ export const operationDefinitions = [
   query("target.snapshot.capture", "Capture target structure", "/snapshot", {
     category: "evidence",
     targetCapabilities: ["snapshot"],
+    lease: "shared",
+    input: targetInputParser,
   }),
   query("target.screenshot.capture", "Capture target screenshot", "/screenshot", {
     category: "evidence",
     targetCapabilities: ["screenshot"],
+    lease: "shared",
+    input: targetInputParser,
     output: screenshotParser,
   }),
   command("target.interact", "Interact with target", "POST", "/interact", {
     category: "target",
     targetCapabilities: ["tap"],
     lease: "exclusive",
+    input: targetInputParser,
   }),
   command("target.touch", "Send target touch", "POST", "/device/touch", {
     category: "target",
     targetCapabilities: ["tap"],
     lease: "exclusive",
+    input: targetInputParser,
   }),
   command("target.key", "Send target key", "POST", "/device/key", {
     category: "target",
     targetCapabilities: ["type"],
     lease: "exclusive",
+    input: targetInputParser,
   }),
   command("target.scroll", "Scroll target", "POST", "/device/scroll", {
     category: "target",
     targetCapabilities: ["scroll"],
     lease: "exclusive",
+    input: targetInputParser,
   }),
   command("target.video.start", "Start target video", "POST", "/device/video", {
     category: "evidence",
     targetCapabilities: ["recording"],
     lease: "shared",
+    input: targetInputParser,
   }),
   query("project.list", "List projects", "/projects", {
     input: emptyInputParser,
@@ -797,10 +819,12 @@ export const operationDefinitions = [
   }),
   command("journey.create", "Create Journey", "POST", "/journeys", {
     category: "authoring",
+    input: revisionWriteInputParser,
     output: objectFieldParser("Journey response", "journey"),
   }),
   command("journey.update", "Update Journey", "PUT", "/journeys/:journeyId", {
     category: "authoring",
+    input: revisionWriteInputParser,
     output: objectFieldParser("Journey response", "journey"),
   }),
   command("journey.delete", "Delete Journey", "DELETE", "/journeys/:journeyId", {
@@ -855,10 +879,12 @@ export const operationDefinitions = [
   }),
   command("collection.create", "Create Collection", "POST", "/collections", {
     category: "authoring",
+    input: revisionWriteInputParser,
     output: objectFieldParser("Collection response", "collection"),
   }),
   command("collection.update", "Update Collection", "PUT", "/collections/:collectionId", {
     category: "authoring",
+    input: revisionWriteInputParser,
     output: objectFieldParser("Collection response", "collection"),
   }),
   command("collection.delete", "Delete Collection", "DELETE", "/collections/:collectionId", {
@@ -1017,6 +1043,7 @@ export const operationDefinitions = [
     lease: "exclusive",
     progress: true,
     cancellable: true,
+    input: targetInputParser,
   }),
   command("generation.create", "Generate test data", "POST", "/generate", {
     category: "authoring",

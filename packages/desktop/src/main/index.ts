@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -28,29 +29,43 @@ async function isServerCompatible(url: string): Promise<boolean> {
   const request = healthUrl.protocol === "https:" ? httpsRequest : httpRequest;
 
   return await new Promise((resolveHealthy) => {
-    const req = request(healthUrl, { method: "GET" }, (response) => {
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      response.on("data", (chunk: Buffer) => {
-        bytes += chunk.byteLength;
-        if (bytes <= 64 * 1024) chunks.push(chunk);
-      });
-      response.on("end", () => {
-        if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-          resolveHealthy(false);
-          return;
-        }
-        try {
-          const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-            product?: unknown;
-            version?: unknown;
-          };
-          resolveHealthy(body.product === "relay" && body.version === PRODUCT_VERSION);
-        } catch {
-          resolveHealthy(false);
-        }
-      });
-    });
+    const req = request(
+      healthUrl,
+      {
+        method: "GET",
+        headers: {
+          "X-Relay-Actor-Id": "system:desktop-main",
+          "X-Relay-Actor-Kind": "system",
+          "X-Relay-Operation-Id": "system.health.get",
+          "X-Relay-Request-Id": randomUUID(),
+          "X-Relay-Command-At": String(Date.now()),
+          "Idempotency-Key": randomUUID(),
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        response.on("data", (chunk: Buffer) => {
+          bytes += chunk.byteLength;
+          if (bytes <= 64 * 1024) chunks.push(chunk);
+        });
+        response.on("end", () => {
+          if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
+            resolveHealthy(false);
+            return;
+          }
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+              product?: unknown;
+              version?: unknown;
+            };
+            resolveHealthy(body.product === "relay" && body.version === PRODUCT_VERSION);
+          } catch {
+            resolveHealthy(false);
+          }
+        });
+      },
+    );
     req.setTimeout(HEALTH_TIMEOUT_MS, () => {
       req.destroy();
       resolveHealthy(false);
