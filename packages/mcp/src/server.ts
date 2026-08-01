@@ -3,6 +3,7 @@ import { RelayClient } from "@relay/client";
 import { operationDefinition, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
 import type { McpConfig } from "./config.js";
+import { registerRelayResources, type RelayResourceScope } from "./resources.js";
 import { relayMcpTools, type RelayMcpToolDescriptor } from "./tools.js";
 
 export const relayMcpServerInfo = {
@@ -35,6 +36,7 @@ export type OperationInvoker = {
 
 export type McpServerDependencies = {
   invoker: OperationInvoker;
+  scope: RelayResourceScope;
 };
 
 const relayToolOutputSchema = z.object({ result: z.unknown() }).strict();
@@ -211,12 +213,13 @@ function registerRelayTool(
   );
 }
 
-export function createMcpServer({ invoker }: McpServerDependencies): McpServer {
+export function createMcpServer({ invoker, scope }: McpServerDependencies): McpServer {
   const server = new McpServer(relayMcpServerInfo, {
     instructions: relayMcpInstructions,
   });
 
   for (const descriptor of relayMcpTools) registerRelayTool(server, descriptor, invoker);
+  registerRelayResources(server, { invoker, scope });
 
   return server;
 }

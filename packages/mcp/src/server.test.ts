@@ -36,7 +36,7 @@ type ToolCallResult = {
 };
 
 async function connectMcp(invoker: OperationInvoker) {
-  const server = createMcpServer({ invoker });
+  const server = createMcpServer({ invoker, scope: { projectId: "project-a" } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const pending = new Map<
     number,
@@ -101,7 +101,7 @@ test("SDK initialization lists every generated Relay tool exactly once", async (
     assert.equal(session.initialized.result?.instructions, relayMcpInstructions);
     const capabilities = session.initialized.result?.capabilities as Record<string, unknown>;
     assert.ok(capabilities.tools);
-    assert.equal(capabilities.resources, undefined);
+    assert.ok(capabilities.resources);
     assert.equal(capabilities.prompts, undefined);
 
     const listed = await session.request("tools/list", {});

@@ -15,7 +15,10 @@ export function runMcp(
 ) {
   const config = parseMcpConfig(argv, env);
   const invoker = createRelayOperationInvoker(config);
-  return serveStdio(() => createMcpServer({ invoker }), { onerror: diagnostic });
+  return serveStdio(
+    () => createMcpServer({ invoker, scope: { projectId: config.connection.projectId } }),
+    { onerror: diagnostic },
+  );
 }
 
 const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
