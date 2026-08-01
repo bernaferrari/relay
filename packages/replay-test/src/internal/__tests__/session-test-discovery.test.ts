@@ -1,7 +1,12 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { AppError } from '@agent-device/kernel/errors';
-import { discoverReplayTestEntries } from '../session-test-discovery.ts';
+import {
+  buildReplayTestInvocationId,
+  buildReplayTestSessionName,
+  discoverReplayTestEntries,
+} from '../session-test-discovery.ts';
+import { buildReplayTestArtifactSlug, trimEdgeDashes } from '../session-test-artifacts.ts';
 import type { ReplayTestManifest, ReplayTestSource } from '../session-test-types.ts';
 
 // Scheduler-owned discovery policy (#1478 P3b): which sources a --platform filter runs, which
@@ -73,5 +78,29 @@ test('a suite that matched nothing after filtering is rejected', () => {
         discoverSources: sourcesOf({ path: '01-ios.ad', manifest: declared('ios') }),
       }),
     (error: unknown) => error instanceof AppError && /No replay tests matched/.test(error.message),
+  );
+});
+
+test('edge-dash trimming stays linear on an interior dash run (CodeQL js/polynomial-redos)', () => {
+  // The slug pipeline collapses character runs before trimming, so only a
+  // direct call can carry a long interior run — which is exactly the shape
+  // the retired /^-+|-+$/g form re-scans quadratically (each interior dash
+  // restarts a -+$ attempt that fails at the trailing x). 100k dashes take
+  // seconds there and must stay well under a second here, with the input
+  // returned byte-identical since nothing sits at the edges.
+  const interiorRun = `x${'-'.repeat(100_000)}x`;
+  const startedAt = performance.now();
+  const trimmed = trimEdgeDashes(interiorRun);
+  assert.ok(performance.now() - startedAt < 1000);
+  assert.equal(trimmed, interiorRun);
+});
+
+test('all-dash inputs land on the documented fallbacks instead of empty identifiers', () => {
+  assert.equal(buildReplayTestArtifactSlug('/tmp/####', '/tmp'), 'test');
+  assert.equal(buildReplayTestInvocationId('----'), 'suite');
+  // A session-name slug that trims to nothing is omitted entirely — no dangling separator.
+  assert.equal(
+    buildReplayTestSessionName('s', 'suite1', '/tmp/----.ad', 0),
+    's:test:suite1:1:attempt-1',
   );
 });
