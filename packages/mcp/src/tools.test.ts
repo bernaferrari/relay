@@ -78,6 +78,8 @@ test("marks delete and dangerous operations as destructive and confirmation-requ
   const confirmationOnly = tool("workspace.evidence.update");
   assert.equal(confirmationOnly.annotations.destructiveHint, false);
   assert.equal(confirmationOnly.requiresConfirmation, true);
+  assert.match(confirmationOnly.description, /Requires confirm: true\.$/);
+  assert.doesNotMatch(tool("target.list").description, /confirm: true/);
 });
 
 test("maps screenshot capture to its stable Relay tool descriptor", () => {

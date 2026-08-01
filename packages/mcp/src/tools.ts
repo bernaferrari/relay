@@ -47,7 +47,7 @@ function toolDescriptor(
     name: relayToolName(definition.id),
     operationId: definition.id,
     title: definition.label,
-    description: `${definition.label}. Input: ${definition.input.description}.`,
+    description: `${definition.label}. Input: ${definition.input.description}.${requiresConfirmation ? " Requires confirm: true." : ""}`,
     annotations: Object.freeze({
       readOnlyHint: definition.mode === "query",
       destructiveHint:
