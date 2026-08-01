@@ -17,6 +17,10 @@ function capture() {
   return { streams: { stdout, stderr }, stdout: () => out, stderr: () => err };
 }
 
+function hasTerminalControl(value: string): boolean {
+  return value.includes(String.fromCharCode(27)) || value.includes("\r");
+}
+
 const relayEvent: EventEnvelope = {
   schemaVersion: 1,
   organizationId: "local",
@@ -248,7 +252,7 @@ test("NDJSON contains typed progress followed by one terminal result", async () 
   );
   assert.equal(records.at(-1).ok, true);
   assert.equal(io.stderr(), "");
-  assert.doesNotMatch(io.stdout(), /\u001b|\r/);
+  assert.equal(hasTerminalControl(io.stdout()), false);
 });
 
 test("job watch polls running jobs through the same invoker until ok", async () => {
@@ -419,7 +423,8 @@ test("system events follow emits typed NDJSON without invoking event.stream or c
     { type: "result", ok: true, operationId: "event.stream", result: {} },
   ]);
   assert.equal(io.stderr(), "");
-  assert.doesNotMatch(io.stdout(), /Following|relay:|\u001b|\r/);
+  assert.doesNotMatch(io.stdout(), /Following|relay:/);
+  assert.equal(hasTerminalControl(io.stdout()), false);
 });
 
 test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", async () => {
@@ -458,7 +463,8 @@ test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", as
     );
     assert.equal(records.filter(({ ok }) => typeof ok === "boolean").length, 1);
     assert.equal(records.at(-1).error.exitCode, ExitCode.cancellation);
-    assert.doesNotMatch(io.stdout(), /relay:|\u001b|\r/);
+    assert.doesNotMatch(io.stdout(), /relay:/);
+    assert.equal(hasTerminalControl(io.stdout()), false);
     assert.match(io.stderr(), /Operation cancelled/);
   }
 

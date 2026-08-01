@@ -216,13 +216,20 @@ export async function streamAndroidVideo(res: http.ServerResponse, serial: strin
 
     const reader = video.stream.getReader();
     cancelReader = () => reader.cancel().then(() => undefined);
-    while (!disconnected) {
-      const result = await reader.read();
-      if (result.done) break;
-      streamedBytes += result.value.data.byteLength;
-      if (result.value.type === "data") streamedFrames += 1;
-      await writeChunk(res, encodeRelayVideoPacket(result.value));
-      await writeChunk(res, result.value.data);
+    try {
+      while (!disconnected) {
+        const result = await reader.read();
+        if (result.done) break;
+        streamedBytes += result.value.data.byteLength;
+        if (result.value.type === "data") streamedFrames += 1;
+        await writeChunk(res, encodeRelayVideoPacket(result.value));
+        await writeChunk(res, result.value.data);
+      }
+    } catch (error) {
+      // Closing or replacing a live preview is normal browser lifecycle, not a
+      // server error. Genuine device/encoder failures still reach the route
+      // boundary and terminate the stream without taking down the process.
+      if (!disconnected && !res.destroyed && !res.writableEnded) throw error;
     }
   } finally {
     if (scrcpy?.controller && activeControls.get(serial)?.controller === scrcpy.controller) {

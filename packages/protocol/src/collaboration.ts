@@ -197,7 +197,11 @@ function optionalLabel(value: unknown, label: string, maximum: number): string |
   if (value === undefined) return undefined;
   if (typeof value !== "string") throw new TypeError(`${label} must be a string`);
   const normalized = value.trim().replace(/\s+/g, " ");
-  if (!normalized || normalized.length > maximum || /[\u0000-\u001f\u007f]/.test(normalized)) {
+  const containsControlCharacter = [...normalized].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+  if (!normalized || normalized.length > maximum || containsControlCharacter) {
     throw new TypeError(`${label} must be a privacy-safe label of at most ${maximum} characters`);
   }
   return normalized;

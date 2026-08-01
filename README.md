@@ -11,11 +11,13 @@ teams like PostHog: clear empty states, CI exits, doctor checks, evidence on dis
 
 ```
 packages/
-  protocol/  connections · resources · revisions · generation schemas
+  protocol/  canonical operations · actors · resources · collaboration DTOs
   client/    authenticated project-scoped HTTP + SSE client
-  core/      recipes · jobs · traces · doctor · JUnit/JSON reports · runs/
-  server/    HTTP + SSE API
-  cli/       doctor · run --json · serve · tui
+  collaboration/ safe granular Yjs Journey document
+  core/      authoring · graph compiler · jobs · evidence · target adapters
+  server/    operation HTTP API · SSE · durable collaboration
+  cli/       server-first human/agent operation client
+  mcp/       scoped MCP v2 adapter with native PNG screenshots
   tui/       terminal workspace
   ui/        OpenCode theme engine + primitives
   app/       Stage UI (device hero · steps · overlays)
@@ -31,12 +33,12 @@ pnpm dev:serve             # terminal 1 — API on :8787
 pnpm dev:app               # terminal 2 — Stage UI
 ```
 
-In the UI, open **Journeys**, choose a ready device, and select **Record journey**. Use the app at
-your own pace. Stopping creates a temporary take: review its captured actions, remove anything
-accidental, choose whether it reaches a new screen, an existing screen, or the end, then add that
-transition to the journey map. Nothing is committed until that last decision. The canvas is a
-free-form, Figma-like view of screens and the actions that connect them; the compact recipe below
-it remains the target-neutral program Relay runs.
+Relay reopens the latest Journey as a blank, free-form canvas and opens the focused device for a new
+map. Use the device normally, then press the single **Record** control when you want to capture a
+connection. Stopping creates a temporary Take: trim accidental actions, choose whether it reaches a
+new screen, an existing screen, or the end, and replay it until it is flawless. Only **Add to map**
+commits its executable steps, evidence, and Connection. The permanent **Device** control reopens the
+live target at any time; it is not an empty-state action or a separate mode.
 
 For a website, open **Settings → Targets**, add its start URL, and choose **Open & sign in**. Relay
 opens a visible, isolated Chrome profile so login, MFA, consent, and CAPTCHA can be completed by a
@@ -46,9 +48,9 @@ schedules, and compatibility matrices; Relay never reads the user’s everyday b
 The equivalent CLI flow is:
 
 ```bash
-relay target add "Store staging" https://staging.example.com
-relay target login <target-id>          # sign in normally, then press Enter
-relay test run checkout --target <target-id>
+relay target create --input '{"name":"Store staging","url":"https://staging.example.com"}'
+relay target open <target-id>           # sign in normally in Relay's isolated profile
+relay run create --input '{...}'        # freeze the Journey path and explicit Target
 ```
 
 Tests remain target-neutral: a tap/click, text entry, wait, screenshot, assertion, or reusable flow
@@ -58,19 +60,25 @@ target, and unsupported device-only operations fail explicitly instead of being 
 ### Journey maps
 
 Journey metadata is versioned independently of recipes. The current graph document has three small,
-stable primitives: **screens**, **transitions**, and named **flow starts**. Layout, notes, and
-planned routes are document concerns; recipe steps are execution concerns. That seam lets the
-canvas change without changing an existing test, makes every edit reversible through the journey
-history, and gives a future collaborative provider a bounded document to synchronize.
+stable primitives: **screens**, **transitions**, and named **flow starts**. Layout and notes are
+document concerns; a selected graph path compiles to the existing target-neutral recipe IR when it
+runs. That seam makes the canvas the visual source of truth while keeping every device adapter and
+existing recipe compatible.
 
 ```text
 Start screen ── recorded transition ──> Settings
                  └─ return transition ─> Start screen
 ```
 
-Old journey metadata is read and converted lazily on the first graph edit. A v6 journey stores the
-graph beside the existing revisioned metadata, so clients can evolve or migrate it without guessing
-from a linear action list again.
+Relay is pre-release, so the v6 graph is canonical and unsupported historical canvas documents can
+be reset instead of creating a second migration/write path.
+
+Every recording captures semantic observations before and after the action. Relay normalizes
+volatile UI details, matches the destination to an existing screen when possible, and creates a new
+screen only when it is genuinely new. Automated discovery uses the same identity model, so explored
+branches and cycles merge into the authored map instead of becoming a separate report. Each run
+freezes the chosen transition path and projects live, passed, failed, and healed status back onto the
+same nodes and edges.
 
 ### Reusable recorded setups and app builds
 
@@ -178,50 +186,40 @@ failures and uncertainty. Its evidence table exposes captured, partial, unsuppor
 failed, and missing counts per channel so a trial cannot look successful while silently collecting
 poor data. The HTTP equivalents are `POST /jobs/soak` and `GET /reports/soak/:batchId`.
 
-## CLI (CI-friendly)
+## CLI and agents
+
+The CLI is a server-first operation client. It never starts an invisible second Relay runtime and
+never imports core domain state. The app, CLI, TUI, and MCP adapter therefore see the same actor,
+target lease, Authoring Session, Take revisions, Journey revision, progress, and events.
 
 ```bash
-pnpm doctor
+export RELAY_URL=http://127.0.0.1:8787
+export RELAY_ORGANIZATION_ID=local
+export RELAY_PROJECT_ID=default
+export RELAY_ACTOR_ID=human:terminal
 
-# Structured run (exit 0 = ok/healed, 1 = failed)
-pnpm --filter @relay/cli exec tsx src/index.ts run logout --json
-pnpm --filter @relay/cli exec tsx src/index.ts run update-last-alpha \
-  --serial "$SERIAL" --junit ./junit.xml
+# Discover the public vocabulary and exact input contracts
+pnpm --filter @relay/cli exec tsx src/index.ts --help
+pnpm --filter @relay/cli exec tsx src/index.ts session --help
 
-# Matrix: every connected device
-pnpm --filter @relay/cli exec tsx src/index.ts run logout --all-devices --json --junit ./matrix.xml
+# Inspect state and receive a canonical PNG payload
+pnpm --filter @relay/cli exec tsx src/index.ts journey list --json
+pnpm --filter @relay/cli exec tsx src/index.ts target screenshot <serial> --json
 
-# Git-friendly test definitions
-pnpm --filter @relay/cli exec tsx src/index.ts init
-pnpm --filter @relay/cli exec tsx src/index.ts test list --json
-pnpm --filter @relay/cli exec tsx src/index.ts test validate
-pnpm --filter @relay/cli exec tsx src/index.ts test export login-x > tests/login-x.relay.yaml
-
-# Browser setup is interactive once; later runs reuse the private login profile
-pnpm --filter @relay/cli exec tsx src/index.ts target add "Store staging" https://staging.example.com
-pnpm --filter @relay/cli exec tsx src/index.ts target list
-pnpm --filter @relay/cli exec tsx src/index.ts target login <target-id>
-pnpm --filter @relay/cli exec tsx src/index.ts target check <target-id>
-pnpm --filter @relay/cli exec tsx src/index.ts test run login-x --target <target-id>
-
-# Named compatibility matrices freeze the observed targets before execution
-pnpm --filter @relay/cli exec tsx src/index.ts matrix list
-pnpm --filter @relay/cli exec tsx src/index.ts matrix validate release-smoke
-pnpm --filter @relay/cli exec tsx src/index.ts test run login-x --matrix release-smoke --junit ./matrix.xml
-
-# Bounded cross-platform trial campaign with aggregate evidence coverage
-pnpm --filter @relay/cli exec tsx src/index.ts soak login-x --matrix release-smoke --repeat 10
-
-# Flake retries (default 3)
-RELAY_RETRY_ATTEMPTS=5 pnpm --filter @relay/cli exec tsx src/index.ts run login-google
-
-# API
-pnpm dev:serve
-curl -s localhost:8787/health | jq .
-curl -s localhost:8787/doctor | jq .
-curl -s localhost:8787/report | jq .
-curl -s localhost:8787/report/junit
+# Every recording action names its server-owned session explicitly
+pnpm --filter @relay/cli exec tsx src/index.ts session create --input '{...}' --json
+pnpm --filter @relay/cli exec tsx src/index.ts session start <session-id> --json
+pnpm --filter @relay/cli exec tsx src/index.ts session tap <session-id> --input '{...}' --json
+pnpm --filter @relay/cli exec tsx src/index.ts session stop <session-id> --json
+pnpm --filter @relay/cli exec tsx src/index.ts take replay <session-id> --json
+pnpm --filter @relay/cli exec tsx src/index.ts session commit <session-id> --input '{...}' --json
 ```
+
+`--ndjson` emits typed progress/events followed by one terminal result; diagnostics remain on stderr.
+Use `--credential-source env:RELAY_AUTH_TOKEN` instead of putting a token in arguments. MCP clients
+can run `pnpm dev:mcp`; `relay_target_screenshot_capture` returns native `image/png` content directly
+to the model, while every mutation still goes through the same confirmations, leases, revisions, and
+cancellation path. See [packages/mcp/README.md](./packages/mcp/README.md).
 
 ## Product surfaces
 

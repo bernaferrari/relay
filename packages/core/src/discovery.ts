@@ -15,6 +15,7 @@ import type {
 import type { SnapshotNode } from "./device.js";
 import { readRecipe, saveRecipe, type Recipe, type RecipeStep } from "./recipes.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import { observeScreenIdentity } from "./screen-identity.js";
 
 const DEFAULT_SCOPE: DiscoveryScope = {
   maxScreens: 50,
@@ -98,19 +99,9 @@ function assertMutable(session: DiscoverySession): void {
 /** Stable screen identity from visible semantics; screenshots remain evidence, not source of truth. */
 export function fingerprintDiscoveryScreen(
   nodes: SnapshotNode[],
-  screenshotDigest?: string,
+  _screenshotDigest?: string,
 ): string {
-  const semantic = nodes
-    .filter((node) => node.visibleToUser !== false)
-    .map((node) => ({
-      role: node.role ?? node.type ?? "",
-      label: node.label?.trim() ?? "",
-      value: node.value?.trim() ?? "",
-      identifier: node.identifier ?? "",
-      enabled: node.enabled !== false,
-    }))
-    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
-  return digest(JSON.stringify({ semantic, screenshotDigest: screenshotDigest ?? "" }));
+  return observeScreenIdentity(nodes).fingerprint;
 }
 
 function unsafeControlText(value: string): boolean {
@@ -259,6 +250,7 @@ export async function recordObservedScreen(input: {
   const screen: ObservedScreen = {
     id: `screen-${randomUUID()}`,
     fingerprint,
+    identity: { schemaVersion: 1, fingerprint },
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     capturedAt: Date.now(),
     ...(input.snapshotDigest ? { snapshotDigest: input.snapshotDigest } : {}),

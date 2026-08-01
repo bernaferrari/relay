@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import { pathToFileURL } from "node:url";
-import type { GlobalConfig, OutputMode } from "./config.js";
+import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
 import { classifyError, ExitCode } from "./errors.js";
 import { renderHelp } from "./help.js";
@@ -88,24 +88,6 @@ function fallbackMode(argv: readonly string[]): OutputMode {
   if (argv.includes("--ndjson")) return "ndjson";
   if (argv.includes("--json")) return "json";
   return "human";
-}
-
-function fallbackConfig(mode: OutputMode): GlobalConfig {
-  return {
-    connection: {
-      url: "http://127.0.0.1:8787",
-      organizationId: "local",
-      projectId: "default",
-      actorId: "human:local-cli",
-      actorKind: "human",
-      auth: { type: "none" },
-    },
-    credentialSource: { type: "none" },
-    output: mode,
-    quiet: false,
-    timeoutMs: 20_000,
-    wait: true,
-  };
 }
 
 export async function runCli(

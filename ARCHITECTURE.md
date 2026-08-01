@@ -9,7 +9,7 @@ connected mobile devices (not a coding agent).
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  HOSTS                                                        │
-│  desktop (Electron) │ app (Solid web) │ cli │ tui             │
+│  desktop (Electron) │ app (Solid web) │ cli │ tui │ mcp       │
 └─────────┬──────────────────┬──────────────────┬──────────────┘
           │       authenticated @relay/client │ in-process
           ▼                  ▼                  ▼
@@ -41,17 +41,19 @@ connected mobile devices (not a coding agent).
 
 ## Packages
 
-| Package           | Role                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------- |
-| `@relay/core`     | Tests/YAML, suites, matrix resolver, action catalog, job sessions, snapshot/screenshot/interact |
-| `@relay/protocol` | Canonical connections, revisions, suites, resources, generation, and event schemas              |
-| `@relay/client`   | Authenticated project-scoped HTTP and fetch-streamed SSE client                                 |
-| `@relay/server`   | HTTP + SSE over core                                                                            |
-| `@relay/cli`      | Host: TUI default, interactive, serve, direct actions                                           |
-| `@relay/tui`      | Terminal testing workspace                                                                      |
-| `@relay/ui`       | Solid design system + themes                                                                    |
-| `@relay/app`      | Solid product UI (workspace / inspector / screen / activity)                                    |
-| `@relay/desktop`  | Electron shell                                                                                  |
+| Package                | Role                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| `@relay/core`          | Authoring sessions, graph compiler, target-neutral execution, evidence, discovery  |
+| `@relay/protocol`      | Canonical connections, revisions, suites, resources, generation, and event schemas |
+| `@relay/client`        | Authenticated project-scoped HTTP and fetch-streamed SSE client                    |
+| `@relay/collaboration` | Safe, granular, versioned Yjs Journey schema and reconciliation                    |
+| `@relay/server`        | HTTP + SSE over core                                                               |
+| `@relay/cli`           | Server-first operation client for people, scripts, and agents                      |
+| `@relay/mcp`           | Scoped MCP v2 adapter; native PNG observation and operation tools                  |
+| `@relay/tui`           | Terminal testing workspace                                                         |
+| `@relay/ui`            | Solid design system + themes                                                       |
+| `@relay/app`           | Solid product UI (workspace / inspector / screen / activity)                       |
+| `@relay/desktop`       | Electron shell                                                                     |
 
 ## Operation contract
 
@@ -79,7 +81,8 @@ operation.
 ## Rules
 
 1. Domain logic stays in `core`.
-2. UIs consume **jobs + events**, not ad-hoc synchronous-only calls (except CLI direct mode).
+2. Every host consumes registered **operations + events** through `@relay/client`; no direct CLI or
+   MCP domain runtime exists.
 3. Renderer never imports `electron`.
 4. `ui` has zero host knowledge.
 5. `vendor/opencode` is reference-only.
@@ -87,8 +90,9 @@ operation.
 7. Shared product state is server-owned and revisioned; browser storage is for preferences only.
 8. Recipes remain target-neutral. Browser and mobile adapters implement the same control and
    observation contract; unsupported capabilities fail explicitly.
-9. Git-tracked `tests/*.relay.yaml` is the canonical editable source. Legacy local JSON remains
-   readable only for migration; a matching YAML definition always wins.
+9. Git-tracked `tests/*.relay.yaml` remains the canonical executable source while the Journey graph
+   is the canonical visual authoring source. Pre-release collaboration documents can be reset;
+   there is no dual-write migration path.
 10. Compatibility matrices select only observed target profiles and preserve every exclusion reason.
 11. Desktop update feeds, signatures, and installation stay in Electron's main process. The shared UI
     receives only a typed update state and can request a check or restart after download.
@@ -136,11 +140,31 @@ returns the Session to review; a crash after it completes the Session from the c
 Only the server emits the final `authoring.committed` event. Renderer signals and progress UI are
 projections of persisted Session state.
 
-Legacy metadata remains readable. `ensureJourneyGraph()` performs a pure, lazy v5-to-v6 view
-migration and `withJourneyGraph()` writes the canonical version only after an intentional canvas
-edit. This keeps opening an older recording non-destructive. `journey-document.ts` uses nested
-Yjs map/array structures behind the same document seam, so a later provider can synchronize screens
-and transitions without moving recipe execution into the renderer.
+Recording captures semantic observations at both ends of a transition. `screen-identity.ts`
+normalizes volatile UI-tree values and resolves those observations to canonical screens, so a route
+back to a screen creates an edge to the existing node instead of a duplicate node. Discovery uses
+the same identity engine and merges its branches and cycles into the same journey graph, preserving
+whether each edge came from authored recording, manual editing, or automated exploration.
+
+The graph is the authoring source of truth. `journey-graph-compiler.ts` validates a selected path
+(including loops), requires executable and reviewed transitions, and compiles it to the existing
+recipe IR. `POST /jobs/graph-path` freezes that path, recipe revision, graph revision, and target
+before enqueueing the normal runner. This keeps every existing recipe adapter compatible while the
+canvas gains branching semantics. Run events are projected back onto the frozen transition IDs so
+the graph can show running, passed, failed, and healed nodes and edges without making runtime state
+part of the authoring document.
+
+The collaborative document is a granular, ID-keyed Yjs projection of Screens, Connections, flow
+starts, positions, notes, and draft labels. A disabled-by-default provider synchronizes opaque
+updates with project-scoped state vectors, offline queues, idempotent append, reconnect, snapshots,
+and compaction. Ephemeral awareness carries bounded human/agent cursor, selection, viewport, and
+activity data; it never changes another actor's focus or enters Journey persistence.
+
+Yjs is not execution authority. Step IDs, evidence, Take/video references, review state, leases,
+Runs, and Authoring Sessions are rejected or stripped from untrusted updates. After the authoritative
+Take commit succeeds, the server projects only its safe graph shape into the shared document. This
+lets a person and an agent edit and observe the same map without allowing either client to forge a
+reviewed executable Connection.
 
 ## Target boundary
 
