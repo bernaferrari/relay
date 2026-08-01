@@ -6,6 +6,7 @@ export * from "./recipes.js";
 export * from "./recipe-yaml.js";
 export * from "./recipe-runner.js";
 export * from "./events.js";
+export * from "./activity-log.js";
 export * from "./operation-context.js";
 export * from "./coordination-store.js";
 export * from "./session.js";

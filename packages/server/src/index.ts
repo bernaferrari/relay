@@ -166,6 +166,7 @@ import {
   serverOperationManifest,
 } from "./operations.js";
 import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
+import { handleActivityRoute, recordOperationActivity } from "./activity-routes.js";
 import {
   createCollaborationRouteService,
   handleCollaborationRoute,
@@ -309,7 +310,9 @@ async function handleRequest(
       recordAudit(scope, { action: "workspace.access", resource: pathname, result: "deny" });
       throw new HttpError(403, "This workspace asset is available only from the local Relay host");
     }
-    bindOperationRequest(req, res, method, pathname, url, scope);
+    const operation = bindOperationRequest(req, res, method, pathname, url, scope);
+    if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
+    if (operation) await recordOperationActivity({ operation, pathname, scope });
     if (
       await handleCollaborationRoute({
         method,
