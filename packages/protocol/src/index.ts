@@ -3,6 +3,7 @@ export * from "./recipes.js";
 export * from "./operations.js";
 export * from "./coordination.js";
 export * from "./authoring.js";
+export * from "./collaboration.js";
 import type { RecipeStep } from "./recipes.js";
 import type { ActorKind, ResourceEventPayload } from "./coordination.js";
 

@@ -15,6 +15,26 @@ import {
   type ReplaceAuthoringActionInput,
   type TrimAuthoringTakeInput,
 } from "./authoring.js";
+import {
+  parseCollaborationAppendInput,
+  parseCollaborationAppendResponse,
+  parseCollaborationAwarenessListResponse,
+  parseCollaborationAwarenessPublishInput,
+  parseCollaborationAwarenessRemoveResponse,
+  parseCollaborationAwarenessResponse,
+  parseCollaborationDocumentResponse,
+  parseCollaborationJourneyInput,
+  parseCollaborationSyncInput,
+  type CollaborationAppendInput,
+  type CollaborationAppendResponse,
+  type CollaborationAwarenessListResponse,
+  type CollaborationAwarenessPublishInput,
+  type CollaborationAwarenessRemoveResponse,
+  type CollaborationAwarenessResponse,
+  type CollaborationDocumentResponse,
+  type CollaborationJourneyInput,
+  type CollaborationSyncInput,
+} from "./collaboration.js";
 type RedactionPolicyDto = {
   enabled: boolean;
   source: "default" | "workspace" | "environment";
@@ -281,6 +301,42 @@ type SpecificOperationMap = {
   "journey.document.update": {
     input: { journeyId: string } & RevisionWriteDto<unknown>;
     output: RevisionedDto<unknown>;
+  };
+  "collaboration.document.bootstrap": {
+    input: CollaborationJourneyInput;
+    output: CollaborationDocumentResponse;
+  };
+  "collaboration.document.sync": {
+    input: CollaborationSyncInput;
+    output: CollaborationDocumentResponse;
+  };
+  "collaboration.update.append": {
+    input: CollaborationAppendInput;
+    output: CollaborationAppendResponse;
+  };
+  "collaboration.status.get": {
+    input: CollaborationJourneyInput;
+    output: CollaborationDocumentResponse;
+  };
+  "collaboration.document.export": {
+    input: CollaborationJourneyInput;
+    output: CollaborationDocumentResponse;
+  };
+  "collaboration.document.repair": {
+    input: CollaborationJourneyInput;
+    output: CollaborationDocumentResponse;
+  };
+  "collaboration.awareness.publish": {
+    input: CollaborationAwarenessPublishInput;
+    output: CollaborationAwarenessResponse;
+  };
+  "collaboration.awareness.list": {
+    input: CollaborationJourneyInput;
+    output: CollaborationAwarenessListResponse;
+  };
+  "collaboration.awareness.remove": {
+    input: CollaborationJourneyInput;
+    output: CollaborationAwarenessRemoveResponse;
   };
   "authoring.session.list": {
     input: Record<string, never>;
@@ -821,6 +877,51 @@ const authoringSessionResponseParser: RuntimeParser<AuthoringSessionResponse> = 
   parse: parseAuthoringSessionResponse,
 };
 
+const collaborationJourneyInputParser: RuntimeParser<CollaborationJourneyInput> = {
+  description: "scoped collaborative Journey input",
+  parse: parseCollaborationJourneyInput,
+};
+
+const collaborationSyncInputParser: RuntimeParser<CollaborationSyncInput> = {
+  description: "bounded collaborative Journey state-vector sync input",
+  parse: parseCollaborationSyncInput,
+};
+
+const collaborationAppendInputParser: RuntimeParser<CollaborationAppendInput> = {
+  description: "bounded idempotent collaborative Journey update input",
+  parse: parseCollaborationAppendInput,
+};
+
+const collaborationDocumentResponseParser: RuntimeParser<CollaborationDocumentResponse> = {
+  description: "bounded collaborative Journey update and metrics response",
+  parse: parseCollaborationDocumentResponse,
+};
+
+const collaborationAppendResponseParser: RuntimeParser<CollaborationAppendResponse> = {
+  description: "collaborative Journey append result",
+  parse: parseCollaborationAppendResponse,
+};
+
+const collaborationAwarenessPublishParser: RuntimeParser<CollaborationAwarenessPublishInput> = {
+  description: "bounded ephemeral collaboration awareness input",
+  parse: parseCollaborationAwarenessPublishInput,
+};
+
+const collaborationAwarenessResponseParser: RuntimeParser<CollaborationAwarenessResponse> = {
+  description: "ephemeral collaboration awareness response",
+  parse: parseCollaborationAwarenessResponse,
+};
+
+const collaborationAwarenessListParser: RuntimeParser<CollaborationAwarenessListResponse> = {
+  description: "ephemeral collaboration awareness list response",
+  parse: parseCollaborationAwarenessListResponse,
+};
+
+const collaborationAwarenessRemoveParser: RuntimeParser<CollaborationAwarenessRemoveResponse> = {
+  description: "ephemeral collaboration awareness removal response",
+  parse: parseCollaborationAwarenessRemoveResponse,
+};
+
 const authoringSessionListParser: RuntimeParser<AuthoringSessionListResponse> = {
   description: "authoring session list response",
   parse: parseAuthoringSessionListResponse,
@@ -1097,6 +1198,110 @@ export const operationDefinitions = [
     {
       category: "authoring",
       output: revisionedJourneyParser,
+    },
+  ),
+  command(
+    "collaboration.document.bootstrap",
+    "Bootstrap collaborative Journey",
+    "POST",
+    "/journeys/:journeyId/collaboration/bootstrap",
+    {
+      category: "authoring",
+      input: collaborationJourneyInputParser,
+      output: collaborationDocumentResponseParser,
+      idempotency: "inherent",
+    },
+  ),
+  command(
+    "collaboration.document.sync",
+    "Sync collaborative Journey",
+    "POST",
+    "/journeys/:journeyId/collaboration/sync",
+    {
+      category: "authoring",
+      input: collaborationSyncInputParser,
+      output: collaborationDocumentResponseParser,
+      idempotency: "inherent",
+    },
+  ),
+  command(
+    "collaboration.update.append",
+    "Append collaborative Journey update",
+    "POST",
+    "/journeys/:journeyId/collaboration/updates",
+    {
+      category: "authoring",
+      input: collaborationAppendInputParser,
+      output: collaborationAppendResponseParser,
+      idempotency: "required",
+    },
+  ),
+  query(
+    "collaboration.status.get",
+    "Get collaborative Journey status",
+    "/journeys/:journeyId/collaboration/status",
+    {
+      category: "authoring",
+      input: collaborationJourneyInputParser,
+      output: collaborationDocumentResponseParser,
+    },
+  ),
+  query(
+    "collaboration.document.export",
+    "Export collaborative Journey",
+    "/journeys/:journeyId/collaboration/export",
+    {
+      category: "authoring",
+      input: collaborationJourneyInputParser,
+      output: collaborationDocumentResponseParser,
+    },
+  ),
+  command(
+    "collaboration.document.repair",
+    "Repair collaborative Journey storage",
+    "POST",
+    "/journeys/:journeyId/collaboration/repair",
+    {
+      category: "authoring",
+      input: collaborationJourneyInputParser,
+      output: collaborationDocumentResponseParser,
+      idempotency: "inherent",
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "collaboration.awareness.publish",
+    "Publish collaboration awareness",
+    "PUT",
+    "/journeys/:journeyId/collaboration/awareness",
+    {
+      category: "authoring",
+      input: collaborationAwarenessPublishParser,
+      output: collaborationAwarenessResponseParser,
+      idempotency: "inherent",
+    },
+  ),
+  query(
+    "collaboration.awareness.list",
+    "List collaboration awareness",
+    "/journeys/:journeyId/collaboration/awareness",
+    {
+      category: "authoring",
+      input: collaborationJourneyInputParser,
+      output: collaborationAwarenessListParser,
+    },
+  ),
+  command(
+    "collaboration.awareness.remove",
+    "Remove collaboration awareness",
+    "DELETE",
+    "/journeys/:journeyId/collaboration/awareness",
+    {
+      category: "authoring",
+      input: collaborationJourneyInputParser,
+      output: collaborationAwarenessRemoveParser,
+      idempotency: "inherent",
+      confirmation: "none",
     },
   ),
   query("authoring.session.list", "List Authoring Sessions", "/authoring-sessions", {

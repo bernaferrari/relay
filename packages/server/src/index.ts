@@ -164,6 +164,13 @@ import {
   serverOperationManifest,
 } from "./operations.js";
 import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
+import {
+  createCollaborationRouteService,
+  handleCollaborationRoute,
+  type CollaborationRouteService,
+} from "./collaboration-routes.js";
+import type { CollaborationAwarenessService } from "./collaboration-awareness.js";
+import type { DurableCollaborativeJourneyStore } from "./collaborative-journey-store.js";
 import { createReadStream } from "node:fs";
 import type {
   Build,
@@ -181,6 +188,12 @@ export type StartServerOptions = {
   host?: string;
   token?: string;
   authoringRuntime?: AuthoringRuntime;
+  collaboration?: {
+    enabled: boolean;
+    store?: DurableCollaborativeJourneyStore;
+    awareness?: CollaborationAwarenessService;
+    clock?: () => number;
+  };
 };
 
 export type StartedServer = {
@@ -246,6 +259,7 @@ async function handleRequest(
   localTrusted = true,
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
+  collaboration?: CollaborationRouteService,
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -291,6 +305,17 @@ async function handleRequest(
       throw new HttpError(403, "This workspace asset is available only from the local Relay host");
     }
     bindOperationRequest(req, res, method, pathname, url, scope);
+    if (
+      await handleCollaborationRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+        service: collaboration,
+      })
+    )
+      return;
     if (
       await handleAuthoringActionReplace({
         method,
@@ -1919,9 +1944,28 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");
   }
   const sse = createSseHub(CORS_HEADERS);
+  let collaboration: CollaborationRouteService | undefined;
+  if (opts.collaboration?.enabled) {
+    if (!opts.collaboration.store) {
+      throw new Error("Collaboration is enabled but no durable store was configured");
+    }
+    collaboration = createCollaborationRouteService({
+      store: opts.collaboration.store,
+      ...(opts.collaboration.awareness ? { awareness: opts.collaboration.awareness } : {}),
+      ...(opts.collaboration.clock ? { clock: opts.collaboration.clock } : {}),
+    });
+  }
 
   const server = http.createServer((req, res) => {
-    void handleRequest(req, res, token, isLoopbackHost(host), sse, opts.authoringRuntime);
+    void handleRequest(
+      req,
+      res,
+      token,
+      isLoopbackHost(host),
+      sse,
+      opts.authoringRuntime,
+      collaboration,
+    );
   });
   const scheduler = startScheduler();
 

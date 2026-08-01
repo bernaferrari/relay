@@ -64,6 +64,23 @@ test("all plan-035 authoring operations have friendly command paths", () => {
   );
 });
 
+test("all collaboration and awareness operations have friendly command paths", () => {
+  const collaborationOperations = operationDefinitions
+    .filter(({ id }) => id.startsWith("collaboration."))
+    .map(({ id }) => id);
+  const mappedOperationIds = new Set(
+    mappedCommandDescriptors.map(({ operationId }) => operationId),
+  );
+  assert.deepEqual(
+    collaborationOperations.filter((operationId) => !mappedOperationIds.has(operationId)),
+    [],
+  );
+  assert.equal(
+    resolveCommand(["collaboration", "awareness", "remove", "checkout"]).operationId,
+    "collaboration.awareness.remove",
+  );
+});
+
 test("path arguments merge into full operation input without hiding revision metadata", () => {
   assert.deepEqual(
     resolveCommand(["journey", "update", "checkout"], {

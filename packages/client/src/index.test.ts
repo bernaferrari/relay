@@ -97,6 +97,85 @@ test("invoke derives path, query, and method from the operation registry", async
   assert.equal(requests[1]?.url, "https://relay.test/jobs/abc");
 });
 
+test("typed collaboration methods use scoped registry routes and stable update idempotency", async () => {
+  const requests: Request[] = [];
+  const document = {
+    schemaVersion: 1,
+    journeyId: "checkout",
+    updateBase64: "AA==",
+    stateVectorBase64: "AA==",
+    status: "ready",
+    documentBytes: 1,
+    updateBytes: 1,
+    pendingUpdates: 0,
+    repairedTailBytes: 0,
+  } as const;
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "agent:mapper",
+      actorKind: "agent",
+    },
+    {
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push(request);
+        if (request.url.endsWith("/updates")) {
+          return new Response(
+            JSON.stringify({
+              ...document,
+              clientUpdateId: "tab-1:update-7",
+              applied: true,
+              duplicate: false,
+            }),
+          );
+        }
+        if (request.url.endsWith("/awareness")) {
+          return new Response(
+            JSON.stringify({
+              journeyId: "checkout",
+              awareness: {
+                actorId: "agent:mapper",
+                actorKind: "agent",
+                displayName: "Mapper",
+                activity: "editing",
+                updatedAt: 10,
+                expiresAt: 20,
+              },
+            }),
+          );
+        }
+        return new Response(JSON.stringify(document));
+      },
+    },
+  );
+
+  await client.bootstrapCollaboration("checkout");
+  await client.syncCollaboration("checkout", "AA==");
+  await client.appendCollaborationUpdate("checkout", "AA==", "tab-1:update-7");
+  await client.publishCollaborationAwareness({
+    journeyId: "checkout",
+    displayName: "Mapper",
+    activity: "editing",
+  });
+
+  assert.equal(requests[0]?.url, "https://relay.test/journeys/checkout/collaboration/bootstrap");
+  assert.equal(requests[1]?.url, "https://relay.test/journeys/checkout/collaboration/sync");
+  assert.equal(requests[2]?.headers.get("idempotency-key"), "tab-1:update-7");
+  assert.equal(requests[2]?.headers.get("x-relay-actor-id"), "agent:mapper");
+  assert.deepEqual(await requests[2]?.json(), {
+    updateBase64: "AA==",
+    clientUpdateId: "tab-1:update-7",
+  });
+  assert.deepEqual(await requests[3]?.json(), {
+    displayName: "Mapper",
+    activity: "editing",
+  });
+});
+
 test("invoke rejects malformed successful responses as an upstream contract error", async () => {
   const client = new RelayClient(
     {
