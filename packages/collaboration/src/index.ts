@@ -65,6 +65,12 @@ export type CollaborativeJourneyMaterializationOptions = {
   validateServerOwnedField?: ServerOwnedFieldValidator;
 };
 
+export type CollaborativeJourneyReconciliationOptions =
+  CollaborativeJourneyMaterializationOptions & {
+    /** Transaction origin forwarded to the live document for undo and presence semantics. */
+    origin?: unknown;
+  };
+
 export type CollaborativeJourneyValidationResult = {
   ok: boolean;
   metadata?: JourneyMetadata;
@@ -193,6 +199,140 @@ function writeDraft(root: Y.Map<unknown>, metadata: JourneyMetadata): void {
     draft.set(key, map);
   }
   root.set(COLLABORATIVE_JOURNEY_ROOT_KEYS.draft, draft);
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  return left.every((value, index) => value === right[index]);
+}
+
+function reconcileArray(target: Y.Array<unknown>, desired: readonly unknown[]): void {
+  const sharedLength = Math.min(target.length, desired.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    const current = target.get(index);
+    const next = desired[index];
+    if (current instanceof Y.Map && isPlainRecord(next) && !(next instanceof Uint8Array)) {
+      reconcileMap(current, next);
+    } else if (current instanceof Y.Array && Array.isArray(next)) {
+      reconcileArray(current, next);
+    } else if (
+      !Object.is(current, next) &&
+      !(current instanceof Uint8Array && next instanceof Uint8Array && equalBytes(current, next))
+    ) {
+      target.delete(index, 1);
+      target.insert(index, [toYValue(next)]);
+    }
+  }
+  if (target.length > desired.length) target.delete(desired.length, target.length - desired.length);
+  if (desired.length > target.length) {
+    target.insert(target.length, desired.slice(target.length).map(toYValue));
+  }
+}
+
+function reconcileMap(target: Y.Map<unknown>, desired: Readonly<Record<string, unknown>>): void {
+  const desiredKeys = new Set(Object.keys(desired).filter((key) => desired[key] !== undefined));
+  for (const key of [...target.keys()].sort()) {
+    if (!desiredKeys.has(key)) target.delete(key);
+  }
+  for (const key of [...desiredKeys].sort()) {
+    const current = target.get(key);
+    const next = desired[key];
+    if (current instanceof Y.Map && isPlainRecord(next) && !(next instanceof Uint8Array)) {
+      reconcileMap(current, next);
+    } else if (current instanceof Y.Array && Array.isArray(next)) {
+      reconcileArray(current, next);
+    } else if (
+      !Object.is(current, next) &&
+      !(current instanceof Uint8Array && next instanceof Uint8Array && equalBytes(current, next))
+    ) {
+      target.set(key, toYValue(next));
+    }
+  }
+}
+
+function ensureMap(target: Y.Map<unknown>, key: string): Y.Map<unknown> {
+  const current = target.get(key);
+  if (current instanceof Y.Map) return current;
+  const created = new Y.Map<unknown>();
+  target.set(key, created);
+  return created;
+}
+
+function reconcileEntityCollection<T extends { id: string }>(
+  root: Y.Map<unknown>,
+  key: RootCollectionKey,
+  values: readonly T[],
+): void {
+  const collection = ensureMap(root, key);
+  const desiredIds = new Set(values.map((value) => value.id));
+  for (const id of [...collection.keys()].sort()) {
+    if (!desiredIds.has(id)) collection.delete(id);
+  }
+  values.forEach((value, order) => {
+    const current = collection.get(value.id);
+    const entity = current instanceof Y.Map ? current : new Y.Map<unknown>();
+    if (entity !== current) collection.set(value.id, entity);
+    const { id: _id, ...fields } = value;
+    reconcileMap(entity, { ...fields, [COLLABORATIVE_JOURNEY_ORDER_FIELD]: order });
+  });
+}
+
+function reconcileKeyedRecords(
+  root: Y.Map<unknown>,
+  key: RootCollectionKey,
+  values: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+): void {
+  const collection = ensureMap(root, key);
+  const desiredIds = new Set(Object.keys(values));
+  for (const id of [...collection.keys()].sort()) {
+    if (!desiredIds.has(id)) collection.delete(id);
+  }
+  for (const id of [...desiredIds].sort()) {
+    const current = collection.get(id);
+    const entity = current instanceof Y.Map ? current : new Y.Map<unknown>();
+    if (entity !== current) collection.set(id, entity);
+    reconcileMap(entity, values[id]!);
+  }
+}
+
+function reconcileStringMap(
+  parent: Y.Map<unknown>,
+  key: string,
+  values: Readonly<Record<string, string>>,
+): void {
+  reconcileMap(ensureMap(parent, key), values);
+}
+
+function reconcileCanonicalProjection(doc: Y.Doc, metadata: JourneyMetadata): void {
+  const root = getCollaborativeJourneyRoot(doc);
+  for (const key of [...root.keys()].sort()) {
+    if (!ROOT_KEY_SET.has(key)) root.delete(key);
+  }
+  if (
+    root.get(COLLABORATIVE_JOURNEY_ROOT_KEYS.schemaVersion) !== COLLABORATIVE_JOURNEY_SCHEMA_VERSION
+  ) {
+    root.set(COLLABORATIVE_JOURNEY_ROOT_KEYS.schemaVersion, COLLABORATIVE_JOURNEY_SCHEMA_VERSION);
+  }
+  reconcileEntityCollection(root, COLLABORATIVE_JOURNEY_ROOT_KEYS.screens, metadata.graph!.screens);
+  reconcileEntityCollection(
+    root,
+    COLLABORATIVE_JOURNEY_ROOT_KEYS.connections,
+    metadata.graph!.transitions,
+  );
+  reconcileEntityCollection(root, COLLABORATIVE_JOURNEY_ROOT_KEYS.flows, metadata.graph!.flows);
+  reconcileKeyedRecords(root, COLLABORATIVE_JOURNEY_ROOT_KEYS.positions, metadata.positions);
+  reconcileEntityCollection(root, COLLABORATIVE_JOURNEY_ROOT_KEYS.notes, metadata.notes ?? []);
+  const draft = ensureMap(root, COLLABORATIVE_JOURNEY_ROOT_KEYS.draft);
+  for (const key of [...draft.keys()].sort()) {
+    if (!DRAFT_KEY_SET.has(key)) draft.delete(key);
+  }
+  reconcileStringMap(
+    draft,
+    COLLABORATIVE_JOURNEY_DRAFT_KEYS.screenTitles,
+    metadata.screenTitles ?? {},
+  );
+  reconcileStringMap(draft, COLLABORATIVE_JOURNEY_DRAFT_KEYS.edgeLabels, metadata.edgeLabels);
+  reconcileStringMap(draft, COLLABORATIVE_JOURNEY_DRAFT_KEYS.edgeKinds, metadata.edgeKinds);
 }
 
 /**
@@ -1054,6 +1194,72 @@ export function materializeCollaborativeJourney(
 }
 
 export const materializeJourneyDocument = materializeCollaborativeJourney;
+
+/**
+ * Reconciles a canonical snapshot into an existing collaborative document.
+ *
+ * Existing root, collection, retained entity, and compatible nested Yjs types
+ * keep their identities. The snapshot is first validated and projected through
+ * the same authority boundary as materialization: server-owned executable,
+ * review, and evidence fields are stripped by default. A server may explicitly
+ * preserve fields only through `validateServerOwnedField`.
+ *
+ * Reconciliation is prepared and validated on a staged document before one
+ * update is applied to the live document, so rejected or invalid input cannot
+ * leave a partial live mutation. `origin` is attached to that live transaction.
+ */
+export function reconcileCollaborativeJourney(
+  doc: Y.Doc,
+  metadata: JourneyMetadata,
+  options: CollaborativeJourneyReconciliationOptions = {},
+): JourneyMetadata {
+  const candidate = createCollaborativeJourneyDoc(metadata);
+  let projection: JourneyMetadata;
+  try {
+    projection = materializeCollaborativeJourney(candidate, {
+      validateServerOwnedField: options.validateServerOwnedField,
+    });
+  } finally {
+    candidate.destroy();
+  }
+
+  const initialStateVector = encodeCollaborativeJourneyStateVector(doc);
+  const staged = new Y.Doc({ gc: true });
+  try {
+    applyCollaborativeJourneyUpdate(
+      staged,
+      encodeCollaborativeJourneyUpdate(doc),
+      "relay:reconcile-stage-bootstrap",
+    );
+    staged.transact(
+      () => reconcileCanonicalProjection(staged, projection),
+      "relay:reconcile-stage",
+    );
+
+    const stagedResult = validateCollaborativeJourney(staged, {
+      // The candidate projection has already passed the caller's authority
+      // validator. This second pass checks structure without invoking a
+      // potentially stateful authority callback twice.
+      validateServerOwnedField: () => "preserve",
+    });
+    if (!stagedResult.ok || !stagedResult.metadata) {
+      throw new CollaborativeJourneyValidationError(stagedResult);
+    }
+    if (JSON.stringify(stagedResult.metadata) !== JSON.stringify(projection)) {
+      throw new Error(
+        "Collaborative Journey reconciliation did not match its validated projection",
+      );
+    }
+
+    const update = encodeCollaborativeJourneyUpdate(staged, initialStateVector);
+    applyCollaborativeJourneyUpdate(doc, update, options.origin);
+    return projection;
+  } finally {
+    staged.destroy();
+  }
+}
+
+export const reconcileJourneyDocument = reconcileCollaborativeJourney;
 
 /** Encode an opaque binary update, optionally relative to a peer state vector. */
 export function encodeCollaborativeJourneyUpdate(doc: Y.Doc, stateVector?: Uint8Array): Uint8Array {
