@@ -3,6 +3,7 @@
  * Jobs, traces, heal retries, persisted runs/, live capture.
  */
 import http from "node:http";
+import { join } from "node:path";
 import { URL } from "node:url";
 import { readFile } from "node:fs/promises";
 import {
@@ -127,6 +128,7 @@ import {
   runWithOperationContext,
   readAuthoringEvidence,
   listJourneyAggregates,
+  findWorkspaceRoot,
   type AuthoringRuntime,
 } from "@relay/core";
 import { createSseHub } from "./sse.js";
@@ -170,7 +172,10 @@ import {
   type CollaborationRouteService,
 } from "./collaboration-routes.js";
 import type { CollaborationAwarenessService } from "./collaboration-awareness.js";
-import type { DurableCollaborativeJourneyStore } from "./collaborative-journey-store.js";
+import {
+  DurableCollaborativeJourneyStore,
+  LocalCollaborativeJourneyStorageProvider,
+} from "./collaborative-journey-store.js";
 import { createReadStream } from "node:fs";
 import type {
   Build,
@@ -2005,9 +2010,29 @@ async function main(): Promise<void> {
     tokenIdx >= 0
       ? argv[tokenIdx + 1]
       : (process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN);
-  const started = await startServer({ port, host, token });
+  const collaborationEnabled = process.env.RELAY_COLLABORATION_ENABLED === "true";
+  const collaboration = collaborationEnabled
+    ? {
+        enabled: true as const,
+        store: new DurableCollaborativeJourneyStore({
+          storage: new LocalCollaborativeJourneyStorageProvider({
+            rootDirectory: join(
+              process.env.RELAY_WORKSPACE_ROOT?.trim() || findWorkspaceRoot(),
+              ".relay",
+            ),
+          }),
+        }),
+      }
+    : undefined;
+  const started = await startServer({
+    port,
+    host,
+    token,
+    ...(collaboration ? { collaboration } : {}),
+  });
   console.log(`@relay/server listening on http://${started.host}:${started.port}`);
   console.log(`  runs → ${runsRoot()}`);
+  if (collaborationEnabled) console.log("  collaboration → enabled");
 }
 
 const invokedDirectly =

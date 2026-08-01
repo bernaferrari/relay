@@ -97,7 +97,11 @@ const platform = createDesktopPlatform();
 
 render(
   () => (
-    <AppBaseProviders platform={platform} onThemeApplied={onThemeApplied}>
+    <AppBaseProviders
+      platform={platform}
+      onThemeApplied={onThemeApplied}
+      collaboration={(import.meta.env.VITE_COLLABORATION_ENABLED as string | undefined) === "true"}
+    >
       <AppInterface />
     </AppBaseProviders>
   ),
