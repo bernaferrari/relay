@@ -1,6 +1,8 @@
 import type { RecipeStep, RecordedStepEvidence, StepTarget } from "./api-types";
 
-export type EditableActionKind = RecipeStep["kind"];
+/** Compiler-generated destination checks are intrinsic to graph edges and are
+ * intentionally absent from the manual action picker. */
+export type EditableActionKind = Exclude<RecipeStep["kind"], "expect-screen">;
 
 export type TapGesture = "single" | "multi" | "hold";
 

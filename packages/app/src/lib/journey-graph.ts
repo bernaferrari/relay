@@ -494,7 +494,7 @@ export function attachGraphConnectionSteps(
 export function reviewGraphTransition(
   graph: JourneyGraph,
   id: string,
-  review: Pick<JourneyTransitionReview, "status" | "error">,
+  review: Pick<JourneyTransitionReview, "status" | "error" | "targets">,
   at = Date.now(),
 ): JourneyGraph {
   const copy = cloneGraph(graph);
@@ -507,6 +507,7 @@ export function reviewGraphTransition(
             updatedAt: at,
             ...(review.status === "verified" ? { verifiedAt: at } : {}),
             ...(review.error ? { error: review.error } : {}),
+            ...(review.targets ? { targets: structuredClone(review.targets) } : {}),
           },
           updatedAt: at,
         }

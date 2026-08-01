@@ -205,11 +205,7 @@ export function Topbar(props: { onSettings: () => void }) {
               <Icon
                 name="refresh"
                 size={12}
-                class={
-                  refreshingDevices()
-                    ? "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70"
-                    : undefined
-                }
+                class={refreshingDevices() ? "ui-refresh-spin motion-reduce:opacity-70" : undefined}
               />
               Refresh devices
             </button>

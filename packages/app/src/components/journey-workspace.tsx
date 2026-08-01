@@ -91,7 +91,13 @@ export function JourneyWorkspace(props: {
     updatedAt: 0,
   });
   const [loadedRecipeId, setLoadedRecipeId] = createSignal<string | null>(null);
+  const [targetSetOpen, setTargetSetOpen] = createSignal(false);
   const graph = createMemo(() => ensureJourneyGraph(metadata().value, draft.steps()));
+  const activeFlow = createMemo(() => graph().flows[0] ?? null);
+  const activeTargetSet = createMemo(() => {
+    const id = activeFlow()?.targetSetId;
+    return id ? (server.matrices().find((matrix) => matrix.id === id) ?? null) : null;
+  });
   const tree = createMemo(() => buildJourneyGraphTree(graph(), draft.steps()));
   const hasMap = () => tree().nodes.length > 0;
   const selectedDevice = createMemo(
@@ -432,14 +438,21 @@ export function JourneyWorkspace(props: {
     };
     const onCloseDevicePanel = closeCapturePanel;
     const onRunJourneyGraph = () => runJourneyGraph();
+    const onOutsideTargetSet = (event: PointerEvent) => {
+      if (!(event.target as HTMLElement | null)?.closest?.("[data-target-set-picker]")) {
+        setTargetSetOpen(false);
+      }
+    };
     window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
     window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
     window.addEventListener("relay:run-journey-graph", onRunJourneyGraph);
+    window.addEventListener("pointerdown", onOutsideTargetSet);
     onCleanup(() => {
       window.removeEventListener("relay:device-selected", onDeviceSelected);
       window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
       window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
       window.removeEventListener("relay:run-journey-graph", onRunJourneyGraph);
+      window.removeEventListener("pointerdown", onOutsideTargetSet);
     });
   });
 
@@ -480,6 +493,13 @@ export function JourneyWorkspace(props: {
     const transitionPath = readiness.transitionPath;
     if (!readiness.ready || !transitionPath) {
       toast(readiness.reason, "info");
+      return;
+    }
+    if (flow.targetSetId) {
+      void server.runCompatibilityMatrixRemote(recipeId, flow.targetSetId, 1, {
+        flowName: flow.name,
+        transitionPath,
+      });
       return;
     }
     void server.runJourneyPathRemote(recipeId, flow.name, transitionPath);
@@ -676,6 +696,25 @@ export function JourneyWorkspace(props: {
   const persistNotes = (notes: JourneyCanvasNote[]) => {
     if (!server.selectedRecipeId()) return;
     persistMetadata(withJourneyGraph({ ...metadata().value, notes }, graph()));
+  };
+  const chooseTargetSet = (targetSetId?: string) => {
+    const flow = activeFlow();
+    if (!flow) return;
+    const at = Date.now();
+    const next = {
+      ...graph(),
+      flows: graph().flows.map((candidate) => {
+        if (candidate.id !== flow.id) return candidate;
+        const { targetSetId: _previousTargetSetId, ...withoutTargetSet } = candidate;
+        return {
+          ...withoutTargetSet,
+          ...(targetSetId ? { targetSetId } : {}),
+          updatedAt: at,
+        };
+      }),
+    };
+    persistMetadata(withJourneyGraph(metadata().value, next));
+    setTargetSetOpen(false);
   };
   const useCurrentScreenAsStart = async () => {
     if (startCaptureBusy() || hasMap()) return;
@@ -897,8 +936,50 @@ export function JourneyWorkspace(props: {
     setTransitionReplay({ connectionId: connection.id, state: "running" });
     const result = await replayTransitionSteps(stepsForConnection(connection), server.runStep);
     if (result.ok) {
+      const destination = graph().screens.find((screen) => screen.id === connection.toScreenId);
+      const captured = await recorder.captureStartScreen();
+      const identity = destination?.identity;
+      const observedFingerprint = captured?.observation.fingerprint;
+      const reachedExpectedScreen = Boolean(
+        identity &&
+        observedFingerprint &&
+        [identity.fingerprint, ...(identity.aliases ?? [])].includes(observedFingerprint),
+      );
+      const device = selectedDevice();
+      const target = {
+        targetId: device?.serial ?? server.selectedDevice() ?? "current-device",
+        ...(device?.name ? { targetName: device.name } : {}),
+        ...(device?.platform ? { platform: device.platform } : {}),
+        status: reachedExpectedScreen ? ("passed" as const) : ("failed" as const),
+        checkedAt: Date.now(),
+        ...(observedFingerprint ? { observedFingerprint } : {}),
+        ...(!reachedExpectedScreen
+          ? {
+              error: `Reached a different screen instead of ${destination?.title ?? "the destination"}`,
+            }
+          : {}),
+      };
+      if (!reachedExpectedScreen) {
+        const error = target.error!;
+        persistMetadata(
+          reviewTransition(
+            metadata().value,
+            connection.id,
+            { status: "failed", error, targets: [target] },
+            Date.now(),
+          ),
+        );
+        setTransitionReplay({ connectionId: connection.id, state: "failed", error });
+        toast(error, "warning");
+        return;
+      }
       persistMetadata(
-        reviewTransition(metadata().value, connection.id, { status: "verified" }, Date.now()),
+        reviewTransition(
+          metadata().value,
+          connection.id,
+          { status: "verified", targets: [target] },
+          Date.now(),
+        ),
       );
       setTransitionReplay({ connectionId: connection.id, state: "passed" });
       toast("Connection verified on the device", "success");
@@ -1208,8 +1289,8 @@ export function JourneyWorkspace(props: {
             }}
           />
           <Show when={hasCanvasContent()}>
-            <header class="absolute top-4 left-4 z-20 flex min-h-10 items-center rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_88%,transparent)] px-2.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_80%,transparent),0_8px_24px_rgb(0_0_0/14%)] backdrop-blur-[14px]">
-              <div class="flex min-w-0 items-center gap-2">
+            <header class="absolute top-4 left-4 z-20 flex min-h-10 items-center gap-1 rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_80%,transparent),0_8px_24px_rgb(0_0_0/14%)] backdrop-blur-[14px]">
+              <div class="flex min-w-0 items-center gap-2 px-2">
                 <span class="grid size-6 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                   <Icon name="move" size={12} />
                 </span>
@@ -1218,6 +1299,91 @@ export function JourneyWorkspace(props: {
                   <span class="mx-1.5 text-[var(--text-weak)]">·</span>
                   {connections().length} {connections().length === 1 ? "connection" : "connections"}
                 </span>
+              </div>
+              <span class="h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+              <div class="relative" data-target-set-picker>
+                <button
+                  type="button"
+                  class="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] px-2 text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
+                  aria-expanded={targetSetOpen()}
+                  aria-label="Choose where this journey runs"
+                  onClick={() => setTargetSetOpen((open) => !open)}
+                >
+                  <Icon name="smartphone" size={11} />
+                  <span class="text-[var(--text-weak)]">Run on</span>
+                  <span class="max-w-32 truncate text-[var(--text-strong)]">
+                    {activeTargetSet()?.name ?? selectedDevice()?.name ?? "Current device"}
+                  </span>
+                  <Icon name={targetSetOpen() ? "chevron-up" : "chevron-down"} size={10} />
+                </button>
+                <Show when={targetSetOpen()}>
+                  <div class="ui-pop absolute top-[calc(100%+7px)] left-0 grid w-[286px] gap-1 rounded-[12px] border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-base)] p-1.5 shadow-[var(--v2-elevation-overlay)]">
+                    <div class="px-2 pt-1 pb-1.5">
+                      <strong class="block text-[11px] font-semibold text-[var(--text-strong)]">
+                        Run on
+                      </strong>
+                      <span class="mt-0.5 block text-[9.5px]/[1.4] text-[var(--text-weak)]">
+                        Relay checks the same path on every target in the set.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      class={cn(
+                        "flex min-h-11 items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] hover:bg-[var(--v2-background-bg-layer-02)]",
+                        !activeFlow()?.targetSetId && "bg-[var(--product-accent-soft)]",
+                      )}
+                      onClick={() => chooseTargetSet()}
+                    >
+                      <span class="grid size-7 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
+                        <Icon name="smartphone" size={12} />
+                      </span>
+                      <span class="min-w-0 flex-1">
+                        <strong class="block font-medium text-[var(--text-strong)]">
+                          Current device
+                        </strong>
+                        <span class="text-[9.5px] text-[var(--text-weak)]">
+                          Fastest while building
+                        </span>
+                      </span>
+                      <Show when={!activeFlow()?.targetSetId}>
+                        <Icon name="check" size={11} class="text-[var(--icon-success-base)]" />
+                      </Show>
+                    </button>
+                    <For each={server.matrices()}>
+                      {(matrix) => (
+                        <button
+                          type="button"
+                          class={cn(
+                            "flex min-h-11 items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] hover:bg-[var(--v2-background-bg-layer-02)]",
+                            activeFlow()?.targetSetId === matrix.id &&
+                              "bg-[var(--product-accent-soft)]",
+                          )}
+                          onClick={() => chooseTargetSet(matrix.id)}
+                        >
+                          <span class="grid size-7 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
+                            <Icon name="grid" size={12} />
+                          </span>
+                          <span class="min-w-0 flex-1 truncate font-medium text-[var(--text-strong)]">
+                            {matrix.name}
+                          </span>
+                          <Show when={activeFlow()?.targetSetId === matrix.id}>
+                            <Icon name="check" size={11} class="text-[var(--icon-success-base)]" />
+                          </Show>
+                        </button>
+                      )}
+                    </For>
+                    <button
+                      type="button"
+                      class="flex min-h-10 items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
+                      onClick={() => {
+                        setTargetSetOpen(false);
+                        props.onOpenTargets();
+                      }}
+                    >
+                      <Icon name="plus" size={11} /> Manage target sets…
+                    </button>
+                  </div>
+                </Show>
               </div>
             </header>
           </Show>
@@ -1244,12 +1410,6 @@ export function JourneyWorkspace(props: {
                 liveScreenSrc={liveScreenSrc()}
                 captureBusy={startCaptureBusy()}
                 onUseCurrentScreen={() => void useCurrentScreenAsStart()}
-                onOpenDevice={() => {
-                  setCaptureOpen(true);
-                  requestAnimationFrame(() =>
-                    window.dispatchEvent(new CustomEvent("relay:open-device-picker")),
-                  );
-                }}
               />
             }
           >
@@ -1557,6 +1717,9 @@ export function JourneyWorkspace(props: {
                 {(connection) => (
                   <ConnectionInspector
                     connection={connection()}
+                    targetSetName={
+                      activeTargetSet()?.name ?? selectedDevice()?.name ?? "current device"
+                    }
                     sourceTitle={titleFor(
                       tree().nodes.find((node) => node.id === connection().fromScreenId)!,
                     )}
@@ -1752,7 +1915,7 @@ export function JourneyWorkspace(props: {
       <Show when={captureOpen() && !reviewingTake()}>
         <aside
           class={cn(
-            "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-visible border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-base)] shadow-[0_20px_56px_-20px_rgb(0_0_0/55%)]",
+            "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-visible",
             captureClosing() && "ui-device-companion--closing",
             selectedDevice()
               ? "bottom-4 w-[min(388px,calc(100%-32px))] rounded-[18px] max-[720px]:top-auto max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:h-[min(72vh,680px)] max-[720px]:w-auto"
@@ -1760,7 +1923,7 @@ export function JourneyWorkspace(props: {
           )}
           aria-label="Device"
         >
-          <header class="relative z-[100] flex min-h-12 shrink-0 items-center justify-between rounded-t-[18px] border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-3.5">
+          <header class="relative z-[100] mx-2 mt-1 flex min-h-11 shrink-0 items-center justify-between rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] px-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_76%,transparent),0_10px_30px_-16px_rgb(0_0_0/42%)] backdrop-blur-[16px]">
             <div class="flex min-w-0 items-center gap-2">
               <Show when={selectedDevice()}>
                 <i
@@ -1788,7 +1951,7 @@ export function JourneyWorkspace(props: {
               </button>
             </Show>
           </header>
-          <div class="relative z-0 min-h-0 flex-1 overflow-hidden rounded-b-[18px]">
+          <div class="relative z-0 min-h-0 flex-1 overflow-visible">
             <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
           </div>
           <Show
@@ -1800,7 +1963,7 @@ export function JourneyWorkspace(props: {
                   (!hasCanvasContent() || Boolean(selectedNode()) || Boolean(selectedConnection()))
                 }
               >
-                <footer class="flex min-h-16 shrink-0 items-center border-t border-[var(--v2-border-border-muted)] px-3 pt-2 pb-3">
+                <footer class="flex min-h-14 shrink-0 items-center px-3 pb-2">
                   <button
                     type="button"
                     class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#705ff0] px-4 text-[11.5px] font-semibold text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_10px_28px_rgb(89_69_214/24%)] transition-[background-color,transform] duration-150 hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.98] disabled:cursor-wait disabled:opacity-75"
@@ -1826,7 +1989,7 @@ export function JourneyWorkspace(props: {
                       <Icon
                         name="refresh"
                         size={13}
-                        class="animate-[spin_900ms_linear_infinite] motion-reduce:animate-none"
+                        class="ui-refresh-spin motion-reduce:opacity-70"
                       />
                     </Show>
                     {recorder.arming() || startCaptureBusy()

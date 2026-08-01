@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { RecipeStep } from "./api-types";
-import { convertStepAction, convertTapGesture } from "./journey-action-conversion";
+import {
+  convertStepAction,
+  convertTapGesture,
+  type EditableActionKind,
+} from "./journey-action-conversion";
 
 const recordedTap: RecipeStep = {
   kind: "tap",
@@ -43,7 +47,7 @@ describe("convertStepAction", () => {
   });
 
   it("creates a real editable shape for every supported action", () => {
-    const kinds: RecipeStep["kind"][] = [
+    const kinds: EditableActionKind[] = [
       "tap",
       "type",
       "scroll",

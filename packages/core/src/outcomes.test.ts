@@ -12,6 +12,10 @@ describe("classifyRunOutcome", () => {
       classifyRunOutcome({ status: "error", error: "tap failed: no strategy matched" }),
       { outcome: "harness-failure", failureCategory: "locator" },
     );
+    assert.deepEqual(
+      classifyRunOutcome({ status: "error", error: "expect-screen: reached a different screen" }),
+      { outcome: "product-failure", failureCategory: "deterministic-assertion" },
+    );
   });
 
   it("preserves uncertainty and cancellation as distinct outcomes", () => {

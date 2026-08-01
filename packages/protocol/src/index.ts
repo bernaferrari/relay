@@ -644,6 +644,20 @@ export type JourneyTransitionReview = {
   updatedAt: number;
   verifiedAt?: number;
   error?: string;
+  /** Verification is recorded per target so one passing phone never hides a
+   * failing tablet. The aggregate status remains useful for compact UI. */
+  targets?: JourneyTargetVerification[];
+};
+
+export type JourneyTargetVerification = {
+  targetId: string;
+  targetName?: string;
+  platform?: "android" | "ios" | "browser";
+  status: "passed" | "failed" | "needs-review";
+  checkedAt: number;
+  observedFingerprint?: string;
+  runId?: string;
+  error?: string;
 };
 
 /** A captured pass before (or after) it becomes part of the executable path.
@@ -761,6 +775,9 @@ export type JourneyGraphFlow = {
   id: string;
   name: string;
   screenId: string;
+  /** Optional named target set. The same canonical route is replayed against
+   * every profile in the set; device-specific forks remain exceptional. */
+  targetSetId?: string;
   createdAt: number;
   updatedAt: number;
 };

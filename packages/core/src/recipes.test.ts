@@ -489,6 +489,12 @@ describe("validateRecipeSteps", () => {
       },
       { kind: "expect", target: { label: "Sign in" }, condition: "visible" },
       { kind: "expect", target: { text: "Welcome" }, condition: "gone", timeoutMs: 3000 },
+      {
+        kind: "expect-screen",
+        screenId: "home",
+        screenTitle: "Home",
+        fingerprint: "a".repeat(64),
+      },
       { kind: "extract", as: "response", target: { ref: "@answer" }, role: "assistant" },
       { kind: "assert-content", input: "response", expected: "France", match: "contains" },
       {
@@ -512,9 +518,9 @@ describe("validateRecipeSteps", () => {
     assert.equal(out.length, steps.length);
     assert.equal(out[0]!.kind, "tap");
     assert.equal(out[3]!.kind, "swipe");
-    assert.equal(out[15]!.kind, "flow");
-    assert.equal((out[13] as { reason?: string }).reason, "consent");
-    assert.deepEqual((out[13] as { verifyAfter?: unknown }).verifyAfter, {
+    assert.equal(out[16]!.kind, "flow");
+    assert.equal((out[14] as { reason?: string }).reason, "consent");
+    assert.deepEqual((out[14] as { verifyAfter?: unknown }).verifyAfter, {
       target: { label: "Welcome" },
       timeoutMs: 15_000,
     });

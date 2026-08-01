@@ -2,6 +2,7 @@ import type {
   JourneyGraph,
   JourneyGraphDestination,
   JourneyGraphFlow,
+  JourneyGraphScreen,
   JourneyGraphTransition,
   RecipeStep,
 } from "@relay/protocol";
@@ -81,6 +82,7 @@ export type CompiledJourneyGraph = {
 };
 
 type GraphIndex = {
+  screenById: Map<string, JourneyGraphScreen>;
   flowByName: Map<string, JourneyGraphFlow>;
   transitionById: Map<string, JourneyGraphTransition>;
   outgoingByScreenId: Map<string, JourneyGraphTransition[]>;
@@ -114,7 +116,11 @@ export function validateJourneyGraphIntegrity(graph: JourneyGraph): GraphIndex {
   }
 
   const screenIds = new Set<string>();
-  for (const screen of graph.screens) requireUniqueId(screen.id, screenIds, "Screen");
+  const screenById = new Map<string, JourneyGraphScreen>();
+  for (const screen of graph.screens) {
+    requireUniqueId(screen.id, screenIds, "Screen");
+    screenById.set(screen.id, screen);
+  }
 
   const flowIds = new Set<string>();
   const flowByName = new Map<string, JourneyGraphFlow>();
@@ -161,7 +167,7 @@ export function validateJourneyGraphIntegrity(graph: JourneyGraph): GraphIndex {
     outgoingByScreenId.set(transition.fromScreenId, outgoing);
   }
 
-  return { flowByName, transitionById, outgoingByScreenId };
+  return { screenById, flowByName, transitionById, outgoingByScreenId };
 }
 
 function transitionLimit(input: JourneyGraphCompileInput): number {
@@ -318,6 +324,32 @@ export function compileJourneyGraph(input: JourneyGraphCompileInput): CompiledJo
         fromScreenId: transition.fromScreenId,
         destination: { ...transition.destination },
       });
+    }
+    if (transition.destination.kind === "screen") {
+      const destination = index.screenById.get(transition.destination.screenId)!;
+      if (destination.identity) {
+        const compiledStepIndex = steps.length;
+        const stepId = `relay-screen-${transition.id}`;
+        steps.push({
+          id: stepId,
+          kind: "expect-screen",
+          screenId: destination.id,
+          screenTitle: destination.title,
+          fingerprint: destination.identity.fingerprint,
+          ...(destination.identity.aliases?.length
+            ? { aliases: [...destination.identity.aliases] }
+            : {}),
+        });
+        stepProvenance.push({
+          compiledStepIndex,
+          transitionPathIndex,
+          transitionStepIndex: transition.stepIds.length,
+          stepId,
+          transitionId: transition.id,
+          fromScreenId: transition.fromScreenId,
+          destination: { ...transition.destination },
+        });
+      }
     }
     transitionProvenance.push({
       transitionPathIndex,

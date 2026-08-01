@@ -752,6 +752,34 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         out.push(step);
         break;
       }
+      case "expect-screen": {
+        if (!isString(raw.screenId) || !raw.screenId.trim()) {
+          throw stepErr(index, "expect-screen.screenId is required");
+        }
+        if (!isString(raw.screenTitle) || !raw.screenTitle.trim()) {
+          throw stepErr(index, "expect-screen.screenTitle is required");
+        }
+        if (!isString(raw.fingerprint) || !/^[a-f0-9]{64}$/u.test(raw.fingerprint)) {
+          throw stepErr(index, "expect-screen.fingerprint must be a SHA-256 fingerprint");
+        }
+        if (
+          raw.aliases !== undefined &&
+          (!Array.isArray(raw.aliases) ||
+            raw.aliases.length > 256 ||
+            !raw.aliases.every((alias) => isString(alias) && /^[a-f0-9]{64}$/u.test(alias)))
+        ) {
+          throw stepErr(index, "expect-screen.aliases must be SHA-256 fingerprints");
+        }
+        out.push({
+          kind: "expect-screen",
+          screenId: raw.screenId,
+          screenTitle: raw.screenTitle,
+          fingerprint: raw.fingerprint,
+          ...(raw.aliases?.length ? { aliases: [...raw.aliases] as string[] } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
       case "extract": {
         if (!isString(raw.as) || !/^[a-zA-Z_][a-zA-Z0-9_.-]*$/.test(raw.as)) {
           throw stepErr(index, "extract.as must be a valid variable name");
@@ -1688,6 +1716,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Wait for ${describeTarget(step.target)} to finish responding`;
     case "expect":
       return `check ${describeExpectTarget(step.target)} ${step.condition}`;
+    case "expect-screen":
+      return `Reach ${step.screenTitle}`;
     case "extract":
       return `Extract ${describeTarget(step.target)} as ${step.as}`;
     case "assert-content":
@@ -1771,6 +1801,8 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "wait-response":
       return ["ai", "wait"];
     case "expect":
+      return ["ok"];
+    case "expect-screen":
       return ["ok"];
     case "extract":
       return ["store"];

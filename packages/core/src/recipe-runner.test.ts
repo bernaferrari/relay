@@ -13,6 +13,7 @@ import { registerEvaluationProvider } from "./evaluation.js";
 import { saveRecipe } from "./recipes.js";
 import { clearControl, requestResume } from "./control.js";
 import { runWithTargetContext } from "./target-context.js";
+import { observeScreenIdentity } from "./screen-identity.js";
 
 const runRecipeStep: typeof runRecipeStepWithoutContext = (...args) =>
   runWithTargetContext({ kind: "device", platform: "android", serial: "recipe-runner-test" }, () =>
@@ -278,6 +279,35 @@ describe("runRecipeStep expect — error classification", () => {
         assert.doesNotMatch(err.message, /not visible after/);
         return true;
       },
+    );
+  });
+});
+
+describe("runRecipeStep expect-screen", () => {
+  const nodes = [{ role: "button", label: "Continue", visibleToUser: true }];
+  const fingerprint = observeScreenIdentity(nodes).fingerprint;
+
+  it("passes when normalized visible semantics reach the expected destination", async () => {
+    const lines: string[] = [];
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes }) }),
+      { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
+      { log: (line) => lines.push(line) },
+    );
+    assert.deepEqual(lines, ["screen: reached Home"]);
+  });
+
+  it("fails with both fingerprints when a route reaches a different screen", async () => {
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          stubDevice({
+            snapshot: () => Promise.resolve({ nodes: [{ role: "button", label: "Try again" }] }),
+          }),
+          { kind: "expect-screen", screenId: "home", screenTitle: "Home", fingerprint },
+          noLog,
+        ),
+      /reached a different screen instead of "Home"/,
     );
   });
 });

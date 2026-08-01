@@ -192,6 +192,38 @@ test("preserves provenance for verified automatic edges with no recipe steps", (
   assert.deepEqual(compiled.terminal, { kind: "screen", screenId: "ready" });
 });
 
+test("adds a semantic destination check after each identified screen edge", () => {
+  const destination = {
+    ...screen("home"),
+    identity: {
+      schemaVersion: 1 as const,
+      fingerprint: "a".repeat(64),
+      aliases: ["b".repeat(64)],
+    },
+  };
+  const compiled = compileJourneyGraph({
+    graph: graph(
+      [screen("start"), destination],
+      [transition("open-home", "start", { kind: "screen", screenId: "home" }, ["open"])],
+    ),
+    flowName: "Main",
+    recipeSteps: [tap("open")],
+  });
+
+  assert.deepEqual(compiled.steps, [
+    tap("open"),
+    {
+      id: "relay-screen-open-home",
+      kind: "expect-screen",
+      screenId: "home",
+      screenTitle: "HOME",
+      fingerprint: "a".repeat(64),
+      aliases: ["b".repeat(64)],
+    },
+  ]);
+  assert.deepEqual(compiled.transitionProvenance[0]?.compiledStepRange, [0, 2]);
+});
+
 test("supports finite explicit return loops, including repeated transitions", () => {
   const value = graph(
     [screen("list"), screen("detail")],

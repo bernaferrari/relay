@@ -61,6 +61,7 @@ import {
 } from "./recipes.js";
 import type { TestJob } from "./session.js";
 import { evaluateSemantic } from "./evaluation.js";
+import { observeScreenIdentity } from "./screen-identity.js";
 
 function nodeText(node: SnapshotNode): string[] {
   return [node.label, node.value]
@@ -692,6 +693,19 @@ export async function runRecipeStep(
           throw new Error(`expect: "${label}" still visible after ${timeoutSec}s`);
         }
       }
+      break;
+    }
+
+    case "expect-screen": {
+      const observed = observeScreenIdentity(await snapshot(device));
+      const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
+      if (!expected.has(observed.fingerprint)) {
+        throw new Error(
+          `expect-screen: reached a different screen instead of "${step.screenTitle}" ` +
+            `(expected ${step.fingerprint.slice(0, 8)}, observed ${observed.fingerprint.slice(0, 8)})`,
+        );
+      }
+      log(`screen: reached ${step.screenTitle}`);
       break;
     }
 

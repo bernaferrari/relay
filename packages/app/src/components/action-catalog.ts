@@ -38,6 +38,7 @@ const descriptions: Record<RecipeStep["kind"], string> = {
   swipe: "Drag between two points",
   key: "Navigate Back or Home",
   expect: "Verify an element is visible or gone",
+  "expect-screen": "Verify the graph reached its expected screen",
   "wait-for": "Continue when an element appears",
   sleep: "Pause for a fixed time",
   pause: "Let a person complete a task",
@@ -63,7 +64,7 @@ const descriptions: Record<RecipeStep["kind"], string> = {
   alert: "Accept or dismiss a system alert",
 };
 
-const group = (id: string, label: string, kinds: RecipeStep["kind"][]): ActionGroup => ({
+const group = (id: string, label: string, kinds: EditableActionKind[]): ActionGroup => ({
   id,
   label,
   actions: kinds.map((kind) => ({

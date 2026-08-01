@@ -43,7 +43,14 @@ export async function enqueueJourneyGraphPath(
 
 export async function enqueueMatrix(
   request: ServerRequest,
-  input: { recipe: string; matrixId: string; repetitions: number; prodAccountMatch?: string },
+  input: {
+    recipe: string;
+    matrixId: string;
+    repetitions: number;
+    prodAccountMatch?: string;
+    flowName?: string;
+    transitionPath?: string[];
+  },
 ): Promise<{ jobs: JobInfo[]; matrix: MatrixExpansion }> {
   return request<{ jobs: JobInfo[]; matrix: MatrixExpansion }>("/jobs/compatibility-matrix", {
     method: "POST",

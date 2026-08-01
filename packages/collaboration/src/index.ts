@@ -818,7 +818,7 @@ function validateConnection(
     } else {
       checkKeys(
         connection.review,
-        ["status", "updatedAt", "verifiedAt", "error"],
+        ["status", "updatedAt", "verifiedAt", "error", "targets"],
         `${path}.review`,
         context,
       );
@@ -839,6 +839,65 @@ function validateConnection(
           validString(connection.review.error, `${path}.review.error`, context, {
             optional: true,
           }) && valid;
+      if (connection.review.targets !== undefined) {
+        if (!Array.isArray(connection.review.targets)) {
+          issue(context, "invalid-shape", `${path}.review.targets`, "must be an array");
+          valid = false;
+        } else {
+          const targetIds = new Set<string>();
+          connection.review.targets.forEach((target, index) => {
+            const targetPath = `${path}.review.targets[${index}]`;
+            if (!isPlainRecord(target)) {
+              issue(context, "invalid-shape", targetPath, "must be an object");
+              valid = false;
+              return;
+            }
+            checkKeys(
+              target,
+              [
+                "targetId",
+                "targetName",
+                "platform",
+                "status",
+                "checkedAt",
+                "observedFingerprint",
+                "runId",
+                "error",
+              ],
+              targetPath,
+              context,
+            );
+            valid = validString(target.targetId, `${targetPath}.targetId`, context) && valid;
+            valid = validNumber(target.checkedAt, `${targetPath}.checkedAt`, context) && valid;
+            valid =
+              validEnum(
+                target.status,
+                ["passed", "failed", "needs-review"],
+                `${targetPath}.status`,
+                context,
+              ) && valid;
+            if (typeof target.targetId === "string") {
+              if (targetIds.has(target.targetId)) {
+                issue(context, "duplicate-id", `${targetPath}.targetId`, "must be unique");
+                valid = false;
+              }
+              targetIds.add(target.targetId);
+            }
+            for (const key of ["targetName", "observedFingerprint", "runId", "error"] as const)
+              valid =
+                validString(target[key], `${targetPath}.${key}`, context, { optional: true }) &&
+                valid;
+            if (target.platform !== undefined)
+              valid =
+                validEnum(
+                  target.platform,
+                  ["android", "ios", "browser"],
+                  `${targetPath}.platform`,
+                  context,
+                ) && valid;
+          });
+        }
+      }
     }
     if (
       serverOwned(
@@ -912,9 +971,16 @@ function validateFlow(
   context: MutableContext,
 ): JourneyGraphFlow | undefined {
   const path = `flows.${flow.id}`;
-  checkKeys(flow, ["id", "name", "screenId", "createdAt", "updatedAt"], path, context);
+  checkKeys(
+    flow,
+    ["id", "name", "screenId", "targetSetId", "createdAt", "updatedAt"],
+    path,
+    context,
+  );
   let valid = validString(flow.name, `${path}.name`, context);
   valid = validString(flow.screenId, `${path}.screenId`, context) && valid;
+  valid =
+    validString(flow.targetSetId, `${path}.targetSetId`, context, { optional: true }) && valid;
   valid = validNumber(flow.createdAt, `${path}.createdAt`, context) && valid;
   valid = validNumber(flow.updatedAt, `${path}.updatedAt`, context) && valid;
   return valid ? (flow as JourneyGraphFlow) : undefined;

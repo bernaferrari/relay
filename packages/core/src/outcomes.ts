@@ -21,7 +21,7 @@ export function classifyRunOutcome(input: {
   if (/visual assertion/.test(message)) {
     return { outcome: "product-failure", failureCategory: "visual-assertion" };
   }
-  if (/content assertion|expect:/.test(message)) {
+  if (/content assertion|expect(?:-screen)?:/.test(message)) {
     return { outcome: "product-failure", failureCategory: "deterministic-assertion" };
   }
   if (/extract:/.test(message)) {

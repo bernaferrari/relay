@@ -117,6 +117,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
     recipeId: string,
     matrixId: string,
     repetitions = 1,
+    graphPath?: { flowName: string; transitionPath: string[] },
   ): Promise<void> {
     if (deps.health() !== "online") {
       toast("Relay isn’t connected — can’t run yet", "warning");
@@ -128,6 +129,9 @@ export function createServerRunController(deps: RunControllerDependencies) {
         recipe: recipeId,
         matrixId,
         repetitions,
+        ...(graphPath
+          ? { flowName: graphPath.flowName, transitionPath: graphPath.transitionPath }
+          : {}),
         ...(deps.prodAccountMatch() ? { prodAccountMatch: deps.prodAccountMatch() } : {}),
       });
       if (data.jobs[0]) deps.setSelectedJobId(data.jobs[0].id);

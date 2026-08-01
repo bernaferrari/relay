@@ -67,6 +67,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       const verb = step.condition === "gone" ? "is gone" : "is visible";
       return `Check ${targetPhrase(step.target)} ${verb}${to}`;
     }
+    case "expect-screen":
+      return `Reach ${step.screenTitle}`;
     case "extract":
       return `Extract ${targetPhrase(step.target)} as ${step.as}`;
     case "assert-content":
@@ -146,6 +148,8 @@ export function stepValid(step: RecipeStep): boolean {
     case "wait-response":
     case "expect":
       return targetValid(step.target);
+    case "expect-screen":
+      return Boolean(step.screenId.trim() && step.screenTitle.trim() && step.fingerprint.trim());
     case "extract":
       return targetValid(step.target) && step.as.trim().length > 0;
     case "assert-content":
@@ -208,6 +212,8 @@ export function stepIssue(step: RecipeStep): string | null {
     case "wait-response":
     case "expect":
       return "Needs a target — a label, ref, text, or point.";
+    case "expect-screen":
+      return "Needs an expected screen identity.";
     case "extract":
       return "Needs a target and output variable name.";
     case "assert-content":

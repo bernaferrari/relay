@@ -389,6 +389,7 @@ export function ConnectionInspector(props: {
   connection: CanvasConnection;
   sourceTitle: string;
   targetTitle: string;
+  targetSetName: string;
   setup: {
     behaviors: Array<{ id: string; label: string; actionCount: number }>;
     onRecord: () => void;
@@ -459,6 +460,57 @@ export function ConnectionInspector(props: {
           ? "Choose what should move the device to the next screen. You can record it or start with a simple behavior."
           : `${modeLabel()} · ${actionCount()} action${actionCount() === 1 ? "" : "s"}${props.connection.videoTakeId ? " · video" : ""}${props.connection.videoClip ? " · trimmed" : ""}`}
       </p>
+      <Show when={!pending()}>
+        <div class="mt-3 grid gap-1 rounded-[9px] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_72%,transparent)] p-2">
+          <div class="flex min-h-8 items-center gap-2 px-0.5">
+            <span
+              class={cn(
+                "grid size-6 shrink-0 place-items-center rounded-[7px]",
+                failed()
+                  ? "bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] text-[var(--icon-critical-base)]"
+                  : verified()
+                    ? "bg-[color-mix(in_srgb,var(--icon-success-base)_14%,transparent)] text-[var(--icon-success-base)]"
+                    : "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+              )}
+            >
+              <Icon name={failed() ? "alert" : verified() ? "check" : "scan"} size={11} />
+            </span>
+            <span class="min-w-0 flex-1">
+              <strong class="block text-[10.5px] font-medium text-[var(--text-strong)]">
+                Reach {props.targetTitle}
+              </strong>
+              <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
+                Checked on {props.targetSetName}
+              </span>
+            </span>
+            <span class="text-[9.5px] font-medium text-[var(--text-weak)]">
+              {verified() ? "Passed" : failed() ? "Changed" : "Not checked"}
+            </span>
+          </div>
+          <For each={props.connection.review?.targets ?? []}>
+            {(target) => (
+              <div class="flex min-h-7 items-center gap-2 border-t border-[var(--v2-border-border-muted)] px-1 pt-1 text-[9.5px]">
+                <i
+                  class={cn(
+                    "size-1.5 rounded-full",
+                    target.status === "passed"
+                      ? "bg-[var(--icon-success-base)]"
+                      : target.status === "failed"
+                        ? "bg-[var(--icon-critical-base)]"
+                        : "bg-[var(--icon-warning-base)]",
+                  )}
+                />
+                <span class="min-w-0 flex-1 truncate text-[var(--text-base)]">
+                  {target.targetName ?? target.targetId}
+                </span>
+                <span class="capitalize text-[var(--text-weak)]">
+                  {target.status.replace("-", " ")}
+                </span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show
         when={pending()}
         fallback={

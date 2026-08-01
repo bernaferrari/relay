@@ -192,7 +192,7 @@ export function attachTransitionSteps(
 export function reviewTransition(
   metadata: JourneyMetadata,
   connectionId: string,
-  review: Pick<JourneyTransitionReview, "status" | "error">,
+  review: Pick<JourneyTransitionReview, "status" | "error" | "targets">,
   at = Date.now(),
 ): JourneyMetadata {
   return withJourneyGraph(

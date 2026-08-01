@@ -505,7 +505,6 @@ export function GraphEmptyState(props: {
   liveScreenSrc?: string;
   captureBusy: boolean;
   onUseCurrentScreen: () => void;
-  onOpenDevice: () => void;
 }) {
   const isRecording = () => props.take?.state === "recording";
   const count = () => props.take?.steps.length ?? 0;
@@ -531,7 +530,8 @@ export function GraphEmptyState(props: {
     if (!props.deviceOpen) {
       return {
         title: "Set the entry screen",
-        detail: "Open Device, navigate to the beginning, then save that screen to the canvas.",
+        detail:
+          "Use Device in the toolbar, navigate to the beginning, then save that screen to the canvas.",
       };
     }
     switch (props.recordState) {
@@ -568,34 +568,40 @@ export function GraphEmptyState(props: {
         };
     }
   };
-  const setupCompanionOpen = () => props.deviceOpen && props.recordState === "choose-device";
   return (
-    <Show
-      when={!setupCompanionOpen()}
-      fallback={
-        <div class="pointer-events-none absolute inset-0 z-[1] grid place-items-center px-6 max-[760px]:place-items-end max-[760px]:pb-8">
-          <div class="flex max-w-[340px] items-center gap-3 rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_76%,transparent)] px-4 py-3 text-left shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent),0_10px_36px_-22px_rgb(0_0_0/42%)] backdrop-blur-[12px]">
-            <span class="grid size-9 shrink-0 place-items-center rounded-[11px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
-              <Icon name="move" size={15} />
-            </span>
-            <span>
-              <strong class="block text-[12.5px] font-semibold text-[var(--text-strong)]">
-                Your journey will grow here
-              </strong>
-              <span class="mt-0.5 block text-[11px]/[1.45] text-[var(--text-weak)]">
-                Choose a device in the open panel, then navigate freely.
-              </span>
-            </span>
-          </div>
-        </div>
-      }
-    >
+    <>
       <div
-        class="absolute inset-y-0 left-0 z-[1] grid place-items-center px-6 max-[760px]:right-0"
+        class={cn(
+          "absolute inset-y-0 left-0 z-[1] grid place-items-center px-6 max-[760px]:right-0",
+          props.deviceOpen && "max-[720px]:hidden",
+        )}
         style={{ right: props.deviceOpen && props.deviceSelected ? "min(420px, 50vw)" : "0" }}
       >
-        <section class="ui-modal w-[min(410px,calc(100vw-48px))] overflow-hidden rounded-[20px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_80%,transparent),0_24px_80px_-28px_rgb(0_0_0/55%)] backdrop-blur-[18px]">
-          <div class="px-5 pt-5 pb-4">
+        <section class="w-[min(430px,calc(100vw-48px))]">
+          <div class="mb-6 flex items-center gap-3 px-1" aria-hidden="true">
+            <div class="grid h-[142px] w-[108px] shrink-0 grid-rows-[24px_1fr_25px] overflow-hidden rounded-[14px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_var(--v2-border-border-strong),0_12px_36px_-18px_rgb(0_0_0/38%)]">
+              <div class="flex items-center gap-1 border-b border-[var(--v2-border-border-muted)] px-2">
+                <i class="size-1 rounded-full bg-[var(--text-interactive-base)]" />
+                <i class="size-1 rounded-full bg-[var(--v2-border-border-strong)]" />
+              </div>
+              <div class="grid place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent),transparent_58%),var(--v2-background-bg-layer-01)]">
+                <Icon name="smartphone" size={18} class="text-[var(--text-interactive-base)]" />
+              </div>
+              <span class="grid place-items-center text-[9px] font-medium text-[var(--text-base)]">
+                First screen
+              </span>
+            </div>
+            <div class="flex w-11 items-center text-[var(--text-interactive-base)]">
+              <span class="h-px flex-1 bg-current opacity-55" />
+              <Icon name="chevron-right" size={13} />
+            </div>
+            <div class="grid h-[118px] w-[90px] shrink-0 place-items-center rounded-[13px] border border-dashed border-[var(--v2-border-border-strong)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_58%,transparent)] text-[var(--text-weak)]">
+              <span class="grid justify-items-center gap-1.5 text-[9px] font-medium">
+                <Icon name="plus" size={15} /> Next screen
+              </span>
+            </div>
+          </div>
+          <div class="px-1">
             <div class="flex items-center gap-3">
               <span class="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]">
                 <Icon name={isRecording() ? "camera" : "smartphone"} size={18} />
@@ -604,26 +610,26 @@ export function GraphEmptyState(props: {
                 <span class="block text-[10.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
                   {isRecording() ? "Capturing connection" : "New journey"}
                 </span>
-                <h2 class="m-0 mt-0.5 text-[20px] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance">
+                <h2 class="m-0 mt-0.5 text-[26px] font-semibold tracking-[-0.045em] text-[var(--text-strong)] text-balance">
                   {guidance().title}
                 </h2>
               </div>
             </div>
-            <p class="m-0 mt-3 max-w-[46ch] text-[12.5px]/[1.55] text-[var(--text-weak)] text-pretty">
+            <p class="m-0 mt-3 max-w-[44ch] text-[13px]/[1.6] text-[var(--text-weak)] text-pretty">
               {guidance().detail}
             </p>
             <Show when={!props.take}>
               <ol
-                class="m-0 mt-4 grid list-none grid-cols-3 gap-1 p-0"
+                class="m-0 mt-4 flex list-none items-center gap-2 p-0"
                 aria-label="Getting started"
               >
                 <For each={["Connect", "Navigate", "Capture"]}>
                   {(label, index) => (
                     <li
                       class={cn(
-                        "flex min-w-0 items-center gap-1.5 rounded-[8px] px-2 py-2 text-[11px] font-medium",
+                        "flex min-w-0 items-center gap-1.5 rounded-full px-1 py-1 text-[10.5px] font-medium",
                         index() === activeStep()
-                          ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
+                          ? "text-[var(--text-interactive-base)]"
                           : index() < activeStep()
                             ? "text-[var(--text-base)]"
                             : "text-[var(--text-weak)]",
@@ -646,51 +652,46 @@ export function GraphEmptyState(props: {
               </ol>
             </Show>
           </div>
-          <Show when={!props.take && !(props.deviceOpen && props.recordState === "choose-device")}>
-            <div class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-3 py-2.5">
-              <span class="text-[11px] text-[var(--text-weak)]">
+          <Show when={!props.take}>
+            <div class="mt-5 flex min-h-11 items-center gap-3 px-1">
+              <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
+                <i
+                  class={cn(
+                    "size-1.5 rounded-full",
+                    props.recordState === "ready"
+                      ? "bg-[var(--icon-success-base)]"
+                      : "bg-[var(--icon-warning-base)] motion-safe:animate-pulse",
+                  )}
+                />
                 {props.recordState === "ready"
                   ? "Your live screen is ready"
-                  : "Device stays one click away"}
+                  : props.deviceOpen
+                    ? "Use the device on the right"
+                    : "Device is available in the toolbar"}
               </span>
-              <button
-                type="button"
-                class={cn(primaryButton, "shrink-0 justify-center px-3")}
-                disabled={
-                  props.captureBusy ||
-                  (props.deviceOpen &&
-                    !["ready", "choose-device", "device-unavailable"].includes(props.recordState))
-                }
-                aria-busy={props.captureBusy}
-                onClick={
-                  props.recordState === "ready" ? props.onUseCurrentScreen : props.onOpenDevice
-                }
-              >
-                <Icon
-                  name={
-                    props.captureBusy
-                      ? "refresh"
-                      : props.recordState === "ready"
-                        ? "camera"
-                        : "smartphone"
-                  }
-                  size={13}
-                  class={
-                    props.captureBusy
-                      ? "animate-[spin_900ms_linear_infinite] motion-reduce:animate-none"
-                      : ""
-                  }
-                />
-                {props.captureBusy
-                  ? "Saving…"
-                  : props.recordState === "ready"
-                    ? "Capture first screen"
-                    : "Open device"}
-              </button>
+              <Show when={props.recordState === "ready"}>
+                <button
+                  type="button"
+                  class={cn(
+                    primaryButton,
+                    "ml-auto shrink-0 justify-center px-4 shadow-[0_8px_24px_-12px_color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)]",
+                  )}
+                  disabled={props.captureBusy}
+                  aria-busy={props.captureBusy}
+                  onClick={props.onUseCurrentScreen}
+                >
+                  <Icon
+                    name={props.captureBusy ? "refresh" : "camera"}
+                    size={13}
+                    class={props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : ""}
+                  />
+                  {props.captureBusy ? "Saving…" : "Use current screen"}
+                </button>
+              </Show>
             </div>
           </Show>
         </section>
       </div>
-    </Show>
+    </>
   );
 }
