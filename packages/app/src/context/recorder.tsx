@@ -44,6 +44,11 @@ export type RecordingTake = {
 
 export type RecordingIssue = { kind: "setup" | "screen"; message: string };
 
+export type CapturedStartScreen = {
+  observation: JourneyScreenObservation;
+  screenshotUrl?: string;
+};
+
 export const describeStep = sentenceForStep;
 
 export function hasUsableDeviceBounds(
@@ -278,6 +283,80 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       } catch (error) {
         toast(error instanceof Error ? error.message : String(error), "warning");
         return false;
+      }
+    }
+
+    /** Capture the current target through the same authoritative observation
+     * boundary used by recording, then discard the temporary zero-action Take.
+     * The canvas receives identity + evidence without inventing an executable
+     * action or leaving a hidden recording session behind. */
+    async function captureStartScreen(): Promise<CapturedStartScreen | null> {
+      if (activeSession()) {
+        toast("Finish the current recording before choosing a start screen", "info");
+        return null;
+      }
+      if (!targetReady()) {
+        toast("Choose a ready device before capturing the start screen", "info");
+        window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+        return null;
+      }
+      const journeyId = await draft.ensureRecordingDraft(() => "Untitled journey");
+      const device = server.devices().find((item) => item.serial === server.selectedDevice());
+      const leaseId = server.selectedLeaseId();
+      const recipe = server.recipes().find((item) => item.id === journeyId);
+      if (!journeyId || !device || !leaseId || !recipe) {
+        toast("Relay needs a journey, device, and active lease to capture this screen", "warning");
+        return null;
+      }
+
+      let session: AuthoringSession | null = null;
+      try {
+        const document = await server.loadJourney(journeyId);
+        session = await server.createAuthoringSession({
+          journeyId,
+          target:
+            device.platform === "browser"
+              ? { kind: "browser", platform: "browser", targetId: device.serial }
+              : {
+                  kind: "device",
+                  platform: device.platform === "ios" ? "ios" : "android",
+                  targetId: device.serial,
+                },
+          leaseId,
+          expectedJourneyRevision: document.revision,
+          expectedRecipeRevision: recipe.updatedAt,
+        });
+        session = await server.observeAuthoringSession(session.id);
+        if (session.state !== "ready")
+          throw new Error(session.error || "Device screen is not ready");
+        session = await server.startAuthoringSession(session.id);
+        if (session.state !== "recording") {
+          throw new Error(session.error || "Could not capture the current screen");
+        }
+        session = await server.stopAuthoringSession(session.id);
+        const revision = sessionRevision(session);
+        const observation = revision?.before ? projectedObservation(revision.before) : undefined;
+        const screenshot = revision?.evidence.find((item) => item.kind === "screenshot");
+        if (!observation) throw new Error("The device did not return a screen observation");
+        await server.discardAuthoringSession(session.id);
+        session = null;
+        return {
+          observation,
+          ...(screenshot
+            ? { screenshotUrl: server.authoringEvidenceUrl(screenshot.uri, screenshot.mime) }
+            : {}),
+        };
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error), "warning");
+        return null;
+      } finally {
+        if (session) {
+          if (session.state === "reviewing") {
+            await server.discardAuthoringSession(session.id).catch(() => undefined);
+          } else {
+            await server.cancelAuthoringSession(session.id).catch(() => undefined);
+          }
+        }
       }
     }
 
@@ -540,6 +619,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setRecordingTransition,
       startNextRecordingGroup,
       enterRecordMode,
+      captureStartScreen,
       stopRecording,
       driveTap,
       driveSwipe,

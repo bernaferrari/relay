@@ -13,6 +13,7 @@ import { ActionIconTrail } from "./action-icon-trail";
 import { EmptyState } from "./empty-state";
 import { cn } from "../lib/cn";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
+import { persistedAsJob } from "../lib/persisted-run";
 import { toast } from "../context/toast";
 import { presentTarget } from "../lib/target-presentation";
 import { nextRovingIndex } from "../lib/roving-focus";
@@ -819,23 +820,6 @@ function RunBrowser(props: {
       </nav>
     </aside>
   );
-}
-
-export function persistedAsJob(run: PersistedRun): JobInfo {
-  const status = ["queued", "running", "paused", "ok", "error", "healed", "cancelled"].includes(
-    run.status,
-  )
-    ? (run.status as JobInfo["status"])
-    : "error";
-  return {
-    ...run,
-    status,
-    queuedAt: run.queuedAt ?? run.startedAt ?? run.writtenAt,
-    logs: run.logs ?? [],
-    steps: run.steps ?? [],
-    frames: run.frames ?? [],
-    attempts: run.attempts ?? 1,
-  };
 }
 
 function CompatibilityReportPanel(props: {

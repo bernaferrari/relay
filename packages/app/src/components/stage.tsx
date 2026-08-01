@@ -1294,7 +1294,7 @@ export function DeviceStage(_props: {
    * Never stack workbench light-theme color recipes on the frame.
    */
   const phoneShell =
-    "relative rounded-[22px] bg-[var(--phone-bezel)] shadow-[0_0_0_3px_var(--phone-bezel),0_0_0_4px_var(--phone-rim-soft),0_28px_64px_-22px_rgb(0_0_0/84%),0_12px_28px_-16px_rgb(255_255_255/10%)]";
+    "relative rounded-[21px] bg-[var(--phone-bezel)] p-[2px] shadow-[0_0_0_1px_rgb(255_255_255/10%),0_22px_54px_-24px_rgb(0_0_0/78%)]";
 
   return (
     <section

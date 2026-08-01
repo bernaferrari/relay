@@ -22,6 +22,7 @@ import {
   type CanvasConnection,
 } from "../lib/journey-prototype";
 import {
+  addJourneyStartScreen,
   buildJourneyGraphTree,
   ensureJourneyGraph,
   screenForObservation,
@@ -57,6 +58,7 @@ import {
 import {
   CanvasNote,
   ConnectionInspector,
+  KeyboardConnectionChooser,
   ScreenCard,
   ScreenInspector,
 } from "./journey-canvas-primitives";
@@ -170,6 +172,11 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
   const connections = createMemo(() => canvasConnections(tree(), draft.steps(), metadata().value));
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
+  const [keyboardConnectionSourceId, setKeyboardConnectionSourceId] = createSignal<string | null>(
+    null,
+  );
+  const [startCaptureBusy, setStartCaptureBusy] = createSignal(false);
+  const [capturedScreenUrls, setCapturedScreenUrls] = createSignal<Record<string, string>>({});
   const [connectionPreview, setConnectionPreview] = createSignal<CanvasPoint | null>(null);
   const [renamingNodeId, setRenamingNodeId] = createSignal<string | null>(null);
   const [historyOpen, setHistoryOpen] = createSignal(false);
@@ -240,6 +247,8 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
     deviceAutoOpenedForRecipe = "";
     setSelectedNodeId(null);
     setSelectedConnectionId(null);
+    setKeyboardConnectionSourceId(null);
+    setCapturedScreenUrls({});
     setRenamingNodeId(null);
     setHistoryOpen(false);
     setCaptureOpen(false);
@@ -444,6 +453,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       if (renamingNodeId()) return;
       setSelectedNodeId(null);
       setSelectedConnectionId(null);
+      setKeyboardConnectionSourceId(null);
       setHistoryOpen(false);
     };
     window.addEventListener("relay:undo-request", onUndoRequest);
@@ -526,6 +536,25 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
   const persistNotes = (notes: JourneyCanvasNote[]) => {
     if (!server.selectedRecipeId()) return;
     persistMetadata(withJourneyGraph({ ...metadata().value, notes }, graph()));
+  };
+  const useCurrentScreenAsStart = async () => {
+    if (startCaptureBusy() || hasMap()) return;
+    setStartCaptureBusy(true);
+    try {
+      const captured = await recorder.captureStartScreen();
+      if (!captured || hasMap()) return;
+      const added = addJourneyStartScreen(graph(), captured.observation);
+      persistMetadata(withJourneyGraph(metadata().value, added.graph));
+      if (captured.screenshotUrl) {
+        setCapturedScreenUrls((urls) => ({ ...urls, [added.screen.id]: captured.screenshotUrl! }));
+      }
+      setSelectedNodeId(added.screen.id);
+      setSelectedConnectionId(null);
+      setCaptureOpen(false);
+      toast("Start screen added", "success");
+    } finally {
+      setStartCaptureBusy(false);
+    }
   };
   const addNote = () => {
     const element = canvas;
@@ -779,6 +808,38 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
     connectionDrag = { fromScreenId, pointerId: event.pointerId, origin: point, point };
     element.setPointerCapture(event.pointerId);
   };
+  const chooseKeyboardConnection = (fromScreenId: string, toScreenId: string) => {
+    const next = addPlannedConnection(
+      metadata().value,
+      { fromScreenId, toScreenId },
+      Date.now(),
+      draft.steps(),
+    );
+    const connection = next.graph?.transitions.at(-1);
+    persistMetadata(next);
+    setKeyboardConnectionSourceId(null);
+    setSelectedConnectionId(connection?.id ?? null);
+    setSelectedNodeId(null);
+  };
+  const createKeyboardDestination = (fromScreenId: string) => {
+    const source = tree().nodes.find((node) => node.id === fromScreenId);
+    if (!source) return;
+    const position = positionFor(source);
+    const next = addPlannedScreenConnection(
+      metadata().value,
+      {
+        fromScreenId,
+        position: { x: position.x + 300, y: position.y },
+      },
+      Date.now(),
+      draft.steps(),
+    );
+    const connection = next.graph?.transitions.at(-1);
+    persistMetadata(next);
+    setKeyboardConnectionSourceId(null);
+    setSelectedConnectionId(connection?.id ?? null);
+    setSelectedNodeId(null);
+  };
   const removeConnection = (connection: CanvasConnection) => {
     if (connection.source !== "authored") return;
     persistMetadata(removeAuthoredConnection(metadata().value, connection.id));
@@ -842,12 +903,12 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
 
   return (
     <section
-      class="relative grid min-h-0 flex-1 overflow-hidden bg-[var(--v2-background-bg-deep)]"
-      style={{
-        "grid-template-columns": reviewingTake()
-          ? "minmax(280px, 320px) minmax(0, 1fr)"
-          : "minmax(0, 1fr)",
-      }}
+      class={cn(
+        "relative grid min-h-0 flex-1 overflow-hidden bg-[var(--v2-background-bg-deep)]",
+        reviewingTake()
+          ? "grid-cols-[minmax(280px,320px)_minmax(0,1fr)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(260px,42%)_minmax(0,1fr)]"
+          : "grid-cols-1",
+      )}
     >
       <Show when={!reviewingTake()}>
         <section
@@ -1072,6 +1133,14 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                 selectedDeviceName={selectedDevice()?.name ?? server.selectedDevice() ?? undefined}
                 deviceOpen={captureOpen()}
                 liveScreenSrc={liveScreenSrc()}
+                captureBusy={startCaptureBusy()}
+                onUseCurrentScreen={() => void useCurrentScreenAsStart()}
+                onOpenDevice={() => {
+                  setCaptureOpen(true);
+                  queueMicrotask(() =>
+                    window.dispatchEvent(new CustomEvent("relay:open-device-picker")),
+                  );
+                }}
               />
             }
           >
@@ -1087,7 +1156,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                 class="absolute inset-0 overflow-visible"
                 width={bounds().width}
                 height={bounds().height}
-                aria-hidden="true"
+                aria-label="Journey connections"
               >
                 <defs>
                   <marker
@@ -1207,11 +1276,24 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                         />
                         <path
                           d={geometry().path}
-                          class="cursor-pointer fill-none stroke-transparent"
+                          class="cursor-pointer fill-none stroke-transparent outline-none focus-visible:stroke-[var(--text-interactive-base)] focus-visible:[stroke-dasharray:4_3]"
                           stroke-width="16"
+                          tabindex={0}
+                          role="button"
+                          aria-label={`Select connection from ${titleFor(
+                            tree().nodes.find((node) => node.id === connection.fromScreenId)!,
+                          )} to ${titleFor(
+                            tree().nodes.find((node) => node.id === connection.toScreenId)!,
+                          )}`}
                           onPointerDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
                             event.stopPropagation();
+                            setSelectedConnectionId(connection.id);
+                            setSelectedNodeId(null);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") return;
+                            event.preventDefault();
                             setSelectedConnectionId(connection.id);
                             setSelectedNodeId(null);
                           }}
@@ -1247,7 +1329,11 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                       editing={renamingNodeId() === node.id}
                       runState={runProjection().screens[node.id]?.state}
                       position={positionFor(node)}
-                      src={() => screenshotUrl(server, draft.steps()[node.representativeStepIndex])}
+                      src={() =>
+                        screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
+                        capturedScreenUrls()[node.id] ||
+                        (isFlowStart() ? (liveScreenSrc() ?? "") : "")
+                      }
                       onSelect={() => selectNode(node)}
                       onRename={() => setRenamingNodeId(node.id)}
                       onCommitRename={(title) => renameScreen(node, title)}
@@ -1256,6 +1342,10 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                         recordFromNode(node);
                       }}
                       onConnectStart={(event) => beginConnection(event, node.id)}
+                      onConnectKeyboard={() => {
+                        selectNode(node);
+                        setKeyboardConnectionSourceId(node.id);
+                      }}
                       onPointerDown={(event) => {
                         event.stopPropagation();
                         event.currentTarget.setPointerCapture(event.pointerId);
@@ -1271,6 +1361,22 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                   );
                 }}
               </For>
+              <Show when={keyboardConnectionSourceId()}>
+                {(sourceId) => {
+                  const source = () => tree().nodes.find((node) => node.id === sourceId());
+                  return (
+                    <KeyboardConnectionChooser
+                      sourceTitle={source() ? titleFor(source()!) : "Selected screen"}
+                      destinations={tree()
+                        .nodes.filter((node) => node.id !== sourceId())
+                        .map((node) => ({ id: node.id, title: titleFor(node) }))}
+                      onChoose={(targetId) => chooseKeyboardConnection(sourceId(), targetId)}
+                      onCreate={() => createKeyboardDestination(sourceId())}
+                      onCancel={() => setKeyboardConnectionSourceId(null)}
+                    />
+                  );
+                }}
+              </Show>
               <For each={metadata().value.notes ?? []}>
                 {(note) => (
                   <CanvasNote
@@ -1420,7 +1526,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
               }}
             />
             <section
-              class="relative min-h-0 min-w-0 overflow-hidden border-l border-[var(--v2-border-border-muted)]"
+              class="relative min-h-0 min-w-0 overflow-hidden border-l border-[var(--v2-border-border-muted)] max-[760px]:border-t max-[760px]:border-l-0"
               aria-label="Recorded action playback"
             >
               <RecordedTakePlayer
@@ -1441,10 +1547,10 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       </Show>
       <Show when={captureOpen() && !reviewingTake()}>
         <aside
-          class="absolute top-4 right-4 bottom-4 z-40 flex w-[min(400px,calc(100%-32px))] min-h-0 min-w-0 flex-col overflow-hidden rounded-[16px] border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-base)] shadow-[0_24px_72px_rgb(0_0_0/44%)]"
+          class="absolute top-4 right-4 bottom-4 z-40 flex min-h-0 w-[min(388px,calc(100%-32px))] min-w-0 flex-col overflow-hidden rounded-[18px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_rgb(255_255_255/7%),0_20px_56px_-20px_rgb(0_0_0/55%)] max-[720px]:top-auto max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:h-[min(72vh,680px)] max-[720px]:w-auto"
           aria-label="Live device"
         >
-          <header class="flex min-h-12 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3">
+          <header class="flex min-h-12 shrink-0 items-center justify-between px-3 shadow-[inset_0_-1px_rgb(255_255_255/6%)]">
             <div class="flex min-w-0 items-center gap-2">
               <i
                 class={cn(
@@ -1492,7 +1598,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                       <Icon
                         name="refresh"
                         size={13}
-                        class="animate-spin motion-reduce:animate-none"
+                        class="animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none"
                       />
                     </Show>
                     {recorder.arming() ? "Preparing device…" : "Record connection"}

@@ -264,7 +264,7 @@ export const tabUnderline = cn(
 export const tabUnderlineActive = "text-text-strong after:scale-x-100";
 
 const productControl = cn(
-  "inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-[10px] px-3.5",
+  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[10px] px-3.5",
   "text-[13px] font-semibold select-none",
   "transition-[color,background-color,box-shadow,transform] duration-150",
   "active:enabled:scale-[0.97]",
@@ -288,9 +288,9 @@ export const productSecondary = cn(
   "disabled:bg-background-base disabled:text-text-weaker disabled:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
 );
 
-/** 36×36 chrome icon button with a 40×40 effective pointer target. */
+/** Compact 36×36 chrome icon with a 44×44 effective pointer target. */
 export const productIconButton = cn(
-  "relative inline-grid size-9 shrink-0 place-items-center rounded-[9px] text-text-base select-none before:absolute before:-inset-0.5 before:content-['']",
+  "relative inline-grid size-9 shrink-0 place-items-center rounded-[9px] text-text-base select-none before:absolute before:-inset-1 before:content-['']",
   "transition-[color,background-color,transform] duration-150",
   "hover:enabled:bg-surface-base-hover hover:enabled:text-text-strong",
   "active:enabled:scale-[0.97]",

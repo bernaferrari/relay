@@ -39,7 +39,7 @@ export function FlowParametersEditor() {
             Inputs
           </h3>
           <p class="m-0 text-[10px]/[1.35] text-[var(--text-weak)]">
-            Values changed when this test is reused.
+            Values changed when this journey is reused.
           </p>
         </div>
         <button
@@ -120,7 +120,7 @@ export function FlowParametersEditor() {
                     <input
                       class={field}
                       value={parameter().description ?? ""}
-                      placeholder="What the test expects"
+                      placeholder="What the journey expects"
                       onInput={(event) =>
                         patch(index, { description: event.currentTarget.value || undefined })
                       }

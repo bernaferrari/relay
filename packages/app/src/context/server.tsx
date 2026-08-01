@@ -220,6 +220,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     );
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
+    const [recipesLoaded, setRecipesLoaded] = createSignal(false);
     const [authoringSessions, setAuthoringSessions] = createSignal<AuthoringSession[]>([]);
     const [suites, setSuites] = createSignal<TestSuite[]>([]);
     const [selectedSuiteId, setSelectedSuiteId] = createSignal<string | null>(null);
@@ -644,6 +645,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const data = await request<{ journeys: RecipeInfo[] }>("/journeys");
         const list = asArray<RecipeInfo>(data, "journeys");
         setRecipes(list);
+        setRecipesLoaded(true);
         // A restored selection may point at a deleted recipe — fall back to
         // the first-run empty state, never silently to the first builtin.
         const sel = selectedRecipeId();
@@ -1556,12 +1558,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
           if (latestJourney) {
             setSelectedRecipeId(latestJourney.id);
-          } else {
-            const firstJourney = await saveRecipeRemote({
-              title: "Untitled journey",
-              steps: [],
-            });
-            if (firstJourney) setSelectedRecipeId(firstJourney.id);
           }
         }
         connectSse();
@@ -1737,6 +1733,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setActiveDiscoverySessionId,
       actions,
       recipes,
+      recipesLoaded,
       authoringSessions,
       suites,
       selectedSuiteId,

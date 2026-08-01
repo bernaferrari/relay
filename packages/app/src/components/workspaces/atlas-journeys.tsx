@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { useServer, type PersistedRun, type TraceFrameRef } from "../../context/server";
-import { persistedAsJob } from "../runs-workspace";
+import { persistedAsJob } from "../../lib/persisted-run";
 import { EmptyState } from "../empty-state";
 import { StatusChip, jobStatusChip } from "../status-chip";
 import { Icon } from "../icon";

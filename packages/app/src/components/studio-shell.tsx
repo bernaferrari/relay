@@ -1,10 +1,18 @@
-import { Show, Suspense, createEffect, createMemo, createSignal, lazy, onCleanup } from "solid-js";
+import {
+  Show,
+  Suspense,
+  createEffect,
+  createMemo,
+  createSignal,
+  lazy,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { JourneyWorkspace } from "./journey-workspace";
 import { JourneyNavigator, type NavigatorArea } from "./journey-navigator";
-import { TestWelcome } from "./test-onboarding";
 import { TestSettingsPanel } from "./test-details-panel";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
@@ -36,6 +44,7 @@ import {
 } from "../lib/shell-layout";
 import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
 import { ensureJourneyGraph } from "../lib/journey-graph";
+import { journeyStartupDecision } from "../lib/journey-startup";
 import type { JourneyRunReadiness as GraphRunReadiness } from "../lib/journey-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
@@ -82,6 +91,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [navOpen, setNavOpen] = createSignal(false);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
   const [devicePanelOpen, setDevicePanelOpen] = createSignal(false);
+  const [pendingCollectionRecording, setPendingCollectionRecording] = createSignal<{
+    suiteId: string;
+    sectionId: string;
+  } | null>(null);
   const [graphRunReadiness, setGraphRunReadiness] = createSignal<GraphRunReadiness>({
     visible: false,
     ready: false,
@@ -104,19 +117,37 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   // It also gives browser-only sessions (with empty storage) the most recent
   // authored journey immediately.
   let restoredInitialJourney = false;
+  let creatingInitialJourney = false;
   createEffect(() => {
-    if (restoredInitialJourney || server.health() !== "online") return;
-    if (server.selectedRecipeId()) {
+    if (restoredInitialJourney) return;
+    const decision = journeyStartupDecision({
+      online: server.health() === "online",
+      loaded: server.recipesLoaded(),
+      selectedId: server.selectedRecipeId(),
+      journeys: server.recipes(),
+    });
+    if (decision.kind === "wait") return;
+    if (decision.kind === "keep") {
       restoredInitialJourney = true;
       return;
     }
-    const latestJourney = server
-      .recipes()
-      .filter((recipe) => recipe.source === "custom")
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-    if (!latestJourney) return;
-    restoredInitialJourney = true;
-    server.setSelectedRecipeId(latestJourney.id);
+    if (decision.kind === "select") {
+      restoredInitialJourney = true;
+      server.setSelectedRecipeId(decision.id);
+      return;
+    }
+    if (creatingInitialJourney) return;
+    creatingInitialJourney = true;
+    void server
+      .saveRecipeRemote({ title: "Untitled journey", steps: [] })
+      .then((saved) => {
+        if (!saved) return;
+        restoredInitialJourney = true;
+        server.setSelectedRecipeId(saved.id);
+      })
+      .finally(() => {
+        creatingInitialJourney = false;
+      });
   });
   // Atlas is reached from a journey's own menu, not the navigator tabs, so it
   // shows as Journeys rather than leaving every tab unselected.
@@ -126,6 +157,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   });
   let titleBeforeEdit = "";
   let variablesDialog: HTMLElement | undefined;
+  let studioActionsTrigger: HTMLButtonElement | undefined;
+  let studioActionsMenu: HTMLDivElement | undefined;
+  let resumingCollectionRecording = false;
   createEffect(() => {
     const openSettings = (event: Event) => {
       const detail = (event as CustomEvent<{ section?: SettingsSection }>).detail;
@@ -159,6 +193,35 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     window.addEventListener("keydown", close);
     requestAnimationFrame(() => variablesDialog?.focus({ preventScroll: true }));
     onCleanup(() => window.removeEventListener("keydown", close));
+  });
+  createEffect(() => {
+    if (!studioActionsOpen()) return;
+    queueMicrotask(() =>
+      studioActionsMenu?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus(),
+    );
+  });
+  onMount(() => {
+    const dismissStudioActions = (event: MouseEvent) => {
+      if (
+        studioActionsOpen() &&
+        !studioActionsMenu?.contains(event.target as Node) &&
+        !studioActionsTrigger?.contains(event.target as Node)
+      ) {
+        setStudioActionsOpen(false);
+      }
+    };
+    const closeStudioActions = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !studioActionsOpen()) return;
+      event.stopPropagation();
+      setStudioActionsOpen(false);
+      queueMicrotask(() => studioActionsTrigger?.focus());
+    };
+    document.addEventListener("mousedown", dismissStudioActions);
+    window.addEventListener("keydown", closeStudioActions, true);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", dismissStudioActions);
+      window.removeEventListener("keydown", closeStudioActions, true);
+    });
   });
   // Navigator, Device, and Properties are three contextual side surfaces.
   // Showing more than one at once makes the canvas feel boxed in and leaves
@@ -249,6 +312,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         )
       : rows;
   });
+  createEffect(() => {
+    const pending = pendingCollectionRecording();
+    if (!pending || !selectedTargetIsReady() || resumingCollectionRecording) return;
+    resumingCollectionRecording = true;
+    void resumeCollectionRecording(pending).finally(() => {
+      resumingCollectionRecording = false;
+    });
+  });
   async function createTest(record = false): Promise<RecipeInfo | null> {
     if (record && !selectedTargetIsReady()) {
       openDevicePicker();
@@ -271,16 +342,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     return saved;
   }
 
-  async function recordTestForSuite(suiteId: string, sectionId: string): Promise<void> {
-    const saved = await createTest(true);
-    const suite = server.suites().find((item) => item.id === suiteId);
-    if (!saved || !suite) return;
-    await server.saveSuiteRemote({
+  async function resumeCollectionRecording(pending: {
+    suiteId: string;
+    sectionId: string;
+  }): Promise<void> {
+    const saved = await createTest(false);
+    const suite = server.suites().find((item) => item.id === pending.suiteId);
+    if (!saved || !suite) {
+      setPendingCollectionRecording(null);
+      return;
+    }
+    const updated = await server.saveSuiteRemote({
       id: suite.id,
       title: suite.title,
       description: suite.description,
       sections: suite.sections.map((section) =>
-        section.id === sectionId
+        section.id === pending.sectionId
           ? {
               ...section,
               entries: [
@@ -291,6 +368,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           : section,
       ),
     });
+    setPendingCollectionRecording(null);
+    if (updated && selectedTargetIsReady()) await recorder.enterRecordMode();
+  }
+
+  async function recordTestForSuite(suiteId: string, sectionId: string): Promise<void> {
+    if (!selectedTargetIsReady()) {
+      setPendingCollectionRecording({ suiteId, sectionId });
+      toast("Choose a ready device to record this journey", "info");
+      openDevicePicker();
+      return;
+    }
+    await resumeCollectionRecording({ suiteId, sectionId });
   }
 
   async function importTestYaml(yaml: string): Promise<void> {
@@ -581,6 +670,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   <Icon name="sliders" size={16} />
                 </button>
                 <button
+                  ref={(element) => (studioActionsTrigger = element)}
                   class={productIconButton}
                   type="button"
                   aria-label="More journey options"
@@ -591,13 +681,35 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </button>
                 <Show when={studioActionsOpen()}>
                   <div
+                    ref={(element) => (studioActionsMenu = element)}
                     class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
                     role="menu"
+                    aria-label="Journey options"
+                    onKeyDown={(event) => {
+                      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                      const items = [
+                        ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                          '[role="menuitem"]:not([disabled])',
+                        ),
+                      ];
+                      if (!items.length) return;
+                      event.preventDefault();
+                      const current = items.indexOf(document.activeElement as HTMLButtonElement);
+                      const next =
+                        event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? items.length - 1
+                            : event.key === "ArrowDown"
+                              ? (current + 1 + items.length) % items.length
+                              : (current - 1 + items.length) % items.length;
+                      items[next]?.focus();
+                    }}
                   >
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void duplicateSelected();
@@ -608,7 +720,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         setArea("map");
@@ -619,7 +731,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
-                      class="flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
                         void deleteSelected();
@@ -638,9 +750,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 <button
                   type="button"
                   class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
-                  aria-disabled={
+                  aria-describedby={
                     (studioView() === "map" ? graphBlockedReason() : testBlockedReason())
-                      ? "true"
+                      ? "journey-run-blocker"
                       : undefined
                   }
                   data-blocked={
@@ -652,15 +764,19 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     (studioView() === "map" ? graphBlockedReason() : testBlockedReason()) ||
                     graphRunReadiness().label
                   }
-                  aria-label={
-                    (studioView() === "map" ? graphBlockedReason() : testBlockedReason()) ||
-                    graphRunReadiness().label
-                  }
+                  aria-label={studioView() === "map" ? graphRunReadiness().label : "Run journey"}
                   onClick={runSelectedTest}
                 >
                   <Icon name="play" size={13} />
                   {studioView() === "map" ? graphRunReadiness().label : "Run"}
                 </button>
+                <Show when={studioView() === "map" ? graphBlockedReason() : testBlockedReason()}>
+                  {(reason) => (
+                    <span id="journey-run-blocker" class="sr-only">
+                      {reason()}
+                    </span>
+                  )}
+                </Show>
               </Show>
             </Show>
           </div>
@@ -677,12 +793,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
               }
             >
-              <Show
-                when={selected()}
-                fallback={
-                  <TestWelcome onStartJourney={startNewJourney} onBrowse={() => setNavOpen(true)} />
-                }
-              >
+              <Show when={selected()} fallback={<WorkspaceLoading label="canvas" />}>
                 <Show when={studioView() === "workbench"}>
                   <Suspense fallback={<WorkspaceLoading label="actions" />}>
                     <TestWorkbench
@@ -810,7 +921,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     id="import-review-title"
                     class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
                   >
-                    {review().exists ? "This test already exists" : "Import this test?"}
+                    {review().exists ? "This journey already exists" : "Import this journey?"}
                   </h3>
                 </div>
                 <button
@@ -847,8 +958,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3">
                 <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--text-weak)]">
                   {review().exists
-                    ? "Replacing preserves the current definition in version history. Importing a copy creates a new test ID."
-                    : "Relay will store the canonical definition in the tracked tests directory."}
+                    ? "Replacing preserves the current definition in version history. Importing a copy creates a new journey ID."
+                    : "Relay will store the canonical definition in the tracked journeys directory."}
                 </p>
                 <div class="flex shrink-0 flex-wrap justify-end gap-2">
                   <button
@@ -872,7 +983,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     class={productPrimary}
                     onClick={() => void confirmImport("replace")}
                   >
-                    {review().exists ? "Replace test" : "Import test"}
+                    {review().exists ? "Replace journey" : "Import journey"}
                   </button>
                 </div>
               </footer>

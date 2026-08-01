@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal } from "solid-js";
 import type { JourneyCanvasNote } from "@relay/protocol";
 import type { RecipeStep } from "../context/server";
 import type { CanvasConnection } from "../lib/journey-prototype";
@@ -68,6 +68,7 @@ export function ScreenCard(props: {
   onCommitRename: (title: string) => void;
   onRecord: () => void;
   onConnectStart: (event: PointerEvent) => void;
+  onConnectKeyboard: () => void;
   onPointerDown: (event: PointerEvent & { currentTarget: HTMLElement }) => void;
 }) {
   return (
@@ -195,7 +196,7 @@ export function ScreenCard(props: {
           <button
             type="button"
             class={cn(
-              "relative rounded-[5px] px-1 py-0.5 font-medium text-[var(--text-interactive-base)] opacity-0 transition-[background-color,opacity] duration-150 before:absolute before:-inset-x-1 before:-inset-y-2 before:content-[''] hover:bg-[var(--product-accent-soft)] group-hover/screen:opacity-100 focus-visible:opacity-100",
+              "relative inline-flex min-h-11 items-center rounded-[7px] px-1 font-medium text-[var(--text-interactive-base)] opacity-60 transition-[background-color,opacity] duration-150 before:absolute before:-inset-x-1 before:content-[''] hover:bg-[var(--product-accent-soft)] group-hover/screen:opacity-100 focus-visible:opacity-100",
               props.selected && "opacity-100",
             )}
             aria-label={`Record a connection from ${props.title}`}
@@ -216,15 +217,96 @@ export function ScreenCard(props: {
           props.selected && "opacity-100",
         )}
         aria-label={`Connect ${props.title} to another screen`}
-        title="Drag to connect"
+        title="Drag to connect, or press Enter"
         onPointerDown={props.onConnectStart}
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
+          props.onConnectKeyboard();
+        }}
       >
         <span class="grid size-[24px] place-items-center rounded-full border border-[var(--text-interactive-base)] bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[0_3px_12px_rgb(0_0_0/28%)] transition-[background-color,transform] duration-150 group-hover:scale-110 group-hover:bg-[var(--product-accent-soft)] group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--border-strong-focus)]">
           <Icon name="arrow-right" size={11} />
         </span>
       </button>
     </article>
+  );
+}
+
+export function KeyboardConnectionChooser(props: {
+  sourceTitle: string;
+  destinations: Array<{ id: string; title: string }>;
+  onChoose: (id: string) => void;
+  onCreate: () => void;
+  onCancel: () => void;
+}) {
+  let panel: HTMLElement | undefined;
+  createEffect(() => {
+    queueMicrotask(() => panel?.querySelector<HTMLButtonElement>("button")?.focus());
+  });
+  return (
+    <aside
+      ref={(element) => (panel = element)}
+      class="absolute bottom-5 left-1/2 z-40 w-[min(420px,calc(100%-32px))] -translate-x-1/2 rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] p-3 shadow-[0_0_0_1px_rgb(255_255_255/8%),0_18px_48px_rgb(0_0_0/34%)] backdrop-blur-[14px]"
+      role="dialog"
+      aria-label={`Connect ${props.sourceTitle}`}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        props.onCancel();
+      }}
+    >
+      <div class="flex items-start justify-between gap-3 px-1">
+        <div>
+          <span class="block text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
+            Connect from
+          </span>
+          <strong class="mt-1 block text-[12px] font-semibold text-[var(--text-strong)]">
+            {props.sourceTitle}
+          </strong>
+        </div>
+        <button
+          type="button"
+          class="relative grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-1 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+          aria-label="Cancel connection"
+          onClick={props.onCancel}
+        >
+          <Icon name="x" size={12} />
+        </button>
+      </div>
+      <p class="m-0 mt-2 px-1 text-[10.5px]/[1.45] text-[var(--text-weak)]">
+        Choose an existing destination or add a new screen to the right.
+      </p>
+      <div class="mt-2 grid max-h-48 gap-1 overflow-y-auto">
+        <For each={props.destinations}>
+          {(destination) => (
+            <button
+              type="button"
+              class="flex min-h-11 items-center gap-2 rounded-[9px] px-2.5 text-left text-[11px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+              onClick={() => props.onChoose(destination.id)}
+            >
+              <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                <Icon name="smartphone" size={12} />
+              </span>
+              <span class="min-w-0 flex-1 truncate">{destination.title}</span>
+              <Icon name="arrow-right" size={11} />
+            </button>
+          )}
+        </For>
+        <button
+          type="button"
+          class="flex min-h-11 items-center gap-2 rounded-[9px] px-2.5 text-left text-[11px] font-medium text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
+          onClick={props.onCreate}
+        >
+          <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)]">
+            <Icon name="plus" size={12} />
+          </span>
+          New screen
+        </button>
+      </div>
+    </aside>
   );
 }
 
@@ -273,7 +355,7 @@ export function ScreenInspector(props: {
                 {(connection) => (
                   <button
                     type="button"
-                    class="flex min-h-8 items-center gap-2 rounded-[7px] px-1.5 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                    class="flex min-h-11 items-center gap-2 rounded-[7px] px-1.5 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                     onClick={() => props.onSelectConnection(connection)}
                   >
                     <span
@@ -383,7 +465,7 @@ export function ConnectionInspector(props: {
             </Show>
             <button
               type="button"
-              class="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+              class="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
               disabled={props.replay.state === "running"}
               onClick={props.replay.onRun}
             >
@@ -405,21 +487,21 @@ export function ConnectionInspector(props: {
             <div class="flex flex-wrap items-center gap-1">
               <button
                 type="button"
-                class="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={props.replay.onSelectStep}
               >
                 <Icon name="arrow-right" size={10} /> Actions
               </button>
               <button
                 type="button"
-                class="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={props.replay.onRewrite}
               >
                 <Icon name="refresh" size={10} /> Rewrite
               </button>
               <button
                 type="button"
-                class="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                class="inline-flex min-h-11 items-center gap-1.5 rounded-[7px] px-2 text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                 onClick={props.replay.onSaveReusable}
               >
                 <Icon name="copy" size={10} /> Save behavior
@@ -427,7 +509,7 @@ export function ConnectionInspector(props: {
               <Show when={props.connection.source === "authored"}>
                 <button
                   type="button"
-                  class="ml-auto grid size-7 place-items-center rounded-[7px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
+                  class="relative ml-auto grid size-9 place-items-center rounded-[7px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
                   aria-label="Remove connection"
                   title="Remove connection"
                   onClick={props.onRemove}
@@ -442,14 +524,14 @@ export function ConnectionInspector(props: {
         <div class="mt-3 grid gap-2">
           <button
             type="button"
-            class="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.98]"
+            class="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.98]"
             onClick={props.setup.onRecord}
           >
             <Icon name="smartphone" size={11} /> Record on device
           </button>
           <button
             type="button"
-            class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[7px] text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[7px] text-[10px] font-medium text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
             aria-expanded={optionsOpen()}
             onClick={() => setOptionsOpen((open) => !open)}
           >

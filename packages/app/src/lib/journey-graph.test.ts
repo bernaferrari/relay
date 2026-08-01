@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { JourneyMetadata, RecipeStep } from "@relay/protocol";
 import {
+  addJourneyStartScreen,
   buildJourneyGraphTree,
   commitTakeToJourneyGraph,
   addGraphScreenConnection,
@@ -24,6 +25,24 @@ const steps: RecipeStep[] = [
   { id: "open-settings", kind: "tap", target: { label: "Settings" } },
   { id: "back", kind: "key", key: "back" },
 ];
+
+test("the current device screen can become the entry node without an executable action", () => {
+  const observation = {
+    id: "observation-home",
+    fingerprint: "home-fingerprint",
+    capturedAt: 10,
+    source: "recording" as const,
+    deviceId: "device-1",
+  };
+  const captured = addJourneyStartScreen(emptyJourneyGraph(), observation, { at: 10 });
+
+  assert.equal(captured.graph.screens.length, 1);
+  assert.equal(captured.graph.transitions.length, 0);
+  assert.equal(captured.graph.flows[0]?.screenId, captured.screen.id);
+  assert.deepEqual(captured.screen.observations, [observation]);
+  assert.equal(buildJourneyGraphTree(captured.graph, []).nodes[0]?.representativeStepIndex, -1);
+  assert.throws(() => addJourneyStartScreen(captured.graph, observation, { at: 20 }));
+});
 
 test("a reviewed take creates an explicit start, destination screen, and transition", () => {
   const committed = commitTakeToJourneyGraph(emptyJourneyGraph(), {

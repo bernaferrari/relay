@@ -119,6 +119,38 @@ export function emptyJourneyGraph(): JourneyGraph {
   return { schemaVersion: 1, screens: [], transitions: [], flows: [] };
 }
 
+/** Establish the first canvas node without creating a fake transition or
+ * executable screenshot step. The observation is the durable screen identity;
+ * recording can begin later from this explicit entry point. */
+export function addJourneyStartScreen(
+  graph: JourneyGraph,
+  observation: JourneyScreenObservation,
+  input: { title?: string; at?: number } = {},
+): { graph: JourneyGraph; screen: JourneyGraphScreen } {
+  if (graph.screens.length || graph.flows.length) {
+    throw new Error("A start screen can only be added to an empty journey");
+  }
+  const at = input.at ?? Date.now();
+  const copy = cloneGraph(graph);
+  const screen: JourneyGraphScreen = {
+    id: id("screen-start", at),
+    title: input.title?.trim() || "Start",
+    identity: { schemaVersion: 1, fingerprint: observation.fingerprint },
+    observations: [structuredClone(observation)],
+    createdAt: at,
+    updatedAt: at,
+  };
+  copy.screens.push(screen);
+  copy.flows.push({
+    id: id("flow", at),
+    name: "Main flow",
+    screenId: screen.id,
+    createdAt: at,
+    updatedAt: at,
+  });
+  return { graph: copy, screen };
+}
+
 function screenTitle(step: RecipeStep | undefined, number: number): string {
   if (step?.kind === "tap") {
     const target = step.target.label ?? step.target.text ?? step.target.ref;

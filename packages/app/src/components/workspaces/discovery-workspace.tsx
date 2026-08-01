@@ -4,7 +4,9 @@ import { useServer } from "../../context/server";
 import { toast } from "../../context/toast";
 import { cn } from "../../lib/cn";
 import { discoveryCanvasLayout, discoveryPathRows } from "../../lib/discovery-presentation";
+import { importDiscoveryJourney } from "../../lib/discovery-journey-import";
 import { targetIsReady } from "../../lib/target-presentation";
+import { trapFocus } from "../../lib/modal";
 import {
   modalPanel,
   modalScrim,
@@ -20,44 +22,6 @@ export const DISCOVERY_NODE_DIMENSIONS = {
   width: 204,
   height: 252,
 } as const;
-
-function discoveryPathTo(session: DiscoverySession, targetScreenId: string | null): string[] {
-  if (
-    !targetScreenId ||
-    session.screens.length === 0 ||
-    targetScreenId === session.screens[0]!.id
-  ) {
-    return [];
-  }
-  const root = session.screens[0]!.id;
-  const queue = [root];
-  const previous = new Map<string, string>();
-  while (queue.length) {
-    const current = queue.shift()!;
-    for (const transition of session.transitions) {
-      if (
-        !transition.changedScreen ||
-        transition.fromScreenId !== current ||
-        !transition.toScreenId
-      )
-        continue;
-      if (previous.has(transition.toScreenId) || transition.toScreenId === root) continue;
-      previous.set(transition.toScreenId, transition.id);
-      queue.push(transition.toScreenId);
-    }
-  }
-  const transitions = new Map(session.transitions.map((transition) => [transition.id, transition]));
-  const path: string[] = [];
-  let cursor = targetScreenId;
-  while (cursor !== root) {
-    const transitionId = previous.get(cursor);
-    const transition = transitionId ? transitions.get(transitionId) : undefined;
-    if (!transitionId || !transition?.toScreenId) return [];
-    path.unshift(transitionId);
-    cursor = transition.fromScreenId;
-  }
-  return path;
-}
 
 export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }) {
   const server = useServer();
@@ -81,6 +45,9 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
     import("@relay/protocol").DiscoveryCoverageReport | null
   >(null);
   let stopAutoExploration = false;
+  let actionsTrigger: HTMLButtonElement | undefined;
+  let actionsMenu: HTMLDivElement | undefined;
+  let promotionDialog: HTMLElement | undefined;
   let mapNameDraftForId: string | null = null;
   const selectedTarget = () =>
     server.devices().find((device) => device.serial === server.selectedDevice());
@@ -132,6 +99,48 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
     };
     window.addEventListener("keydown", closeOnEscape);
     onCleanup(() => window.removeEventListener("keydown", closeOnEscape));
+  });
+
+  createEffect(() => {
+    if (!actionsOpen()) return;
+    const closeOutside = (event: MouseEvent) => {
+      if (
+        !actionsMenu?.contains(event.target as Node) &&
+        !actionsTrigger?.contains(event.target as Node)
+      ) {
+        setActionsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setActionsOpen(false);
+      queueMicrotask(() => actionsTrigger?.focus());
+    };
+    queueMicrotask(() =>
+      actionsMenu?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus(),
+    );
+    document.addEventListener("mousedown", closeOutside);
+    window.addEventListener("keydown", closeOnEscape, true);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", closeOutside);
+      window.removeEventListener("keydown", closeOnEscape, true);
+    });
+  });
+
+  createEffect(() => {
+    if (!promotionOpen() || !promotionDialog) return;
+    const releaseFocus = trapFocus(promotionDialog);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setPromotionOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape, true);
+    onCleanup(() => {
+      window.removeEventListener("keydown", closeOnEscape, true);
+      releaseFocus();
+    });
   });
 
   createEffect(() => {
@@ -204,45 +213,58 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
   }
 
   function reviewPromotion(session: DiscoverySession): void {
-    const transitionIds = discoveryPathTo(session, selectedScreenId());
-    if (transitionIds.length === 0) {
-      toast("Select a reached screen to turn its path into a test.", "warning");
+    if (session.screens.length === 0) {
+      toast("Capture at least one screen before creating a journey.", "warning");
       return;
     }
-    setPromotionTitle(`${session.name} path`);
+    setPromotionTitle(session.name);
     setPromotionLabels(
       Object.fromEntries(
-        transitionIds.map((id) => {
-          const transition = session.transitions.find((item) => item.id === id);
-          return [id, transition?.label ?? transition?.kind ?? "Continue"];
-        }),
+        session.transitions.map((transition) => [
+          transition.id,
+          transition.label ?? transition.kind ?? "Continue",
+        ]),
       ),
     );
     setPromotionOpen(true);
   }
 
   async function promote(session: DiscoverySession): Promise<void> {
-    const transitionIds = discoveryPathTo(session, selectedScreenId());
     const title = promotionTitle();
     if (!title?.trim()) return;
-    const recipeId = title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 96);
-    if (!recipeId) return;
     try {
-      const result = await server.promoteDiscoveryPath({
-        sessionId: session.id,
-        transitionIds,
-        recipeId,
-        title,
-        transitionLabels: promotionLabels(),
+      const recipe = await server.saveRecipeRemote({
+        title: title.trim(),
+        description: `Canonical journey map imported from ${session.name}`,
+        steps: [],
+      });
+      if (!recipe) return;
+      const labelledSession: DiscoverySession = {
+        ...session,
+        transitions: session.transitions.map((transition) => ({
+          ...transition,
+          label: promotionLabels()[transition.id]?.trim() || transition.label,
+        })),
+      };
+      const currentJourney = await server.loadJourney(recipe.id);
+      const imported = importDiscoveryJourney(labelledSession, currentJourney.value.graph);
+      await server.saveJourney(recipe.id, currentJourney, {
+        ...currentJourney.value,
+        schemaVersion: 6,
+        graph: imported.graph,
       });
       setPromotionOpen(false);
-      if (result.warnings.length) toast("Test created with review pauses", "warning");
-      else toast("Editable YAML test created", "success");
-      props.onOpenRecipe(result.recipe.id);
+      if (imported.warnings.length) {
+        toast("Journey created; incomplete observations were left for review", "warning");
+      } else {
+        toast(
+          imported.graph.transitions.length
+            ? `Journey created · ${imported.graph.transitions.length} connections ready to record`
+            : "Journey created",
+          "success",
+        );
+      }
+      props.onOpenRecipe(recipe.id);
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), "error");
     }
@@ -333,12 +355,12 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       class={cn(
         "grid h-full min-h-0 flex-1 overflow-hidden",
         active() && selectedScreen()
-          ? "grid-cols-[minmax(220px,260px)_minmax(0,1fr)_minmax(280px,320px)]"
-          : "grid-cols-[minmax(220px,260px)_minmax(0,1fr)]",
+          ? "grid-cols-[minmax(220px,260px)_minmax(0,1fr)_minmax(280px,320px)] max-[1100px]:grid-cols-[220px_minmax(0,1fr)] max-[1100px]:grid-rows-[minmax(0,1fr)_minmax(220px,38%)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(170px,24%)_minmax(300px,1fr)_minmax(220px,38%)]"
+          : "grid-cols-[minmax(220px,260px)_minmax(0,1fr)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(170px,28%)_minmax(0,1fr)]",
       )}
     >
       <aside
-        class="flex min-h-0 flex-col gap-2.5 overflow-hidden border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-4"
+        class="flex min-h-0 flex-col gap-2.5 overflow-hidden border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-4 max-[1100px]:row-span-2 max-[760px]:row-span-1 max-[760px]:border-r-0 max-[760px]:border-b max-[760px]:p-3"
         aria-label="Discovery sessions"
       >
         <div>
@@ -433,7 +455,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
           <DiscoveryCoveragePanel coverage={coverage()} />
         </Show>
       </aside>
-      <main class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--v2-background-bg-deep)]">
+      <main class="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--v2-background-bg-deep)] max-[760px]:row-start-2">
         <Show
           when={active()}
           fallback={
@@ -512,6 +534,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     </button>
                   </div>
                   <button
+                    ref={(element) => (actionsTrigger = element)}
                     type="button"
                     class={productSecondary}
                     disabled={session().status !== "running"}
@@ -530,8 +553,30 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   </button>
                   <Show when={actionsOpen()}>
                     <div
-                      class="absolute top-[calc(100%+7px)] right-0 z-20 grid w-[190px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-9 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-md [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--text-base)] hover:[&_button]:bg-[var(--v2-background-bg-layer-02)] hover:[&_button]:text-[var(--text-strong)] [&_button:disabled]:opacity-40 [&_button.is-danger]:text-[var(--icon-critical-base)]"
+                      ref={(element) => (actionsMenu = element)}
+                      class="absolute top-[calc(100%+7px)] right-0 z-20 grid w-[190px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)] [&_button]:flex [&_button]:min-h-11 [&_button]:w-full [&_button]:items-center [&_button]:gap-2 [&_button]:rounded-md [&_button]:px-2.5 [&_button]:text-left [&_button]:text-[12px] [&_button]:text-[var(--text-base)] hover:[&_button]:bg-[var(--v2-background-bg-layer-02)] hover:[&_button]:text-[var(--text-strong)] [&_button:disabled]:opacity-40 [&_button.is-danger]:text-[var(--icon-critical-base)]"
                       role="menu"
+                      aria-label="Map actions"
+                      onKeyDown={(event) => {
+                        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                        const items = [
+                          ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                            '[role="menuitem"]:not([disabled])',
+                          ),
+                        ];
+                        if (!items.length) return;
+                        event.preventDefault();
+                        const current = items.indexOf(document.activeElement as HTMLButtonElement);
+                        const next =
+                          event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? items.length - 1
+                              : event.key === "ArrowDown"
+                                ? (current + 1 + items.length) % items.length
+                                : (current - 1 + items.length) % items.length;
+                        items[next]?.focus();
+                      }}
                     >
                       <button type="button" role="menuitem" onClick={() => void toggleCoverage()}>
                         <Icon name="grid" size={14} />
@@ -596,7 +641,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       </main>
       <Show when={active() && selectedScreen()}>
         <aside
-          class="flex min-h-0 flex-col gap-3 overflow-y-auto border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-3.5"
+          class="flex min-h-0 flex-col gap-3 overflow-y-auto border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] p-3.5 max-[1100px]:col-start-2 max-[1100px]:row-start-2 max-[1100px]:border-t max-[1100px]:border-l-0 max-[760px]:col-start-1 max-[760px]:row-start-3"
           aria-label="Selected screen details"
         >
           <header class="flex items-start justify-between gap-2">
@@ -637,10 +682,9 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
           <button
             type="button"
             class={cn(productPrimary, "w-full")}
-            disabled={discoveryPathTo(active()!, selectedScreenId()).length === 0}
             onClick={() => reviewPromotion(active()!)}
           >
-            <Icon name="pointer" size={14} /> Create test from this path
+            <Icon name="pointer" size={14} /> Open full map as journey
           </button>
           <Show when={active()!.status === "running"}>
             <button
@@ -706,29 +750,38 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
       </Show>
       <Show when={promotionOpen() && active()}>
         {(session) => {
-          const transitionIds = () => discoveryPathTo(session(), selectedScreenId());
           const transitions = () =>
-            transitionIds()
-              .map((id) => session().transitions.find((item) => item.id === id))
-              .filter((item): item is NonNullable<typeof item> => Boolean(item));
+            session().transitions.toSorted(
+              (left, right) =>
+                left.capturedAt - right.capturedAt || left.id.localeCompare(right.id),
+            );
           const screenTitle = (id: string | undefined) =>
             session().screens.find((screen) => screen.id === id)?.title ?? "Observed screen";
           return (
-            <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>
+            <div
+              class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) setPromotionOpen(false);
+              }}
+            >
               <section
-                class={cn(modalPanel, "grid w-[min(100%,460px)] gap-0 overflow-hidden rounded-xl")}
+                ref={(element) => (promotionDialog = element)}
+                class={cn(
+                  modalPanel,
+                  "grid max-h-[min(84vh,720px)] w-[min(100%,460px)] grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl",
+                )}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="discovery-review-title"
               >
                 <header class="flex items-start justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
                   <div>
-                    <span class={eyebrow}>Create editable test</span>
+                    <span class={eyebrow}>Create canonical journey</span>
                     <h3
                       id="discovery-review-title"
                       class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
                     >
-                      Review this path
+                      Open the complete map
                     </h3>
                   </div>
                   <button
@@ -741,7 +794,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                   </button>
                 </header>
                 <label class="grid gap-1.5 px-4 pt-3.5 text-[11px] text-[var(--text-weak)]">
-                  <span>Test name</span>
+                  <span>Journey name</span>
                   <input
                     class="h-9 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2.5 text-[13px] text-[var(--text-strong)] outline-none focus:border-[var(--text-interactive-base)]"
                     value={promotionTitle()}
@@ -749,7 +802,7 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     onInput={(event) => setPromotionTitle(event.currentTarget.value)}
                   />
                 </label>
-                <ol class="m-0 grid list-none gap-2 px-4 py-3.5">
+                <ol class="m-0 grid list-none content-start gap-2 overflow-y-auto px-4 py-3.5">
                   <For each={transitions()}>
                     {(transition, index) => (
                       <li class="grid grid-cols-[28px_minmax(0,1fr)] items-start gap-2">
@@ -777,11 +830,12 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     )}
                   </For>
                 </ol>
-                <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3">
+                <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3 max-[560px]:flex-col max-[560px]:items-stretch">
                   <p class="m-0 text-[11px]/[1.45] text-[var(--text-weak)]">
-                    Names change the editable test only. Captured evidence stays untouched.
+                    Every observed screen and connection stays linked to its evidence. Record
+                    connections before running them.
                   </p>
-                  <div class="flex shrink-0 gap-2">
+                  <div class="flex shrink-0 justify-end gap-2">
                     <button
                       type="button"
                       class={productSecondary}
@@ -792,10 +846,10 @@ export function DiscoveryWorkspace(props: { onOpenRecipe: (id: string) => void }
                     <button
                       type="button"
                       class={productPrimary}
-                      disabled={!promotionTitle().trim() || transitions().length === 0}
+                      disabled={!promotionTitle().trim()}
                       onClick={() => void promote(session())}
                     >
-                      Create test
+                      Create journey
                     </button>
                   </div>
                 </footer>

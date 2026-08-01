@@ -8,13 +8,13 @@ import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
 
 const controlButton =
-  "grid h-9 min-w-9 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
 const primaryButton =
-  "inline-flex h-10 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 const secondaryButton =
-  "inline-flex h-10 items-center gap-1.5 rounded-[8px] px-2.5 text-[10px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[10px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
 const reviewPhoneShell =
-  "relative rounded-[22px] bg-[var(--phone-bezel)] shadow-[0_0_0_3px_var(--phone-bezel),0_0_0_4px_var(--phone-rim-soft),0_28px_64px_-22px_rgb(0_0_0/84%),0_12px_28px_-16px_rgb(255_255_255/10%)]";
+  "relative rounded-[21px] bg-[var(--phone-bezel)] p-[2px] shadow-[0_0_0_1px_rgb(255_255_255/10%),0_22px_54px_-24px_rgb(0_0_0/78%)]";
 
 /** A compact capture status for the live device drawer. Once stopped, review
  * moves into TakeReviewWorkspace so it never competes with the live device. */
@@ -72,7 +72,7 @@ export function TakeReviewSidebar(props: {
   const actionLabel = () => `${count()} action${count() === 1 ? "" : "s"}`;
   return (
     <aside
-      class="flex min-h-0 min-w-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]"
+      class="flex min-h-0 min-w-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[760px]:border-r-0 max-[760px]:border-b"
       aria-label="Review captured actions"
     >
       <header class="shrink-0 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
@@ -92,7 +92,7 @@ export function TakeReviewSidebar(props: {
         <Show
           when={count() > 0}
           fallback={
-            <div class="grid h-full place-items-center px-5 text-center text-[11px]/[1.5] text-[var(--text-weak)]">
+            <div class="rounded-[9px] bg-[var(--v2-background-bg-layer-01)] px-4 py-3 text-[11px]/[1.5] text-[var(--text-weak)]">
               No device action. This connection observes a transition that happens on its own.
             </div>
           }
@@ -131,7 +131,7 @@ export function TakeReviewSidebar(props: {
                     </button>
                     <button
                       type="button"
-                      class="grid size-10 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] opacity-0 transition-[background-color,color,opacity] duration-150 group-hover:opacity-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--icon-critical-base)] focus-visible:opacity-100"
+                      class="grid size-11 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] opacity-60 transition-[background-color,color,opacity] duration-150 group-hover:opacity-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--icon-critical-base)] focus-visible:opacity-100"
                       aria-label={`Remove ${description()}`}
                       title="Remove action"
                       onClick={() => props.onRemove(index())}
@@ -143,90 +143,90 @@ export function TakeReviewSidebar(props: {
               }}
             </For>
           </ol>
-          <section class="mt-4 border-t border-[var(--v2-border-border-muted)] px-1 pt-3">
-            <span class="block text-[9.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
-              Connection
-            </span>
-            <span class="mt-1 block text-[10.5px] text-[var(--text-weak)]">
-              From <span class="font-medium text-[var(--text-base)]">{props.sourceTitle}</span>
-            </span>
-            <label class="mt-2 grid gap-1.5 text-[10.5px] font-medium text-[var(--text-base)]">
-              Goes to
-              <select
-                class="h-8 w-full rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2 text-[11px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
-                value={
-                  props.destination.kind === "new-screen"
-                    ? "new"
-                    : props.destination.kind === "end"
-                      ? "end"
-                      : `screen:${props.destination.screenId}`
-                }
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  if (value === "new") props.onDestination({ kind: "new-screen" });
-                  else if (value === "end") props.onDestination({ kind: "end" });
-                  else
-                    props.onDestination({
-                      kind: "screen",
-                      screenId: value.slice("screen:".length),
-                    });
-                }}
-              >
-                <option value="new">New screen</option>
-                <For each={props.screens}>
-                  {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}
-                </For>
-                <option value="end">End journey</option>
-              </select>
-            </label>
-          </section>
-          <section
-            class={cn(
-              "mt-3 rounded-[9px] border px-3 py-2.5",
-              props.replayState === "passed"
-                ? "border-[color-mix(in_srgb,var(--icon-success-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-success-base)_8%,transparent)]"
-                : props.replayState === "failed"
-                  ? "border-[color-mix(in_srgb,var(--icon-critical-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)]"
-                  : "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]",
-            )}
-          >
-            <div class="flex items-center gap-2">
-              <Icon
-                name={
-                  props.replayState === "passed"
-                    ? "check"
-                    : props.replayState === "failed"
-                      ? "alert"
-                      : "play"
-                }
-                size={12}
-                class={
-                  props.replayState === "passed"
-                    ? "text-[var(--icon-success-base)]"
-                    : props.replayState === "failed"
-                      ? "text-[var(--icon-critical-base)]"
-                      : "text-[var(--text-interactive-base)]"
-                }
-              />
-              <strong class="text-[10.5px] font-semibold text-[var(--text-strong)]">
-                {props.replayState === "passed"
-                  ? "Replayed successfully"
-                  : props.replayState === "failed"
-                    ? "Needs another pass"
-                    : props.replayState === "running"
-                      ? "Replaying on device…"
-                      : "Ready to test"}
-              </strong>
-            </div>
-            <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
-              {props.replayState === "passed"
-                ? "Approve it if the device reached the right screen."
-                : props.replayState === "failed"
-                  ? props.replayError || "The connection stopped before it finished."
-                  : "Relay will try only this connection before you add it to the journey."}
-            </p>
-          </section>
         </Show>
+        <section class="mt-4 border-t border-[var(--v2-border-border-muted)] px-1 pt-3">
+          <span class="block text-[9.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
+            Connection
+          </span>
+          <span class="mt-1 block text-[10.5px] text-[var(--text-weak)]">
+            From <span class="font-medium text-[var(--text-base)]">{props.sourceTitle}</span>
+          </span>
+          <label class="mt-2 grid gap-1.5 text-[10.5px] font-medium text-[var(--text-base)]">
+            Goes to
+            <select
+              class="h-11 w-full rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2 text-[11px] text-[var(--text-strong)] outline-none transition-colors focus:border-[var(--text-interactive-base)]"
+              value={
+                props.destination.kind === "new-screen"
+                  ? "new"
+                  : props.destination.kind === "end"
+                    ? "end"
+                    : `screen:${props.destination.screenId}`
+              }
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                if (value === "new") props.onDestination({ kind: "new-screen" });
+                else if (value === "end") props.onDestination({ kind: "end" });
+                else
+                  props.onDestination({
+                    kind: "screen",
+                    screenId: value.slice("screen:".length),
+                  });
+              }}
+            >
+              <option value="new">New screen</option>
+              <For each={props.screens}>
+                {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}
+              </For>
+              <option value="end">End journey</option>
+            </select>
+          </label>
+        </section>
+        <section
+          class={cn(
+            "mt-3 rounded-[9px] border px-3 py-2.5",
+            props.replayState === "passed"
+              ? "border-[color-mix(in_srgb,var(--icon-success-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-success-base)_8%,transparent)]"
+              : props.replayState === "failed"
+                ? "border-[color-mix(in_srgb,var(--icon-critical-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)]"
+                : "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)]",
+          )}
+        >
+          <div class="flex items-center gap-2">
+            <Icon
+              name={
+                props.replayState === "passed"
+                  ? "check"
+                  : props.replayState === "failed"
+                    ? "alert"
+                    : "play"
+              }
+              size={12}
+              class={
+                props.replayState === "passed"
+                  ? "text-[var(--icon-success-base)]"
+                  : props.replayState === "failed"
+                    ? "text-[var(--icon-critical-base)]"
+                    : "text-[var(--text-interactive-base)]"
+              }
+            />
+            <strong class="text-[10.5px] font-semibold text-[var(--text-strong)]">
+              {props.replayState === "passed"
+                ? "Replayed successfully"
+                : props.replayState === "failed"
+                  ? "Needs another pass"
+                  : props.replayState === "running"
+                    ? "Replaying on device…"
+                    : "Ready to test"}
+            </strong>
+          </div>
+          <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
+            {props.replayState === "passed"
+              ? "Approve it if the device reached the right screen."
+              : props.replayState === "failed"
+                ? props.replayError || "The connection stopped before it finished."
+                : "Relay will try only this connection before you add it to the journey."}
+          </p>
+        </section>
       </div>
 
       <footer class="grid shrink-0 gap-2 border-t border-[var(--v2-border-border-muted)] p-3">
@@ -245,7 +245,11 @@ export function TakeReviewSidebar(props: {
                   : "play"
             }
             size={12}
-            class={props.replayState === "running" ? "animate-spin motion-reduce:animate-none" : ""}
+            class={
+              props.replayState === "running"
+                ? "animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none"
+                : ""
+            }
           />
           {props.replayState === "passed"
             ? "Approve connection"
@@ -498,6 +502,9 @@ export function GraphEmptyState(props: {
   selectedDeviceName?: string;
   deviceOpen: boolean;
   liveScreenSrc?: string;
+  captureBusy: boolean;
+  onUseCurrentScreen: () => void;
+  onOpenDevice: () => void;
 }) {
   const isRecording = () => props.take?.state === "recording";
   const count = () => props.take?.steps.length ?? 0;
@@ -517,8 +524,7 @@ export function GraphEmptyState(props: {
     if (!props.deviceOpen) {
       return {
         title: "Set the entry screen",
-        detail:
-          "Choose Device in the toolbar, navigate to where this journey begins, then record one connection.",
+        detail: "Open Device, navigate to the beginning, then save that screen to the canvas.",
       };
     }
     switch (props.recordState) {
@@ -551,14 +557,14 @@ export function GraphEmptyState(props: {
       default:
         return {
           title: "Set the entry screen",
-          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this journey begins, then choose Record connection.`,
+          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this journey begins, then use the current screen as the start.`,
         };
     }
   };
   return (
     <div
-      class="absolute inset-0 z-[1] grid place-items-center px-6 text-center"
-      style={{ right: props.deviceOpen ? "min(432px, 50vw)" : "0" }}
+      class="absolute inset-y-0 left-0 z-[1] grid place-items-center px-6 text-center max-[760px]:right-0"
+      style={{ right: props.deviceOpen ? "min(420px, 50vw)" : "0" }}
     >
       <div class="grid max-w-[560px] justify-items-center">
         <div class="mb-6 flex items-center justify-center gap-3" aria-hidden="true">
@@ -616,6 +622,42 @@ export function GraphEmptyState(props: {
         <p class="m-0 mt-2 max-w-[42ch] text-[12.5px]/[1.55] text-[var(--text-weak)] text-pretty">
           {guidance().detail}
         </p>
+        <Show when={!props.take}>
+          <button
+            type="button"
+            class={cn(primaryButton, "mt-4 justify-center px-4")}
+            disabled={
+              props.captureBusy ||
+              (props.deviceOpen &&
+                !["ready", "choose-device", "device-unavailable"].includes(props.recordState))
+            }
+            aria-busy={props.captureBusy}
+            onClick={props.recordState === "ready" ? props.onUseCurrentScreen : props.onOpenDevice}
+          >
+            <Icon
+              name={
+                props.captureBusy
+                  ? "refresh"
+                  : props.recordState === "ready"
+                    ? "camera"
+                    : "smartphone"
+              }
+              size={13}
+              class={
+                props.captureBusy
+                  ? "animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none"
+                  : ""
+              }
+            />
+            {props.captureBusy
+              ? "Saving current screen…"
+              : props.recordState === "ready"
+                ? "Use current screen as start"
+                : props.deviceOpen
+                  ? "Choose a device"
+                  : "Open Device"}
+          </button>
+        </Show>
       </div>
     </div>
   );

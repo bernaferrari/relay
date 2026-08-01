@@ -1,15 +1,11 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useServer, type SuiteSection, type TestSuite } from "../context/server";
-import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
 import { productIconButton, productIconButtonDanger, productPrimary } from "../lib/ui";
 import { shellStageWrap } from "../lib/shell-layout";
-import { DeviceStage } from "./stage";
 import { ExecutionInspector } from "./execution-inspector";
-import { ExecutionTimeline } from "./execution-timeline";
 import { EmptyState } from "./empty-state";
 import { Icon } from "./icon";
-import { executionDuration, executionElapsedAt, executionMoments } from "../lib/execution-moments";
 import { displayTitle } from "../lib/job";
 import { confirmAction } from "./confirm-dialog";
 
@@ -20,8 +16,6 @@ export function SuitesWorkspace(props: {
   onRecordTest: (suiteId: string, sectionId: string) => void;
 }) {
   const server = useServer();
-  const workbench = useWorkbench();
-  const [selectedEntryId, setSelectedEntryId] = createSignal<string | null>(null);
   const [addPopoverSection, setAddPopoverSection] = createSignal<string | null>(null);
   const [addQuery, setAddQuery] = createSignal("");
   const [history, setHistory] = createSignal<TestSuite[] | null>(null);
@@ -58,14 +52,6 @@ export function SuitesWorkspace(props: {
   const selectedSuite = createMemo(() =>
     server.suites().find((suite) => suite.id === server.selectedSuiteId()),
   );
-  const selectedEntry = createMemo(() =>
-    selectedSuite()
-      ?.sections.flatMap((section) => section.entries)
-      .find((entry) => entry.id === selectedEntryId()),
-  );
-  const selectedTest = createMemo(() =>
-    server.recipes().find((test) => test.id === selectedEntry()?.testId),
-  );
   const suiteExecutionJob = createMemo(() => {
     const suite = selectedSuite();
     if (!suite) return null;
@@ -76,15 +62,6 @@ export function SuitesWorkspace(props: {
     const selected = server.jobs().find((job) => job.id === server.selectedJobId());
     return selected && contains(selected.action) ? selected : null;
   });
-  const moments = createMemo(() =>
-    executionMoments({
-      recipe: selectedTest(),
-      job: suiteExecutionJob(),
-      recipes: server.recipes(),
-    }),
-  );
-  const selectedMoment = createMemo(() => workbench.focusedIndex() ?? 0);
-
   const save = (suite: TestSuite, sections = suite.sections, title = suite.title) =>
     server.saveSuiteRemote({
       id: suite.id,
@@ -101,7 +78,7 @@ export function SuitesWorkspace(props: {
 
   const createSuite = async () => {
     const suite = await server.saveSuiteRemote({
-      title: `Flow ${server.suites().length + 1}`,
+      title: `Collection ${server.suites().length + 1}`,
       sections: [{ title: "Main path", entries: [] }],
     });
     if (!suite) return;
@@ -111,38 +88,6 @@ export function SuitesWorkspace(props: {
       suiteTitleInput?.select();
     });
   };
-
-  const selectEntry = (entryId: string, testId: string) => {
-    setSelectedEntryId(entryId);
-    server.setSelectedRecipeId(testId);
-  };
-
-  // A Flow is a sequence, not a blank container. Opening one should immediately
-  // show the first runnable test; the user can then move through the sequence
-  // deliberately instead of first having to discover a second selection.
-  createEffect(() => {
-    const suite = selectedSuite();
-    if (!suite) {
-      if (selectedEntryId()) setSelectedEntryId(null);
-      return;
-    }
-    const entries = suite.sections.flatMap((section) => section.entries);
-    if (entries.some((entry) => entry.id === selectedEntryId())) return;
-    const first = entries.find((entry) => entry.enabled) ?? entries[0];
-    if (first) selectEntry(first.id, first.testId);
-    else setSelectedEntryId(null);
-  });
-
-  createEffect(() => {
-    const suite = selectedSuite();
-    const job = suiteExecutionJob();
-    if (!suite || !job) return;
-    const entry = suite.sections
-      .flatMap((section) => section.entries)
-      .find((item) => item.testId === job.action);
-    if (!entry || selectedEntryId() === entry.id) return;
-    selectEntry(entry.id, entry.testId);
-  });
 
   const latestJob = (testId: string) =>
     server
@@ -158,6 +103,8 @@ export function SuitesWorkspace(props: {
         : status === "running" || status === "queued" || status === "paused"
           ? "bg-[var(--text-interactive-base)]"
           : "bg-[var(--text-weak)]";
+  const entryCount = (suite: TestSuite) =>
+    suite.sections.reduce((sum, section) => sum + section.entries.length, 0);
 
   const libraryTests = createMemo(() => server.recipes().filter((test) => test.steps.length > 0));
   const libraryTitleCounts = createMemo(() => {
@@ -185,7 +132,7 @@ export function SuitesWorkspace(props: {
     closeAddPopover();
   };
 
-  // The user sees one ordered Flow even when they use named stages to keep a
+  // The user sees one ordered collection even when they use named stages to keep a
   // longer release journey readable. Moving therefore crosses stage boundaries
   // instead of silently stopping at the first or last item in a stage.
   const moveEntry = (suite: TestSuite, entryId: string, direction: -1 | 1) => {
@@ -221,69 +168,156 @@ export function SuitesWorkspace(props: {
   return (
     <section
       class={cn(
-        "grid min-h-0 min-w-0 flex-1 overflow-hidden max-[900px]:grid-cols-1",
-        // The flow list lives in the navigator, so this pane only ever shows
-        // the open flow: its ordered journeys and the selected entry.
-        selectedSuite()
-          ? "grid-cols-[minmax(420px,1fr)_336px] max-[1160px]:grid-cols-[minmax(360px,1fr)_300px]"
-          : "grid-cols-1",
+        "grid min-h-0 min-w-0 flex-1 overflow-hidden max-[900px]:grid-cols-1 max-[900px]:grid-rows-[minmax(320px,1fr)_minmax(260px,45%)]",
+        // The collection list lives in the navigator, so this pane only ever shows
+        // the open collection: its ordered journeys and the selected entry.
+        selectedSuite() ? "grid-cols-[minmax(420px,1fr)_336px]" : "grid-cols-1",
       )}
     >
-      <div class={cn(shellStageWrap, "flex min-h-0 flex-col")}>
+      <div class={cn(shellStageWrap, "relative flex min-h-0 flex-col overflow-hidden")}>
         <Show
           when={selectedSuite()}
           fallback={
-            // The navigator already lists flows and offers "New flow", so this
+            // The navigator already lists collections and offers "New collection", so this
             // is a one-line hint, not a second front door.
             <EmptyState
               size="lg"
               icon="check"
-              title={server.suites().length ? "Select a flow" : "Create a flow"}
-              description="A flow runs named journeys in order, one after another."
+              title={server.suites().length ? "Select a collection" : "Create a collection"}
+              description="A collection runs journeys in order, one after another."
               {...(server.suites().length
                 ? {}
-                : { actionLabel: "Create a flow", onAction: () => void createSuite() })}
+                : { actionLabel: "Create a collection", onAction: () => void createSuite() })}
               class="h-full justify-center"
             />
           }
         >
-          <Show
-            when={selectedTest()}
-            fallback={
-              <EmptyState
-                size="lg"
-                icon="smartphone"
-                title="Select a journey"
-                description="Its real device capture and latest evidence appear here."
-                class="h-full justify-center"
-              />
-            }
-          >
-            <div class="flex h-full min-h-0 flex-col">
-              <div class="min-h-0 flex-1">
-                <DeviceStage
-                  onExpandBoard={() => props.onOpenTest(selectedTest()!.id)}
-                  onOpenTargets={props.onOpenTargets}
-                />
+          {(suite) => (
+            <>
+              <header class="flex min-h-[58px] shrink-0 items-center justify-between gap-4 border-b border-[var(--v2-border-border-muted)] px-5">
+                <div class="min-w-0">
+                  <span class="block text-[10px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase">
+                    Collection flow
+                  </span>
+                  <strong class="mt-0.5 block truncate text-[13px] font-semibold text-[var(--text-strong)]">
+                    {entryCount(suite())} {entryCount(suite()) === 1 ? "journey" : "journeys"}{" "}
+                    across {suite().sections.length}{" "}
+                    {suite().sections.length === 1 ? "stage" : "stages"}
+                  </strong>
+                </div>
+                <span class="hidden text-[10.5px] text-[var(--text-weak)] min-[1040px]:block">
+                  Select a journey to open its graph
+                </span>
+              </header>
+              <div class="min-h-0 flex-1 overflow-auto px-8 py-10">
+                <div class="flex w-max min-w-full items-start justify-center gap-5">
+                  <For each={suite().sections}>
+                    {(section, sectionIndex) => (
+                      <>
+                        <section class="w-[252px] shrink-0 rounded-[16px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-2.5 shadow-[0_12px_34px_rgb(0_0_0/16%)] backdrop-blur-[10px]">
+                          <header class="flex min-h-9 items-center justify-between gap-3 px-1.5">
+                            <strong class="min-w-0 truncate text-[11px] font-semibold text-[var(--text-base)]">
+                              {section.title}
+                            </strong>
+                            <span class="font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+                              {section.entries.length}
+                            </span>
+                          </header>
+                          <div class="grid gap-1.5">
+                            <For
+                              each={section.entries}
+                              fallback={
+                                <button
+                                  type="button"
+                                  class="grid min-h-24 place-items-center rounded-[12px] border border-dashed border-[var(--v2-border-border-strong)] px-4 text-center text-[10.5px] text-[var(--text-weak)] transition-colors hover:border-[var(--text-interactive-base)] hover:text-[var(--text-base)]"
+                                  onClick={() => props.onRecordTest(suite().id, section.id)}
+                                >
+                                  Record the first journey
+                                </button>
+                              }
+                            >
+                              {(entry, entryIndex) => {
+                                const test = () =>
+                                  server.recipes().find((item) => item.id === entry.testId);
+                                const job = () => latestJob(entry.testId);
+                                const order = () =>
+                                  suite()
+                                    .sections.slice(0, sectionIndex())
+                                    .reduce((sum, item) => sum + item.entries.length, 0) +
+                                  entryIndex() +
+                                  1;
+                                return (
+                                  <>
+                                    <button
+                                      type="button"
+                                      class={cn(
+                                        "group/card min-h-[92px] w-full rounded-[12px] border p-3 text-left outline-none transition-[border-color,background-color,box-shadow,transform] duration-150 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)]",
+                                        "border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-02)]",
+                                        !entry.enabled && "opacity-50",
+                                      )}
+                                      aria-label={`Open ${test()?.title ?? "journey"}`}
+                                      onClick={() => props.onOpenTest(entry.testId)}
+                                    >
+                                      <span class="flex items-center justify-between gap-3">
+                                        <span class="font-mono text-[9.5px] tabular-nums text-[var(--text-weak)]">
+                                          {String(order()).padStart(2, "0")}
+                                        </span>
+                                        <i
+                                          class={cn(
+                                            "size-1.5 rounded-full",
+                                            statusTone(job()?.status),
+                                          )}
+                                          aria-hidden="true"
+                                        />
+                                      </span>
+                                      <strong class="mt-2 block truncate text-[12px] font-semibold text-[var(--text-strong)]">
+                                        {test()?.title ?? "Missing journey"}
+                                      </strong>
+                                      <span class="mt-1 flex items-center justify-between gap-3 text-[9.5px] text-[var(--text-weak)]">
+                                        <span>
+                                          {test()?.steps.length ?? 0}{" "}
+                                          {(test()?.steps.length ?? 0) === 1 ? "action" : "actions"}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1 font-medium text-[var(--text-base)] opacity-70 transition-opacity group-hover/card:opacity-100 group-focus-visible/card:opacity-100">
+                                          Open <Icon name="arrow-right" size={10} />
+                                        </span>
+                                      </span>
+                                    </button>
+                                    <Show when={entryIndex() < section.entries.length - 1}>
+                                      <span
+                                        class="mx-auto grid size-6 place-items-center text-[var(--text-weak)]"
+                                        aria-hidden="true"
+                                      >
+                                        <Icon name="chevron-down" size={12} />
+                                      </span>
+                                    </Show>
+                                  </>
+                                );
+                              }}
+                            </For>
+                          </div>
+                        </section>
+                        <Show when={sectionIndex() < suite().sections.length - 1}>
+                          <span
+                            class="mt-16 grid size-8 shrink-0 place-items-center rounded-full border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] text-[var(--text-weak)]"
+                            aria-hidden="true"
+                          >
+                            <Icon name="arrow-right" size={13} />
+                          </span>
+                        </Show>
+                      </>
+                    )}
+                  </For>
+                </div>
               </div>
-              <Show when={moments().length > 0}>
-                <ExecutionTimeline
-                  moments={moments()}
-                  selectedIndex={selectedMoment()}
-                  onSelect={workbench.focusStep}
-                  mode={suiteExecutionJob() ? "live" : "plan"}
-                  elapsedMs={executionElapsedAt(moments(), selectedMoment())}
-                  totalDurationMs={executionDuration(moments())}
-                />
-              </Show>
-            </div>
-          </Show>
+            </>
+          )}
         </Show>
       </div>
 
       <Show when={selectedSuite()}>
         {(suite) => (
-          <aside class="relative col-start-1 row-start-1 flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)]">
+          <aside class="relative col-start-2 row-start-1 flex min-h-0 flex-col border-l border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[900px]:col-start-1 max-[900px]:row-start-2 max-[900px]:border-t max-[900px]:border-l-0">
             <Show
               when={
                 suiteExecutionJob() &&
@@ -298,14 +332,14 @@ export function SuitesWorkspace(props: {
                 </div>
               )}
             </Show>
-            {/* One header row. A flow is an ordered list of journeys — the
+            {/* One header row. A collection is an ordered list of journeys — the
                 list itself says so, so it needs no diagram above it and no
                 full-width call to action shouting at an empty list. */}
             <header class="flex min-h-[52px] shrink-0 items-center gap-1.5 border-b border-[var(--v2-border-border-muted)] px-3">
               <input
                 ref={(element) => (suiteTitleInput = element)}
-                aria-label="Flow name"
-                data-tip="Rename flow"
+                aria-label="Collection name"
+                data-tip="Rename collection"
                 class="min-w-0 flex-1 rounded-md bg-transparent px-1.5 py-1 text-[14px] font-semibold tracking-[-0.015em] text-[var(--text-strong)] outline-none transition hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
                 value={suite().title}
                 onChange={(event) =>
@@ -315,7 +349,7 @@ export function SuitesWorkspace(props: {
               <button
                 type="button"
                 class={productIconButton}
-                aria-label="Flow history"
+                aria-label="Collection history"
                 data-tip="Version history"
                 aria-expanded={historyOpen()}
                 onClick={() => {
@@ -329,13 +363,13 @@ export function SuitesWorkspace(props: {
               <button
                 type="button"
                 class={productIconButtonDanger}
-                aria-label="Delete flow"
-                data-tip="Delete this flow"
+                aria-label="Delete collection"
+                data-tip="Delete this collection"
                 onClick={() => {
                   confirmAction({
-                    title: "Delete flow?",
+                    title: "Delete collection?",
                     body: `“${suite().title}” will be removed. Journeys inside it are not deleted.`,
-                    confirmLabel: "Delete flow",
+                    confirmLabel: "Delete collection",
                     onConfirm: () => void server.deleteSuite(suite().id),
                   });
                 }}
@@ -414,7 +448,7 @@ export function SuitesWorkspace(props: {
             <div class="min-h-0 flex-1 overflow-y-auto px-2 py-2">
               <For each={suite().sections}>
                 {(section, sectionIndex) => {
-                  // Journeys are numbered across the whole flow: the number is
+                  // Journeys are numbered across the whole collection: the number is
                   // run order, and stages are only a way to name a span of it.
                   const offset = () =>
                     suite()
@@ -440,7 +474,7 @@ export function SuitesWorkspace(props: {
                           type="button"
                           class={cn(
                             productIconButtonDanger,
-                            "size-6 opacity-0 group-hover/stage:opacity-100 group-focus-within/stage:opacity-100",
+                            "opacity-60 group-hover/stage:opacity-100 group-focus-within/stage:opacity-100",
                           )}
                           aria-label={`Remove ${section.title} stage`}
                           data-tip="Remove this stage"
@@ -453,7 +487,7 @@ export function SuitesWorkspace(props: {
                             if (section.entries.length === 0) return removeSection();
                             confirmAction({
                               title: "Remove stage?",
-                              body: `“${section.title}” and its ${section.entries.length} ${section.entries.length === 1 ? "journey" : "journeys"} will be removed from this flow.`,
+                              body: `“${section.title}” and its ${section.entries.length} ${section.entries.length === 1 ? "journey" : "journeys"} will be removed from this collection.`,
                               confirmLabel: "Remove stage",
                               onConfirm: removeSection,
                             });
@@ -477,9 +511,7 @@ export function SuitesWorkspace(props: {
                             <div
                               class={cn(
                                 "group grid min-h-9 grid-cols-[26px_16px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg pr-1 pl-1 transition-colors",
-                                selectedEntryId() === entry.id
-                                  ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_15%,transparent)]"
-                                  : "hover:bg-[var(--v2-background-bg-layer-01)]",
+                                "hover:bg-[var(--v2-background-bg-layer-01)]",
                                 !entry.enabled && "opacity-45",
                               )}
                             >
@@ -513,10 +545,10 @@ export function SuitesWorkspace(props: {
                               />
                               <button
                                 type="button"
-                                class="min-w-0 py-1.5 text-left"
+                                class="min-h-11 min-w-0 py-1.5 text-left"
                                 title={test()?.title ?? "Missing journey"}
-                                onClick={() => selectEntry(entry.id, entry.testId)}
-                                onDblClick={() => props.onOpenTest(entry.testId)}
+                                aria-label={`Open ${test()?.title ?? "journey"}`}
+                                onClick={() => props.onOpenTest(entry.testId)}
                               >
                                 <span class="block truncate text-[12px] font-medium text-[var(--text-strong)]">
                                   {test()?.title ?? "Missing journey"}
@@ -529,7 +561,7 @@ export function SuitesWorkspace(props: {
                                 <div class="hidden items-center group-hover:flex group-focus-within:flex [@media(hover:none)]:flex">
                                   <button
                                     type="button"
-                                    class={cn(productIconButton, "size-6")}
+                                    class={productIconButton}
                                     aria-label="Open this journey"
                                     data-tip="Open journey"
                                     onClick={() => props.onOpenTest(entry.testId)}
@@ -538,8 +570,8 @@ export function SuitesWorkspace(props: {
                                   </button>
                                   <button
                                     type="button"
-                                    class={cn(productIconButton, "size-6")}
-                                    aria-label="Move journey earlier in flow"
+                                    class={productIconButton}
+                                    aria-label="Move journey earlier in collection"
                                     data-tip="Move earlier"
                                     disabled={flowIndex() === 0}
                                     onClick={() => moveEntry(suite(), entry.id, -1)}
@@ -548,8 +580,8 @@ export function SuitesWorkspace(props: {
                                   </button>
                                   <button
                                     type="button"
-                                    class={cn(productIconButton, "size-6")}
-                                    aria-label="Move journey later in flow"
+                                    class={productIconButton}
+                                    aria-label="Move journey later in collection"
                                     data-tip="Move later"
                                     disabled={flowIndex() === flowEntries().length - 1}
                                     onClick={() => moveEntry(suite(), entry.id, 1)}
@@ -558,9 +590,9 @@ export function SuitesWorkspace(props: {
                                   </button>
                                   <button
                                     type="button"
-                                    class={cn(productIconButtonDanger, "size-6")}
-                                    aria-label="Remove from flow"
-                                    data-tip="Remove from flow"
+                                    class={productIconButtonDanger}
+                                    aria-label="Remove from collection"
+                                    data-tip="Remove from collection"
                                     onClick={() =>
                                       patchSection(suite(), section.id, {
                                         ...section,

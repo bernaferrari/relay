@@ -232,7 +232,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                 size={13}
                 class={cn(
                   (refreshing() || scanning()) &&
-                    "origin-center animate-spin motion-reduce:animate-none motion-reduce:opacity-70",
+                    "origin-center animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none motion-reduce:opacity-70",
                 )}
               />
             </button>
@@ -266,7 +266,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                         <Icon
                           name="refresh"
                           size={20}
-                          class="animate-spin motion-reduce:animate-none motion-reduce:opacity-70"
+                          class="animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none motion-reduce:opacity-70"
                         />
                       </span>
                       <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
