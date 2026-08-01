@@ -33,7 +33,7 @@ export function ChooseDeviceEmptyState(props: {
       </p>
       <button
         type="button"
-        class="mt-4 inline-flex min-h-10 items-center gap-1.5 rounded-[10px] bg-[var(--v2-background-bg-accent)] px-4 text-[11px] font-semibold text-white shadow-[0_8px_24px_color-mix(in_srgb,var(--v2-background-bg-accent)_24%,transparent)] transition-[background-color,box-shadow,transform] duration-150 ease-out hover:brightness-110 active:scale-[0.98] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-strong-focus)]"
+        class="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-[10px] bg-[var(--v2-background-bg-accent)] px-4 text-[11.5px] font-semibold text-white shadow-[0_8px_24px_color-mix(in_srgb,var(--v2-background-bg-accent)_24%,transparent)] transition-[background-color,box-shadow,transform] duration-150 ease-out hover:brightness-110 active:scale-[0.98]"
         onClick={props.onChooseDevice}
       >
         <Icon name="smartphone" size={13} />

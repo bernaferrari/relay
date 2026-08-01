@@ -74,7 +74,11 @@ import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-r
  * there. Recording remains the only way to create the real transitions, so
  * the canvas never promises a route that the runner cannot execute.
  */
-export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOpen?: boolean }) {
+export function JourneyWorkspace(props: {
+  onOpenTargets: () => void;
+  onOpenActions: () => void;
+  navigatorOpen?: boolean;
+}) {
   const server = useServer();
   const draft = useRecipeDraft();
   const recorder = useRecorder();
@@ -185,6 +189,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
   const [renamingNodeId, setRenamingNodeId] = createSignal<string | null>(null);
   const [historyOpen, setHistoryOpen] = createSignal(false);
   const [captureOpen, setCaptureOpen] = createSignal(false);
+  const [captureClosing, setCaptureClosing] = createSignal(false);
   const [waitingForRecordTarget, setWaitingForRecordTarget] = createSignal(false);
   const [reviewStepIndex, setReviewStepIndex] = createSignal(0);
   const [reviewDestination, setReviewDestination] = createSignal<TakeDestination>({
@@ -232,6 +237,31 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
   let fittedSignature = "";
   let metadataSaveSequence = 0;
   let destinationResolvedForTake = "";
+  let captureCloseTimer: number | undefined;
+
+  const closeCapturePanel = () => {
+    if (!captureOpen() || captureClosing()) return;
+    setCaptureClosing(true);
+    captureCloseTimer = window.setTimeout(() => {
+      setCaptureOpen(false);
+      setCaptureClosing(false);
+      captureCloseTimer = undefined;
+    }, 150);
+  };
+
+  const openDevicePicker = () => {
+    if (captureCloseTimer) window.clearTimeout(captureCloseTimer);
+    captureCloseTimer = undefined;
+    setCaptureClosing(false);
+    setHistoryOpen(false);
+    setCaptureOpen(true);
+    // DevicePicker subscribes when the companion mounts. Wait one frame so a
+    // request made from the canvas can never race that subscription.
+    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:open-device-picker")));
+  };
+  onCleanup(() => {
+    if (captureCloseTimer) window.clearTimeout(captureCloseTimer);
+  });
 
   const closeJourneyDocument = () => {
     unsubscribeAwareness?.();
@@ -358,7 +388,9 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
 
   createEffect(() => {
     window.dispatchEvent(
-      new CustomEvent("relay:device-panel-state", { detail: { open: captureOpen() } }),
+      new CustomEvent("relay:device-panel-state", {
+        detail: { open: captureOpen() && !reviewingTake() },
+      }),
     );
   });
 
@@ -393,8 +425,12 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       setWaitingForRecordTarget(true);
     };
     window.addEventListener("relay:device-selected", onDeviceSelected);
-    const onToggleDevicePanel = () => setCaptureOpen((open) => !open);
-    const onCloseDevicePanel = () => setCaptureOpen(false);
+    const onToggleDevicePanel = () => {
+      setHistoryOpen(false);
+      if (captureOpen()) closeCapturePanel();
+      else setCaptureOpen(true);
+    };
+    const onCloseDevicePanel = closeCapturePanel;
     const onRunJourneyGraph = () => runJourneyGraph();
     window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
     window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
@@ -675,7 +711,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
   const canReplayOnDevice = () => {
     if (canRecord()) return true;
     toast("Choose a ready device before trying this connection", "info");
-    window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+    openDevicePicker();
     return false;
   };
   const replayTake = async () => {
@@ -785,7 +821,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       )
         return;
       recordRequestedAfterDeviceSelection = true;
-      window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+      openDevicePicker();
       return;
     }
     // A recording group is a lightweight, executable breadcrumb: it makes the
@@ -1210,7 +1246,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                 onUseCurrentScreen={() => void useCurrentScreenAsStart()}
                 onOpenDevice={() => {
                   setCaptureOpen(true);
-                  queueMicrotask(() =>
+                  requestAnimationFrame(() =>
                     window.dispatchEvent(new CustomEvent("relay:open-device-picker")),
                   );
                 }}
@@ -1403,6 +1439,10 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                       node={node}
                       step={draft.steps()[node.representativeStepIndex]}
                       isFlowStart={isFlowStart()}
+                      outgoingCount={
+                        connections().filter((connection) => connection.fromScreenId === node.id)
+                          .length
+                      }
                       title={titleFor(node)}
                       selected={selectedNode()?.id === node.id}
                       editing={renamingNodeId() === node.id}
@@ -1411,7 +1451,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                       src={() =>
                         screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
                         capturedScreenUrls()[node.id] ||
-                        (isFlowStart() ? (liveScreenSrc() ?? "") : "")
+                        ""
                       }
                       onSelect={() => selectNode(node)}
                       onRename={() => setRenamingNodeId(node.id)}
@@ -1496,58 +1536,62 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                 )}
               </For>
             </div>
-            <Show
-              when={selectedConnection()}
-              fallback={
-                <ScreenInspector
-                  node={selectedNode()}
-                  title={selectedNode() ? titleFor(selectedNode()!) : ""}
-                  connections={connections().filter(
-                    (connection) => connection.fromScreenId === selectedNode()?.id,
-                  )}
-                  onSelectConnection={(connection) => {
-                    setSelectedConnectionId(connection.id);
-                    setSelectedNodeId(null);
-                  }}
-                  onClose={() => setSelectedNodeId(null)}
-                />
-              }
-            >
-              {(connection) => (
-                <ConnectionInspector
-                  connection={connection()}
-                  sourceTitle={titleFor(
-                    tree().nodes.find((node) => node.id === connection().fromScreenId)!,
-                  )}
-                  targetTitle={titleFor(
-                    tree().nodes.find((node) => node.id === connection().toScreenId)!,
-                  )}
-                  setup={{
-                    behaviors: reusableBehaviors(),
-                    onRecord: () => recordConnection(connection()),
-                    onBack: () => attachBackBehavior(connection()),
-                    onAutomatic: () => attachAutomaticBehavior(connection()),
-                    onAttachBehavior: (recipeId) => attachReusableBehavior(connection(), recipeId),
-                  }}
-                  replay={{
-                    state: replayStateFor(connection()),
-                    ...(replayErrorFor(connection())
-                      ? { error: replayErrorFor(connection()) }
-                      : {}),
-                    onRun: () => void replayConnection(connection()),
-                    onRewrite: () => recordConnection(connection()),
-                    onSaveReusable: () => void saveReusableBehavior(connection()),
-                    onSelectStep: () => {
-                      const index = draft
-                        .steps()
-                        .findIndex((step) => step.id === connection().stepId);
-                      if (index >= 0) selectStep(index);
-                    },
-                  }}
-                  onRemove={() => removeConnection(connection())}
-                  onClose={() => setSelectedConnectionId(null)}
-                />
-              )}
+            <Show when={!captureOpen()}>
+              <Show
+                when={selectedConnection()}
+                fallback={
+                  <ScreenInspector
+                    node={selectedNode()}
+                    title={selectedNode() ? titleFor(selectedNode()!) : ""}
+                    connections={connections().filter(
+                      (connection) => connection.fromScreenId === selectedNode()?.id,
+                    )}
+                    onSelectConnection={(connection) => {
+                      setSelectedConnectionId(connection.id);
+                      setSelectedNodeId(null);
+                    }}
+                    onClose={() => setSelectedNodeId(null)}
+                  />
+                }
+              >
+                {(connection) => (
+                  <ConnectionInspector
+                    connection={connection()}
+                    sourceTitle={titleFor(
+                      tree().nodes.find((node) => node.id === connection().fromScreenId)!,
+                    )}
+                    targetTitle={titleFor(
+                      tree().nodes.find((node) => node.id === connection().toScreenId)!,
+                    )}
+                    setup={{
+                      behaviors: reusableBehaviors(),
+                      onRecord: () => recordConnection(connection()),
+                      onBack: () => attachBackBehavior(connection()),
+                      onAutomatic: () => attachAutomaticBehavior(connection()),
+                      onAttachBehavior: (recipeId) =>
+                        attachReusableBehavior(connection(), recipeId),
+                    }}
+                    replay={{
+                      state: replayStateFor(connection()),
+                      ...(replayErrorFor(connection())
+                        ? { error: replayErrorFor(connection()) }
+                        : {}),
+                      onRun: () => void replayConnection(connection()),
+                      onRewrite: () => recordConnection(connection()),
+                      onSaveReusable: () => void saveReusableBehavior(connection()),
+                      onSelectStep: () => {
+                        const index = draft
+                          .steps()
+                          .findIndex((step) => step.id === connection().stepId);
+                        if (index >= 0) selectStep(index);
+                        props.onOpenActions();
+                      },
+                    }}
+                    onRemove={() => removeConnection(connection())}
+                    onClose={() => setSelectedConnectionId(null)}
+                  />
+                )}
+              </Show>
             </Show>
             <div class="absolute bottom-[calc(16px+env(safe-area-inset-bottom))] left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_76%,transparent),0_16px_46px_rgb(0_0_0/28%)] backdrop-blur-[16px]">
               <button
@@ -1605,7 +1649,11 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                 aria-expanded={historyOpen()}
                 aria-label="Journey history"
                 title="Journey history"
-                onClick={() => setHistoryOpen((open) => !open)}
+                onClick={() => {
+                  const opening = !historyOpen();
+                  if (opening) setCaptureOpen(false);
+                  setHistoryOpen(opening);
+                }}
               >
                 <Icon name="clock" size={13} />
               </button>
@@ -1623,7 +1671,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                 </button>
               </Show>
             </div>
-            <div class="absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_78%,transparent),0_8px_24px_rgb(0_0_0/16%)] backdrop-blur-[12px] max-[680px]:hidden">
+            <div class="absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_78%,transparent),0_8px_24px_rgb(0_0_0/16%)] backdrop-blur-[12px] max-[680px]:right-2 max-[680px]:bottom-[calc(68px+env(safe-area-inset-bottom))]">
               <button
                 type="button"
                 class={mapControlButton}
@@ -1704,26 +1752,17 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       <Show when={captureOpen() && !reviewingTake()}>
         <aside
           class={cn(
-            "absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_rgb(255_255_255/7%),0_20px_56px_-20px_rgb(0_0_0/55%)]",
+            "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-visible border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-base)] shadow-[0_20px_56px_-20px_rgb(0_0_0/55%)]",
+            captureClosing() && "ui-device-companion--closing",
             selectedDevice()
               ? "bottom-4 w-[min(388px,calc(100%-32px))] rounded-[18px] max-[720px]:top-auto max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:h-[min(72vh,680px)] max-[720px]:w-auto"
               : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[18px] max-[720px]:right-2 max-[720px]:left-2 max-[720px]:w-auto",
           )}
-          aria-label="Live device"
+          aria-label="Device"
         >
-          <header class="flex min-h-12 shrink-0 items-center justify-between px-3.5 shadow-[inset_0_-1px_rgb(255_255_255/5%)]">
+          <header class="relative z-[100] flex min-h-12 shrink-0 items-center justify-between rounded-t-[18px] border-b border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] px-3.5">
             <div class="flex min-w-0 items-center gap-2">
-              <Show
-                when={selectedDevice()}
-                fallback={
-                  <span class="inline-flex items-center gap-2 text-[11.5px] font-semibold text-[var(--text-base)]">
-                    <span class="grid size-6 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
-                      <Icon name="smartphone" size={12} />
-                    </span>
-                    Live device
-                  </span>
-                }
-              >
+              <Show when={selectedDevice()}>
                 <i
                   class={cn(
                     "size-1.5 shrink-0 rounded-full",
@@ -1734,44 +1773,54 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                         : "bg-[var(--icon-warning-base)]",
                   )}
                 />
-                <DevicePicker onManageTargets={props.onOpenTargets} />
               </Show>
+              <DevicePicker onManageTargets={props.onOpenTargets} />
             </div>
             <Show when={!recorder.recording()}>
               <button
                 type="button"
                 class={mapControlButton}
-                aria-label="Close live device"
-                title="Close live device"
-                onClick={() => setCaptureOpen(false)}
+                aria-label="Close device"
+                title="Close device"
+                onClick={closeCapturePanel}
               >
                 <Icon name="x" size={13} />
               </button>
             </Show>
           </header>
-          <div class="min-h-0 flex-1">
+          <div class="relative z-0 min-h-0 flex-1 overflow-hidden rounded-b-[18px]">
             <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
           </div>
           <Show
             when={recorder.recording() && recorder.take()}
             fallback={
               <Show
-                when={canRecord() && hasCanvasContent() && (selectedNode() || selectedConnection())}
+                when={
+                  canRecord() &&
+                  (!hasCanvasContent() || Boolean(selectedNode()) || Boolean(selectedConnection()))
+                }
               >
-                <footer class="flex min-h-16 shrink-0 items-center px-3 pt-1 pb-3">
+                <footer class="flex min-h-16 shrink-0 items-center border-t border-[var(--v2-border-border-muted)] px-3 pt-2 pb-3">
                   <button
                     type="button"
-                    class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#705ff0] px-4 text-[11.5px] font-semibold text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_10px_28px_rgb(89_69_214/24%)] transition-[background-color,transform] duration-150 hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.98] disabled:cursor-wait disabled:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]"
-                    disabled={recorder.arming()}
-                    aria-busy={recorder.arming()}
+                    class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#705ff0] px-4 text-[11.5px] font-semibold text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_10px_28px_rgb(89_69_214/24%)] transition-[background-color,transform] duration-150 hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.98] disabled:cursor-wait disabled:opacity-75"
+                    disabled={recorder.arming() || startCaptureBusy()}
+                    aria-busy={recorder.arming() || startCaptureBusy()}
                     onClick={() => {
+                      if (!hasCanvasContent()) {
+                        void useCurrentScreenAsStart();
+                        return;
+                      }
                       const connection = selectedConnection();
-                      if (connection) recordConnection(connection);
-                      else recordFromHere();
+                      if (connection) {
+                        recordConnection(connection);
+                        return;
+                      }
+                      recordFromHere();
                     }}
                   >
                     <Show
-                      when={recorder.arming()}
+                      when={recorder.arming() || startCaptureBusy()}
                       fallback={<i class="size-2 rounded-full bg-white/90" />}
                     >
                       <Icon
@@ -1780,11 +1829,15 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                         class="animate-[spin_900ms_linear_infinite] motion-reduce:animate-none"
                       />
                     </Show>
-                    {recorder.arming()
+                    {recorder.arming() || startCaptureBusy()
                       ? "Preparing device…"
-                      : selectedConnection()
-                        ? "Rewrite connection"
-                        : "Record next connection"}
+                      : !hasCanvasContent()
+                        ? "Use current screen"
+                        : selectedConnection()
+                          ? selectedConnection()!.state === "needs-recording"
+                            ? "Record connection"
+                            : "Rewrite connection"
+                          : "Record next connection"}
                   </button>
                 </footer>
               </Show>
@@ -1805,9 +1858,9 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
 }
 
 const recordButton =
-  "inline-flex h-10 items-center gap-1.5 rounded-[9px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96]";
+  "canvas-tool-control inline-flex h-10 items-center gap-1.5 rounded-[9px] bg-[var(--product-accent-soft)] px-3 text-[11px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96]";
 const mapControlButton =
-  "grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 
 function screenshotUrl(server: ReturnType<typeof useServer>, step: RecipeStep | undefined): string {
   const screenshot = evidenceForStep(step)?.screenshot;

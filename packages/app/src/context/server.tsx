@@ -49,7 +49,7 @@ import {
   bootDevice as bootDeviceRequest,
   authorizeDevice as authorizeDeviceRequest,
 } from "../lib/server-target-remote";
-import { preferredTargetSerial } from "../lib/target-presentation";
+import { preferredTargetSerial, targetIsReady } from "../lib/target-presentation";
 import { projectRelayEvent, type EventActivity, type EventRefresh } from "../lib/event-projection";
 import {
   deleteRecipe,
@@ -295,6 +295,24 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     const fetcher = () => platform.fetch ?? fetch;
 
+    async function fallbackActorId(): Promise<string> {
+      const sessionKey = "relay:actorId";
+      let stored: string | null = null;
+      try {
+        stored = sessionStorage.getItem(sessionKey);
+      } catch {
+        stored = await platform.storage.get("actorId");
+      }
+      if (stored?.startsWith("human:") && stored.length <= 128) return stored;
+      const created = `human:${crypto.randomUUID()}`;
+      try {
+        sessionStorage.setItem(sessionKey, created);
+      } catch {
+        await platform.storage.set("actorId", created);
+      }
+      return created;
+    }
+
     const currentFrame = () => {
       const list = frames();
       if (list.length === 0) return null;
@@ -310,7 +328,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             auth: { type: "none" },
             organizationId: "local",
             projectId: "default",
-            actorId: `human:${crypto.randomUUID()}`,
+            actorId: await fallbackActorId(),
             actorKind: "human",
           };
       connection = { ...connection, url: normalizeLocalBase(connection.url) };
@@ -519,13 +537,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           // switching the user to a simulator or another phone.
           const selected = selectedDevice();
           const selectedTarget = list.find((device) => device.serial === selected);
+          const selectedTargetReady = targetIsReady(selectedTarget, true);
           if (!selected) {
             void selectDeviceRemote(preferredTargetSerial(list));
-          } else if (selectedTarget && !selectedDeviceAvailable) {
+          } else if (selectedTargetReady && !selectedDeviceAvailable) {
             // Reacquire this actor's lease when the intentionally focused
             // target returns. Focus itself remains entirely renderer-local.
             void selectDeviceRemote(selected);
-          } else if (!selectedTarget && selectedDeviceAvailable) {
+          } else if (!selectedTargetReady && selectedDeviceAvailable) {
             // A cached screen is evidence from a device that is no longer
             // present. Keep the intentional selection for auto-recovery, but
             // never present its pixels as the current live screen.
@@ -533,7 +552,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             setSnapshot(null);
             setLiveCaptureIssue(null);
           }
-          selectedDeviceAvailable = Boolean(selectedTarget);
+          selectedDeviceAvailable = selectedTargetReady;
           // clear only network-ish noise; keep explicit action errors
           if (error()?.match(/failed to fetch|network|ECONNREFUSED|offline/i)) setError(null);
         } catch (err) {
@@ -1360,7 +1379,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         setLiveCaptureIssue(null);
       }
       setSelectedDevice(serial);
-      selectedDeviceAvailable = devices().some((device) => device.serial === serial);
+      const selectedTarget = devices().find((device) => device.serial === serial);
+      selectedDeviceAvailable = targetIsReady(selectedTarget, health() === "online");
       void Promise.resolve(platform.storage.set("selectedDevice", serial ?? "")).catch(
         () => undefined,
       );
@@ -1370,14 +1390,29 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           await client.releaseLease(selectedLeaseId()!).catch(() => undefined);
           setSelectedLeaseId(null);
         }
-        if (serial) {
-          const active = (await client.leases()).leases.find(
+        if (serial && selectedDeviceAvailable) {
+          const leases = (await client.leases()).leases;
+          const active = leases.find(
             (lease) =>
               lease.deviceSerial === serial &&
               lease.ownerId === connection!.actorId &&
               lease.status === "leased" &&
               lease.expiresAt > Date.now(),
           );
+          const occupied = leases.find(
+            (lease) =>
+              lease.deviceSerial === serial &&
+              lease.status === "leased" &&
+              lease.expiresAt > Date.now(),
+          );
+          if (!active && occupied) {
+            setLiveCaptureIssue("This device is open in another Relay window.");
+            setSelectedLeaseId(null);
+            return;
+          }
+          if (liveCaptureIssue() === "This device is open in another Relay window.") {
+            setLiveCaptureIssue(null);
+          }
           setSelectedLeaseId(
             active?.id ??
               (

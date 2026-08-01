@@ -1293,7 +1293,7 @@ export function DeviceStage(_props: {
    * Abstract device viewport — thin always-dark frame, no hardware gimmicks.
    * Never stack workbench light-theme color recipes on the frame.
    */
-  const phoneShell = "phone-bezel relative rounded-[22px] bg-[var(--phone-bezel)] p-[2px]";
+  const phoneShell = "phone-bezel relative rounded-[21px] bg-[var(--phone-bezel)] p-px";
 
   return (
     <section
@@ -1534,7 +1534,7 @@ export function DeviceStage(_props: {
                                   <Show when={!developerModeDisabled()}>
                                     <button
                                       type="button"
-                                      class="rounded-[7px] px-2 py-1 text-[10.5px] font-medium text-[var(--text-interactive-base)] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)]"
+                                      class="min-h-11 rounded-[8px] px-3 text-[11px] font-medium text-[var(--text-interactive-base)] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)]"
                                       onClick={() => {
                                         if (hasIosSetupIssue()) {
                                           window.dispatchEvent(
@@ -1609,7 +1609,7 @@ export function DeviceStage(_props: {
                             </p>
                             <button
                               type="button"
-                              class="rounded-[7px] bg-[var(--product-accent-soft)] px-2.5 py-1.5 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]"
+                              class="min-h-11 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.97]"
                               onClick={() => {
                                 if (issue().kind === "setup") {
                                   window.dispatchEvent(

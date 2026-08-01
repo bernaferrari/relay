@@ -34,7 +34,7 @@ export function CanvasNote(props: {
         </button>
         <button
           type="button"
-          class="grid size-6 place-items-center rounded-[6px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
+          class="relative grid size-8 place-items-center rounded-[7px] text-[var(--text-weak)] before:absolute before:-inset-1 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
           aria-label="Delete note"
           onClick={props.onDelete}
         >
@@ -57,6 +57,7 @@ export function ScreenCard(props: {
   node: JourneyTreeNode;
   step: RecipeStep | undefined;
   isFlowStart: boolean;
+  outgoingCount: number;
   title: string;
   selected: boolean;
   editing: boolean;
@@ -96,6 +97,11 @@ export function ScreenCard(props: {
         props.onRename();
       }}
       onKeyDown={(event) => {
+        if (event.key === "F2") {
+          event.preventDefault();
+          props.onRename();
+          return;
+        }
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           props.onSelect();
@@ -156,43 +162,47 @@ export function ScreenCard(props: {
         }
       >
         {(src) => (
-          <div class="min-h-0 overflow-hidden bg-[#080a0f] p-1.5">
+          <div class="min-h-0 overflow-hidden bg-[#080a0f]">
             <img
               src={src()}
               alt={`Recorded ${props.title} screen`}
               draggable={false}
-              class="size-full rounded-[9px] object-contain object-top"
+              class="size-full object-contain object-top"
             />
           </div>
         )}
       </Show>
       <footer class="flex items-center justify-between px-2.5 text-[10px] text-[var(--text-weak)]">
-        <span class="inline-flex items-center gap-1.5">
-          <Show when={props.runState && props.runState !== "idle"}>
-            <i
-              class={cn(
-                "size-1.5 rounded-full",
-                props.runState === "failed"
-                  ? "bg-[var(--icon-critical-base)]"
-                  : props.runState === "running"
-                    ? "bg-[var(--text-interactive-base)] motion-safe:animate-pulse"
-                    : props.runState === "healed"
-                      ? "bg-[var(--icon-warning-base)]"
-                      : props.runState === "passed"
-                        ? "bg-[var(--icon-success-base)]"
-                        : "bg-[var(--text-weak)]",
-              )}
-            />
-            <span class="capitalize">{props.runState}</span>
-          </Show>
-          <Show when={!props.runState || props.runState === "idle"}>
-            {props.isFlowStart && !props.node.stepIndexes.length
-              ? "Entry point"
-              : `${props.node.stepIndexes.length} ${props.node.stepIndexes.length === 1 ? "connection" : "connections"}`}
-          </Show>
-        </span>
+        <Show when={!props.selected}>
+          <span class="inline-flex items-center gap-1.5">
+            <Show when={props.runState && props.runState !== "idle"}>
+              <i
+                class={cn(
+                  "size-1.5 rounded-full",
+                  props.runState === "failed"
+                    ? "bg-[var(--icon-critical-base)]"
+                    : props.runState === "running"
+                      ? "bg-[var(--text-interactive-base)] motion-safe:animate-pulse"
+                      : props.runState === "healed"
+                        ? "bg-[var(--icon-warning-base)]"
+                        : props.runState === "passed"
+                          ? "bg-[var(--icon-success-base)]"
+                          : "bg-[var(--text-weak)]",
+                )}
+              />
+              <span class="capitalize">{props.runState}</span>
+            </Show>
+            <Show when={!props.runState || props.runState === "idle"}>
+              {props.isFlowStart
+                ? `Entry · ${props.outgoingCount} ${props.outgoingCount === 1 ? "connection" : "connections"}`
+                : `${props.outgoingCount} ${props.outgoingCount === 1 ? "connection" : "connections"}`}
+            </Show>
+          </span>
+        </Show>
         <Show when={props.selected}>
-          <span class="font-medium text-[var(--text-interactive-base)]">Drag arrow to connect</span>
+          <span class="ml-auto font-medium text-[var(--text-interactive-base)]">
+            Drag arrow to connect
+          </span>
         </Show>
       </footer>
       <button
@@ -317,7 +327,7 @@ export function ScreenInspector(props: {
             </div>
             <button
               type="button"
-              class="grid size-9 place-items-center rounded-[8px] text-[var(--text-weak)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+              class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
               aria-label="Close screen details"
               onClick={props.onClose}
             >
@@ -325,13 +335,13 @@ export function ScreenInspector(props: {
             </button>
           </div>
           <div class="mt-2 grid gap-0.5 border-t border-[var(--v2-border-border-muted)] pt-1.5">
-            <span class="px-1.5 pb-0.5 text-[9.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)]">
+            <span class="px-1.5 pb-0.5 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)]">
               OUTGOING
             </span>
             <Show
               when={props.connections.length}
               fallback={
-                <p class="m-0 px-1.5 py-2 text-[10px]/[1.4] text-[var(--text-weak)]">
+                <p class="m-0 px-1.5 py-2 text-[11px]/[1.45] text-[var(--text-weak)]">
                   No connections yet. Record an interaction, or drag the arrow on the screen card to
                   sketch one.
                 </p>
@@ -341,7 +351,7 @@ export function ScreenInspector(props: {
                 {(connection) => (
                   <button
                     type="button"
-                    class="flex min-h-11 items-center gap-2 rounded-[7px] px-1.5 text-left text-[10.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                    class="flex min-h-11 items-center gap-2 rounded-[7px] px-1.5 text-left text-[11.5px] text-[var(--text-base)] transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
                     onClick={() => props.onSelectConnection(connection)}
                   >
                     <span

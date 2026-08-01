@@ -8,11 +8,11 @@ import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
 
 const controlButton =
-  "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[10px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[11px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
 const primaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[10.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-3 text-[11.5px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 const secondaryButton =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[10px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:outline-border-strong-focus";
+  "inline-flex min-h-11 items-center gap-1.5 rounded-[8px] px-2.5 text-[11px] font-medium text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]";
 const reviewPhoneShell =
   "relative rounded-[21px] bg-[var(--phone-bezel)] p-[2px] shadow-[0_0_0_1px_rgb(255_255_255/10%),0_22px_54px_-24px_rgb(0_0_0/78%)]";
 
@@ -41,7 +41,7 @@ export function TakeCaptureBar(props: {
       </div>
       <button
         type="button"
-        class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] px-3 text-[11px] font-semibold text-[var(--icon-critical-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_20%,transparent)] active:scale-[0.96] focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]"
+        class="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-[9px] bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] px-3 text-[11px] font-semibold text-[var(--icon-critical-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_20%,transparent)] active:scale-[0.96]"
         onClick={props.onStop}
       >
         <Icon name="square" size={10} /> Stop
@@ -568,20 +568,40 @@ export function GraphEmptyState(props: {
         };
     }
   };
+  const setupCompanionOpen = () => props.deviceOpen && props.recordState === "choose-device";
   return (
-    <Show when={!(props.deviceOpen && props.recordState === "choose-device")}>
+    <Show
+      when={!setupCompanionOpen()}
+      fallback={
+        <div class="pointer-events-none absolute inset-0 z-[1] grid place-items-center px-6 max-[760px]:place-items-end max-[760px]:pb-8">
+          <div class="flex max-w-[340px] items-center gap-3 rounded-[14px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_76%,transparent)] px-4 py-3 text-left shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_72%,transparent),0_10px_36px_-22px_rgb(0_0_0/42%)] backdrop-blur-[12px]">
+            <span class="grid size-9 shrink-0 place-items-center rounded-[11px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+              <Icon name="move" size={15} />
+            </span>
+            <span>
+              <strong class="block text-[12.5px] font-semibold text-[var(--text-strong)]">
+                Your journey will grow here
+              </strong>
+              <span class="mt-0.5 block text-[11px]/[1.45] text-[var(--text-weak)]">
+                Choose a device in the open panel, then navigate freely.
+              </span>
+            </span>
+          </div>
+        </div>
+      }
+    >
       <div
         class="absolute inset-y-0 left-0 z-[1] grid place-items-center px-6 max-[760px]:right-0"
         style={{ right: props.deviceOpen && props.deviceSelected ? "min(420px, 50vw)" : "0" }}
       >
-        <section class="ui-modal w-[min(410px,calc(100vw-48px))] overflow-hidden rounded-[20px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] p-1.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_80%,transparent),0_24px_80px_-28px_rgb(0_0_0/55%)] backdrop-blur-[18px]">
-          <div class="rounded-[15px] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_72%,transparent)] px-5 pt-5 pb-4">
+        <section class="ui-modal w-[min(410px,calc(100vw-48px))] overflow-hidden rounded-[20px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,transparent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_80%,transparent),0_24px_80px_-28px_rgb(0_0_0/55%)] backdrop-blur-[18px]">
+          <div class="px-5 pt-5 pb-4">
             <div class="flex items-center gap-3">
               <span class="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]">
                 <Icon name={isRecording() ? "camera" : "smartphone"} size={18} />
               </span>
               <div class="min-w-0">
-                <span class="block text-[9.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
+                <span class="block text-[10.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
                   {isRecording() ? "Capturing connection" : "New journey"}
                 </span>
                 <h2 class="m-0 mt-0.5 text-[20px] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance">
@@ -589,7 +609,7 @@ export function GraphEmptyState(props: {
                 </h2>
               </div>
             </div>
-            <p class="m-0 mt-3 max-w-[46ch] text-[12px]/[1.55] text-[var(--text-weak)] text-pretty">
+            <p class="m-0 mt-3 max-w-[46ch] text-[12.5px]/[1.55] text-[var(--text-weak)] text-pretty">
               {guidance().detail}
             </p>
             <Show when={!props.take}>
@@ -601,7 +621,7 @@ export function GraphEmptyState(props: {
                   {(label, index) => (
                     <li
                       class={cn(
-                        "flex min-w-0 items-center gap-1.5 rounded-[8px] px-2 py-2 text-[10px] font-medium",
+                        "flex min-w-0 items-center gap-1.5 rounded-[8px] px-2 py-2 text-[11px] font-medium",
                         index() === activeStep()
                           ? "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]"
                           : index() < activeStep()
@@ -611,7 +631,7 @@ export function GraphEmptyState(props: {
                     >
                       <span
                         class={cn(
-                          "grid size-4 shrink-0 place-items-center rounded-full text-[8px] font-semibold",
+                          "grid size-4 shrink-0 place-items-center rounded-full text-[9px] font-semibold",
                           index() <= activeStep()
                             ? "bg-[var(--text-interactive-base)] text-white"
                             : "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-weak)]",
@@ -627,8 +647,8 @@ export function GraphEmptyState(props: {
             </Show>
           </div>
           <Show when={!props.take && !(props.deviceOpen && props.recordState === "choose-device")}>
-            <div class="flex items-center justify-between gap-3 px-3 py-2.5">
-              <span class="text-[10px] text-[var(--text-weak)]">
+            <div class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-3 py-2.5">
+              <span class="text-[11px] text-[var(--text-weak)]">
                 {props.recordState === "ready"
                   ? "Your live screen is ready"
                   : "Device stays one click away"}

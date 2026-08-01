@@ -20,6 +20,7 @@ import { displayTitle } from "../lib/job";
 import { deviceReadiness } from "../lib/device-readiness";
 import { toast } from "../context/toast";
 import { confirmAction } from "./confirm-dialog";
+import { trapFocus } from "../lib/modal";
 import {
   modalPanel,
   modalScrim,
@@ -157,6 +158,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   });
   let titleBeforeEdit = "";
   let variablesDialog: HTMLElement | undefined;
+  let importReviewDialog: HTMLElement | undefined;
   let studioActionsTrigger: HTMLButtonElement | undefined;
   let studioActionsMenu: HTMLDivElement | undefined;
   let resumingCollectionRecording = false;
@@ -191,8 +193,26 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       if (event.key === "Escape") setVariablesOpen(false);
     };
     window.addEventListener("keydown", close);
-    requestAnimationFrame(() => variablesDialog?.focus({ preventScroll: true }));
-    onCleanup(() => window.removeEventListener("keydown", close));
+    let releaseFocus: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      if (variablesDialog) releaseFocus = trapFocus(variablesDialog);
+    });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", close);
+      releaseFocus?.();
+    });
+  });
+  createEffect(() => {
+    if (!importReview()) return;
+    let releaseFocus: (() => void) | undefined;
+    const frame = requestAnimationFrame(() => {
+      if (importReviewDialog) releaseFocus = trapFocus(importReviewDialog);
+    });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      releaseFocus?.();
+    });
   });
   createEffect(() => {
     if (!studioActionsOpen()) return;
@@ -266,7 +286,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     });
   });
   const selectedTargetIsReady = () => selectedDeviceReadiness().kind === "ready";
-  const openDevicePicker = () => window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
+  const openDevicePicker = () => {
+    if (area() === "tests" && studioView() === "map" && !devicePanelOpen()) {
+      window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+    }
+    requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("relay:open-device-picker")));
+  };
   const testBlockedReason = () => testRunBlocker(readinessState());
   const graphBlockedReason = () => {
     if (server.health() !== "online") return "Server offline";
@@ -650,9 +675,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     aria-hidden="true"
                   />
                   <Icon name="smartphone" size={14} />
-                  <span class="max-[560px]:hidden">
-                    {selectedTargetIsReady() ? "Device" : "Connect device"}
-                  </span>
+                  <span class="max-[560px]:hidden">Device</span>
                 </button>
               </Show>
               <div class="relative flex items-center gap-1.5">
@@ -692,6 +715,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
                     role="menu"
                     aria-label="Journey options"
+                    onFocusOut={(event) => {
+                      const next = event.relatedTarget as Node | null;
+                      if (next && event.currentTarget.contains(next)) return;
+                      setStudioActionsOpen(false);
+                    }}
                     onKeyDown={(event) => {
                       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
                       const items = [
@@ -840,6 +868,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <JourneyWorkspace
                       navigatorOpen={navOpen()}
                       onOpenTargets={() => props.onOpenSettings("targets")}
+                      onOpenActions={() => setStudioView("workbench")}
                     />
                   </div>
                   <Show when={settingsOpen()}>
@@ -928,12 +957,23 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       </Show>
       <Show when={importReview()}>
         {(review) => (
-          <div class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}>
+          <div
+            class={cn(modalScrim, "z-[120] flex items-center justify-center p-5")}
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) setImportReview(null);
+            }}
+          >
             <section
+              ref={(element) => {
+                importReviewDialog = element;
+              }}
               class={cn(modalPanel, "grid w-[min(100%,480px)] gap-0 overflow-hidden rounded-xl")}
               role="dialog"
               aria-modal="true"
               aria-labelledby="import-review-title"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setImportReview(null);
+              }}
             >
               <header class="flex items-start justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
                 <div>
