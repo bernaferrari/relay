@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@relay/client": "workspace:*",
+    "@relay/mcp": "workspace:*",
     "@types/node": "^26.1.1",
     "tsx": "^4.20.0",
     "typescript": "catalog:"
