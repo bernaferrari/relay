@@ -4,7 +4,7 @@ export type JourneyRunReadiness = {
   visible: boolean;
   ready: boolean;
   reason: string;
-  label: "Run journey" | "Run to here" | "Run";
+  label: "Run flow" | "Run to here" | "Run";
   transitionPath: string[] | null;
 };
 
@@ -97,7 +97,7 @@ function selectedPath(
       ? {
           transitionPath: screenPath,
           reason: "",
-          label: screenPath.length ? "Run to here" : "Run journey",
+          label: screenPath.length ? "Run to here" : "Run flow",
         }
       : {
           transitionPath: null,
@@ -110,7 +110,7 @@ function selectedPath(
   return {
     transitionPath: inferred.path,
     reason: inferred.reason ?? "",
-    label: "Run journey",
+    label: "Run flow",
   };
 }
 
@@ -129,8 +129,8 @@ export function journeyRunReadiness(input: {
     return {
       visible: false,
       ready: false,
-      reason: "Record a connection before running this journey",
-      label: "Run journey",
+      reason: "Record a connection before running this flow",
+      label: "Run flow",
       transitionPath: null,
     };
   }

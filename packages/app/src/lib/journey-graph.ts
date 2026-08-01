@@ -151,6 +151,40 @@ export function addJourneyStartScreen(
   return { graph: copy, screen };
 }
 
+/** Capture a unique app state without inventing a transition. Re-observing a
+ * known state enriches that screen instead of creating a duplicate node. */
+export function addJourneyGraphScreen(
+  graph: JourneyGraph,
+  observation: JourneyScreenObservation,
+  input: { title?: string; at?: number } = {},
+): { graph: JourneyGraph; screen: JourneyGraphScreen; created: boolean } {
+  if (!graph.screens.length) {
+    const first = addJourneyStartScreen(graph, observation, input);
+    return { ...first, created: true };
+  }
+  const existing = screenForObservation(graph, observation);
+  if (existing) {
+    const next = observeJourneyGraphScreen(graph, existing.id, observation);
+    return {
+      graph: next,
+      screen: next.screens.find((screen) => screen.id === existing.id)!,
+      created: false,
+    };
+  }
+  const at = input.at ?? Date.now();
+  const copy = cloneGraph(graph);
+  const screen: JourneyGraphScreen = {
+    id: id("screen", at),
+    title: input.title?.trim() || `Screen ${copy.screens.length + 1}`,
+    identity: { schemaVersion: 1, fingerprint: observation.fingerprint },
+    observations: [structuredClone(observation)],
+    createdAt: at,
+    updatedAt: at,
+  };
+  copy.screens.push(screen);
+  return { graph: copy, screen, created: true };
+}
+
 function screenTitle(step: RecipeStep | undefined, number: number): string {
   if (step?.kind === "tap") {
     const target = step.target.label ?? step.target.text ?? step.target.ref;

@@ -23,6 +23,7 @@ import {
   type CanvasConnection,
 } from "../lib/journey-prototype";
 import {
+  addJourneyGraphScreen,
   addJourneyStartScreen,
   buildJourneyGraphTree,
   ensureJourneyGraph,
@@ -46,16 +47,8 @@ import { projectJourneyRun } from "../lib/journey-run-projection";
 import { journeyRunReadiness } from "../lib/journey-run-readiness";
 import { replayTransitionSteps } from "../lib/transition-replay";
 import { toast } from "../context/toast";
-import { DeviceStage } from "./stage";
-import { DevicePicker } from "./device-picker";
-import { Icon } from "./icon";
 import { evidenceForStep } from "./journey-step-presentation";
-import {
-  GraphEmptyState,
-  RecordedTakePlayer,
-  TakeCaptureBar,
-  TakeReviewSidebar,
-} from "./journey-capture-review";
+import { GraphEmptyState, RecordedTakePlayer, TakeReviewSidebar } from "./journey-capture-review";
 import {
   CanvasNote,
   ConnectionInspector,
@@ -67,6 +60,9 @@ import { JourneyHistoryPanel } from "./journey-history-panel";
 import { CollaborationPresence } from "./collaboration-presence";
 import { collaborationActivity } from "../lib/collaboration-awareness";
 import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-runtime";
+import { AppMapDeviceCompanion } from "./app-map-device-companion";
+import { AppMapOverviewToolbar, AppMapToolbar, AppMapZoomControls } from "./app-map-toolbar";
+import { createAppMapEventOrchestration } from "./app-map-events";
 
 /**
  * The graph is the authoring surface for a journey. A card is a captured
@@ -74,10 +70,14 @@ import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-r
  * there. Recording remains the only way to create the real transitions, so
  * the canvas never promises a route that the runner cannot execute.
  */
-export function JourneyWorkspace(props: {
+export function AppMapWorkspace(props: {
   onOpenTargets: () => void;
   onOpenActions: () => void;
   navigatorOpen?: boolean;
+  captureStartOnReady?: boolean;
+  onCaptureStartHandled?: () => void;
+  addNoteOnReady?: boolean;
+  onAddNoteHandled?: () => void;
 }) {
   const server = useServer();
   const draft = useRecipeDraft();
@@ -173,6 +173,13 @@ export function JourneyWorkspace(props: {
     return "ready";
   };
   const canRecord = () => recordState() === "ready";
+  const livePanelStatus = () => {
+    if (recorder.recording()) return { label: "Recording", tone: "critical" } as const;
+    if (server.health() !== "online") return { label: "Relay offline", tone: "critical" } as const;
+    if (!selectedDevice()) return { label: "Choose a device", tone: "weak" } as const;
+    if (canRecord()) return { label: "Live", tone: "success" } as const;
+    return { label: "Connecting", tone: "warning" } as const;
+  };
   const liveScreenSrc = createMemo(() => {
     const device = selectedDevice();
     const liveFrame = server.liveFrame();
@@ -253,6 +260,14 @@ export function JourneyWorkspace(props: {
       setCaptureClosing(false);
       captureCloseTimer = undefined;
     }, 150);
+  };
+
+  const openCapturePanel = () => {
+    if (captureCloseTimer) window.clearTimeout(captureCloseTimer);
+    captureCloseTimer = undefined;
+    setCaptureClosing(false);
+    setHistoryOpen(false);
+    setCaptureOpen(true);
   };
 
   const openDevicePicker = () => {
@@ -392,14 +407,6 @@ export function JourneyWorkspace(props: {
     setCaptureOpen(false);
   });
 
-  createEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("relay:device-panel-state", {
-        detail: { open: captureOpen() && !reviewingTake() },
-      }),
-    );
-  });
-
   // Selecting a ready device from the first-recording prompt is not a second
   // task the person has to finish manually. An iPad that still needs its
   // runner is different: take the person straight to setup and do not leave a
@@ -424,38 +431,6 @@ export function JourneyWorkspace(props: {
   });
   onCleanup(closeJourneyDocument);
 
-  onMount(() => {
-    const onDeviceSelected = () => {
-      if (!recordRequestedAfterDeviceSelection) return;
-      recordRequestedAfterDeviceSelection = false;
-      setWaitingForRecordTarget(true);
-    };
-    window.addEventListener("relay:device-selected", onDeviceSelected);
-    const onToggleDevicePanel = () => {
-      setHistoryOpen(false);
-      if (captureOpen()) closeCapturePanel();
-      else setCaptureOpen(true);
-    };
-    const onCloseDevicePanel = closeCapturePanel;
-    const onRunJourneyGraph = () => runJourneyGraph();
-    const onOutsideTargetSet = (event: PointerEvent) => {
-      if (!(event.target as HTMLElement | null)?.closest?.("[data-target-set-picker]")) {
-        setTargetSetOpen(false);
-      }
-    };
-    window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
-    window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
-    window.addEventListener("relay:run-journey-graph", onRunJourneyGraph);
-    window.addEventListener("pointerdown", onOutsideTargetSet);
-    onCleanup(() => {
-      window.removeEventListener("relay:device-selected", onDeviceSelected);
-      window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
-      window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
-      window.removeEventListener("relay:run-journey-graph", onRunJourneyGraph);
-      window.removeEventListener("pointerdown", onOutsideTargetSet);
-    });
-  });
-
   const positions = () => metadata().value.positions;
   const titleFor = (node: JourneyTreeNode) =>
     metadata().value.screenTitles?.[node.id]?.trim() || node.title;
@@ -477,16 +452,11 @@ export function JourneyWorkspace(props: {
       },
     }),
   );
-  createEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("relay:graph-run-readiness", { detail: graphRunReadiness() }),
-    );
-  });
   const runJourneyGraph = () => {
     const recipeId = server.selectedRecipeId();
     const flow = graph().flows[0];
     if (!recipeId || !flow) {
-      toast("Add and verify a connection before running this journey", "info");
+      toast("Add and verify a connection before running this flow", "info");
       return;
     }
     const readiness = graphRunReadiness();
@@ -582,44 +552,7 @@ export function JourneyWorkspace(props: {
     );
   };
 
-  onMount(() => {
-    requestAnimationFrame(fit);
-    const onUndoRequest = (event: Event) => {
-      const request = event as CustomEvent<{ redo: boolean }>;
-      if (request.detail.redo) {
-        if (!journeyDocument?.canRedo()) return;
-        event.preventDefault();
-        redo();
-        return;
-      }
-      if (!journeyDocument?.canUndo()) return;
-      event.preventDefault();
-      undo();
-    };
-    const onCanvasKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
-      if (event.key === "v" || event.key === "V") {
-        setCanvasTool("select");
-        return;
-      }
-      if (event.key === "h" || event.key === "H") {
-        setCanvasTool("hand");
-        return;
-      }
-      if (event.key !== "Escape" || renamingNodeId()) return;
-      setSelectedNodeId(null);
-      setSelectedConnectionId(null);
-      setKeyboardConnectionSourceId(null);
-      setHistoryOpen(false);
-    };
-    window.addEventListener("relay:undo-request", onUndoRequest);
-    window.addEventListener("keydown", onCanvasKey);
-    onCleanup(() => {
-      window.removeEventListener("relay:undo-request", onUndoRequest);
-      window.removeEventListener("keydown", onCanvasKey);
-    });
-  });
+  onMount(() => requestAnimationFrame(fit));
   createEffect(() => {
     const signature = [
       ...tree().nodes.map((node) => node.id),
@@ -735,6 +668,41 @@ export function JourneyWorkspace(props: {
       setStartCaptureBusy(false);
     }
   };
+  const captureCurrentScreen = async () => {
+    if (!canReplayOnDevice() || startCaptureBusy()) return;
+    setStartCaptureBusy(true);
+    try {
+      const captured = await recorder.captureStartScreen();
+      if (!captured) return;
+      const added = addJourneyGraphScreen(graph(), captured.observation);
+      persistMetadata(withJourneyGraph(metadata().value, added.graph));
+      if (captured.screenshotUrl) {
+        setCapturedScreenUrls((urls) => ({ ...urls, [added.screen.id]: captured.screenshotUrl! }));
+      }
+      const node = buildJourneyGraphTree(added.graph, draft.steps()).nodes.find(
+        (candidate) => candidate.id === added.screen.id,
+      );
+      if (node) selectNode(node);
+      toast(added.created ? "Screen added to the map" : "Existing screen refreshed", "success");
+    } finally {
+      setStartCaptureBusy(false);
+    }
+  };
+  let automaticStartCaptureHandled = false;
+  createEffect(() => {
+    if (
+      automaticStartCaptureHandled ||
+      !props.captureStartOnReady ||
+      loadedRecipeId() !== server.selectedRecipeId() ||
+      hasMap() ||
+      !canRecord() ||
+      startCaptureBusy()
+    )
+      return;
+    automaticStartCaptureHandled = true;
+    props.onCaptureStartHandled?.();
+    void useCurrentScreenAsStart();
+  });
   const addNote = () => {
     const element = canvas;
     const current = view();
@@ -744,9 +712,21 @@ export function JourneyWorkspace(props: {
     const id = `note-${globalThis.crypto?.randomUUID?.().slice(0, 8) ?? at.toString(36)}`;
     persistNotes([
       ...(metadata().value.notes ?? []),
-      { id, text: "Add context for this part of the journey", x, y, createdAt: at, updatedAt: at },
+      { id, text: "Add context for this part of the map", x, y, createdAt: at, updatedAt: at },
     ]);
   };
+  let automaticFirstNoteHandled = false;
+  createEffect(() => {
+    if (
+      automaticFirstNoteHandled ||
+      !props.addNoteOnReady ||
+      loadedRecipeId() !== server.selectedRecipeId()
+    )
+      return;
+    automaticFirstNoteHandled = true;
+    addNote();
+    props.onAddNoteHandled?.();
+  });
   const canReplayOnDevice = () => {
     if (canRecord()) return true;
     toast("Choose a ready device before trying this connection", "info");
@@ -1011,7 +991,7 @@ export function JourneyWorkspace(props: {
     const title = `${source ? titleFor(source) : "Screen"} → ${target ? titleFor(target) : "Next screen"}`;
     const saved = await server.saveRecipeRemote({
       title,
-      description: "Reusable connection behavior · saved from the journey canvas",
+      description: "Reusable connection behavior · saved from the App Map",
       steps,
     });
     if (saved) toast(`Saved “${saved.title}” as a reusable behavior`, "success");
@@ -1124,10 +1104,70 @@ export function JourneyWorkspace(props: {
     draft.redo();
   };
 
+  createAppMapEventOrchestration({
+    devicePanelOpen: captureOpen,
+    reviewingTake,
+    runReadiness: graphRunReadiness,
+    canvasTool,
+    renamingScreen: () => Boolean(renamingNodeId()),
+    onDeviceSelected: () => {
+      if (!recordRequestedAfterDeviceSelection) return;
+      recordRequestedAfterDeviceSelection = false;
+      setWaitingForRecordTarget(true);
+    },
+    onToggleDevicePanel: () => {
+      setHistoryOpen(false);
+      if (captureOpen()) closeCapturePanel();
+      else setCaptureOpen(true);
+    },
+    onCloseDevicePanel: closeCapturePanel,
+    onRunMap: runJourneyGraph,
+    onCloseTargetSet: () => setTargetSetOpen(false),
+    onUndoRequest: (event, shouldRedo) => {
+      if (shouldRedo) {
+        if (!journeyDocument?.canRedo()) return;
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (!journeyDocument?.canUndo()) return;
+      event.preventDefault();
+      undo();
+    },
+    onToolChange: setCanvasTool,
+    onCaptureScreen: () => void captureCurrentScreen(),
+    onAddNote: addNote,
+    onCreateConnection: () => {
+      const node = selectedNode();
+      if (node) setKeyboardConnectionSourceId(node.id);
+      else toast("Select the screen where this connection begins", "info");
+    },
+    onRecord: () => {
+      if (recorder.recording()) {
+        void recorder.stopRecording();
+        return;
+      }
+      if (!hasCanvasContent()) {
+        void useCurrentScreenAsStart();
+        return;
+      }
+      const connection = selectedConnection();
+      if (connection) recordConnection(connection);
+      else if (selectedNode()) recordFromHere();
+      else toast("Select a screen or connection to record", "info");
+    },
+    onEscape: () => {
+      setSelectedNodeId(null);
+      setSelectedConnectionId(null);
+      setKeyboardConnectionSourceId(null);
+      setHistoryOpen(false);
+    },
+  });
+
   return (
     <section
       class={cn(
-        "relative grid min-h-0 flex-1 overflow-hidden bg-[var(--v2-background-bg-deep)]",
+        "app-map-canvas relative grid min-h-0 flex-1 overflow-hidden",
         reviewingTake()
           ? "grid-cols-[minmax(280px,320px)_minmax(0,1fr)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(260px,42%)_minmax(0,1fr)]"
           : "grid-cols-1",
@@ -1142,7 +1182,7 @@ export function JourneyWorkspace(props: {
             "relative isolate flex min-h-0 min-w-0 touch-none select-none overflow-hidden",
             canvasTool() === "hand" ? "cursor-grab active:cursor-grabbing" : "cursor-default",
           )}
-          aria-label="Journey graph"
+          aria-label="App Map"
           onWheel={(event) => {
             if (!hasCanvasContent() || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
             event.preventDefault();
@@ -1235,7 +1275,7 @@ export function JourneyWorkspace(props: {
                 );
               } else if (
                 !target &&
-                hit?.closest('[aria-label="Journey graph"]') === event.currentTarget &&
+                hit?.closest('[aria-label="App Map"]') === event.currentTarget &&
                 !hit.closest("button, aside, header") &&
                 Math.hypot(
                   connectionDrag.point.x - connectionDrag.origin.x,
@@ -1280,112 +1320,22 @@ export function JourneyWorkspace(props: {
           }}
           onPointerLeave={() => setLocalCursor(undefined)}
         >
-          <div
-            class="pointer-events-none absolute inset-0 opacity-35"
-            style={{
-              "background-image":
-                "radial-gradient(circle at 1px 1px,color-mix(in srgb,var(--text-strong) 9%,transparent) 1px,transparent 0)",
-              "background-size": "22px 22px",
-            }}
-          />
+          <div class="app-map-grid pointer-events-none absolute inset-0" aria-hidden="true" />
           <Show when={hasCanvasContent()}>
-            <header class="absolute top-4 left-4 z-20 flex min-h-10 items-center gap-1 rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_80%,transparent),0_8px_24px_rgb(0_0_0/14%)] backdrop-blur-[14px]">
-              <div class="flex min-w-0 items-center gap-2 px-2">
-                <span class="grid size-6 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
-                  <Icon name="move" size={12} />
-                </span>
-                <span class="whitespace-nowrap text-[10.5px] font-medium text-[var(--text-base)]">
-                  {tree().nodes.length} {tree().nodes.length === 1 ? "screen" : "screens"}
-                  <span class="mx-1.5 text-[var(--text-weak)]">·</span>
-                  {connections().length} {connections().length === 1 ? "connection" : "connections"}
-                </span>
-              </div>
-              <span class="h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
-              <div class="relative" data-target-set-picker>
-                <button
-                  type="button"
-                  class="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] px-2 text-[10.5px] font-medium text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96]"
-                  aria-expanded={targetSetOpen()}
-                  aria-label="Choose where this journey runs"
-                  onClick={() => setTargetSetOpen((open) => !open)}
-                >
-                  <Icon name="smartphone" size={11} />
-                  <span class="text-[var(--text-weak)]">Run on</span>
-                  <span class="max-w-32 truncate text-[var(--text-strong)]">
-                    {activeTargetSet()?.name ?? selectedDevice()?.name ?? "Current device"}
-                  </span>
-                  <Icon name={targetSetOpen() ? "chevron-up" : "chevron-down"} size={10} />
-                </button>
-                <Show when={targetSetOpen()}>
-                  <div class="ui-pop absolute top-[calc(100%+7px)] left-0 grid w-[286px] gap-1 rounded-[12px] border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-base)] p-1.5 shadow-[var(--v2-elevation-overlay)]">
-                    <div class="px-2 pt-1 pb-1.5">
-                      <strong class="block text-[11px] font-semibold text-[var(--text-strong)]">
-                        Run on
-                      </strong>
-                      <span class="mt-0.5 block text-[9.5px]/[1.4] text-[var(--text-weak)]">
-                        Relay checks the same path on every target in the set.
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      class={cn(
-                        "flex min-h-11 items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] hover:bg-[var(--v2-background-bg-layer-02)]",
-                        !activeFlow()?.targetSetId && "bg-[var(--product-accent-soft)]",
-                      )}
-                      onClick={() => chooseTargetSet()}
-                    >
-                      <span class="grid size-7 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
-                        <Icon name="smartphone" size={12} />
-                      </span>
-                      <span class="min-w-0 flex-1">
-                        <strong class="block font-medium text-[var(--text-strong)]">
-                          Current device
-                        </strong>
-                        <span class="text-[9.5px] text-[var(--text-weak)]">
-                          Fastest while building
-                        </span>
-                      </span>
-                      <Show when={!activeFlow()?.targetSetId}>
-                        <Icon name="check" size={11} class="text-[var(--icon-success-base)]" />
-                      </Show>
-                    </button>
-                    <For each={server.matrices()}>
-                      {(matrix) => (
-                        <button
-                          type="button"
-                          class={cn(
-                            "flex min-h-11 items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] hover:bg-[var(--v2-background-bg-layer-02)]",
-                            activeFlow()?.targetSetId === matrix.id &&
-                              "bg-[var(--product-accent-soft)]",
-                          )}
-                          onClick={() => chooseTargetSet(matrix.id)}
-                        >
-                          <span class="grid size-7 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
-                            <Icon name="grid" size={12} />
-                          </span>
-                          <span class="min-w-0 flex-1 truncate font-medium text-[var(--text-strong)]">
-                            {matrix.name}
-                          </span>
-                          <Show when={activeFlow()?.targetSetId === matrix.id}>
-                            <Icon name="check" size={11} class="text-[var(--icon-success-base)]" />
-                          </Show>
-                        </button>
-                      )}
-                    </For>
-                    <button
-                      type="button"
-                      class="flex min-h-10 items-center gap-2 rounded-[8px] px-2 text-left text-[10.5px] text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
-                      onClick={() => {
-                        setTargetSetOpen(false);
-                        props.onOpenTargets();
-                      }}
-                    >
-                      <Icon name="plus" size={11} /> Manage target sets…
-                    </button>
-                  </div>
-                </Show>
-              </div>
-            </header>
+            <AppMapOverviewToolbar
+              screenCount={tree().nodes.length}
+              connectionCount={connections().length}
+              targetSetOpen={targetSetOpen()}
+              activeTargetSetId={activeFlow()?.targetSetId}
+              runTargetLabel={activeTargetSet()?.name ?? selectedDevice()?.name ?? "Current device"}
+              targetSets={server.matrices()}
+              onTargetSetOpenChange={setTargetSetOpen}
+              onChooseTargetSet={chooseTargetSet}
+              onManageTargetSets={() => {
+                setTargetSetOpen(false);
+                props.onOpenTargets();
+              }}
+            />
           </Show>
           <Show when={historyOpen()}>
             <JourneyHistoryPanel
@@ -1410,6 +1360,8 @@ export function JourneyWorkspace(props: {
                 liveScreenSrc={liveScreenSrc()}
                 captureBusy={startCaptureBusy()}
                 onUseCurrentScreen={() => void useCurrentScreenAsStart()}
+                onAddNote={addNote}
+                onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
               />
             }
           >
@@ -1425,7 +1377,7 @@ export function JourneyWorkspace(props: {
                 class="absolute inset-0 overflow-visible"
                 width={bounds().width}
                 height={bounds().height}
-                aria-label="Journey connections"
+                aria-label="Map connections"
               >
                 <defs>
                   <marker
@@ -1756,108 +1708,41 @@ export function JourneyWorkspace(props: {
                 )}
               </Show>
             </Show>
-            <div class="absolute bottom-[calc(16px+env(safe-area-inset-bottom))] left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_76%,transparent),0_16px_46px_rgb(0_0_0/28%)] backdrop-blur-[16px]">
-              <button
-                type="button"
-                class={cn(
-                  mapControlButton,
-                  canvasTool() === "select" &&
-                    "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-                )}
-                aria-label="Select tool"
-                aria-pressed={canvasTool() === "select"}
-                title="Select and move (V)"
-                onClick={() => setCanvasTool("select")}
-              >
-                <Icon name="pointer" size={13} />
-              </button>
-              <button
-                type="button"
-                class={cn(
-                  mapControlButton,
-                  canvasTool() === "hand" &&
-                    "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-                )}
-                aria-label="Hand tool"
-                aria-pressed={canvasTool() === "hand"}
-                title="Pan canvas (H)"
-                onClick={() => setCanvasTool("hand")}
-              >
-                <Icon name="move" size={13} />
-              </button>
-              <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
-              <button
-                type="button"
-                class={mapControlButton}
-                aria-label="Undo"
-                title="Undo"
-                disabled={!canvasHistory().undo && !draft.canUndo()}
-                onClick={undo}
-              >
-                <Icon name="undo" size={13} />
-              </button>
-              <button
-                type="button"
-                class={mapControlButton}
-                aria-label="Redo"
-                title="Redo"
-                disabled={!canvasHistory().redo && !draft.canRedo()}
-                onClick={redo}
-              >
-                <Icon name="redo" size={13} />
-              </button>
-              <button
-                type="button"
-                class={mapControlButton}
-                aria-expanded={historyOpen()}
-                aria-label="Journey history"
-                title="Journey history"
-                onClick={() => {
-                  const opening = !historyOpen();
-                  if (opening) setCaptureOpen(false);
-                  setHistoryOpen(opening);
-                }}
-              >
-                <Icon name="clock" size={13} />
-              </button>
-              <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
-              <button type="button" class={mapControlButton} title="Add note" onClick={addNote}>
-                <Icon name="edit" size={13} />
-                <span class="sr-only">Add note</span>
-              </button>
-              <Show
-                when={selectedNode() && !captureOpen() && !recorder.recording() && !recorder.take()}
-              >
-                <button type="button" class={recordButton} onClick={recordFromHere}>
-                  <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" />
-                  Record next
-                </button>
-              </Show>
-            </div>
-            <div class="absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_78%,transparent),0_8px_24px_rgb(0_0_0/16%)] backdrop-blur-[12px] max-[680px]:right-2 max-[680px]:bottom-[calc(68px+env(safe-area-inset-bottom))]">
-              <button
-                type="button"
-                class={mapControlButton}
-                aria-label="Zoom out"
-                onClick={() => zoom(-0.1)}
-              >
-                −
-              </button>
-              <span class="min-w-9 text-center font-mono text-[10px] tabular-nums text-[var(--text-weak)]">
-                {Math.round(view().scale * 100)}%
-              </span>
-              <button
-                type="button"
-                class={mapControlButton}
-                aria-label="Zoom in"
-                onClick={() => zoom(0.1)}
-              >
-                +
-              </button>
-              <button type="button" class={mapControlButton} aria-label="Fit journey" onClick={fit}>
-                Fit
-              </button>
-            </div>
+            <AppMapToolbar
+              tool={canvasTool()}
+              deviceOpen={captureOpen()}
+              shiftForDevice={Boolean(captureOpen() && selectedDevice())}
+              canUndo={canvasHistory().undo || draft.canUndo()}
+              canRedo={canvasHistory().redo || draft.canRedo()}
+              historyOpen={historyOpen()}
+              onToolChange={setCanvasTool}
+              onCaptureScreen={() => void captureCurrentScreen()}
+              onCreateConnection={() => {
+                const node = selectedNode();
+                if (node) setKeyboardConnectionSourceId(node.id);
+                else toast("Select the screen where this connection begins", "info");
+              }}
+              onUndo={undo}
+              onRedo={redo}
+              onToggleHistory={() => {
+                const opening = !historyOpen();
+                if (opening) setCaptureOpen(false);
+                setHistoryOpen(opening);
+              }}
+              onAddNote={addNote}
+              onCreateRoutine={() => {
+                const connection = selectedConnection();
+                if (connection) void saveReusableBehavior(connection);
+                else toast("Select a connection to turn it into a Routine", "info");
+              }}
+              onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
+            />
+            <AppMapZoomControls
+              percentage={Math.round(view().scale * 100)}
+              onZoomOut={() => zoom(-0.1)}
+              onZoomIn={() => zoom(0.1)}
+              onFit={fit}
+            />
           </Show>
         </section>
       </Show>
@@ -1913,117 +1798,49 @@ export function JourneyWorkspace(props: {
         )}
       </Show>
       <Show when={captureOpen() && !reviewingTake()}>
-        <aside
-          class={cn(
-            "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-visible",
-            captureClosing() && "ui-device-companion--closing",
-            selectedDevice()
-              ? "bottom-4 w-[min(388px,calc(100%-32px))] rounded-[18px] max-[720px]:top-auto max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:h-[min(72vh,680px)] max-[720px]:w-auto"
-              : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[18px] max-[720px]:right-2 max-[720px]:left-2 max-[720px]:w-auto",
-          )}
-          aria-label="Device"
-        >
-          <header class="relative z-[100] mx-2 mt-1 flex min-h-11 shrink-0 items-center justify-between rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] px-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_76%,transparent),0_10px_30px_-16px_rgb(0_0_0/42%)] backdrop-blur-[16px]">
-            <div class="flex min-w-0 items-center gap-2">
-              <Show when={selectedDevice()}>
-                <i
-                  class={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    recorder.recording()
-                      ? "bg-[var(--icon-critical-base)]"
-                      : canRecord()
-                        ? "bg-[var(--icon-success-base)]"
-                        : "bg-[var(--icon-warning-base)]",
-                  )}
-                />
-              </Show>
-              <DevicePicker onManageTargets={props.onOpenTargets} />
-            </div>
-            <Show when={!recorder.recording()}>
-              <button
-                type="button"
-                class={mapControlButton}
-                aria-label="Close device"
-                title="Close device"
-                onClick={closeCapturePanel}
-              >
-                <Icon name="x" size={13} />
-              </button>
-            </Show>
-          </header>
-          <div class="relative z-0 min-h-0 flex-1 overflow-visible">
-            <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
-          </div>
-          <Show
-            when={recorder.recording() && recorder.take()}
-            fallback={
-              <Show
-                when={
-                  canRecord() &&
-                  (!hasCanvasContent() || Boolean(selectedNode()) || Boolean(selectedConnection()))
-                }
-              >
-                <footer class="flex min-h-14 shrink-0 items-center px-3 pb-2">
-                  <button
-                    type="button"
-                    class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#705ff0] px-4 text-[11.5px] font-semibold text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_10px_28px_rgb(89_69_214/24%)] transition-[background-color,transform] duration-150 hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.98] disabled:cursor-wait disabled:opacity-75"
-                    disabled={recorder.arming() || startCaptureBusy()}
-                    aria-busy={recorder.arming() || startCaptureBusy()}
-                    onClick={() => {
-                      if (!hasCanvasContent()) {
-                        void useCurrentScreenAsStart();
-                        return;
-                      }
-                      const connection = selectedConnection();
-                      if (connection) {
-                        recordConnection(connection);
-                        return;
-                      }
-                      recordFromHere();
-                    }}
-                  >
-                    <Show
-                      when={recorder.arming() || startCaptureBusy()}
-                      fallback={<i class="size-2 rounded-full bg-white/90" />}
-                    >
-                      <Icon
-                        name="refresh"
-                        size={13}
-                        class="ui-refresh-spin motion-reduce:opacity-70"
-                      />
-                    </Show>
-                    {recorder.arming() || startCaptureBusy()
-                      ? "Preparing device…"
-                      : !hasCanvasContent()
-                        ? "Use current screen"
-                        : selectedConnection()
-                          ? selectedConnection()!.state === "needs-recording"
-                            ? "Record connection"
-                            : "Rewrite connection"
-                          : "Record next connection"}
-                  </button>
-                </footer>
-              </Show>
+        <AppMapDeviceCompanion
+          closing={captureClosing()}
+          deviceSelected={Boolean(selectedDevice())}
+          status={livePanelStatus()}
+          recording={recorder.recording()}
+          take={recorder.take()}
+          arming={recorder.arming()}
+          captureBusy={startCaptureBusy()}
+          canRecord={canRecord()}
+          recordLabel={
+            !canRecord()
+              ? "Preparing screen…"
+              : recorder.arming() || startCaptureBusy()
+                ? "Preparing…"
+                : !hasCanvasContent()
+                  ? "Capture screen"
+                  : selectedConnection()
+                    ? selectedConnection()!.state === "needs-recording"
+                      ? "Record"
+                      : "Rewrite"
+                    : "Record"
+          }
+          captureContextLabel={captureContextLabel()}
+          onClose={closeCapturePanel}
+          onOpenTargets={props.onOpenTargets}
+          onRecord={() => {
+            if (!hasCanvasContent()) {
+              void useCurrentScreenAsStart();
+              return;
             }
-          >
-            {(take) => (
-              <TakeCaptureBar
-                take={take()}
-                contextLabel={captureContextLabel()}
-                onStop={() => void recorder.stopRecording()}
-              />
-            )}
-          </Show>
-        </aside>
+            const connection = selectedConnection();
+            if (connection) {
+              recordConnection(connection);
+              return;
+            }
+            recordFromHere();
+          }}
+          onStop={() => void recorder.stopRecording()}
+        />
       </Show>
     </section>
   );
 }
-
-const recordButton =
-  "canvas-tool-control inline-flex h-10 items-center gap-1.5 rounded-[9px] bg-[var(--product-accent-soft)] px-3 text-[11px] font-semibold text-[var(--text-interactive-base)] transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96]";
-const mapControlButton =
-  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
 
 function screenshotUrl(server: ReturnType<typeof useServer>, step: RecipeStep | undefined): string {
   const screenshot = evidenceForStep(step)?.screenshot;

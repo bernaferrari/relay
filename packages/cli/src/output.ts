@@ -49,6 +49,10 @@ export class CliOutput {
     else if (this.mode === "human") line(this.streams.stdout, event);
   }
 
+  binary(value: Uint8Array): void {
+    this.streams.stdout.write(value);
+  }
+
   result(operationId: string, result: unknown): void {
     const terminal = { type: "result", ok: true, operationId, result } as const;
     if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);

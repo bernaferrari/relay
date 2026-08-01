@@ -16,7 +16,7 @@ const RUN_GRAPH_NODE_WIDTH = 220;
 const RUN_GRAPH_NODE_PORT_Y = 200;
 const RUN_GRAPH_NODE_GAP = 96;
 
-// Same chrome recipe as journey-workspace.tsx's Map — duplicated locally
+// Same chrome recipe as app-map-workspace.tsx's Map — duplicated locally
 // (not imported) so this read-only run-report view stays decoupled from the
 // planning editor's state and interactions.
 const boardChrome =
@@ -42,7 +42,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Read-only run-report counterpart to journey-workspace.tsx's screen tree.
+ * Read-only run-report counterpart to app-map-workspace.tsx's screen tree.
  * Same node-graph grammar (curved bezier edges, phone-card nodes, pan/zoom)
  * but fed by real execution moments instead of the plan — real screenshots,
  * real pass/fail state, real per-step timing. No editing affordances.
@@ -72,7 +72,7 @@ export function RunGraph(props: {
     );
 
   // Fit measures the actual board and a rendered node instead of guessing
-  // from window size — mirrors journey-workspace's fittedView() exactly.
+  // from window size — mirrors app-map-workspace's fittedView() exactly.
   const fittedView = (): Viewport => {
     const count = Math.max(1, nodes().length);
     const contentWidth = count * (RUN_GRAPH_NODE_WIDTH + RUN_GRAPH_NODE_GAP) - RUN_GRAPH_NODE_GAP;
@@ -326,7 +326,7 @@ export function RunGraph(props: {
   );
 }
 
-/** Node card — visual twin of journey-workspace's JourneyPlanCard, fed by an
+/** Node card — visual twin of app-map-workspace's JourneyPlanCard, fed by an
  * execution moment instead of a planned step. Read-only: no add-step
  * affordance, no draggable repositioning, no edge-click editor. */
 function RunGraphNode(props: {

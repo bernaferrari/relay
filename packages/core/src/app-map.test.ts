@@ -1,0 +1,672 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { TargetProfile } from "@relay/protocol";
+import {
+  AppMapDomainError,
+  addAppMapScreen,
+  approveAppMapProposal,
+  connectAppMapScreens,
+  previewRoutineImpact,
+  rejectAppMapProposal,
+  removeAppMapConnection,
+  removeAppMapScreen,
+  serializeAppMap,
+  updateAppMapConnection,
+  updateAppMapScreen,
+  validateAppMap,
+  type ActionSpec,
+  type AppMap,
+  type AppMapEntity,
+  type AppMapErrorCode,
+  type AppMapMutationContext,
+  type Connection,
+  type Proposal,
+  type Routine,
+  type Screen,
+  type ScreenVariant,
+} from "./app-map.js";
+
+const at = 1_000;
+const fingerprint = "a".repeat(64);
+const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
+
+function entity(id: string, updatedAt = at): AppMapEntity {
+  return { ...scope, id, createdAt: at, updatedAt };
+}
+
+function profile(id = "pixel-8"): TargetProfile {
+  return {
+    id,
+    targetId: `target-${id}`,
+    source: "device",
+    platform: "android",
+    name: id,
+    capabilities: [],
+    observedAt: at,
+  };
+}
+
+function screen(id: string, variants: string[] = []): Screen {
+  return {
+    ...entity(id),
+    title: id === "start" ? "Welcome" : id === "home" ? "Home" : id,
+    identity: { schemaVersion: 1, fingerprint },
+    variantIds: variants,
+  };
+}
+
+function variant(id: string, screenId: string, target = profile()): ScreenVariant {
+  return {
+    ...entity(id),
+    screenId,
+    targetProfile: target,
+    observation: { fingerprint, nodes: [], volatileSignals: [] },
+    evidenceIds: ["evidence-screen"],
+  };
+}
+
+function actions(): ActionSpec[] {
+  return [
+    {
+      id: "recorded",
+      kind: "recorded",
+      takeId: "take-1",
+      takeRevision: 1,
+      steps: [{ id: "step-1", kind: "tap", target: { label: "Continue" } }],
+      evidenceIds: ["evidence-take"],
+    },
+    { id: "tap", kind: "tap", target: { label: "Continue" } },
+    { id: "text", kind: "text", text: "Ada", target: { ref: "name" } },
+    {
+      id: "swipe",
+      kind: "gesture",
+      gesture: { kind: "swipe", from: { x: 10, y: 20 }, to: { x: 10, y: 200 } },
+    },
+    { id: "scroll", kind: "gesture", gesture: { kind: "scroll", direction: "down", amount: 2 } },
+    { id: "back", kind: "back" },
+    { id: "home", kind: "home" },
+    { id: "wait", kind: "wait", ms: 500 },
+    { id: "assert-screen", kind: "assertion", assertion: { kind: "screen", screenId: "home" } },
+    {
+      id: "assert-target",
+      kind: "assertion",
+      assertion: { kind: "target", target: { text: "Ready" }, condition: "visible" },
+    },
+    {
+      id: "assert-content",
+      kind: "assertion",
+      assertion: { kind: "content", input: "status", expected: "ready", match: "exact" },
+    },
+    { id: "routine", kind: "routine", routineId: "sign-in", bindings: { email: "{{email}}" } },
+    { id: "passive", kind: "passive", reason: "automatic" },
+  ];
+}
+
+function connection(overrides: Partial<Connection> = {}): Connection {
+  return {
+    ...entity("open-home"),
+    fromScreenId: "start",
+    destination: { kind: "screen", screenId: "home" },
+    label: "Continue",
+    state: "ready",
+    actions: actions(),
+    ...overrides,
+  };
+}
+
+function routine(id: string, routineActions: ActionSpec[]): Routine {
+  return {
+    ...entity(id),
+    name: id,
+    parameters: id === "sign-in" ? [{ name: "email", required: true }] : [],
+    actions: routineActions,
+  };
+}
+
+function pendingProposal(baseRevision: number): Proposal {
+  return {
+    ...entity("proposal-1"),
+    title: "Add settings",
+    status: "pending",
+    baseRevision,
+    changes: [
+      {
+        kind: "screen.add",
+        input: { screen: screen("settings") },
+      },
+    ],
+  };
+}
+
+function mapFixture(): AppMap {
+  const startVariant = variant("variant-start", "start");
+  const homeVariant: ScreenVariant = {
+    ...variant("variant-home", "home"),
+    baseline: {
+      approvedAt: at,
+      approvedBy: "person-1",
+      source: { kind: "run", targetResultId: "result-1", evidenceId: "evidence-run" },
+    },
+  };
+  const signIn = routine("sign-in", [{ id: "enter-email", kind: "text", text: "{{email}}" }]);
+  return {
+    schemaVersion: 1,
+    id: scope.appMapId,
+    organizationId: scope.organizationId,
+    projectId: scope.projectId,
+    name: "Store",
+    revision: 3,
+    screens: {
+      start: screen("start", [startVariant.id]),
+      home: screen("home", [homeVariant.id]),
+    },
+    screenVariants: { [startVariant.id]: startVariant, [homeVariant.id]: homeVariant },
+    connections: { "open-home": connection() },
+    routines: { [signIn.id]: signIn },
+    flows: {
+      main: {
+        ...entity("main"),
+        name: "Main",
+        startScreenId: "start",
+        connectionIds: ["open-home"],
+      },
+    },
+    runs: {
+      "run-1": {
+        ...entity("run-1"),
+        flowId: "main",
+        appMapRevision: 2,
+        targetResultIds: ["result-1"],
+        startedAt: at,
+        finishedAt: at + 100,
+      },
+    },
+    targetResults: {
+      "result-1": {
+        ...entity("result-1"),
+        runId: "run-1",
+        targetProfile: profile(),
+        outcome: "passed",
+        connectionId: "open-home",
+        evidenceIds: ["evidence-run"],
+        finishedAt: at + 100,
+      },
+    },
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+function context(map: AppMap, eventId: string, nextAt = map.updatedAt + 1): AppMapMutationContext {
+  return {
+    expectedRevision: map.revision,
+    eventId,
+    actorId: "person-1",
+    actorKind: "human",
+    at: nextAt,
+  };
+}
+
+function expectError(code: AppMapErrorCode, run: () => unknown, message?: RegExp): void {
+  assert.throws(run, (error: unknown) => {
+    assert.ok(error instanceof AppMapDomainError);
+    assert.equal(error.code, code);
+    if (message) assert.match(error.message, message);
+    return true;
+  });
+}
+
+test("validates a normalized project map containing every action kind and returns a clone", () => {
+  const input = mapFixture();
+  const validated = validateAppMap(input);
+
+  assert.deepEqual(validated, input);
+  assert.notEqual(validated, input);
+  assert.notEqual(validated.connections["open-home"], input.connections["open-home"]);
+  validated.screens.start!.title = "Changed clone";
+  assert.equal(input.screens.start!.title, "Welcome");
+  assert.deepEqual(
+    input.connections["open-home"]!.actions.map((action) => action.kind),
+    [
+      "recorded",
+      "tap",
+      "text",
+      "gesture",
+      "gesture",
+      "back",
+      "home",
+      "wait",
+      "assertion",
+      "assertion",
+      "assertion",
+      "routine",
+      "passive",
+    ],
+  );
+});
+
+test("rejects invalid schema, record keys, scope, duplicate actions, and missing references", () => {
+  const schema = mapFixture();
+  (schema as unknown as { schemaVersion: number }).schemaVersion = 2;
+  expectError("invalid-map", () => validateAppMap(schema), /schemaVersion/u);
+
+  const key = mapFixture();
+  key.screens.wrong = key.screens.start!;
+  delete key.screens.start;
+  expectError("invalid-map", () => validateAppMap(key), /does not match entity id/u);
+
+  const scoped = mapFixture();
+  scoped.screens.start!.projectId = "another-project";
+  expectError("scope-mismatch", () => validateAppMap(scoped));
+
+  const duplicate = mapFixture();
+  duplicate.connections["open-home"]!.actions.push({ id: "tap", kind: "back" });
+  expectError("duplicate-id", () => validateAppMap(duplicate), /duplicate action/u);
+
+  const missing = mapFixture();
+  missing.connections["open-home"]!.destination = { kind: "screen", screenId: "missing" };
+  expectError("missing-reference", () => validateAppMap(missing), /missing screen/u);
+});
+
+test("validates variant ownership, baseline provenance, and one variant per target profile", () => {
+  const orphan = mapFixture();
+  orphan.screens.start!.variantIds = [];
+  expectError("missing-reference", () => validateAppMap(orphan), /not owned/u);
+
+  const wrongBaseline = mapFixture();
+  wrongBaseline.screenVariants["variant-home"]!.baseline = {
+    approvedAt: at,
+    approvedBy: "person-1",
+    source: { kind: "run", targetResultId: "missing" },
+  };
+  expectError("missing-reference", () => validateAppMap(wrongBaseline), /baseline/u);
+
+  const duplicateTarget = mapFixture();
+  const second = variant("variant-home-copy", "home");
+  duplicateTarget.screenVariants[second.id] = second;
+  duplicateTarget.screens.home!.variantIds.push(second.id);
+  expectError("duplicate-id", () => validateAppMap(duplicateTarget), /target profile/u);
+});
+
+test("rejects routine cycles, missing routine references, and missing asserted screens", () => {
+  const missingRoutine = mapFixture();
+  missingRoutine.connections["open-home"]!.actions.find(
+    (action) => action.kind === "routine",
+  )!.routineId = "missing";
+  expectError("missing-reference", () => validateAppMap(missingRoutine), /missing routine/u);
+
+  const missingBinding = mapFixture();
+  const invocation = missingBinding.connections["open-home"]!.actions.find(
+    (action) => action.kind === "routine",
+  );
+  assert.ok(invocation?.kind === "routine");
+  delete invocation.bindings;
+  expectError(
+    "missing-reference",
+    () => validateAppMap(missingBinding),
+    /required parameter email/u,
+  );
+
+  const cycle = mapFixture();
+  cycle.routines.wrapper = routine("wrapper", [
+    { id: "call-sign-in", kind: "routine", routineId: "sign-in", bindings: { email: "{{email}}" } },
+  ]);
+  cycle.routines["sign-in"]!.actions.push({
+    id: "call-wrapper",
+    kind: "routine",
+    routineId: "wrapper",
+  });
+  expectError("invalid-map", () => validateAppMap(cycle), /cycle/u);
+
+  const assertion = mapFixture();
+  const action = assertion.connections["open-home"]!.actions.find(
+    (item) => item.id === "assert-screen",
+  );
+  assert.ok(action?.kind === "assertion" && action.assertion.kind === "screen");
+  action.assertion.screenId = "missing";
+  expectError("missing-reference", () => validateAppMap(assertion), /asserts missing screen/u);
+});
+
+test("recorded actions use the canonical RecipeStep validator", () => {
+  const input = mapFixture();
+  const recorded = input.connections["open-home"]!.actions[0];
+  assert.ok(recorded?.kind === "recorded");
+  recorded.steps = [{ kind: "tap", target: {} }];
+  expectError("invalid-map", () => validateAppMap(input), /steps are invalid/u);
+});
+
+test("rejects discontinuous flows and inconsistent run/target-result references", () => {
+  const discontinuous = mapFixture();
+  discontinuous.connections.other = connection({
+    ...entity("other"),
+    fromScreenId: "home",
+    destination: { kind: "end" },
+  });
+  discontinuous.flows.main!.connectionIds = ["other"];
+  expectError("invalid-map", () => validateAppMap(discontinuous), /discontinuous/u);
+
+  const result = mapFixture();
+  result.runs["run-1"]!.targetResultIds = [];
+  expectError("missing-reference", () => validateAppMap(result), /not owned by run/u);
+});
+
+test("adds a screen and variants without mutating input and records one revisioned event", () => {
+  const input = mapFixture();
+  const addedVariant = variant("variant-help", "help", profile("iphone-15"));
+  addedVariant.targetProfile.source = "device";
+  addedVariant.targetProfile.platform = "ios";
+  const next = addAppMapScreen(
+    input,
+    { screen: screen("help", [addedVariant.id]), variants: [addedVariant] },
+    context(input, "event-add"),
+  );
+
+  assert.equal(input.screens.help, undefined);
+  assert.equal(next.screens.help?.title, "help");
+  assert.equal(next.screenVariants[addedVariant.id]?.screenId, "help");
+  assert.equal(next.revision, 4);
+  assert.deepEqual(next.activity["event-add"], {
+    ...scope,
+    id: "event-add",
+    actorId: "person-1",
+    actorKind: "human",
+    eventType: "screen.added",
+    subject: { kind: "screen", id: "help" },
+    summary: "Added screen help",
+    at: at + 1,
+    beforeRevision: 3,
+    afterRevision: 4,
+  });
+});
+
+test("updates screen fields and normalized variants, including explicit field removal", () => {
+  const input = mapFixture();
+  const tablet = variant("variant-tablet", "home", profile("ipad-pro"));
+  tablet.targetProfile.platform = "ios";
+  const next = updateAppMapScreen(
+    input,
+    "home",
+    {
+      patch: { title: "Dashboard", description: "Primary state", identity: null },
+      removeVariantIds: ["variant-home"],
+      upsertVariants: [tablet],
+    },
+    context(input, "event-update-screen"),
+  );
+
+  assert.deepEqual(next.screens.home?.variantIds, ["variant-tablet"]);
+  assert.equal(next.screenVariants["variant-home"], undefined);
+  assert.equal(next.screenVariants["variant-tablet"]?.screenId, "home");
+  assert.equal(next.screens.home?.title, "Dashboard");
+  assert.equal(next.screens.home?.description, "Primary state");
+  assert.equal(next.screens.home?.identity, undefined);
+});
+
+test("screen removal is safe and explains connections, flows, assertions, and proposals that block it", () => {
+  const connected = mapFixture();
+  expectError(
+    "in-use",
+    () => removeAppMapScreen(connected, "home", context(connected, "remove-home")),
+    /connection/u,
+  );
+
+  const free = mapFixture();
+  delete free.screenVariants["variant-home"]!.baseline;
+  delete free.targetResults["result-1"];
+  delete free.runs["run-1"];
+  delete free.connections["open-home"];
+  free.flows.main!.connectionIds = [];
+  const removed = removeAppMapScreen(free, "home", context(free, "remove-free"));
+  assert.equal(removed.screens.home, undefined);
+  assert.equal(removed.screenVariants["variant-home"], undefined);
+
+  const proposed = mapFixture();
+  proposed.proposals["proposal-1"] = {
+    ...pendingProposal(proposed.revision),
+    changes: [{ kind: "screen.update", screenId: "start", input: { patch: { title: "Entry" } } }],
+  };
+  delete proposed.screenVariants["variant-home"]!.baseline;
+  delete proposed.targetResults["result-1"];
+  delete proposed.runs["run-1"];
+  delete proposed.connections["open-home"];
+  proposed.flows.main!.connectionIds = [];
+  proposed.flows.main!.startScreenId = "home";
+  expectError(
+    "in-use",
+    () => removeAppMapScreen(proposed, "start", context(proposed, "remove-proposed")),
+    /proposal/u,
+  );
+});
+
+test("connects and updates an edge while preserving immutable input", () => {
+  const input = mapFixture();
+  const done = connection({
+    ...entity("finish"),
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    actions: [{ id: "finish-passive", kind: "passive", reason: "observe-only" }],
+  });
+  const connected = connectAppMapScreens(input, done, context(input, "connect-finish"));
+  assert.equal(input.connections.finish, undefined);
+  assert.equal(connected.connections.finish?.destination.kind, "end");
+
+  const updated = updateAppMapConnection(
+    connected,
+    "finish",
+    { label: null, state: "draft", actions: [{ id: "go-home", kind: "home" }] },
+    context(connected, "update-finish"),
+  );
+  assert.equal(updated.connections.finish?.label, undefined);
+  assert.equal(updated.connections.finish?.state, "draft");
+  assert.deepEqual(updated.connections.finish?.actions, [{ id: "go-home", kind: "home" }]);
+});
+
+test("connection removal rejects flow and immutable result references", () => {
+  const flowUse = mapFixture();
+  expectError(
+    "in-use",
+    () => removeAppMapConnection(flowUse, "open-home", context(flowUse, "remove-edge")),
+    /flow/u,
+  );
+
+  const resultUse = mapFixture();
+  resultUse.flows.main!.connectionIds = [];
+  expectError(
+    "in-use",
+    () => removeAppMapConnection(resultUse, "open-home", context(resultUse, "remove-result-edge")),
+    /target result/u,
+  );
+
+  const free = mapFixture();
+  free.flows.main!.connectionIds = [];
+  delete free.screenVariants["variant-home"]!.baseline;
+  delete free.targetResults["result-1"];
+  delete free.runs["run-1"];
+  const removed = removeAppMapConnection(free, "open-home", context(free, "remove-free-edge"));
+  assert.equal(removed.connections["open-home"], undefined);
+});
+
+test("all mutations reject stale revisions and duplicate activity IDs", () => {
+  const input = mapFixture();
+  expectError(
+    "revision-conflict",
+    () =>
+      addAppMapScreen(
+        input,
+        { screen: screen("help") },
+        { ...context(input, "stale"), expectedRevision: 2 },
+      ),
+    /current revision is 3/u,
+  );
+  input.activity.duplicate = {
+    ...scope,
+    id: "duplicate",
+    actorId: "person-1",
+    actorKind: "human",
+    eventType: "screen.updated",
+    subject: { kind: "screen", id: "start" },
+    summary: "Earlier change",
+    at,
+    beforeRevision: 1,
+    afterRevision: 2,
+  };
+  expectError("duplicate-id", () =>
+    updateAppMapScreen(input, "start", { patch: { title: "Entry" } }, context(input, "duplicate")),
+  );
+  expectError(
+    "invalid-map",
+    () =>
+      updateAppMapScreen(
+        input,
+        "start",
+        { patch: { title: "Entry" } },
+        context(input, "time-travel", at - 1),
+      ),
+    /cannot precede/u,
+  );
+});
+
+test("previews direct and transitive routine impact in deterministic order", () => {
+  const input = mapFixture();
+  input.routines.wrapper = routine("wrapper", [
+    { id: "wrapper-call", kind: "routine", routineId: "sign-in", bindings: { email: "{{email}}" } },
+  ]);
+  input.routines.checkout = routine("checkout", [
+    { id: "checkout-call", kind: "routine", routineId: "wrapper" },
+  ]);
+  input.connections["open-home"]!.actions.push({
+    id: "checkout-use",
+    kind: "routine",
+    routineId: "checkout",
+  });
+  input.connections.direct = connection({
+    ...entity("direct"),
+    actions: [
+      {
+        id: "direct-use",
+        kind: "routine",
+        routineId: "sign-in",
+        bindings: { email: "test@example.com" },
+      },
+    ],
+  });
+  input.flows.alternate = {
+    ...entity("alternate"),
+    name: "Alternate",
+    startScreenId: "start",
+    connectionIds: ["direct"],
+  };
+
+  assert.deepEqual(previewRoutineImpact(input, "sign-in"), {
+    routineId: "sign-in",
+    directUsages: [
+      { ownerKind: "connection", ownerId: "direct", actionId: "direct-use" },
+      { ownerKind: "connection", ownerId: "open-home", actionId: "routine" },
+      { ownerKind: "routine", ownerId: "wrapper", actionId: "wrapper-call" },
+    ],
+    affectedRoutineIds: ["checkout", "wrapper"],
+    affectedConnectionIds: ["direct", "open-home"],
+    affectedFlowIds: ["alternate", "main"],
+  });
+});
+
+test("approves a proposal atomically with one revision and one activity event", () => {
+  const input = mapFixture();
+  input.proposals["proposal-1"] = pendingProposal(input.revision);
+  const next = approveAppMapProposal(
+    input,
+    "proposal-1",
+    context(input, "approve-proposal"),
+    "Looks correct",
+  );
+
+  assert.equal(input.screens.settings, undefined);
+  assert.equal(next.screens.settings?.title, "settings");
+  assert.equal(next.proposals["proposal-1"]?.status, "approved");
+  assert.deepEqual(next.proposals["proposal-1"]?.decision, {
+    actorId: "person-1",
+    at: at + 1,
+    reason: "Looks correct",
+  });
+  assert.equal(next.revision, input.revision + 1);
+  assert.equal(Object.keys(next.activity).length, 1);
+  expectError("proposal-state", () =>
+    approveAppMapProposal(next, "proposal-1", context(next, "approve-again")),
+  );
+});
+
+test("proposal approval rejects stale or invalid changes without mutating the source map", () => {
+  const stale = mapFixture();
+  stale.proposals["proposal-1"] = pendingProposal(stale.revision - 1);
+  expectError("revision-conflict", () =>
+    approveAppMapProposal(stale, "proposal-1", context(stale, "approve-stale")),
+  );
+
+  const invalid = mapFixture();
+  invalid.proposals["proposal-1"] = {
+    ...pendingProposal(invalid.revision),
+    changes: [{ kind: "screen.add", input: { screen: screen("home") } }],
+  };
+  const before = structuredClone(invalid);
+  expectError("duplicate-id", () =>
+    approveAppMapProposal(invalid, "proposal-1", context(invalid, "approve-invalid")),
+  );
+  assert.deepEqual(invalid, before);
+});
+
+test("rejects a proposal without applying its changes", () => {
+  const input = mapFixture();
+  input.proposals["proposal-1"] = pendingProposal(input.revision);
+  const next = rejectAppMapProposal(
+    input,
+    "proposal-1",
+    context(input, "reject-proposal"),
+    "Not now",
+  );
+
+  assert.equal(next.screens.settings, undefined);
+  assert.equal(next.proposals["proposal-1"]?.status, "rejected");
+  assert.equal(next.proposals["proposal-1"]?.decision?.reason, "Not now");
+  assert.equal(next.activity["reject-proposal"]?.eventType, "proposal.rejected");
+});
+
+test("serializes a deterministic YAML-ready plain object without sharing references", () => {
+  const first = mapFixture();
+  const second = mapFixture();
+  first.screens.home!.identity!.aliases = ["c".repeat(64), "b".repeat(64)];
+  second.screens.home!.identity!.aliases = ["b".repeat(64), "c".repeat(64)];
+  first.screenVariants["variant-home"]!.evidenceIds = ["evidence-z", "evidence-a"];
+  second.screenVariants["variant-home"]!.evidenceIds = ["evidence-a", "evidence-z"];
+  first.screenVariants["variant-home"]!.targetProfile.capabilities = ["tap", "screenshot"];
+  second.screenVariants["variant-home"]!.targetProfile.capabilities = ["screenshot", "tap"];
+  const firstRecorded = first.connections["open-home"]!.actions[0];
+  const secondRecorded = second.connections["open-home"]!.actions[0];
+  assert.ok(firstRecorded?.kind === "recorded" && secondRecorded?.kind === "recorded");
+  firstRecorded.evidenceIds = ["evidence-z", "evidence-a"];
+  secondRecorded.evidenceIds = ["evidence-a", "evidence-z"];
+  second.screens = { home: second.screens.home!, start: second.screens.start! };
+  second.screenVariants = {
+    "variant-home": second.screenVariants["variant-home"]!,
+    "variant-start": second.screenVariants["variant-start"]!,
+  };
+  second.connections = { "open-home": second.connections["open-home"]! };
+  second.screens.home!.variantIds.reverse();
+
+  const serialized = serializeAppMap(first);
+  assert.deepEqual(serialized, serializeAppMap(second));
+  assert.ok(Array.isArray(serialized.screens));
+  assert.deepEqual(
+    serialized.screens.map((item) => item.id),
+    ["home", "start"],
+  );
+  assert.deepEqual(
+    serialized.screenVariants.map((item) => item.id),
+    ["variant-home", "variant-start"],
+  );
+  assert.equal(Object.getPrototypeOf(serialized), Object.prototype);
+  serialized.screens[0]!.title = "Changed output";
+  assert.equal(first.screens.home!.title, "Home");
+  assert.doesNotThrow(() => JSON.stringify(serialized));
+});

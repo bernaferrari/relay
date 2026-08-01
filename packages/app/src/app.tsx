@@ -30,7 +30,7 @@ export function AppBaseProviders(
     <PlatformProvider value={props.platform}>
       <ThemeProvider
         defaultTheme={props.defaultTheme ?? "relay"}
-        defaultColorScheme={props.defaultColorScheme ?? "system"}
+        defaultColorScheme={props.defaultColorScheme ?? "light"}
         onThemeApplied={props.onThemeApplied}
       >
         <ServerProvider collaboration={props.collaboration}>

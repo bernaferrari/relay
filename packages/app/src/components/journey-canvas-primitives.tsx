@@ -77,25 +77,21 @@ export function ScreenCard(props: {
       aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
       data-journey-screen-id={props.node.id}
       class={cn(
-        "group/screen absolute grid h-[248px] w-[196px] grid-rows-[34px_minmax(0,1fr)_30px] overflow-visible rounded-[14px] border bg-[var(--v2-background-bg-base)] text-left shadow-[0_8px_28px_rgb(0_0_0/20%)] outline-none transition-[border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--v2-background-bg-deep)]",
+        "group/screen absolute flex h-[272px] w-[208px] flex-col gap-2 overflow-visible rounded-[18px] p-1 text-left outline-none transition-[transform,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
         props.runState === "failed"
-          ? "border-[var(--icon-critical-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-critical-base)_18%,transparent),0_8px_28px_rgb(0_0_0/24%)]"
+          ? "shadow-[0_0_0_2px_color-mix(in_srgb,var(--icon-critical-base)_72%,transparent)]"
           : props.runState === "running"
-            ? "border-[var(--text-interactive-base)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent),0_8px_28px_rgb(0_0_0/24%)]"
+            ? "shadow-[0_0_0_2px_var(--text-interactive-base)]"
             : props.runState === "healed"
-              ? "border-[var(--icon-warning-base)]"
+              ? "shadow-[0_0_0_2px_var(--icon-warning-base)]"
               : props.runState === "passed"
-                ? "border-[var(--icon-success-base)]"
+                ? "shadow-[0_0_0_2px_var(--icon-success-base)]"
                 : props.selected
-                  ? "border-[var(--text-interactive-base)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent),0_8px_28px_rgb(0_0_0/24%)]"
-                  : "border-[var(--v2-border-border-muted)] hover:border-[var(--v2-border-border-strong)]",
+                  ? "shadow-[0_0_0_2px_var(--text-interactive-base)]"
+                  : "hover:bg-[color-mix(in_oklch,var(--map-control-surface)_46%,transparent)]",
       )}
       style={{ transform: `translate3d(${props.position.x}px, ${props.position.y}px, 0)` }}
       onClick={props.onSelect}
-      onDblClick={(event) => {
-        event.stopPropagation();
-        props.onRename();
-      }}
       onKeyDown={(event) => {
         if (event.key === "F2") {
           event.preventDefault();
@@ -109,9 +105,39 @@ export function ScreenCard(props: {
       }}
       onPointerDown={props.onPointerDown}
     >
-      <header class="flex min-w-0 items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-2.5">
+      <Show when={props.selected && !props.editing}>
+        <div class="absolute bottom-[calc(100%+10px)] left-1/2 z-30 flex min-h-10 -translate-x-1/2 items-center gap-1 rounded-[11px] bg-[var(--map-control-surface)] p-1 shadow-[var(--map-elevation-panel)]">
+          <button
+            type="button"
+            class="app-map-icon-button"
+            aria-label={`Rename ${props.title}`}
+            data-tip="Rename · F2"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onRename();
+            }}
+          >
+            <Icon name="edit" size={13} />
+          </button>
+          <button
+            type="button"
+            class="app-map-icon-button"
+            aria-label={`Connect from ${props.title}`}
+            data-tip="Add connection"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onConnectKeyboard();
+            }}
+          >
+            <Icon name="arrow-right" size={13} />
+          </button>
+        </div>
+      </Show>
+      <header class="order-2 flex h-7 min-w-0 items-center gap-2 px-1">
         <span
-          class="grid size-[17px] shrink-0 place-items-center rounded-[5px] text-white"
+          class="grid size-[18px] shrink-0 place-items-center rounded-[6px] text-white"
           style={{
             background: props.step ? accentForStep(props.step) : "var(--text-interactive-base)",
           }}
@@ -121,13 +147,13 @@ export function ScreenCard(props: {
         <Show
           when={props.editing}
           fallback={
-            <strong class="min-w-0 truncate text-[11px] font-semibold text-[var(--text-strong)]">
+            <strong class="min-w-0 truncate text-[13px] font-medium text-[var(--text-strong)]">
               {props.title}
             </strong>
           }
         >
           <input
-            class="min-w-0 flex-1 rounded-[4px] bg-[var(--v2-background-bg-layer-02)] px-1 py-0.5 text-[11px] font-semibold text-[var(--text-strong)] outline-none ring-1 ring-[var(--text-interactive-base)]"
+            class="min-w-0 flex-1 rounded-[6px] bg-[var(--map-control-surface)] px-1.5 py-1 text-[13px] font-medium text-[var(--text-strong)] outline-none ring-2 ring-[var(--text-interactive-base)]"
             aria-label="Screen name"
             value={props.title}
             autofocus
@@ -147,14 +173,17 @@ export function ScreenCard(props: {
       <Show
         when={props.src()}
         fallback={
-          <div class="grid place-items-center bg-[radial-gradient(circle_at_50%_35%,color-mix(in_srgb,var(--v2-background-bg-accent)_14%,transparent),transparent_44%),var(--v2-background-bg-deep)] px-5 text-center">
+          <div
+            data-screen-frame
+            class="order-1 grid min-h-0 flex-1 place-items-center overflow-hidden rounded-[18px] bg-[radial-gradient(circle_at_50%_35%,color-mix(in_srgb,var(--v2-background-bg-accent)_10%,transparent),transparent_44%),var(--v2-background-bg-deep)] px-5 text-center shadow-[var(--map-elevation-control)]"
+          >
             <div class="grid justify-items-center gap-2">
               <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
                 <Icon name={props.step ? iconForStep(props.step) : "play"} size={17} />
               </span>
               <Show when={props.isFlowStart}>
                 <span class="text-[10px] font-medium text-[var(--text-base)]">
-                  Journey starts here
+                  Flow starts here
                 </span>
               </Show>
             </div>
@@ -162,7 +191,10 @@ export function ScreenCard(props: {
         }
       >
         {(src) => (
-          <div class="min-h-0 overflow-hidden bg-[#080a0f]">
+          <div
+            data-screen-frame
+            class="order-1 min-h-0 flex-1 overflow-hidden rounded-[18px] bg-[oklch(0.12_0.01_270)] shadow-[var(--map-elevation-control)]"
+          >
             <img
               src={src()}
               alt={`Recorded ${props.title} screen`}
@@ -172,7 +204,7 @@ export function ScreenCard(props: {
           </div>
         )}
       </Show>
-      <footer class="flex items-center justify-between px-2.5 text-[10px] text-[var(--text-weak)]">
+      <footer class="order-3 flex h-5 items-center justify-between px-1 text-[11px] text-[var(--text-weak)]">
         <Show when={!props.selected}>
           <span class="inline-flex items-center gap-1.5">
             <Show when={props.runState && props.runState !== "idle"}>
@@ -201,7 +233,7 @@ export function ScreenCard(props: {
         </Show>
         <Show when={props.selected}>
           <span class="ml-auto font-medium text-[var(--text-interactive-base)]">
-            Drag arrow to connect
+            Drag to connect
           </span>
         </Show>
       </footer>

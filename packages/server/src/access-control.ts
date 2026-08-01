@@ -43,6 +43,25 @@ export async function assertTargetControl(
   return active;
 }
 
+/**
+ * Read-only target observation is intentionally shareable. Authentication and
+ * project scoping are enforced by the request boundary, while the operation
+ * context keeps every observation attributable without claiming the exclusive
+ * input lease used by taps, typing, recording, and streaming.
+ */
+export function assertTargetObservation(scope: RequestContext, targetId?: string): string {
+  if (!targetId) throw new HttpError(400, "Explicit target identity is required");
+  const operation = currentOperationContext();
+  if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
+  recordAudit(scope, {
+    action: "target.observe",
+    resource: "target",
+    target: targetId,
+    result: "allow",
+  });
+  return targetId;
+}
+
 export async function assertTargetLease(
   scope: RequestContext,
   targetId: string,

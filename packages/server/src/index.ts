@@ -135,7 +135,11 @@ import { createSseHub } from "./sse.js";
 import { startScheduler } from "./scheduler.js";
 import { handleRunRoute } from "./run-routes.js";
 import { handleJobRoute } from "./job-routes.js";
-import { assertTargetControl, assertTargetLease } from "./access-control.js";
+import {
+  assertTargetControl,
+  assertTargetLease,
+  assertTargetObservation,
+} from "./access-control.js";
 import {
   CORS_HEADERS,
   HttpError,
@@ -1572,7 +1576,7 @@ async function handleRequest(
     if (method === "GET" && pathname === "/snapshot") {
       const serial = url.searchParams.get("serial") ?? undefined;
       const interactiveOnly = url.searchParams.get("interactiveOnly") === "1";
-      await assertTargetControl(scope, serial);
+      assertTargetObservation(scope, serial);
       const snap = await captureSnapshot({ serial, interactiveOnly });
       const tree = formatSnapshotTree(snap.nodes);
       json(res, 200, { ...snap, tree });
@@ -1584,7 +1588,7 @@ async function handleRequest(
       const caption = url.searchParams.get("caption") ?? undefined;
       const jobId = url.searchParams.get("jobId") ?? undefined;
       const ephemeral = url.searchParams.get("ephemeral") === "1";
-      await assertTargetControl(scope, serial);
+      assertTargetObservation(scope, serial);
       const shot = await captureScreenshot({
         serial,
         caption: caption ?? undefined,

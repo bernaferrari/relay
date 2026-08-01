@@ -598,9 +598,24 @@ export type ScreenshotPayload = {
   base64: string;
   path: string;
   bytes: number;
+  width?: number;
+  height?: number;
+  screenMatch?: {
+    fingerprint: string;
+    matchedScreenId: string | null;
+    status: "observed" | "unavailable";
+  };
   jobId?: string;
   framePath?: string;
 };
+
+function pngDimensions(bytes: Buffer): { width: number; height: number } | undefined {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (bytes.length < 24 || !bytes.subarray(0, 8).equals(signature)) return undefined;
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  return width > 0 && height > 0 ? { width, height } : undefined;
+}
 
 export async function captureScreenshot(opts?: {
   serial?: string;
@@ -639,6 +654,21 @@ export async function captureScreenshot(opts?: {
     }
     const buf = await readFile(path);
     const base64 = buf.toString("base64");
+    const dimensions = pngDimensions(buf);
+    let screenMatch: ScreenshotPayload["screenMatch"];
+    try {
+      const semantic = await snapshotForTarget(target, false);
+      const identity = observeScreenIdentity(semantic.nodes);
+      if (identity.fingerprint) {
+        screenMatch = {
+          fingerprint: identity.fingerprint,
+          matchedScreenId: null,
+          status: "observed",
+        };
+      }
+    } catch {
+      screenMatch = undefined;
+    }
     const serial = targetIdentity();
     publish({ type: "screenshot.captured", at: now(), serial, bytes: buf.byteLength });
 
@@ -664,6 +694,8 @@ export async function captureScreenshot(opts?: {
       base64,
       path,
       bytes: buf.byteLength,
+      ...dimensions,
+      ...(screenMatch ? { screenMatch } : {}),
       jobId,
       framePath,
     };

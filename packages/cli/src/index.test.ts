@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { RelayClient } from "@relay/client";
@@ -12,10 +15,22 @@ function capture() {
   const stderr = new PassThrough();
   let out = "";
   let err = "";
-  stdout.on("data", (chunk) => (out += String(chunk)));
+  const chunks: Buffer[] = [];
+  stdout.on("data", (chunk) => {
+    chunks.push(Buffer.from(chunk));
+    out += String(chunk);
+  });
   stderr.on("data", (chunk) => (err += String(chunk)));
-  return { streams: { stdout, stderr }, stdout: () => out, stderr: () => err };
+  return {
+    streams: { stdout, stderr },
+    stdout: () => out,
+    stdoutBuffer: () => Buffer.concat(chunks),
+    stderr: () => err,
+  };
 }
+
+const pngBase64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
 function hasTerminalControl(value: string): boolean {
   return value.includes(String.fromCharCode(27)) || value.includes("\r");
@@ -165,9 +180,148 @@ test("friendly screenshot output preserves the PNG base64 payload", async () => 
   });
 });
 
+test("App Map resource commands use declared read-only routes", async () => {
+  const cases = [
+    [["run", "get", "run/a"], "/runs/run%2Fa"],
+    [["run", "signals", "run-1"], "/runs/run-1/signals"],
+    [["run", "compare", "run-1"], "/runs/run-1/visual-baseline"],
+    [["activity", "list", "--input", '{"limit":10}'], "/activity?limit=10"],
+  ] as const;
+
+  for (const [argv, expectedPath] of cases) {
+    const io = capture();
+    let invoked = false;
+    const resources: Array<{ path: string; method?: string }> = [];
+    const code = await runCli([...argv, "--json"], {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke() {
+          invoked = true;
+          return {};
+        },
+        events: async () => {},
+        async resource(path, init) {
+          resources.push({ path, method: init?.method });
+          return { path };
+        },
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+
+    assert.equal(code, ExitCode.success, argv.join(" "));
+    assert.equal(invoked, false, argv.join(" "));
+    assert.deepEqual(resources, [{ path: expectedPath, method: "GET" }]);
+    assert.equal(JSON.parse(io.stdout()).result.path, expectedPath);
+  }
+});
+
+test("screenshot output writes validated PNG files without leaking base64", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-screenshot-"));
+  const file = join(root, "screen.png");
+  const screenshot = {
+    path: "/server/screen.png",
+    bytes: Buffer.from(pngBase64, "base64").byteLength,
+    mime: "image/png",
+    base64: pngBase64,
+  };
+  try {
+    const io = capture();
+    const code = await runCli(["device", "screenshot", "pixel-9", "--file", file, "--json"], {
+      streams: io.streams,
+      createClient: () => ({ invoke: async () => screenshot, events: async () => {} }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+
+    assert.equal(code, ExitCode.success);
+    assert.deepEqual(await readFile(file), Buffer.from(pngBase64, "base64"));
+    const terminal = JSON.parse(io.stdout());
+    assert.deepEqual(terminal.result, {
+      file,
+      bytes: screenshot.bytes,
+      mime: "image/png",
+      sourcePath: "/server/screen.png",
+    });
+    assert.doesNotMatch(io.stdout(), new RegExp(pngBase64));
+
+    const conflict = capture();
+    const conflictCode = await runCli(
+      ["device", "screenshot", "pixel-9", "--file", file, "--json"],
+      {
+        streams: conflict.streams,
+        createClient: () => ({ invoke: async () => screenshot, events: async () => {} }),
+        registerSignalHandlers: false,
+        env: {},
+      },
+    );
+    assert.equal(conflictCode, ExitCode.conflict);
+    assert.match(JSON.parse(conflict.stdout()).error.message, /already exists/);
+
+    await writeFile(file, "old");
+    const forced = capture();
+    const forcedCode = await runCli(
+      ["device", "screenshot", "pixel-9", "--file", file, "--force", "--quiet"],
+      {
+        streams: forced.streams,
+        createClient: () => ({ invoke: async () => screenshot, events: async () => {} }),
+        registerSignalHandlers: false,
+        env: {},
+      },
+    );
+    assert.equal(forcedCode, ExitCode.success);
+    assert.deepEqual(await readFile(file), Buffer.from(pngBase64, "base64"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("screenshot binary mode keeps stdout byte-clean", async () => {
+  const io = capture();
+  const png = Buffer.from(pngBase64, "base64");
+  const code = await runCli(["target", "screenshot", "pixel-9", "--binary", "--quiet"], {
+    streams: io.streams,
+    createClient: () => ({
+      invoke: async () => ({
+        path: "/server/screen.png",
+        bytes: png.byteLength,
+        base64: pngBase64,
+      }),
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(io.stdoutBuffer(), png);
+  assert.equal(io.stderr(), "");
+});
+
+test("screenshot file modes reject malformed image payloads", async () => {
+  for (const result of [
+    { mime: "image/jpeg", base64: pngBase64 },
+    { mime: "image/png", base64: "not-base64" },
+    { mime: "image/png", base64: Buffer.from("not a png").toString("base64") },
+  ]) {
+    const io = capture();
+    const code = await runCli(["device", "screenshot", "pixel-9", "--binary", "--quiet"], {
+      streams: io.streams,
+      createClient: () => ({ invoke: async () => result, events: async () => {} }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(code, ExitCode.validation);
+    assert.equal(io.stdoutBuffer().byteLength, 0);
+  }
+});
+
 test("root and family help are useful without creating a client", async () => {
   const cases = [
-    { argv: ["--help"], matches: [/Command families:/, /target screenshot <serial>/, /--server/] },
+    {
+      argv: ["--help"],
+      matches: [/App Map\s+map, screen, connect, flow/, /device screenshot <serial>/, /--binary/],
+    },
     {
       argv: ["session", "--help"],
       matches: [/session start <sessionId>/, /session commit <sessionId>/, /--actor/],
@@ -178,7 +332,19 @@ test("root and family help are useful without creating a client", async () => {
     },
     {
       argv: ["screen", "--help"],
-      matches: [/screen list <journeyId>/, /aliases for Journey document operations/],
+      matches: [
+        /screen list <mapId>/,
+        /whole App Map documents/,
+        /expectedRevision \(number, required\)/,
+      ],
+    },
+    {
+      argv: ["proposal", "--help"],
+      matches: [/proposal record <proposalId>/, /target \(object, required\)/, /proposal accept/],
+    },
+    {
+      argv: ["activity", "--help"],
+      matches: [/activity list/, /limit \(number, optional\)/, /activity follow/],
     },
   ];
 
@@ -333,6 +499,28 @@ test("job watch --no-wait gets the job exactly once", async () => {
   });
 });
 
+test("run watch alias shares job polling behavior", async () => {
+  const io = capture();
+  let calls = 0;
+  const running = { job: { id: "abc", status: "running" } };
+  const code = await runCli(["run", "watch", "abc", "--no-wait", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        calls += 1;
+        return running;
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.equal(calls, 1);
+  assert.equal(JSON.parse(io.stdout()).operationId, "job.get");
+});
+
 test("job watch polling is cancelled through the existing signal path", async () => {
   const io = capture();
   const listenersBefore = process.listenerCount("SIGINT");
@@ -425,6 +613,37 @@ test("system events follow emits typed NDJSON without invoking event.stream or c
   assert.equal(io.stderr(), "");
   assert.doesNotMatch(io.stdout(), /Following|relay:/);
   assert.equal(hasTerminalControl(io.stdout()), false);
+});
+
+test("activity follow alias subscribes to the shared event stream", async () => {
+  const io = capture();
+  let invoked = false;
+  const code = await runCli(["activity", "follow", "--ndjson"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        invoked = true;
+        return {};
+      },
+      async events(callback) {
+        callback(relayEvent);
+      },
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.equal(invoked, false);
+  const records = io
+    .stdout()
+    .trim()
+    .split("\n")
+    .map((value) => JSON.parse(value));
+  assert.deepEqual(
+    records.map(({ type }) => type),
+    ["progress", "event", "result"],
+  );
 });
 
 test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", async () => {

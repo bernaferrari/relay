@@ -1,4 +1,5 @@
 import {
+  cliResourceDescriptors,
   formatCommandUsage,
   mappedCommandDescriptors,
   operationLabel,
@@ -7,12 +8,12 @@ import {
 import { UsageError } from "./errors.js";
 
 const familyGroups = [
-  ["Journeys", ["journey", "screen", "connection"]],
-  ["Authoring", ["session", "take"]],
-  ["Targets", ["target", "action"]],
-  ["Execution", ["collection", "run", "job", "schedule", "matrix"]],
-  ["Workspace", ["discovery", "policy", "data", "workspace"]],
-  ["Resources", ["project", "build", "device-pool", "lease", "generation", "system"]],
+  ["App Map", ["map", "screen", "connect", "flow"]],
+  ["Create", ["proposal", "routine"]],
+  ["Operate", ["device", "run", "activity"]],
+  ["Automation", ["schedule", "matrix"]],
+  ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
+  ["System", ["generation", "system"]],
 ] as const;
 
 const globalOptions = `Global options:
@@ -24,17 +25,25 @@ const globalOptions = `Global options:
   --json | --ndjson                Machine-readable output
   --quiet                          Suppress stderr diagnostics
   --timeout <ms>                   Request timeout (env RELAY_TIMEOUT_MS)
-  --wait | --no-wait               Wait policy (env RELAY_WAIT)`;
+  --wait | --no-wait               Wait policy (env RELAY_WAIT)
+
+Screenshot output:
+  --file <path>                    Save screenshot PNG to a file
+  --binary                         Write raw PNG bytes to stdout
+  --force                          Overwrite an existing --file target`;
 
 type FriendlyPath = {
   descriptor: CommandPathDescriptor;
-  operationId: (typeof mappedCommandDescriptors)[number]["operationId"];
+  label: string;
 };
 
 function friendlyPaths(): FriendlyPath[] {
-  return mappedCommandDescriptors.flatMap(({ operationId, paths }) =>
-    paths.map((descriptor) => ({ descriptor, operationId })),
-  );
+  return [
+    ...mappedCommandDescriptors.flatMap(({ operationId, paths }) =>
+      paths.map((descriptor) => ({ descriptor, label: operationLabel(operationId) })),
+    ),
+    ...cliResourceDescriptors.map(({ path: descriptor, label }) => ({ descriptor, label })),
+  ];
 }
 
 function familyNames(): Set<string> {
@@ -58,23 +67,22 @@ function renderRootHelp(): string {
     .filter((line): line is string => line !== undefined)
     .join("\n");
   const workflowCommands = [
-    "target screenshot",
-    "session create",
-    "session start",
-    "session screenshot",
-    "session stop",
-    "take trim",
-    "take reorder",
-    "take replay",
-    "session commit",
-    "session discard",
+    "map list",
+    "map get",
     "screen list",
-    "screen update",
-    "connection list",
-    "connection update",
+    "connect list",
+    "flow run",
+    "device list",
+    "device screenshot",
+    "proposal create",
+    "proposal record",
+    "proposal replay",
+    "proposal accept",
+    "run watch",
+    "activity follow",
   ];
 
-  return `Relay — server-first operation client
+  return `Relay — App Maps for humans and agents
 
 Usage:
   relay <family> <command> [arguments] [--input <json>] [global options]
@@ -84,16 +92,43 @@ Usage:
 Command families:
 ${groups}
 
-Target and authoring workflows:
+Start here:
 ${usages(workflowCommands).join("\n")}
 
-Screen and connection commands are aliases for Journey document operations.
+An App Map contains screens, connections, and named flows. Proposals turn live device
+interactions into reviewable map changes. Every interface invokes the same Relay operations.
 
 ${globalOptions}
 
 Friendly commands default --input to '{}'. Explicit path arguments such as <serial> and <sessionId>
 are required where shown. Relay does not start a server automatically.
 `;
+}
+
+function renderDetails(descriptor: CommandPathDescriptor): string {
+  const lines: string[] = [];
+  if (descriptor.argumentHelp?.length) {
+    lines.push("      Arguments:");
+    for (const argument of descriptor.argumentHelp) {
+      lines.push(
+        `        <${argument.name}> (${argument.type}, required)  ${argument.description}`,
+      );
+    }
+  }
+  if (descriptor.inputHelp?.length) {
+    lines.push("      --input fields:");
+    for (const field of descriptor.inputHelp) {
+      lines.push(
+        `        ${field.name} (${field.type}, ${field.required ? "required" : "optional"})  ${field.description}`,
+      );
+    }
+  }
+  if (descriptor.note) lines.push(`      Note: ${descriptor.note}`);
+  if (descriptor.examples?.length) {
+    lines.push("      Examples:");
+    for (const example of descriptor.examples) lines.push(`        ${example}`);
+  }
+  return lines.length ? `\n${lines.join("\n")}` : "";
 }
 
 function renderFamilyHelp(family: string): string {
@@ -115,13 +150,13 @@ ${globalOptions}
   if (!paths.length) throw new UsageError(`Unknown command family: ${family}. Run 'relay help'.`);
   const commands = paths
     .map(
-      ({ descriptor, operationId }) =>
-        `  relay ${formatCommandUsage(descriptor)}\n      ${operationLabel(operationId)}`,
+      ({ descriptor, label }) =>
+        `  relay ${formatCommandUsage(descriptor)}\n      ${descriptor.summary ?? label}${renderDetails(descriptor)}`,
     )
     .join("\n");
   const aliasNote =
-    family === "screen" || family === "connection"
-      ? "\nThese commands are aliases for Journey document operations.\n"
+    family === "screen" || family === "connect" || family === "flow"
+      ? "\nScreen, connection, and flow edits use revision-safe whole App Map documents.\n"
       : "";
 
   return `Relay ${family} commands

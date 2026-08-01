@@ -54,9 +54,7 @@ export function TestSettingsPanel(props: {
     try {
       const preview = await server.previewRecipeYaml(source);
       if (preview.recipe.id !== recipe.id) {
-        throw new Error(
-          "The journey id cannot change here. Duplicate the journey to create a new id.",
-        );
+        throw new Error("The map id cannot change here. Duplicate the map to create a new id.");
       }
       const saved = await server.importRecipeYaml(source, "replace");
       if (!saved) throw new Error("Relay could not save this YAML.");
@@ -82,10 +80,10 @@ export function TestSettingsPanel(props: {
           ? "absolute top-4 right-4 bottom-4 z-50 w-[min(360px,calc(100%-32px))] overflow-hidden rounded-[16px] border border-[var(--v2-border-border-strong)] shadow-[0_24px_72px_rgb(0_0_0/40%)]"
           : shellAsideDrawer,
       )}
-      aria-label="Journey details"
+      aria-label="Map details"
     >
       <header class="flex h-12 shrink-0 items-end justify-between border-b border-[var(--v2-border-border-muted)] px-3">
-        <div class="flex h-full items-end" role="tablist" aria-label="Journey detail panels">
+        <div class="flex h-full items-end" role="tablist" aria-label="Map detail panels">
           <For each={["properties", "source"] as const}>
             {(item) => (
               <button
@@ -104,7 +102,7 @@ export function TestSettingsPanel(props: {
           <button
             type="button"
             class={productIconButton}
-            aria-label="Close journey details"
+            aria-label="Close map details"
             onClick={props.onClose}
           >
             <Icon name="x" size={14} />
@@ -121,7 +119,7 @@ export function TestSettingsPanel(props: {
                 <textarea
                   class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
                   value={draft.description()}
-                  placeholder="What this journey verifies"
+                  placeholder="What this map verifies"
                   onInput={(event) => draft.setDescription(event.currentTarget.value)}
                 />
               </label>
@@ -227,7 +225,7 @@ export function TestSettingsPanel(props: {
               >
                 <textarea
                   class="min-h-0 flex-1 resize-none border-0 bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[11px]/[1.5] text-[var(--text-strong)] outline-none"
-                  aria-label="Journey YAML"
+                  aria-label="App Map YAML"
                   spellcheck={false}
                   value={yamlDraft()}
                   onInput={(event) => {

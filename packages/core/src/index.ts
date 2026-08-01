@@ -48,3 +48,4 @@ export * from "./screen-identity.js";
 export * from "./journey-graph-compiler.js";
 export * from "./journey-aggregate.js";
 export * from "./authoring-sessions.js";
+export * from "./app-map.js";

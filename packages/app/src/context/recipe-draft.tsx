@@ -316,7 +316,7 @@ export const { use: useRecipeDraft, provider: RecipeDraftProvider } = createSimp
       }
 
       const body = {
-        title: title().trim() || "Untitled journey",
+        title: title().trim() || "Untitled",
         description: description().trim() || undefined,
         parameters: parameters(),
         steps: persistSteps,

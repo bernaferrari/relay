@@ -11,8 +11,10 @@ import {
 import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
-import { JourneyWorkspace } from "./journey-workspace";
+import { AppMapWorkspace } from "./app-map-workspace";
 import { JourneyNavigator, type NavigatorArea } from "./journey-navigator";
+import { DevicePicker } from "./device-picker";
+import { EmptyAppMap } from "./app-map-empty";
 import { TestSettingsPanel } from "./test-details-panel";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
@@ -49,19 +51,13 @@ import { journeyStartupDecision } from "../lib/journey-startup";
 import type { JourneyRunReadiness as GraphRunReadiness } from "../lib/journey-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
-type ProductArea = "tests" | "suites" | "runs" | "map";
+type ProductArea = "tests" | "runs";
 type StudioView = "workbench" | "map";
 const DataWorkspace = lazy(() =>
   import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
 );
-const MapsWorkspace = lazy(() =>
-  import("./workspaces/maps-workspace").then((module) => ({ default: module.MapsWorkspace })),
-);
 const RunsWorkspace = lazy(() =>
   import("./runs-workspace").then((module) => ({ default: module.RunsWorkspace })),
-);
-const SuitesWorkspace = lazy(() =>
-  import("./suites-workspace").then((module) => ({ default: module.SuitesWorkspace })),
 );
 const TestWorkbench = lazy(() =>
   import("./test-workbench").then((module) => ({ default: module.TestWorkbench })),
@@ -91,16 +87,15 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [query, setQuery] = createSignal("");
   const [navOpen, setNavOpen] = createSignal(false);
   const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
-  const [devicePanelOpen, setDevicePanelOpen] = createSignal(false);
-  const [pendingCollectionRecording, setPendingCollectionRecording] = createSignal<{
-    suiteId: string;
-    sectionId: string;
-  } | null>(null);
+  const [devicePanelOpen, setDevicePanelOpen] = createSignal(readRememberedDevicePanelPreference());
+  const [creatingBlankMap, setCreatingBlankMap] = createSignal(false);
+  const [captureStartOnReady, setCaptureStartOnReady] = createSignal(false);
+  const [addNoteOnReady, setAddNoteOnReady] = createSignal(false);
   const [graphRunReadiness, setGraphRunReadiness] = createSignal<GraphRunReadiness>({
     visible: false,
     ready: false,
-    reason: "Record a connection before running this journey",
-    label: "Run journey",
+    reason: "Record a connection before running this flow",
+    label: "Run flow",
     transitionPath: null,
   });
   const [importReview, setImportReview] = createSignal<{
@@ -118,7 +113,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   // It also gives browser-only sessions (with empty storage) the most recent
   // authored journey immediately.
   let restoredInitialJourney = false;
-  let creatingInitialJourney = false;
   createEffect(() => {
     if (restoredInitialJourney) return;
     const decision = journeyStartupDecision({
@@ -137,31 +131,17 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       server.setSelectedRecipeId(decision.id);
       return;
     }
-    if (creatingInitialJourney) return;
-    creatingInitialJourney = true;
-    void server
-      .saveRecipeRemote({ title: "Untitled journey", steps: [] })
-      .then((saved) => {
-        if (!saved) return;
-        restoredInitialJourney = true;
-        server.setSelectedRecipeId(saved.id);
-      })
-      .finally(() => {
-        creatingInitialJourney = false;
-      });
+    // No saved maps yet. The renderer now owns an unsaved canvas until the
+    // first capture/edit, so launching Relay never manufactures an empty file.
+    restoredInitialJourney = true;
+    server.setSelectedRecipeId(null);
   });
-  // Atlas is reached from a journey's own menu, not the navigator tabs, so it
-  // shows as Journeys rather than leaving every tab unselected.
-  const navigatorArea = createMemo<NavigatorArea>(() => {
-    const current = area();
-    return current === "map" ? "tests" : current;
-  });
+  const navigatorArea = createMemo<NavigatorArea>(() => area());
   let titleBeforeEdit = "";
   let variablesDialog: HTMLElement | undefined;
   let importReviewDialog: HTMLElement | undefined;
   let studioActionsTrigger: HTMLButtonElement | undefined;
   let studioActionsMenu: HTMLDivElement | undefined;
-  let resumingCollectionRecording = false;
   createEffect(() => {
     const openSettings = (event: Event) => {
       const detail = (event as CustomEvent<{ section?: SettingsSection }>).detail;
@@ -177,6 +157,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     };
     window.addEventListener("relay:device-panel-state", updateDevicePanel);
     onCleanup(() => window.removeEventListener("relay:device-panel-state", updateDevicePanel));
+  });
+  createEffect(() => {
+    try {
+      localStorage.setItem("relay:device-panel-open", devicePanelOpen() ? "true" : "false");
+    } catch {
+      // A host can disable storage; panel state is still valid for this session.
+    }
   });
   createEffect(() => {
     const updateGraphRunReadiness = (event: Event) => {
@@ -243,6 +230,26 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       window.removeEventListener("keydown", closeStudioActions, true);
     });
   });
+  onMount(() => {
+    const onWorkspaceShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (area() !== "tests" || studioView() !== "map") return;
+      const key = event.key.toLowerCase();
+      if (key === "d") {
+        event.preventDefault();
+        toggleDevicePanel();
+        return;
+      }
+      if (key === "r" && !selected()) {
+        event.preventDefault();
+        void captureFirstScreenFromBlankMap();
+      }
+    };
+    window.addEventListener("keydown", onWorkspaceShortcut);
+    onCleanup(() => window.removeEventListener("keydown", onWorkspaceShortcut));
+  });
   // Navigator, Device, and Properties are three contextual side surfaces.
   // Showing more than one at once makes the canvas feel boxed in and leaves
   // no obvious answer to which context is active.
@@ -286,6 +293,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     });
   });
   const selectedTargetIsReady = () => selectedDeviceReadiness().kind === "ready";
+  const toggleDevicePanel = () => {
+    setSettingsOpen(false);
+    if (selected()) {
+      window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
+      return;
+    }
+    setDevicePanelOpen((open) => !open);
+  };
   const openDevicePicker = () => {
     if (area() === "tests" && studioView() === "map" && !devicePanelOpen()) {
       window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
@@ -337,21 +352,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         )
       : rows;
   });
-  createEffect(() => {
-    const pending = pendingCollectionRecording();
-    if (!pending || !selectedTargetIsReady() || resumingCollectionRecording) return;
-    resumingCollectionRecording = true;
-    void resumeCollectionRecording(pending).finally(() => {
-      resumingCollectionRecording = false;
-    });
-  });
   async function createTest(record = false): Promise<RecipeInfo | null> {
     if (record && !selectedTargetIsReady()) {
       openDevicePicker();
       return null;
     }
     const saved = await server.saveRecipeRemote({
-      title: nextUntitledTitle(server.recipes()),
+      title: nextUntitledMapTitle(server.recipes()),
       steps: [],
     });
     if (!saved) return null;
@@ -367,44 +374,31 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     return saved;
   }
 
-  async function resumeCollectionRecording(pending: {
-    suiteId: string;
-    sectionId: string;
-  }): Promise<void> {
-    const saved = await createTest(false);
-    const suite = server.suites().find((item) => item.id === pending.suiteId);
-    if (!saved || !suite) {
-      setPendingCollectionRecording(null);
+  async function captureFirstScreenFromBlankMap(): Promise<void> {
+    if (creatingBlankMap() || !selectedTargetIsReady()) {
+      if (!selectedTargetIsReady()) openDevicePicker();
       return;
     }
-    const updated = await server.saveSuiteRemote({
-      id: suite.id,
-      title: suite.title,
-      description: suite.description,
-      sections: suite.sections.map((section) =>
-        section.id === pending.sectionId
-          ? {
-              ...section,
-              entries: [
-                ...section.entries,
-                { id: crypto.randomUUID(), testId: saved.id, enabled: true, version: "latest" },
-              ],
-            }
-          : section,
-      ),
-    });
-    setPendingCollectionRecording(null);
-    if (updated && selectedTargetIsReady()) await recorder.enterRecordMode();
+    setCreatingBlankMap(true);
+    setCaptureStartOnReady(true);
+    const saved = await createTest(false);
+    if (!saved) {
+      setCaptureStartOnReady(false);
+      setCreatingBlankMap(false);
+      return;
+    }
+    // AppMapWorkspace completes the capture after its canonical document has
+    // loaded. Until then the progress state prevents duplicate files/captures.
   }
 
-  async function recordTestForSuite(suiteId: string, sectionId: string): Promise<void> {
-    if (!selectedTargetIsReady()) {
-      setPendingCollectionRecording({ suiteId, sectionId });
-      toast("Choose a ready device to record this journey", "info");
-      openDevicePicker();
-      return;
-    }
-    await resumeCollectionRecording({ suiteId, sectionId });
+  async function addFirstNoteToBlankMap(): Promise<void> {
+    if (creatingBlankMap()) return;
+    setCreatingBlankMap(true);
+    setAddNoteOnReady(true);
+    const saved = await createTest(false);
+    if (saved) return;
+    setAddNoteOnReady(false);
+    setCreatingBlankMap(false);
   }
 
   async function importTestYaml(yaml: string): Promise<void> {
@@ -444,9 +438,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
   function confirmDeleteJourney(recipe: RecipeInfo): void {
     confirmAction({
-      title: "Delete journey?",
+      title: "Delete map?",
       body: `“${displayTitle(recipe.title)}” and its version history will be removed. This cannot be undone.`,
-      confirmLabel: "Delete journey",
+      confirmLabel: "Delete map",
       onConfirm: async () => {
         await server.deleteRecipeRemote(recipe.id);
       },
@@ -471,16 +465,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     // The library is for choosing work. Once chosen, give the graph and live
     // device the room; the toolbar button keeps the library one click away.
     setNavOpen(false);
-  }
-
-  async function createFlow(): Promise<void> {
-    const suite = await server.saveSuiteRemote({
-      title: `Collection ${server.suites().length + 1}`,
-      sections: [{ title: "Main path", entries: [] }],
-    });
-    if (!suite) return;
-    setArea("suites");
-    server.setSelectedSuiteId(suite.id);
   }
 
   async function reusableEmptyJourney(): Promise<RecipeInfo | null> {
@@ -546,7 +530,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         onSelect={openRecipe}
         onDelete={deleteJourney}
         onCreate={startNewJourney}
-        onCreateFlow={() => void createFlow()}
         onOpenRun={(id) => server.setSelectedJobId(id)}
         onImport={importTestYaml}
         onOpenSettings={() => props.onOpenSettings()}
@@ -568,8 +551,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             <button
               type="button"
               class={productIconButton}
-              aria-label={navOpen() ? "Hide navigator" : "Show navigator"}
-              data-tip={navOpen() ? "Hide navigator" : "Show navigator"}
+              aria-label={navOpen() ? "Close library" : "Open library"}
+              data-tip={navOpen() ? "Close library" : "Maps and flows"}
               onClick={() => setNavOpen((value) => !value)}
             >
               <Icon name="panel-left" size={17} />
@@ -577,36 +560,23 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             <div class={shellBreadcrumb}>
               <Show
                 when={area() === "tests" && selected()}
-                fallback={
-                  <strong>
-                    {area() === "runs"
-                      ? "Run history"
-                      : area() === "suites"
-                        ? "Collections"
-                        : area() === "map"
-                          ? "Atlas"
-                          : "Journeys"}
-                  </strong>
-                }
+                fallback={<strong>{area() === "runs" ? "Run history" : "Untitled"}</strong>}
               >
                 <input
                   type="text"
-                  size={Math.max(
-                    12,
-                    Math.min(34, (draft.title() || "Untitled journey").length + 1),
-                  )}
+                  size={Math.max(12, Math.min(34, displayTitle(draft.title()).length + 1))}
                   class="h-8 min-w-[120px] max-w-[min(32vw,360px)] rounded-md bg-transparent px-1.5 font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)] max-[680px]:max-w-[26vw] max-[520px]:min-w-0"
-                  aria-label="Journey name"
-                  data-tip="Rename journey"
-                  value={draft.title()}
-                  placeholder="Untitled journey"
+                  aria-label="Map name"
+                  data-tip="Rename map"
+                  value={displayTitle(draft.title())}
+                  placeholder="Untitled"
                   spellcheck={false}
                   onFocus={() => {
                     titleBeforeEdit = draft.title();
                   }}
                   onInput={(event) => draft.setTitle(event.currentTarget.value)}
                   onBlur={() => {
-                    if (!draft.title().trim()) draft.setTitle("Untitled journey");
+                    if (!draft.title().trim()) draft.setTitle("Untitled");
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();
@@ -620,6 +590,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             </div>
           </div>
           <div class={shellTopbarActions}>
+            <Show when={area() === "tests" && studioView() === "map"}>
+              <DevicePicker
+                liveOpen={devicePanelOpen()}
+                onOpenLive={toggleDevicePanel}
+                onManageTargets={() => props.onOpenSettings("targets")}
+              />
+            </Show>
             <Show when={area() === "tests" && selected()}>
               <Show when={draft.saveState() === "saving" || draft.saveState() === "invalid"}>
                 <span class={shellSaveState}>
@@ -637,47 +614,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     setStudioView("map");
                   }}
                 >
-                  <Icon name="chevron-left" size={13} /> Back to journey
+                  <Icon name="chevron-left" size={13} /> Back to map
                 </button>
               </Show>
             </Show>
             <Show when={area() === "tests" && selected()}>
-              <Show when={studioView() === "map"}>
-                <button
-                  type="button"
-                  aria-pressed={devicePanelOpen()}
-                  class={cn(
-                    productSecondary,
-                    "relative min-h-9 gap-2 px-3 text-[12px] before:absolute before:-inset-y-1 before:inset-x-0 before:content-['']",
-                    devicePanelOpen() &&
-                      "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
-                  )}
-                  aria-label={devicePanelOpen() ? "Hide device" : "Show device"}
-                  data-tip={
-                    selectedDeviceReadiness().kind === "ready"
-                      ? devicePanelOpen()
-                        ? "Hide device"
-                        : "Show device"
-                      : "Device needs attention"
-                  }
-                  onClick={() => {
-                    setSettingsOpen(false);
-                    window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
-                  }}
-                >
-                  <i
-                    class={cn(
-                      "size-1.5 rounded-full",
-                      selectedTargetIsReady()
-                        ? "bg-[var(--icon-success-base)]"
-                        : "bg-[var(--icon-warning-base)]",
-                    )}
-                    aria-hidden="true"
-                  />
-                  <Icon name="smartphone" size={14} />
-                  <span class="max-[560px]:hidden">Device</span>
-                </button>
-              </Show>
               <div class="relative flex items-center gap-1.5">
                 <button
                   type="button"
@@ -687,8 +628,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     "max-[680px]:hidden",
                     settingsOpen() && "bg-surface-base-active",
                   )}
-                  aria-label="Journey properties"
-                  data-tip="Journey properties"
+                  aria-label="Map properties"
+                  data-tip="Map properties"
                   onClick={() => {
                     const opening = !settingsOpen();
                     if (opening) {
@@ -703,7 +644,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   ref={(element) => (studioActionsTrigger = element)}
                   class={productIconButton}
                   type="button"
-                  aria-label="More journey options"
+                  aria-label="More map options"
                   aria-expanded={studioActionsOpen()}
                   onClick={() => setStudioActionsOpen((open) => !open)}
                 >
@@ -714,7 +655,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     ref={(element) => (studioActionsMenu = element)}
                     class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-[10px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--v2-elevation-overlay)]"
                     role="menu"
-                    aria-label="Journey options"
+                    aria-label="Map options"
                     onFocusOut={(event) => {
                       const next = event.relatedTarget as Node | null;
                       if (next && event.currentTarget.contains(next)) return;
@@ -751,7 +692,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         setSettingsOpen(true);
                       }}
                     >
-                      <Icon name="sliders" size={14} /> Journey properties
+                      <Icon name="sliders" size={14} /> Map properties
                     </button>
                     <button
                       type="button"
@@ -762,18 +703,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         void duplicateSelected();
                       }}
                     >
-                      <Icon name="copy" size={14} /> Duplicate journey
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        setArea("map");
-                      }}
-                    >
-                      <Icon name="move" size={14} /> Explore in Atlas
+                      <Icon name="copy" size={14} /> Duplicate map
                     </button>
                     <button
                       type="button"
@@ -784,7 +714,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                         void deleteSelected();
                       }}
                     >
-                      <Icon name="trash" size={14} /> Delete journey
+                      <Icon name="trash" size={14} /> Delete map
                     </button>
                   </div>
                 </Show>
@@ -811,7 +741,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     (studioView() === "map" ? graphBlockedReason() : testBlockedReason()) ||
                     graphRunReadiness().label
                   }
-                  aria-label={studioView() === "map" ? graphRunReadiness().label : "Run journey"}
+                  aria-label={studioView() === "map" ? graphRunReadiness().label : "Run flow"}
                   onClick={runSelectedTest}
                 >
                   <Icon name="play" size={13} />
@@ -842,7 +772,19 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
               }
             >
-              <Show when={selected()} fallback={<WorkspaceLoading label="canvas" />}>
+              <Show
+                when={selected()}
+                fallback={
+                  <EmptyAppMap
+                    deviceOpen={devicePanelOpen()}
+                    creating={creatingBlankMap()}
+                    onToggleDevice={toggleDevicePanel}
+                    onOpenTargets={() => props.onOpenSettings("targets")}
+                    onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
+                    onAddFirstNote={() => void addFirstNoteToBlankMap()}
+                  />
+                }
+              >
                 <Show when={studioView() === "workbench"}>
                   <Suspense fallback={<WorkspaceLoading label="actions" />}>
                     <TestWorkbench
@@ -865,8 +807,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </Show>
                 <Show when={studioView() === "map"}>
                   <div class={cn(shellStageWrap, "flex flex-1")}>
-                    <JourneyWorkspace
+                    <AppMapWorkspace
                       navigatorOpen={navOpen()}
+                      captureStartOnReady={captureStartOnReady()}
+                      addNoteOnReady={addNoteOnReady()}
+                      onCaptureStartHandled={() => {
+                        setCaptureStartOnReady(false);
+                        setCreatingBlankMap(false);
+                      }}
+                      onAddNoteHandled={() => {
+                        setAddNoteOnReady(false);
+                        setCreatingBlankMap(false);
+                      }}
                       onOpenTargets={() => props.onOpenSettings("targets")}
                       onOpenActions={() => setStudioView("workbench")}
                     />
@@ -887,35 +839,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         <Show when={area() === "runs"}>
           <Suspense fallback={<WorkspaceLoading label="runs" />}>
             <RunsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
-          </Suspense>
-        </Show>
-        <Show when={area() === "suites"}>
-          <Suspense fallback={<WorkspaceLoading label="collections" />}>
-            <SuitesWorkspace
-              onOpenTest={openRecipe}
-              onOpenRun={(id) => {
-                server.setSelectedJobId(id);
-                setArea("runs");
-              }}
-              onOpenTargets={() => props.onOpenSettings("targets")}
-              onRecordTest={(suiteId, sectionId) => void recordTestForSuite(suiteId, sectionId)}
-            />
-          </Suspense>
-        </Show>
-        <Show when={area() === "map"}>
-          <Suspense
-            fallback={
-              <div class="grid min-h-0 flex-1 place-items-center bg-[var(--v2-background-bg-deep)] p-8 text-center">
-                <div>
-                  <span class="mx-auto grid size-10 place-items-center rounded-xl bg-[var(--v2-background-bg-layer-01)] text-[var(--text-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-                    <Icon name="move" size={16} />
-                  </span>
-                  <p class="mt-3 text-[12px] text-[var(--text-weak)]">Loading Atlas…</p>
-                </div>
-              </div>
-            }
-          >
-            <MapsWorkspace onOpenRecipe={openRecipe} onOpenTests={() => setArea("tests")} />
           </Suspense>
         </Show>
       </main>
@@ -982,7 +905,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     id="import-review-title"
                     class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
                   >
-                    {review().exists ? "This journey already exists" : "Import this journey?"}
+                    {review().exists ? "This map already exists" : "Import this map?"}
                   </h3>
                 </div>
                 <button
@@ -1019,8 +942,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3">
                 <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--text-weak)]">
                   {review().exists
-                    ? "Replacing preserves the current definition in version history. Importing a copy creates a new journey ID."
-                    : "Relay will store the canonical definition in the tracked journeys directory."}
+                    ? "Replacing preserves the current definition in version history. Importing a copy creates a new map ID."
+                    : "Relay will store the canonical App Map definition in the project."}
                 </p>
                 <div class="flex shrink-0 flex-wrap justify-end gap-2">
                   <button
@@ -1044,7 +967,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     class={productPrimary}
                     onClick={() => void confirmImport("replace")}
                   >
-                    {review().exists ? "Replace journey" : "Import journey"}
+                    {review().exists ? "Replace map" : "Import map"}
                   </button>
                 </div>
               </footer>
@@ -1056,10 +979,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   );
 }
 
-function nextUntitledTitle(recipes: RecipeInfo[]): string {
+function nextUntitledMapTitle(recipes: RecipeInfo[]): string {
   const used = new Set(recipes.map((recipe) => recipe.title));
-  if (!used.has("Untitled journey")) return "Untitled journey";
+  if (!used.has("Untitled")) return "Untitled";
   let index = 2;
-  while (used.has(`Untitled journey ${index}`)) index++;
-  return `Untitled journey ${index}`;
+  while (used.has(`Untitled ${index}`)) index++;
+  return `Untitled ${index}`;
+}
+
+function readRememberedDevicePanelPreference(): boolean {
+  try {
+    return localStorage.getItem("relay:device-panel-open") !== "false";
+  } catch {
+    return true;
+  }
 }

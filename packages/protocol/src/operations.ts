@@ -271,7 +271,21 @@ type SpecificOperationMap = {
   };
   "target.screenshot.capture": {
     input: { serial: string };
-    output: { path: string; bytes: number; base64?: string; mime?: string };
+    output: {
+      path: string;
+      bytes: number;
+      base64?: string;
+      mime?: string;
+      serial?: string;
+      capturedAt?: number;
+      width?: number;
+      height?: number;
+      screenMatch?: {
+        fingerprint: string;
+        matchedScreenId: string | null;
+        status: "observed" | "unavailable";
+      };
+    };
   };
   "job.list": {
     input: { full?: boolean; limit?: number };

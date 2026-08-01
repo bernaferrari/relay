@@ -15,7 +15,11 @@ import {
   type OperationContext,
 } from "@relay/core";
 import { startServer } from "./index.js";
-import { assertTargetControl, assertTargetLease } from "./access-control.js";
+import {
+  assertTargetControl,
+  assertTargetLease,
+  assertTargetObservation,
+} from "./access-control.js";
 
 test("Journey and Collection writes are atomic, revision-safe, idempotent, and attributable", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-coordination-"));
@@ -252,6 +256,12 @@ test("two actors keep target context, lease ownership, environment, and event id
   const events: DeviceEvent[] = [];
   const unsubscribe = subscribe((event) => events.push(event));
   try {
+    const observed = await runWithOperationContext(
+      command("agent:observer", "request-observe"),
+      () => assertTargetObservation(scope, "target-b"),
+    );
+    assert.equal(observed, "target-b");
+
     const identities = await Promise.all([
       runWithOperationContext(command("agent:a", "request-a"), () =>
         runWithTargetContext(

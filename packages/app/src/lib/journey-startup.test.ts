@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { journeyStartupDecision } from "./journey-startup";
 
-test("startup waits for the definitive journey list before creating a canvas", () => {
+test("startup waits for the definitive map list before opening a local blank canvas", () => {
   assert.deepEqual(
     journeyStartupDecision({ online: true, loaded: false, selectedId: null, journeys: [] }),
     { kind: "wait" },
   );
   assert.deepEqual(
     journeyStartupDecision({ online: true, loaded: true, selectedId: null, journeys: [] }),
-    { kind: "create" },
+    { kind: "blank" },
   );
 });
 

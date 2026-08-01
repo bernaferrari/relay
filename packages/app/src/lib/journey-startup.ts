@@ -8,11 +8,11 @@ export type JourneyStartupDecision =
   | { kind: "wait" }
   | { kind: "keep" }
   | { kind: "select"; id: string }
-  | { kind: "create" };
+  | { kind: "blank" };
 
-/** Pure startup policy for the document editor. Creation is allowed only
- * after the server has returned the journey list, preventing the initial
- * empty signal from racing hydration and creating duplicate blank canvases. */
+/** Pure startup policy for the map editor. An empty project opens a local,
+ * unsaved canvas. Persistence starts only after the first meaningful edit or
+ * capture, so merely launching Relay can never create another empty draft. */
 export function journeyStartupDecision(input: {
   online: boolean;
   loaded: boolean;
@@ -26,5 +26,5 @@ export function journeyStartupDecision(input: {
   const latest = input.journeys
     .filter((item) => item.source === "custom")
     .toSorted((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))[0];
-  return latest ? { kind: "select", id: latest.id } : { kind: "create" };
+  return latest ? { kind: "select", id: latest.id } : { kind: "blank" };
 }

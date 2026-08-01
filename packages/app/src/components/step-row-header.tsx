@@ -25,7 +25,7 @@ export function StepAnno(props: { anno: Accessor<RowAnno> }): JSX.Element {
         aria-hidden="true"
       >
         <Show when={props.anno().status === "running"}>
-          <span class="size-1.5 animate-pulse rounded-full bg-icon-info-base" />
+          <span class="size-1.5 rounded-full bg-icon-info-base motion-safe:animate-pulse" />
         </Show>
         <Show when={props.anno().status === "pass"}>
           <span class="ui-check grid size-4 place-items-center text-icon-success-base">

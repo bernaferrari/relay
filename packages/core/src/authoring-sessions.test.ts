@@ -289,10 +289,15 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
     session = await store.replay(session.id, runtime);
     assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "failed");
     runtime.failReplay = false;
+    runtime.screen = "source";
+    session = await store.replay(session.id, runtime);
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "failed");
+    assert.match(session.take!.replayAttempts.at(-1)?.error ?? "", /different screen/);
+    runtime.screen = "destination";
     session = await store.replay(session.id, runtime);
     assert.deepEqual(
       session.take!.replayAttempts.map((attempt) => attempt.outcome),
-      ["failed", "passed"],
+      ["failed", "failed", "passed"],
     );
     const immutableFailed = structuredClone(session.take!.replayAttempts[0]);
 

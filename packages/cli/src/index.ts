@@ -7,11 +7,13 @@ import { renderHelp } from "./help.js";
 import {
   createClient,
   invokeOperation,
+  readResource,
   type ClientFactory,
   type OperationInvoker,
   validateOperationId,
 } from "./invoke.js";
 import { CliOutput, type OutputStreams } from "./output.js";
+import { emitScreenshot } from "./screenshot.js";
 
 export type CliDependencies = {
   env?: Record<string, string | undefined>;
@@ -104,7 +106,7 @@ export async function runCli(
       streams.stdout.write(renderHelp(parsed.helpFamily));
       return ExitCode.success;
     }
-    operationId = parsed.operationId;
+    operationId = parsed.command === "invoke" ? parsed.operationId : parsed.resourceId;
     const abort = new AbortController();
     const cancel = () => abort.abort();
     if (dependencies.registerSignalHandlers !== false) {
@@ -112,14 +114,18 @@ export async function runCli(
       process.once("SIGTERM", cancel);
     }
     try {
-      validateOperationId(operationId);
+      if (parsed.command === "invoke") validateOperationId(operationId);
       const client = (dependencies.createClient ?? createClient)(parsed.config);
-      if (parsed.commandPath === "system events follow") {
+      if (parsed.command === "resource") {
+        output.progress(operationId, "invoking");
+        const result = await readResource(client, parsed.resourcePath, abort.signal);
+        output.result(operationId, result);
+      } else if (parsed.behavior === "event-stream") {
         output.progress(operationId, "following");
         await client.events((event) => output.event(event), { signal: abort.signal });
         if (abort.signal.aborted) throw abortError();
         output.result(operationId, {});
-      } else if (parsed.commandPath === "job watch" && parsed.config.wait) {
+      } else if (parsed.behavior === "job-watch" && parsed.config.wait) {
         const result = await watchJob(
           client,
           operationId,
@@ -132,7 +138,11 @@ export async function runCli(
       } else {
         output.progress(operationId, "invoking");
         const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
-        output.result(operationId, result);
+        if (parsed.behavior === "screenshot") {
+          await emitScreenshot(operationId, result, parsed.screenshotOutput, output);
+        } else {
+          output.result(operationId, result);
+        }
       }
       return ExitCode.success;
     } finally {

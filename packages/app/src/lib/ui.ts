@@ -271,11 +271,11 @@ const productControl = cn(
   "disabled:cursor-not-allowed",
 );
 
-/** Brand/product primary CTA (tests, maps, run actions) — same purple as Record/Run */
+/** Brand/product primary CTA shared by Run and confirmation actions. */
 export const productPrimary = cn(
   productControl,
-  "bg-[#705ff0] text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_7px_22px_rgb(89_69_214/18%)]",
-  "hover:enabled:bg-[#7d6df5]",
+  "bg-[var(--button-primary-base)] text-[var(--text-on-brand-base)] shadow-[var(--map-elevation-control)]",
+  "hover:enabled:bg-[color-mix(in_oklch,var(--button-primary-base)_88%,black)]",
   "disabled:bg-surface-raised-strong disabled:text-text-weaker disabled:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
   "data-[blocked]:cursor-not-allowed data-[blocked]:bg-surface-raised-strong data-[blocked]:text-text-weaker data-[blocked]:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
 );

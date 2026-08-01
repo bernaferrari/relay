@@ -1,0 +1,16 @@
+export * from "./app-map/model.js";
+export { AppMapDomainError } from "./app-map/errors.js";
+export { validateAppMap } from "./app-map/validation.js";
+export {
+  addAppMapScreen,
+  removeAppMapScreen,
+  updateAppMapScreen,
+} from "./app-map/screen-operations.js";
+export {
+  connectAppMapScreens,
+  removeAppMapConnection,
+  updateAppMapConnection,
+} from "./app-map/connection-operations.js";
+export { previewRoutineImpact } from "./app-map/routine-operations.js";
+export { approveAppMapProposal, rejectAppMapProposal } from "./app-map/proposal-operations.js";
+export { serializeAppMap } from "./app-map/serialization.js";

@@ -177,7 +177,7 @@ export function TakeReviewSidebar(props: {
               <For each={props.screens}>
                 {(screen) => <option value={`screen:${screen.id}`}>{screen.title}</option>}
               </For>
-              <option value="end">End journey</option>
+              <option value="end">End flow</option>
             </select>
           </label>
         </section>
@@ -224,7 +224,7 @@ export function TakeReviewSidebar(props: {
               ? "Approve it if the device reached the right screen."
               : props.replayState === "failed"
                 ? props.replayError || "The connection stopped before it finished."
-                : "Relay will try only this connection before you add it to the journey."}
+                : "Relay will try only this connection before you add it to the map."}
           </p>
         </section>
       </div>
@@ -505,15 +505,11 @@ export function GraphEmptyState(props: {
   liveScreenSrc?: string;
   captureBusy: boolean;
   onUseCurrentScreen: () => void;
+  onAddNote: () => void;
+  onToggleDevice: () => void;
 }) {
   const isRecording = () => props.take?.state === "recording";
   const count = () => props.take?.steps.length ?? 0;
-  const activeStep = () => {
-    if (props.recordState === "choose-device" || props.recordState === "device-unavailable")
-      return 0;
-    if (props.recordState === "ready") return 2;
-    return 1;
-  };
   const guidance = () => {
     if (isRecording()) {
       return {
@@ -524,7 +520,7 @@ export function GraphEmptyState(props: {
     if (props.take) {
       return {
         title: "Review this connection",
-        detail: "Trim its actions, try it on the device, then approve it for the journey.",
+        detail: "Trim its actions, try it on the device, then approve it for the map.",
       };
     }
     if (!props.deviceOpen) {
@@ -538,7 +534,7 @@ export function GraphEmptyState(props: {
       case "choose-device":
         return {
           title: "Start from any screen",
-          detail: "Choose a target on the right, then navigate to where this journey begins.",
+          detail: "Choose a target above, then navigate to where this flow begins.",
         };
       case "setup-ios":
       case "enable-developer-mode":
@@ -564,7 +560,7 @@ export function GraphEmptyState(props: {
       default:
         return {
           title: "Set the entry screen",
-          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this journey begins, then use the current screen as the start.`,
+          detail: `Navigate ${props.selectedDeviceName ?? "the device"} to where this flow begins, then capture the current screen.`,
         };
     }
   };
@@ -577,83 +573,18 @@ export function GraphEmptyState(props: {
         )}
         style={{ right: props.deviceOpen && props.deviceSelected ? "min(420px, 50vw)" : "0" }}
       >
-        <section class="w-[min(430px,calc(100vw-48px))]">
-          <div class="mb-6 flex items-center gap-3 px-1" aria-hidden="true">
-            <div class="grid h-[142px] w-[108px] shrink-0 grid-rows-[24px_1fr_25px] overflow-hidden rounded-[14px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_var(--v2-border-border-strong),0_12px_36px_-18px_rgb(0_0_0/38%)]">
-              <div class="flex items-center gap-1 border-b border-[var(--v2-border-border-muted)] px-2">
-                <i class="size-1 rounded-full bg-[var(--text-interactive-base)]" />
-                <i class="size-1 rounded-full bg-[var(--v2-border-border-strong)]" />
-              </div>
-              <div class="grid place-items-center bg-[radial-gradient(circle_at_50%_38%,color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent),transparent_58%),var(--v2-background-bg-layer-01)]">
-                <Icon name="smartphone" size={18} class="text-[var(--text-interactive-base)]" />
-              </div>
-              <span class="grid place-items-center text-[9px] font-medium text-[var(--text-base)]">
-                First screen
-              </span>
-            </div>
-            <div class="flex w-11 items-center text-[var(--text-interactive-base)]">
-              <span class="h-px flex-1 bg-current opacity-55" />
-              <Icon name="chevron-right" size={13} />
-            </div>
-            <div class="grid h-[118px] w-[90px] shrink-0 place-items-center rounded-[13px] border border-dashed border-[var(--v2-border-border-strong)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_58%,transparent)] text-[var(--text-weak)]">
-              <span class="grid justify-items-center gap-1.5 text-[9px] font-medium">
-                <Icon name="plus" size={15} /> Next screen
-              </span>
-            </div>
-          </div>
-          <div class="px-1">
-            <div class="flex items-center gap-3">
-              <span class="grid size-10 shrink-0 place-items-center rounded-[12px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_18%,transparent)]">
-                <Icon name={isRecording() ? "camera" : "smartphone"} size={18} />
-              </span>
-              <div class="min-w-0">
-                <span class="block text-[10.5px] font-semibold tracking-[0.12em] text-[var(--text-weak)] uppercase">
-                  {isRecording() ? "Capturing connection" : "New journey"}
-                </span>
-                <h2 class="m-0 mt-0.5 text-[26px] font-semibold tracking-[-0.045em] text-[var(--text-strong)] text-balance">
-                  {guidance().title}
-                </h2>
-              </div>
-            </div>
-            <p class="m-0 mt-3 max-w-[44ch] text-[13px]/[1.6] text-[var(--text-weak)] text-pretty">
-              {guidance().detail}
-            </p>
-            <Show when={!props.take}>
-              <ol
-                class="m-0 mt-4 flex list-none items-center gap-2 p-0"
-                aria-label="Getting started"
-              >
-                <For each={["Connect", "Navigate", "Capture"]}>
-                  {(label, index) => (
-                    <li
-                      class={cn(
-                        "flex min-w-0 items-center gap-1.5 rounded-full px-1 py-1 text-[10.5px] font-medium",
-                        index() === activeStep()
-                          ? "text-[var(--text-interactive-base)]"
-                          : index() < activeStep()
-                            ? "text-[var(--text-base)]"
-                            : "text-[var(--text-weak)]",
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "grid size-4 shrink-0 place-items-center rounded-full text-[9px] font-semibold",
-                          index() <= activeStep()
-                            ? "bg-[var(--text-interactive-base)] text-white"
-                            : "bg-[var(--v2-background-bg-layer-03)] text-[var(--text-weak)]",
-                        )}
-                      >
-                        {index() < activeStep() ? <Icon name="check" size={9} /> : index() + 1}
-                      </span>
-                      <span class="truncate">{label}</span>
-                    </li>
-                  )}
-                </For>
-              </ol>
-            </Show>
-          </div>
+        <section class="grid w-[min(410px,calc(100vw-48px))] justify-items-center text-center">
+          <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
+            <Icon name={isRecording() ? "camera" : "smartphone"} size={20} />
+          </span>
+          <h2 class="m-0 mt-4 text-[22px]/[1.2] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance">
+            {guidance().title}
+          </h2>
+          <p class="m-0 mt-2 max-w-[42ch] text-[13px]/[1.55] text-[var(--text-weak)] text-pretty">
+            {guidance().detail}
+          </p>
           <Show when={!props.take}>
-            <div class="mt-5 flex min-h-11 items-center gap-3 px-1">
+            <div class="mt-4 flex min-h-11 items-center gap-3">
               <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
                 <i
                   class={cn(
@@ -664,10 +595,10 @@ export function GraphEmptyState(props: {
                   )}
                 />
                 {props.recordState === "ready"
-                  ? "Your live screen is ready"
+                  ? "Ready to capture"
                   : props.deviceOpen
-                    ? "Use the device on the right"
-                    : "Device is available in the toolbar"}
+                    ? "Preparing live control"
+                    : "Press D to show the device"}
               </span>
               <Show when={props.recordState === "ready"}>
                 <button
@@ -692,6 +623,63 @@ export function GraphEmptyState(props: {
           </Show>
         </section>
       </div>
+      <div
+        class={cn(
+          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-30 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]",
+          props.deviceOpen && props.deviceSelected
+            ? "left-[calc((100%-388px)/2)] max-[720px]:left-1/2"
+            : "left-1/2",
+        )}
+        role="toolbar"
+        aria-label="App Map tools"
+      >
+        <button type="button" class={emptyMapControl} aria-label="Select tool" aria-pressed="true">
+          <Icon name="pointer" size={14} />
+        </button>
+        <button type="button" class={emptyMapControl} aria-label="Hand tool">
+          <Icon name="move" size={14} />
+        </button>
+        <span class="mx-0.5 h-6 w-px bg-[var(--map-divider)]" aria-hidden="true" />
+        <button
+          type="button"
+          class={emptyMapControl}
+          aria-label="Capture screen"
+          onClick={props.onUseCurrentScreen}
+        >
+          <Icon name="smartphone" size={14} />
+        </button>
+        <button type="button" class={emptyMapControl} aria-label="Create connection" disabled>
+          <Icon name="arrow-right" size={14} />
+        </button>
+        <button
+          type="button"
+          class={emptyMapControl}
+          aria-label="Add note"
+          onClick={props.onAddNote}
+        >
+          <Icon name="edit" size={14} />
+        </button>
+        <button type="button" class={emptyMapControl} aria-label="Create Routine" disabled>
+          <Icon name="sparkle" size={14} />
+        </button>
+        <span class="mx-0.5 h-6 w-px bg-[var(--map-divider)]" aria-hidden="true" />
+        <button
+          type="button"
+          class={cn(
+            emptyMapControl,
+            props.deviceOpen &&
+              "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+          )}
+          aria-label="Toggle live device"
+          aria-pressed={props.deviceOpen}
+          onClick={props.onToggleDevice}
+        >
+          <Icon name="smartphone" size={14} />
+        </button>
+      </div>
     </>
   );
 }
+
+const emptyMapControl =
+  "grid size-10 place-items-center rounded-[9px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30";

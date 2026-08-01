@@ -1,0 +1,211 @@
+import { Show, createMemo, createSignal } from "solid-js";
+import { useServer } from "../context/server";
+import { cn } from "../lib/cn";
+import { deviceReadiness } from "../lib/device-readiness";
+import { DeviceStage } from "./stage";
+import { Icon } from "./icon";
+
+/**
+ * The first project state is a real canvas, not a creation wizard and not a
+ * persisted placeholder. The device can be used freely here; the map is only
+ * created when the person captures its first screen.
+ */
+export function EmptyAppMap(props: {
+  deviceOpen: boolean;
+  onToggleDevice: () => void;
+  onCaptureFirstScreen: () => void;
+  onAddFirstNote: () => void;
+  onOpenTargets: () => void;
+  creating?: boolean;
+}) {
+  const server = useServer();
+  const [tool, setTool] = createSignal<"select" | "hand">("select");
+  const device = createMemo(() =>
+    server.devices().find((candidate) => candidate.serial === server.selectedDevice()),
+  );
+  const readiness = createMemo(() =>
+    deviceReadiness(device(), server.health() === "online", {
+      ...(device()?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
+      liveCaptureIssue: server.liveCaptureIssue(),
+      requireLiveScreen: false,
+    }),
+  );
+  const ready = () => readiness().kind === "ready";
+  const status = () => {
+    if (server.health() !== "online") return { label: "Relay offline", tone: "critical" } as const;
+    if (!device()) return { label: "Choose a device", tone: "weak" } as const;
+    if (ready()) return { label: "Live", tone: "success" } as const;
+    return { label: "Connecting", tone: "warning" } as const;
+  };
+
+  return (
+    <section
+      class="app-map-canvas relative min-h-0 min-w-0 flex-1 overflow-hidden"
+      aria-label="Untitled app map"
+    >
+      <div class="pointer-events-none absolute inset-0 app-map-grid" aria-hidden="true" />
+
+      <Show when={!props.deviceOpen}>
+        <div class="pointer-events-none absolute inset-0 grid place-items-center px-8 text-center">
+          <div class="grid max-w-[420px] justify-items-center gap-3">
+            <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
+              <Icon name="smartphone" size={20} />
+            </span>
+            <div class="grid gap-1.5">
+              <h1 class="m-0 text-[20px]/[1.2] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
+                Start from any screen
+              </h1>
+              <p class="m-0 max-w-[40ch] text-[13px]/[1.55] text-[var(--text-weak)]">
+                Use the device above, navigate where you want to begin, then capture that screen.
+                Relay will build the map as you continue.
+              </p>
+            </div>
+            <span class="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-[var(--map-control-surface)] px-3 text-[12px] font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)]">
+              <kbd class="rounded-[5px] bg-[var(--v2-background-bg-layer-02)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-weak)]">
+                D
+              </kbd>
+              Show device
+            </span>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={props.deviceOpen}>
+        <aside
+          class="ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex w-[min(404px,calc(100%-32px))] min-w-0 flex-col overflow-hidden rounded-[18px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto"
+          aria-label="Live device"
+        >
+          <header class="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-[var(--map-divider)] px-4">
+            <span class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]">
+              <i
+                class={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  status().tone === "success"
+                    ? "bg-[var(--icon-success-base)]"
+                    : status().tone === "critical"
+                      ? "bg-[var(--icon-critical-base)]"
+                      : status().tone === "weak"
+                        ? "bg-[var(--icon-weak)]"
+                        : "bg-[var(--icon-warning-base)]",
+                )}
+                aria-hidden="true"
+              />
+              <span>{status().label}</span>
+            </span>
+            <button
+              type="button"
+              class="app-map-icon-button"
+              aria-label="Close device"
+              data-tip="Close device · D"
+              onClick={props.onToggleDevice}
+            >
+              <Icon name="x" size={13} />
+            </button>
+          </header>
+          <div class="relative min-h-0 flex-1">
+            <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
+          </div>
+          <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
+            <button
+              type="button"
+              class="app-map-record-button"
+              disabled={!ready() || props.creating}
+              aria-busy={props.creating}
+              onClick={props.onCaptureFirstScreen}
+            >
+              <Show
+                when={props.creating}
+                fallback={<i class="size-2 rounded-full bg-current" aria-hidden="true" />}
+              >
+                <Icon name="refresh" size={14} class="ui-refresh-spin" />
+              </Show>
+              {props.creating ? "Capturing…" : "Capture first screen"}
+            </button>
+          </footer>
+        </aside>
+      </Show>
+
+      <div
+        class={cn(
+          "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-50 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]",
+          props.deviceOpen ? "left-[calc((100%-404px)/2)] max-[720px]:left-1/2" : "left-1/2",
+        )}
+        role="toolbar"
+        aria-label="App Map tools"
+      >
+        <button
+          type="button"
+          class={cn(emptyMapToolButton, tool() === "select" && emptyMapToolActive)}
+          aria-label="Select tool"
+          aria-pressed={tool() === "select"}
+          data-tip="Select · V"
+          onClick={() => setTool("select")}
+        >
+          <Icon name="pointer" size={14} />
+        </button>
+        <button
+          type="button"
+          class={cn(emptyMapToolButton, tool() === "hand" && emptyMapToolActive)}
+          aria-label="Hand tool"
+          aria-pressed={tool() === "hand"}
+          data-tip="Hand · H"
+          onClick={() => setTool("hand")}
+        >
+          <Icon name="move" size={14} />
+        </button>
+        <span class="mx-0.5 h-6 w-px bg-[var(--map-divider)]" aria-hidden="true" />
+        <button
+          type="button"
+          class={emptyMapToolButton}
+          aria-label="Capture screen"
+          data-tip="Capture screen · S"
+          onClick={props.onCaptureFirstScreen}
+        >
+          <Icon name="smartphone" size={14} />
+        </button>
+        <button
+          type="button"
+          class={emptyMapToolButton}
+          aria-label="Create connection"
+          data-tip="Add a screen before connecting"
+          disabled
+        >
+          <Icon name="arrow-right" size={14} />
+        </button>
+        <button
+          type="button"
+          class={emptyMapToolButton}
+          aria-label="Add note"
+          data-tip="Note · N"
+          onClick={props.onAddFirstNote}
+        >
+          <Icon name="edit" size={14} />
+        </button>
+        <button
+          type="button"
+          class={emptyMapToolButton}
+          aria-label="Create Routine"
+          data-tip="Add a connection before creating a Routine"
+          disabled
+        >
+          <Icon name="sparkle" size={14} />
+        </button>
+        <span class="mx-0.5 h-6 w-px bg-[var(--map-divider)]" aria-hidden="true" />
+        <button
+          type="button"
+          class={cn(emptyMapToolButton, props.deviceOpen && emptyMapToolActive)}
+          aria-label="Toggle live device"
+          aria-pressed={props.deviceOpen}
+          data-tip="Live device · D"
+          onClick={props.onToggleDevice}
+        >
+          <Icon name="smartphone" size={14} />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+const emptyMapToolButton =
+  "grid size-10 place-items-center rounded-[9px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30";
+const emptyMapToolActive = "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]";

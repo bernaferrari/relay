@@ -230,7 +230,7 @@ export function Topbar(props: { onSettings: () => void }) {
               <Show
                 when={server.isPaused()}
                 fallback={
-                  <span class="size-[10px] animate-spin rounded-full border-[1.5px] border-border-weak-base border-t-text-strong" />
+                  <span class="size-[10px] rounded-full border-[1.5px] border-border-weak-base border-t-text-strong motion-safe:animate-spin" />
                 }
               >
                 <Icon name="pause" size={10} />

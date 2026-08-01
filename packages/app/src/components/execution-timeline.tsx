@@ -145,7 +145,7 @@ export function ExecutionTimeline(props: {
                 class={cn(
                   "size-2 rounded-full",
                   stateDot(runState()),
-                  runState() === "running" && "animate-pulse",
+                  runState() === "running" && "motion-safe:animate-pulse",
                 )}
               />
               <span class="text-[11px] font-medium text-[var(--text-base)]">

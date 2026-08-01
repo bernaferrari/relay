@@ -3,11 +3,35 @@ import { UsageError } from "./errors.js";
 
 export type CliExclusionReason = "ui-only" | "internal" | "unsafe";
 
+export type CommandBehavior = "event-stream" | "job-watch" | "screenshot";
+
+export type CommandArgumentHelp = {
+  name: string;
+  type: string;
+  description: string;
+};
+
+export type CommandInputHelp = {
+  name: string;
+  type: string;
+  required?: boolean;
+  description: string;
+};
+
+export type CommandHelp = {
+  summary?: string;
+  argumentHelp?: readonly CommandArgumentHelp[];
+  inputHelp?: readonly CommandInputHelp[];
+  examples?: readonly string[];
+  note?: string;
+  behavior?: CommandBehavior;
+};
+
 export type CommandPathDescriptor = {
   command: string;
   arguments?: readonly string[];
   fixedInput?: Readonly<Record<string, unknown>>;
-};
+} & CommandHelp;
 
 export type MappedOperationDescriptor = {
   operationId: OperationId;
@@ -26,10 +50,12 @@ const path = (
   command: string,
   arguments_: readonly string[] = [],
   fixedInput?: Readonly<Record<string, unknown>>,
+  help: CommandHelp = {},
 ): CommandPathDescriptor => ({
   command,
   ...(arguments_.length ? { arguments: arguments_ } : {}),
   ...(fixedInput ? { fixedInput } : {}),
+  ...help,
 });
 
 const mapped = (
@@ -46,8 +72,22 @@ const mapped = (
 export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("system.health.get", path("system health")),
   mapped("system.doctor.get", path("system doctor")),
-  mapped("system.audit.list", path("system audit list")),
-  mapped("event.stream", path("system events follow")),
+  mapped(
+    "system.audit.list",
+    path("system audit list"),
+    path("activity audit", [], undefined, {
+      summary: "List operation audit records",
+    }),
+  ),
+  mapped(
+    "event.stream",
+    path("system events follow", [], undefined, { behavior: "event-stream" }),
+    path("activity follow", [], undefined, {
+      summary: "Follow live project activity",
+      examples: ["relay activity follow --ndjson"],
+      behavior: "event-stream",
+    }),
+  ),
 
   mapped("workspace.privacy.get", path("policy privacy get")),
   mapped("workspace.privacy.update", path("policy privacy update")),
@@ -57,26 +97,152 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("workspace.variables.get", path("data variables get")),
   mapped("workspace.variables.update", path("data variables update")),
 
-  mapped("target.actions.list", path("action list")),
-  mapped("target.devices.list", path("target device list")),
+  mapped(
+    "target.actions.list",
+    path("action list"),
+    path("routine list", [], undefined, {
+      summary: "List reusable routines",
+      examples: ["relay routine list"],
+    }),
+  ),
+  mapped(
+    "target.devices.list",
+    path("target device list"),
+    path("device list", [], undefined, {
+      summary: "List connected devices",
+      examples: ["relay device list"],
+    }),
+  ),
   mapped("target.list", path("target list")),
   mapped("target.create", path("target create")),
   mapped("target.delete", path("target delete", ["targetId"])),
   mapped("target.preflight", path("target preflight", ["targetId"])),
   mapped("target.open", path("target open", ["targetId"])),
-  mapped("target.boot", path("target boot", ["serial"])),
-  mapped("target.authorize", path("target authorize", ["serial"])),
+  mapped(
+    "target.boot",
+    path("target boot", ["serial"]),
+    path("device boot", ["serial"], undefined, {
+      summary: "Boot a device",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+    }),
+  ),
+  mapped(
+    "target.authorize",
+    path("target authorize", ["serial"]),
+    path("device authorize", ["serial"], undefined, {
+      summary: "Authorize a device for control",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+    }),
+  ),
   mapped(
     "target.snapshot.capture",
     path("target observe", ["serial"]),
     path("target snapshot", ["serial"]),
+    path("device observe", ["serial"], undefined, {
+      summary: "Read the current accessibility structure",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+    }),
+    path("device snapshot", ["serial"], undefined, {
+      summary: "Read the current accessibility structure",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+    }),
   ),
-  mapped("target.screenshot.capture", path("target screenshot", ["serial"])),
-  mapped("target.interact", path("target interact", ["serial"])),
-  mapped("target.touch", path("target touch", ["serial"])),
-  mapped("target.key", path("target key", ["serial"])),
-  mapped("target.scroll", path("target scroll", ["serial"])),
-  mapped("target.video.start", path("target video", ["serial"])),
+  mapped(
+    "target.screenshot.capture",
+    path("target screenshot", ["serial"], undefined, { behavior: "screenshot" }),
+    path("device screenshot", ["serial"], undefined, {
+      summary: "Capture the current screen as PNG",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      examples: [
+        "relay device screenshot emulator-5554 --file current.png",
+        "relay device screenshot emulator-5554 --binary > current.png",
+      ],
+      note: "Use --file <path> for a PNG file or --binary for raw PNG bytes on stdout.",
+      behavior: "screenshot",
+    }),
+  ),
+  mapped(
+    "target.interact",
+    path("target interact", ["serial"]),
+    path("device interact", ["serial"], undefined, {
+      summary: "Perform a semantic device interaction",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        {
+          name: "kind",
+          type: "label | point | ref | find | text-match | swipe | type",
+          required: true,
+          description: "Semantic interaction kind",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "target.touch",
+    path("target touch", ["serial"]),
+    path("device touch", ["serial"], undefined, {
+      summary: "Send a low-level touch event",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        {
+          name: "action",
+          type: "down | move | up | cancel",
+          required: true,
+          description: "Touch phase",
+        },
+        { name: "x", type: "number", required: true, description: "Normalized x coordinate" },
+        { name: "y", type: "number", required: true, description: "Normalized y coordinate" },
+      ],
+    }),
+  ),
+  mapped(
+    "target.key",
+    path("target key", ["serial"]),
+    path("device key", ["serial"], undefined, {
+      summary: "Send a device key",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        {
+          name: "kind",
+          type: "text | key",
+          required: true,
+          description: "Keyboard input kind",
+        },
+        { name: "text", type: "string", description: "Required when kind is text" },
+        { name: "key", type: "enter | backspace", description: "Required when kind is key" },
+      ],
+    }),
+  ),
+  mapped(
+    "target.scroll",
+    path("target scroll", ["serial"]),
+    path("device scroll", ["serial"], undefined, {
+      summary: "Scroll the current device screen",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        { name: "x", type: "number", required: true, description: "Gesture origin x" },
+        { name: "y", type: "number", required: true, description: "Gesture origin y" },
+        { name: "scrollX", type: "number", required: true, description: "Horizontal delta" },
+        { name: "scrollY", type: "number", required: true, description: "Vertical delta" },
+      ],
+    }),
+  ),
+  mapped(
+    "target.video.start",
+    path("target video", ["serial"]),
+    path("device video", ["serial"], undefined, {
+      summary: "Record device video",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      inputHelp: [
+        {
+          name: "action",
+          type: "start | stop",
+          required: true,
+          description: "Recording action (Apple devices)",
+        },
+      ],
+    }),
+  ),
 
   mapped("project.list", path("project list")),
   mapped("project.save", path("project save")),
@@ -88,25 +254,172 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("lease.create", path("lease create")),
   mapped("lease.release", path("lease release", ["leaseId"])),
 
-  mapped("journey.list", path("journey list")),
+  mapped(
+    "journey.list",
+    path("journey list"),
+    path("map list", [], undefined, {
+      summary: "List App Maps",
+      examples: ["relay map list"],
+    }),
+  ),
   mapped("journey.get", path("journey get", ["journeyId"])),
-  mapped("journey.create", path("journey create")),
+  mapped(
+    "journey.create",
+    path("journey create"),
+    path("map create", [], undefined, {
+      summary: "Create an App Map",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Expected initial revision, normally 0",
+        },
+        {
+          name: "title",
+          type: "string",
+          required: true,
+          description: "Human-readable title",
+        },
+        {
+          name: "steps",
+          type: "object[]",
+          required: true,
+          description: "Initial routine steps; use [] for an empty map",
+        },
+      ],
+      examples: [
+        'relay map create --input \'{"expectedRevision":0,"title":"Checkout","steps":[]}\'',
+      ],
+    }),
+  ),
   mapped("journey.update", path("journey update", ["journeyId"])),
-  mapped("journey.delete", path("journey delete", ["journeyId"])),
-  mapped("journey.import", path("journey import")),
-  mapped("journey.history.restore", path("journey history restore", ["journeyId"])),
+  mapped(
+    "journey.delete",
+    path("journey delete", ["journeyId"]),
+    path("map delete", ["journeyId"], undefined, {
+      summary: "Delete an App Map",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+    }),
+  ),
+  mapped(
+    "journey.import",
+    path("journey import"),
+    path("map import", [], undefined, {
+      summary: "Import an App Map",
+      inputHelp: [
+        { name: "yaml", type: "string", required: true, description: "Portable map YAML" },
+        { name: "dryRun", type: "boolean", description: "Validate without saving" },
+        {
+          name: "conflict",
+          type: "reject | replace | copy",
+          description: "How to handle an existing map",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "journey.history.restore",
+    path("journey history restore", ["journeyId"]),
+    path("map restore", ["journeyId"], undefined, {
+      summary: "Restore an App Map revision",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "updatedAt",
+          type: "number",
+          required: true,
+          description: "History timestamp to restore",
+        },
+      ],
+    }),
+  ),
   mapped("journey.evidence.save", path("journey evidence save", ["journeyId"])),
   mapped(
     "journey.document.get",
     path("journey document get", ["journeyId"]),
-    path("screen list", ["journeyId"]),
+    path("screen list", ["journeyId"], undefined, {
+      summary: "List screens in an App Map",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      note: "Returns the complete revisioned App Map document.",
+    }),
     path("connection list", ["journeyId"]),
+    path("map get", ["journeyId"], undefined, {
+      summary: "Get the revisioned App Map document",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      examples: ["relay map get checkout"],
+    }),
+    path("connect list", ["journeyId"], undefined, {
+      summary: "List connections in an App Map",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      note: "Returns the complete revisioned App Map document.",
+    }),
+    path("flow list", ["journeyId"], undefined, {
+      summary: "List named flows in an App Map",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      note: "Returns the complete revisioned App Map document.",
+    }),
   ),
   mapped(
     "journey.document.update",
     path("journey document update", ["journeyId"]),
-    path("screen update", ["journeyId"]),
+    path("screen update", ["journeyId"], undefined, {
+      summary: "Update screens in an App Map",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current map revision",
+        },
+        { name: "value", type: "object", required: true, description: "Complete App Map document" },
+      ],
+      note: "Screens are updated through the complete revisioned App Map document.",
+    }),
     path("connection update", ["journeyId"]),
+    path("map update", ["journeyId"], undefined, {
+      summary: "Replace a revisioned App Map document",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Revision used for optimistic concurrency",
+        },
+        { name: "value", type: "object", required: true, description: "Complete App Map document" },
+      ],
+      note: "This is a revision-safe whole-document update, not a partial patch.",
+    }),
+    path("connect update", ["journeyId"], undefined, {
+      summary: "Update connections in an App Map",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current map revision",
+        },
+        { name: "value", type: "object", required: true, description: "Complete App Map document" },
+      ],
+      note: "Connections are updated through the complete revisioned App Map document.",
+    }),
+    path("flow update", ["journeyId"], undefined, {
+      summary: "Update named flows in an App Map",
+      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current map revision",
+        },
+        { name: "value", type: "object", required: true, description: "Complete App Map document" },
+      ],
+      note: "Flows are updated through the complete revisioned App Map document.",
+    }),
   ),
   mapped("collaboration.document.bootstrap", path("collaboration bootstrap", ["journeyId"])),
   mapped("collaboration.document.sync", path("collaboration sync", ["journeyId"])),
@@ -118,11 +431,65 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("collaboration.awareness.list", path("collaboration awareness list", ["journeyId"])),
   mapped("collaboration.awareness.remove", path("collaboration awareness remove", ["journeyId"])),
 
-  mapped("authoring.session.list", path("session list")),
-  mapped("authoring.session.get", path("session get", ["sessionId"])),
-  mapped("authoring.session.create", path("session create")),
-  mapped("authoring.session.observe", path("session observe", ["sessionId"])),
-  mapped("authoring.session.start", path("session start", ["sessionId"])),
+  mapped(
+    "authoring.session.list",
+    path("session list"),
+    path("proposal list", [], undefined, { summary: "List recording proposals" }),
+  ),
+  mapped(
+    "authoring.session.get",
+    path("session get", ["sessionId"]),
+    path("proposal get", ["sessionId"], undefined, {
+      summary: "Get a recording proposal",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.create",
+    path("session create"),
+    path("proposal create", [], undefined, {
+      summary: "Create a proposal attached to an App Map and device",
+      inputHelp: [
+        { name: "journeyId", type: "string", required: true, description: "App Map identifier" },
+        { name: "target", type: "object", required: true, description: "Device or browser target" },
+        { name: "leaseId", type: "string", required: true, description: "Exclusive target lease" },
+        {
+          name: "expectedJourneyRevision",
+          type: "number",
+          required: true,
+          description: "Current map revision",
+        },
+        {
+          name: "expectedRecipeRevision",
+          type: "number",
+          required: true,
+          description: "Current recipe revision",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.observe",
+    path("session observe", ["sessionId"]),
+    path("proposal observe", ["sessionId"], undefined, {
+      summary: "Capture the proposal's current device state",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.start",
+    path("session start", ["sessionId"]),
+    path("proposal record", ["sessionId"], undefined, {
+      summary: "Start recording a proposal",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
   mapped(
     "authoring.session.interact",
     path("session interact", ["sessionId"]),
@@ -132,16 +499,244 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("session back", ["sessionId"], { interaction: { kind: "key", key: "back" } }),
     path("session wait", ["sessionId"], { interaction: { kind: "wait" } }),
     path("session screenshot", ["sessionId"], { interaction: { kind: "screenshot" } }),
+    path("proposal interact", ["sessionId"], undefined, {
+      summary: "Perform an explicit interaction while recording",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "interaction",
+          type: "object",
+          required: true,
+          description: "Authoring interaction",
+        },
+      ],
+    }),
+    path(
+      "proposal tap",
+      ["sessionId"],
+      { interaction: { kind: "tap" } },
+      {
+        summary: "Tap while recording",
+        argumentHelp: [
+          { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+        inputHelp: [
+          {
+            name: "interaction.target",
+            type: "object",
+            required: true,
+            description: "Semantic target or coordinates",
+          },
+        ],
+      },
+    ),
+    path(
+      "proposal type",
+      ["sessionId"],
+      { interaction: { kind: "type" } },
+      {
+        summary: "Enter text while recording",
+        argumentHelp: [
+          { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+        inputHelp: [
+          {
+            name: "interaction.text",
+            type: "string",
+            required: true,
+            description: "Text to enter",
+          },
+        ],
+      },
+    ),
+    path(
+      "proposal swipe",
+      ["sessionId"],
+      { interaction: { kind: "swipe" } },
+      {
+        summary: "Swipe while recording",
+        argumentHelp: [
+          { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+        inputHelp: [
+          { name: "interaction.from", type: "object", required: true, description: "Start point" },
+          { name: "interaction.to", type: "object", required: true, description: "End point" },
+          {
+            name: "interaction.durationMs",
+            type: "number",
+            description: "Optional gesture duration",
+          },
+        ],
+      },
+    ),
+    path(
+      "proposal back",
+      ["sessionId"],
+      { interaction: { kind: "key", key: "back" } },
+      {
+        summary: "Press Back while recording",
+        argumentHelp: [
+          { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+      },
+    ),
+    path(
+      "proposal wait",
+      ["sessionId"],
+      { interaction: { kind: "wait" } },
+      {
+        summary: "Wait while recording",
+        argumentHelp: [
+          { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+        inputHelp: [
+          {
+            name: "interaction.ms",
+            type: "number",
+            required: true,
+            description: "Wait duration in milliseconds",
+          },
+        ],
+      },
+    ),
+    path(
+      "proposal screenshot",
+      ["sessionId"],
+      { interaction: { kind: "screenshot" } },
+      {
+        summary: "Add a screenshot checkpoint",
+        argumentHelp: [
+          { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        ],
+      },
+    ),
   ),
-  mapped("authoring.session.stop", path("session stop", ["sessionId"])),
-  mapped("authoring.take.trim", path("take trim", ["sessionId"])),
-  mapped("authoring.take.reorder", path("take reorder", ["sessionId"])),
-  mapped("authoring.take.replace", path("take replace", ["sessionId", "actionId"])),
-  mapped("authoring.take.replay", path("take replay", ["sessionId"])),
-  mapped("authoring.session.commit", path("session commit", ["sessionId"])),
-  mapped("authoring.session.discard", path("session discard", ["sessionId"])),
-  mapped("authoring.session.cancel", path("session cancel", ["sessionId"])),
-  mapped("authoring.session.cleanup", path("session cleanup", ["sessionId"])),
+  mapped(
+    "authoring.session.stop",
+    path("session stop", ["sessionId"]),
+    path("proposal stop", ["sessionId"], undefined, {
+      summary: "Stop recording and open the proposal for review",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.take.trim",
+    path("take trim", ["sessionId"]),
+    path("proposal trim", ["sessionId"], undefined, {
+      summary: "Trim recorded proposal actions or video",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+      inputHelp: [
+        { name: "fromMs", type: "number", description: "Clip start in milliseconds" },
+        { name: "toMs", type: "number", description: "Clip end in milliseconds" },
+        { name: "actionIds", type: "string[]", description: "Actions to keep" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.take.reorder",
+    path("take reorder", ["sessionId"]),
+    path("proposal reorder", ["sessionId"], undefined, {
+      summary: "Reorder proposal actions",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "actionIds",
+          type: "string[]",
+          required: true,
+          description: "Action identifiers in desired order",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.take.replace",
+    path("take replace", ["sessionId", "actionId"]),
+    path("proposal replace", ["sessionId", "actionId"], undefined, {
+      summary: "Replace one proposal action",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+        { name: "actionId", type: "string", description: "Recorded action identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "interaction",
+          type: "object",
+          required: true,
+          description: "Replacement interaction",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.take.replay",
+    path("take replay", ["sessionId"]),
+    path("proposal replay", ["sessionId"], undefined, {
+      summary: "Replay a proposal on its device",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.commit",
+    path("session commit", ["sessionId"]),
+    path("proposal accept", ["sessionId"], undefined, {
+      summary: "Accept a proposal into the App Map",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "destination",
+          type: "object",
+          description: "Existing screen, new screen, or end destination",
+        },
+        {
+          name: "mode",
+          type: "interaction | automatic | reusable",
+          description: "Connection execution mode",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.discard",
+    path("session discard", ["sessionId"]),
+    path("proposal discard", ["sessionId"], undefined, {
+      summary: "Discard the current proposal take",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.cancel",
+    path("session cancel", ["sessionId"]),
+    path("proposal cancel", ["sessionId"], undefined, {
+      summary: "Cancel a proposal",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
+  mapped(
+    "authoring.session.cleanup",
+    path("session cleanup", ["sessionId"]),
+    path("proposal cleanup", ["sessionId"], undefined, {
+      summary: "Remove a finished proposal session",
+      argumentHelp: [
+        { name: "proposalId", type: "string", description: "Authoring session identifier" },
+      ],
+    }),
+  ),
 
   mapped("collection.list", path("collection list")),
   mapped("collection.get", path("collection get", ["collectionId"])),
@@ -170,14 +765,81 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("discovery.promote", path("discovery promote", ["sessionId"])),
 
   mapped("job.list", path("job list")),
-  mapped("job.get", path("job get", ["jobId"]), path("job watch", ["jobId"])),
-  mapped("job.start", path("job start")),
-  mapped("job.retry", path("job retry", ["jobId"])),
-  mapped("job.cancel", path("job cancel", ["jobId"])),
-  mapped("job.pause", path("job pause", ["jobId"])),
-  mapped("job.resume", path("job resume", ["jobId"])),
+  mapped(
+    "job.get",
+    path("job get", ["jobId"]),
+    path("job watch", ["jobId"], undefined, { behavior: "job-watch" }),
+    path("run watch", ["jobId"], undefined, {
+      summary: "Watch an execution job until it finishes",
+      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
+      behavior: "job-watch",
+    }),
+  ),
+  mapped(
+    "job.start",
+    path("job start"),
+    path("run start", ["action"], undefined, {
+      summary: "Start an execution job",
+      argumentHelp: [
+        { name: "action", type: "string", description: "Routine or action identifier" },
+      ],
+      inputHelp: [{ name: "serial", type: "string", description: "Optional target device serial" }],
+    }),
+  ),
+  mapped(
+    "job.retry",
+    path("job retry", ["jobId"]),
+    path("run retry", ["jobId"], undefined, {
+      summary: "Retry an execution job",
+      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
+    }),
+  ),
+  mapped(
+    "job.cancel",
+    path("job cancel", ["jobId"]),
+    path("run cancel", ["jobId"], undefined, {
+      summary: "Cancel an execution job",
+      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
+    }),
+  ),
+  mapped(
+    "job.pause",
+    path("job pause", ["jobId"]),
+    path("run pause", ["jobId"], undefined, {
+      summary: "Pause an execution job",
+      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
+    }),
+  ),
+  mapped(
+    "job.resume",
+    path("job resume", ["jobId"]),
+    path("run resume", ["jobId"], undefined, {
+      summary: "Resume an execution job",
+      argumentHelp: [{ name: "jobId", type: "string", description: "Execution job identifier" }],
+    }),
+  ),
   mapped("job.active.cancel", path("job active cancel")),
-  mapped("job.graph-path.start", path("job graph-path start")),
+  mapped(
+    "job.graph-path.start",
+    path("job graph-path start"),
+    path("flow run", ["recipe", "flowName"], undefined, {
+      summary: "Run a named path through an App Map",
+      argumentHelp: [
+        { name: "mapId", type: "string", description: "App Map identifier" },
+        { name: "flowName", type: "string", description: "Named flow start" },
+      ],
+      inputHelp: [
+        { name: "serial", type: "string", description: "Device serial" },
+        {
+          name: "transitionPath",
+          type: "string[]",
+          description: "Explicit connection identifiers",
+        },
+        { name: "platform", type: "android | ios", description: "Device platform" },
+      ],
+      examples: ['relay flow run checkout Checkout --input \'{"serial":"emulator-5554"}\''],
+    }),
+  ),
   mapped("job.matrix.start", path("job matrix start")),
   mapped("job.compatibility-matrix.start", path("job compatibility-matrix start")),
   mapped("job.soak.start", path("job soak start")),
@@ -185,11 +847,105 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("run.list", path("run list")),
   mapped("run.catalog.rebuild", path("run catalog rebuild")),
   mapped("run.retention.apply", path("run retention apply")),
-  mapped("run.visual-baseline.update", path("run visual-baseline update", ["runId"])),
-  mapped("run.pin.update", path("run pin update", ["runId"])),
+  mapped(
+    "run.visual-baseline.update",
+    path("run visual-baseline update", ["runId"]),
+    path("run approve", ["runId"], undefined, {
+      summary: "Approve a run as the visual baseline",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+    }),
+  ),
+  mapped(
+    "run.pin.update",
+    path("run pin update", ["runId"]),
+    path("run pin", ["runId"], undefined, {
+      summary: "Pin or unpin a run",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      inputHelp: [{ name: "pinned", type: "boolean", description: "Defaults to true" }],
+    }),
+  ),
   mapped("step.run", path("run step", ["serial"])),
   mapped("generation.create", path("generation create")),
-  mapped("action.run", path("action run", ["actionId", "serial"])),
+  mapped(
+    "action.run",
+    path("action run", ["actionId", "serial"]),
+    path("routine run", ["actionId", "serial"], undefined, {
+      summary: "Run a reusable routine on a device",
+      argumentHelp: [
+        { name: "routineId", type: "string", description: "Reusable action identifier" },
+        { name: "serial", type: "string", description: "Connected device serial" },
+      ],
+      examples: ["relay routine run login emulator-5554"],
+    }),
+  ),
+];
+
+export type CliResourceDescriptor = {
+  resourceId: string;
+  label: string;
+  path: CommandPathDescriptor;
+  resourcePath(input: Readonly<Record<string, unknown>>): string;
+};
+
+function noResourceInput(input: Readonly<Record<string, unknown>>, path: string): void {
+  if (Object.keys(input).length > 0) throw new UsageError(`${path} does not accept --input fields`);
+}
+
+function runResource(command: string, suffix: string, summary: string): CliResourceDescriptor {
+  return {
+    resourceId: command.replace(" ", "."),
+    label: summary,
+    path: path(command, ["runId"], undefined, {
+      summary,
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+    }),
+    resourcePath(input) {
+      const runId = input.runId;
+      if (typeof runId !== "string") throw new UsageError(`${command} requires <runId>`);
+      const extra = { ...input };
+      delete extra.runId;
+      noResourceInput(extra, command);
+      return `/runs/${encodeURIComponent(runId)}${suffix}`;
+    },
+  };
+}
+
+export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
+  runResource("run get", "", "Get a persisted run and its evidence"),
+  runResource("run signals", "/signals", "Get regression signals for a run"),
+  runResource("run compare", "/visual-baseline", "Compare a run with its visual baseline"),
+  {
+    resourceId: "activity.list",
+    label: "List durable project activity",
+    path: path("activity list", [], undefined, {
+      summary: "List durable human, agent, and system activity",
+      inputHelp: [
+        { name: "limit", type: "number", description: "Positive page size" },
+        { name: "cursor", type: "string", description: "Cursor returned by the previous page" },
+      ],
+      examples: ["relay activity list --input '{\"limit\":50}'"],
+    }),
+    resourcePath(input) {
+      const query = new URLSearchParams();
+      if (input.limit !== undefined) {
+        if (!Number.isInteger(input.limit) || Number(input.limit) < 1) {
+          throw new UsageError("activity list limit must be a positive integer");
+        }
+        query.set("limit", String(input.limit));
+      }
+      if (input.cursor !== undefined) {
+        if (typeof input.cursor !== "string" || !input.cursor) {
+          throw new UsageError("activity list cursor must be a non-empty string");
+        }
+        query.set("cursor", input.cursor);
+      }
+      const unknown = Object.keys(input).filter((key) => key !== "limit" && key !== "cursor");
+      if (unknown.length)
+        throw new UsageError(`activity list does not accept: ${unknown.join(", ")}`);
+      const encoded = query.toString();
+      return `/activity${encoded ? `?${encoded}` : ""}`;
+    },
+  },
 ];
 
 export const mappedCommandDescriptors = cliOperationDescriptors.filter(
@@ -232,6 +988,13 @@ export type ResolvedCommand = {
   operationId: OperationId;
   commandPath: string;
   input: Record<string, unknown>;
+  behavior?: CommandBehavior;
+};
+
+export type ResolvedResourceCommand = {
+  resourceId: string;
+  commandPath: string;
+  resourcePath: string;
 };
 
 export function resolveCommand(
@@ -254,6 +1017,7 @@ export function resolveCommand(
         operationId: descriptor.operationId,
         commandPath: candidate.command,
         input: constructed,
+        ...(candidate.behavior ? { behavior: candidate.behavior } : {}),
       };
     }
   }
@@ -268,7 +1032,12 @@ export function resolveCommand(
     const providedArguments = Math.max(0, positionals.length - incomplete.tokens.length);
     const missingArguments = argumentKeys.slice(providedArguments);
     if (missingArguments.length) {
-      const required = missingArguments.map((key) => `<${key.split(".").at(-1)}>`).join(", ");
+      const required = missingArguments
+        .map((key, index) => {
+          const help = incomplete.candidate.argumentHelp?.[providedArguments + index];
+          return `<${help?.name ?? key.split(".").at(-1)}>`;
+        })
+        .join(", ");
       throw new UsageError(`${incomplete.candidate.command} requires ${required}`);
     }
     throw new UsageError(`Expected: relay ${formatCommandUsage(incomplete.candidate)}`);
@@ -288,9 +1057,52 @@ export function resolveCommand(
   throw new UsageError(`Unknown command: ${positionals.join(" ")}. Run 'relay help'.`);
 }
 
+export function resolveResourceCommand(
+  positionals: readonly string[],
+  input: Readonly<Record<string, unknown>> = {},
+): ResolvedResourceCommand | undefined {
+  for (const descriptor of cliResourceDescriptors) {
+    const candidate = descriptor.path;
+    const tokens = candidate.command.split(" ");
+    const argumentKeys = candidate.arguments ?? [];
+    if (positionals.length !== tokens.length + argumentKeys.length) continue;
+    if (!tokens.every((token, index) => positionals[index] === token)) continue;
+
+    const constructed = mergeRecords({}, input);
+    argumentKeys.forEach((key, index) => {
+      setInputPath(constructed, key, positionals[tokens.length + index]!);
+    });
+    return {
+      resourceId: descriptor.resourceId,
+      commandPath: candidate.command,
+      resourcePath: descriptor.resourcePath(constructed),
+    };
+  }
+
+  const incomplete = cliResourceDescriptors
+    .map((descriptor) => ({ descriptor, tokens: descriptor.path.command.split(" ") }))
+    .filter(({ tokens }) => tokens.every((token, index) => positionals[index] === token))
+    .sort((left, right) => right.tokens.length - left.tokens.length)[0];
+  if (incomplete) {
+    const argumentKeys = incomplete.descriptor.path.arguments ?? [];
+    const providedArguments = Math.max(0, positionals.length - incomplete.tokens.length);
+    const missingArguments = argumentKeys.slice(providedArguments);
+    if (missingArguments.length) {
+      const required = missingArguments
+        .map((key, index) => {
+          const help = incomplete.descriptor.path.argumentHelp?.[providedArguments + index];
+          return `<${help?.name ?? key.split(".").at(-1)}>`;
+        })
+        .join(", ");
+      throw new UsageError(`${incomplete.descriptor.path.command} requires ${required}`);
+    }
+  }
+  return undefined;
+}
+
 export function formatCommandUsage(descriptor: CommandPathDescriptor): string {
   const arguments_ = (descriptor.arguments ?? [])
-    .map((key) => `<${key.split(".").at(-1)}>`)
+    .map((key, index) => `<${descriptor.argumentHelp?.[index]?.name ?? key.split(".").at(-1)}>`)
     .join(" ");
   return `${descriptor.command}${arguments_ ? ` ${arguments_}` : ""}`;
 }

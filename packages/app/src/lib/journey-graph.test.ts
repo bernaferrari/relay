@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { JourneyMetadata, RecipeStep } from "@relay/protocol";
 import {
+  addJourneyGraphScreen,
   addJourneyStartScreen,
   buildJourneyGraphTree,
   commitTakeToJourneyGraph,
@@ -42,6 +43,39 @@ test("the current device screen can become the entry node without an executable 
   assert.deepEqual(captured.screen.observations, [observation]);
   assert.equal(buildJourneyGraphTree(captured.graph, []).nodes[0]?.representativeStepIndex, -1);
   assert.throws(() => addJourneyStartScreen(captured.graph, observation, { at: 20 }));
+});
+
+test("capturing a screen creates unique nodes and refreshes matching observations", () => {
+  const home = {
+    id: "observation-home-1",
+    fingerprint: "home-fingerprint",
+    capturedAt: 10,
+    source: "recording" as const,
+  };
+  const first = addJourneyGraphScreen(emptyJourneyGraph(), home, { at: 10 });
+  const settings = addJourneyGraphScreen(
+    first.graph,
+    {
+      id: "observation-settings",
+      fingerprint: "settings-fingerprint",
+      capturedAt: 20,
+      source: "recording" as const,
+    },
+    { title: "Settings", at: 20 },
+  );
+  const refreshed = addJourneyGraphScreen(settings.graph, {
+    ...home,
+    id: "observation-home-2",
+    capturedAt: 30,
+  });
+
+  assert.equal(first.created, true);
+  assert.equal(settings.created, true);
+  assert.equal(settings.screen.title, "Settings");
+  assert.equal(refreshed.created, false);
+  assert.equal(refreshed.graph.screens.length, 2);
+  assert.equal(refreshed.screen.observations?.length, 2);
+  assert.equal(refreshed.graph.transitions.length, 0);
 });
 
 test("a reviewed take creates an explicit start, destination screen, and transition", () => {

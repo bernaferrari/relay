@@ -1,9 +1,13 @@
 import type { ActorKind, ServerConnection } from "@relay/protocol";
-import { resolveCommand } from "./commands.js";
+import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
 import { UsageError } from "./errors.js";
 
 export type OutputMode = "human" | "json" | "ndjson";
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
+export type ScreenshotOutput =
+  | { kind: "default" }
+  | { kind: "file"; path: string; force: boolean }
+  | { kind: "binary" };
 
 export type GlobalConfig = {
   connection: ServerConnection;
@@ -26,6 +30,15 @@ export type ParsedCli =
       operationId: string;
       input: Record<string, unknown>;
       commandPath?: string;
+      behavior?: CommandBehavior;
+      screenshotOutput: ScreenshotOutput;
+    }
+  | {
+      config: GlobalConfig;
+      command: "resource";
+      resourceId: string;
+      resourcePath: string;
+      commandPath: string;
     };
 
 type Environment = Record<string, string | undefined>;
@@ -54,6 +67,7 @@ const valueFlags = new Set([
   "--actor",
   "--timeout",
   "--input",
+  "--file",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -63,6 +77,8 @@ const switchFlags = new Set([
   "--quiet",
   "--wait",
   "--no-wait",
+  "--binary",
+  "--force",
 ]);
 
 function tokenize(argv: readonly string[]): ParsedTokens {
@@ -125,6 +141,28 @@ function parseInput(rawInput: string | undefined): Record<string, unknown> {
     throw new UsageError("--input must be a JSON object");
   }
   return input as Record<string, unknown>;
+}
+
+function screenshotOutput(
+  tokens: ParsedTokens,
+  output: OutputMode,
+  eligible: boolean,
+): ScreenshotOutput {
+  const file = tokens.values.get("--file");
+  const binary = tokens.switches.has("--binary");
+  const force = tokens.switches.has("--force");
+  if (!file && !binary && !force) return { kind: "default" };
+  if (!eligible) {
+    throw new UsageError("--file, --binary, and --force are only valid for screenshot commands");
+  }
+  if (file && binary) throw new UsageError("Use only one of --file or --binary");
+  if (force && !file) throw new UsageError("--force requires --file <path>");
+  if (binary && output !== "human") {
+    throw new UsageError("--binary cannot be combined with --json or --ndjson");
+  }
+  if (file) return { kind: "file", path: file, force };
+  if (binary) return { kind: "binary" };
+  return { kind: "default" };
 }
 
 export function parseCli(argv: readonly string[], env: Environment = process.env): ParsedCli {
@@ -219,13 +257,39 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       command: "invoke",
       operationId,
       input: parseInput(rawInput),
+      ...(operationId === "target.screenshot.capture" ? { behavior: "screenshot" as const } : {}),
+      screenshotOutput: screenshotOutput(
+        tokens,
+        output,
+        operationId === "target.screenshot.capture",
+      ),
     };
   }
 
-  const resolved = resolveCommand(tokens.positionals, parseInput(rawInput));
-  if (resolved.commandPath === "system events follow" && output === "json") {
+  const input = parseInput(rawInput);
+  const resource = resolveResourceCommand(tokens.positionals, input);
+  if (resource) {
+    screenshotOutput(tokens, output, false);
+    return {
+      config: {
+        connection,
+        credentialSource,
+        output,
+        quiet: tokens.switches.has("--quiet"),
+        timeoutMs,
+        wait,
+      },
+      command: "resource",
+      resourceId: resource.resourceId,
+      resourcePath: resource.resourcePath,
+      commandPath: resource.commandPath,
+    };
+  }
+
+  const resolved = resolveCommand(tokens.positionals, input);
+  if (resolved.behavior === "event-stream" && output === "json") {
     throw new UsageError(
-      "system events follow is a stream; use --ndjson (or human output) instead of --json",
+      `${resolved.commandPath} is a stream; use --ndjson (or human output) instead of --json`,
     );
   }
   return {
@@ -241,6 +305,12 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     operationId: resolved.operationId,
     input: resolved.input,
     commandPath: resolved.commandPath,
+    ...(resolved.behavior ? { behavior: resolved.behavior } : {}),
+    screenshotOutput: screenshotOutput(
+      tokens,
+      output,
+      resolved.operationId === "target.screenshot.capture",
+    ),
   };
 }
 

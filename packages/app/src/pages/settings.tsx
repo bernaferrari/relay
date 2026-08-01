@@ -1333,7 +1333,9 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                     <span
                       class={cn(
                         "size-1.5 shrink-0 rounded-full bg-current",
-                        server.health() === "online" && server.sseConnected() && "animate-pulse",
+                        server.health() === "online" &&
+                          server.sseConnected() &&
+                          "motion-safe:animate-pulse",
                       )}
                     />
                     {healthText()}

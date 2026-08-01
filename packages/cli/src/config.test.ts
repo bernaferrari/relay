@@ -247,3 +247,55 @@ test("target and session mutations report missing explicit identities", () => {
     /take replace requires <actionId>/,
   );
 });
+
+test("resource commands and App Map aliases parse with explicit behavior", () => {
+  const resource = parseCli(
+    ["activity", "list", "--input", '{"limit":25,"cursor":"next/value"}'],
+    {},
+  );
+  assert.deepEqual(resource, {
+    config: resource.config,
+    command: "resource",
+    resourceId: "activity.list",
+    resourcePath: "/activity?limit=25&cursor=next%2Fvalue",
+    commandPath: "activity list",
+  });
+
+  const flow = parseCli(["flow", "run", "checkout", "Main"], {});
+  assert.equal(flow.command, "invoke");
+  if (flow.command === "invoke") {
+    assert.equal(flow.operationId, "job.graph-path.start");
+    assert.deepEqual(flow.input, { recipe: "checkout", flowName: "Main" });
+  }
+
+  const follow = parseCli(["activity", "follow", "--ndjson"], {});
+  assert.equal(follow.command, "invoke");
+  if (follow.command === "invoke") assert.equal(follow.behavior, "event-stream");
+  assert.throws(() => parseCli(["activity", "follow", "--json"], {}), /stream; use --ndjson/);
+});
+
+test("screenshot output flags reject ambiguous or unrelated use", () => {
+  const file = parseCli(["device", "screenshot", "pixel-9", "--file", "shot.png"], {});
+  assert.equal(file.command, "invoke");
+  if (file.command === "invoke") {
+    assert.deepEqual(file.screenshotOutput, { kind: "file", path: "shot.png", force: false });
+  }
+
+  const binary = parseCli(["target", "screenshot", "pixel-9", "--binary"], {});
+  assert.equal(binary.command, "invoke");
+  if (binary.command === "invoke") assert.deepEqual(binary.screenshotOutput, { kind: "binary" });
+
+  assert.throws(
+    () => parseCli(["device", "screenshot", "pixel-9", "--binary", "--json"], {}),
+    /cannot be combined/,
+  );
+  assert.throws(
+    () => parseCli(["device", "screenshot", "pixel-9", "--file", "a.png", "--binary"], {}),
+    /only one/,
+  );
+  assert.throws(() => parseCli(["map", "list", "--file", "a.png"], {}), /only valid/);
+  assert.throws(
+    () => parseCli(["device", "screenshot", "pixel-9", "--force"], {}),
+    /requires --file/,
+  );
+});

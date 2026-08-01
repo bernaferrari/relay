@@ -1945,7 +1945,7 @@ export function DeviceStage(_props: {
               <Show when={tapFeedback()}>
                 {(fb) => (
                   <div
-                    class="pointer-events-none absolute z-[6] origin-center rounded-full border-[1.5px] border-border-interactive-base bg-surface-brand-base/20 animate-ping"
+                    class="pointer-events-none absolute z-[6] origin-center rounded-full border-[1.5px] border-border-interactive-base bg-surface-brand-base/20 motion-safe:animate-ping"
                     aria-hidden="true"
                     style={{
                       left: `calc(${fb().x}% - 10px)`,
@@ -2210,7 +2210,7 @@ export function DeviceStage(_props: {
               >
                 <Show when={server.busyCapture()} fallback={<Icon name="camera" size={14} />}>
                   <span
-                    class="size-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-70"
+                    class="size-3.5 rounded-full border-[1.5px] border-current border-t-transparent opacity-70 motion-safe:animate-spin"
                     aria-hidden="true"
                   />
                 </Show>

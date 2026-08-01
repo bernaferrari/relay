@@ -248,12 +248,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
         return false;
       }
-      const journeyId = await draft.ensureRecordingDraft(() => "Untitled journey");
+      const journeyId = await draft.ensureRecordingDraft(() => "Untitled");
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
       const leaseId = server.selectedLeaseId();
       const recipe = server.recipes().find((item) => item.id === journeyId);
       if (!journeyId || !device || !leaseId || !recipe) {
-        toast("Relay needs a Journey, device, and active lease before recording", "warning");
+        toast(
+          "Relay needs an App Map, device, and active control lease before recording",
+          "warning",
+        );
         return false;
       }
       try {
@@ -300,12 +303,15 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
         return null;
       }
-      const journeyId = await draft.ensureRecordingDraft(() => "Untitled journey");
+      const journeyId = await draft.ensureRecordingDraft(() => "Untitled");
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
       const leaseId = server.selectedLeaseId();
       const recipe = server.recipes().find((item) => item.id === journeyId);
       if (!journeyId || !device || !leaseId || !recipe) {
-        toast("Relay needs a journey, device, and active lease to capture this screen", "warning");
+        toast(
+          "Relay needs an App Map, device, and active control lease to capture this screen",
+          "warning",
+        );
         return null;
       }
 
@@ -477,7 +483,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       setPendingSourceScreenId(undefined);
       setPendingTransitionId(undefined);
       setPendingGroup("");
-      toast("Connection added to the Journey", "success");
+      toast("Connection added to the map", "success");
       return committed;
     }
 

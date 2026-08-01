@@ -8,11 +8,11 @@ export type TestRunReadiness = {
 
 /** One source of truth for every Run button in the Tests workspace. */
 export function testRunBlocker(state: TestRunReadiness): string {
-  if (state.health !== "online") return "Start the Relay server before running this journey.";
-  if (!state.selectedDevice) return "Choose a device before running this journey.";
+  if (state.health !== "online") return "Start the Relay server before running this flow.";
+  if (!state.selectedDevice) return "Choose a device before running this flow.";
   const target = state.devices.find((device) => device.serial === state.selectedDevice);
   if (!target || target.booted === false) return "Start the selected device, or choose another.";
-  if (state.stepCount === 0) return "Add at least one action before running this journey.";
+  if (state.stepCount === 0) return "Add at least one connection before running this flow.";
   if (state.invalidCount > 0) {
     return `Complete ${state.invalidCount} unfinished step${state.invalidCount === 1 ? "" : "s"}.`;
   }

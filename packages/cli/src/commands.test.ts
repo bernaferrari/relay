@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { operationDefinitions } from "@relay/protocol";
-import { cliOperationDescriptors, mappedCommandDescriptors, resolveCommand } from "./commands.js";
+import {
+  cliOperationDescriptors,
+  cliResourceDescriptors,
+  mappedCommandDescriptors,
+  resolveCommand,
+  resolveResourceCommand,
+} from "./commands.js";
 
 test("every registry operation is mapped or excluded exactly once", () => {
   const coverage = new Map<string, number>();
@@ -22,6 +28,7 @@ test("friendly command paths are unique", () => {
   const paths = mappedCommandDescriptors.flatMap((descriptor) =>
     descriptor.paths.map((candidate) => candidate.command),
   );
+  paths.push(...cliResourceDescriptors.map((descriptor) => descriptor.path.command));
   assert.equal(new Set(paths).size, paths.length);
 });
 
@@ -123,5 +130,57 @@ test("authoring interaction aliases construct explicit session inputs", () => {
       interaction: { kind: "swipe", target: { x: 0.25, y: 0.75 } },
     }).input,
     { sessionId: "session-1", interaction: { kind: "tap", target: { x: 0.25, y: 0.75 } } },
+  );
+});
+
+test("App Map vocabulary remains aliases over canonical operations", () => {
+  const cases = [
+    [["map", "list"], "journey.list", {}],
+    [["map", "get", "checkout"], "journey.document.get", { journeyId: "checkout" }],
+    [["connect", "update", "checkout"], "journey.document.update", { journeyId: "checkout" }],
+    [
+      ["flow", "run", "checkout", "Main"],
+      "job.graph-path.start",
+      { recipe: "checkout", flowName: "Main" },
+    ],
+    [
+      ["routine", "run", "login", "pixel-9"],
+      "action.run",
+      { actionId: "login", serial: "pixel-9" },
+    ],
+    [["device", "screenshot", "pixel-9"], "target.screenshot.capture", { serial: "pixel-9" }],
+    [["proposal", "record", "proposal-1"], "authoring.session.start", { sessionId: "proposal-1" }],
+    [["proposal", "accept", "proposal-1"], "authoring.session.commit", { sessionId: "proposal-1" }],
+    [["run", "watch", "job-1"], "job.get", { jobId: "job-1" }],
+    [["activity", "follow"], "event.stream", {}],
+  ] as const;
+
+  for (const [argv, operationId, input] of cases) {
+    const resolved = resolveCommand(argv);
+    assert.equal(resolved.operationId, operationId, argv.join(" "));
+    assert.deepEqual(resolved.input, input, argv.join(" "));
+  }
+  assert.equal(resolveCommand(["device", "screenshot", "pixel-9"]).behavior, "screenshot");
+  assert.equal(resolveCommand(["run", "watch", "job-1"]).behavior, "job-watch");
+  assert.equal(resolveCommand(["activity", "follow"]).behavior, "event-stream");
+});
+
+test("declared read-only resources build encoded paths", () => {
+  assert.deepEqual(resolveResourceCommand(["run", "get", "run/a"]), {
+    resourceId: "run.get",
+    commandPath: "run get",
+    resourcePath: "/runs/run%2Fa",
+  });
+  assert.deepEqual(
+    resolveResourceCommand(["activity", "list"], { limit: 20, cursor: "next/value" }),
+    {
+      resourceId: "activity.list",
+      commandPath: "activity list",
+      resourcePath: "/activity?limit=20&cursor=next%2Fvalue",
+    },
+  );
+  assert.throws(
+    () => resolveResourceCommand(["activity", "list"], { limit: 0 }),
+    /positive integer/,
   );
 });

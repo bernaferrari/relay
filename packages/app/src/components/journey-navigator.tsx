@@ -9,12 +9,11 @@ import { mono } from "../lib/ui";
 import { RelayMark } from "./relay-mark";
 import { Icon, type IconName } from "./icon";
 
-export type NavigatorArea = "tests" | "suites" | "runs";
+export type NavigatorArea = "tests" | "runs";
 type RunFilter = "all" | "attention" | "active";
 
 const AREA_TABS: { id: NavigatorArea; label: string }[] = [
-  { id: "tests", label: "Journeys" },
-  { id: "suites", label: "Collections" },
+  { id: "tests", label: "Maps" },
   { id: "runs", label: "Runs" },
 ];
 
@@ -24,16 +23,8 @@ const RUN_FILTERS: { id: RunFilter; label: string }[] = [
   { id: "active", label: "Running" },
 ];
 
-/** Row heights are tuned for ~50 journeys × ~15 steps in one scroller. */
-const createRow = cn(
-  "grid min-h-8 w-full grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2",
-  "text-left text-[12px] font-medium text-text-weak",
-  "transition-colors duration-100 hover:bg-surface-raised-base-hover hover:text-text-strong",
-  "focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
-);
-
 const groupLabel = cn(
-  "grid min-h-8 w-full grid-cols-[minmax(0,1fr)_auto_14px] items-center gap-2 rounded-lg px-2",
+  "grid min-h-10 w-full grid-cols-[minmax(0,1fr)_auto_14px] items-center gap-2 rounded-lg px-2",
   "text-left text-[10.5px]/[1.25] font-semibold tracking-[0.06em] text-text-weaker uppercase",
   "transition-colors hover:bg-surface-base-hover hover:text-text-weak",
   "focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
@@ -60,7 +51,6 @@ export function JourneyNavigator(props: {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onCreate: () => void;
-  onCreateFlow: () => void;
   onOpenRun: (id: string) => void;
   onImport: (yaml: string) => Promise<void>;
   onOpenSettings: () => void;
@@ -102,7 +92,7 @@ export function JourneyNavigator(props: {
   return (
     <aside
       class={cn(shellNav, !props.open && shellNavClosed)}
-      aria-label="Navigator"
+      aria-label="Project library"
       aria-hidden={!props.open}
       inert={!props.open}
       data-recipe-count={props.items.length}
@@ -134,7 +124,7 @@ export function JourneyNavigator(props: {
                   role="tab"
                   aria-selected={active()}
                   class={cn(
-                    "min-h-7 flex-1 rounded-[7px] text-[11.5px] font-medium transition-colors duration-150",
+                    "min-h-9 flex-1 rounded-[7px] text-[11.5px] font-medium transition-colors duration-150",
                     active()
                       ? "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base"
                       : "text-text-weak hover:text-text-base",
@@ -153,13 +143,13 @@ export function JourneyNavigator(props: {
         <div class="mb-1.5 shrink-0 px-2.5">
           <label class="relative flex h-[32px] w-full items-center gap-2 rounded-[9px] bg-v2-background-bg-base px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:text-text-base focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base),0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_10%,transparent)]">
             <Icon name="search" size={14} />
-            <span class="sr-only">Search journeys</span>
+            <span class="sr-only">Search maps</span>
             <input
               ref={(element) => (searchInput = element)}
               class="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-text-strong outline-none placeholder:text-text-weaker"
               type="search"
               value={props.query}
-              placeholder="Search journeys"
+              placeholder="Search maps"
               autocomplete="off"
               spellcheck={false}
               onInput={(event) => props.onQuery(event.currentTarget.value)}
@@ -192,7 +182,7 @@ export function JourneyNavigator(props: {
                 aria-expanded={draftsOpen()}
                 onClick={() => setDraftsOpen((open) => !open)}
               >
-                <span>Drafts</span>
+                <span>Unfinished</span>
                 <span>{drafts().length}</span>
                 <Icon name={draftsOpen() ? "chevron-up" : "chevron-down"} size={13} />
               </button>
@@ -231,14 +221,10 @@ export function JourneyNavigator(props: {
 
           <Show when={props.query.trim().length > 0 && props.items.length === 0}>
             <p class="px-3 py-6 text-center text-[11.5px] text-text-weak">
-              No journeys match “{props.query}”.
+              No maps match “{props.query}”.
             </p>
           </Show>
         </div>
-      </Show>
-
-      <Show when={props.area === "suites"}>
-        <FlowList onCreate={props.onCreateFlow} />
       </Show>
 
       <Show when={props.area === "runs"}>
@@ -262,7 +248,7 @@ export function JourneyNavigator(props: {
             onClick={props.onCreate}
           >
             <Icon name="plus" size={14} />
-            <span class="text-[12px] font-semibold">New journey</span>
+            <span class="text-[12px] font-semibold">New map</span>
             <Icon
               name="arrow-right"
               size={13}
@@ -272,7 +258,7 @@ export function JourneyNavigator(props: {
         </Show>
         <button
           type="button"
-          class="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong"
+          class="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong"
           onClick={props.onOpenSettings}
         >
           <Icon name="sliders" size={15} /> Settings
@@ -331,72 +317,12 @@ function JourneyBranch(props: {
           type="button"
           class="grid size-7 shrink-0 place-items-center rounded-[6px] text-text-weaker transition-colors hover:bg-surface-raised-base-hover hover:text-[var(--icon-critical-base)] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
           aria-label={`Delete ${displayTitle(props.recipe.title)}`}
-          title="Delete journey"
+          title="Delete map"
           onClick={() => props.onDelete(props.recipe.id)}
         >
           <Icon name="trash" size={13} />
         </button>
       </Show>
-    </div>
-  );
-}
-
-/** Saved collections — ordered groups of journeys. */
-function FlowList(props: { onCreate: () => void }) {
-  const server = useServer();
-  return (
-    <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-      <button type="button" class={cn(createRow, "mb-1")} onClick={props.onCreate}>
-        <Icon name="plus" size={14} class="justify-self-center" />
-        <span>New collection</span>
-      </button>
-      <For
-        each={server.suites()}
-        fallback={
-          <p class="px-3 py-6 text-center text-[11.5px]/[1.5] text-text-weak">
-            No collections yet. A collection runs journeys in order.
-          </p>
-        }
-      >
-        {(suite) => {
-          const count = () =>
-            suite.sections.reduce((sum, section) => sum + section.entries.length, 0);
-          const selected = () => server.selectedSuiteId() === suite.id;
-          return (
-            <button
-              type="button"
-              class={cn(
-                "grid min-h-[34px] w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg px-2 text-left transition-colors duration-100",
-                selected() ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
-              )}
-              aria-current={selected() ? "page" : undefined}
-              title={suite.title}
-              onClick={() => server.setSelectedSuiteId(suite.id)}
-            >
-              <span
-                class={cn(
-                  "justify-self-center text-text-weaker",
-                  selected() && "text-text-interactive-base",
-                )}
-                aria-hidden="true"
-              >
-                <Icon name="check" size={13} />
-              </span>
-              <span
-                class={cn(
-                  "truncate text-[12.5px]/[1.3] font-[550] text-text-weak",
-                  selected() && "text-text-strong",
-                )}
-              >
-                {suite.title}
-              </span>
-              <small class={cn("shrink-0 text-[10px] text-text-weaker", mono)}>
-                {count() || "—"}
-              </small>
-            </button>
-          );
-        }}
-      </For>
     </div>
   );
 }

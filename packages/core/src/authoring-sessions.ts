@@ -126,6 +126,29 @@ function currentRevision(session: AuthoringSession): AuthoringTakeRevision {
   return revision;
 }
 
+async function expectedReplayFingerprints(
+  session: AuthoringSession,
+  revision: AuthoringTakeRevision,
+): Promise<string[]> {
+  const document = await readJourney(session.projectId, session.journeyId);
+  const graph = document.value.graph;
+  const configured =
+    session.destination ??
+    graph?.transitions.find((transition) => transition.id === session.pendingTransitionId)
+      ?.destination;
+  if (configured?.kind === "end") return [];
+  if (configured?.kind === "screen") {
+    const screen = graph?.screens.find((candidate) => candidate.id === configured.screenId);
+    if (!screen) throw new AuthoringStateError("Expected destination screen no longer exists");
+    return [
+      screen.identity?.fingerprint,
+      ...(screen.identity?.aliases ?? []),
+      ...(screen.observations ?? []).map((observation) => observation.fingerprint),
+    ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
+  }
+  return revision.after?.screen.fingerprint ? [revision.after.screen.fingerprint] : [];
+}
+
 function requireState(
   session: AuthoringSession,
   ...states: AuthoringSessionState[]
@@ -959,6 +982,13 @@ export class AuthoringSessionStore {
         error = caught instanceof Error ? caught.message : String(caught);
       }
       const captured = await persistObservation(await runtime.observe(session));
+      if (outcome === "passed") {
+        const expected = await expectedReplayFingerprints(session, revision);
+        if (expected.length > 0 && !expected.includes(captured.observation.screen.fingerprint)) {
+          outcome = "failed";
+          error = `Replay reached a different screen (expected ${expected[0]}, received ${captured.observation.screen.fingerprint})`;
+        }
+      }
       const attempt: AuthoringReplayAttempt = {
         id: `replay-${randomUUID()}`,
         takeId: session.take!.id,

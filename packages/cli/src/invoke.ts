@@ -18,6 +18,7 @@ export type OperationInvoker = {
       onGap?: (event: EventEnvelope) => void;
     },
   ): Promise<void>;
+  resource?(path: string, init?: RequestInit): Promise<unknown>;
 };
 
 export type ClientFactory = (config: GlobalConfig) => OperationInvoker;
@@ -42,4 +43,13 @@ export async function invokeOperation(
 ): Promise<unknown> {
   validateOperationId(operationId);
   return client.invoke(operationId, input as never, { signal });
+}
+
+export async function readResource(
+  client: OperationInvoker,
+  path: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  if (!client.resource) throw new Error("CLI client does not support read-only resources");
+  return client.resource(path, { method: "GET", signal });
 }

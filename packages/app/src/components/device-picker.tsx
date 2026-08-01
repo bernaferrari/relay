@@ -7,7 +7,11 @@ import { withRefreshFeedback } from "../lib/refresh-feedback";
 
 type TargetGroup = { items: DeviceInfo[]; item: DeviceInfo; count: number };
 
-export function DevicePicker(props: { onManageTargets?: () => void }) {
+export function DevicePicker(props: {
+  onManageTargets?: () => void;
+  onOpenLive?: () => void;
+  liveOpen?: boolean;
+}) {
   let trigger: HTMLButtonElement | undefined;
   let dialog: HTMLDivElement | undefined;
   let searchInput: HTMLInputElement | undefined;
@@ -16,10 +20,17 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
   const [query, setQuery] = createSignal("");
   const [showVirtualDevices, setShowVirtualDevices] = createSignal(false);
   const [refreshing, setRefreshing] = createSignal(false);
+  const [scanPhase, setScanPhase] = createSignal<"android" | "ios">("android");
   const device = () => server.devices().find((item) => item.serial === server.selectedDevice());
   const online = () => server.health() === "online";
   const scanning = () => server.deviceDiscoveryStatus() === "scanning";
   const ready = () => targetIsReady(device(), online());
+  const targetLabel = () => {
+    if (device()) return device()!.name;
+    if (!online()) return "Relay offline";
+    if (scanning()) return scanPhase() === "android" ? "Looking for Android…" : "Checking iOS…";
+    return "Choose device";
+  };
   const groupedDevices = createMemo<TargetGroup[]>(() => {
     const groups = new Map<string, DeviceInfo[]>();
     for (const item of server.devices()) {
@@ -65,6 +76,16 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
     showVirtualDevices() ||
     query().trim().length > 0 ||
     virtualGroups().some((group) => group.item.serial === server.selectedDevice());
+
+  createEffect(() => {
+    if (!scanning()) {
+      setScanPhase("android");
+      return;
+    }
+    setScanPhase("android");
+    const phaseTimer = window.setTimeout(() => setScanPhase("ios"), 900);
+    onCleanup(() => window.clearTimeout(phaseTimer));
+  });
 
   async function refreshTargets(): Promise<void> {
     if (refreshing()) return;
@@ -142,41 +163,118 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
 
   return (
     <div class="relative z-[80]" data-device-picker>
-      <button
-        ref={(element) => (trigger = element)}
-        type="button"
-        class={cn(
-          "relative inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--text-base)] transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
-          "hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
-          "active:scale-[0.98] motion-reduce:active:scale-100",
-          "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]",
-          open() && "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
-        )}
-        aria-haspopup="dialog"
-        aria-controls="target-picker-dialog"
-        aria-expanded={open()}
-        onClick={() => (open() ? closePicker() : setOpen(true))}
+      <Show
+        when={props.onOpenLive}
+        fallback={
+          <button
+            ref={(element) => (trigger = element)}
+            type="button"
+            class={cn(
+              "relative inline-flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-[10px] px-3 text-[12px] font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)] transition-[background-color,color,transform] duration-150",
+              "bg-[var(--map-control-surface)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100",
+              open() && "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)]",
+            )}
+            aria-haspopup="dialog"
+            aria-controls="target-picker-dialog"
+            aria-expanded={open()}
+            onClick={() => (open() ? closePicker() : setOpen(true))}
+          >
+            <Icon
+              name={
+                scanning() && !device()
+                  ? "refresh"
+                  : device()?.platform === "browser"
+                    ? "server"
+                    : "smartphone"
+              }
+              size={14}
+              class={cn(
+                ready() ? "text-[var(--text-base)]" : "text-[var(--text-weak)]",
+                device() && !ready() && "text-[var(--icon-warning-base)]",
+                scanning() && !device() && "ui-refresh-spin motion-reduce:opacity-70",
+              )}
+            />
+            <span class="max-w-[150px] truncate">{targetLabel()}</span>
+            <Icon
+              name="chevron-down"
+              size={13}
+              class={cn(
+                "text-[var(--text-weak)] transition-transform duration-150",
+                open() && "rotate-180",
+              )}
+            />
+          </button>
+        }
       >
-        <Icon
-          name={device()?.platform === "browser" ? "server" : "smartphone"}
-          size={13}
+        <div
           class={cn(
-            ready() ? "text-[var(--text-base)]" : "text-[var(--text-weak)]",
-            device() && !ready() && "text-[var(--icon-warning-base)]",
+            "inline-flex h-10 min-w-0 items-stretch overflow-hidden rounded-[11px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-control)]",
+            props.liveOpen && "text-[var(--text-interactive-base)]",
           )}
-        />
-        <span class="max-w-[150px] truncate">
-          {device()?.name ?? (online() ? "No device" : "Relay offline")}
-        </span>
-        <Icon
-          name="chevron-down"
-          size={13}
-          class={cn(
-            "ml-px text-[var(--text-weak)] transition-transform duration-150",
-            open() && "rotate-180",
-          )}
-        />
-      </button>
+          role="group"
+          aria-label="Live device"
+        >
+          <button
+            type="button"
+            class="inline-flex min-w-0 items-center gap-2 px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            aria-pressed={props.liveOpen}
+            aria-label={
+              device() ? `${props.liveOpen ? "Hide" : "Show"} ${device()!.name}` : "Choose a device"
+            }
+            data-tip={device() ? `${props.liveOpen ? "Hide" : "Show"} device · D` : "Choose device"}
+            onClick={() => {
+              if (device()) props.onOpenLive?.();
+              else setOpen(true);
+            }}
+          >
+            <i
+              class={cn(
+                "size-1.5 shrink-0 rounded-full",
+                ready()
+                  ? "bg-[var(--icon-success-base)]"
+                  : !online()
+                    ? "bg-[var(--icon-critical-base)]"
+                    : scanning()
+                      ? "bg-[var(--text-interactive-base)] motion-safe:animate-pulse"
+                      : "bg-[var(--icon-weak)]",
+              )}
+              aria-hidden="true"
+            />
+            <Icon
+              name={
+                scanning() && !device()
+                  ? "refresh"
+                  : device()?.platform === "browser"
+                    ? "server"
+                    : "smartphone"
+              }
+              size={14}
+              class={cn(scanning() && !device() && "ui-refresh-spin motion-reduce:opacity-70")}
+            />
+            <span class="max-w-[150px] truncate max-[560px]:hidden">{targetLabel()}</span>
+          </button>
+          <button
+            ref={(element) => (trigger = element)}
+            type="button"
+            class="grid w-9 shrink-0 place-items-center border-l border-[var(--map-divider)] text-[var(--text-weak)] transition-[background-color,color] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+            aria-label="Choose device"
+            aria-haspopup="dialog"
+            aria-controls="target-picker-dialog"
+            aria-expanded={open()}
+            data-tip="Choose device"
+            onClick={() => (open() ? closePicker() : setOpen(true))}
+          >
+            <Icon
+              name="chevron-down"
+              size={13}
+              class={cn(
+                "transition-transform duration-150 motion-reduce:transition-none",
+                open() && "rotate-180",
+              )}
+            />
+          </button>
+        </div>
+      </Show>
       <Show when={open()}>
         <div
           ref={(element) => (dialog = element)}
@@ -207,9 +305,9 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
           <header class="flex h-12 shrink-0 items-center justify-between gap-3 px-3">
             <span
               id="target-picker-title"
-              class="inline-flex min-w-0 items-center gap-3 text-[12px] font-semibold text-[var(--text-base)]"
+              class="inline-flex min-w-0 items-center gap-4 text-[12px] leading-none font-semibold text-[var(--text-base)]"
             >
-              <span>Devices</span>
+              <span class="inline-flex h-6 items-center">Devices</span>
               <Show when={scanning()}>
                 <span class="inline-flex h-6 items-center gap-2 rounded-full bg-[var(--v2-background-bg-layer-02)] px-2 text-[10px] leading-none font-normal text-[var(--text-weak)]">
                   <i class="size-1 rounded-full bg-[var(--text-interactive-base)] motion-safe:animate-pulse" />
@@ -268,10 +366,13 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                         />
                       </span>
                       <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">
-                        Looking for devices…
+                        {scanPhase() === "android"
+                          ? "Checking Android devices…"
+                          : "Checking iOS simulators…"}
                       </strong>
                       <p class="mt-1 mb-0 max-w-[220px] text-[11.5px]/[1.5] text-[var(--text-weak)]">
-                        Checking connected phones and available simulators.
+                        Relay scans each platform separately. Connected devices appear as soon as
+                        they answer.
                       </p>
                     </div>
                   }

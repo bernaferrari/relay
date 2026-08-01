@@ -128,11 +128,11 @@ function screenshotResult(result: unknown): CallToolResult {
     return errorResult("Relay returned an invalid PNG screenshot result.");
   }
 
-  const metadata: Record<string, string | number | boolean | null> = {
+  const metadata: Record<string, unknown> = {
     mimeType: "image/png",
     bytes: bytes.byteLength,
   };
-  for (const key of ["capturedAt", "serial", "jobId"] as const) {
+  for (const key of ["capturedAt", "serial", "jobId", "width", "height"] as const) {
     const value = screenshot[key];
     if (
       value === null ||
@@ -141,6 +141,24 @@ function screenshotResult(result: unknown): CallToolResult {
       (typeof value === "number" && Number.isFinite(value))
     ) {
       metadata[key] = value;
+    }
+  }
+  if (
+    screenshot.screenMatch &&
+    typeof screenshot.screenMatch === "object" &&
+    !Array.isArray(screenshot.screenMatch)
+  ) {
+    const match = screenshot.screenMatch as Record<string, unknown>;
+    if (
+      typeof match.fingerprint === "string" &&
+      (match.matchedScreenId === null || typeof match.matchedScreenId === "string") &&
+      (match.status === "observed" || match.status === "unavailable")
+    ) {
+      metadata.screenMatch = {
+        fingerprint: match.fingerprint,
+        matchedScreenId: match.matchedScreenId,
+        status: match.status,
+      };
     }
   }
   return {

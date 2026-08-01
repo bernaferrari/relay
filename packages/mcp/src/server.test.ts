@@ -313,6 +313,13 @@ test("returns screenshots as native PNG content without path or base64 metadata 
         capturedAt,
         serial: "emulator-5554",
         jobId: "job-1",
+        width: 1,
+        height: 1,
+        screenMatch: {
+          fingerprint: "screen-fingerprint",
+          matchedScreenId: "screen-home",
+          status: "observed",
+        },
         nested: { unsafe: true },
       };
     },
@@ -334,6 +341,13 @@ test("returns screenshots as native PNG content without path or base64 metadata 
           capturedAt,
           serial: "emulator-5554",
           jobId: "job-1",
+          width: 1,
+          height: 1,
+          screenMatch: {
+            fingerprint: "screen-fingerprint",
+            matchedScreenId: "screen-home",
+            status: "observed",
+          },
         }),
       },
       { type: "image", data: base64, mimeType: "image/png" },
@@ -345,6 +359,13 @@ test("returns screenshots as native PNG content without path or base64 metadata 
         capturedAt,
         serial: "emulator-5554",
         jobId: "job-1",
+        width: 1,
+        height: 1,
+        screenMatch: {
+          fingerprint: "screen-fingerprint",
+          matchedScreenId: "screen-home",
+          status: "observed",
+        },
       },
     });
     const metadata = JSON.stringify({
