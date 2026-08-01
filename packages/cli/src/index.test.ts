@@ -251,6 +251,142 @@ test("NDJSON contains typed progress followed by one terminal result", async () 
   assert.doesNotMatch(io.stdout(), /\u001b|\r/);
 });
 
+test("job watch polls running jobs through the same invoker until ok", async () => {
+  const io = capture();
+  const responses = [
+    { job: { id: "abc", status: "running" } },
+    { job: { id: "abc", status: "ok" } },
+  ];
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  const client: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return responses.shift();
+    },
+    events: async () => {},
+  };
+
+  const code = await runCli(["job", "watch", "abc", "--ndjson"], {
+    streams: io.streams,
+    createClient: () => client,
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(calls, [
+    { operationId: "job.get", input: { jobId: "abc" } },
+    { operationId: "job.get", input: { jobId: "abc" } },
+  ]);
+  const records = io
+    .stdout()
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    records.map(({ type }) => type),
+    ["progress", "snapshot", "snapshot", "result"],
+  );
+  assert.deepEqual(
+    records.filter(({ ok }) => typeof ok === "boolean"),
+    [
+      {
+        type: "result",
+        ok: true,
+        operationId: "job.get",
+        result: { job: { id: "abc", status: "ok" } },
+      },
+    ],
+  );
+});
+
+test("job watch --no-wait gets the job exactly once", async () => {
+  const io = capture();
+  let calls = 0;
+  const running = { job: { id: "abc", status: "running" } };
+  const code = await runCli(["job", "watch", "abc", "--no-wait", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        calls += 1;
+        return running;
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.equal(calls, 1);
+  assert.deepEqual(JSON.parse(io.stdout()), {
+    type: "result",
+    ok: true,
+    operationId: "job.get",
+    result: running,
+  });
+});
+
+test("job watch polling is cancelled through the existing signal path", async () => {
+  const io = capture();
+  const listenersBefore = process.listenerCount("SIGINT");
+  let calls = 0;
+  const code = await runCli(["job", "watch", "abc", "--ndjson"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        calls += 1;
+        setImmediate(() => process.emit("SIGINT"));
+        return { job: { id: "abc", status: "running" } };
+      },
+      events: async () => {},
+    }),
+    pollIntervalMs: 10_000,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.cancellation);
+  assert.equal(calls, 1);
+  const records = io
+    .stdout()
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    records.map(({ type }) => type),
+    ["progress", "snapshot", "error"],
+  );
+  assert.equal(records.filter(({ ok }) => typeof ok === "boolean").length, 1);
+  assert.equal(records.at(-1).error.exitCode, ExitCode.cancellation);
+  assert.equal(process.listenerCount("SIGINT"), listenersBefore);
+});
+
+test("job watch rejects malformed job.get responses", async () => {
+  const io = capture();
+  let calls = 0;
+  const code = await runCli(["job", "watch", "abc", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        calls += 1;
+        return { job: { id: "abc" } };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.validation);
+  assert.equal(calls, 1);
+  const records = io.stdout().trim().split("\n");
+  assert.equal(records.length, 1);
+  assert.match(JSON.parse(records[0]!).error.message, /Malformed job\.get response/);
+});
+
 test("system events follow emits typed NDJSON without invoking event.stream or client focus", async () => {
   const io = capture();
   let invoked = false;

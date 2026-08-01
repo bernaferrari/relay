@@ -8,6 +8,7 @@ import {
   createClient,
   invokeOperation,
   type ClientFactory,
+  type OperationInvoker,
   validateOperationId,
 } from "./invoke.js";
 import { CliOutput, type OutputStreams } from "./output.js";
@@ -17,9 +18,71 @@ export type CliDependencies = {
   streams?: OutputStreams;
   createClient?: ClientFactory;
   registerSignalHandlers?: boolean;
+  pollIntervalMs?: number;
 };
 
 const processStreams: OutputStreams = { stdout: process.stdout, stderr: process.stderr };
+const jobStatuses = new Set(["queued", "running", "paused", "ok", "error", "healed", "cancelled"]);
+const terminalJobStatuses = new Set(["ok", "error", "healed", "cancelled"]);
+
+function abortError(): DOMException {
+  return new DOMException("cancelled", "AbortError");
+}
+
+function waitForPoll(intervalMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(finish, intervalMs);
+    signal.addEventListener("abort", cancel, { once: true });
+
+    function finish(): void {
+      signal.removeEventListener("abort", cancel);
+      resolve();
+    }
+
+    function cancel(): void {
+      clearTimeout(timer);
+      reject(abortError());
+    }
+  });
+}
+
+function jobStatus(response: unknown): string {
+  if (
+    !response ||
+    typeof response !== "object" ||
+    !("job" in response) ||
+    !response.job ||
+    typeof response.job !== "object" ||
+    !("status" in response.job) ||
+    typeof response.job.status !== "string"
+  ) {
+    throw new Error("Malformed job.get response: expected { job: { status: string } }");
+  }
+  if (!jobStatuses.has(response.job.status)) {
+    throw new Error(`Malformed job.get response: unknown job status ${response.job.status}`);
+  }
+  return response.job.status;
+}
+
+async function watchJob(
+  client: OperationInvoker,
+  operationId: string,
+  input: unknown,
+  signal: AbortSignal,
+  output: CliOutput,
+  pollIntervalMs: number,
+): Promise<unknown> {
+  output.progress(operationId, "watching");
+  while (true) {
+    const result = await invokeOperation(client, operationId, input, signal);
+    if (signal.aborted) throw abortError();
+    const status = jobStatus(result);
+    output.snapshot(operationId, result);
+    if (terminalJobStatuses.has(status)) return result;
+    await waitForPoll(pollIntervalMs, signal);
+  }
+}
 
 function fallbackMode(argv: readonly string[]): OutputMode {
   if (argv.includes("--ndjson")) return "ndjson";
@@ -72,8 +135,18 @@ export async function runCli(
       if (parsed.commandPath === "system events follow") {
         output.progress(operationId, "following");
         await client.events((event) => output.event(event), { signal: abort.signal });
-        if (abort.signal.aborted) throw new DOMException("cancelled", "AbortError");
+        if (abort.signal.aborted) throw abortError();
         output.result(operationId, {});
+      } else if (parsed.commandPath === "job watch" && parsed.config.wait) {
+        const result = await watchJob(
+          client,
+          operationId,
+          parsed.input,
+          abort.signal,
+          output,
+          dependencies.pollIntervalMs ?? 250,
+        );
+        output.result(operationId, result);
       } else {
         output.progress(operationId, "invoking");
         const result = await invokeOperation(client, operationId, parsed.input, abort.signal);

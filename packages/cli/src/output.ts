@@ -19,12 +19,28 @@ export class CliOutput {
     private readonly streams: OutputStreams,
   ) {}
 
-  progress(operationId: string, phase: "invoking" | "following"): void {
+  progress(operationId: string, phase: "invoking" | "following" | "watching"): void {
     if (this.mode === "ndjson") {
       line(this.streams.stdout, { type: "progress", operationId, phase });
     } else if (!this.quiet && this.mode === "human") {
-      const verb = phase === "following" ? "Following" : "Invoking";
+      const verb =
+        phase === "following" ? "Following" : phase === "watching" ? "Watching" : "Invoking";
       this.streams.stderr.write(`${verb} ${operationId}…\n`);
+    }
+  }
+
+  snapshot(operationId: string, snapshot: unknown): void {
+    if (this.mode === "ndjson") {
+      line(this.streams.stdout, { type: "snapshot", operationId, snapshot });
+    } else if (!this.quiet && this.mode === "human") {
+      const job =
+        snapshot && typeof snapshot === "object" && "job" in snapshot
+          ? (snapshot as { job?: unknown }).job
+          : undefined;
+      const id = job && typeof job === "object" && "id" in job ? String(job.id) : "job";
+      const status =
+        job && typeof job === "object" && "status" in job ? String(job.status) : "unknown";
+      this.streams.stderr.write(`${id}: ${status}\n`);
     }
   }
 
