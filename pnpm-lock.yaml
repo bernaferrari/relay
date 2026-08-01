@@ -287,15 +287,12 @@ importers:
 
   packages/cli:
     dependencies:
-      '@relay/core':
+      '@relay/client':
         specifier: workspace:*
-        version: link:../core
-      '@relay/server':
+        version: link:../client
+      '@relay/protocol':
         specifier: workspace:*
-        version: link:../server
-      '@relay/tui':
-        specifier: workspace:*
-        version: link:../tui
+        version: link:../protocol
     devDependencies:
       '@types/node':
         specifier: ^26.1.1

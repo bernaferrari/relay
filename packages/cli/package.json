@@ -12,12 +12,12 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
-    "@relay/core": "workspace:*",
-    "@relay/server": "workspace:*",
-    "@relay/tui": "workspace:*"
+    "@relay/client": "workspace:*",
+    "@relay/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
