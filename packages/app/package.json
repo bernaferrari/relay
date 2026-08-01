@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@relay/client": "workspace:*",
+    "@relay/collaboration": "workspace:*",
     "@relay/protocol": "workspace:*",
     "@relay/ui": "workspace:*",
     "@yume-chan/scrcpy": "2.3.0",
