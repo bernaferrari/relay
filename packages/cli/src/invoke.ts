@@ -1,5 +1,5 @@
 import { RelayClient } from "@relay/client";
-import { operationDefinitions, type OperationId } from "@relay/protocol";
+import { operationDefinitions, type EventEnvelope, type OperationId } from "@relay/protocol";
 import type { GlobalConfig } from "./config.js";
 import { UsageError } from "./errors.js";
 
@@ -9,6 +9,15 @@ export type OperationInvoker = {
     input: never,
     options?: { signal?: AbortSignal },
   ): Promise<unknown>;
+  events(
+    callback: (event: EventEnvelope) => void,
+    options?: {
+      signal?: AbortSignal;
+      onOpen?: () => void;
+      afterSequence?: number;
+      onGap?: (event: EventEnvelope) => void;
+    },
+  ): Promise<void>;
 };
 
 export type ClientFactory = (config: GlobalConfig) => OperationInvoker;

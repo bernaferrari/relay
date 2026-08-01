@@ -1,6 +1,7 @@
 import type { Writable } from "node:stream";
 import type { OutputMode } from "./config.js";
 import type { CliError } from "./errors.js";
+import type { EventEnvelope } from "@relay/protocol";
 
 export type OutputStreams = {
   stdout: Writable;
@@ -18,12 +19,18 @@ export class CliOutput {
     private readonly streams: OutputStreams,
   ) {}
 
-  progress(operationId: string, phase: "invoking"): void {
+  progress(operationId: string, phase: "invoking" | "following"): void {
     if (this.mode === "ndjson") {
       line(this.streams.stdout, { type: "progress", operationId, phase });
     } else if (!this.quiet && this.mode === "human") {
-      this.streams.stderr.write(`Invoking ${operationId}…\n`);
+      const verb = phase === "following" ? "Following" : "Invoking";
+      this.streams.stderr.write(`${verb} ${operationId}…\n`);
     }
+  }
+
+  event(event: EventEnvelope): void {
+    if (this.mode === "ndjson") line(this.streams.stdout, { type: "event", event });
+    else if (this.mode === "human") line(this.streams.stdout, event);
   }
 
   result(operationId: string, result: unknown): void {

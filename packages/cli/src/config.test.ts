@@ -171,6 +171,19 @@ test("friendly inputs default to an object and path arguments override JSON fiel
   }
 });
 
+test("event follow retains its command path and rejects single-object JSON output", () => {
+  const parsed = parseCli(["system", "events", "follow", "--ndjson"], {});
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command === "invoke") {
+    assert.equal(parsed.commandPath, "system events follow");
+    assert.equal(parsed.operationId, "event.stream");
+  }
+  assert.throws(
+    () => parseCli(["system", "events", "follow", "--json"], {}),
+    /stream; use --ndjson.*instead of --json/,
+  );
+});
+
 test("friendly aliases and lifecycle commands construct operation inputs", () => {
   const cases = [
     [["screen", "list", "journey-1"], "journey.document.get", { journeyId: "journey-1" }],

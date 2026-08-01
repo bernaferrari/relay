@@ -25,6 +25,7 @@ export type ParsedCli =
       command: "invoke";
       operationId: string;
       input: Record<string, unknown>;
+      commandPath?: string;
     };
 
 type Environment = Record<string, string | undefined>;
@@ -222,6 +223,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   }
 
   const resolved = resolveCommand(tokens.positionals, parseInput(rawInput));
+  if (resolved.commandPath === "system events follow" && output === "json") {
+    throw new UsageError(
+      "system events follow is a stream; use --ndjson (or human output) instead of --json",
+    );
+  }
   return {
     config: {
       connection,
@@ -234,6 +240,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     command: "invoke",
     operationId: resolved.operationId,
     input: resolved.input,
+    commandPath: resolved.commandPath,
   };
 }
 

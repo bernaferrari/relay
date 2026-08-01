@@ -67,11 +67,18 @@ export async function runCli(
       process.once("SIGTERM", cancel);
     }
     try {
-      output.progress(operationId, "invoking");
       validateOperationId(operationId);
       const client = (dependencies.createClient ?? createClient)(parsed.config);
-      const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
-      output.result(operationId, result);
+      if (parsed.commandPath === "system events follow") {
+        output.progress(operationId, "following");
+        await client.events((event) => output.event(event), { signal: abort.signal });
+        if (abort.signal.aborted) throw new DOMException("cancelled", "AbortError");
+        output.result(operationId, {});
+      } else {
+        output.progress(operationId, "invoking");
+        const result = await invokeOperation(client, operationId, parsed.input, abort.signal);
+        output.result(operationId, result);
+      }
       return ExitCode.success;
     } finally {
       if (dependencies.registerSignalHandlers !== false) {

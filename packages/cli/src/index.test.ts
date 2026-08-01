@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { RelayClient } from "@relay/client";
-import type { OperationId } from "@relay/protocol";
+import type { EventEnvelope, OperationId } from "@relay/protocol";
 import { ExitCode } from "./errors.js";
 import { runCli } from "./index.js";
 import type { OperationInvoker } from "./invoke.js";
@@ -17,6 +17,20 @@ function capture() {
   return { streams: { stdout, stderr }, stdout: () => out, stderr: () => err };
 }
 
+const relayEvent: EventEnvelope = {
+  schemaVersion: 1,
+  organizationId: "local",
+  projectId: "default",
+  actorId: "system:relay",
+  actorKind: "system",
+  eventId: "event-1",
+  sequence: 1,
+  operationId: "journey.update",
+  requestId: "request-1",
+  occurredAt: 1,
+  payload: { type: "resource.updated", at: 1 },
+};
+
 test("generic invocation calls the operation client with parsed input", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];
@@ -25,6 +39,7 @@ test("generic invocation calls the operation client with parsed input", async ()
       calls.push({ operationId, input });
       return { healthy: true };
     },
+    events: async () => {},
   };
   const code = await runCli(
     ["operation", "invoke", "system.health.get", "--input", "{}", "--json"],
@@ -110,6 +125,7 @@ test("friendly command families invoke through the operation client", async () =
           calls.push({ operationId, input });
           return { accepted: true };
         },
+        events: async () => {},
       }),
       registerSignalHandlers: false,
       env: {},
@@ -131,7 +147,7 @@ test("friendly screenshot output preserves the PNG base64 payload", async () => 
   };
   const code = await runCli(["target", "screenshot", "pixel-9", "--json"], {
     streams: io.streams,
-    createClient: () => ({ invoke: async () => screenshot }),
+    createClient: () => ({ invoke: async () => screenshot, events: async () => {} }),
     registerSignalHandlers: false,
     env: {},
   });
@@ -169,7 +185,7 @@ test("root and family help are useful without creating a client", async () => {
       streams: io.streams,
       createClient: () => {
         created = true;
-        return { invoke: async () => ({}) };
+        return { invoke: async () => ({}), events: async () => {} };
       },
       registerSignalHandlers: false,
       env: {},
@@ -193,7 +209,7 @@ test("friendly commands reject missing target and session identities before crea
       streams: io.streams,
       createClient: () => {
         created = true;
-        return { invoke: async () => ({}) };
+        return { invoke: async () => ({}), events: async () => {} };
       },
       registerSignalHandlers: false,
       env: {},
@@ -211,7 +227,10 @@ test("NDJSON contains typed progress followed by one terminal result", async () 
     ["operation", "invoke", "job.get", "--input", '{"jobId":"abc"}', "--ndjson"],
     {
       streams: io.streams,
-      createClient: () => ({ invoke: async () => ({ job: { id: "abc" } }) }),
+      createClient: () => ({
+        invoke: async () => ({ job: { id: "abc" } }),
+        events: async () => {},
+      }),
       registerSignalHandlers: false,
       env: {},
     },
@@ -230,6 +249,105 @@ test("NDJSON contains typed progress followed by one terminal result", async () 
   assert.equal(records.at(-1).ok, true);
   assert.equal(io.stderr(), "");
   assert.doesNotMatch(io.stdout(), /\u001b|\r/);
+});
+
+test("system events follow emits typed NDJSON without invoking event.stream or client focus", async () => {
+  const io = capture();
+  let invoked = false;
+  const code = await runCli(["system", "events", "follow", "--ndjson"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        invoked = true;
+        throw new Error("event follow must subscribe");
+      },
+      async events(callback, options) {
+        assert.ok(options?.signal);
+        callback(relayEvent);
+      },
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.equal(invoked, false);
+  const records = io
+    .stdout()
+    .trim()
+    .split("\n")
+    .map((value) => JSON.parse(value));
+  assert.deepEqual(records, [
+    { type: "progress", operationId: "event.stream", phase: "following" },
+    { type: "event", event: relayEvent },
+    { type: "result", ok: true, operationId: "event.stream", result: {} },
+  ]);
+  assert.equal(io.stderr(), "");
+  assert.doesNotMatch(io.stdout(), /Following|relay:|\u001b|\r/);
+});
+
+test("SIGINT and SIGTERM emit one terminal cancellation and remove handlers", async () => {
+  const listenersBefore = {
+    sigint: process.listenerCount("SIGINT"),
+    sigterm: process.listenerCount("SIGTERM"),
+  };
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    const io = capture();
+    const code = await runCli(["system", "events", "follow", "--ndjson"], {
+      streams: io.streams,
+      createClient: () => ({
+        invoke: async () => ({}),
+        events: async (_callback, options) =>
+          await new Promise<void>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("cancelled", "AbortError")),
+              { once: true },
+            );
+            queueMicrotask(() => process.emit(signal));
+          }),
+      }),
+      env: {},
+    });
+
+    assert.equal(code, ExitCode.cancellation);
+    const records = io
+      .stdout()
+      .trim()
+      .split("\n")
+      .map((value) => JSON.parse(value));
+    assert.deepEqual(
+      records.map(({ type }) => type),
+      ["progress", "error"],
+    );
+    assert.equal(records.filter(({ ok }) => typeof ok === "boolean").length, 1);
+    assert.equal(records.at(-1).error.exitCode, ExitCode.cancellation);
+    assert.doesNotMatch(io.stdout(), /relay:|\u001b|\r/);
+    assert.match(io.stderr(), /Operation cancelled/);
+  }
+
+  assert.equal(process.listenerCount("SIGINT"), listenersBefore.sigint);
+  assert.equal(process.listenerCount("SIGTERM"), listenersBefore.sigterm);
+});
+
+test("JSON event follow is a usage error before creating a client", async () => {
+  const io = capture();
+  let created = false;
+  const code = await runCli(["system", "events", "follow", "--json"], {
+    streams: io.streams,
+    createClient: () => {
+      created = true;
+      return { invoke: async () => ({}), events: async () => {} };
+    },
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.usage);
+  assert.equal(created, false);
+  const records = io.stdout().trim().split("\n");
+  assert.equal(records.length, 1);
+  assert.match(JSON.parse(records[0]!).error.message, /use --ndjson/);
 });
 
 test("JSON failures emit exactly one terminal object and diagnostics only to stderr", async () => {
@@ -281,7 +399,7 @@ test("unknown operations are usage errors without invoking a client", async () =
     streams: io.streams,
     createClient: () => {
       created = true;
-      return { invoke: async () => ({}) };
+      return { invoke: async () => ({}), events: async () => {} };
     },
     registerSignalHandlers: false,
     env: {},
