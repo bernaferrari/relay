@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "pnpm --filter @relay/cli exec tsx src/index.ts",
     "dev:cli": "pnpm --filter @relay/cli exec tsx src/index.ts",
-    "dev:tui": "pnpm --filter @relay/cli exec tsx src/index.ts tui",
-    "dev:serve": "pnpm --filter @relay/cli exec tsx src/index.ts serve",
+    "dev:tui": "pnpm --filter @relay/tui dev",
+    "dev:serve": "pnpm --filter @relay/server dev",
+    "dev:mcp": "pnpm --filter @relay/mcp start",
     "dev:app": "pnpm --filter @relay/app dev",
     "dev:desktop": "pnpm --filter @relay/desktop dev",
     "check": "vp check",
@@ -17,7 +18,7 @@
     "typecheck": "pnpm -r --if-present run typecheck",
     "pack": "vp pack",
     "prepare": "vp config",
-    "doctor": "pnpm --filter @relay/cli exec tsx src/index.ts doctor",
+    "doctor": "pnpm --filter @relay/cli exec tsx src/index.ts system doctor",
     "test": "pnpm run test:packages && vp test",
     "test:packages": "pnpm -r --if-present run test",
     "verify": "vp check && pnpm typecheck && pnpm run test:packages && vp test && pnpm --filter @relay/app check:ui && pnpm --filter @relay/app build && pnpm --filter @relay/desktop build"
