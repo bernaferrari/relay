@@ -8,7 +8,8 @@
   "type": "module",
   "exports": {
     ".": "./src/server.ts",
-    "./config": "./src/config.ts"
+    "./config": "./src/config.ts",
+    "./prompts": "./src/prompts.ts"
   },
   "scripts": {
     "start": "tsx src/index.ts",

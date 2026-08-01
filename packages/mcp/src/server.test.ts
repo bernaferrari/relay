@@ -102,7 +102,7 @@ test("SDK initialization lists every generated Relay tool exactly once", async (
     const capabilities = session.initialized.result?.capabilities as Record<string, unknown>;
     assert.ok(capabilities.tools);
     assert.ok(capabilities.resources);
-    assert.equal(capabilities.prompts, undefined);
+    assert.ok(capabilities.prompts);
 
     const listed = await session.request("tools/list", {});
     assert.equal(listed.error, undefined);
