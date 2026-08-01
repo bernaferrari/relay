@@ -14,7 +14,10 @@ const platform = createWebPlatform({
 
 render(
   () => (
-    <AppBaseProviders platform={platform}>
+    <AppBaseProviders
+      platform={platform}
+      collaboration={(import.meta.env.VITE_COLLABORATION_ENABLED as string | undefined) === "true"}
+    >
       <AppInterface />
     </AppBaseProviders>
   ),

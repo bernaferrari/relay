@@ -73,6 +73,16 @@ import {
 } from "../lib/server-device-setup-remote";
 import { createServerRunController } from "../lib/server-run-controller";
 import {
+  JourneyCollaborationRuntime,
+  normalizeAppCollaborationConfig,
+  type AppCollaborationConfig,
+} from "../lib/journey-collaboration-runtime";
+import {
+  createRelayAwarenessTransport,
+  createRelayCollaborationTransport,
+} from "../lib/relay-collaboration-transport";
+import type * as Y from "yjs";
+import {
   deleteSuite as deleteSuiteRequest,
   listSuites as listSuitesRequest,
   loadSuiteHistory as loadSuiteHistoryRequest,
@@ -200,9 +210,16 @@ export type {
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
   name: "Server",
   gate: false,
-  init: (props: { pollMs?: number } = {}) => {
+  init: (
+    props: {
+      pollMs?: number;
+      collaboration?: boolean | Partial<AppCollaborationConfig>;
+    } = {},
+  ) => {
     const platform = usePlatform();
     const pollMs = props.pollMs ?? 5000;
+    const collaborationConfig = normalizeAppCollaborationConfig(props.collaboration);
+    const collaborationClientId = `app:${crypto.randomUUID()}`;
 
     const [serverUrl, setServerUrlState] = createSignal("");
     const [actorId, setActorId] = createSignal("");
@@ -1696,9 +1713,33 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       () => recipes().find((recipe) => recipe.id === selectedRecipeId()) ?? null,
     );
 
+    function createJourneyCollaboration(journeyId: string, doc: Y.Doc) {
+      if (!collaborationConfig.enabled) {
+        return new JourneyCollaborationRuntime({
+          config: collaborationConfig,
+          doc,
+          scope: { projectId: connection?.projectId ?? "default", journeyId },
+          clientId: collaborationClientId,
+        });
+      }
+      if (!client || !connection) {
+        throw new Error("Relay collaboration requires an active server connection");
+      }
+      return new JourneyCollaborationRuntime({
+        config: collaborationConfig,
+        doc,
+        scope: { projectId: connection.projectId, journeyId },
+        clientId: collaborationClientId,
+        transport: createRelayCollaborationTransport(client),
+        awarenessTransport: createRelayAwarenessTransport(client),
+      });
+    }
+
     return {
       serverUrl,
       actorId,
+      collaborationConfig,
+      createJourneyCollaboration,
       setServerUrl,
       prodAccountMatch,
       setProdAccountMatch,

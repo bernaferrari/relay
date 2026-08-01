@@ -4,6 +4,7 @@ import type {
   JourneyMetadata,
   JourneyVideoClip,
   Revisioned,
+  CollaborationAwareness,
 } from "@relay/protocol";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
@@ -63,6 +64,9 @@ import {
   ScreenInspector,
 } from "./journey-canvas-primitives";
 import { JourneyHistoryPanel } from "./journey-history-panel";
+import { CollaborationPresence } from "./collaboration-presence";
+import { collaborationActivity } from "../lib/collaboration-awareness";
+import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-runtime";
 
 /**
  * The graph is the authoring surface for a journey. A card is a captured
@@ -198,8 +202,13 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
     error?: string;
   }>({ connectionId: null, state: "idle" });
   const [canvasHistory, setCanvasHistory] = createSignal({ undo: false, redo: false });
+  const [remoteAwareness, setRemoteAwareness] = createSignal<readonly CollaborationAwareness[]>([]);
+  const [localCursor, setLocalCursor] = createSignal<CanvasPoint | undefined>();
   let canvas: HTMLElement | undefined;
   let journeyDocument: JourneyDocument | null = null;
+  let collaborationRuntime: JourneyCollaborationRuntime | null = null;
+  let unsubscribeJourneyDocument: (() => void) | undefined;
+  let unsubscribeAwareness: (() => void) | undefined;
   let pan: { x: number; y: number; view: CanvasViewport } | undefined;
   let nodeDrag:
     | { id: string; x: number; y: number; origin: CanvasPoint; moved: boolean }
@@ -222,6 +231,44 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
   let fittedSignature = "";
   let metadataSaveSequence = 0;
   let destinationResolvedForTake = "";
+
+  const closeJourneyDocument = () => {
+    unsubscribeAwareness?.();
+    unsubscribeAwareness = undefined;
+    unsubscribeJourneyDocument?.();
+    unsubscribeJourneyDocument = undefined;
+    collaborationRuntime?.destroy();
+    collaborationRuntime = null;
+    journeyDocument?.destroy();
+    journeyDocument = null;
+    setRemoteAwareness([]);
+    setLocalCursor(undefined);
+  };
+
+  const openJourneyDocument = (journeyId: string, value: JourneyMetadata) => {
+    closeJourneyDocument();
+    const document = createJourneyDocument(value);
+    journeyDocument = document;
+    unsubscribeJourneyDocument = document.subscribe((next, origin) => {
+      const remoteCollaborationOrigin =
+        typeof origin === "object" &&
+        origin !== null &&
+        (origin as { type?: string }).type === "relay-collaboration-remote";
+      if (!remoteCollaborationOrigin) return;
+      setMetadata((current) => ({
+        ...current,
+        revision: current.revision + 1,
+        value: next,
+        updatedAt: Date.now(),
+      }));
+      setCanvasHistory({ undo: document.canUndo(), redo: document.canRedo() });
+    });
+    collaborationRuntime = server.createJourneyCollaboration(journeyId, document.doc);
+    unsubscribeAwareness = collaborationRuntime.subscribeAwareness(setRemoteAwareness);
+    void collaborationRuntime.start().catch((error: unknown) => {
+      toast(error instanceof Error ? error.message : "Collaboration could not connect", "warning");
+    });
+  };
 
   const reviewingTake = () => recorder.take()?.state === "review";
 
@@ -253,8 +300,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
     setHistoryOpen(false);
     setCaptureOpen(false);
     if (!recipeId) {
-      journeyDocument?.destroy();
-      journeyDocument = null;
+      closeJourneyDocument();
       setLoadedRecipeId(null);
       setCanvasHistory({ undo: false, redo: false });
       setMetadata({ revision: 0, value: EMPTY_JOURNEY_METADATA, updatedAt: 0 });
@@ -265,19 +311,17 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       .loadJourney(recipeId)
       .then((next) => {
         if (server.selectedRecipeId() === recipeId) {
-          journeyDocument?.destroy();
-          journeyDocument = createJourneyDocument(next.value);
-          setCanvasHistory({ undo: false, redo: false });
           setMetadata(next);
+          openJourneyDocument(recipeId, next.value);
+          setCanvasHistory({ undo: false, redo: false });
           setLoadedRecipeId(recipeId);
         }
       })
       .catch(() => {
         if (server.selectedRecipeId() === recipeId) {
-          journeyDocument?.destroy();
-          journeyDocument = createJourneyDocument(EMPTY_JOURNEY_METADATA);
-          setCanvasHistory({ undo: false, redo: false });
           setMetadata({ revision: 0, value: EMPTY_JOURNEY_METADATA, updatedAt: 0 });
+          openJourneyDocument(recipeId, EMPTY_JOURNEY_METADATA);
+          setCanvasHistory({ undo: false, redo: false });
           setLoadedRecipeId(recipeId);
         }
       });
@@ -339,7 +383,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
     setCaptureOpen(true);
     void recorder.enterRecordMode();
   });
-  onCleanup(() => journeyDocument?.destroy());
+  onCleanup(closeJourneyDocument);
 
   onMount(() => {
     const onDeviceSelected = () => {
@@ -425,6 +469,53 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
   const bounds = createMemo(() =>
     canvasBounds(tree().nodes, metadata().value.notes ?? [], positionFor),
   );
+  const presenceGeometry = createMemo(() => ({
+    screenPositions: Object.fromEntries(
+      tree().nodes.map((node) => [node.id, { ...positionFor(node) }]),
+    ),
+    connectionPaths: Object.fromEntries(
+      connections().map((connection) => [
+        connection.id,
+        canvasEdgeGeometry(
+          {
+            from: connection.fromScreenId,
+            to: connection.toScreenId,
+            kind: connection.kind,
+          },
+          tree().nodes,
+          positionFor,
+        ).path,
+      ]),
+    ),
+  }));
+
+  createEffect(() => {
+    const journeyId = loadedRecipeId();
+    const runtime = collaborationRuntime;
+    const element = canvas;
+    const currentView = view();
+    if (!journeyId || !runtime?.enabled || !element) return;
+    runtime.updateAwareness({
+      activity: collaborationActivity({
+        recording: recorder.recording(),
+        running: server.running(),
+        editing: Boolean(selectedNodeId() || selectedConnectionId() || localCursor()),
+      }),
+      ...(localCursor() ? { cursor: localCursor() } : {}),
+      ...(selectedNodeId()
+        ? { selection: { screenId: selectedNodeId()! } }
+        : selectedConnectionId()
+          ? { selection: { connectionId: selectedConnectionId()! } }
+          : {}),
+      viewport: {
+        x: currentView.x,
+        y: currentView.y,
+        zoom: currentView.scale,
+        width: element.clientWidth,
+        height: element.clientHeight,
+      },
+    });
+  });
 
   const fit = () => {
     const element = canvas;
@@ -521,6 +612,9 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       value: nextValue,
       updatedAt: Date.now(),
     });
+    // When opted in, the provider is the only draft writer. The revisioned
+    // Journey endpoint remains the sole writer when collaboration is disabled.
+    if (collaborationRuntime?.enabled) return;
     const sequence = ++metadataSaveSequence;
     void server
       .saveJourney(recipeId, current, nextValue)
@@ -875,6 +969,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       setCanvasHistory({ undo: journeyDocument.canUndo(), redo: journeyDocument.canRedo() });
       setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
       const recipeId = server.selectedRecipeId();
+      if (collaborationRuntime?.enabled) return;
       const sequence = ++metadataSaveSequence;
       if (recipeId)
         void server
@@ -891,6 +986,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       setCanvasHistory({ undo: journeyDocument.canUndo(), redo: journeyDocument.canRedo() });
       setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
       const recipeId = server.selectedRecipeId();
+      if (collaborationRuntime?.enabled) return;
       const sequence = ++metadataSaveSequence;
       if (recipeId)
         void server
@@ -933,8 +1029,12 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setLocalCursor({
+              x: (event.clientX - rect.left - view().x) / view().scale,
+              y: (event.clientY - rect.top - view().y) / view().scale,
+            });
             if (connectionDrag) {
-              const rect = event.currentTarget.getBoundingClientRect();
               connectionDrag.point = {
                 x: (event.clientX - rect.left - view().x) / view().scale,
                 y: (event.clientY - rect.top - view().y) / view().scale,
@@ -1047,6 +1147,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
             noteDrag = undefined;
             pan = undefined;
           }}
+          onPointerLeave={() => setLocalCursor(undefined)}
         >
           <div
             class="pointer-events-none absolute inset-0 opacity-35"
@@ -1316,6 +1417,12 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                   />
                 </Show>
               </svg>
+              <CollaborationPresence
+                awareness={remoteAwareness()}
+                geometry={presenceGeometry()}
+                width={bounds().width}
+                height={bounds().height}
+              />
               <For each={tree().nodes}>
                 {(node) => {
                   const isFlowStart = () => graph().flows.some((flow) => flow.screenId === node.id);

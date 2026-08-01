@@ -1,22 +1,28 @@
+import {
+  createCollaborativeJourneyDoc,
+  createCollaborativeJourneyUndoManager,
+  materializeCollaborativeJourney,
+  reconcileCollaborativeJourney,
+} from "@relay/collaboration";
+import type { JourneyGraphScreen, JourneyMetadata } from "@relay/protocol";
 import * as Y from "yjs";
-import type { JourneyMetadata } from "@relay/protocol";
 
-const ROOT = "relay-journey";
-const METADATA = "metadata";
+export type JourneyDocumentListener = (value: JourneyMetadata, origin: unknown) => void;
 
 /**
- * A small collaboration seam around the canvas-only part of a journey.
+ * Canvas-facing adapter over Relay's canonical, safe collaborative Journey.
  *
- * Unlike the earlier JSON-blob adapter, this writes real nested Y.Map/Y.Array
- * values. Today the server remains the revisioned persistence authority, but a
- * Yjs provider can now sync individual graph screens, transitions, positions,
- * and notes without changing every canvas component or the executable recipe.
+ * The Y.Doc contains only editable graph structure. Executable steps, takes,
+ * evidence, review state, leases, and recording state remain in the private
+ * authoritative overlay supplied by the server and are never encoded in Yjs.
  */
 export type JourneyDocument = {
   doc: Y.Doc;
   undo: Y.UndoManager;
+  localOrigin: unknown;
   read: () => JourneyMetadata;
   replace: (value: JourneyMetadata, origin?: unknown) => JourneyMetadata;
+  subscribe: (listener: JourneyDocumentListener) => () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
   undoOnce: () => JourneyMetadata;
@@ -24,84 +30,113 @@ export type JourneyDocument = {
   destroy: () => void;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+function safeCollaborativeProjection(value: JourneyMetadata): Y.Doc {
+  const projected = createCollaborativeJourneyDoc(value);
+  try {
+    // Default materialization strips every server-owned executable field.
+    const editable = materializeCollaborativeJourney(projected);
+    return createCollaborativeJourneyDoc(editable);
+  } finally {
+    projected.destroy();
+  }
 }
 
-function toYValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    const next = new Y.Array<unknown>();
-    next.push(value.map((entry) => toYValue(entry)));
-    return next;
-  }
-  if (isRecord(value)) {
-    const next = new Y.Map<unknown>();
-    for (const [key, entry] of Object.entries(value)) next.set(key, toYValue(entry));
-    return next;
-  }
-  return structuredClone(value);
+function mergeObservations(
+  authoritative: JourneyGraphScreen["observations"],
+  editable: JourneyGraphScreen["observations"],
+): JourneyGraphScreen["observations"] {
+  if (!editable) return editable;
+  const byId = new Map((authoritative ?? []).map((observation) => [observation.id, observation]));
+  return editable.map((observation) => ({ ...byId.get(observation.id), ...observation }));
 }
 
-function fromYValue(value: unknown): unknown {
-  if (value instanceof Y.Map) {
-    return Object.fromEntries([...value.entries()].map(([key, entry]) => [key, fromYValue(entry)]));
-  }
-  if (value instanceof Y.Array) return value.toArray().map(fromYValue);
-  return structuredClone(value);
-}
-
-/** Reconcile objects in-place so existing Yjs child types retain identity. */
-function syncMap(target: Y.Map<unknown>, value: Record<string, unknown>): void {
-  for (const key of target.keys()) if (!(key in value)) target.delete(key);
-  for (const [key, next] of Object.entries(value)) {
-    const current = target.get(key);
-    if (isRecord(next) && current instanceof Y.Map) {
-      syncMap(current, next);
-      continue;
-    }
-    // Arrays deliberately replace as a unit for now. The public API is still
-    // snapshot based; a future collaborative canvas will mutate one Y.Array
-    // item at a time through this same document boundary.
-    if (JSON.stringify(fromYValue(current)) === JSON.stringify(next)) continue;
-    target.set(key, toYValue(next));
-  }
+function mergeAuthoritativeOverlay(
+  authoritative: JourneyMetadata,
+  editable: JourneyMetadata,
+): JourneyMetadata {
+  const authoritativeScreens = new Map(
+    (authoritative.graph?.screens ?? []).map((screen) => [screen.id, screen]),
+  );
+  const authoritativeConnections = new Map(
+    (authoritative.graph?.transitions ?? []).map((connection) => [connection.id, connection]),
+  );
+  const authoritativeFlows = new Map(
+    (authoritative.graph?.flows ?? []).map((flow) => [flow.id, flow]),
+  );
+  return {
+    ...structuredClone(authoritative),
+    ...structuredClone(editable),
+    positions: structuredClone(editable.positions),
+    screenTitles: structuredClone(editable.screenTitles),
+    edgeLabels: structuredClone(editable.edgeLabels),
+    edgeKinds: structuredClone(editable.edgeKinds),
+    notes: structuredClone(editable.notes),
+    graph: {
+      schemaVersion: 1,
+      screens: (editable.graph?.screens ?? []).map((screen) => {
+        const server = authoritativeScreens.get(screen.id);
+        return {
+          ...server,
+          ...screen,
+          ...(screen.observations
+            ? { observations: mergeObservations(server?.observations, screen.observations) }
+            : {}),
+        };
+      }),
+      transitions: (editable.graph?.transitions ?? []).map((connection) => {
+        const server = authoritativeConnections.get(connection.id);
+        return {
+          ...server,
+          ...connection,
+          stepIds: structuredClone(server?.stepIds ?? connection.stepIds),
+          state: server?.state ?? connection.state,
+          ...(server?.evidenceIds ? { evidenceIds: structuredClone(server.evidenceIds) } : {}),
+          ...(server?.takeId ? { takeId: server.takeId } : {}),
+          ...(server?.videoTakeId ? { videoTakeId: server.videoTakeId } : {}),
+          ...(server?.videoClip ? { videoClip: structuredClone(server.videoClip) } : {}),
+          ...(server?.review ? { review: structuredClone(server.review) } : {}),
+        };
+      }),
+      flows: (editable.graph?.flows ?? []).map((flow) => ({
+        ...authoritativeFlows.get(flow.id),
+        ...flow,
+      })),
+    },
+  };
 }
 
 export function createJourneyDocument(initial: JourneyMetadata): JourneyDocument {
-  const doc = new Y.Doc({ gc: true });
-  const root = doc.getMap<unknown>(ROOT);
-  const localOrigin = Symbol("journey-local-edit");
-  const undo = new Y.UndoManager(root, {
-    trackedOrigins: new Set([localOrigin]),
-    captureTimeout: 500,
-  });
+  let authoritative = structuredClone(initial);
+  const doc = safeCollaborativeProjection(initial);
+  const localOrigin = Object.freeze({ type: "relay-journey-local-edit" });
+  const undo = createCollaborativeJourneyUndoManager(doc, localOrigin, 500);
+  const listeners = new Set<JourneyDocumentListener>();
 
-  const metadataMap = (): Y.Map<unknown> => {
-    const current = root.get(METADATA);
-    if (current instanceof Y.Map) return current;
-    const next = new Y.Map<unknown>();
-    root.set(METADATA, next);
-    return next;
+  const read = (): JourneyMetadata =>
+    mergeAuthoritativeOverlay(authoritative, materializeCollaborativeJourney(doc));
+
+  const onUpdate = (_update: Uint8Array, origin: unknown) => {
+    const value = read();
+    for (const listener of listeners) listener(value, origin);
   };
-  const read = (): JourneyMetadata => structuredClone(fromYValue(metadataMap())) as JourneyMetadata;
+  doc.on("update", onUpdate);
 
-  const replace = (value: JourneyMetadata, origin?: unknown): JourneyMetadata => {
-    doc.transact(
-      () => syncMap(metadataMap(), structuredClone(value) as Record<string, unknown>),
-      (origin === undefined ? localOrigin : origin) as symbol,
-    );
+  const replace = (value: JourneyMetadata, origin: unknown = localOrigin): JourneyMetadata => {
+    authoritative = structuredClone(value);
+    reconcileCollaborativeJourney(doc, value, { origin });
     return read();
   };
-
-  // Seeding is intentionally not undoable; history starts with a person's edit.
-  replace(initial, "seed");
-  undo.clear();
 
   return {
     doc,
     undo,
+    localOrigin,
     read,
     replace,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     canUndo: () => undo.undoStack.length > 0,
     canRedo: () => undo.redoStack.length > 0,
     undoOnce: () => {
@@ -112,6 +147,11 @@ export function createJourneyDocument(initial: JourneyMetadata): JourneyDocument
       undo.redo();
       return read();
     },
-    destroy: () => doc.destroy(),
+    destroy: () => {
+      listeners.clear();
+      doc.off("update", onUpdate);
+      undo.destroy();
+      doc.destroy();
+    },
   };
 }

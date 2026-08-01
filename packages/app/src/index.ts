@@ -10,6 +10,7 @@ export {
   type PlatformUpdates,
 } from "./context/platform";
 export { ServerProvider, useServer } from "./context/server";
+export type { AppCollaborationConfig } from "./lib/journey-collaboration-runtime";
 export type {
   ActionInfo,
   DeviceInfo,

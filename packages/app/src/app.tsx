@@ -12,6 +12,7 @@ import { HomePage } from "./pages/home";
 import { SettingsPage, type SettingsSection } from "./pages/settings";
 import { DesktopUpdateDialog } from "./components/desktop-update";
 import { ConfirmDialogHost } from "./components/confirm-dialog";
+import type { AppCollaborationConfig } from "./lib/journey-collaboration-runtime";
 /* Product chrome — must load for every host (web + desktop Electron). */
 import "./styles/app.css";
 
@@ -22,6 +23,7 @@ export function AppBaseProviders(
     defaultTheme?: string;
     defaultColorScheme?: "light" | "dark" | "system";
     onThemeApplied?: (detail: ThemeAppliedDetail) => void;
+    collaboration?: boolean | Partial<AppCollaborationConfig>;
   }>,
 ) {
   return (
@@ -31,7 +33,7 @@ export function AppBaseProviders(
         defaultColorScheme={props.defaultColorScheme ?? "dark"}
         onThemeApplied={props.onThemeApplied}
       >
-        <ServerProvider>
+        <ServerProvider collaboration={props.collaboration}>
           <ToastProvider>
             <RecipeDraftProvider>
               <WorkbenchProvider>
