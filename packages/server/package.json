@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@relay/collaboration": "workspace:*",
     "@relay/core": "workspace:*",
     "@relay/protocol": "workspace:*",
     "@yume-chan/adb": "2.6.0",
@@ -21,7 +22,8 @@
     "@yume-chan/adb-server-node-tcp": "2.5.2",
     "@yume-chan/fetch-scrcpy-server": "1.0.0",
     "@yume-chan/scrcpy": "2.3.0",
-    "@yume-chan/stream-extra": "2.6.1"
+    "@yume-chan/stream-extra": "2.6.1",
+    "yjs": "^13.6.29"
   },
   "devDependencies": {
     "@relay/client": "workspace:*",
