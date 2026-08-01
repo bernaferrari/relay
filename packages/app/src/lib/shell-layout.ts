@@ -43,11 +43,11 @@ export const shellMain =
 
 export const shellTopbar = cn(
   "shell-drag relative z-[70] flex min-h-[54px] shrink-0 items-center justify-between gap-4 overflow-visible border-b border-[var(--v2-border-border-muted)]",
-  "bg-[var(--v2-background-bg-deep)] px-4",
+  "bg-[color-mix(in_srgb,var(--v2-background-bg-base)_78%,var(--v2-background-bg-deep))] px-4",
 );
 
-export const shellTopbarContext = "flex min-w-0 items-center gap-2";
-export const shellTopbarActions = "flex items-center gap-2.5";
+export const shellTopbarContext = "flex min-w-0 flex-1 items-center gap-2";
+export const shellTopbarActions = "flex shrink-0 items-center gap-2.5 max-[680px]:gap-1";
 
 export const shellBreadcrumb = cn(
   "flex min-w-0 items-center gap-1.5 text-[13px] text-[var(--text-weak)]",
@@ -113,9 +113,9 @@ export const shellAsideDrawer = cn(
 
 export const shellStageWrap = cn(
   "relative min-h-0 min-w-0 overflow-hidden",
-  "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_91%,black)]",
+  "bg-[color-mix(in_srgb,var(--v2-background-bg-deep)_94%,var(--v2-background-bg-accent))]",
   "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:content-['']",
-  "before:bg-[radial-gradient(circle_at_50%_38%,rgb(139_124_255/10%),transparent_44%),radial-gradient(circle_at_1px_1px,rgb(255_255_255/3%)_1px,transparent_0)] before:bg-size-[auto,20px_20px]",
+  "before:bg-[radial-gradient(circle_at_50%_34%,rgb(139_124_255/7%),transparent_48%)]",
   "[&>*]:relative [&>*]:z-[1]",
 );
 

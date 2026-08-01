@@ -147,7 +147,6 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
         type="button"
         class={cn(
           "relative inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-[var(--text-base)] transition-colors before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
-          "shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]",
           "hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]",
           "active:scale-[0.98] motion-reduce:active:scale-100",
           "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]",
@@ -212,7 +211,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
             >
               <span>Devices</span>
               <Show when={scanning()}>
-                <span class="inline-flex items-center gap-2 text-[10px] leading-none font-normal text-[var(--text-weak)]">
+                <span class="inline-flex h-6 items-center gap-2 rounded-full bg-[var(--v2-background-bg-layer-02)] px-2 text-[10px] leading-none font-normal text-[var(--text-weak)]">
                   <i class="size-1 rounded-full bg-[var(--text-interactive-base)] motion-safe:animate-pulse" />
                   Scanning…
                 </span>
@@ -232,7 +231,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                 size={13}
                 class={cn(
                   (refreshing() || scanning()) &&
-                    "origin-center animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none motion-reduce:opacity-70",
+                    "origin-center animate-[spin_900ms_linear_infinite] motion-reduce:animate-none motion-reduce:opacity-70",
                 )}
               />
             </button>
@@ -266,7 +265,7 @@ export function DevicePicker(props: { onManageTargets?: () => void }) {
                         <Icon
                           name="refresh"
                           size={20}
-                          class="animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none motion-reduce:opacity-70"
+                          class="animate-[spin_900ms_linear_infinite] motion-reduce:animate-none motion-reduce:opacity-70"
                         />
                       </span>
                       <strong class="mt-3 text-[13px] font-semibold text-[var(--text-strong)]">

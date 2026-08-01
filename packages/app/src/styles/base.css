@@ -96,14 +96,19 @@
   [data-device-chrome].phone-bezel {
     background: var(--phone-bezel);
     box-shadow:
-      0 0 0 6px var(--phone-bezel),
-      0 0 0 7px var(--phone-rim-soft),
-      0 24px 48px -18px color-mix(in srgb, var(--phone-screen) 70%, transparent),
-      0 10px 24px -10px color-mix(in srgb, var(--text-strong) 16%, transparent);
+      0 0 0 3px var(--phone-bezel),
+      0 0 0 4px var(--phone-rim-soft),
+      0 24px 52px -22px color-mix(in srgb, var(--phone-screen) 68%, transparent);
   }
 
   [data-device-chrome] .phone-screen {
     background: var(--phone-screen);
+  }
+}
+
+@media (pointer: coarse) {
+  .journey-connect-handle {
+    opacity: 1;
   }
 }
 

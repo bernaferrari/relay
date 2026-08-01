@@ -202,6 +202,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
     error?: string;
   }>({ connectionId: null, state: "idle" });
   const [canvasHistory, setCanvasHistory] = createSignal({ undo: false, redo: false });
+  const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
   const [remoteAwareness, setRemoteAwareness] = createSignal<readonly CollaborationAwareness[]>([]);
   const [localCursor, setLocalCursor] = createSignal<CanvasPoint | undefined>();
   let canvas: HTMLElement | undefined;
@@ -539,19 +540,28 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       event.preventDefault();
       undo();
     };
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (renamingNodeId()) return;
+    const onCanvasKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (event.key === "v" || event.key === "V") {
+        setCanvasTool("select");
+        return;
+      }
+      if (event.key === "h" || event.key === "H") {
+        setCanvasTool("hand");
+        return;
+      }
+      if (event.key !== "Escape" || renamingNodeId()) return;
       setSelectedNodeId(null);
       setSelectedConnectionId(null);
       setKeyboardConnectionSourceId(null);
       setHistoryOpen(false);
     };
     window.addEventListener("relay:undo-request", onUndoRequest);
-    window.addEventListener("keydown", onEscape);
+    window.addEventListener("keydown", onCanvasKey);
     onCleanup(() => {
       window.removeEventListener("relay:undo-request", onUndoRequest);
-      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("keydown", onCanvasKey);
     });
   });
   createEffect(() => {
@@ -1011,7 +1021,10 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
           ref={(element) => {
             canvas = element;
           }}
-          class="relative isolate flex min-h-0 min-w-0 touch-none select-none overflow-hidden"
+          class={cn(
+            "relative isolate flex min-h-0 min-w-0 touch-none select-none overflow-hidden",
+            canvasTool() === "hand" ? "cursor-grab active:cursor-grabbing" : "cursor-default",
+          )}
           aria-label="Journey graph"
           onWheel={(event) => {
             if (!hasCanvasContent() || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
@@ -1024,7 +1037,8 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
               setSelectedNodeId(null);
               setSelectedConnectionId(null);
             }
-            if (!hasCanvasContent() || event.button !== 0 || target.closest("button")) return;
+            const wantsPan = canvasTool() === "hand" || event.button === 1;
+            if (!hasCanvasContent() || !wantsPan || target.closest("button")) return;
             pan = { x: event.clientX, y: event.clientY, view: view() };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -1158,8 +1172,8 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
             }}
           />
           <Show when={hasCanvasContent()}>
-            <header class="absolute top-4 left-4 z-20 flex min-h-11 items-center gap-1 rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[0_10px_32px_rgb(0_0_0/18%)] backdrop-blur-[14px]">
-              <div class="flex min-w-0 items-center gap-2 px-2">
+            <header class="absolute top-4 left-4 z-20 flex min-h-10 items-center rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_88%,transparent)] px-2.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_80%,transparent),0_8px_24px_rgb(0_0_0/14%)] backdrop-blur-[14px]">
+              <div class="flex min-w-0 items-center gap-2">
                 <span class="grid size-6 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
                   <Icon name="move" size={12} />
                 </span>
@@ -1168,49 +1182,6 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                   <span class="mx-1.5 text-[var(--text-weak)]">·</span>
                   {connections().length} {connections().length === 1 ? "connection" : "connections"}
                 </span>
-              </div>
-              <span class="mx-0.5 h-5 w-px bg-[var(--v2-border-border-muted)]" />
-              <div class="flex items-center gap-0.5">
-                <Show when={hasCanvasContent()}>
-                  <button
-                    type="button"
-                    class={mapControlButton}
-                    aria-label="Undo"
-                    title="Undo"
-                    disabled={!canvasHistory().undo && !draft.canUndo()}
-                    onClick={undo}
-                  >
-                    <Icon name="undo" size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    class={mapControlButton}
-                    aria-label="Redo"
-                    title="Redo"
-                    disabled={!canvasHistory().redo && !draft.canRedo()}
-                    onClick={redo}
-                  >
-                    <Icon name="redo" size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    class={mapControlButton}
-                    aria-expanded={historyOpen()}
-                    title="Journey history"
-                    onClick={() => setHistoryOpen((open) => !open)}
-                  >
-                    <Icon name="clock" size={13} />
-                  </button>
-                  <button type="button" class={mapControlButton} title="Add note" onClick={addNote}>
-                    <Icon name="plus" size={13} />
-                  </button>
-                  <Show when={!recorder.recording() && !recorder.take()}>
-                    <button type="button" class={recordButton} onClick={recordFromHere}>
-                      <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" />
-                      Record connection
-                    </button>
-                  </Show>
-                </Show>
               </div>
             </header>
           </Show>
@@ -1233,6 +1204,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                 recordState={recordState()}
                 selectedDeviceName={selectedDevice()?.name ?? server.selectedDevice() ?? undefined}
                 deviceOpen={captureOpen()}
+                deviceSelected={Boolean(selectedDevice())}
                 liveScreenSrc={liveScreenSrc()}
                 captureBusy={startCaptureBusy()}
                 onUseCurrentScreen={() => void useCurrentScreenAsStart()}
@@ -1444,16 +1416,18 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                       onSelect={() => selectNode(node)}
                       onRename={() => setRenamingNodeId(node.id)}
                       onCommitRename={(title) => renameScreen(node, title)}
-                      onRecord={() => {
-                        selectNode(node);
-                        recordFromNode(node);
-                      }}
                       onConnectStart={(event) => beginConnection(event, node.id)}
                       onConnectKeyboard={() => {
                         selectNode(node);
                         setKeyboardConnectionSourceId(node.id);
                       }}
                       onPointerDown={(event) => {
+                        if (canvasTool() === "hand") {
+                          event.stopPropagation();
+                          pan = { x: event.clientX, y: event.clientY, view: view() };
+                          canvas?.setPointerCapture(event.pointerId);
+                          return;
+                        }
                         event.stopPropagation();
                         event.currentTarget.setPointerCapture(event.pointerId);
                         nodeDrag = {
@@ -1535,7 +1509,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                     setSelectedConnectionId(connection.id);
                     setSelectedNodeId(null);
                   }}
-                  onRecord={recordFromHere}
+                  onClose={() => setSelectedNodeId(null)}
                 />
               }
             >
@@ -1571,10 +1545,85 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                     },
                   }}
                   onRemove={() => removeConnection(connection())}
+                  onClose={() => setSelectedConnectionId(null)}
                 />
               )}
             </Show>
-            <div class="absolute bottom-4 left-4 z-20 flex items-center gap-1 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1 shadow-[var(--v2-elevation-floating)] backdrop-blur-[12px]">
+            <div class="absolute bottom-[calc(16px+env(safe-area-inset-bottom))] left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_76%,transparent),0_16px_46px_rgb(0_0_0/28%)] backdrop-blur-[16px]">
+              <button
+                type="button"
+                class={cn(
+                  mapControlButton,
+                  canvasTool() === "select" &&
+                    "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+                )}
+                aria-label="Select tool"
+                aria-pressed={canvasTool() === "select"}
+                title="Select and move (V)"
+                onClick={() => setCanvasTool("select")}
+              >
+                <Icon name="pointer" size={13} />
+              </button>
+              <button
+                type="button"
+                class={cn(
+                  mapControlButton,
+                  canvasTool() === "hand" &&
+                    "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
+                )}
+                aria-label="Hand tool"
+                aria-pressed={canvasTool() === "hand"}
+                title="Pan canvas (H)"
+                onClick={() => setCanvasTool("hand")}
+              >
+                <Icon name="move" size={13} />
+              </button>
+              <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+              <button
+                type="button"
+                class={mapControlButton}
+                aria-label="Undo"
+                title="Undo"
+                disabled={!canvasHistory().undo && !draft.canUndo()}
+                onClick={undo}
+              >
+                <Icon name="undo" size={13} />
+              </button>
+              <button
+                type="button"
+                class={mapControlButton}
+                aria-label="Redo"
+                title="Redo"
+                disabled={!canvasHistory().redo && !draft.canRedo()}
+                onClick={redo}
+              >
+                <Icon name="redo" size={13} />
+              </button>
+              <button
+                type="button"
+                class={mapControlButton}
+                aria-expanded={historyOpen()}
+                aria-label="Journey history"
+                title="Journey history"
+                onClick={() => setHistoryOpen((open) => !open)}
+              >
+                <Icon name="clock" size={13} />
+              </button>
+              <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+              <button type="button" class={mapControlButton} title="Add note" onClick={addNote}>
+                <Icon name="edit" size={13} />
+                <span class="sr-only">Add note</span>
+              </button>
+              <Show
+                when={selectedNode() && !captureOpen() && !recorder.recording() && !recorder.take()}
+              >
+                <button type="button" class={recordButton} onClick={recordFromHere}>
+                  <i class="size-1.5 rounded-full bg-[var(--icon-critical-base)]" />
+                  Record next
+                </button>
+              </Show>
+            </div>
+            <div class="absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_78%,transparent),0_8px_24px_rgb(0_0_0/16%)] backdrop-blur-[12px] max-[680px]:hidden">
               <button
                 type="button"
                 class={mapControlButton}
@@ -1594,7 +1643,7 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
               >
                 +
               </button>
-              <button type="button" class={mapControlButton} onClick={fit}>
+              <button type="button" class={mapControlButton} aria-label="Fit journey" onClick={fit}>
                 Fit
               </button>
             </div>
@@ -1654,22 +1703,39 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
       </Show>
       <Show when={captureOpen() && !reviewingTake()}>
         <aside
-          class="absolute top-4 right-4 bottom-4 z-40 flex min-h-0 w-[min(388px,calc(100%-32px))] min-w-0 flex-col overflow-hidden rounded-[18px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_rgb(255_255_255/7%),0_20px_56px_-20px_rgb(0_0_0/55%)] max-[720px]:top-auto max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:h-[min(72vh,680px)] max-[720px]:w-auto"
+          class={cn(
+            "absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_rgb(255_255_255/7%),0_20px_56px_-20px_rgb(0_0_0/55%)]",
+            selectedDevice()
+              ? "bottom-4 w-[min(388px,calc(100%-32px))] rounded-[18px] max-[720px]:top-auto max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:h-[min(72vh,680px)] max-[720px]:w-auto"
+              : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[18px] max-[720px]:right-2 max-[720px]:left-2 max-[720px]:w-auto",
+          )}
           aria-label="Live device"
         >
-          <header class="flex min-h-12 shrink-0 items-center justify-between px-3 shadow-[inset_0_-1px_rgb(255_255_255/6%)]">
+          <header class="flex min-h-12 shrink-0 items-center justify-between px-3.5 shadow-[inset_0_-1px_rgb(255_255_255/5%)]">
             <div class="flex min-w-0 items-center gap-2">
-              <i
-                class={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  recorder.recording()
-                    ? "bg-[var(--icon-critical-base)]"
-                    : canRecord()
-                      ? "bg-[var(--icon-success-base)]"
-                      : "bg-[var(--icon-warning-base)]",
-                )}
-              />
-              <DevicePicker onManageTargets={props.onOpenTargets} />
+              <Show
+                when={selectedDevice()}
+                fallback={
+                  <span class="inline-flex items-center gap-2 text-[11.5px] font-semibold text-[var(--text-base)]">
+                    <span class="grid size-6 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+                      <Icon name="smartphone" size={12} />
+                    </span>
+                    Live device
+                  </span>
+                }
+              >
+                <i
+                  class={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    recorder.recording()
+                      ? "bg-[var(--icon-critical-base)]"
+                      : canRecord()
+                        ? "bg-[var(--icon-success-base)]"
+                        : "bg-[var(--icon-warning-base)]",
+                  )}
+                />
+                <DevicePicker onManageTargets={props.onOpenTargets} />
+              </Show>
             </div>
             <Show when={!recorder.recording()}>
               <button
@@ -1689,14 +1755,20 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
           <Show
             when={recorder.recording() && recorder.take()}
             fallback={
-              <Show when={canRecord()}>
+              <Show
+                when={canRecord() && hasCanvasContent() && (selectedNode() || selectedConnection())}
+              >
                 <footer class="flex min-h-16 shrink-0 items-center px-3 pt-1 pb-3">
                   <button
                     type="button"
                     class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#705ff0] px-4 text-[11.5px] font-semibold text-white shadow-[inset_0_1px_rgb(255_255_255/18%),0_10px_28px_rgb(89_69_214/24%)] transition-[background-color,transform] duration-150 hover:enabled:bg-[#7d6df5] active:enabled:scale-[0.98] disabled:cursor-wait disabled:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--v2-border-border-strong)]"
                     disabled={recorder.arming()}
                     aria-busy={recorder.arming()}
-                    onClick={recordFromHere}
+                    onClick={() => {
+                      const connection = selectedConnection();
+                      if (connection) recordConnection(connection);
+                      else recordFromHere();
+                    }}
                   >
                     <Show
                       when={recorder.arming()}
@@ -1705,10 +1777,14 @@ export function JourneyWorkspace(props: { onOpenTargets: () => void; navigatorOp
                       <Icon
                         name="refresh"
                         size={13}
-                        class="animate-[spin_900ms_linear_infinite_reverse] motion-reduce:animate-none"
+                        class="animate-[spin_900ms_linear_infinite] motion-reduce:animate-none"
                       />
                     </Show>
-                    {recorder.arming() ? "Preparing device…" : "Record connection"}
+                    {recorder.arming()
+                      ? "Preparing device…"
+                      : selectedConnection()
+                        ? "Rewrite connection"
+                        : "Record next connection"}
                   </button>
                 </footer>
               </Show>

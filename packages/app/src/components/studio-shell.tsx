@@ -570,7 +570,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     12,
                     Math.min(34, (draft.title() || "Untitled journey").length + 1),
                   )}
-                  class="h-8 min-w-[120px] max-w-[min(32vw,360px)] rounded-md bg-transparent px-1.5 font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)]"
+                  class="h-8 min-w-[120px] max-w-[min(32vw,360px)] rounded-md bg-transparent px-1.5 font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)] max-[680px]:max-w-[26vw] max-[520px]:min-w-0"
                   aria-label="Journey name"
                   data-tip="Rename journey"
                   value={draft.title()}
@@ -649,14 +649,21 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     )}
                     aria-hidden="true"
                   />
-                  <Icon name="smartphone" size={14} /> Device
+                  <Icon name="smartphone" size={14} />
+                  <span class="max-[560px]:hidden">
+                    {selectedTargetIsReady() ? "Device" : "Connect device"}
+                  </span>
                 </button>
               </Show>
               <div class="relative flex items-center gap-1.5">
                 <button
                   type="button"
                   aria-pressed={settingsOpen()}
-                  class={cn(productIconButton, settingsOpen() && "bg-surface-base-active")}
+                  class={cn(
+                    productIconButton,
+                    "max-[680px]:hidden",
+                    settingsOpen() && "bg-surface-base-active",
+                  )}
                   aria-label="Journey properties"
                   data-tip="Journey properties"
                   onClick={() => {
@@ -706,6 +713,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       items[next]?.focus();
                     }}
                   >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="hidden min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] max-[680px]:flex"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
+                        setSettingsOpen(true);
+                      }}
+                    >
+                      <Icon name="sliders" size={14} /> Journey properties
+                    </button>
                     <button
                       type="button"
                       role="menuitem"
@@ -768,7 +787,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   onClick={runSelectedTest}
                 >
                   <Icon name="play" size={13} />
-                  {studioView() === "map" ? graphRunReadiness().label : "Run"}
+                  <span class="max-[620px]:hidden">
+                    {studioView() === "map" ? graphRunReadiness().label : "Run"}
+                  </span>
                 </button>
                 <Show when={studioView() === "map" ? graphBlockedReason() : testBlockedReason()}>
                   {(reason) => (

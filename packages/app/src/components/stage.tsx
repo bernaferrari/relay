@@ -1293,8 +1293,7 @@ export function DeviceStage(_props: {
    * Abstract device viewport — thin always-dark frame, no hardware gimmicks.
    * Never stack workbench light-theme color recipes on the frame.
    */
-  const phoneShell =
-    "relative rounded-[21px] bg-[var(--phone-bezel)] p-[2px] shadow-[0_0_0_1px_rgb(255_255_255/10%),0_22px_54px_-24px_rgb(0_0_0/78%)]";
+  const phoneShell = "phone-bezel relative rounded-[22px] bg-[var(--phone-bezel)] p-[2px]";
 
   return (
     <section
