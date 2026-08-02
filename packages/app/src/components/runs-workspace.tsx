@@ -61,6 +61,7 @@ import type {
   VisualReviewAction,
   VisualReviewDecision,
 } from "@relay/protocol";
+import { appMapIdForJob, runStopHeadline } from "../lib/run-presentation";
 
 export function RunsWorkspace(props: {
   onOpenRecipe: (id: string) => void;
@@ -297,6 +298,11 @@ export function RunsWorkspace(props: {
   const reviewCompletion = createMemo(() =>
     selected() ? runCompletion(selected()!, selectedRecipe()?.steps.length ?? 0) : null,
   );
+  const selectedAppMapId = createMemo(() => (selected() ? appMapIdForJob(selected()!) : null));
+  const selectedAppMapAvailable = createMemo(() => {
+    const id = selectedAppMapId();
+    return id ? server.appMaps().some((map) => map.id === id) : false;
+  });
   const selectedCanvasItems = createMemo(() => {
     const job = selected();
     if (!job) return [];
@@ -501,9 +507,9 @@ export function RunsWorkspace(props: {
                 <div class="flex items-start justify-between gap-2">
                   <div class="grid min-w-0 gap-1">
                     <span class={eyebrow}>Execution review</span>
-                    <strong class="truncate text-[20px]/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
-                      {server.recipes().find((r) => r.id === job().action)?.title ??
-                        job().title ??
+                    <strong class="line-clamp-2 text-[20px]/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
+                      {job().title ??
+                        server.recipes().find((r) => r.id === job().action)?.title ??
                         job().action}
                     </strong>
                   </div>
@@ -511,12 +517,19 @@ export function RunsWorkspace(props: {
                     <button
                       type="button"
                       class={cn(productSecondary, "mr-1 min-h-8 px-2.5 text-[11px]")}
+                      disabled={Boolean(selectedAppMapId()) && !selectedAppMapAvailable()}
                       onClick={() => {
+                        if (selectedAppMapId() && !selectedAppMapAvailable()) return;
                         server.setSelectedJobId(job().id);
-                        props.onOpenRecipe(job().action);
+                        props.onOpenRecipe(selectedAppMapId() ?? job().action);
                       }}
                     >
-                      <Icon name="edit" size={12} /> Open test
+                      <Icon name="edit" size={12} />{" "}
+                      {selectedAppMapId()
+                        ? selectedAppMapAvailable()
+                          ? "Open map"
+                          : "Map unavailable"
+                        : "Open test"}
                     </button>
                     <Show when={job().status === "error" || job().status === "cancelled"}>
                       <button
@@ -595,8 +608,13 @@ export function RunsWorkspace(props: {
                   </span>
                   <div class="min-w-0">
                     <strong class="block text-[12.5px] font-semibold text-text-strong">
-                      {job().failureCategory ? readableFailure(job().failureCategory!) : "Stopped"}{" "}
-                      at step {initialRunReviewStep(job()) + 1} of {reviewCompletion()?.total ?? 1}
+                      {runStopHeadline({
+                        total: reviewCompletion()?.total ?? 0,
+                        selectedIndex: initialRunReviewStep(job()),
+                        failureLabel: job().failureCategory
+                          ? readableFailure(job().failureCategory!)
+                          : "Stopped",
+                      })}
                     </strong>
                     <span class="mt-0.5 block text-[11px]/[1.4] text-text-weak">
                       {job().error
@@ -607,19 +625,19 @@ export function RunsWorkspace(props: {
                 </div>
               </Show>
               <nav
-                class="flex shrink-0 overflow-x-auto border-b border-border-weak-base px-3.5"
+                class="flex shrink-0 gap-0.5 overflow-x-auto border-b border-border-weak-base px-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 role="tablist"
                 aria-label="Run evidence"
               >
                 {(
                   [
-                    ["timeline", "Playback"],
-                    ["summary", "Overview"],
-                    ["visual", "Changes"],
+                    ["timeline", "Replay"],
+                    ["summary", "Summary"],
+                    ["visual", "Visual"],
                     ["evaluation", "Checks"],
                     ["network", "Network"],
                     ["logs", "Logs"],
-                    ["performance", "Performance"],
+                    ["performance", "Metrics"],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -629,7 +647,11 @@ export function RunsWorkspace(props: {
                     aria-controls="run-report-panel"
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
-                    class={cn(tabUnderline, tab() === id && tabUnderlineActive)}
+                    class={cn(
+                      tabUnderline,
+                      "!px-2 !text-[11px]",
+                      tab() === id && tabUnderlineActive,
+                    )}
                     onClick={() => setTab(id)}
                     onKeyDown={onReportTabKeyDown}
                   >
@@ -654,7 +676,11 @@ export function RunsWorkspace(props: {
                     aria-controls="run-report-panel"
                     aria-selected={tab() === "compatibility"}
                     tabindex={tab() === "compatibility" ? 0 : -1}
-                    class={cn(tabUnderline, tab() === "compatibility" && tabUnderlineActive)}
+                    class={cn(
+                      tabUnderline,
+                      "!px-2 !text-[11px]",
+                      tab() === "compatibility" && tabUnderlineActive,
+                    )}
                     onClick={() => setTab("compatibility")}
                     onKeyDown={onReportTabKeyDown}
                   >
@@ -681,7 +707,7 @@ export function RunsWorkspace(props: {
                     job={job()}
                     clock={server.clock()}
                     previous={baseline()}
-                    onOpenRecipe={props.onOpenRecipe}
+                    onOpenRecipe={(id) => props.onOpenRecipe(selectedAppMapId() ?? id)}
                   />
                   <Show when={job().evidence}>
                     {(manifest) => (
@@ -892,7 +918,7 @@ function RunBrowser(props: {
                 />
                 <span class="min-w-0">
                   <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
-                    {recipe()?.title ?? job.title ?? titleize(job.action)}
+                    {job.title ?? recipe()?.title ?? titleize(job.action)}
                   </strong>
                   <small class="mt-1 flex items-center gap-1.5 text-[9.5px] text-[var(--text-weak)]">
                     <span>{status().label}</span>
@@ -2098,7 +2124,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
   });
   const rowLabel = () =>
     [
-      recipe()?.title ?? titleize(props.job.action),
+      props.job.title ?? recipe()?.title ?? titleize(props.job.action),
       status(),
       fmtDur(props.job, server.clock()),
       fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "just now",
@@ -2129,7 +2155,7 @@ function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) 
       </span>
       <span class="min-w-0">
         <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
-          {recipe()?.title ?? titleize(props.job.action)}
+          {props.job.title ?? recipe()?.title ?? titleize(props.job.action)}
         </strong>
         <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-weaker">
           <span
