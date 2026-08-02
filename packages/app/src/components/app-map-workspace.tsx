@@ -4,7 +4,6 @@ import type {
   CaseStack,
   JourneyCanvasNote,
   JourneyMetadata,
-  JourneyVideoClip,
   Revisioned,
   CollaborationAwareness,
 } from "@relay/protocol";
@@ -50,7 +49,7 @@ import { journeyRunReadiness } from "../lib/journey-run-readiness";
 import { replayTransitionSteps } from "../lib/transition-replay";
 import { toast } from "../context/toast";
 import { evidenceForStep } from "./journey-step-presentation";
-import { GraphEmptyState, RecordedTakePlayer, TakeReviewSidebar } from "./journey-capture-review";
+import { GraphEmptyState } from "./journey-capture-review";
 import { ConnectionInspector, ScreenInspector } from "./journey-canvas-primitives";
 import { JourneyHistoryPanel } from "./journey-history-panel";
 import { collaborationActivity } from "../lib/collaboration-awareness";
@@ -70,6 +69,7 @@ import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-proj
 import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
 import { AppMapCanvasScene } from "./app-map-canvas-scene";
+import { AppMapTakeReview } from "./app-map-take-review";
 
 type AppMapLoadState =
   | { status: "idle" }
@@ -2033,59 +2033,44 @@ export function AppMapWorkspace(props: {
       </Show>
       <Show when={appMapLoadState().status === "ready" && reviewingTake() && recorder.take()}>
         {(take) => (
-          <>
-            <TakeReviewSidebar
-              take={take()}
-              selectedIndex={reviewStepIndex()}
-              sourceTitle={
-                graph().screens.find(
-                  (screen) => screen.id === (take().sourceScreenId ?? recordingSourceScreenId),
-                )?.title ??
-                selectedNode()?.title ??
-                "Start"
-              }
-              screens={graph().screens}
-              destination={reviewDestination()}
-              onSelect={setReviewStepIndex}
-              onDestination={setReviewDestination}
-              onKeep={() => void keepTake()}
-              onDiscard={() => void discardTake()}
-              onReplay={() => void replayTake()}
-              onRewrite={() => void rewriteTake()}
-              onReorderActions={(actionIds) => recorder.reorderTakeActions(actionIds)}
-              onReplaceAction={(actionId, interaction) =>
-                recorder.replaceTakeAction(actionId, interaction)
-              }
-              onRemoveAction={(actionId) => recorder.removeTakeAction(actionId)}
-              onReviewInvalidated={() => setTakeReplay({ takeId: take().id, state: "idle" })}
-              replayState={takeReplay().takeId === take().id ? takeReplay().state : "idle"}
-              {...(takeReplay().takeId === take().id && takeReplay().error
-                ? { replayError: takeReplay().error }
-                : {})}
-              onRemove={(index) => {
-                void recorder.removeTakeStep(index);
-                setTakeReplay({ takeId: take().id, state: "idle" });
-                setReviewStepIndex((selected) => (selected > index ? selected - 1 : selected));
-              }}
-            />
-            <section
-              class="relative min-h-0 min-w-0 overflow-hidden border-l border-[var(--v2-border-border-muted)] max-[760px]:border-t max-[760px]:border-l-0"
-              aria-label="Recorded action playback"
-            >
-              <RecordedTakePlayer
-                take={take()}
-                selectedIndex={reviewStepIndex()}
-                onSelect={setReviewStepIndex}
-                screenshotFor={(_, index) => take().stepEvidenceUrls[index] ?? ""}
-                videoSrc={take().videoEvidenceUrl}
-                clip={take().videoClip}
-                onClip={(clip: JourneyVideoClip) => {
-                  void recorder.setTakeVideoClip(clip);
-                  setTakeReplay({ takeId: take().id, state: "idle" });
-                }}
-              />
-            </section>
-          </>
+          <AppMapTakeReview
+            take={take()}
+            selectedIndex={reviewStepIndex()}
+            sourceTitle={
+              graph().screens.find(
+                (screen) => screen.id === (take().sourceScreenId ?? recordingSourceScreenId),
+              )?.title ??
+              selectedNode()?.title ??
+              "Start"
+            }
+            screens={graph().screens}
+            destination={reviewDestination()}
+            onSelect={setReviewStepIndex}
+            onDestination={setReviewDestination}
+            onKeep={() => void keepTake()}
+            onDiscard={() => void discardTake()}
+            onReplay={() => void replayTake()}
+            onRewrite={() => void rewriteTake()}
+            onReorderActions={(actionIds) => recorder.reorderTakeActions(actionIds)}
+            onReplaceAction={(actionId, interaction) =>
+              recorder.replaceTakeAction(actionId, interaction)
+            }
+            onRemoveAction={(actionId) => recorder.removeTakeAction(actionId)}
+            onReviewInvalidated={() => setTakeReplay({ takeId: take().id, state: "idle" })}
+            replayState={takeReplay().takeId === take().id ? takeReplay().state : "idle"}
+            {...(takeReplay().takeId === take().id && takeReplay().error
+              ? { replayError: takeReplay().error }
+              : {})}
+            onRemove={(index) => {
+              void recorder.removeTakeStep(index);
+              setTakeReplay({ takeId: take().id, state: "idle" });
+              setReviewStepIndex((selected) => (selected > index ? selected - 1 : selected));
+            }}
+            onClip={(clip) => {
+              void recorder.setTakeVideoClip(clip);
+              setTakeReplay({ takeId: take().id, state: "idle" });
+            }}
+          />
         )}
       </Show>
       <Show when={appMapLoadState().status === "ready" && captureOpen() && !reviewingTake()}>
