@@ -112,7 +112,7 @@ test("recording activity refreshes Authoring Sessions without replacing Journey 
   assert.equal(projection.activity?.actorId, "agent:indexer");
 });
 
-test("one authoring commit event refreshes both the session and Journey projections", () => {
+test("one authoring commit event refreshes the session and canonical App Map", () => {
   const projection = projectRelayEvent(
     0,
     event(1, {
@@ -120,10 +120,10 @@ test("one authoring commit event refreshes both the session and Journey projecti
       at: 1,
       projectId: "default",
       sessionId: "authoring-1",
-      journeyId: "journey-1",
-      transitionId: "transition-1",
+      appMapId: "map-1",
+      connectionId: "connection-1",
       revision: 2,
     }),
   );
-  assert.deepEqual(projection.refresh, ["authoring", "journeys"]);
+  assert.deepEqual(projection.refresh, ["authoring", "appMaps"]);
 });

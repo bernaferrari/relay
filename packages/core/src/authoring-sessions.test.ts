@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,9 +12,7 @@ import {
   type AuthoringRuntime,
 } from "./authoring-sessions.js";
 import { runWithOperationContext, type OperationContext } from "./operation-context.js";
-import { readJourney } from "./collaboration.js";
-import { readJourneyAggregate } from "./journey-aggregate.js";
-import { readRecipe, saveRecipe } from "./recipes.js";
+import { createAppMap, readAppMap } from "./collaboration.js";
 
 function operation(operationId = "authoring.test"): OperationContext {
   const requestId = crypto.randomUUID();
@@ -43,7 +42,7 @@ class FakeRuntime implements AuthoringRuntime {
     return {
       capturedAt,
       targetId: "device-a",
-      fingerprint: `fingerprint-${this.screen}`,
+      fingerprint: createHash("sha256").update(this.screen).digest("hex"),
       bounds: { width: 400, height: 800 },
       nodes: [{ role: "button", label: this.screen }],
       screenshot: { data: Buffer.from(`png:${this.screen}:${capturedAt}`), mime: "image/png" },
@@ -71,7 +70,7 @@ async function withWorkspace(
   run: (input: {
     store: AuthoringSessionStore;
     runtime: FakeRuntime;
-    recipeId: string;
+    appMapId: string;
   }) => Promise<void>,
 ) {
   const directory = await mkdtemp(join(tmpdir(), "relay-authoring-"));
@@ -84,12 +83,17 @@ async function withWorkspace(
   process.env.GROK_DEVICE_RECIPES_DIR = join(directory, "recipes");
   process.env.RELAY_TESTS_DIR = join(directory, "tests");
   try {
-    await runWithOperationContext(operation("journey.create"), async () => {
-      const recipe = await saveRecipe({ expectedRevision: 0, title: "Authoring", steps: [] });
+    await runWithOperationContext(operation("app-map.create"), async () => {
+      const appMap = await createAppMap({
+        organizationId: "local",
+        projectId: "project-a",
+        appMapId: "authoring-map",
+        name: "Authoring",
+      });
       await run({
         store: new AuthoringSessionStore(),
         runtime: new FakeRuntime(),
-        recipeId: recipe.id,
+        appMapId: appMap.id,
       });
     });
   } finally {
@@ -106,17 +110,15 @@ async function withWorkspace(
 async function createReadySession(
   store: AuthoringSessionStore,
   runtime: FakeRuntime,
-  recipeId: string,
+  appMapId: string,
 ) {
-  const recipe = await readRecipe(recipeId);
-  const document = await readJourney("project-a", recipeId);
-  assert.ok(recipe);
+  const appMap = await readAppMap("project-a", appMapId);
+  assert.ok(appMap);
   let session = await store.create({
-    journeyId: recipeId,
+    appMapId,
     target: { kind: "device", platform: "android", targetId: "device-a" },
     leaseId: "lease-a",
-    expectedJourneyRevision: document.revision,
-    expectedRecipeRevision: recipe.updatedAt,
+    expectedAppMapRevision: appMap.revision,
     group: "Settings",
   });
   session = await store.observe(session.id, runtime);
@@ -166,17 +168,15 @@ test("state machine permits only explicit lifecycle edges", () => {
 });
 
 test("sessions on different explicit targets progress independently", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    const first = await createReadySession(store, runtime, recipeId);
-    const recipe = await readRecipe(recipeId);
-    const document = await readJourney("project-a", recipeId);
-    assert.ok(recipe);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    const first = await createReadySession(store, runtime, appMapId);
+    const appMap = await readAppMap("project-a", appMapId);
+    assert.ok(appMap);
     let second = await store.create({
-      journeyId: recipeId,
+      appMapId,
       target: { kind: "device", platform: "android", targetId: "device-b" },
       leaseId: "lease-b",
-      expectedJourneyRevision: document.revision,
-      expectedRecipeRevision: recipe.updatedAt,
+      expectedAppMapRevision: appMap.revision,
     });
     const secondRuntime = new FakeRuntime();
     second = await store.observe(second.id, secondRuntime);
@@ -192,8 +192,8 @@ test("sessions on different explicit targets progress independently", async () =
 });
 
 test("unsupported target interactions stay explicit and are not recorded", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    let session = await createReadySession(store, runtime, recipeId);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
     runtime.execute = async () => {
       throw new Error("Capability unavailable for swipe");
@@ -211,8 +211,8 @@ test("unsupported target interactions stay explicit and are not recorded", async
 });
 
 test("the session routes every supported control and evidence-only interaction", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    let session = await createReadySession(store, runtime, recipeId);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
     const interactions: AuthoringInteraction[] = [
       { kind: "tap", target: { label: "Continue" } },
@@ -242,8 +242,8 @@ test("the session routes every supported control and evidence-only interaction",
 });
 
 test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, and evidence", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    let session = await createReadySession(store, runtime, recipeId);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
     session = await store.interact(session.id, { kind: "key", key: "back" }, runtime);
     session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
@@ -306,63 +306,58 @@ test("Take revisions preserve Back, Wait/no-op, reusable, multi-action, replay, 
     });
     assert.equal(session.state, "committed");
     assert.deepEqual(session.take!.replayAttempts[0], immutableFailed);
-    const recipe = await readRecipe(recipeId);
-    const journey = await readJourney("project-a", recipeId);
-    assert.ok(recipe);
-    const transition = journey.value.graph?.transitions.find(
-      (item) => item.id === session.committedTransitionId,
+    const appMap = await readAppMap("project-a", appMapId);
+    assert.ok(appMap);
+    const connection = appMap.connections[session.committedConnectionId!];
+    assert.ok(connection);
+    assert.equal(connection.state, "ready");
+    assert.equal(connection.actions[0]?.kind, "recorded");
+    assert.ok(
+      connection.actions[0]?.kind === "recorded" && connection.actions[0].evidenceIds.length > 0,
     );
-    assert.ok(transition);
-    assert.equal(transition.state, "recorded");
-    assert.equal(transition.review?.status, "verified");
-    assert.ok(transition.evidenceIds?.length);
-    for (const stepId of transition.stepIds) {
-      assert.ok(recipe.steps.some((step) => step.id === stepId));
-    }
+    assert.equal(appMap.activity[session.id]?.eventType, "recording.committed");
   });
 });
 
 test("a zero-action Take commits as an explicit verified observe-only edge", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    let session = await createReadySession(store, runtime, recipeId);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
     session = await store.stop(session.id, runtime);
     session = await store.replay(session.id, runtime);
-    session = await store.commit(session.id, { mode: "automatic" });
-    const journey = await readJourney("project-a", recipeId);
-    const transition = journey.value.graph?.transitions.find(
-      (item) => item.id === session.committedTransitionId,
-    );
-    assert.deepEqual(transition?.stepIds, []);
-    assert.equal(transition?.state, "recorded");
-    assert.equal(transition?.mode, "automatic");
-    assert.equal(transition?.destination.kind, "screen");
+    session = await store.commit(session.id, {});
+    const appMap = await readAppMap("project-a", appMapId);
+    assert.ok(appMap);
+    const connection = appMap.connections[session.committedConnectionId!];
+    assert.deepEqual(connection?.actions, [
+      { id: `passive-${session.take!.id}`, kind: "passive", reason: "observe-only" },
+    ]);
+    assert.equal(connection?.state, "ready");
+    assert.equal(connection?.destination.kind, "screen");
     assert.equal(
-      transition?.destination.kind === "screen" ? transition.destination.screenId : undefined,
-      transition?.fromScreenId,
+      connection?.destination.kind === "screen" ? connection.destination.screenId : undefined,
+      connection?.fromScreenId,
       "the canonical semantic identity merges an observe-only cycle back to its source Screen",
     );
   });
 });
 
 test("later atomic commits retain evidence for every existing graph connection", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    let first = await createReadySession(store, runtime, recipeId);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let first = await createReadySession(store, runtime, appMapId);
     first = await store.start(first.id, runtime);
     first = await store.interact(first.id, { kind: "key", key: "back" }, runtime);
     first = await store.stop(first.id, runtime);
     first = await store.replay(first.id, runtime);
     first = await store.commit(first.id, {});
 
-    const recipe = await readRecipe(recipeId);
-    const document = await readJourney("project-a", recipeId);
-    assert.ok(recipe);
+    const current = await readAppMap("project-a", appMapId);
+    assert.ok(current);
     let second = await store.create({
-      journeyId: recipeId,
+      appMapId,
       target: { kind: "device", platform: "android", targetId: "device-a" },
       leaseId: "lease-a",
-      expectedJourneyRevision: document.revision,
-      expectedRecipeRevision: recipe.updatedAt,
+      expectedAppMapRevision: current.revision,
     });
     second = await store.observe(second.id, runtime);
     second = await store.start(second.id, runtime);
@@ -371,20 +366,19 @@ test("later atomic commits retain evidence for every existing graph connection",
     second = await store.replay(second.id, runtime);
     await store.commit(second.id, {});
 
-    const aggregate = await readJourneyAggregate("project-a", recipeId);
-    assert.ok(aggregate);
-    const evidenceIds = new Set(aggregate.evidence.map((evidence) => evidence.id));
-    assert.equal(aggregate.document.value.graph?.transitions.length, 2);
-    for (const transition of aggregate.document.value.graph?.transitions ?? []) {
-      assert.ok(transition.evidenceIds?.length);
-      assert.ok(transition.evidenceIds?.every((id) => evidenceIds.has(id)));
+    const appMap = await readAppMap("project-a", appMapId);
+    assert.ok(appMap);
+    assert.equal(Object.keys(appMap.connections).length, 2);
+    for (const connection of Object.values(appMap.connections)) {
+      const recorded = connection.actions.find((action) => action.kind === "recorded");
+      assert.ok(recorded && recorded.evidenceIds.length > 0);
     }
   });
 });
 
 test("recovery preserves interrupted recording and resolves post-rename commits", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    let session = await createReadySession(store, runtime, recipeId);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
     session = await store.interact(session.id, { kind: "key", key: "back" }, runtime);
     let released = 0;
@@ -415,33 +409,32 @@ test("recovery preserves interrupted recording and resolves post-rename commits"
     assert.equal((await store.get(session.id)).state, "committing");
     const afterCommitRecovery = await store.recover({ async releaseLease() {} });
     assert.equal(afterCommitRecovery[0]?.state, "committed");
-    const journey = await readJourney("project-a", recipeId);
-    const recipe = await readRecipe(recipeId);
-    const committed = journey.value.graph?.transitions.find(
-      (transition) => transition.provenance?.sessionId === session.id,
-    );
-    assert.ok(committed);
-    assert.ok(recipe);
-    assert.ok(committed.stepIds.every((id) => recipe.steps.some((step) => step.id === id)));
+    const appMap = await readAppMap("project-a", appMapId);
+    assert.ok(appMap);
+    const activity = appMap.activity[session.id];
+    assert.equal(activity?.eventType, "recording.committed");
+    assert.ok(activity && appMap.connections[activity.subject.id]);
   });
 });
 
 test("startup recovery scopes every persisted project without crossing project ownership", async () => {
-  await withWorkspace(async ({ store, runtime, recipeId }) => {
-    let projectA = await createReadySession(store, runtime, recipeId);
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let projectA = await createReadySession(store, runtime, appMapId);
     projectA = await store.start(projectA.id, runtime);
 
     const projectBContext = { ...operation("authoring.project-b"), projectId: "project-b" };
     const projectB = await runWithOperationContext(projectBContext, async () => {
-      const recipe = await readRecipe(recipeId);
-      const document = await readJourney("project-b", recipeId);
-      assert.ok(recipe);
+      const appMap = await createAppMap({
+        organizationId: "local",
+        projectId: "project-b",
+        appMapId,
+        name: "Authoring",
+      });
       let session = await store.create({
-        journeyId: recipeId,
+        appMapId,
         target: { kind: "device", platform: "android", targetId: "device-b" },
         leaseId: "lease-b",
-        expectedJourneyRevision: document.revision,
-        expectedRecipeRevision: recipe.updatedAt,
+        expectedAppMapRevision: appMap.revision,
       });
       session = await store.observe(session.id, runtime);
       return store.start(session.id, runtime);

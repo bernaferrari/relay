@@ -736,7 +736,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     async function createAuthoringSession(input: {
-      journeyId: string;
+      appMapId: string;
       target:
         | { kind: "device"; platform: "android" | "ios"; targetId: string }
         | {
@@ -745,10 +745,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             targetId: string;
           };
       leaseId: string;
-      expectedJourneyRevision: number;
-      expectedRecipeRevision: number;
+      expectedAppMapRevision: number;
       sourceScreenId?: string;
-      pendingTransitionId?: string;
+      pendingConnectionId?: string;
       group?: string;
     }): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
@@ -820,14 +819,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       id: string,
       input: {
         destination?: AuthoringCommitDestination;
-        mode?: "interaction" | "automatic" | "reusable";
       },
     ): Promise<AuthoringSession> {
       if (!client) await resolveConnection();
       const session = projectAuthoringSession(
         (await client!.commitAuthoringSession({ sessionId: id, ...input })).session,
       );
-      await Promise.all([refreshRecipes(), loadJourney(session.journeyId)]);
+      await refreshAppMaps();
       return session;
     }
 

@@ -77,19 +77,18 @@ test("remote authoring activity is visible without replacing local Journey or Ta
     projectId: "default",
     actorId,
     actorKind: actorId.startsWith("agent:") ? "agent" : "human",
-    journeyId: "journey-a",
+    appMapId: "map-a",
     state: "recording",
     target: { kind: "device", platform: "android", targetId },
     leaseId: `lease-${id}`,
-    expectedJourneyRevision: 1,
-    expectedRecipeRevision: 1,
+    expectedAppMapRevision: 1,
     createdAt: 1,
     updatedAt,
   });
   const selectedTarget = "device-a";
   const projected = selectProjectedAuthoringSession(
     [session("remote", "agent:indexer", "device-a", 3), session("other", "agent:b", "device-b", 4)],
-    { journeyId: "journey-a", targetId: selectedTarget, actorId: "human:me" },
+    { appMapId: "map-a", targetId: selectedTarget, actorId: "human:me" },
   );
   assert.equal(projected?.id, "remote");
   assert.equal(selectedTarget, "device-a");
@@ -103,12 +102,11 @@ test("Take projection preserves canonical zero-step and grouped action boundarie
     projectId: "default",
     actorId: "human:me",
     actorKind: "human",
-    journeyId: "journey-a",
+    appMapId: "map-a",
     state: "reviewing",
     target: { kind: "device", platform: "android", targetId: "device-a" },
     leaseId: "lease-1",
-    expectedJourneyRevision: 1,
-    expectedRecipeRevision: 1,
+    expectedAppMapRevision: 1,
     createdAt: 1,
     updatedAt: 4,
     take: {

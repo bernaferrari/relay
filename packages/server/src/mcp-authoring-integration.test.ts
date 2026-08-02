@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,7 +60,7 @@ class FakeRuntime implements AuthoringRuntime {
     return {
       capturedAt,
       targetId,
-      fingerprint: `fingerprint-${this.screen}`,
+      fingerprint: createHash("sha256").update(this.screen).digest("hex"),
       bounds: { width: 400, height: 800 },
       nodes: [{ role: "button", label: this.screen }],
       screenshot: { data: Buffer.from(pngBase64, "base64"), mime: "image/png" },
@@ -302,12 +303,10 @@ test("MCP agent authors a transition observed by an app client", async () => {
       platform: "android",
       deviceSerials: [targetId],
     });
-    const created = await setup.invoke("journey.create", {
-      expectedRevision: 0,
-      title: "MCP Authoring Integration",
-      steps: [],
+    const created = await setup.invoke("app-map.create", {
+      appMapId: "mcp-authoring",
+      name: "MCP Authoring Integration",
     });
-    const initialJourney = await setup.journey(created.journey.id);
 
     mcp = await connectMcp(invoker);
     const listed = await mcp.request("tools/list", {});
@@ -358,11 +357,10 @@ test("MCP agent authors a transition observed by an app client", async () => {
     );
 
     const createInput = {
-      journeyId: created.journey.id,
+      appMapId: created.appMap.id,
       target: { kind: "device", platform: "android", targetId },
       leaseId,
-      expectedJourneyRevision: initialJourney.revision,
-      expectedRecipeRevision: created.journey.updatedAt,
+      expectedAppMapRevision: created.appMap.revision,
     } as const;
 
     const leaseConflictCalls = invocations.length;
@@ -383,7 +381,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
     const revisionConflict = callResult(
       await callTool(mcp, "relay_authoring_session_create", {
         ...createInput,
-        expectedJourneyRevision: initialJourney.revision + 1,
+        expectedAppMapRevision: created.appMap.revision + 1,
       }),
     );
     assert.equal(revisionConflict.isError, true);
@@ -443,7 +441,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
     assert.notEqual(commitResult.isError, true, JSON.stringify(commitResult.content));
     const committed = await observer.authoringSession(sessionId);
     assert.equal(committed.session.state, "committed");
-    assert.ok(committed.session.committedTransitionId);
+    assert.ok(committed.session.committedConnectionId);
 
     await waitFor(
       () =>
@@ -473,18 +471,16 @@ test("MCP agent authors a transition observed by an app client", async () => {
 
     const visibleSession = await observer.authoringSession(sessionId);
     assert.equal(visibleSession.session.state, "committed");
-    const finalJourney = await observer.journey(created.journey.id);
-    assert.equal(finalJourney.revision, initialJourney.revision + 1);
-    const transition = finalJourney.value.graph?.transitions.find(
-      (item) => item.id === committed.session.committedTransitionId,
-    );
-    assert.ok(transition);
-    assert.equal(transition.state, "recorded");
-    assert.equal(transition.destination.kind, "screen");
-    const destination = finalJourney.value.graph?.screens.find(
-      (screen) =>
-        transition.destination.kind === "screen" && screen.id === transition.destination.screenId,
-    );
+    const finalMap = (await observer.invoke("app-map.get", { appMapId: created.appMap.id })).appMap;
+    assert.equal(finalMap.revision, created.appMap.revision + 1);
+    const connection = finalMap.connections[committed.session.committedConnectionId!];
+    assert.ok(connection);
+    assert.equal(connection.state, "ready");
+    assert.equal(connection.destination.kind, "screen");
+    const destination =
+      connection.destination.kind === "screen"
+        ? finalMap.screens[connection.destination.screenId]
+        : undefined;
     assert.equal(destination?.title, "MCP destination");
     assert.deepEqual(
       runtime.executed.map((interaction) => interaction.kind),

@@ -396,20 +396,14 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     path("proposal create", [], undefined, {
       summary: "Create a proposal attached to an App Map and device",
       inputHelp: [
-        { name: "journeyId", type: "string", required: true, description: "App Map identifier" },
+        { name: "appMapId", type: "string", required: true, description: "App Map identifier" },
         { name: "target", type: "object", required: true, description: "Device or browser target" },
         { name: "leaseId", type: "string", required: true, description: "Exclusive target lease" },
         {
-          name: "expectedJourneyRevision",
+          name: "expectedAppMapRevision",
           type: "number",
           required: true,
           description: "Current map revision",
-        },
-        {
-          name: "expectedRecipeRevision",
-          type: "number",
-          required: true,
-          description: "Current recipe revision",
         },
       ],
     }),

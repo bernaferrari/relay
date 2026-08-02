@@ -939,15 +939,13 @@ export function AppMapWorkspace(props: {
     if (!take || takeReplay().takeId !== take.id || takeReplay().state !== "passed") return;
     const committed = await recorder.keepTake({
       destination: reviewDestination(),
-      mode: take.steps.length ? "interaction" : "automatic",
     });
     if (committed) {
-      const recipeId = server.selectedRecipeId();
-      const next = recipeId ? await server.loadJourney(recipeId) : null;
-      if (next) applyRemoteMetadata(next);
-      const destinationScreenId = next?.value.graph?.transitions.find(
-        (transition) => transition.id === committed.committedTransitionId,
-      )?.destination;
+      const appMapId = server.selectedRecipeId();
+      const next = appMapId ? await server.loadAppMap(appMapId) : null;
+      const destination = committed.committedConnectionId
+        ? next?.connections[committed.committedConnectionId]?.destination
+        : undefined;
       pendingConnectionId = null;
       recordingSourceScreenId = null;
       recorder.setRecordingTransition(undefined);
@@ -959,14 +957,10 @@ export function AppMapWorkspace(props: {
       setCaptureOpen(false);
       setTakeReplay({ takeId: null, state: "idle" });
       requestAnimationFrame(() => {
-        const nextTree = buildJourneyGraphTree(
-          ensureJourneyGraph(next?.value ?? metadata().value, draft.steps()),
-          draft.steps(),
-        );
-        const addedScreen = nextTree.nodes.find(
-          (node) =>
-            destinationScreenId?.kind === "screen" && node.id === destinationScreenId.screenId,
-        );
+        const addedScreen =
+          destination?.kind === "screen"
+            ? tree().nodes.find((node) => node.id === destination.screenId)
+            : undefined;
         if (addedScreen) selectNode(addedScreen);
       });
     }

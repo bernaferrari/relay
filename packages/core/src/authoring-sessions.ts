@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -12,27 +12,16 @@ import type {
   AuthoringSessionState,
   AuthoringTakeRevision,
   CreateAuthoringSessionInput,
-  JourneyGraph,
-  JourneyGraphScreen,
-  JourneyGraphTransition,
-  JourneyMetadata,
-  JourneyScreenObservation,
   RecipeStep,
-  Revisioned,
 } from "@relay/protocol";
 import { serializeAuthoringSession } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { now, publish } from "./events.js";
 import { KeyedSerialQueue } from "./coordination-store.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
-import {
-  commitJourneyAggregate,
-  persistAuthoringEvidence,
-  readJourneyAggregate,
-} from "./journey-aggregate.js";
-import { readJourney } from "./collaboration.js";
-import { readRecipe, type Recipe } from "./recipes.js";
-import { validateJourneyGraphIntegrity } from "./journey-graph-compiler.js";
+import { commitAppMapRecording } from "./app-map.js";
+import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
+import { authoringEvidenceExists, persistAuthoringEvidence } from "./journey-aggregate.js";
 
 export class AuthoringStateError extends Error {
   readonly status = 409;
@@ -73,6 +62,10 @@ export type AuthoringRecoveryScope = {
   organizationId: string;
   projectId: string;
 };
+
+export type AuthoringCommitFault = (
+  boundary: "before-verify" | "after-verify" | "before-rename" | "after-rename",
+) => void;
 
 const TRANSITIONS: Record<AuthoringSessionState, readonly AuthoringSessionState[]> = {
   preparing: ["ready", "failed", "cancelled"],
@@ -130,20 +123,24 @@ async function expectedReplayFingerprints(
   session: AuthoringSession,
   revision: AuthoringTakeRevision,
 ): Promise<string[]> {
-  const document = await readJourney(session.projectId, session.journeyId);
-  const graph = document.value.graph;
+  const appMap = await readAppMap(session.projectId, session.appMapId);
+  if (!appMap) throw new AuthoringStateError("App Map no longer exists");
   const configured =
     session.destination ??
-    graph?.transitions.find((transition) => transition.id === session.pendingTransitionId)
-      ?.destination;
+    (session.pendingConnectionId
+      ? appMap.connections[session.pendingConnectionId]?.destination
+      : undefined);
   if (configured?.kind === "end") return [];
   if (configured?.kind === "screen") {
-    const screen = graph?.screens.find((candidate) => candidate.id === configured.screenId);
+    const screen = appMap.screens[configured.screenId];
     if (!screen) throw new AuthoringStateError("Expected destination screen no longer exists");
     return [
       screen.identity?.fingerprint,
       ...(screen.identity?.aliases ?? []),
-      ...(screen.observations ?? []).map((observation) => observation.fingerprint),
+      ...screen.variantIds.flatMap((variantId) => {
+        const fingerprint = appMap.screenVariants[variantId]?.observation?.fingerprint;
+        return fingerprint ? [fingerprint] : [];
+      }),
     ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
   }
   return revision.after?.screen.fingerprint ? [revision.after.screen.fingerprint] : [];
@@ -192,7 +189,7 @@ function sessionEvent(session: AuthoringSession): void {
 }
 
 function committedEvent(session: AuthoringSession): void {
-  if (!session.committedTransitionId) {
+  if (!session.committedConnectionId) {
     throw new Error("Committed Authoring Session has no graph connection");
   }
   publish({
@@ -200,9 +197,9 @@ function committedEvent(session: AuthoringSession): void {
     at: session.updatedAt,
     projectId: session.projectId,
     sessionId: session.id,
-    journeyId: session.journeyId,
-    transitionId: session.committedTransitionId,
-    revision: session.expectedJourneyRevision,
+    appMapId: session.appMapId,
+    connectionId: session.committedConnectionId,
+    revision: session.expectedAppMapRevision,
   });
 }
 
@@ -444,196 +441,6 @@ function nextRevision(
   };
 }
 
-function graph(metadata: JourneyMetadata): JourneyGraph {
-  return clone(metadata.graph ?? { schemaVersion: 1, screens: [], transitions: [], flows: [] });
-}
-
-function screenObservation(
-  observation: AuthoringObservation | undefined,
-): JourneyScreenObservation | undefined {
-  return observation ? clone(observation.screen) : undefined;
-}
-
-function observeScreen(
-  screen: JourneyGraphScreen,
-  observation: JourneyScreenObservation | undefined,
-): JourneyGraphScreen {
-  if (!observation) return screen;
-  const observations = screen.observations ?? [];
-  const aliases = new Set(screen.identity?.aliases ?? []);
-  if (screen.identity && screen.identity.fingerprint !== observation.fingerprint) {
-    aliases.add(observation.fingerprint);
-  }
-  return {
-    ...screen,
-    identity: screen.identity ?? { schemaVersion: 1, fingerprint: observation.fingerprint },
-    ...(aliases.size
-      ? {
-          identity: {
-            ...(screen.identity ?? {
-              schemaVersion: 1 as const,
-              fingerprint: observation.fingerprint,
-            }),
-            aliases: [...aliases].sort(),
-          },
-        }
-      : {}),
-    observations: observations.some((item) => item.id === observation.id)
-      ? observations
-      : [...observations, observation],
-    updatedAt: Math.max(screen.updatedAt, observation.capturedAt),
-  };
-}
-
-function screenByObservation(
-  value: JourneyGraph,
-  observation: JourneyScreenObservation | undefined,
-): JourneyGraphScreen | undefined {
-  if (!observation) return undefined;
-  return value.screens.find(
-    (screen) =>
-      screen.identity?.fingerprint === observation.fingerprint ||
-      screen.identity?.aliases?.includes(observation.fingerprint) ||
-      screen.observations?.some((item) => item.fingerprint === observation.fingerprint),
-  );
-}
-
-function graphId(prefix: string, seed: string): string {
-  return `${prefix}-${createHash("sha256").update(seed).digest("hex").slice(0, 16)}`;
-}
-
-function buildCommittedGraph(input: {
-  session: AuthoringSession;
-  metadata: JourneyMetadata;
-  steps: RecipeStep[];
-  destination?: AuthoringCommitDestination;
-  mode?: JourneyGraphTransition["mode"];
-  evidenceIds: string[];
-  at: number;
-}): { metadata: JourneyMetadata; transition: JourneyGraphTransition } {
-  const takeRevision = currentRevision(input.session);
-  const value = graph(input.metadata);
-  const sourceObservation = screenObservation(takeRevision.before);
-  const destinationObservation = screenObservation(takeRevision.after);
-  const pending = input.session.pendingTransitionId
-    ? value.transitions.find((item) => item.id === input.session.pendingTransitionId)
-    : undefined;
-  if (input.session.pendingTransitionId && !pending) {
-    throw new AuthoringStateError("Pending connection no longer exists");
-  }
-  if (
-    pending &&
-    input.session.sourceScreenId &&
-    pending.fromScreenId !== input.session.sourceScreenId
-  ) {
-    throw new AuthoringStateError(
-      "Pending connection does not start at the Authoring source Screen",
-    );
-  }
-  const sourceScreenId = input.session.sourceScreenId ?? pending?.fromScreenId;
-  let source = sourceScreenId
-    ? value.screens.find((item) => item.id === sourceScreenId)
-    : screenByObservation(value, sourceObservation);
-  if (sourceScreenId && !source) throw new AuthoringStateError("Source Screen no longer exists");
-  if (!source) {
-    source = {
-      id: graphId("screen", `${input.session.id}:source`),
-      title: "Start",
-      createdAt: input.at,
-      updatedAt: input.at,
-    };
-    value.screens.push(source);
-    if (value.flows.length === 0) {
-      value.flows.push({
-        id: graphId("flow", input.session.journeyId),
-        name: "Main flow",
-        screenId: source.id,
-        createdAt: input.at,
-        updatedAt: input.at,
-      });
-    }
-  }
-  source = observeScreen(source, sourceObservation);
-  value.screens = value.screens.map((item) => (item.id === source!.id ? source! : item));
-
-  const stepIds = input.steps.flatMap((step) => (step.id ? [step.id] : []));
-  let destination = input.destination ?? input.session.destination;
-  if (!destination && pending) destination = clone(pending.destination);
-  const observedDestination = screenByObservation(value, destinationObservation);
-  if (!destination && observedDestination)
-    destination = { kind: "screen", screenId: observedDestination.id };
-  destination ??= { kind: "new-screen" };
-
-  let graphDestination: JourneyGraphTransition["destination"];
-  if (destination.kind === "end") {
-    graphDestination = { kind: "end" };
-  } else if (destination.kind === "screen") {
-    const existing = value.screens.find((item) => item.id === destination.screenId);
-    if (!existing) throw new AuthoringStateError("Destination Screen no longer exists");
-    const observed = observeScreen(existing, destinationObservation);
-    value.screens = value.screens.map((item) => (item.id === observed.id ? observed : item));
-    graphDestination = { kind: "screen", screenId: observed.id };
-  } else {
-    const observed = observedDestination;
-    if (observed) {
-      graphDestination = { kind: "screen", screenId: observed.id };
-    } else {
-      const screen: JourneyGraphScreen = observeScreen(
-        {
-          id: graphId("screen", `${input.session.id}:destination`),
-          title: destination.title?.trim() || "Next screen",
-          representativeStepId: input.steps.at(-1)?.id,
-          createdAt: input.at,
-          updatedAt: input.at,
-        },
-        destinationObservation,
-      );
-      value.screens.push(screen);
-      graphDestination = { kind: "screen", screenId: screen.id };
-    }
-  }
-
-  const transitionId = pending?.id ?? graphId("transition", input.session.id);
-  const transition: JourneyGraphTransition = {
-    ...(pending ?? {
-      id: transitionId,
-      fromScreenId: source.id,
-      destination: graphDestination,
-      stepIds: [],
-      state: "needs-recording" as const,
-      kind: "forward" as const,
-      createdAt: input.at,
-      updatedAt: input.at,
-    }),
-    fromScreenId: source.id,
-    destination: graphDestination,
-    stepIds,
-    evidenceIds: [...new Set(input.evidenceIds)],
-    takeId: input.session.take!.id,
-    ...(takeRevision.videoClip ? { videoClip: clone(takeRevision.videoClip) } : {}),
-    mode: input.mode ?? pending?.mode ?? "interaction",
-    review: { status: "verified", updatedAt: input.at, verifiedAt: input.at },
-    provenance: { source: "recording", sessionId: input.session.id },
-    label: pending?.label ?? input.steps.at(-1)?.note ?? (stepIds.length ? "Continue" : "Observe"),
-    state: "recorded",
-    updatedAt: input.at,
-  };
-  value.transitions = [
-    ...value.transitions.filter((item) => item.id !== transition.id),
-    transition,
-  ];
-  validateJourneyGraphIntegrity(value);
-  return {
-    metadata: {
-      ...input.metadata,
-      schemaVersion: 6,
-      graph: value,
-      review: { state: "needs-review", updatedAt: input.at },
-    },
-    transition,
-  };
-}
-
 export class AuthoringSessionStore {
   readonly #queue = new KeyedSerialQueue();
 
@@ -695,14 +502,10 @@ export class AuthoringSessionStore {
     if (input.target.targetId.trim() === "" || input.leaseId.trim() === "") {
       throw new AuthoringStateError("Explicit target and lease are required");
     }
-    const existingRecipe = await readRecipe(input.journeyId);
-    const existingJourney = await readJourney(operation.projectId, input.journeyId);
-    if (!existingRecipe) throw new AuthoringStateError("Journey not found");
-    if (existingRecipe.updatedAt !== input.expectedRecipeRevision) {
-      throw new AuthoringStateError("Journey recipe revision changed before authoring started");
-    }
-    if (existingJourney.revision !== input.expectedJourneyRevision) {
-      throw new AuthoringStateError("Journey document revision changed before authoring started");
+    const appMap = await readAppMap(operation.projectId, input.appMapId);
+    if (!appMap) throw new AuthoringStateError("App Map not found");
+    if (appMap.revision !== input.expectedAppMapRevision) {
+      throw new AuthoringStateError("App Map revision changed before recording started");
     }
     const at = now();
     const session: AuthoringSession = {
@@ -712,14 +515,13 @@ export class AuthoringSessionStore {
       projectId: operation.projectId,
       actorId: operation.actorId,
       actorKind: operation.actorKind,
-      journeyId: input.journeyId,
+      appMapId: input.appMapId,
       state: "preparing",
       target: clone(input.target),
       leaseId: input.leaseId,
-      expectedJourneyRevision: input.expectedJourneyRevision,
-      expectedRecipeRevision: input.expectedRecipeRevision,
+      expectedAppMapRevision: input.expectedAppMapRevision,
       ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
-      ...(input.pendingTransitionId ? { pendingTransitionId: input.pendingTransitionId } : {}),
+      ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),
       ...(input.group?.trim() ? { group: input.group.trim() } : {}),
       createdAt: at,
       updatedAt: at,
@@ -1013,8 +815,8 @@ export class AuthoringSessionStore {
 
   async commit(
     id: string,
-    input: { destination?: AuthoringCommitDestination; mode?: JourneyGraphTransition["mode"] },
-    fault?: Parameters<typeof commitJourneyAggregate>[0]["fault"],
+    input: { destination?: AuthoringCommitDestination },
+    fault?: AuthoringCommitFault,
   ): Promise<AuthoringSession> {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
@@ -1032,75 +834,69 @@ export class AuthoringSessionStore {
       session = transition(session, "committing");
       session.commitTransactionId = session.id;
       await atomicSessionWrite(session);
-
-      const aggregate = await readJourneyAggregate(session.projectId, session.journeyId);
-      const recipe = aggregate?.recipe ?? (await readRecipe(session.journeyId));
-      const document =
-        aggregate?.document ?? (await readJourney(session.projectId, session.journeyId));
-      if (!recipe) throw new AuthoringStateError("Journey no longer exists");
-      if (
-        recipe.updatedAt !== session.expectedRecipeRevision ||
-        document.revision !== session.expectedJourneyRevision
-      ) {
-        session = transition(session, "reviewing");
-        await atomicSessionWrite(session);
-        throw new AuthoringStateError("Journey changed while this Take was being reviewed");
-      }
-      const steps = revision.actions.flatMap((action) => action.steps).map(clone);
-      const ids = new Set(recipe.steps.flatMap((step) => (step.id ? [step.id] : [])));
-      for (const step of steps) {
-        if (!step.id || ids.has(step.id))
-          throw new AuthoringStateError("Take step ids must be unique");
-        ids.add(step.id);
-      }
-      const committedAt = now();
-      const committedRecipe: Recipe = {
-        ...recipe,
-        steps: [...recipe.steps, ...steps],
-        updatedAt: Math.max(committedAt, recipe.updatedAt + 1),
-      };
-      const committedGraph = buildCommittedGraph({
-        session,
-        metadata: document.value,
-        steps,
-        destination: input.destination,
-        mode: input.mode,
-        evidenceIds: [
-          ...revision.evidence.map((evidence) => evidence.id),
-          ...take.replayAttempts.flatMap((attempt) =>
-            attempt.evidence.map((evidence) => evidence.id),
-          ),
-        ],
-        at: committedAt,
-      });
-      const committedDocument: Revisioned<JourneyMetadata> = {
-        revision: document.revision + 1,
-        value: committedGraph.metadata,
-        updatedAt: committedAt,
-        updatedBy: session.actorId,
-      };
-      const evidenceById = new Map(
-        [
-          ...(aggregate?.evidence ?? []),
+      let mapCommitted = false;
+      let committedConnectionId: string | undefined;
+      let committedRevision: number | undefined;
+      try {
+        const appMap = await readAppMap(session.projectId, session.appMapId);
+        if (!appMap) throw new AuthoringStateError("App Map no longer exists");
+        if (appMap.revision !== session.expectedAppMapRevision) {
+          throw new AuthoringStateError("App Map changed while this Take was being reviewed");
+        }
+        const evidence = [
           ...revision.evidence,
           ...take.replayAttempts.flatMap((attempt) => attempt.evidence),
-        ].map((evidence) => [evidence.id, evidence]),
-      );
-      const evidence = [...evidenceById.values()];
-      await commitJourneyAggregate({
-        organizationId: session.organizationId,
-        projectId: session.projectId,
-        journeyId: session.journeyId,
-        transactionId: session.id,
-        recipe: committedRecipe,
-        document: committedDocument,
-        evidence,
-        fault,
-      });
+        ];
+        fault?.("before-verify");
+        for (const item of evidence) {
+          if (!(await authoringEvidenceExists(item))) {
+            throw new AuthoringStateError(`Authoring evidence ${item.id} is not durable`);
+          }
+        }
+        fault?.("after-verify");
+        fault?.("before-rename");
+        const committedAt = Math.max(now(), appMap.updatedAt + 1);
+        const result = await mutateStoredAppMap(session.projectId, session.appMapId, (current) => {
+          const committed = commitAppMapRecording(
+            current,
+            {
+              sessionId: session.id,
+              sourceScreenId: session.sourceScreenId,
+              pendingConnectionId: session.pendingConnectionId,
+              destination: input.destination ?? session.destination,
+              target: session.target,
+              takeId: take.id,
+              takeRevision: revision.revision,
+              actions: revision.actions,
+              before: revision.before,
+              after: revision.after,
+              evidenceIds: [...new Set(evidence.map((item) => item.id))],
+            },
+            {
+              expectedRevision: session.expectedAppMapRevision,
+              eventId: session.id,
+              actorId: session.actorId,
+              actorKind: session.actorKind,
+              at: committedAt,
+            },
+          );
+          committedConnectionId = committed.connectionId;
+          return committed.appMap;
+        });
+        mapCommitted = true;
+        committedRevision = result.revision;
+        fault?.("after-rename");
+      } catch (error) {
+        if (!mapCommitted) {
+          session = transition(session, "reviewing");
+          session.error = error instanceof Error ? error.message : String(error);
+          await atomicSessionWrite(session);
+        }
+        throw error;
+      }
       session = transition(session, "committed");
-      session.expectedRecipeRevision = committedRecipe.updatedAt;
-      session.expectedJourneyRevision = committedDocument.revision;
-      session.committedTransitionId = committedGraph.transition.id;
+      session.expectedAppMapRevision = committedRevision!;
+      session.committedConnectionId = committedConnectionId;
       session.take = { ...take, state: "committed", updatedAt: session.updatedAt };
       return session;
     });
@@ -1173,13 +969,12 @@ export class AuthoringSessionStore {
       const session = await this.#queue.run(current.id, async () => {
         let next = (await readStoredSession(current.id))!;
         if (next.state === "committing") {
-          const aggregate = await readJourneyAggregate(next.projectId, next.journeyId);
-          if (aggregate && aggregate.transactionId === next.commitTransactionId) {
-            const committed = aggregate;
+          const appMap = await readAppMap(next.projectId, next.appMapId);
+          const committed = appMap?.activity[next.commitTransactionId ?? next.id];
+          if (appMap && committed?.eventType === "recording.committed") {
             next = transition(next, "committed");
-            next.committedTransitionId = committed.document.value.graph?.transitions.find(
-              (item) => item.provenance?.sessionId === next.id,
-            )?.id;
+            next.committedConnectionId = committed.subject.id;
+            next.expectedAppMapRevision = appMap.revision;
             if (next.take) next.take = { ...next.take, state: "committed" };
           } else {
             next = transition(next, "reviewing");

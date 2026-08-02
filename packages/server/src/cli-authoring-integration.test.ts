@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,7 +39,7 @@ class FakeRuntime implements AuthoringRuntime {
     return {
       capturedAt,
       targetId: "device-cli-authoring",
-      fingerprint: `fingerprint-${this.screen}`,
+      fingerprint: createHash("sha256").update(this.screen).digest("hex"),
       bounds: { width: 400, height: 800 },
       nodes: [{ role: "button", label: this.screen }],
       screenshot: { data: Buffer.from(`png:${this.screen}:${capturedAt}`), mime: "image/png" },
@@ -176,12 +177,10 @@ test("CLI authoring commands commit a fake transition visible to another client"
       platform: "android",
       deviceSerials: [targetId],
     });
-    const created = await setup.invoke("journey.create", {
-      expectedRevision: 0,
-      title: "CLI Authoring Integration",
-      steps: [],
+    const created = await setup.invoke("app-map.create", {
+      appMapId: "cli-authoring",
+      name: "CLI Authoring Integration",
     });
-    const initialJourney = await setup.journey(created.journey.id);
     const lease = await setup.lease({
       poolId,
       deviceSerial: targetId,
@@ -195,11 +194,10 @@ test("CLI authoring commands commit a fake transition visible to another client"
         "create",
         "--input",
         JSON.stringify({
-          journeyId: created.journey.id,
+          appMapId: created.appMap.id,
           target: { kind: "device", platform: "android", targetId },
           leaseId: lease.lease.id,
-          expectedJourneyRevision: initialJourney.revision,
-          expectedRecipeRevision: created.journey.updatedAt,
+          expectedAppMapRevision: created.appMap.revision,
         }),
       ],
       cliConnection,
@@ -229,7 +227,7 @@ test("CLI authoring commands commit a fake transition visible to another client"
       cliConnection,
     );
     assert.equal(committed.session.state, "committed");
-    assert.ok(committed.session.committedTransitionId);
+    assert.ok(committed.session.committedConnectionId);
 
     await waitForEvents(() =>
       events.some(
@@ -256,22 +254,20 @@ test("CLI authoring commands commit a fake transition visible to another client"
 
     const visibleSession = await observer.authoringSession(sessionId);
     assert.equal(visibleSession.session.state, "committed");
-    const finalJourney = await observer.journey(created.journey.id);
-    assert.equal(finalJourney.revision, initialJourney.revision + 1);
-    const transition = finalJourney.value.graph?.transitions.find(
-      (item) => item.id === committed.session.committedTransitionId,
-    );
-    assert.ok(transition);
-    assert.equal(transition.state, "recorded");
-    assert.equal(transition.destination.kind, "screen");
+    const finalMap = (await observer.invoke("app-map.get", { appMapId: created.appMap.id })).appMap;
+    assert.equal(finalMap.revision, created.appMap.revision + 1);
+    const mapConnection = finalMap.connections[committed.session.committedConnectionId];
+    assert.ok(mapConnection);
+    assert.equal(mapConnection.state, "ready");
+    assert.equal(mapConnection.destination.kind, "screen");
     assert.notEqual(
-      transition.destination.kind === "screen" ? transition.destination.screenId : undefined,
-      transition.fromScreenId,
+      mapConnection.destination.kind === "screen" ? mapConnection.destination.screenId : undefined,
+      mapConnection.fromScreenId,
     );
-    const destination = finalJourney.value.graph?.screens.find(
-      (screen) =>
-        transition.destination.kind === "screen" && screen.id === transition.destination.screenId,
-    );
+    const destination =
+      mapConnection.destination.kind === "screen"
+        ? finalMap.screens[mapConnection.destination.screenId]
+        : undefined;
     assert.equal(destination?.title, "CLI destination");
     assert.deepEqual(
       runtime.executed.map((interaction) => interaction.kind),

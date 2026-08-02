@@ -95,23 +95,20 @@ test("Authoring Sessions require an explicit actor-owned target lease and remain
     actorKind: "agent",
   });
   try {
-    const created = await owner.invoke("journey.create", {
-      expectedRevision: 0,
-      title: "Checkout",
-      steps: [],
+    const created = await owner.invoke("app-map.create", {
+      appMapId: "checkout",
+      name: "Checkout",
     });
-    const document = await owner.journey(created.journey.id);
     const lease = await owner.lease({
       poolId: "authoring",
       deviceSerial: "device-a",
       expiresAt: Date.now() + 60_000,
     });
     const response = await owner.createAuthoringSession({
-      journeyId: created.journey.id,
+      appMapId: created.appMap.id,
       target: { kind: "device", platform: "android", targetId: "device-a" },
       leaseId: lease.lease.id,
-      expectedJourneyRevision: document.revision,
-      expectedRecipeRevision: created.journey.updatedAt,
+      expectedAppMapRevision: created.appMap.revision,
     });
     assert.equal(response.session.state, "preparing");
     assert.equal(response.session.actorId, "human:author");

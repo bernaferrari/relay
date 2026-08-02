@@ -52,8 +52,8 @@ export type DeviceEventPayload =
       at: number;
       projectId: string;
       sessionId: string;
-      journeyId: string;
-      transitionId: string;
+      appMapId: string;
+      connectionId: string;
       revision: number;
     }
   | { type: "error"; at: number; message: string; where?: string };

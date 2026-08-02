@@ -3,9 +3,9 @@ import type {
   AuthoringActionSource,
   AuthoringInteraction,
   AuthoringObservation,
+  AuthoringScreenObservation,
   AuthoringSession,
-  JourneyScreenObservation,
-  JourneyVideoClip,
+  AuthoringVideoClip,
 } from "@relay/protocol";
 import { createSimpleContext } from "@relay/ui/context/helper";
 import {
@@ -18,7 +18,6 @@ import {
 import { ancestryOf, nodeAtPoint, targetFromStrategy, type PickStrategy } from "../lib/snapshot";
 import { sentenceForStep } from "../lib/step-sentence";
 import { targetIsReady } from "../lib/target-presentation";
-import { useRecipeDraft } from "./recipe-draft";
 import { toast } from "./toast";
 
 export type RecLevel = "smart" | "element" | "point";
@@ -37,10 +36,10 @@ export type RecordingTake = {
   id: string;
   sessionId: string;
   revision: number;
-  recipeId: string;
+  appMapId: string;
   sourceScreenId?: string;
-  sourceObservation?: JourneyScreenObservation;
-  destinationObservation?: JourneyScreenObservation;
+  sourceObservation?: AuthoringScreenObservation;
+  destinationObservation?: AuthoringScreenObservation;
   startedAt: number;
   finishedAt?: number;
   group: string;
@@ -50,13 +49,13 @@ export type RecordingTake = {
   stepEvidenceUrls: string[];
   state: "recording" | "review";
   videoEvidenceUrl?: string;
-  videoClip?: JourneyVideoClip;
+  videoClip?: AuthoringVideoClip;
 };
 
 export type RecordingIssue = { kind: "setup" | "screen"; message: string };
 
 export type CapturedStartScreen = {
-  observation: JourneyScreenObservation;
+  observation: AuthoringScreenObservation;
   screenshotUrl?: string;
 };
 
@@ -115,9 +114,9 @@ function sessionRevision(session: AuthoringSession) {
   return take?.revisions.find((revision) => revision.revision === take.currentRevision);
 }
 
-function projectedObservation(value: AuthoringObservation): JourneyScreenObservation | undefined {
+function projectedObservation(value: AuthoringObservation): AuthoringScreenObservation | undefined {
   if (!value || typeof value !== "object" || !("screen" in value)) return undefined;
-  return structuredClone(value.screen as JourneyScreenObservation);
+  return structuredClone(value.screen);
 }
 
 export function projectTake(
@@ -156,7 +155,7 @@ export function projectTake(
     id: take.id,
     sessionId: session.id,
     revision: revision.revision,
-    recipeId: session.journeyId,
+    appMapId: session.appMapId,
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
     ...(revision.before ? { sourceObservation: projectedObservation(revision.before) } : {}),
     ...(revision.after ? { destinationObservation: projectedObservation(revision.after) } : {}),
@@ -183,12 +182,12 @@ function issueFromSession(session: AuthoringSession | null): RecordingIssue | nu
 
 export function selectProjectedAuthoringSession(
   sessions: readonly AuthoringSession[],
-  input: { journeyId: string | null; targetId: string | null; actorId: string },
+  input: { appMapId: string | null; targetId: string | null; actorId: string },
 ): AuthoringSession | null {
   const relevant = sessions
     .filter(
       (session) =>
-        session.journeyId === input.journeyId &&
+        session.appMapId === input.appMapId &&
         !["committed", "cancelled"].includes(session.state) &&
         (!input.targetId || session.target.targetId === input.targetId),
     )
@@ -201,15 +200,14 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
   gate: false,
   init: () => {
     const server = useServer();
-    const draft = useRecipeDraft();
     const [interacting, setInteracting] = createSignal(false);
     const [pendingGroup, setPendingGroup] = createSignal("");
     const [pendingSourceScreenId, setPendingSourceScreenId] = createSignal<string>();
-    const [pendingTransitionId, setPendingTransitionId] = createSignal<string>();
+    const [pendingConnectionId, setPendingTransitionId] = createSignal<string>();
 
     const activeSession = createMemo(() =>
       selectProjectedAuthoringSession(server.authoringSessions(), {
-        journeyId: server.selectedRecipeId(),
+        appMapId: server.selectedRecipeId(),
         targetId: server.selectedDevice(),
         actorId: server.actorId(),
       }),
@@ -270,11 +268,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
         return false;
       }
-      const journeyId = await draft.ensureRecordingDraft(() => "Untitled");
+      const appMapId = server.selectedRecipeId();
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
       const leaseId = server.selectedLeaseId();
-      const recipe = server.recipes().find((item) => item.id === journeyId);
-      if (!journeyId || !device || !leaseId || !recipe) {
+      if (!appMapId || !device || !leaseId) {
         toast(
           "Relay needs an App Map, device, and active control lease before recording",
           "warning",
@@ -282,9 +279,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         return false;
       }
       try {
-        const document = await server.loadJourney(journeyId);
+        const appMap = await server.loadAppMap(appMapId);
         let session = await server.createAuthoringSession({
-          journeyId,
+          appMapId,
           target:
             device.platform === "browser"
               ? { kind: "browser", platform: "browser", targetId: device.serial }
@@ -294,10 +291,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
                   targetId: device.serial,
                 },
           leaseId,
-          expectedJourneyRevision: document.revision,
-          expectedRecipeRevision: recipe.updatedAt,
+          expectedAppMapRevision: appMap.revision,
           ...(pendingSourceScreenId() ? { sourceScreenId: pendingSourceScreenId() } : {}),
-          ...(pendingTransitionId() ? { pendingTransitionId: pendingTransitionId() } : {}),
+          ...(pendingConnectionId() ? { pendingConnectionId: pendingConnectionId() } : {}),
           ...(pendingGroup().trim() ? { group: pendingGroup().trim() } : {}),
         });
         session = await server.observeAuthoringSession(session.id);
@@ -325,11 +321,10 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
         return null;
       }
-      const journeyId = await draft.ensureRecordingDraft(() => "Untitled");
+      const appMapId = server.selectedRecipeId();
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
       const leaseId = server.selectedLeaseId();
-      const recipe = server.recipes().find((item) => item.id === journeyId);
-      if (!journeyId || !device || !leaseId || !recipe) {
+      if (!appMapId || !device || !leaseId) {
         toast(
           "Relay needs an App Map, device, and active control lease to capture this screen",
           "warning",
@@ -339,9 +334,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
       let session: AuthoringSession | null = null;
       try {
-        const document = await server.loadJourney(journeyId);
+        const appMap = await server.loadAppMap(appMapId);
         session = await server.createAuthoringSession({
-          journeyId,
+          appMapId,
           target:
             device.platform === "browser"
               ? { kind: "browser", platform: "browser", targetId: device.serial }
@@ -351,8 +346,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
                   targetId: device.serial,
                 },
           leaseId,
-          expectedJourneyRevision: document.revision,
-          expectedRecipeRevision: recipe.updatedAt,
+          expectedAppMapRevision: appMap.revision,
         });
         session = await server.observeAuthoringSession(session.id);
         if (session.state !== "ready")
@@ -496,7 +490,6 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
           | { kind: "new-screen"; title?: string }
           | { kind: "screen"; screenId: string }
           | { kind: "end" };
-        mode?: "interaction" | "automatic" | "reusable";
       } = {},
     ): Promise<AuthoringSession | null> {
       const session = activeSession();
@@ -578,7 +571,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       });
     }
 
-    async function setTakeVideoClip(videoClip: JourneyVideoClip): Promise<void> {
+    async function setTakeVideoClip(videoClip: AuthoringVideoClip): Promise<void> {
       const session = activeSession();
       if (!session || !ownsActiveSession()) return;
       await server.trimAuthoringTake(session.id, {

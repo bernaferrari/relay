@@ -363,13 +363,12 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "authoring.session.get": z.object(sessionReference).strict(),
   "authoring.session.create": z
     .object({
-      journeyId: identifier("App Map identifier"),
+      appMapId: identifier("App Map identifier"),
       target: authoringTarget,
       leaseId: identifier("Actor-owned target lease identifier"),
-      expectedJourneyRevision: natural("Current App Map revision"),
-      expectedRecipeRevision: natural("Current executable recipe revision"),
+      expectedAppMapRevision: natural("Current App Map revision"),
       sourceScreenId: identifier("Source screen identifier").optional(),
-      pendingTransitionId: identifier("Pending connection identifier").optional(),
+      pendingConnectionId: identifier("Pending connection identifier").optional(),
       group: z.string().optional(),
     })
     .strict(),
@@ -402,7 +401,6 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
     .object({
       ...sessionReference,
       destination: destination.optional(),
-      mode: z.enum(["interaction", "automatic", "reusable"]).optional(),
     })
     .strict(),
   "authoring.session.discard": z.object(sessionReference).strict(),

@@ -50,6 +50,8 @@ export type AuthoringObservation = {
 
 export type AuthoringActionSource = "captured" | "manual" | "reusable";
 
+export type AuthoringVideoClip = { startMs: number; endMs: number };
+
 export type AuthoringAction = {
   id: string;
   source: AuthoringActionSource;
@@ -90,7 +92,7 @@ export type AuthoringTakeRevision = {
   evidence: AuthoringEvidence[];
   before?: AuthoringObservation;
   after?: AuthoringObservation;
-  videoClip?: { startMs: number; endMs: number };
+  videoClip?: AuthoringVideoClip;
 };
 
 export type AuthoringReplayAttempt = {
@@ -126,14 +128,13 @@ export type AuthoringSession = {
   projectId: string;
   actorId: string;
   actorKind: "human" | "agent" | "system";
-  journeyId: string;
+  appMapId: string;
   state: AuthoringSessionState;
   target: AuthoringTarget;
   leaseId: string;
-  expectedJourneyRevision: number;
-  expectedRecipeRevision: number;
+  expectedAppMapRevision: number;
   sourceScreenId?: string;
-  pendingTransitionId?: string;
+  pendingConnectionId?: string;
   destination?: AuthoringCommitDestination;
   group?: string;
   take?: AuthoringTake;
@@ -143,17 +144,16 @@ export type AuthoringSession = {
   recoverable?: boolean;
   error?: string;
   commitTransactionId?: string;
-  committedTransitionId?: string;
+  committedConnectionId?: string;
 };
 
 export type CreateAuthoringSessionInput = {
-  journeyId: string;
+  appMapId: string;
   target: AuthoringTarget;
   leaseId: string;
-  expectedJourneyRevision: number;
-  expectedRecipeRevision: number;
+  expectedAppMapRevision: number;
   sourceScreenId?: string;
-  pendingTransitionId?: string;
+  pendingConnectionId?: string;
   group?: string;
 };
 
@@ -174,7 +174,6 @@ export type ReplaceAuthoringActionInput = AuthoringSessionRef & {
 
 export type CommitAuthoringSessionInput = AuthoringSessionRef & {
   destination?: AuthoringCommitDestination;
-  mode?: "interaction" | "automatic" | "reusable";
 };
 
 export type AuthoringSessionResponse = { session: AuthoringSession };

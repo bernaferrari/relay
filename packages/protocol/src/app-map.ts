@@ -268,6 +268,7 @@ export type ActivityEvent = AppMapScope & {
     | "flow.removed"
     | "routine.saved"
     | "routine.removed"
+    | "recording.committed"
     | "proposal.submitted"
     | "proposal.approved"
     | "proposal.rejected";

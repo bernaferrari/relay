@@ -66,7 +66,7 @@ export function projectRelayEvent(cursor: number, event: EventEnvelope): EventPr
     return {
       cursor: event.sequence,
       accepted: true,
-      refresh: ["authoring", "journeys"],
+      refresh: ["authoring", "appMaps"],
       activity,
     };
   }

@@ -1154,7 +1154,7 @@ const authoringSessionRefParser = objectParser<OperationRecord>(
 const createAuthoringSessionParser = objectParser<CreateAuthoringSessionInput>(
   "create authoring session input",
   (input) => {
-    string(input.journeyId, "journeyId");
+    string(input.appMapId, "appMapId");
     string(input.leaseId, "leaseId");
     const target = record(input.target, "authoring target");
     string(target.targetId, "authoring target targetId");
@@ -1170,11 +1170,8 @@ const createAuthoringSessionParser = objectParser<CreateAuthoringSessionInput>(
     ) {
       fail("authoring target", "kind and platform do not describe the same target");
     }
-    if (number(input.expectedJourneyRevision, "expectedJourneyRevision") < 0) {
-      fail("expectedJourneyRevision", "must be non-negative");
-    }
-    if (number(input.expectedRecipeRevision, "expectedRecipeRevision") < 0) {
-      fail("expectedRecipeRevision", "must be non-negative");
+    if (number(input.expectedAppMapRevision, "expectedAppMapRevision") < 0) {
+      fail("expectedAppMapRevision", "must be non-negative");
     }
   },
 );
