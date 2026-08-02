@@ -348,6 +348,44 @@ export async function readProjectVariables(projectId: string): Promise<Revisione
   return (await readState()).variables[projectId] ?? revisioned([]);
 }
 
+function validateProjectVariables(value: TestVariable[]): TestVariable[] {
+  if (!Array.isArray(value)) throw new Error("Variables must be an array");
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  return value.map((variable) => {
+    const id = variable.id.trim();
+    const name = variable.name.trim();
+    if (!id || !name) throw new Error("Every variable needs an id and name");
+    if (ids.has(id)) throw new Error(`Variable id ${id} is duplicated`);
+    if (names.has(name)) throw new Error(`Variable name ${name} is duplicated`);
+    ids.add(id);
+    names.add(name);
+    if (!(variable.scope === "shared" || variable.scope === "private")) {
+      throw new Error(`Variable ${name} has an invalid scope`);
+    }
+    if (
+      !(
+        variable.source === "static" ||
+        variable.source === "list" ||
+        variable.source === "generated"
+      )
+    ) {
+      throw new Error(`Variable ${name} has an invalid source`);
+    }
+    if (variable.scope === "private" && (variable.values?.length || variable.fallback)) {
+      throw new Error(`Private variable ${name} cannot persist a value or fallback`);
+    }
+    return {
+      ...structuredClone(variable),
+      id,
+      name,
+      ...(variable.values
+        ? { values: variable.values.map((item) => item.trim()).filter(Boolean) }
+        : {}),
+    };
+  });
+}
+
 export async function writeProjectVariables(
   projectId: string,
   write: RevisionWrite<TestVariable[]>,
@@ -359,7 +397,10 @@ export async function writeProjectVariables(
     ) {
       return state.variables[projectId] ?? revisioned([]);
     }
-    const next = writeRevision(state.variables[projectId] ?? revisioned([]), write);
+    const next = writeRevision(state.variables[projectId] ?? revisioned([]), {
+      ...write,
+      value: validateProjectVariables(write.value),
+    });
     state.variables[projectId] = next;
     if (write.idempotencyKey)
       state.idempotency[`${projectId}:variables:${write.idempotencyKey}`] = next.revision;
@@ -472,6 +513,7 @@ export async function createAppMap(input: {
       screens: {},
       screenVariants: {},
       connections: {},
+      caseStacks: {},
       routines: {},
       flows: {},
       runs: {},

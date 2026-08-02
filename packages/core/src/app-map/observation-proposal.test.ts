@@ -14,6 +14,7 @@ test("discovery becomes a target-covered App Map proposal without mutating the m
     screens: {},
     screenVariants: {},
     connections: {},
+    caseStacks: {},
     routines: {},
     flows: {},
     runs: {},

@@ -6,6 +6,7 @@ import type {
   AppMapEntity,
   AppMapScope,
   BaselineProvenance,
+  CaseStack,
   Connection,
   ConnectionPatch,
   Flow,
@@ -201,9 +202,33 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   else if (connection.destination.kind !== "end")
     appMapFail("invalid-map", `${label}.destination.kind is unsupported`);
   optionalText(connection.label, `${label}.label`);
+  if (connection.caseStackId !== undefined)
+    identifier(connection.caseStackId, `${label}.caseStackId`);
   if (!(connection.state === "draft" || connection.state === "ready"))
     appMapFail("invalid-map", `${label}.state is unsupported`);
   assertActions(connection.actions, `${label}.actions`);
+}
+
+export function assertCaseStack(stack: CaseStack, scope: AppMapScope, label: string): void {
+  assertEntity(stack, scope, label);
+  requiredText(stack.name, `${label}.name`);
+  optionalText(stack.description, `${label}.description`);
+  stringArray(stack.variableIds, `${label}.variableIds`);
+  if (stack.variableIds.length === 0) {
+    appMapFail("invalid-map", `${label}.variableIds must not be empty`);
+  }
+  if (new Set(stack.variableIds).size !== stack.variableIds.length) {
+    appMapFail("duplicate-id", `${label}.variableIds must not contain duplicates`);
+  }
+  if (
+    !(stack.strategy === "zip" || stack.strategy === "cartesian" || stack.strategy === "pairwise")
+  ) {
+    appMapFail("invalid-map", `${label}.strategy is unsupported`);
+  }
+  safeInteger(stack.maxCases, `${label}.maxCases`);
+  if (stack.maxCases < 1 || stack.maxCases > 100) {
+    appMapFail("invalid-map", `${label}.maxCases must be between 1 and 100`);
+  }
 }
 
 export function assertRoutine(routine: Routine, scope: AppMapScope, label: string): void {
@@ -296,6 +321,8 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   }
   if (patch.label !== undefined && patch.label !== null)
     requiredText(patch.label, `${label}.label`);
+  if (patch.caseStackId !== undefined && patch.caseStackId !== null)
+    identifier(patch.caseStackId, `${label}.caseStackId`);
   if (patch.state !== undefined && patch.state !== "draft" && patch.state !== "ready")
     appMapFail("invalid-map", `${label}.state is unsupported`);
   if (patch.actions !== undefined) assertActions(patch.actions, `${label}.actions`);
@@ -435,6 +462,8 @@ export function assertActivity(
     "flow.removed",
     "routine.saved",
     "routine.removed",
+    "case-stack.saved",
+    "case-stack.removed",
     "recording.committed",
     "proposal.submitted",
     "proposal.approved",
@@ -450,6 +479,7 @@ export function assertActivity(
       event.subject.kind === "connection" ||
       event.subject.kind === "flow" ||
       event.subject.kind === "routine" ||
+      event.subject.kind === "case-stack" ||
       event.subject.kind === "proposal"
     )
   )

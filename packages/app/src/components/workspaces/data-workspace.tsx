@@ -5,6 +5,11 @@ import { toast } from "../../context/toast";
 import { cn } from "../../lib/cn";
 import { Icon } from "../icon";
 import {
+  readPrivateVariableValues,
+  removePrivateVariableValue,
+  writePrivateVariableValue,
+} from "../../lib/private-variables";
+import {
   eyebrow,
   productPrimary,
   productSecondary,
@@ -18,37 +23,13 @@ import {
 type DataRow = {
   id: string;
   name: string;
+  scope: "shared" | "private";
   mode: "AI" | "List" | "Default";
   preview: string;
   values?: string[];
   fallback: string;
+  privateValue: string;
 };
-
-const INITIAL_DATA: DataRow[] = [
-  {
-    id: "daily-question",
-    name: "daily_question",
-    mode: "AI",
-    preview: "Where is Paris located?",
-    fallback: "What is the capital of France?",
-  },
-  {
-    id: "image-prompt",
-    name: "image_prompt",
-    mode: "AI",
-    preview: "A tram crossing Lisbon at dusk",
-    fallback: "A red bicycle beside a lake",
-  },
-  { id: "account-tier", name: "account_tier", mode: "List", preview: "Pro", fallback: "Free" },
-  {
-    id: "login-email",
-    name: "login_email",
-    mode: "List",
-    preview: "qa.primary@example.test",
-    values: ["qa.primary@example.test", "qa.secondary@example.test"],
-    fallback: "qa.primary@example.test",
-  },
-];
 
 const fieldClass =
   "w-full rounded-lg border border-border-weak-base bg-background-base px-2.5 py-2 text-[13px]/[1.4] text-text-base outline-none focus:border-border-focus focus:ring-2 focus:ring-surface-info-weak";
@@ -59,7 +40,7 @@ export function DataWorkspace(props: {
   onClose?: () => void;
 }) {
   const server = useServer();
-  const [rows, setRows] = createSignal<DataRow[]>(INITIAL_DATA);
+  const [rows, setRows] = createSignal<DataRow[]>([]);
   const [hydrated, setHydrated] = createSignal(false);
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
   const selectedRow = () => rows().find((row) => row.id === selectedId()) ?? null;
@@ -68,7 +49,10 @@ export function DataWorkspace(props: {
   createEffect(() => {
     const remote = server.projectVariables();
     if (remote.updatedAt <= 0 || hydrated()) return;
-    setRows(remote.value.length ? remote.value.map(variableToDataRow) : INITIAL_DATA);
+    const privateValues = readPrivateVariableValues(server.projectId());
+    setRows(
+      remote.value.map((variable) => variableToDataRow(variable, privateValues[variable.id])),
+    );
     setHydrated(true);
   });
   createEffect(() => {
@@ -88,6 +72,7 @@ export function DataWorkspace(props: {
   const patchRow = (id: string, changes: Partial<DataRow>) =>
     setRows((items) => items.map((item) => (item.id === id ? { ...item, ...changes } : item)));
   const deleteRow = (id: string) => {
+    removePrivateVariableValue(server.projectId(), id);
     setRows((items) => items.filter((item) => item.id !== id));
     if (selectedId() === id) setSelectedId(null);
   };
@@ -98,9 +83,11 @@ export function DataWorkspace(props: {
       {
         id,
         name: `variable_${current.length + 1}`,
+        scope: "shared",
         mode: "Default",
-        preview: "Sample value",
-        fallback: "Fallback value",
+        preview: "",
+        fallback: "",
+        privateValue: "",
       },
     ]);
     setSelectedId(id);
@@ -165,9 +152,10 @@ export function DataWorkspace(props: {
           props.embedded && "min-h-0 flex-1 overflow-y-auto p-4",
         )}
       >
-        <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger">
-          <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-[10px]/[1.25] font-semibold tracking-wide text-text-weaker uppercase">
+        <div class="min-w-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-stronger shadow-[0_1px_2px_rgb(0_0_0/4%)]">
+          <div class="grid min-h-9 grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base bg-surface-weak px-3 text-[10px]/[1.25] font-semibold tracking-wide text-text-weaker uppercase">
             <span>Variable</span>
+            <span>Scope</span>
             <span>Source</span>
             <span>Preview</span>
             <span />
@@ -178,7 +166,7 @@ export function DataWorkspace(props: {
                 type="button"
                 aria-current={selectedId() === row.id ? "true" : undefined}
                 class={cn(
-                  "grid min-h-14 w-full grid-cols-[minmax(0,1fr)_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base px-3 text-left last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
+                  "grid min-h-14 w-full grid-cols-[minmax(0,1fr)_88px_100px_minmax(0,1fr)_18px] items-center gap-3 border-b border-border-weak-base px-3 text-left last:border-b-0 hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-border-strong-focus",
                   selectedId() === row.id && "bg-surface-base-active",
                 )}
                 onClick={() => setSelectedId(row.id)}
@@ -188,10 +176,15 @@ export function DataWorkspace(props: {
                     {row.name}
                   </strong>
                   <small class="mt-1 block truncate text-[10px]/[1.25] text-text-weaker">
-                    {row.mode === "List"
-                      ? `${row.values?.length ?? 1} allowed values`
-                      : "Shared across tests"}
+                    {row.scope === "private"
+                      ? "Value stays on this computer"
+                      : row.mode === "List"
+                        ? `${row.values?.length ?? 1} allowed values`
+                        : "Shared across tests"}
                   </small>
+                </span>
+                <span class="w-fit rounded-md bg-surface-weak px-2 py-1 text-[10px]/[1.25] text-text-weak">
+                  {row.scope === "private" ? "Private" : "Shared"}
                 </span>
                 <span
                   class={cn(
@@ -202,12 +195,35 @@ export function DataWorkspace(props: {
                   {row.mode === "AI" ? "Generated" : row.mode === "List" ? "List" : "Fixed"}
                 </span>
                 <span class="min-w-0 truncate text-[11px]/[1.3] text-text-weak">
-                  {row.preview || row.fallback || "No value"}
+                  {row.scope === "private"
+                    ? row.privateValue
+                      ? "Set locally"
+                      : "Needs a value"
+                    : row.preview || row.fallback || "No value"}
                 </span>
                 <Icon name="chevron-right" size={14} />
               </button>
             )}
           </For>
+          <Show when={rows().length === 0}>
+            <div class="grid min-h-56 place-items-center px-6 py-10 text-center">
+              <div class="max-w-[360px]">
+                <span class="mx-auto grid size-10 place-items-center rounded-xl bg-surface-info-weak text-text-info-base">
+                  <Icon name="grid" size={17} />
+                </span>
+                <strong class="mt-3 block text-[14px]/[1.3] text-text-strong">
+                  Add data only when a test needs it
+                </strong>
+                <p class="m-0 mt-1.5 text-[11px]/[1.5] text-text-weaker">
+                  Use a list to cover plans or locales. Keep logins private so each teammate can use
+                  their own account without sharing credentials.
+                </p>
+                <button type="button" class={cn(productPrimary, "mt-4")} onClick={addRow}>
+                  <Icon name="plus" size={14} /> Add first variable
+                </button>
+              </div>
+            </div>
+          </Show>
         </div>
         <Show when={selectedRow()}>
           {(row) => (
@@ -232,6 +248,39 @@ export function DataWorkspace(props: {
                 </button>
               </header>
               <div class="grid gap-4 p-4">
+                <fieldset class="grid gap-1.5 border-0 p-0">
+                  <legend class="text-[11px]/[1.25] font-semibold text-text-weak">
+                    Who can see the value
+                  </legend>
+                  <div class="grid grid-cols-2 gap-1 rounded-lg bg-surface-weak p-1">
+                    <For each={["shared", "private"] as const}>
+                      {(scope) => (
+                        <button
+                          type="button"
+                          class={cn(
+                            "min-h-10 rounded-md px-2 text-[11px] font-medium text-text-weak transition-colors duration-150",
+                            row().scope === scope &&
+                              "bg-background-stronger text-text-strong shadow-[0_1px_2px_rgb(0_0_0/8%)]",
+                          )}
+                          aria-pressed={row().scope === scope}
+                          onClick={() =>
+                            patchRow(row().id, {
+                              scope,
+                              ...(scope === "private" ? { mode: "Default" as const } : {}),
+                            })
+                          }
+                        >
+                          {scope === "shared" ? "Project" : "Only me"}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                  <small class="text-[10px]/[1.4] text-text-weaker">
+                    {row().scope === "private"
+                      ? "The definition is shared; your value stays in this app on this computer."
+                      : "Project values sync with the map and are visible to collaborators."}
+                  </small>
+                </fieldset>
                 <label class="grid gap-1.5">
                   <span class="text-[11px]/[1.25] font-semibold text-text-weak">Name</span>
                   <input
@@ -241,71 +290,100 @@ export function DataWorkspace(props: {
                     onInput={(event) => patchRow(row().id, { name: event.currentTarget.value })}
                   />
                 </label>
-                <label class="grid gap-1.5">
-                  <span class="text-[11px]/[1.25] font-semibold text-text-weak">
-                    How to choose it
-                  </span>
-                  <select
-                    class={fieldClass}
-                    value={row().mode}
-                    onChange={(event) =>
-                      patchRow(row().id, { mode: event.currentTarget.value as DataRow["mode"] })
-                    }
-                  >
-                    <option value="AI">Generate with AI</option>
-                    <option value="List">Choose from a list</option>
-                    <option value="Default">Fixed value</option>
-                  </select>
-                </label>
+                <Show when={row().scope === "shared"}>
+                  <label class="grid gap-1.5">
+                    <span class="text-[11px]/[1.25] font-semibold text-text-weak">
+                      How to choose it
+                    </span>
+                    <select
+                      class={fieldClass}
+                      value={row().mode}
+                      onChange={(event) =>
+                        patchRow(row().id, { mode: event.currentTarget.value as DataRow["mode"] })
+                      }
+                    >
+                      <option value="AI">Generate with AI</option>
+                      <option value="List">Choose from a list</option>
+                      <option value="Default">Fixed value</option>
+                    </select>
+                  </label>
+                </Show>
                 <Show
-                  when={row().mode === "List"}
+                  when={row().scope === "private"}
                   fallback={
-                    <label class="grid gap-1.5">
-                      <span class="text-[11px]/[1.25] font-semibold text-text-weak">
-                        {row().mode === "AI" ? "Generation prompt" : "Value"}
-                      </span>
-                      <textarea
-                        class={fieldClass}
-                        value={row().preview}
-                        rows={4}
-                        onInput={(event) =>
-                          patchRow(row().id, { preview: event.currentTarget.value })
-                        }
-                      />
-                    </label>
+                    <Show
+                      when={row().mode === "List"}
+                      fallback={
+                        <label class="grid gap-1.5">
+                          <span class="text-[11px]/[1.25] font-semibold text-text-weak">
+                            {row().mode === "AI" ? "Generation prompt" : "Value"}
+                          </span>
+                          <textarea
+                            class={fieldClass}
+                            value={row().preview}
+                            rows={4}
+                            onInput={(event) =>
+                              patchRow(row().id, { preview: event.currentTarget.value })
+                            }
+                          />
+                        </label>
+                      }
+                    >
+                      <label class="grid gap-1.5">
+                        <span class="text-[11px]/[1.25] font-semibold text-text-weak">
+                          Allowed values
+                        </span>
+                        <textarea
+                          class={fieldClass}
+                          value={(row().values ?? [row().preview]).join("\n")}
+                          rows={7}
+                          placeholder="One value per line"
+                          onInput={(event) => {
+                            const values = event.currentTarget.value
+                              .split("\n")
+                              .map((value) => value.trim())
+                              .filter(Boolean);
+                            patchRow(row().id, { values, preview: values[0] ?? "" });
+                          }}
+                        />
+                      </label>
+                    </Show>
                   }
                 >
                   <label class="grid gap-1.5">
-                    <span class="text-[11px]/[1.25] font-semibold text-text-weak">
-                      Allowed values
-                    </span>
-                    <textarea
+                    <span class="text-[11px]/[1.25] font-semibold text-text-weak">Your value</span>
+                    <input
                       class={fieldClass}
-                      value={(row().values ?? [row().preview]).join("\n")}
-                      rows={7}
-                      placeholder="One value per line"
+                      type="password"
+                      autocomplete="off"
+                      value={row().privateValue}
+                      placeholder="Stored only on this computer"
                       onInput={(event) => {
-                        const values = event.currentTarget.value
-                          .split("\n")
-                          .map((value) => value.trim())
-                          .filter(Boolean);
-                        patchRow(row().id, { values, preview: values[0] ?? "" });
+                        const privateValue = event.currentTarget.value;
+                        patchRow(row().id, { privateValue });
+                        writePrivateVariableValue(server.projectId(), row().id, privateValue);
                       }}
                     />
                   </label>
                 </Show>
-                <label class="grid gap-1.5">
-                  <span class="text-[11px]/[1.25] font-semibold text-text-weak">Safe fallback</span>
-                  <textarea
-                    class={fieldClass}
-                    value={row().fallback}
-                    rows={3}
-                    onInput={(event) => patchRow(row().id, { fallback: event.currentTarget.value })}
-                  />
-                  <small class="text-[10px]/[1.3] text-text-weaker">
-                    Used when generation is unavailable.
-                  </small>
-                </label>
+                <Show when={row().scope === "shared"}>
+                  <label class="grid gap-1.5">
+                    <span class="text-[11px]/[1.25] font-semibold text-text-weak">
+                      Safe fallback
+                    </span>
+                    <textarea
+                      class={fieldClass}
+                      value={row().fallback}
+                      rows={3}
+                      onInput={(event) =>
+                        patchRow(row().id, { fallback: event.currentTarget.value })
+                      }
+                    />
+                    <small class="text-[10px]/[1.3] text-text-weaker">
+                      Used when generation is unavailable.
+                    </small>
+                  </label>
+                </Show>
               </div>
               <footer class="flex min-h-14 items-center justify-between gap-3 border-t border-border-weak-base px-4">
                 <button
@@ -325,14 +403,16 @@ export function DataWorkspace(props: {
   );
 }
 
-function variableToDataRow(variable: TestVariable): DataRow {
+function variableToDataRow(variable: TestVariable, privateValue = ""): DataRow {
   return {
     id: variable.id,
     name: variable.name,
+    scope: variable.scope ?? "shared",
     mode: variable.source === "generated" ? "AI" : variable.source === "list" ? "List" : "Default",
-    preview: variable.values?.[0] ?? variable.prompt ?? variable.fallback,
+    preview: variable.values?.[0] ?? variable.prompt ?? variable.fallback ?? "",
     ...(variable.source === "list" ? { values: variable.values ?? [] } : {}),
-    fallback: variable.fallback,
+    fallback: variable.fallback ?? "",
+    privateValue,
   };
 }
 
@@ -346,9 +426,10 @@ function dataRowToVariable(row: DataRow): TestVariable {
   return {
     id: row.id,
     name: row.name,
+    scope: row.scope,
     source: row.mode === "AI" ? "generated" : row.mode === "List" ? "list" : "static",
-    prompt: row.mode === "AI" ? row.preview : undefined,
-    values,
-    fallback: row.fallback,
+    prompt: row.scope === "shared" && row.mode === "AI" ? row.preview : undefined,
+    values: row.scope === "shared" ? values : undefined,
+    fallback: row.scope === "shared" ? row.fallback : undefined,
   };
 }

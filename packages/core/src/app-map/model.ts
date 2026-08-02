@@ -13,6 +13,8 @@ export {
   type AppMapScope,
   type AssertionSpec,
   type BaselineProvenance,
+  type CaseExpansionStrategy,
+  type CaseStack,
   type Connection,
   type ConnectionDestination,
   type ConnectionPatch,

@@ -2,6 +2,7 @@ import type {
   AppMap,
   AppMapPatch,
   AppMapMutationContext,
+  CaseStack,
   Flow,
   Proposal,
   Routine,
@@ -30,7 +31,7 @@ export function updateAppMap(
   );
 }
 
-function assertEntityScope(map: AppMap, entity: Flow | Routine | Proposal): void {
+function assertEntityScope(map: AppMap, entity: Flow | Routine | Proposal | CaseStack): void {
   if (
     entity.organizationId !== map.organizationId ||
     entity.projectId !== map.projectId ||
@@ -38,6 +39,51 @@ function assertEntityScope(map: AppMap, entity: Flow | Routine | Proposal): void
   ) {
     appMapFail("scope-mismatch", `${entity.id} does not belong to App Map ${map.id}`);
   }
+}
+
+export function saveAppMapCaseStack(
+  map: AppMap,
+  stack: CaseStack,
+  context: AppMapMutationContext,
+): AppMap {
+  assertEntityScope(map, stack);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "case-stack.saved",
+      subject: { kind: "case-stack", id: stack.id },
+      summary: `Saved ${stack.name}`,
+    },
+    (draft) => {
+      draft.caseStacks[stack.id] = structuredClone(stack);
+    },
+  );
+}
+
+export function removeAppMapCaseStack(
+  map: AppMap,
+  caseStackId: string,
+  context: AppMapMutationContext,
+): AppMap {
+  const stack = map.caseStacks[caseStackId];
+  if (!stack) appMapFail("missing-reference", `Case stack ${caseStackId} does not exist`);
+  const used = Object.values(map.connections).some(
+    (connection) => connection.caseStackId === caseStackId,
+  );
+  if (used) appMapFail("in-use", `Case stack ${caseStackId} is still referenced`);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "case-stack.removed",
+      subject: { kind: "case-stack", id: caseStackId },
+      summary: `Removed ${stack.name}`,
+    },
+    (draft) => {
+      delete draft.caseStacks[caseStackId];
+    },
+  );
 }
 
 export function saveAppMapFlow(map: AppMap, flow: Flow, context: AppMapMutationContext): AppMap {

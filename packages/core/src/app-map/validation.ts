@@ -2,6 +2,7 @@ import { appMapFail } from "./errors.js";
 import { APP_MAP_SCHEMA_VERSION, type ActionSpec, type AppMap } from "./model.js";
 import {
   assertActivity,
+  assertCaseStack,
   assertConnection,
   assertFlow,
   assertProposal,
@@ -119,6 +120,12 @@ function assertConnectionsAndActions(map: AppMap): void {
       appMapFail(
         "missing-reference",
         `Connection ${connection.id} ends at missing screen ${connection.destination.screenId}`,
+      );
+    }
+    if (connection.caseStackId && !map.caseStacks[connection.caseStackId]) {
+      appMapFail(
+        "missing-reference",
+        `Connection ${connection.id} references missing case stack ${connection.caseStackId}`,
       );
     }
   }
@@ -291,6 +298,9 @@ export function validateAppMap(value: unknown): AppMap {
   assertEntityRecord(input.connections, "App Map.connections", (item, label) =>
     assertConnection(item, scope, label),
   );
+  assertEntityRecord(input.caseStacks, "App Map.caseStacks", (item, label) =>
+    assertCaseStack(item, scope, label),
+  );
   assertEntityRecord(input.routines, "App Map.routines", (item, label) =>
     assertRoutine(item, scope, label),
   );
@@ -310,6 +320,7 @@ export function validateAppMap(value: unknown): AppMap {
     screens: input.screens,
     screenVariants: input.screenVariants,
     connections: input.connections,
+    caseStacks: input.caseStacks,
     routines: input.routines,
     flows: input.flows,
     runs: input.runs,

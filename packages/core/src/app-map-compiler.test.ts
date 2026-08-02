@@ -31,6 +31,7 @@ function fixture(): AppMap {
     ...entity("open-home"),
     fromScreenId: "welcome",
     destination: { kind: "screen", screenId: "home" },
+    caseStackId: "thinking-levels",
     state: "ready",
     actions: [
       {
@@ -55,6 +56,15 @@ function fixture(): AppMap {
     },
     screenVariants: {},
     connections: { [connection.id]: connection },
+    caseStacks: {
+      "thinking-levels": {
+        ...entity("thinking-levels"),
+        name: "Thinking levels",
+        variableIds: ["thinking-level"],
+        strategy: "zip",
+        maxCases: 10,
+      },
+    },
     routines: { [signIn.id]: signIn },
     flows: {
       checkout: {
@@ -79,6 +89,11 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   const routineId = "app-map:map-1:routine:sign-in:r7";
 
   assert.equal(plan.appMapRevision, 7);
+  assert.deepEqual(
+    plan.caseStacks.map((stack) => stack.id),
+    ["thinking-levels"],
+  );
+  assert.equal(plan.connections[0]?.caseStackId, "thinking-levels");
   assert.deepEqual(plan.flow, {
     id: "checkout",
     name: "Checkout",

@@ -1,10 +1,14 @@
 import type http from "node:http";
 import {
   AppMapCompileError,
+  RunMatrixError,
   compileAppMapFlow,
   currentOperationContext,
   enqueueJob,
+  prepareCaseStackMatrix,
   readAppMap,
+  readProjectVariables,
+  redactRunMatrix,
   type Recipe,
 } from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
@@ -69,20 +73,72 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
   const recipeSnapshot = recipeGraph[plan.rootRecipeId]!;
   const operation = currentOperationContext();
   if (!operation) throw new HttpError(500, "App Map execution context is unavailable");
-  const job = enqueueJob({
-    recipe: recipeSnapshot.id,
-    title: recipeSnapshot.title,
-    recipeSnapshot,
-    recipeGraph,
-    serial: body.serial,
-    platform: body.platform,
-    targetKind: body.targetKind,
-    browserTargetId: body.browserTargetId,
-    variables: body.variables,
-    artifacts: [{ kind: "app-map-flow-plan", capturedAt: Date.now(), data: plan }],
-    projectId: input.scope.projectId,
-    ownerId: operation.actorId,
+  const definitions = await readProjectVariables(input.scope.projectId);
+  let matrix;
+  try {
+    matrix = plan.caseStacks.length
+      ? await prepareCaseStackMatrix({
+          variables: definitions.value,
+          caseStacks: plan.caseStacks,
+          runtimeValues: body.variables,
+        })
+      : undefined;
+  } catch (error) {
+    if (error instanceof RunMatrixError) {
+      throw new HttpError(409, error.message, {
+        code: error.code,
+        recovery:
+          error.code === "missing-private-value"
+            ? "Set your private value locally or pass it in this run request."
+            : "Open the Case Stack and adjust its variables or coverage strategy.",
+      });
+    }
+    throw error;
+  }
+  const constantVariables = Object.fromEntries(
+    Object.entries(body.variables ?? {}).flatMap(([name, value]) =>
+      typeof value === "string" ? [[name, value] as const] : [],
+    ),
+  );
+  const cases = matrix?.cases ?? [
+    { id: "default", name: "Default", index: 0, values: {}, provenance: [] },
+  ];
+  const safeMatrix = matrix ? redactRunMatrix(matrix, definitions.value) : undefined;
+  const jobs = cases.map((item) =>
+    enqueueJob({
+      recipe: recipeSnapshot.id,
+      title: cases.length > 1 ? `${recipeSnapshot.title} · ${item.name}` : recipeSnapshot.title,
+      recipeSnapshot,
+      recipeGraph,
+      serial: body.serial,
+      platform: body.platform,
+      targetKind: body.targetKind,
+      browserTargetId: body.browserTargetId,
+      variables: { ...constantVariables, ...item.values },
+      ...(matrix
+        ? { batchId: matrix.id, caseIndex: item.index, caseCount: matrix.cases.length }
+        : {}),
+      artifacts: [
+        { kind: "app-map-flow-plan", capturedAt: Date.now(), data: plan },
+        ...(safeMatrix
+          ? [
+              {
+                kind: "frozen-inputs",
+                capturedAt: safeMatrix.createdAt,
+                data: safeMatrix.cases[item.index],
+              },
+            ]
+          : []),
+      ],
+      projectId: input.scope.projectId,
+      ownerId: operation.actorId,
+    }),
+  );
+  json(input.response, 202, {
+    job: jobs[0]!,
+    jobs,
+    plan,
+    ...(safeMatrix ? { matrix: safeMatrix } : {}),
   });
-  json(input.response, 202, { job, plan });
   return true;
 }

@@ -16,6 +16,7 @@ import {
   readProjectVariables,
   readJourney,
   readRecipe,
+  redactRunMatrix,
   resumeJob,
   retryJob,
   summarizeJob,
@@ -197,6 +198,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       repetitions: body.repetitions,
       seed: body.seed,
     });
+    const safeMatrix = redactRunMatrix(matrix, definitions.value);
     const jobs = matrix.cases.map((item) =>
       enqueueJob({
         recipe: body.recipe,
@@ -219,8 +221,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
               seed: matrix.seed,
               caseIndex: item.index,
               caseCount: matrix.cases.length,
-              values: item.values,
-              provenance: item.provenance,
+              values: safeMatrix.cases[item.index]!.values,
+              provenance: safeMatrix.cases[item.index]!.provenance,
             },
           },
         ],
@@ -228,7 +230,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         ownerId: currentOperationContext()!.actorId,
       }),
     );
-    json(res, 202, { matrix, jobs });
+    json(res, 202, { matrix: safeMatrix, jobs });
     return true;
   }
 

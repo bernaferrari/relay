@@ -691,10 +691,13 @@ export type DeviceLease = {
 export type TestVariable = {
   id: string;
   name: string;
+  /** Shared values are collaborative. Private definitions are collaborative,
+   * but their values must be supplied by the actor at execution time. */
+  scope: "shared" | "private";
   source: "static" | "list" | "generated";
   prompt?: string;
   values?: string[];
-  fallback: string;
+  fallback?: string;
   sensitive?: boolean;
 };
 
@@ -943,6 +946,8 @@ export type RunCaseProvenance = {
 };
 
 export type FrozenRunCase = {
+  id: string;
+  name: string;
   index: number;
   values: Record<string, string>;
   provenance: RunCaseProvenance[];

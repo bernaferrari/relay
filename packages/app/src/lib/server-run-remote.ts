@@ -50,11 +50,11 @@ export async function enqueueAppMapFlow(
     targetKind: "browser" | "device";
     browserTargetId?: string;
     platform?: "android" | "ios";
-    variables?: Record<string, string>;
+    variables?: Record<string, string | string[]>;
   },
-): Promise<{ job: JobInfo }> {
+): Promise<{ job: JobInfo; jobs: JobInfo[] }> {
   const { appMapId, flowId, ...body } = input;
-  return request<{ job: JobInfo }>(
+  return request<{ job: JobInfo; jobs: JobInfo[] }>(
     `/app-maps/${encodeURIComponent(appMapId)}/flows/${encodeURIComponent(flowId)}/run`,
     { method: "POST", body: JSON.stringify(body) },
   );

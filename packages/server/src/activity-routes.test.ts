@@ -52,6 +52,7 @@ test("GET /activity lists durable scoped semantic operations without persisting 
             {
               id: "token",
               name: "token",
+              scope: "shared",
               source: "static",
               fallback: `TOP-SECRET-${revision}`,
               sensitive: true,

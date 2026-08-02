@@ -9,10 +9,12 @@ import {
   previewRoutineImpact,
   rejectAppMapProposal,
   removeAppMapConnection,
+  removeAppMapCaseStack,
   removeAppMapFlow,
   removeAppMapRoutine,
   removeAppMapScreen,
   saveAppMapFlow,
+  saveAppMapCaseStack,
   saveAppMapRoutine,
   serializeAppMap,
   submitAppMapProposal,
@@ -168,6 +170,7 @@ function mapFixture(): AppMap {
     },
     screenVariants: { [startVariant.id]: startVariant, [homeVariant.id]: homeVariant },
     connections: { "open-home": connection() },
+    caseStacks: {},
     routines: { [signIn.id]: signIn },
     flows: {
       main: {
@@ -673,6 +676,46 @@ test("saves and removes reusable Flows and Routines through revisioned operation
     context(withRoutine, "remove-routine", withRoutine.updatedAt + 1),
   );
   assert.equal(withoutRoutine.routines[helper.id], undefined);
+});
+
+test("saves reusable Case Stacks and protects referenced coverage", () => {
+  const input = mapFixture();
+  const stack = {
+    ...entity("thinking-levels"),
+    name: "Thinking levels",
+    variableIds: ["thinking-level"],
+    strategy: "zip" as const,
+    maxCases: 10,
+  };
+  const withStack = saveAppMapCaseStack(input, stack, context(input, "save-stack"));
+  assert.equal(withStack.caseStacks[stack.id]?.name, "Thinking levels");
+  assert.equal(withStack.activity["save-stack"]?.eventType, "case-stack.saved");
+
+  const referenced = updateAppMapConnection(
+    withStack,
+    "open-home",
+    { caseStackId: stack.id },
+    context(withStack, "attach-stack", withStack.updatedAt + 1),
+  );
+  expectError("in-use", () =>
+    removeAppMapCaseStack(
+      referenced,
+      stack.id,
+      context(referenced, "remove-used-stack", referenced.updatedAt + 1),
+    ),
+  );
+  const detached = updateAppMapConnection(
+    referenced,
+    "open-home",
+    { caseStackId: null },
+    context(referenced, "detach-stack", referenced.updatedAt + 1),
+  );
+  const removed = removeAppMapCaseStack(
+    detached,
+    stack.id,
+    context(detached, "remove-stack", detached.updatedAt + 1),
+  );
+  assert.equal(removed.caseStacks[stack.id], undefined);
 });
 
 test("renames an App Map and stores finite collaborative screen positions", () => {

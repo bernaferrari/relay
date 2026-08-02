@@ -55,11 +55,11 @@ export function canvasEdgeGeometry(
   edge: { from: string; to: string; kind: "forward" | "return" },
   nodes: JourneyTreeNode[],
   positionFor: (node: JourneyTreeNode) => CanvasPoint,
-): { path: string } {
+): { path: string; labelPoint: CanvasPoint } {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const from = byId.get(edge.from);
   const to = byId.get(edge.to);
-  if (!from || !to) return { path: "" };
+  if (!from || !to) return { path: "", labelPoint: { x: 0, y: 0 } };
   const fromPosition = positionFor(from);
   const toPosition = positionFor(to);
   if (edge.kind === "return") {
@@ -70,6 +70,10 @@ export function canvasEdgeGeometry(
     const railY = Math.min(startY, endY) - 34;
     return {
       path: `M ${startX} ${startY} C ${startX} ${railY}, ${endX} ${railY}, ${endX} ${endY}`,
+      labelPoint: {
+        x: (startX + endX) / 2,
+        y: (startY + 6 * railY + endY) / 8,
+      },
     };
   }
   const startX = fromPosition.x + SCREEN_CARD_WIDTH;
@@ -78,6 +82,10 @@ export function canvasEdgeGeometry(
   const endY = toPosition.y + SCREEN_CARD_HEIGHT / 2;
   return {
     path: `M ${startX} ${startY} C ${startX + 48} ${startY}, ${endX - 48} ${endY}, ${endX} ${endY}`,
+    labelPoint: {
+      x: (startX + 3 * (startX + 48) + 3 * (endX - 48) + endX) / 8,
+      y: (startY + endY) / 2,
+    },
   };
 }
 

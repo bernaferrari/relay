@@ -22,6 +22,7 @@ function mapFixture(): AppMap {
     screens: {},
     screenVariants: {},
     connections: {},
+    caseStacks: {},
     routines: {},
     flows: {},
     runs: {},

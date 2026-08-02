@@ -14,10 +14,12 @@ import {
   readDiscoverySession,
   rejectAppMapProposal,
   removeAppMapConnection,
+  removeAppMapCaseStack,
   removeAppMapFlow,
   removeAppMapRoutine,
   removeAppMapScreen,
   saveAppMapFlow,
+  saveAppMapCaseStack,
   saveAppMapRoutine,
   submitAppMapProposal,
   updateAppMap,
@@ -273,6 +275,46 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       body.expectedRevision,
       body.eventId,
       (map, context) => removeAppMapFlow(map, flowRemove.flowId!, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const caseStackSave = matchPath(pathname, "/app-maps/:appMapId/case-stacks/:caseStackId");
+  if (method === "PUT" && caseStackSave) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.case-stack.save">,
+      "appMapId" | "caseStackId"
+    >;
+    if (body.caseStack.id !== caseStackSave.caseStackId) {
+      throw new HttpError(400, "Case stack id must match the route");
+    }
+    const appMap = await applyMutation(
+      scope,
+      caseStackSave.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => saveAppMapCaseStack(map, body.caseStack, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const caseStackRemove = matchPath(
+    pathname,
+    "/app-maps/:appMapId/case-stacks/:caseStackId/remove",
+  );
+  if (method === "POST" && caseStackRemove) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.case-stack.remove">,
+      "appMapId" | "caseStackId"
+    >;
+    const appMap = await applyMutation(
+      scope,
+      caseStackRemove.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) => removeAppMapCaseStack(map, caseStackRemove.caseStackId!, context),
     );
     json(response, 200, { appMap });
     return true;

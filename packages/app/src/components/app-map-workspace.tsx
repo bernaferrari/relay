@@ -1,5 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type {
+  CaseExpansionStrategy,
+  CaseStack,
   JourneyCanvasNote,
   JourneyMetadata,
   JourneyVideoClip,
@@ -74,6 +76,7 @@ import { canvasWheelAction, createAppMapEventOrchestration } from "./app-map-eve
 import { Icon } from "./icon";
 import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-projection";
 import { AppMapProposalReview } from "./app-map-proposal-review";
+import { caseStackCount } from "../lib/case-stack-presentation";
 
 type JourneyLoadState =
   | { status: "idle" }
@@ -90,6 +93,7 @@ type JourneyLoadState =
 export function AppMapWorkspace(props: {
   onOpenTargets: () => void;
   onOpenActions: () => void;
+  onOpenVariables: () => void;
   onOpenRun?: (id: string) => void;
   navigatorOpen?: boolean;
   captureStartOnReady?: boolean;
@@ -257,6 +261,7 @@ export function AppMapWorkspace(props: {
   const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
   const [proposalBusyId, setProposalBusyId] = createSignal<string>();
   const [proposalError, setProposalError] = createSignal<string>();
+  const [caseStackBusy, setCaseStackBusy] = createSignal(false);
   const [captureOpen, setCaptureOpen] = createSignal(false);
   const [captureClosing, setCaptureClosing] = createSignal(false);
   const [waitingForRecordTarget, setWaitingForRecordTarget] = createSignal(false);
@@ -550,6 +555,87 @@ export function AppMapWorkspace(props: {
   const selectedConnection = createMemo(
     () => connections().find((connection) => connection.id === selectedConnectionId()) ?? null,
   );
+  const canonicalConnectionFor = (connection: CanvasConnection) =>
+    activeAppMap()?.connections[connection.id];
+  const caseStackFor = (connection: CanvasConnection) => {
+    const map = activeAppMap();
+    const id = canonicalConnectionFor(connection)?.caseStackId;
+    return id ? map?.caseStacks[id] : undefined;
+  };
+  const saveConnectionCaseStack = async (
+    connection: CanvasConnection,
+    value: { name: string; variableIds: string[]; strategy: CaseExpansionStrategy },
+  ) => {
+    const map = activeAppMap();
+    const canonicalConnection = canonicalConnectionFor(connection);
+    if (!map || !canonicalConnection) {
+      toast("This connection is still syncing. Try again in a moment.", "info");
+      return;
+    }
+    const existing = canonicalConnection.caseStackId
+      ? map.caseStacks[canonicalConnection.caseStackId]
+      : undefined;
+    const at = Date.now();
+    const caseStackId = existing?.id ?? `cases-${connection.id}`;
+    const stack: CaseStack = {
+      id: caseStackId,
+      organizationId: map.organizationId,
+      projectId: map.projectId,
+      appMapId: map.id,
+      name: value.name,
+      variableIds: value.variableIds,
+      strategy: value.strategy,
+      maxCases: existing?.maxCases ?? 20,
+      createdAt: existing?.createdAt ?? at,
+      updatedAt: at,
+    };
+    setCaseStackBusy(true);
+    try {
+      const saved = await server.runAction("app-map.case-stack.save", {
+        appMapId: map.id,
+        caseStackId,
+        expectedRevision: map.revision,
+        caseStack: stack,
+      });
+      if (canonicalConnection.caseStackId !== caseStackId) {
+        await server.runAction("app-map.connection.update", {
+          appMapId: map.id,
+          connectionId: canonicalConnection.id,
+          expectedRevision: saved.appMap.revision,
+          patch: { caseStackId },
+        });
+      }
+      await server.refreshAppMaps();
+      toast(
+        `Added ${value.variableIds.length === 1 ? "a case stack" : "combined coverage"}`,
+        "success",
+      );
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      setCaseStackBusy(false);
+    }
+  };
+  const detachConnectionCaseStack = async (connection: CanvasConnection) => {
+    const map = activeAppMap();
+    const canonicalConnection = canonicalConnectionFor(connection);
+    if (!map || !canonicalConnection?.caseStackId) return;
+    setCaseStackBusy(true);
+    try {
+      await server.runAction("app-map.connection.update", {
+        appMapId: map.id,
+        connectionId: canonicalConnection.id,
+        expectedRevision: map.revision,
+        patch: { caseStackId: null },
+      });
+      await server.refreshAppMaps();
+      toast("Removed cases from this connection", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      setCaseStackBusy(false);
+    }
+  };
   const graphRunReadiness = createMemo(() =>
     journeyRunReadiness({
       graph: graph(),
@@ -1864,31 +1950,21 @@ export function AppMapWorkspace(props: {
                                     ? "verified"
                                     : connection.review?.status === "failed"
                                       ? "failed"
-                                      : connection.kind === "return"
-                                        ? "return"
-                                        : "arrow"
+                                      : connection.review?.status === "verified"
+                                        ? "verified"
+                                        : connection.kind === "return"
+                                          ? "return"
+                                          : "arrow"
                             })`}
                           />
                           <path
                             d={geometry().path}
-                            class="cursor-pointer fill-none stroke-transparent outline-none focus-visible:stroke-[var(--text-interactive-base)] focus-visible:[stroke-dasharray:4_3]"
+                            class="cursor-pointer fill-none stroke-transparent"
                             stroke-width="16"
-                            tabindex={0}
-                            role="button"
-                            aria-label={`Select connection from ${titleFor(
-                              tree().nodes.find((node) => node.id === connection.fromScreenId)!,
-                            )} to ${titleFor(
-                              tree().nodes.find((node) => node.id === connection.toScreenId)!,
-                            )}`}
+                            aria-hidden="true"
                             onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               event.stopPropagation();
-                              setSelectedConnectionId(connection.id);
-                              setSelectedNodeId(null);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              event.preventDefault();
                               setSelectedConnectionId(connection.id);
                               setSelectedNodeId(null);
                             }}
@@ -1911,6 +1987,65 @@ export function AppMapWorkspace(props: {
                     />
                   </Show>
                 </svg>
+                <For each={connections()}>
+                  {(connection) => {
+                    const geometry = () =>
+                      canvasEdgeGeometry(
+                        {
+                          from: connection.fromScreenId,
+                          to: connection.toScreenId,
+                          kind: connection.kind,
+                        },
+                        tree().nodes,
+                        positionFor,
+                      );
+                    const stack = () => caseStackFor(connection);
+                    const stackCount = () => {
+                      const value = stack();
+                      return value
+                        ? caseStackCount(value, server.projectVariables().value)
+                        : undefined;
+                    };
+                    const source = () =>
+                      tree().nodes.find((node) => node.id === connection.fromScreenId);
+                    const target = () =>
+                      tree().nodes.find((node) => node.id === connection.toScreenId);
+                    return (
+                      <button
+                        type="button"
+                        class={cn(
+                          "group absolute z-[6] flex min-h-8 max-w-44 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] px-2.5 text-[10px] font-medium text-[var(--text-base)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent),0_5px_14px_rgb(0_0_0/12%)] backdrop-blur-[10px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1.5 before:rounded-full hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] hover:shadow-[0_0_0_1px_var(--border-focus),0_7px_18px_rgb(0_0_0/16%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
+                          selectedConnectionId() === connection.id &&
+                            "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[0_0_0_1px_var(--border-focus),0_7px_18px_rgb(0_0_0/16%)]",
+                        )}
+                        style={{
+                          left: `${geometry().labelPoint.x}px`,
+                          top: `${geometry().labelPoint.y}px`,
+                          transform: "translate(-50%, -50%)",
+                        }}
+                        aria-label={`Open connection from ${source() ? titleFor(source()!) : "source screen"} to ${target() ? titleFor(target()!) : "destination screen"}`}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedConnectionId(connection.id);
+                          setSelectedNodeId(null);
+                        }}
+                      >
+                        <span class="truncate">
+                          {connection.label ||
+                            (connection.state === "needs-recording" ? "Add action" : "Open")}
+                        </span>
+                        <Show when={stackCount()}>
+                          {(count) => (
+                            <span class="relative grid min-w-5 place-items-center rounded-full bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-white after:absolute after:-right-0.5 after:-top-0.5 after:-z-10 after:size-full after:rounded-full after:bg-[color-mix(in_srgb,var(--text-interactive-base)_32%,transparent)]">
+                              {count().exact ? count().count : `~${count().count}`}
+                            </span>
+                          )}
+                        </Show>
+                      </button>
+                    );
+                  }}
+                </For>
                 <CollaborationPresence
                   awareness={remoteAwareness()}
                   geometry={presenceGeometry()}
@@ -2077,6 +2212,16 @@ export function AppMapWorkspace(props: {
                           if (index >= 0) selectStep(index);
                           props.onOpenActions();
                         },
+                      }}
+                      cases={{
+                        ...(caseStackFor(connection())
+                          ? { stack: caseStackFor(connection()) }
+                          : {}),
+                        variables: server.projectVariables().value,
+                        busy: caseStackBusy(),
+                        onSave: (value) => void saveConnectionCaseStack(connection(), value),
+                        onDetach: () => void detachConnectionCaseStack(connection()),
+                        onOpenVariables: props.onOpenVariables,
                       }}
                       onRemove={() => removeConnection(connection())}
                       onClose={() => setSelectedConnectionId(null)}

@@ -42,6 +42,7 @@ test("project-scoped variables persist and expose revision conflicts", async () 
         {
           id: "prompt",
           name: "prompt",
+          scope: "shared",
           source: "generated",
           prompt: "A novel QA prompt",
           fallback: "Hello",

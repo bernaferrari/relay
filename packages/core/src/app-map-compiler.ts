@@ -222,6 +222,7 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     stepProvenance: [],
   };
   const connections: AppMapCompiledFlow["connections"] = [];
+  const caseStackIds = new Set<string>();
   let terminal: AppMapCompiledFlow["terminal"] = {
     kind: "screen",
     screenId: flow.startScreenId,
@@ -271,8 +272,10 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
       connectionId: connection.id,
       fromScreenId: connection.fromScreenId,
       destination: structuredClone(connection.destination),
+      ...(connection.caseStackId ? { caseStackId: connection.caseStackId } : {}),
       compiledStepRange: [rangeStart, root.steps.length],
     });
+    if (connection.caseStackId) caseStackIds.add(connection.caseStackId);
     terminal = structuredClone(connection.destination);
   }
   recipes[rootRecipeId] = root;
@@ -285,6 +288,9 @@ export function compileAppMapFlow(mapInput: AppMap, flowId: string): AppMapCompi
     rootRecipeId,
     recipes,
     connections,
+    caseStacks: [...caseStackIds]
+      .sort((left, right) => left.localeCompare(right))
+      .map((id) => structuredClone(map.caseStacks[id]!)),
     terminal,
   };
 }

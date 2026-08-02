@@ -274,10 +274,40 @@ test("a saved App Map flow runs without a Journey projection", async () => {
         actions: [{ id: "tap-continue", kind: "tap", target: { label: "Continue" } }],
       },
     });
+    await client.updateVariables({
+      expectedRevision: 0,
+      value: [
+        {
+          id: "thinking-level",
+          name: "thinking_level",
+          scope: "shared",
+          source: "list",
+          values: ["low", "medium", "high", "xhigh", "pro"],
+        },
+      ],
+    });
+    await client.invoke("app-map.case-stack.save", {
+      appMapId: "store",
+      caseStackId: "thinking-levels",
+      expectedRevision: 3,
+      caseStack: {
+        ...scoped("thinking-levels"),
+        name: "Thinking levels",
+        variableIds: ["thinking-level"],
+        strategy: "zip",
+        maxCases: 10,
+      },
+    });
+    await client.invoke("app-map.connection.update", {
+      appMapId: "store",
+      connectionId: "continue",
+      expectedRevision: 4,
+      patch: { caseStackId: "thinking-levels" },
+    });
     await client.invoke("app-map.flow.save", {
       appMapId: "store",
       flowId: "main",
-      expectedRevision: 3,
+      expectedRevision: 5,
       flow: {
         ...scoped("main"),
         name: "Main",
@@ -299,13 +329,24 @@ test("a saved App Map flow runs without a Journey projection", async () => {
       targetKind: "device",
     });
     assert.equal(result.plan.appMapId, "store");
-    assert.equal(result.plan.appMapRevision, 4);
+    assert.equal(result.plan.appMapRevision, 6);
     assert.equal(result.plan.flow.id, "main");
     assert.deepEqual(
       result.plan.recipes[result.plan.rootRecipeId]!.steps.map((step) => step.kind),
       ["tap", "expect-screen"],
     );
     assert.equal((result.job as { projectId?: string }).projectId, "mobile");
+    assert.equal(result.jobs.length, 5);
+    assert.deepEqual(
+      result.matrix?.cases.map((item) => item.name),
+      [
+        "Thinking levels: low",
+        "Thinking levels: medium",
+        "Thinking levels: high",
+        "Thinking levels: xhigh",
+        "Thinking levels: pro",
+      ],
+    );
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;

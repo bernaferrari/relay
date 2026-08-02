@@ -166,6 +166,7 @@ export function serializeAppMap(value: AppMap): SerializedAppMap {
     screens: sortedEntities(map.screens).map(normalizedScreen),
     screenVariants: sortedEntities(map.screenVariants).map(normalizedVariant),
     connections: sortedEntities(map.connections).map(normalizedConnection),
+    caseStacks: sortedEntities(map.caseStacks),
     routines: sortedEntities(map.routines).map(normalizedRoutine),
     flows: sortedEntities(map.flows),
     runs: sortedEntities(map.runs).map((run) => ({

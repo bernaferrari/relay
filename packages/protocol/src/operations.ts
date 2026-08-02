@@ -40,6 +40,7 @@ import type {
   AppMap,
   AppMapCompiledFlow,
   AppMapPatch,
+  CaseStack,
   Connection,
   ConnectionPatch,
   Flow,
@@ -111,8 +112,9 @@ type RevisionWriteDto<T> = {
 type TestVariableDto = {
   id: string;
   name: string;
+  scope: "shared" | "private";
   source: "static" | "list" | "generated";
-  fallback: string;
+  fallback?: string;
   prompt?: string;
   values?: string[];
   sensitive?: boolean;
@@ -422,9 +424,45 @@ type SpecificOperationMap = {
       platform?: "android" | "ios";
       targetKind?: "device" | "browser";
       browserTargetId?: string;
-      variables?: Record<string, string>;
+      variables?: Record<string, string | string[]>;
     };
-    output: { job: OperationRecord; plan: AppMapCompiledFlow };
+    output: {
+      job: OperationRecord;
+      jobs: OperationRecord[];
+      plan: AppMapCompiledFlow;
+      matrix?: {
+        id: string;
+        createdAt: number;
+        seed: number;
+        strategy: "repeat" | "zip" | "cartesian" | "pairwise";
+        cases: Array<{
+          id: string;
+          name: string;
+          index: number;
+          values: Record<string, string>;
+          provenance: unknown[];
+        }>;
+      };
+    };
+  };
+  "app-map.case-stack.save": {
+    input: {
+      appMapId: string;
+      caseStackId: string;
+      expectedRevision: number;
+      eventId?: string;
+      caseStack: CaseStack;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.case-stack.remove": {
+    input: {
+      appMapId: string;
+      caseStackId: string;
+      expectedRevision: number;
+      eventId?: string;
+    };
+    output: { appMap: AppMap };
   };
   "app-map.routine.save": {
     input: {
@@ -966,7 +1004,11 @@ const appMapFlowRunParser = objectParser<OperationInput<"app-map.flow.run">>(
     }
     if (input.variables !== undefined) {
       for (const [name, value] of Object.entries(record(input.variables, "App Map variables"))) {
-        string(value, `App Map variable ${name}`);
+        if (Array.isArray(value)) {
+          value.forEach((item) => string(item, `App Map variable ${name}`));
+        } else {
+          string(value, `App Map variable ${name}`);
+        }
       }
     }
   },
@@ -976,7 +1018,9 @@ const appMapFlowRunOutputParser = objectParser<OperationOutput<"app-map.flow.run
   "App Map flow run response",
   (input) => {
     record(input.job, "App Map flow run job");
+    if (!Array.isArray(input.jobs)) fail("App Map flow run jobs", "must be an array");
     record(input.plan, "App Map flow run plan");
+    if (input.matrix !== undefined) record(input.matrix, "App Map flow run matrix");
   },
 );
 
@@ -1714,6 +1758,33 @@ export const operationDefinitions = [
     {
       category: "authoring",
       input: appMapMutationParser<"app-map.flow.remove">("Flow removal", undefined, ["flowId"]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.case-stack.save",
+    "Save App Map case stack",
+    "PUT",
+    "/app-maps/:appMapId/case-stacks/:caseStackId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.case-stack.save">("Case stack save", "caseStack", [
+        "caseStackId",
+      ]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.case-stack.remove",
+    "Remove App Map case stack",
+    "POST",
+    "/app-maps/:appMapId/case-stacks/:caseStackId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.case-stack.remove">("Case stack removal", undefined, [
+        "caseStackId",
+      ]),
       output: appMapOutputParser,
       confirmation: "confirm",
     },

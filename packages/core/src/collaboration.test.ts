@@ -96,6 +96,7 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
         {
           id: "email",
           name: "email",
+          scope: "shared",
           source: "static",
           values: ["qa@example.com"],
           fallback: "qa@example.com",

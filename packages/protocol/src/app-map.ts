@@ -121,8 +121,21 @@ export type Connection = AppMapEntity & {
   fromScreenId: string;
   destination: ConnectionDestination;
   label?: string;
+  caseStackId?: string;
   state: "draft" | "ready";
   actions: ActionSpec[];
+};
+
+export type CaseExpansionStrategy = "zip" | "cartesian" | "pairwise";
+
+/** A reusable coverage definition. Values remain project variables so private
+ * actor-local data never has to enter the collaborative App Map document. */
+export type CaseStack = AppMapEntity & {
+  name: string;
+  description?: string;
+  variableIds: string[];
+  strategy: CaseExpansionStrategy;
+  maxCases: number;
 };
 
 export type Routine = AppMapEntity & {
@@ -162,6 +175,7 @@ export type AppMapCompiledConnection = {
   connectionId: string;
   fromScreenId: string;
   destination: ConnectionDestination;
+  caseStackId?: string;
   /** Half-open range in the root recipe: [start, end). */
   compiledStepRange: readonly [start: number, end: number];
 };
@@ -175,6 +189,7 @@ export type AppMapCompiledFlow = {
   rootRecipeId: string;
   recipes: Record<string, AppMapCompiledRecipe>;
   connections: AppMapCompiledConnection[];
+  caseStacks: CaseStack[];
   terminal: ConnectionDestination | { kind: "screen"; screenId: string };
 };
 
@@ -221,6 +236,7 @@ export type ConnectionPatch = {
   fromScreenId?: string;
   destination?: ConnectionDestination;
   label?: string | null;
+  caseStackId?: string | null;
   state?: Connection["state"];
   actions?: ActionSpec[];
 };
@@ -250,6 +266,7 @@ export type ActivitySubjectKind =
   | "connection"
   | "flow"
   | "routine"
+  | "case-stack"
   | "proposal";
 
 export type ActivityEvent = AppMapScope & {
@@ -268,6 +285,8 @@ export type ActivityEvent = AppMapScope & {
     | "flow.removed"
     | "routine.saved"
     | "routine.removed"
+    | "case-stack.saved"
+    | "case-stack.removed"
     | "recording.committed"
     | "proposal.submitted"
     | "proposal.approved"
@@ -289,6 +308,7 @@ export type AppMap = {
   screens: Record<string, Screen>;
   screenVariants: Record<string, ScreenVariant>;
   connections: Record<string, Connection>;
+  caseStacks: Record<string, CaseStack>;
   routines: Record<string, Routine>;
   flows: Record<string, Flow>;
   runs: Record<string, RunReference>;
@@ -326,6 +346,7 @@ export type SerializedAppMap = Omit<
   | "screens"
   | "screenVariants"
   | "connections"
+  | "caseStacks"
   | "routines"
   | "flows"
   | "runs"
@@ -336,6 +357,7 @@ export type SerializedAppMap = Omit<
   screens: Screen[];
   screenVariants: ScreenVariant[];
   connections: Connection[];
+  caseStacks: CaseStack[];
   routines: Routine[];
   flows: Flow[];
   runs: RunReference[];

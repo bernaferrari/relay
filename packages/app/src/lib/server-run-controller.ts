@@ -11,6 +11,7 @@ import {
   loadMatrixReport,
   retryJob,
 } from "./server-run-remote";
+import { privateValuesForRun } from "./private-variables";
 
 type RunControllerDependencies = {
   request: ServerRequest;
@@ -22,6 +23,7 @@ type RunControllerDependencies = {
   selectedJobId: Accessor<string | null>;
   prodAccountMatch: Accessor<string>;
   projectId: () => string;
+  projectVariables: Accessor<import("@relay/protocol").TestVariable[]>;
   activeJob: Accessor<JobInfo | null>;
   queuedJobs: Accessor<JobInfo[]>;
   captureBeforeRun: (label: string, actionId: string) => Promise<unknown>;
@@ -49,18 +51,22 @@ export function createServerRunController(deps: RunControllerDependencies) {
       deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
     try {
       await deps.captureBeforeRun(`before · ${title}`, appMapId).catch(() => undefined);
-      const { job } = await enqueueAppMapFlow(deps.request, {
+      const { job, jobs } = await enqueueAppMapFlow(deps.request, {
         appMapId,
         flowId,
         serial,
         ...(targetPlatform === "browser"
           ? { targetKind: "browser" as const, browserTargetId: serial }
           : { targetKind: "device" as const, platform: targetPlatform }),
+        variables: privateValuesForRun(deps.projectId(), deps.projectVariables()),
       });
       deps.setSelectedJobId(job.id);
       deps.setSelectedAction(appMapId);
       deps.rememberJob(job);
-      toast(`Running ${title}`, "success");
+      toast(
+        jobs.length > 1 ? `Running ${jobs.length} cases for ${title}` : `Running ${title}`,
+        "success",
+      );
       void deps.refreshJobs();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

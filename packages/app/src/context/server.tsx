@@ -1825,6 +1825,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       selectedJobId,
       prodAccountMatch,
       projectId: () => connection?.projectId ?? "default",
+      projectVariables: () => projectVariables().value,
       activeJob,
       queuedJobs,
       captureBeforeRun: (label, actionId) => captureUiScreenshot(label, undefined, actionId, true),
@@ -1865,6 +1866,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     return {
+      projectId: () => connection?.projectId ?? "default",
       serverUrl,
       actorId,
       collaborationConfig,
