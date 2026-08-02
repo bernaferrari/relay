@@ -16,10 +16,13 @@ import {
   readProjectVariables,
   readJourney,
   readRecipe,
+  referencedRuntimeInputs,
+  referencedVariableIds,
   redactRunMatrix,
   resumeJob,
   retryJob,
   summarizeJob,
+  sensitiveInputNames,
 } from "@relay/core";
 import { assertJobAccess, assertTargetControl } from "./access-control.js";
 import { enqueueCompatibilityBatch } from "./compatibility-jobs.js";
@@ -195,6 +198,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     const frozenRecipe = await freezeRecipeExecution(body.recipe);
     const matrix = await prepareRunMatrix({
       variables: definitions.value,
+      variableIds: referencedVariableIds(frozenRecipe.recipeGraph, definitions.value),
       repetitions: body.repetitions,
       seed: body.seed,
     });
@@ -209,6 +213,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         browserTargetId: body.browserTargetId,
         prodAccountMatch: body.prodAccountMatch,
         variables: item.values,
+        sensitiveInputNames: sensitiveInputNames(definitions.value, item.values),
         batchId: matrix.id,
         caseIndex: item.index,
         caseCount: matrix.cases.length,
@@ -287,6 +292,14 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         await assertTargetControl(scope, previous?.browserTargetId ?? previous?.serial);
       }
       const frozenRecipe = body.recipe ? await freezeRecipeExecution(body.recipe) : undefined;
+      const definitions = body.variables ? await readProjectVariables(scope.projectId) : undefined;
+      const variables = frozenRecipe
+        ? referencedRuntimeInputs(
+            frozenRecipe.recipeGraph,
+            definitions?.value ?? [],
+            body.variables,
+          )
+        : body.variables;
       job = body.retryOf
         ? retryJob(body.retryOf)
         : enqueueJob({
@@ -298,7 +311,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             targetKind: body.targetKind,
             browserTargetId: body.browserTargetId,
             prodAccountMatch: body.prodAccountMatch,
-            variables: body.variables,
+            variables,
+            sensitiveInputNames: definitions
+              ? sensitiveInputNames(definitions.value, variables ?? {})
+              : [],
             projectId: scope.projectId,
             ownerId: currentOperationContext()!.actorId,
           });

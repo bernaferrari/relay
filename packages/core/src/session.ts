@@ -53,6 +53,7 @@ import {
   type StepTarget,
 } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
+import { redactPrivateValue } from "./private-inputs.js";
 import { classifyRunOutcome } from "./outcomes.js";
 import {
   initializeRunEvidence,
@@ -196,6 +197,9 @@ export type TestJob = {
   };
   artifacts: { kind: string; capturedAt: number; data: unknown }[];
   resolvedInputs: Record<string, string>;
+  /** Input names whose values are execution-only and must never cross a
+   * transport or persistence boundary in plaintext. */
+  sensitiveInputNames?: string[];
   options?: {
     prodAccountMatch?: string;
   };
@@ -287,6 +291,7 @@ export type EnqueueJobInput = {
   /** provisional title for recipe jobs (recipe id is used if absent) */
   title?: string;
   variables?: Record<string, string>;
+  sensitiveInputNames?: string[];
   batchId?: string;
   caseIndex?: number;
   caseCount?: number;
@@ -366,6 +371,9 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     caseIndex: input.caseIndex ?? parent?.caseIndex,
     caseCount: input.caseCount ?? parent?.caseCount,
     resolvedInputs: Object.assign({}, parent?.resolvedInputs ?? input.variables),
+    sensitiveInputNames: [
+      ...new Set(parent?.sensitiveInputNames ?? input.sensitiveInputNames ?? []),
+    ].sort((left, right) => left.localeCompare(right)),
     recipeSnapshot: structuredClone(input.recipeSnapshot ?? parent?.recipeSnapshot),
     recipeGraph: structuredClone(input.recipeGraph ?? parent?.recipeGraph),
     evidencePolicy: structuredClone(
@@ -378,9 +386,10 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
 
   // Recipe job: action doubles as the recipe id so history/run-dir naming keeps working.
   // The recipe is resolved (title/steps) inside executeJob; enqueue stays sync.
+  let job: TestJob;
   if (input.recipe) {
     const recipeId = input.recipe;
-    return {
+    job = {
       ...baseJob,
       action: recipeId,
       recipeId,
@@ -389,23 +398,38 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
       tone: "acc",
       title: input.title ?? recipeId,
     };
+  } else {
+    // Legacy coded-action job
+    const action = input.action;
+    if (!action || !isActionId(action)) {
+      throw new Error(`Unknown action: ${action ?? "(none)"}`);
+    }
+    const plan = planForAction(action);
+    const meta = getAction(action);
+    job = {
+      ...baseJob,
+      action,
+      glyphs: plan.glyphs,
+      kind: plan.kind,
+      tone: plan.tone,
+      title: meta?.title ?? action,
+    };
   }
+  Object.defineProperty(job, "toJSON", {
+    enumerable: false,
+    value: () => jobForTransport(job),
+  });
+  return job;
+}
 
-  // Legacy coded-action job
-  const action = input.action;
-  if (!action || !isActionId(action)) {
-    throw new Error(`Unknown action: ${action ?? "(none)"}`);
-  }
-  const plan = planForAction(action);
-  const meta = getAction(action);
-  return {
-    ...baseJob,
-    action,
-    glyphs: plan.glyphs,
-    kind: plan.kind,
-    tone: plan.tone,
-    title: meta?.title ?? action,
-  };
+/** The runtime keeps private values only in memory for step resolution. Every
+ * HTTP, MCP, event, and JSON boundary receives this redacted projection. */
+export function jobForTransport(job: TestJob): TestJob {
+  return redactPrivateValue(
+    Object.fromEntries(Object.entries(job).filter(([key]) => key !== "toJSON")),
+    job.resolvedInputs,
+    job.sensitiveInputNames ?? [],
+  ) as TestJob;
 }
 
 export function enqueueJob(input: EnqueueJobInput): TestJob {
@@ -454,6 +478,7 @@ export function retryJob(id: string): TestJob {
     retryOf: parent.id,
     title: parent.title,
     variables: parent.resolvedInputs,
+    sensitiveInputNames: parent.sensitiveInputNames ?? [],
     recipeSnapshot: parent.recipeSnapshot,
     recipeGraph: parent.recipeGraph,
     batchId: parent.batchId,
@@ -824,7 +849,11 @@ async function executeJob(id: string): Promise<void> {
   const logTarget = () => (phaseSteps.length > 0 ? currentPhase() : currentRecipeStep);
 
   const pushLog = (line: string) => {
-    const safeLine = redactText(line);
+    const safeLine = redactPrivateValue(
+      redactText(line),
+      job.resolvedInputs,
+      job.sensitiveInputNames ?? [],
+    );
     job.logs.push(safeLine);
     appendStepLog(logTarget(), safeLine);
     // Advance phase on major progress markers so pause has clearer boundaries (legacy only)

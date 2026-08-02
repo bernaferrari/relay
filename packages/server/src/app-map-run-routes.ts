@@ -8,7 +8,9 @@ import {
   prepareCaseStackMatrix,
   readAppMap,
   readProjectVariables,
+  referencedRuntimeInputs,
   redactRunMatrix,
+  sensitiveInputNames,
   type Recipe,
 } from "@relay/core";
 import type { OperationInput } from "@relay/protocol";
@@ -90,22 +92,21 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         recovery:
           error.code === "missing-private-value"
             ? "Set your private value locally or pass it in this run request."
-            : "Open the Case Stack and adjust its variables or coverage strategy.",
+            : error.code === "generation-failed"
+              ? "Check the generation provider or add a fallback value to this variable."
+              : "Open the Case Stack and adjust its variables or coverage strategy.",
       });
     }
     throw error;
   }
-  const constantVariables = Object.fromEntries(
-    Object.entries(body.variables ?? {}).flatMap(([name, value]) =>
-      typeof value === "string" ? [[name, value] as const] : [],
-    ),
-  );
+  const constantVariables = referencedRuntimeInputs(recipeGraph, definitions.value, body.variables);
   const cases = matrix?.cases ?? [
     { id: "default", name: "Default", index: 0, values: {}, provenance: [] },
   ];
   const safeMatrix = matrix ? redactRunMatrix(matrix, definitions.value) : undefined;
-  const jobs = cases.map((item) =>
-    enqueueJob({
+  const jobs = cases.map((item) => {
+    const variables = { ...constantVariables, ...item.values };
+    return enqueueJob({
       recipe: recipeSnapshot.id,
       title: cases.length > 1 ? `${recipeSnapshot.title} · ${item.name}` : recipeSnapshot.title,
       recipeSnapshot,
@@ -114,7 +115,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       platform: body.platform,
       targetKind: body.targetKind,
       browserTargetId: body.browserTargetId,
-      variables: { ...constantVariables, ...item.values },
+      variables,
+      sensitiveInputNames: sensitiveInputNames(definitions.value, variables),
       ...(matrix
         ? { batchId: matrix.id, caseIndex: item.index, caseCount: matrix.cases.length }
         : {}),
@@ -132,8 +134,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ],
       projectId: input.scope.projectId,
       ownerId: operation.actorId,
-    }),
-  );
+    });
+  });
   json(input.response, 202, {
     job: jobs[0]!,
     jobs,

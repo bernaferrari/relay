@@ -33,6 +33,7 @@ export class RunMatrixError extends Error {
     readonly code:
       | "missing-private-value"
       | "missing-variable"
+      | "generation-failed"
       | "zip-length-mismatch"
       | "too-many-cases"
       | "conflicting-variable",
@@ -85,6 +86,7 @@ async function resolveVariable(
 
   const approved = compactValues(variable.values);
   if (variable.source === "generated" && variable.prompt?.trim()) {
+    const fallback = compactValues(variable.fallback);
     try {
       const generated = await generateValues({
         purpose: "variable",
@@ -92,12 +94,17 @@ async function resolveVariable(
         count: generationCount,
         seed,
       });
+      const values = compactValues(generated.values);
+      if (values.length === 0 && fallback.length === 0) {
+        throw new RunMatrixError(
+          "generation-failed",
+          `Generated variable “${name}” returned no values and has no fallback`,
+        );
+      }
       return {
         definition: variable,
         name,
-        values: compactValues(generated.values).length
-          ? compactValues(generated.values)
-          : compactValues(variable.fallback),
+        values: values.length ? values : fallback,
         provenance: {
           variableId: variable.id,
           variableName: name,
@@ -108,8 +115,25 @@ async function resolveVariable(
           seed,
         },
       };
-    } catch {
-      // A declared fallback keeps generation failures explicit but non-fatal.
+    } catch (error) {
+      if (error instanceof RunMatrixError) throw error;
+      if (fallback.length) {
+        return {
+          definition: variable,
+          name,
+          values: fallback,
+          provenance: {
+            variableId: variable.id,
+            variableName: name,
+            source: variable.source,
+            seed,
+          },
+        };
+      }
+      throw new RunMatrixError(
+        "generation-failed",
+        `Could not generate values for “${name}”; add a fallback or check the generation provider`,
+      );
     }
   }
 
@@ -152,61 +176,88 @@ function pairKey(
   return `${leftVariable}:${leftValue}|${rightVariable}:${rightValue}`;
 }
 
-function pairsFor(row: number[]): Set<string> {
-  const pairs = new Set<string>();
-  for (let left = 0; left < row.length; left += 1) {
-    for (let right = left + 1; right < row.length; right += 1) {
-      pairs.add(pairKey(left, row[left]!, right, row[right]!));
-    }
-  }
-  return pairs;
-}
-
-/** Deterministic greedy all-pairs selection. Small matrices remain exhaustive;
- * larger ones preserve every two-variable interaction with fewer runs. */
+/** Deterministic in-parameter-order all-pairs expansion. It grows rows one
+ * dimension at a time, so pairwise coverage never constructs the Cartesian
+ * product it exists to avoid. */
 function pairwiseIndexes(lengths: number[], limit: number): number[][] {
-  const candidates = cartesianIndexes(lengths, 10_000);
-  if (lengths.length < 2) {
-    if (candidates.length > limit) {
+  if (lengths.length === 0) return [[]];
+  if (lengths.length === 1) {
+    if (lengths[0]! > limit) {
       throw new RunMatrixError("too-many-cases", `This case stack exceeds its ${limit}-run limit`);
     }
-    return candidates;
+    return Array.from({ length: lengths[0]! }, (_, value) => [value]);
   }
-  const remaining = new Set<string>();
-  for (let left = 0; left < lengths.length; left += 1) {
-    for (let right = left + 1; right < lengths.length; right += 1) {
-      for (let leftValue = 0; leftValue < lengths[left]!; leftValue += 1) {
-        for (let rightValue = 0; rightValue < lengths[right]!; rightValue += 1) {
-          remaining.add(pairKey(left, leftValue, right, rightValue));
+  const rows: number[][] = [];
+  for (let left = 0; left < lengths[0]!; left += 1) {
+    for (let right = 0; right < lengths[1]!; right += 1) rows.push([left, right]);
+  }
+  if (rows.length > limit) {
+    throw new RunMatrixError(
+      "too-many-cases",
+      `Pairwise coverage needs more than ${limit} runs; raise the stack limit or reduce values`,
+    );
+  }
+  for (let dimension = 2; dimension < lengths.length; dimension += 1) {
+    const uncovered = new Set<string>();
+    for (let prior = 0; prior < dimension; prior += 1) {
+      for (let priorValue = 0; priorValue < lengths[prior]!; priorValue += 1) {
+        for (let value = 0; value < lengths[dimension]!; value += 1) {
+          uncovered.add(pairKey(prior, priorValue, dimension, value));
         }
       }
     }
-  }
-  const selected: number[][] = [];
-  const available = candidates.map((row) => ({ row, pairs: pairsFor(row) }));
-  while (remaining.size > 0) {
-    let bestIndex = -1;
-    let bestCoverage = -1;
-    for (let index = 0; index < available.length; index += 1) {
-      let coverage = 0;
-      for (const pair of available[index]!.pairs) if (remaining.has(pair)) coverage += 1;
-      if (coverage > bestCoverage) {
-        bestCoverage = coverage;
-        bestIndex = index;
+    for (const row of rows) {
+      let bestValue = 0;
+      let bestCoverage = -1;
+      for (let value = 0; value < lengths[dimension]!; value += 1) {
+        let coverage = 0;
+        for (let prior = 0; prior < dimension; prior += 1) {
+          if (uncovered.has(pairKey(prior, row[prior]!, dimension, value))) coverage += 1;
+        }
+        if (coverage > bestCoverage) {
+          bestCoverage = coverage;
+          bestValue = value;
+        }
+      }
+      row.push(bestValue);
+      for (let prior = 0; prior < dimension; prior += 1) {
+        uncovered.delete(pairKey(prior, row[prior]!, dimension, bestValue));
       }
     }
-    if (bestIndex < 0 || bestCoverage === 0) break;
-    const [best] = available.splice(bestIndex, 1);
-    selected.push(best!.row);
-    for (const pair of best!.pairs) remaining.delete(pair);
-    if (selected.length > limit) {
-      throw new RunMatrixError(
-        "too-many-cases",
-        `Pairwise coverage needs more than ${limit} runs; raise the stack limit or reduce values`,
-      );
+    while (uncovered.size > 0) {
+      const first = uncovered.values().next().value as string;
+      const [leftPair, rightPair] = first.split("|");
+      const [priorText, priorValueText] = leftPair!.split(":");
+      const [, valueText] = rightPair!.split(":");
+      const prior = Number(priorText);
+      const value = Number(valueText);
+      const row = Array.from({ length: dimension + 1 }, () => 0);
+      row[prior] = Number(priorValueText);
+      row[dimension] = value;
+      for (let other = 0; other < dimension; other += 1) {
+        if (other === prior) continue;
+        let chosen = 0;
+        for (let candidate = 0; candidate < lengths[other]!; candidate += 1) {
+          if (uncovered.has(pairKey(other, candidate, dimension, value))) {
+            chosen = candidate;
+            break;
+          }
+        }
+        row[other] = chosen;
+      }
+      rows.push(row);
+      for (let other = 0; other < dimension; other += 1) {
+        uncovered.delete(pairKey(other, row[other]!, dimension, value));
+      }
+      if (rows.length > limit) {
+        throw new RunMatrixError(
+          "too-many-cases",
+          `Pairwise coverage needs more than ${limit} runs; raise the stack limit or reduce values`,
+        );
+      }
     }
   }
-  return selected;
+  return rows;
 }
 
 function indexesFor(
@@ -253,7 +304,7 @@ function caseName(variables: ResolvedVariable[], indexes: number[], index: numbe
 /** Resolve dynamic values and coverage combinations before any run is queued. */
 export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<PreparedRunMatrix> {
   const repetitions = bounded(input.repetitions, 1, 100);
-  const maxCases = bounded(input.maxCases, 20, 100);
+  const maxCases = bounded(input.maxCases, 20, 250);
   const seed = Number.isFinite(input.seed) ? Math.floor(input.seed!) : Date.now();
   const strategy = input.strategy ?? "repeat";
   const selectedIds = input.variableIds ? new Set(input.variableIds) : null;
@@ -275,6 +326,13 @@ export async function prepareRunMatrix(input: PrepareRunMatrixInput): Promise<Pr
   const variables = await Promise.all(
     selected.map((variable) => resolveVariable(variable, input, generationCount, seed)),
   );
+  const unresolved = variables.find((variable) => variable.values.length === 0);
+  if (unresolved) {
+    throw new RunMatrixError(
+      "missing-variable",
+      `Variable “${unresolved.name}” has no value for this run`,
+    );
+  }
   const rows = indexesFor(strategy, variables, repetitions, maxCases);
   const matrixId = randomUUID();
   const cases: FrozenRunCase[] = rows.map((indexes, index) => ({
@@ -314,7 +372,7 @@ export async function prepareCaseStackMatrix(input: {
       }),
     );
   }
-  const maxCases = Math.min(100, ...input.caseStacks.map((stack) => stack.maxCases));
+  const maxCases = Math.min(250, ...input.caseStacks.map((stack) => stack.maxCases));
   let combined: Array<Pick<FrozenRunCase, "name" | "values" | "provenance">> = [
     { name: "", values: {}, provenance: [] },
   ];

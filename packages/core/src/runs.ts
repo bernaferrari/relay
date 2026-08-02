@@ -29,6 +29,7 @@ import {
 } from "./run-catalog.js";
 import type { RunSummary } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
+import { redactPrivateInputs, redactPrivateValue } from "./private-inputs.js";
 export { findWorkspaceRoot } from "./workspace-root.js";
 
 export type PersistedExecutionProvenance = {
@@ -180,6 +181,8 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     ...s,
     frames: s.frames.map(({ base64: _b, ...rest }) => rest),
   }));
+  const privateSafe = <T>(value: T): T =>
+    redactPrivateValue(value, job.resolvedInputs, job.sensitiveInputNames ?? []);
 
   const frozenInput = JSON.stringify({
     action: job.action,
@@ -211,8 +214,8 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
     durationMs,
-    result: job.result,
-    error: job.error,
+    result: privateSafe(redactValue(job.result)),
+    error: privateSafe(job.error ? redactText(job.error) : job.error),
     errorCode: job.errorCode,
     outcome: job.outcome,
     failureCategory: job.failureCategory,
@@ -220,18 +223,21 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     batchId: job.batchId,
     caseIndex: job.caseIndex,
     caseCount: job.caseCount,
-    logs: job.logs.map(redactText),
-    steps,
-    frames,
+    logs: privateSafe(job.logs.map(redactText)),
+    steps: privateSafe(steps),
+    frames: privateSafe(frames),
     frameCount: frames.length,
     dir,
     writtenAt,
-    recipeSnapshot: redactValue(job.recipeSnapshot) as TestJob["recipeSnapshot"],
-    recipeGraph: redactValue(job.recipeGraph) as TestJob["recipeGraph"],
-    artifacts: redactValue(job.artifacts) as TestJob["artifacts"],
+    recipeSnapshot: privateSafe(redactValue(job.recipeSnapshot)) as TestJob["recipeSnapshot"],
+    recipeGraph: privateSafe(redactValue(job.recipeGraph)) as TestJob["recipeGraph"],
+    artifacts: privateSafe(redactValue(job.artifacts)) as TestJob["artifacts"],
     inputDigest: createHash("sha256").update(frozenInput).digest("hex"),
-    resolvedInputs: redactResolvedInputs(job.resolvedInputs),
-    evidence: redactValue(job.evidence) as EvidenceManifest | undefined,
+    resolvedInputs: redactPrivateInputs(
+      redactResolvedInputs(job.resolvedInputs),
+      job.sensitiveInputNames ?? [],
+    ),
+    evidence: privateSafe(redactValue(job.evidence)) as EvidenceManifest | undefined,
     executionProvenance: persistedExecutionProvenance(job),
   };
 }

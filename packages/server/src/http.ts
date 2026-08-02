@@ -1,5 +1,5 @@
 import type http from "node:http";
-import { redactValue } from "@relay/core";
+import { redactPrivateJobs, redactValue } from "@relay/core";
 import { validateOperationBody, validateOperationResponse } from "./operations.js";
 
 export const CORS_HEADERS: Record<string, string> = {
@@ -24,7 +24,7 @@ export class HttpError extends Error {
 
 export function json(res: http.ServerResponse, status: number, body: unknown): void {
   validateOperationResponse(res, status, body);
-  const payload = JSON.stringify(redactValue(body));
+  const payload = JSON.stringify(redactValue(redactPrivateJobs(body)));
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(payload),

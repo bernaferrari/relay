@@ -284,6 +284,12 @@ test("a saved App Map flow runs without a Journey projection", async () => {
           source: "list",
           values: ["low", "medium", "high", "xhigh", "pro"],
         },
+        {
+          id: "login",
+          name: "login_email",
+          scope: "private",
+          source: "static",
+        },
       ],
     });
     await client.invoke("app-map.case-stack.save", {
@@ -293,7 +299,7 @@ test("a saved App Map flow runs without a Journey projection", async () => {
       caseStack: {
         ...scoped("thinking-levels"),
         name: "Thinking levels",
-        variableIds: ["thinking-level"],
+        variableIds: ["thinking-level", "login"],
         strategy: "zip",
         maxCases: 10,
       },
@@ -327,6 +333,7 @@ test("a saved App Map flow runs without a Journey projection", async () => {
       serial: "virtual-target",
       platform: "android",
       targetKind: "device",
+      variables: { login_email: "person@example.test" },
     });
     assert.equal(result.plan.appMapId, "store");
     assert.equal(result.plan.appMapRevision, 6);
@@ -339,14 +346,13 @@ test("a saved App Map flow runs without a Journey projection", async () => {
     assert.equal(result.jobs.length, 5);
     assert.deepEqual(
       result.matrix?.cases.map((item) => item.name),
-      [
-        "Thinking levels: low",
-        "Thinking levels: medium",
-        "Thinking levels: high",
-        "Thinking levels: xhigh",
-        "Thinking levels: pro",
-      ],
+      ["Private case 1", "Private case 2", "Private case 3", "Private case 4", "Private case 5"],
     );
+    assert.equal(
+      (result.jobs[0] as { resolvedInputs?: Record<string, unknown> }).resolvedInputs?.login_email,
+      "[private]",
+    );
+    assert.equal(JSON.stringify(result).includes("person@example.test"), false);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;

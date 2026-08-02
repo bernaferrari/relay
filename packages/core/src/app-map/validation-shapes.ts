@@ -226,8 +226,8 @@ export function assertCaseStack(stack: CaseStack, scope: AppMapScope, label: str
     appMapFail("invalid-map", `${label}.strategy is unsupported`);
   }
   safeInteger(stack.maxCases, `${label}.maxCases`);
-  if (stack.maxCases < 1 || stack.maxCases > 100) {
-    appMapFail("invalid-map", `${label}.maxCases must be between 1 and 100`);
+  if (stack.maxCases < 1 || stack.maxCases > 250) {
+    appMapFail("invalid-map", `${label}.maxCases must be between 1 and 250`);
   }
 }
 

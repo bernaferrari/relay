@@ -25,6 +25,7 @@ export * from "./outcomes.js";
 export * from "./run-evidence.js";
 export * from "./run-observatory.js";
 export * from "./run-matrix.js";
+export * from "./private-inputs.js";
 export * from "./atlas.js";
 export * from "./schedules.js";
 export * from "./suites.js";

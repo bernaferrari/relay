@@ -29,6 +29,7 @@ function job(root: string, status: TestJob["status"] = "ok"): TestJob {
     title: "Evidence test",
     runDir: root,
     resolvedInputs: {},
+    sensitiveInputNames: [],
     evidencePolicy: { schemaVersion: 1, sensitive: {} },
   };
 }
@@ -70,6 +71,26 @@ test("run reports finalize once at a terminal atomic commit point", async () => 
     assert.deepEqual(await persistRun(run), onDisk, "an identical finalization is idempotent");
     run.logs.push("late mutation");
     await assert.rejects(persistRun(run), /integrity conflict/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("private run inputs never persist in plaintext when optional redaction is off", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-private-run-"));
+  const run = job(join(root, "run"));
+  const secret = "person@example.test";
+  run.resolvedInputs = { login_email: secret, display_name: "Ada" };
+  run.sensitiveInputNames = ["login_email"];
+  run.logs = [`Signing in as ${secret}`];
+  run.result = { account: secret };
+  run.artifacts = [{ kind: "command-attempt", capturedAt: Date.now(), data: { text: secret } }];
+  try {
+    const persisted = await persistRun(run);
+    const serialized = JSON.stringify(persisted);
+    assert.equal(serialized.includes(secret), false);
+    assert.equal(persisted.resolvedInputs.login_email, "[private]");
+    assert.equal(persisted.resolvedInputs.display_name, "Ada");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

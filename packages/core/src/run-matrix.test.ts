@@ -87,6 +87,34 @@ test("cartesian and pairwise expansion are deterministic and bounded", async () 
   assert.equal(pairs.size, 2 * 3 + 2 * 2 + 3 * 2);
 });
 
+test("pairwise coverage scales without constructing the Cartesian product", async () => {
+  const values = Array.from({ length: 11 }, (_, index) => String(index));
+  const variables: TestVariable[] = ["a", "b", "c", "d"].map((name) => ({
+    id: name,
+    name,
+    scope: "shared",
+    source: "list",
+    values,
+  }));
+  const matrix = await prepareRunMatrix({
+    variables,
+    strategy: "pairwise",
+    maxCases: 250,
+  });
+
+  assert.ok(matrix.cases.length <= 250);
+  for (let left = 0; left < variables.length; left += 1) {
+    for (let right = left + 1; right < variables.length; right += 1) {
+      const pairs = new Set(
+        matrix.cases.map(
+          (item) => `${item.values[variables[left]!.name]}:${item.values[variables[right]!.name]}`,
+        ),
+      );
+      assert.equal(pairs.size, 121);
+    }
+  }
+});
+
 test("private variables never fall back to collaborative values", async () => {
   const variable = {
     id: "login",
@@ -101,4 +129,15 @@ test("private variables never fall back to collaborative values", async () => {
   });
   assert.equal(matrix.cases[0]?.values.login_email, "me@example.test");
   assert.equal(matrix.cases[0]?.name, "Private case 1");
+});
+
+test("unselected private variables do not block an unrelated run", async () => {
+  const matrix = await prepareRunMatrix({
+    variableIds: ["locale"],
+    variables: [
+      { id: "locale", name: "locale", scope: "shared", source: "static", values: ["en"] },
+      { id: "login", name: "login_email", scope: "private", source: "static" },
+    ],
+  });
+  assert.deepEqual(matrix.cases[0]?.values, { locale: "en" });
 });

@@ -13,7 +13,7 @@ export function caseStackCount(
     .filter((variable): variable is TestVariable => Boolean(variable))
     .map(valueCount);
   if (!counts.length) return { count: 0, exact: true };
-  const limit = Math.min(100, Math.max(1, stack.maxCases));
+  const limit = Math.min(250, Math.max(1, stack.maxCases));
   if (stack.strategy === "cartesian") {
     return {
       count: Math.min(
