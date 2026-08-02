@@ -317,7 +317,7 @@ export function DataWorkspace(props: {
                     onInput={(event) => patchRow(row().id, { name: event.currentTarget.value })}
                   />
                 </label>
-                <Show when={row().scope === "shared"}>
+                <Show when={row().scope === "shared" && row().mode === "AI"}>
                   <label class="grid gap-1.5">
                     <span class="text-[11px]/[1.25] font-semibold text-text-weak">
                       How to choose it

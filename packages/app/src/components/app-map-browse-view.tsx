@@ -62,7 +62,10 @@ export function AppMapBrowseView(props: {
     <div
       class={cn(
         "absolute inset-0 min-h-0 overflow-y-auto bg-[var(--v2-background-bg-deep)] pt-[76px] pb-24 transition-[padding] duration-150",
-        props.deviceOpen && "pr-[404px] max-[900px]:pr-0",
+        // The live companion grows to 548px for landscape tablets. Reserve
+        // its largest desktop footprint so search, filters, and primary
+        // actions never render underneath a perfectly visible device.
+        props.deviceOpen && "pr-[564px] max-[900px]:pr-0",
       )}
     >
       <div class="mx-auto w-full max-w-[1440px] px-[clamp(18px,3vw,44px)]">

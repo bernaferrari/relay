@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import {
@@ -143,6 +143,13 @@ export function DeviceCompanionStage(props: {
         recordingControls="embedded"
         preparing={props.preparing}
       />
+      <Show when={server.health() !== "online" && server.liveFrame()?.base64}>
+        <div class="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-4">
+          <span class="rounded-full bg-black/72 px-2.5 py-1 text-[10.5px] font-medium text-white shadow-sm backdrop-blur-sm">
+            Last frame · reconnect to control
+          </span>
+        </div>
+      </Show>
     </div>
   );
 }

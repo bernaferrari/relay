@@ -1157,6 +1157,16 @@ export function DeviceStage(_props: {
       hasIosSetupIssue();
     if (!shouldLeaveDeviceFrame) return null;
 
+    if (server.health() !== "online") {
+      return {
+        kind: "error",
+        title: "Relay is offline",
+        detail: "Reconnect Relay to resume this live device. Your App Map is still safe.",
+        primaryAction: "retry",
+        primaryLabel: "Reconnect",
+      };
+    }
+
     if (rec.arming()) {
       return {
         kind: "progress",
@@ -1958,7 +1968,13 @@ export function DeviceStage(_props: {
                   new CustomEvent("relay:open-settings", { detail: { section: "devices" } }),
                 )
               }
-              onRetry={retryScreenPreview}
+              onRetry={() => {
+                if (server.health() !== "online") {
+                  void server.retryConnection();
+                  return;
+                }
+                retryScreenPreview();
+              }}
             />
           )}
         </Show>

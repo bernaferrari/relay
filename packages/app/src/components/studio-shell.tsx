@@ -9,7 +9,7 @@ import {
   onMount,
 } from "solid-js";
 import type { AppMap } from "@relay/protocol";
-import { useServer, type RecipeInfo } from "../context/server";
+import { useServer } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { DevicePicker } from "./device-picker";
@@ -355,37 +355,28 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     rows.sort((a, b) => b.updatedAt - a.updatedAt);
     return needle ? rows.filter((appMap) => appMap.name.toLowerCase().includes(needle)) : rows;
   });
-  async function createTest(record = false): Promise<RecipeInfo | null> {
+  async function createCanonicalMap(record = false): Promise<AppMap | null> {
     if (record && !selectedTargetIsReady()) {
       openDevicePicker();
       return null;
     }
     const title = nextUntitledMapTitle(server.appMaps());
-    const saved = await server.saveRecipeRemote({
-      title,
-      steps: [],
-    });
-    if (!saved) return null;
     try {
-      await server.createAppMap(saved.id, title);
+      const appMap = await server.createAppMap(crypto.randomUUID(), title);
+      server.setSelectedAppMapId(appMap.id);
+      setArea("tests");
+      setStudioView("map");
+      setSettingsOpen(false);
+      setNavOpen(false);
+      if (record) recorder.enterRecordMode();
+      return appMap;
     } catch (error) {
-      await server.deleteRecipeRemote(saved.id).catch(() => undefined);
       toast(
         `The App Map could not be initialized: ${error instanceof Error ? error.message : String(error)}`,
         "error",
       );
       return null;
     }
-    server.setSelectedAppMapId(saved.id);
-    setArea("tests");
-    setStudioView("map");
-    setSettingsOpen(false);
-    setNavOpen(false);
-    if (record) {
-      if (selectedTargetIsReady()) recorder.enterRecordMode();
-      else window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
-    }
-    return saved;
   }
 
   async function captureFirstScreenFromBlankMap(): Promise<void> {
@@ -395,7 +386,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
     setCreatingBlankMap(true);
     setCaptureStartOnReady(true);
-    const saved = await createTest(false);
+    const saved = await createCanonicalMap(false);
     if (!saved) {
       setCaptureStartOnReady(false);
       setCreatingBlankMap(false);
@@ -409,7 +400,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     if (creatingBlankMap()) return;
     setCreatingBlankMap(true);
     setAddNoteOnReady(true);
-    const saved = await createTest(false);
+    const saved = await createCanonicalMap(false);
     if (saved) return;
     setAddNoteOnReady(false);
     setCreatingBlankMap(false);
@@ -469,25 +460,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
   async function duplicateSelected(): Promise<void> {
     const appMap = selectedMap();
-    const recipe = selectedRecipe();
     if (!appMap) return;
     // Copies of copies get "(copy 2)", never "… (copy) copy".
     const base = displayTitle(appMap.name).replace(/\s*\((copy)(?:\s+\d+)?\)\s*$/i, "");
     const titles = new Set(server.appMaps().map((item) => displayTitle(item.name)));
     let title = `${base} (copy)`;
     for (let index = 2; titles.has(title); index++) title = `${base} (copy ${index})`;
-    let duplicateId: string = crypto.randomUUID();
-    let recipeCopy: RecipeInfo | null = null;
+    const duplicateId = crypto.randomUUID();
     try {
-      if (recipe) {
-        recipeCopy = await server.saveRecipeRemote({
-          title,
-          description: recipe.description,
-          steps: draft.steps(),
-        });
-        if (!recipeCopy) return;
-        duplicateId = recipeCopy.id;
-      }
       await server.runAction("app-map.duplicate", {
         sourceAppMapId: appMap.id,
         appMapId: duplicateId,
@@ -497,7 +477,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       server.setSelectedAppMapId(duplicateId);
       toast(`Duplicated ${displayTitle(appMap.name)}`, "success");
     } catch (error) {
-      if (recipeCopy) await server.deleteRecipeRemote(recipeCopy.id).catch(() => undefined);
       toast(error instanceof Error ? error.message : String(error), "error");
     }
   }
@@ -528,7 +507,6 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       confirmLabel: "Delete map",
       onConfirm: async () => {
         await server.runAction("app-map.remove", { appMapId });
-        await server.deleteRecipeRemote(appMapId).catch(() => undefined);
         await server.refreshAppMaps();
         if (server.selectedAppMapId() === appMapId) server.setSelectedAppMapId(null);
       },
