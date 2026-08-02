@@ -41,6 +41,40 @@ function assertEntityScope(map: AppMap, entity: Flow | Routine | Proposal | Case
   }
 }
 
+export function attachAppMapCaseStack(
+  map: AppMap,
+  connectionId: string,
+  caseStackId: string,
+  stack: CaseStack | undefined,
+  context: AppMapMutationContext,
+): AppMap {
+  if (stack) {
+    assertEntityScope(map, stack);
+    if (stack.id !== caseStackId) {
+      appMapFail("scope-mismatch", `Case stack ${stack.id} does not match ${caseStackId}`);
+    }
+  }
+  const resolved = stack ?? map.caseStacks[caseStackId];
+  if (!resolved) appMapFail("missing-reference", `Case stack ${caseStackId} does not exist`);
+  if (!map.connections[connectionId]) {
+    appMapFail("missing-reference", `Connection ${connectionId} does not exist`);
+  }
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "case-stack.attached",
+      subject: { kind: "connection", id: connectionId },
+      summary: `Applied ${resolved.name}`,
+    },
+    (draft) => {
+      if (stack) draft.caseStacks[caseStackId] = structuredClone(stack);
+      draft.connections[connectionId]!.caseStackId = caseStackId;
+      draft.connections[connectionId]!.updatedAt = context.at;
+    },
+  );
+}
+
 export function saveAppMapCaseStack(
   map: AppMap,
   stack: CaseStack,

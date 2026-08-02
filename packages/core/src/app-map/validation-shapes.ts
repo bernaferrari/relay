@@ -463,6 +463,7 @@ export function assertActivity(
     "routine.saved",
     "routine.removed",
     "case-stack.saved",
+    "case-stack.attached",
     "case-stack.removed",
     "recording.committed",
     "proposal.submitted",

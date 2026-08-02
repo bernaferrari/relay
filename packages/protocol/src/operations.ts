@@ -471,6 +471,17 @@ type SpecificOperationMap = {
     };
     output: { appMap: AppMap };
   };
+  "app-map.case-stack.attach": {
+    input: {
+      appMapId: string;
+      connectionId: string;
+      caseStackId: string;
+      expectedRevision: number;
+      eventId?: string;
+      caseStack?: CaseStack;
+    };
+    output: { appMap: AppMap };
+  };
   "app-map.case-stack.remove": {
     input: {
       appMapId: string;
@@ -1843,6 +1854,20 @@ export const operationDefinitions = [
     {
       category: "authoring",
       input: appMapMutationParser<"app-map.case-stack.save">("Case stack save", "caseStack", [
+        "caseStackId",
+      ]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.case-stack.attach",
+    "Apply an App Map case stack to a connection",
+    "POST",
+    "/app-maps/:appMapId/connections/:connectionId/case-stack",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.case-stack.attach">("Case stack attachment", undefined, [
+        "connectionId",
         "caseStackId",
       ]),
       output: appMapOutputParser,

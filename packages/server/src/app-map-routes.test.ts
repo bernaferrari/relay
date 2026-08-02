@@ -292,8 +292,9 @@ test("a saved App Map flow runs without a Journey projection", async () => {
         },
       ],
     });
-    await client.invoke("app-map.case-stack.save", {
+    await client.invoke("app-map.case-stack.attach", {
       appMapId: "store",
+      connectionId: "continue",
       caseStackId: "thinking-levels",
       expectedRevision: 3,
       caseStack: {
@@ -304,16 +305,10 @@ test("a saved App Map flow runs without a Journey projection", async () => {
         maxCases: 10,
       },
     });
-    await client.invoke("app-map.connection.update", {
-      appMapId: "store",
-      connectionId: "continue",
-      expectedRevision: 4,
-      patch: { caseStackId: "thinking-levels" },
-    });
     await client.invoke("app-map.flow.save", {
       appMapId: "store",
       flowId: "main",
-      expectedRevision: 5,
+      expectedRevision: 4,
       flow: {
         ...scoped("main"),
         name: "Main",
@@ -336,7 +331,7 @@ test("a saved App Map flow runs without a Journey projection", async () => {
       variables: { login_email: "person@example.test" },
     });
     assert.equal(result.plan.appMapId, "store");
-    assert.equal(result.plan.appMapRevision, 6);
+    assert.equal(result.plan.appMapRevision, 5);
     assert.equal(result.plan.flow.id, "main");
     assert.deepEqual(
       result.plan.recipes[result.plan.rootRecipeId]!.steps.map((step) => step.kind),

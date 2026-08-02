@@ -591,25 +591,38 @@ export function AppMapWorkspace(props: {
     };
     setCaseStackBusy(true);
     try {
-      const saved = await server.runAction("app-map.case-stack.save", {
+      await server.runAction("app-map.case-stack.attach", {
         appMapId: map.id,
+        connectionId: canonicalConnection.id,
         caseStackId,
         expectedRevision: map.revision,
         caseStack: stack,
       });
-      if (canonicalConnection.caseStackId !== caseStackId) {
-        await server.runAction("app-map.connection.update", {
-          appMapId: map.id,
-          connectionId: canonicalConnection.id,
-          expectedRevision: saved.appMap.revision,
-          patch: { caseStackId },
-        });
-      }
       await server.refreshAppMaps();
       toast(
         `Added ${value.variableIds.length === 1 ? "a case stack" : "combined coverage"}`,
         "success",
       );
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    } finally {
+      setCaseStackBusy(false);
+    }
+  };
+  const attachConnectionCaseStack = async (connection: CanvasConnection, caseStackId: string) => {
+    const map = activeAppMap();
+    const canonicalConnection = canonicalConnectionFor(connection);
+    if (!map || !canonicalConnection || !map.caseStacks[caseStackId]) return;
+    setCaseStackBusy(true);
+    try {
+      await server.runAction("app-map.case-stack.attach", {
+        appMapId: map.id,
+        connectionId: canonicalConnection.id,
+        caseStackId,
+        expectedRevision: map.revision,
+      });
+      await server.refreshAppMaps();
+      toast(`Applied ${map.caseStacks[caseStackId]!.name}`, "success");
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), "error");
     } finally {
@@ -2217,9 +2230,12 @@ export function AppMapWorkspace(props: {
                         ...(caseStackFor(connection())
                           ? { stack: caseStackFor(connection()) }
                           : {}),
+                        stacks: Object.values(activeAppMap()?.caseStacks ?? {}),
                         variables: server.projectVariables().value,
                         busy: caseStackBusy(),
                         onSave: (value) => void saveConnectionCaseStack(connection(), value),
+                        onAttach: (caseStackId) =>
+                          void attachConnectionCaseStack(connection(), caseStackId),
                         onDetach: () => void detachConnectionCaseStack(connection()),
                         onOpenVariables: props.onOpenVariables,
                       }}

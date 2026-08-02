@@ -5,6 +5,7 @@ import {
   AppMapDomainError,
   addAppMapScreen,
   approveAppMapProposal,
+  attachAppMapCaseStack,
   connectAppMapScreens,
   previewRoutineImpact,
   rejectAppMapProposal,
@@ -716,6 +717,29 @@ test("saves reusable Case Stacks and protects referenced coverage", () => {
     context(detached, "remove-stack", detached.updatedAt + 1),
   );
   assert.equal(removed.caseStacks[stack.id], undefined);
+});
+
+test("creates and attaches a Case Stack in one attributable revision", () => {
+  const input = mapFixture();
+  const stack = {
+    ...entity("thinking-levels"),
+    name: "Thinking levels",
+    variableIds: ["thinking-level"],
+    strategy: "zip" as const,
+    maxCases: 10,
+  };
+  const attached = attachAppMapCaseStack(
+    input,
+    "open-home",
+    stack.id,
+    stack,
+    context(input, "apply-stack"),
+  );
+
+  assert.equal(attached.revision, input.revision + 1);
+  assert.equal(attached.caseStacks[stack.id]?.name, "Thinking levels");
+  assert.equal(attached.connections["open-home"]?.caseStackId, stack.id);
+  assert.equal(attached.activity["apply-stack"]?.eventType, "case-stack.attached");
 });
 
 test("renames an App Map and stores finite collaborative screen positions", () => {

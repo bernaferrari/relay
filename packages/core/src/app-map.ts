@@ -14,6 +14,7 @@ export {
 export { previewRoutineImpact } from "./app-map/routine-operations.js";
 export { approveAppMapProposal, rejectAppMapProposal } from "./app-map/proposal-operations.js";
 export {
+  attachAppMapCaseStack,
   removeAppMapFlow,
   removeAppMapCaseStack,
   removeAppMapRoutine,

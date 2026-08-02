@@ -298,6 +298,10 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("app-map.flow.save", path("flow save", ["appMapId", "flowId"])),
   mapped("app-map.flow.remove", path("flow remove", ["appMapId", "flowId"])),
   mapped("app-map.case-stack.save", path("case-stack save", ["appMapId", "caseStackId"])),
+  mapped(
+    "app-map.case-stack.attach",
+    path("case-stack apply", ["appMapId", "connectionId", "caseStackId"]),
+  ),
   mapped("app-map.case-stack.remove", path("case-stack remove", ["appMapId", "caseStackId"])),
   mapped(
     "app-map.flow.run",

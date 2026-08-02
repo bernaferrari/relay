@@ -1,10 +1,5 @@
 import { For, Show, createEffect, createSignal } from "solid-js";
-import type {
-  CaseExpansionStrategy,
-  CaseStack,
-  JourneyCanvasNote,
-  TestVariable,
-} from "@relay/protocol";
+import type { JourneyCanvasNote } from "@relay/protocol";
 import type { RecipeStep } from "../context/server";
 import type { CanvasConnection } from "../lib/journey-prototype";
 import type { JourneyTreeNode } from "../lib/journey-tree";
@@ -12,7 +7,7 @@ import { cn } from "../lib/cn";
 import type { JourneyRunPresentationState } from "../lib/journey-run-projection";
 import { accentForStep, iconForStep } from "./journey-step-presentation";
 import { Icon } from "./icon";
-import { caseStackCount } from "../lib/case-stack-presentation";
+import { ConnectionCaseStack, type ConnectionCaseStackProps } from "./connection-case-stack";
 
 /** Presentation-only canvas objects. They deliberately receive callbacks
  * instead of knowing about the graph document or recorder state. */
@@ -454,41 +449,12 @@ export function ConnectionInspector(props: {
     onSaveReusable: () => void;
     onSelectStep: () => void;
   };
-  cases: {
-    stack?: CaseStack;
-    variables: TestVariable[];
-    busy?: boolean;
-    onSave: (input: {
-      name: string;
-      variableIds: string[];
-      strategy: CaseExpansionStrategy;
-    }) => void;
-    onDetach: () => void;
-    onOpenVariables: () => void;
-  };
+  cases: ConnectionCaseStackProps;
   onRemove: () => void;
   onClose: () => void;
 }) {
   const pending = () => props.connection.state === "needs-recording";
   const [optionsOpen, setOptionsOpen] = createSignal(false);
-  const [caseEditorOpen, setCaseEditorOpen] = createSignal(false);
-  const [caseVariableIds, setCaseVariableIds] = createSignal<string[]>([]);
-  const [caseStrategy, setCaseStrategy] = createSignal<CaseExpansionStrategy>("zip");
-  createEffect(() => {
-    setCaseVariableIds(props.cases.stack?.variableIds ?? []);
-    setCaseStrategy(props.cases.stack?.strategy ?? "zip");
-  });
-  const selectedCaseVariables = () =>
-    props.cases.variables.filter((variable) => caseVariableIds().includes(variable.id));
-  const caseCount = () =>
-    caseStackCount(
-      {
-        variableIds: caseVariableIds(),
-        strategy: caseStrategy(),
-        maxCases: props.cases.stack?.maxCases ?? 20,
-      },
-      props.cases.variables,
-    );
   const actionCount = () => props.connection.stepIds.length;
   const verified = () => props.connection.review?.status === "verified";
   const failed = () => props.connection.review?.status === "failed";
@@ -539,149 +505,7 @@ export function ConnectionInspector(props: {
           ? "Choose what should move the device to the next screen. You can record it or start with a simple behavior."
           : `${modeLabel()} · ${actionCount()} action${actionCount() === 1 ? "" : "s"}${props.connection.videoTakeId ? " · video" : ""}${props.connection.videoClip ? " · trimmed" : ""}`}
       </p>
-      <div class="mt-3 rounded-[9px] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_72%,transparent)] p-1.5">
-        <button
-          type="button"
-          class="flex min-h-10 w-full items-center gap-2 rounded-[7px] px-2 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
-          aria-expanded={caseEditorOpen()}
-          onClick={() => setCaseEditorOpen((open) => !open)}
-        >
-          <span class="relative grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] before:absolute before:-right-0.5 before:-top-0.5 before:size-2 before:rounded-[2px] before:border before:border-[var(--v2-background-bg-layer-02)] before:bg-current">
-            <Icon name="grid" size={11} />
-          </span>
-          <span class="min-w-0 flex-1">
-            <strong class="block text-[10.5px] font-medium text-[var(--text-strong)]">
-              {props.cases.stack ? props.cases.stack.name : "Test cases"}
-            </strong>
-            <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
-              {props.cases.stack
-                ? `${caseCount().exact ? "" : "~"}${caseCount().count} case${caseCount().count === 1 ? "" : "s"} · ${selectedCaseVariables()
-                    .map((variable) => variable.name)
-                    .join(", ")}`
-                : "Run this same connection with different inputs"}
-            </span>
-          </span>
-          <span class="text-[9.5px] font-medium text-[var(--text-weak)]">
-            {props.cases.stack ? "Edit" : "Add"}
-          </span>
-        </button>
-        <Show when={caseEditorOpen()}>
-          <div class="mt-1 grid gap-2 border-t border-[var(--v2-border-border-muted)] px-1.5 pb-1 pt-2">
-            <Show
-              when={props.cases.variables.length > 0}
-              fallback={
-                <div class="rounded-[7px] bg-[var(--v2-background-bg-layer-01)] p-2.5">
-                  <strong class="block text-[10.5px] text-[var(--text-strong)]">
-                    Add a variable first
-                  </strong>
-                  <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
-                    A list such as low, medium, high becomes a clean stack on this connection.
-                  </p>
-                  <button
-                    type="button"
-                    class="mt-2 min-h-9 rounded-[7px] px-2 text-[10px] font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--product-accent-soft)]"
-                    onClick={props.cases.onOpenVariables}
-                  >
-                    Open variables
-                  </button>
-                </div>
-              }
-            >
-              <div class="grid gap-1">
-                <For each={props.cases.variables}>
-                  {(variable) => {
-                    const selected = () => caseVariableIds().includes(variable.id);
-                    return (
-                      <button
-                        type="button"
-                        class={cn(
-                          "flex min-h-9 items-center gap-2 rounded-[7px] px-2 text-left text-[10px] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)]",
-                          selected() && "bg-[var(--product-accent-soft)]",
-                        )}
-                        aria-pressed={selected()}
-                        onClick={() =>
-                          setCaseVariableIds((current) =>
-                            selected()
-                              ? current.filter((id) => id !== variable.id)
-                              : [...current, variable.id],
-                          )
-                        }
-                      >
-                        <span
-                          class={cn(
-                            "grid size-4 place-items-center rounded-[4px] border border-[var(--v2-border-border-strong)]",
-                            selected() &&
-                              "border-[var(--text-interactive-base)] bg-[var(--text-interactive-base)] text-white",
-                          )}
-                        >
-                          <Show when={selected()}>
-                            <Icon name="check" size={9} />
-                          </Show>
-                        </span>
-                        <span class="min-w-0 flex-1 truncate text-[var(--text-base)]">
-                          {variable.name}
-                        </span>
-                        <span class="text-[9px] text-[var(--text-weak)]">
-                          {variable.scope === "private"
-                            ? "Private"
-                            : `${Math.max(1, variable.values?.length ?? 1)} value${(variable.values?.length ?? 1) === 1 ? "" : "s"}`}
-                        </span>
-                      </button>
-                    );
-                  }}
-                </For>
-              </div>
-              <label class="grid gap-1">
-                <span class="text-[9.5px] font-medium text-[var(--text-weak)]">Coverage</span>
-                <select
-                  class="min-h-9 rounded-[7px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-2 text-[10px] text-[var(--text-base)] outline-none focus:border-[var(--border-focus)]"
-                  value={caseStrategy()}
-                  onChange={(event) =>
-                    setCaseStrategy(event.currentTarget.value as CaseExpansionStrategy)
-                  }
-                >
-                  <option value="zip">Match values by row</option>
-                  <option value="pairwise">Cover every pair</option>
-                  <option value="cartesian">Every combination</option>
-                </select>
-              </label>
-              <div class="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  class="inline-flex min-h-10 flex-1 items-center justify-center rounded-[7px] bg-[var(--product-accent-soft)] px-3 text-[10px] font-semibold text-[var(--text-interactive-base)] disabled:cursor-not-allowed disabled:opacity-45"
-                  disabled={caseVariableIds().length === 0 || props.cases.busy}
-                  onClick={() => {
-                    const variables = selectedCaseVariables();
-                    props.cases.onSave({
-                      name:
-                        props.cases.stack?.name ??
-                        (variables.length === 1 ? variables[0]!.name : "Test cases"),
-                      variableIds: caseVariableIds(),
-                      strategy: caseStrategy(),
-                    });
-                    setCaseEditorOpen(false);
-                  }}
-                >
-                  {props.cases.busy
-                    ? "Saving…"
-                    : caseVariableIds().length
-                      ? `Save ${caseCount().exact ? "" : "~"}${caseCount().count} cases`
-                      : "Save cases"}
-                </button>
-                <Show when={props.cases.stack}>
-                  <button
-                    type="button"
-                    class="min-h-10 rounded-[7px] px-2.5 text-[10px] text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--icon-critical-base)]"
-                    onClick={props.cases.onDetach}
-                  >
-                    Remove
-                  </button>
-                </Show>
-              </div>
-            </Show>
-          </div>
-        </Show>
-      </div>
+      <ConnectionCaseStack {...props.cases} />
       <Show when={!pending()}>
         <div class="mt-3 grid gap-1 rounded-[9px] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_72%,transparent)] p-2">
           <div class="flex min-h-8 items-center gap-2 px-0.5">

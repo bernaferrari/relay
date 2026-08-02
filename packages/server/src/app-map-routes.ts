@@ -3,6 +3,7 @@ import {
   AppMapDomainError,
   addAppMapScreen,
   approveAppMapProposal,
+  attachAppMapCaseStack,
   connectAppMapScreens,
   createAppMap,
   currentOperationContext,
@@ -295,6 +296,36 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       body.expectedRevision,
       body.eventId,
       (map, context) => saveAppMapCaseStack(map, body.caseStack, context),
+    );
+    json(response, 200, { appMap });
+    return true;
+  }
+
+  const caseStackAttach = matchPath(
+    pathname,
+    "/app-maps/:appMapId/connections/:connectionId/case-stack",
+  );
+  if (method === "POST" && caseStackAttach) {
+    const body = (await parseJsonBody(request)) as Omit<
+      OperationInput<"app-map.case-stack.attach">,
+      "appMapId" | "connectionId"
+    >;
+    if (body.caseStack && body.caseStack.id !== body.caseStackId) {
+      throw new HttpError(400, "Case stack id must match the supplied stack");
+    }
+    const appMap = await applyMutation(
+      scope,
+      caseStackAttach.appMapId!,
+      body.expectedRevision,
+      body.eventId,
+      (map, context) =>
+        attachAppMapCaseStack(
+          map,
+          caseStackAttach.connectionId!,
+          body.caseStackId,
+          body.caseStack,
+          context,
+        ),
     );
     json(response, 200, { appMap });
     return true;
