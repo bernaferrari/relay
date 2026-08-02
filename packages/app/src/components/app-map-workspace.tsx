@@ -49,9 +49,9 @@ import { journeyRunReadiness } from "../lib/journey-run-readiness";
 import { replayTransitionSteps } from "../lib/transition-replay";
 import { toast } from "../context/toast";
 import { evidenceForStep } from "./journey-step-presentation";
-import { GraphEmptyState } from "./journey-capture-review";
-import { ConnectionInspector, ScreenInspector } from "./journey-canvas-primitives";
-import { JourneyHistoryPanel } from "./journey-history-panel";
+import { AppMapEmptyState } from "./app-map-capture-review";
+import { ConnectionInspector, ScreenInspector } from "./app-map-canvas-primitives";
+import { AppMapHistoryPanel } from "./app-map-history-panel";
 import { collaborationActivity } from "../lib/collaboration-awareness";
 import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-runtime";
 import { AppMapDeviceCompanion } from "./app-map-device-companion";
@@ -181,7 +181,7 @@ export function AppMapWorkspace(props: {
       }
     });
   });
-  const recordState = (): Parameters<typeof GraphEmptyState>[0]["recordState"] => {
+  const recordState = (): Parameters<typeof AppMapEmptyState>[0]["recordState"] => {
     const device = selectedDevice();
     if (device?.platform === "ios" && appleSetupCheckFailed()) return "setup-check-failed";
     const liveFrame = server.liveFrame();
@@ -1775,7 +1775,7 @@ export function AppMapWorkspace(props: {
             }
           >
             <Show when={historyOpen()}>
-              <JourneyHistoryPanel
+              <AppMapHistoryPanel
                 loading={draft.historyLoading()}
                 entries={draft.savedHistory()}
                 onClose={() => setHistoryOpen(false)}
@@ -1788,7 +1788,7 @@ export function AppMapWorkspace(props: {
             <Show
               when={hasCanvasContent()}
               fallback={
-                <GraphEmptyState
+                <AppMapEmptyState
                   take={recorder.take()}
                   recordState={recordState()}
                   selectedDeviceName={

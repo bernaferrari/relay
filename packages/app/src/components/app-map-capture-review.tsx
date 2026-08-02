@@ -612,7 +612,7 @@ export function RecordedTakePlayer(props: {
   );
 }
 
-export function GraphEmptyState(props: {
+export function AppMapEmptyState(props: {
   take: RecordingTake | null;
   recordState:
     | "ready"

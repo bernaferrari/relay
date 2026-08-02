@@ -2,7 +2,7 @@ import { Show, createMemo, createSignal } from "solid-js";
 import type { RecordingTake } from "../context/recorder";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
-import { TakeCaptureBar } from "./journey-capture-review";
+import { TakeCaptureBar } from "./app-map-capture-review";
 import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
 import { companionFooterMode } from "./app-map-device-companion-geometry";
 import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";

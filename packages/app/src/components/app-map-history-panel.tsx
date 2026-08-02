@@ -2,7 +2,7 @@ import { For, Show } from "solid-js";
 import type { RecipeInfo } from "../context/server";
 import { Icon } from "./icon";
 
-export function JourneyHistoryPanel(props: {
+export function AppMapHistoryPanel(props: {
   loading: boolean;
   entries: RecipeInfo[];
   onClose: () => void;

@@ -1,7 +1,7 @@
 import type { AuthoringInteraction, JourneyGraphScreen, JourneyVideoClip } from "@relay/protocol";
 import type { RecordingTake } from "../context/recorder";
 import type { TakeDestination } from "../lib/journey-graph";
-import { RecordedTakePlayer, TakeReviewSidebar } from "./journey-capture-review";
+import { RecordedTakePlayer, TakeReviewSidebar } from "./app-map-capture-review";
 
 export type AppMapTakeReviewProps = {
   take: RecordingTake;

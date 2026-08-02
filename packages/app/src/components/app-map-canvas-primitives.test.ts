@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkedTargetsLabel } from "./journey-canvas-primitives";
+import { checkedTargetsLabel } from "./app-map-canvas-primitives";
 
 test("connection evidence names the one target that was actually checked", () => {
   assert.equal(

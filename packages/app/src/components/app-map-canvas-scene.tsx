@@ -12,7 +12,7 @@ import type { CanvasConnection } from "../lib/journey-prototype";
 import type { JourneyRunPresentationState } from "../lib/journey-run-projection";
 import type { PresenceGeometry } from "./collaboration-presence";
 import { CollaborationPresence } from "./collaboration-presence";
-import { CanvasNote, KeyboardConnectionChooser, ScreenCard } from "./journey-canvas-primitives";
+import { CanvasNote, KeyboardConnectionChooser, ScreenCard } from "./app-map-canvas-primitives";
 
 type ConnectionPreview = Readonly<{
   fromScreenId: string;
