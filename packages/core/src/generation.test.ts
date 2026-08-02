@@ -14,6 +14,10 @@ test("deterministic generation is reproducible", async () => {
   const second = await generateValues(input);
   assert.deepEqual(first.values, second.values);
   assert.equal(first.values.length, 3);
+  assert.equal(first.provenance?.purpose, "variable");
+  assert.equal(first.provenance?.seed, 42);
+  assert.match(first.provenance?.promptDigest ?? "", /^[a-f0-9]{64}$/);
+  assert.ok((first.provenance?.durationMs ?? -1) >= 0);
 });
 
 test("OpenRouter generation uses structured chat output", async () => {
@@ -22,7 +26,10 @@ test("OpenRouter generation uses structured chat output", async () => {
   globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
     requestBody = JSON.parse(String(init?.body));
     return new Response(
-      JSON.stringify({ choices: [{ message: { content: '{"values":["control-settings"]}' } }] }),
+      JSON.stringify({
+        choices: [{ message: { content: '{"values":["control-settings"]}' } }],
+        usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16, cost: 0.002 },
+      }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }) as typeof fetch;
@@ -37,6 +44,12 @@ test("OpenRouter generation uses structured chat output", async () => {
     assert.deepEqual(result.values, ["control-settings"]);
     assert.equal(result.provider, "openrouter");
     assert.equal(result.model, "test/model");
+    assert.deepEqual(result.usage, {
+      inputTokens: 12,
+      outputTokens: 4,
+      totalTokens: 16,
+      costUsd: 0.002,
+    });
     assert.match(JSON.stringify(requestBody), /Choose a control/);
   } finally {
     globalThis.fetch = originalFetch;

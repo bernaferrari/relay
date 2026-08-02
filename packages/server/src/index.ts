@@ -774,6 +774,7 @@ async function handleRequest(
         name?: string;
         targetId?: string;
         scope?: import("@relay/protocol").DiscoveryScope;
+        agent?: Omit<import("@relay/protocol").DiscoveryAgentContext, "createdBy">;
       };
       if (!body.name || !body.targetId) throw new HttpError(400, "name and targetId are required");
       const profiles = buildTargetProfiles({
@@ -785,6 +786,7 @@ async function handleRequest(
         targetId: body.targetId,
         targetProfile: profiles.find((profile) => profile.targetId === body.targetId),
         scope: body.scope,
+        agent: body.agent,
       });
       json(res, 201, { session });
       return;
@@ -859,11 +861,14 @@ async function handleRequest(
       if (session.status !== "running") {
         throw new HttpError(409, "Start or resume this Discovery Map before interacting");
       }
-      const body = (await parseJsonBody(req)) as InteractInput & { serial?: string };
+      const body = (await parseJsonBody(req)) as InteractInput & {
+        serial?: string;
+        decision?: import("@relay/protocol").DiscoveryDecisionProvenance;
+      };
       if (!body || typeof body !== "object" || !("kind" in body)) {
         throw new HttpError(400, "body.kind required for Discovery Map interaction");
       }
-      const { serial: _serial, ...raw } = body;
+      const { serial: _serial, decision, ...raw } = body;
       const input = raw as InteractInput;
       const observed = discoveryInteraction(input);
       if (!session.scope.allowSensitiveControls && isSensitiveDiscoveryAction(observed)) {
@@ -891,6 +896,7 @@ async function handleRequest(
         fromScreenId: before.screen.id,
         ...(before.screen.id !== after.screen.id ? { toScreenId: after.screen.id } : {}),
         ...observed,
+        ...(decision ? { decision } : {}),
         changedScreen: before.screen.id !== after.screen.id,
       });
       json(res, 201, { transition, before: before.screen, after: after.screen });

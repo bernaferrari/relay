@@ -611,13 +611,7 @@ test("submits and approves a proposal with attributable revisioned events", () =
   );
 });
 
-test("proposal approval rejects stale or invalid changes without mutating the source map", () => {
-  const stale = mapFixture();
-  stale.proposals["proposal-1"] = pendingProposal(stale.revision - 2);
-  expectError("revision-conflict", () =>
-    approveAppMapProposal(stale, "proposal-1", context(stale, "approve-stale")),
-  );
-
+test("proposal approval rejects invalid changes without mutating the source map", () => {
   const invalid = mapFixture();
   invalid.proposals["proposal-1"] = {
     ...pendingProposal(invalid.revision - 1),
@@ -628,6 +622,55 @@ test("proposal approval rejects stale or invalid changes without mutating the so
     approveAppMapProposal(invalid, "proposal-1", context(invalid, "approve-invalid")),
   );
   assert.deepEqual(invalid, before);
+});
+
+test("rebases and approves independent agent proposals across unrelated edits", () => {
+  const input = mapFixture();
+  const changedHome = updateAppMapScreen(
+    input,
+    "home",
+    { patch: { title: "Home feed" } },
+    context(input, "rename-home"),
+  );
+  const submitted = submitAppMapProposal(
+    changedHome,
+    pendingProposal(input.revision),
+    context(changedHome, "submit-rebased", changedHome.updatedAt + 1),
+  );
+
+  assert.equal(submitted.proposals["proposal-1"]?.sourceRevision, input.revision);
+  assert.equal(submitted.proposals["proposal-1"]?.baseRevision, changedHome.revision);
+
+  const changedAgain = updateAppMapScreen(
+    submitted,
+    "home",
+    { patch: { description: "Personalized feed" } },
+    context(submitted, "describe-home", submitted.updatedAt + 1),
+  );
+  const approved = approveAppMapProposal(
+    changedAgain,
+    "proposal-1",
+    context(changedAgain, "approve-rebased", changedAgain.updatedAt + 1),
+  );
+  assert.equal(approved.screens.settings?.title, "settings");
+  assert.equal(approved.proposals["proposal-1"]?.status, "approved");
+});
+
+test("rejects a stale proposal when another actor changed the same entity", () => {
+  const input = mapFixture();
+  const changed = updateAppMapScreen(
+    input,
+    "home",
+    { patch: { title: "Home feed" } },
+    context(input, "rename-home"),
+  );
+  const proposal: Proposal = {
+    ...pendingProposal(input.revision),
+    changes: [{ kind: "screen.update", screenId: "home", input: { patch: { title: "Start" } } }],
+  };
+  expectError("revision-conflict", () =>
+    submitAppMapProposal(changed, proposal, context(changed, "submit-conflict")),
+  );
 });
 
 test("rejects a proposal without applying its changes", () => {

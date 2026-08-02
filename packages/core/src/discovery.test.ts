@@ -29,6 +29,14 @@ test("discovery keeps a bounded, evidence-backed screen graph", async () => {
       id: "map",
       name: "Sign-in map",
       targetId: "browser-chat",
+      agent: {
+        workerId: "worker-1",
+        appMapId: "store",
+        goal: "Map sign in",
+        provider: "openrouter",
+        model: "test/model",
+        source: "mcp",
+      },
       scope: { maxScreens: 2, maxTransitions: 2, maxDurationMs: 60_000 },
     });
     await setDiscoveryStatus(session.id, "running");
@@ -60,6 +68,15 @@ test("discovery keeps a bounded, evidence-backed screen graph", async () => {
       kind: "tap",
       label: "Continue",
       target: { label: "Continue" },
+      decision: {
+        mode: "model",
+        provider: "openrouter",
+        model: "test/model",
+        selectedControlId: "continue",
+        requestId: "request-1",
+        promptDigest: "a".repeat(64),
+        durationMs: 42,
+      },
       changedScreen: true,
     });
     const promoted = await promoteDiscoveryPath({
@@ -75,6 +92,11 @@ test("discovery keeps a bounded, evidence-backed screen graph", async () => {
       (await readDiscoverySession(session.id))?.transitions[0]?.label,
       "Continue",
       "review labels must not mutate raw discovery evidence",
+    );
+    assert.equal((await readDiscoverySession(session.id))?.agent?.model, "test/model");
+    assert.equal(
+      (await readDiscoverySession(session.id))?.transitions[0]?.decision?.requestId,
+      "request-1",
     );
     await assert.rejects(
       promoteDiscoveryPath({
@@ -130,6 +152,55 @@ test("discovery blocks sensitive actions before an interaction is recorded", asy
         changedScreen: false,
       }),
       /blocks sensitive controls/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("discovery rejects malformed agent and model provenance at the shared core boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-discovery-provenance-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    await assert.rejects(
+      createDiscoverySession({
+        id: "bad-agent",
+        name: "Bad agent",
+        targetId: "phone",
+        agent: {
+          workerId: "worker",
+          appMapId: "map",
+          goal: "Explore",
+          provider: "openrouter",
+          source: "socket" as "mcp",
+        },
+      }),
+      /source is invalid/,
+    );
+    const session = await createDiscoverySession({
+      id: "bad-decision",
+      name: "Bad decision",
+      targetId: "phone",
+    });
+    const screen = await recordObservedScreen({ sessionId: session.id, nodes: [] });
+    await assert.rejects(
+      recordObservedTransition({
+        sessionId: session.id,
+        fromScreenId: screen.screen.id,
+        kind: "tap",
+        changedScreen: false,
+        decision: {
+          mode: "model",
+          provider: "openrouter",
+          model: "test/model",
+          selectedControlId: "continue",
+          promptDigest: "not-a-digest",
+        },
+      }),
+      /prompt digest is invalid/,
     );
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

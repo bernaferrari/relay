@@ -255,6 +255,8 @@ export type Proposal = AppMapEntity & {
   title: string;
   description?: string;
   status: "pending" | "approved" | "rejected";
+  /** Revision originally observed by the proposer when a safe rebase occurred. */
+  sourceRevision?: number;
   baseRevision: number;
   changes: ProposalChange[];
   decision?: ProposalDecision;

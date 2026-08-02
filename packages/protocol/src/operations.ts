@@ -136,6 +136,22 @@ type GenerationResultDto = {
   model: string;
   values: string[];
   generatedAt: number;
+  usage?: {
+    inputTokens?: number | undefined;
+    outputTokens?: number | undefined;
+    totalTokens?: number | undefined;
+    costUsd?: number | undefined;
+  };
+  provenance?: {
+    requestId: string;
+    purpose: "variable" | "test-plan";
+    promptDigest: string;
+    startedAt: number;
+    completedAt: number;
+    durationMs: number;
+    seed?: number;
+    usage?: GenerationResultDto["usage"];
+  };
 };
 
 type ProjectDto = {
@@ -1326,6 +1342,20 @@ const generationOutputParser = objectParser<GenerationResultDto>("generation res
     fail("generation values", "must be an array of strings");
   }
   number(input.generatedAt, "generation generatedAt");
+  if (input.usage !== undefined) {
+    const usage = record(input.usage, "generation usage");
+    for (const field of ["inputTokens", "outputTokens", "totalTokens", "costUsd"] as const) {
+      if (usage[field] !== undefined) number(usage[field], `generation usage ${field}`);
+    }
+  }
+  if (input.provenance !== undefined) {
+    const provenance = record(input.provenance, "generation provenance");
+    string(provenance.requestId, "generation provenance requestId");
+    string(provenance.promptDigest, "generation provenance promptDigest");
+    number(provenance.startedAt, "generation provenance startedAt");
+    number(provenance.completedAt, "generation provenance completedAt");
+    number(provenance.durationMs, "generation provenance durationMs");
+  }
 });
 
 const revisionWriteInputParser = objectParser<OperationRecord>("revisioned write", (input) => {

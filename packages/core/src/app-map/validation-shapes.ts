@@ -421,6 +421,12 @@ export function assertProposal(proposal: Proposal, scope: AppMapScope, label: st
   )
     appMapFail("invalid-map", `${label}.status is unsupported`);
   safeInteger(proposal.baseRevision, `${label}.baseRevision`);
+  if (proposal.sourceRevision !== undefined) {
+    safeInteger(proposal.sourceRevision, `${label}.sourceRevision`);
+    if (proposal.sourceRevision >= proposal.baseRevision) {
+      appMapFail("invalid-map", `${label}.sourceRevision must precede baseRevision`);
+    }
+  }
   if (!Array.isArray(proposal.changes) || proposal.changes.length === 0)
     appMapFail("invalid-map", `${label}.changes must contain at least one change`);
   proposal.changes.forEach((change, index) =>

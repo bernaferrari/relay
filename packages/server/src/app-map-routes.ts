@@ -100,6 +100,46 @@ async function applyMutation(
   }
 }
 
+/** Proposal work is optimistic and can safely move across unrelated revisions.
+ * The domain layer performs the entity-level conflict check; this wrapper only
+ * ensures the final write itself is atomic against the latest stored map. */
+async function applyRebasableMutation(
+  scope: RequestContext,
+  appMapId: string,
+  eventId: string | undefined,
+  transform: (map: AppMap, context: AppMapMutationContext) => AppMap,
+): Promise<AppMap> {
+  const operation = currentOperationContext();
+  if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
+  const stableEventId = eventId?.trim() || operation.requestId;
+  const current = await readAppMap(scope.projectId, appMapId);
+  if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);
+  if (current.activity[stableEventId]) return current;
+  try {
+    return await mutateStoredAppMap(scope.projectId, appMapId, (map) =>
+      transform(map, {
+        expectedRevision: map.revision,
+        eventId: stableEventId,
+        actorId: operation.actorId,
+        actorKind: operation.actorKind,
+        at: Math.max(now(), map.updatedAt),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof AppMapDomainError) {
+      throw new HttpError(domainStatus(error), error.message, {
+        code: error.code,
+        recovery:
+          error.code === "revision-conflict"
+            ? "Review the conflicting screen or connection, then update the proposal."
+            : "Inspect the referenced App Map entities and retry.",
+        current: await readAppMap(scope.projectId, appMapId),
+      });
+    }
+    throw error;
+  }
+}
+
 export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
 
@@ -472,10 +512,9 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<"app-map.proposal.submit">,
       "appMapId"
     >;
-    const appMap = await applyMutation(
+    const appMap = await applyRebasableMutation(
       scope,
       proposalSubmit.appMapId!,
-      body.expectedRevision,
       body.eventId,
       (map, context) => submitAppMapProposal(map, body.proposal, context),
     );
@@ -494,24 +533,28 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     const operation = currentOperationContext();
     if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
     const proposalId = body.proposalId?.trim() || `proposal:${operation.requestId}`;
-    const appMap = await applyMutation(
+    const appMap = await applyRebasableMutation(
       scope,
       observationProposal.appMapId!,
-      body.expectedRevision,
       body.eventId,
-      (map, context) =>
-        submitAppMapProposal(
+      (map, context) => {
+        const proposal = proposalFromDiscovery({
           map,
-          proposalFromDiscovery({
-            map,
-            session,
-            proposalId,
-            ...(body.title ? { title: body.title } : {}),
-            ...(body.transitionIds ? { transitionIds: body.transitionIds } : {}),
-            at: context.at,
-          }),
+          session,
+          proposalId,
+          ...(body.title ? { title: body.title } : {}),
+          ...(body.transitionIds ? { transitionIds: body.transitionIds } : {}),
+          at: context.at,
+        });
+        return submitAppMapProposal(
+          map,
+          {
+            ...proposal,
+            baseRevision: Math.min(body.expectedRevision, map.revision),
+          },
           context,
-        ),
+        );
+      },
     );
     json(response, 200, { appMap, proposalId });
     return true;
@@ -527,10 +570,9 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       OperationInput<`app-map.proposal.${typeof decision}`>,
       "appMapId" | "proposalId"
     >;
-    const appMap = await applyMutation(
+    const appMap = await applyRebasableMutation(
       scope,
       proposalDecision.appMapId!,
-      body.expectedRevision,
       body.eventId,
       (map, context) =>
         decision === "approve"

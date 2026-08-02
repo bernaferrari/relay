@@ -1,4 +1,5 @@
-import type { GenerationRequest, GenerationResult } from "@relay/protocol";
+import { createHash, randomUUID } from "node:crypto";
+import type { GenerationRequest, GenerationResult, GenerationUsage } from "@relay/protocol";
 
 export type GenerationProvider = {
   id: string;
@@ -102,7 +103,14 @@ export function createOpenRouterGenerationProvider(
         );
       }
       const body = (await response.json()) as {
+        id?: string;
         choices?: Array<{ message?: { content?: string | null } }>;
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+          cost?: number;
+        };
       };
       const text = body.choices?.[0]?.message?.content ?? "";
       return {
@@ -110,6 +118,12 @@ export function createOpenRouterGenerationProvider(
         model,
         values: parseValues(text, input.count ?? 1),
         generatedAt: Date.now(),
+        usage: {
+          inputTokens: body.usage?.prompt_tokens,
+          outputTokens: body.usage?.completion_tokens,
+          totalTokens: body.usage?.total_tokens,
+          costUsd: body.usage?.cost,
+        },
       };
     },
   };
@@ -142,6 +156,7 @@ function registerBuiltins(): void {
         const body = (await response.json()) as {
           output_text?: string;
           output?: { content?: { text?: string }[] }[];
+          usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
         };
         const text =
           body.output_text ??
@@ -155,6 +170,11 @@ function registerBuiltins(): void {
           model,
           values: parseValues(text, input.count ?? 1),
           generatedAt: Date.now(),
+          usage: {
+            inputTokens: body.usage?.input_tokens,
+            outputTokens: body.usage?.output_tokens,
+            totalTokens: body.usage?.total_tokens,
+          },
         };
       },
     });
@@ -180,7 +200,10 @@ function registerBuiltins(): void {
           }),
         });
         if (!response.ok) throw new Error(`Anthropic generation failed (${response.status})`);
-        const body = (await response.json()) as { content?: { text?: string }[] };
+        const body = (await response.json()) as {
+          content?: { text?: string }[];
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
         return {
           provider: "anthropic",
           model,
@@ -189,6 +212,14 @@ function registerBuiltins(): void {
             input.count ?? 1,
           ),
           generatedAt: Date.now(),
+          usage: {
+            inputTokens: body.usage?.input_tokens,
+            outputTokens: body.usage?.output_tokens,
+            totalTokens:
+              body.usage?.input_tokens !== undefined && body.usage.output_tokens !== undefined
+                ? body.usage.input_tokens + body.usage.output_tokens
+                : undefined,
+          },
         };
       },
     });
@@ -211,6 +242,11 @@ function registerBuiltins(): void {
         if (!response.ok) throw new Error(`Google generation failed (${response.status})`);
         const body = (await response.json()) as {
           candidates?: { content?: { parts?: { text?: string }[] } }[];
+          usageMetadata?: {
+            promptTokenCount?: number;
+            candidatesTokenCount?: number;
+            totalTokenCount?: number;
+          };
         };
         const text =
           body.candidates
@@ -222,6 +258,11 @@ function registerBuiltins(): void {
           model,
           values: parseValues(text, input.count ?? 1),
           generatedAt: Date.now(),
+          usage: {
+            inputTokens: body.usageMetadata?.promptTokenCount,
+            outputTokens: body.usageMetadata?.candidatesTokenCount,
+            totalTokens: body.usageMetadata?.totalTokenCount,
+          },
         };
       },
     });
@@ -258,5 +299,28 @@ export async function generateValues(input: GenerationRequest): Promise<Generati
     "deterministic";
   const provider = providers.get(providerId);
   if (!provider) throw new Error(`Generation provider is not configured: ${providerId}`);
-  return provider.generate(input);
+  const startedAt = Date.now();
+  const result = await provider.generate(input);
+  const completedAt = Date.now();
+  const usage = compactUsage(result.usage);
+  return {
+    ...result,
+    ...(usage ? { usage } : {}),
+    provenance: {
+      requestId: randomUUID(),
+      purpose: input.purpose,
+      promptDigest: createHash("sha256").update(input.prompt).digest("hex"),
+      startedAt,
+      completedAt,
+      durationMs: Math.max(0, completedAt - startedAt),
+      ...(input.seed !== undefined ? { seed: input.seed } : {}),
+      ...(usage ? { usage } : {}),
+    },
+  };
+}
+
+function compactUsage(usage: GenerationUsage | undefined): GenerationUsage | undefined {
+  if (!usage) return undefined;
+  const entries = Object.entries(usage).filter(([, value]) => value !== undefined);
+  return entries.length ? (Object.fromEntries(entries) as GenerationUsage) : undefined;
 }

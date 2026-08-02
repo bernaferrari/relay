@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { publish } from "./events.js";
 import { currentOperationContext } from "./operation-context.js";
 import type {
+  DiscoveryAgentContext,
+  DiscoveryDecisionProvenance,
   DiscoveryScope,
   DiscoveryControl,
   DiscoverySession,
@@ -23,6 +25,66 @@ const DEFAULT_SCOPE: DiscoveryScope = {
   maxDurationMs: 15 * 60_000,
   allowSensitiveControls: false,
 };
+
+function requiredText(value: unknown, label: string, maxLength: number): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
+  const normalized = value.trim();
+  if (normalized.length > maxLength) throw new Error(`${label} is too long`);
+  return normalized;
+}
+
+function optionalText(value: unknown, label: string, maxLength: number): string | undefined {
+  if (value === undefined) return undefined;
+  return requiredText(value, label, maxLength);
+}
+
+function normalizeAgentContext(
+  input: Omit<DiscoveryAgentContext, "createdBy">,
+): Omit<DiscoveryAgentContext, "createdBy"> {
+  if (!["ui", "cli", "mcp", "api"].includes(input.source)) {
+    throw new Error("discovery agent source is invalid");
+  }
+  const model = optionalText(input.model, "discovery agent model", 240);
+  const buildId = optionalText(input.buildId, "discovery build id", 240);
+  const caseStackId = optionalText(input.caseStackId, "discovery case stack id", 240);
+  return {
+    workerId: requiredText(input.workerId, "discovery worker id", 160),
+    appMapId: requiredText(input.appMapId, "discovery App Map id", 160),
+    goal: requiredText(input.goal, "discovery goal", 4_000),
+    provider: requiredText(input.provider, "discovery agent provider", 160),
+    ...(model ? { model } : {}),
+    ...(buildId ? { buildId } : {}),
+    ...(caseStackId ? { caseStackId } : {}),
+    source: input.source,
+  };
+}
+
+function normalizeDecision(input: DiscoveryDecisionProvenance): DiscoveryDecisionProvenance {
+  if (input.mode !== "model" && input.mode !== "semantic") {
+    throw new Error("discovery decision mode is invalid");
+  }
+  if (
+    input.durationMs !== undefined &&
+    (!Number.isFinite(input.durationMs) ||
+      input.durationMs < 0 ||
+      input.durationMs > 8 * 60 * 60_000)
+  ) {
+    throw new Error("discovery decision duration is invalid");
+  }
+  if (input.promptDigest !== undefined && !/^[a-f\d]{64}$/i.test(input.promptDigest)) {
+    throw new Error("discovery decision prompt digest is invalid");
+  }
+  const requestId = optionalText(input.requestId, "discovery request id", 240);
+  return {
+    mode: input.mode,
+    provider: requiredText(input.provider, "discovery decision provider", 160),
+    model: requiredText(input.model, "discovery decision model", 240),
+    selectedControlId: requiredText(input.selectedControlId, "discovery selected control id", 240),
+    ...(requestId ? { requestId } : {}),
+    ...(input.promptDigest ? { promptDigest: input.promptDigest.toLowerCase() } : {}),
+    ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+  };
+}
 
 function emitDiscovery(session: DiscoverySession, created = false): void {
   publish({
@@ -143,15 +205,33 @@ export async function createDiscoverySession(input: {
   targetId: string;
   targetProfile?: TargetProfile;
   scope?: Partial<DiscoveryScope>;
+  agent?: Omit<DiscoveryAgentContext, "createdBy">;
 }): Promise<DiscoverySession> {
-  if (!input.name.trim()) throw new Error("discovery session name is required");
-  if (!input.targetId.trim()) throw new Error("discovery target is required");
+  const name = requiredText(input.name, "discovery session name", 160);
+  const targetId = requiredText(input.targetId, "discovery target", 240);
+  const agent = input.agent ? normalizeAgentContext(input.agent) : undefined;
+  const operation = currentOperationContext();
   const at = Date.now();
   const session: DiscoverySession = {
     id: input.id ?? `discovery-${randomUUID()}`,
-    name: input.name.trim(),
-    targetId: input.targetId.trim(),
+    name,
+    targetId,
     ...(input.targetProfile ? { targetProfile: { ...input.targetProfile } } : {}),
+    ...(agent
+      ? {
+          agent: {
+            ...agent,
+            ...(operation
+              ? {
+                  createdBy: {
+                    actorId: operation.actorId,
+                    actorKind: operation.actorKind,
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
     scope: normalizeScope(input.scope),
     status: "draft",
     createdAt: at,
@@ -332,6 +412,7 @@ export async function recordObservedTransition(
     ...(input.target ? { target: input.target } : {}),
     ...(input.text !== undefined ? { text: input.text } : {}),
     ...(input.direction ? { direction: input.direction } : {}),
+    ...(input.decision ? { decision: normalizeDecision(input.decision) } : {}),
     capturedAt: Date.now(),
     changedScreen: input.changedScreen,
   };

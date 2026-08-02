@@ -1,6 +1,8 @@
 import type {
+  DiscoveryAgentContext,
   DiscoveryControl,
   DiscoveryCoverageReport,
+  DiscoveryDecisionProvenance,
   DiscoveryScope,
   DiscoverySession,
 } from "@relay/protocol";
@@ -15,7 +17,12 @@ export function listDiscoverySessions(
 
 export async function createDiscoverySession(
   request: ServerRequest,
-  input: { name: string; targetId: string; scope?: Partial<DiscoveryScope> },
+  input: {
+    name: string;
+    targetId: string;
+    scope?: Partial<DiscoveryScope>;
+    agent?: Omit<DiscoveryAgentContext, "createdBy">;
+  },
 ): Promise<DiscoverySession> {
   const data = await request<{ session: DiscoverySession }>("/discovery", {
     method: "POST",
@@ -102,7 +109,11 @@ export async function getDiscoveryCoverage(
 
 export async function approveDiscoverySuggestion(
   request: ServerRequest,
-  input: { sessionId: string; control: DiscoveryControl },
+  input: {
+    sessionId: string;
+    control: DiscoveryControl;
+    decision?: DiscoveryDecisionProvenance;
+  },
 ): Promise<void> {
   const target = input.control.target;
   const action = target.ref
@@ -117,7 +128,7 @@ export async function approveDiscoverySuggestion(
   if (!action) throw new Error("suggestion has no executable target");
   await request(`/discovery/${encodeURIComponent(input.sessionId)}/interact`, {
     method: "POST",
-    body: JSON.stringify(action),
+    body: JSON.stringify({ ...action, ...(input.decision ? { decision: input.decision } : {}) }),
   });
 }
 

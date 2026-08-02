@@ -9,6 +9,7 @@ import type {
 } from "./model.js";
 import { appMapFail } from "./errors.js";
 import { mutateAppMap } from "./mutation.js";
+import { proposalConflictsSince } from "./proposal-conflicts.js";
 
 export function updateAppMap(
   map: AppMap,
@@ -224,11 +225,18 @@ export function submitAppMapProposal(
 ): AppMap {
   assertEntityScope(map, proposal);
   if (proposal.status !== "pending") appMapFail("proposal-state", "New proposals must be pending");
-  if (proposal.baseRevision !== map.revision) {
-    appMapFail(
-      "revision-conflict",
-      `Proposal base revision ${proposal.baseRevision} does not match ${map.revision}`,
-    );
+  if (proposal.baseRevision > map.revision) {
+    appMapFail("revision-conflict", `Proposal references future revision ${proposal.baseRevision}`);
+  }
+  const originalBaseRevision = proposal.baseRevision;
+  if (originalBaseRevision < map.revision) {
+    const conflicts = proposalConflictsSince(map, proposal, originalBaseRevision);
+    if (conflicts.conflict) {
+      appMapFail(
+        "revision-conflict",
+        `Proposal conflicts with newer changes to ${conflicts.subjects.join(", ")}`,
+      );
+    }
   }
   if (map.proposals[proposal.id])
     appMapFail("duplicate-id", `Proposal ${proposal.id} already exists`);
@@ -241,7 +249,11 @@ export function submitAppMapProposal(
       summary: `Proposed ${proposal.title}`,
     },
     (draft) => {
-      draft.proposals[proposal.id] = structuredClone(proposal);
+      draft.proposals[proposal.id] = {
+        ...structuredClone(proposal),
+        baseRevision: draft.revision,
+        ...(originalBaseRevision < draft.revision ? { sourceRevision: originalBaseRevision } : {}),
+      };
     },
   );
 }

@@ -541,6 +541,28 @@ export type DiscoveryScope = {
 
 export type DiscoveryStatus = "draft" | "running" | "paused" | "complete" | "stopped";
 
+export type DiscoveryAgentContext = {
+  workerId: string;
+  appMapId: string;
+  goal: string;
+  provider: string;
+  model?: string;
+  buildId?: string;
+  caseStackId?: string;
+  source: "ui" | "cli" | "mcp" | "api";
+  createdBy?: { actorId: string; actorKind: "human" | "agent" | "system" };
+};
+
+export type DiscoveryDecisionProvenance = {
+  mode: "model" | "semantic";
+  provider: string;
+  model: string;
+  selectedControlId: string;
+  requestId?: string;
+  promptDigest?: string;
+  durationMs?: number;
+};
+
 /** Stable, explainable identity for one semantic application screen. Pixels
  * are observations of this identity, not the identity itself: clocks,
  * counters, animation, and device dimensions may change between captures. */
@@ -616,6 +638,7 @@ export type ObservedTransition = {
   direction?: "up" | "down";
   capturedAt: number;
   changedScreen: boolean;
+  decision?: DiscoveryDecisionProvenance;
 };
 
 export type DiscoverySession = {
@@ -623,6 +646,7 @@ export type DiscoverySession = {
   name: string;
   targetId: string;
   targetProfile?: TargetProfile;
+  agent?: DiscoveryAgentContext;
   scope: DiscoveryScope;
   status: DiscoveryStatus;
   createdAt: number;
@@ -928,11 +952,29 @@ export type GenerationRequest = {
   count?: number;
   seed?: number;
 };
+export type GenerationUsage = {
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  totalTokens?: number | undefined;
+  costUsd?: number | undefined;
+};
+export type GenerationProvenance = {
+  requestId: string;
+  purpose: GenerationPurpose;
+  promptDigest: string;
+  startedAt: number;
+  completedAt: number;
+  durationMs: number;
+  seed?: number;
+  usage?: GenerationUsage | undefined;
+};
 export type GenerationResult = {
   provider: string;
   model: string;
   values: string[];
   generatedAt: number;
+  usage?: GenerationUsage | undefined;
+  provenance?: GenerationProvenance | undefined;
 };
 
 export type RunCaseProvenance = {

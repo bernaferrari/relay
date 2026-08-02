@@ -2,6 +2,7 @@ import { dropConnection, patchConnection, putConnection } from "./connection-ope
 import { appMapFail } from "./errors.js";
 import type { AppMap, AppMapMutationContext, ProposalChange } from "./model.js";
 import { mutateAppMap } from "./mutation.js";
+import { proposalConflictsSince } from "./proposal-conflicts.js";
 import { dropScreen, patchScreen, putScreen } from "./screen-operations.js";
 
 function applyProposalChange(
@@ -54,10 +55,11 @@ export function approveAppMapProposal(
       if (proposal.status !== "pending") {
         appMapFail("proposal-state", `Proposal ${proposalId} is already ${proposal.status}`);
       }
-      if (proposal.baseRevision + 1 !== draft.revision) {
+      const conflicts = proposalConflictsSince(draft, proposal, proposal.baseRevision + 1);
+      if (conflicts.conflict) {
         appMapFail(
           "revision-conflict",
-          `Proposal ${proposalId} targets revision ${proposal.baseRevision}, but the current revision is ${draft.revision}`,
+          `Proposal ${proposalId} conflicts with newer changes to ${conflicts.subjects.join(", ")}`,
         );
       }
       for (const change of proposal.changes) {

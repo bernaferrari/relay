@@ -256,10 +256,20 @@ test("an agent turns observations into a proposal that a human must approve", as
     assert.equal(Object.keys(proposed.appMap.screens).length, 0);
     assert.equal(proposed.appMap.proposals[proposed.proposalId]?.status, "pending");
 
+    const parallel = await agent.invoke("app-map.observations.propose", {
+      appMapId: "observed",
+      sessionId: session.id,
+      expectedRevision: 0,
+      proposalId: "proposal-agent-parallel",
+      transitionIds: [transition.id],
+    });
+    assert.equal(Object.keys(parallel.appMap.proposals).length, 2);
+    assert.equal(parallel.appMap.proposals[parallel.proposalId]?.sourceRevision, 0);
+
     const approved = await human.invoke("app-map.proposal.approve", {
       appMapId: "observed",
       proposalId: proposed.proposalId,
-      expectedRevision: proposed.appMap.revision,
+      expectedRevision: parallel.appMap.revision,
     });
     assert.equal(Object.keys(approved.appMap.screens).length, 2);
     assert.equal(Object.keys(approved.appMap.connections).length, 1);

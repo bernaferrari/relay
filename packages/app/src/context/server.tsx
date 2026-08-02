@@ -4,8 +4,10 @@ import { ApiError, RelayClient } from "@relay/client";
 import type {
   GenerationRequest,
   GenerationResult,
+  DiscoveryAgentContext,
   DiscoverySession,
   DiscoveryCoverageReport,
+  DiscoveryDecisionProvenance,
   DiscoveryScope,
   DiscoveryControl,
   JourneyMetadata,
@@ -589,6 +591,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       name: string;
       targetId: string;
       scope?: Partial<DiscoveryScope>;
+      agent?: Omit<DiscoveryAgentContext, "createdBy">;
     }): Promise<DiscoverySession> {
       const session = await createDiscoverySession(request, input);
       await refreshDiscoverySessions();
@@ -653,6 +656,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function approveDiscoverySuggestion(input: {
       sessionId: string;
       control: DiscoveryControl;
+      decision?: DiscoveryDecisionProvenance;
     }): Promise<void> {
       await approveDiscoverySuggestionRemote(request, input);
       await refreshDiscoverySessions();
