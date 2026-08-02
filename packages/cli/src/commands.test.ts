@@ -142,6 +142,7 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
   const cases = [
     [["map", "list"], "app-map.list", {}],
     [["map", "get", "checkout"], "app-map.get", { appMapId: "checkout" }],
+    [["map", "update", "checkout"], "app-map.update", { appMapId: "checkout" }],
     [
       ["connect", "update", "checkout", "continue"],
       "app-map.connection.update",

@@ -203,6 +203,19 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       conflict: z.enum(["reject", "replace", "copy"]).optional(),
     })
     .strict(),
+  "app-map.update": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      patch: z
+        .object({
+          name: text("App Map name").optional(),
+          description: z.union([z.string(), z.null()]).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
   "app-map.screen.add": z
     .object({
       appMapId: identifier("App Map identifier"),
@@ -279,6 +292,33 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       targetKind: z.enum(["device", "browser"]).optional(),
       browserTargetId: identifier("Managed browser target identifier").optional(),
       variables: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
+    })
+    .strict(),
+  "app-map.case-stack.save": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      caseStackId: identifier("Case Stack identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      caseStack: unknownRecord.describe("Normalized reusable Case Stack"),
+    })
+    .strict(),
+  "app-map.case-stack.attach": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      connectionId: identifier("Connection identifier"),
+      caseStackId: identifier("Case Stack identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+      caseStack: unknownRecord.describe("Optional Case Stack to create atomically").optional(),
+    })
+    .strict(),
+  "app-map.case-stack.remove": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      caseStackId: identifier("Case Stack identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
     })
     .strict(),
   "app-map.routine.save": z

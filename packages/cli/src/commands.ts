@@ -327,7 +327,31 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       ],
     }),
   ),
-  mapped("app-map.update", path("map rename", ["appMapId"])),
+  mapped(
+    "app-map.update",
+    path("map update", ["appMapId"], undefined, {
+      summary: "Update App Map metadata",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current revision",
+        },
+        {
+          name: "patch",
+          type: "object",
+          required: true,
+          description: "Name and/or description update",
+        },
+      ],
+      examples: [
+        'relay map update checkout --input \'{"expectedRevision":3,"patch":{"description":"Checkout coverage"}}\'',
+      ],
+    }),
+    path("map rename", ["appMapId"]),
+  ),
   mapped("app-map.screen.add", path("screen add", ["appMapId"])),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
   mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),

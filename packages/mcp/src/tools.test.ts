@@ -119,6 +119,42 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
   });
 });
 
+test("gives agents exact schemas for App Map metadata and Case Stacks", () => {
+  assert.deepEqual(
+    tool("app-map.update").inputSchema.parse({
+      appMapId: "checkout",
+      expectedRevision: 3,
+      patch: { description: "Checkout coverage" },
+    }),
+    {
+      appMapId: "checkout",
+      expectedRevision: 3,
+      patch: { description: "Checkout coverage" },
+    },
+  );
+  assert.deepEqual(
+    tool("app-map.case-stack.attach").inputSchema.parse({
+      appMapId: "checkout",
+      connectionId: "choose-model",
+      caseStackId: "thinking-levels",
+      expectedRevision: 4,
+    }),
+    {
+      appMapId: "checkout",
+      connectionId: "choose-model",
+      caseStackId: "thinking-levels",
+      expectedRevision: 4,
+    },
+  );
+  assert.throws(() =>
+    tool("app-map.update").inputSchema.parse({
+      appMapId: "checkout",
+      expectedRevision: 3,
+      patch: { secretLegacyField: true },
+    }),
+  );
+});
+
 test("defines deterministic role profiles with a compact authoring default", () => {
   assert.deepEqual(relayMcpProfiles, ["observe", "author", "execute", "review", "admin", "full"]);
   assert.equal(defaultRelayMcpProfile, "author");

@@ -38,7 +38,7 @@ const descriptions: Record<RecipeStep["kind"], string> = {
   swipe: "Drag between two points",
   key: "Navigate Back or Home",
   expect: "Verify an element is visible or gone",
-  "expect-screen": "Verify the graph reached its expected screen",
+  "expect-screen": "Verify the map reached its expected screen",
   "wait-for": "Continue when an element appears",
   sleep: "Pause for a fixed time",
   pause: "Let a person complete a task",
