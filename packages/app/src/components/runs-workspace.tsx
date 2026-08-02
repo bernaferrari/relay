@@ -522,32 +522,6 @@ export function RunsWorkspace(props: {
                   <div class="flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
-                      class={cn(productSecondary, "mr-1 min-h-8 px-2.5 text-[11px]")}
-                      disabled={Boolean(selectedAppMapId()) && !selectedAppMapAvailable()}
-                      onClick={() => {
-                        if (selectedAppMapId() && !selectedAppMapAvailable()) return;
-                        server.setSelectedJobId(job().id);
-                        props.onOpenRecipe(selectedAppMapId() ?? job().action);
-                      }}
-                    >
-                      <Icon name="edit" size={12} />{" "}
-                      {selectedAppMapId()
-                        ? selectedAppMapAvailable()
-                          ? "Open map"
-                          : "Map unavailable"
-                        : "Open test"}
-                    </button>
-                    <Show when={job().status === "error" || job().status === "cancelled"}>
-                      <button
-                        type="button"
-                        class={cn(productPrimary, "min-h-8 px-2.5 text-[11px]")}
-                        onClick={() => void server.retrySelectedJob(job().id)}
-                      >
-                        <Icon name="refresh" size={12} /> Retry
-                      </button>
-                    </Show>
-                    <button
-                      type="button"
                       class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-150 hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
                       aria-label="Copy report link"
                       data-tip="Copy report link"
@@ -576,6 +550,34 @@ export function RunsWorkspace(props: {
                       <Icon name="x" size={15} />
                     </button>
                   </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    class={cn(productSecondary, "min-h-8 px-2.5 text-[11px]")}
+                    disabled={Boolean(selectedAppMapId()) && !selectedAppMapAvailable()}
+                    onClick={() => {
+                      if (selectedAppMapId() && !selectedAppMapAvailable()) return;
+                      server.setSelectedJobId(job().id);
+                      props.onOpenRecipe(selectedAppMapId() ?? job().action);
+                    }}
+                  >
+                    <Icon name={selectedAppMapAvailable() ? "edit" : "info"} size={12} />{" "}
+                    {selectedAppMapId()
+                      ? selectedAppMapAvailable()
+                        ? "Open map"
+                        : "Map deleted"
+                      : "Open test"}
+                  </button>
+                  <Show when={job().status === "error" || job().status === "cancelled"}>
+                    <button
+                      type="button"
+                      class={cn(productPrimary, "min-h-8 px-2.5 text-[11px]")}
+                      onClick={() => void server.retrySelectedJob(job().id)}
+                    >
+                      <Icon name="refresh" size={12} /> Retry
+                    </button>
+                  </Show>
                 </div>
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-text-weak">
                   <StatusChip
