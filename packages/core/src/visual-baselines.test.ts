@@ -3,23 +3,36 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { PNG } from "pngjs";
 import type { PersistedRun } from "./runs.js";
 import {
   approveVisualBaseline,
   compareVisualBaseline,
   getVisualBaseline,
+  getVisualComparisonPolicy,
   listVisualReviews,
   reviewVisualComparison,
+  updateVisualComparisonPolicy,
   visualTargetKey,
 } from "./visual-baselines.js";
 
-const ONE_PIXEL_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
-
 function png(variant: string): Buffer {
-  return Buffer.concat([ONE_PIXEL_PNG, Buffer.from(variant)]);
+  const shade = [...variant].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 256;
+  const image = new PNG({ width: 4, height: 4 });
+  for (let offset = 0; offset < image.data.length; offset += 4) {
+    image.data[offset] = shade;
+    image.data[offset + 1] = (shade * 3) % 256;
+    image.data[offset + 2] = (shade * 7) % 256;
+    image.data[offset + 3] = 255;
+  }
+  return PNG.sync.write(image);
+}
+
+function pngWithChangedTopLeft(changed: boolean): Buffer {
+  const image = new PNG({ width: 4, height: 4 });
+  for (let offset = 0; offset < image.data.length; offset += 4) image.data[offset + 3] = 255;
+  if (changed) image.data[0] = 255;
+  return PNG.sync.write(image);
 }
 
 async function runFixture(
@@ -100,9 +113,9 @@ test("approved baselines snapshot exact PNG metadata and remain isolated by proj
     });
     assert.equal(baseline.schemaVersion, 2);
     assert.equal(baseline.approved.frameCount, 2);
-    assert.equal(baseline.approved.frames[0]?.bytes, ONE_PIXEL_PNG.byteLength + 10);
-    assert.equal(baseline.approved.frames[0]?.width, 1);
-    assert.equal(baseline.approved.frames[0]?.height, 1);
+    assert.equal(baseline.approved.frames[0]?.bytes, first.frames[0]?.bytes);
+    assert.equal(baseline.approved.frames[0]?.width, 4);
+    assert.equal(baseline.approved.frames[0]?.height, 4);
     assert.match(baseline.approved.frames[0]?.sha256 ?? "", /^[a-f0-9]{64}$/u);
     assert.match(
       baseline.approved.frames[0]?.artifactPath ?? "",
@@ -151,7 +164,7 @@ test("comparison persists approved, latest, and deterministic frame diff metadat
     assert.equal(comparison.code, "VISUAL_CHANGED");
     assert.equal(comparison.approved?.runId, "approved");
     assert.equal(comparison.latest.runId, "latest");
-    assert.equal(comparison.diff.algorithm, "exact-png-sha256-v1");
+    assert.equal(comparison.diff.algorithm, "pixel-rgba-regions-v1");
     assert.equal(comparison.diff.matchedFrames, 1);
     assert.equal(comparison.diff.changedFrames, 2);
     assert.deepEqual(
@@ -165,6 +178,73 @@ test("comparison persists approved, latest, and deterministic frame diff metadat
     );
     const repeated = await compareVisualBaseline(root, latest);
     assert.equal(repeated.id, comparison.id, "comparison identity is idempotent for the evidence");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("visual policies compare selected regions and ignore approved dynamic content", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-regions-"));
+  try {
+    const approved = await runFixture(root, {
+      id: "approved",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(false)],
+    });
+    await approveVisualBaseline(root, approved);
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(true)],
+    });
+    const changed = await compareVisualBaseline(root, latest);
+    assert.equal(changed.code, "VISUAL_CHANGED");
+    assert.equal(changed.diff.frames[0]?.changedPixels, 1);
+    assert.equal(changed.diff.frames[0]?.changeRatio, 1 / 16);
+
+    const initial = await getVisualComparisonPolicy(root, latest);
+    const policy = await updateVisualComparisonPolicy(root, latest, {
+      expectedRevision: initial.revision,
+      changeThreshold: initial.changeThreshold,
+      pixelThreshold: initial.pixelThreshold,
+      regions: [
+        {
+          id: "dynamic-avatar",
+          name: "Dynamic avatar",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0,
+          width: 0.25,
+          height: 0.25,
+        },
+      ],
+      actor: { id: "reviewer-1", kind: "human" },
+    });
+    assert.equal(policy.revision, 1);
+    assert.equal(policy.updatedBy.id, "reviewer-1");
+    const ignored = await compareVisualBaseline(root, latest);
+    assert.equal(ignored.code, "VISUAL_MATCH");
+    assert.equal(ignored.diff.frames[0]?.consideredPixels, 15);
+    assert.equal(ignored.diff.frames[0]?.changedPixels, 0);
+    assert.equal(ignored.diff.policyRevision, 1);
+
+    await assert.rejects(
+      () =>
+        updateVisualComparisonPolicy(root, latest, {
+          expectedRevision: 0,
+          changeThreshold: 0,
+          pixelThreshold: 0,
+          regions: [],
+          actor: { id: "reviewer-2", kind: "human" },
+        }),
+      (error: unknown) => {
+        assert.equal((error as { code?: string }).code, "VISUAL_POLICY_REVISION_CONFLICT");
+        return true;
+      },
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

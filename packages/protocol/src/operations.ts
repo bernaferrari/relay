@@ -53,6 +53,8 @@ import type {
   VisualComparison,
   VisualReviewAction,
   VisualReviewDecision,
+  VisualComparisonPolicy,
+  VisualRegion,
 } from "./visual-verification.js";
 import type {
   DevicePoolPreflight,
@@ -339,6 +341,20 @@ type SpecificOperationMap = {
   "run.visual.review": {
     input: { runId: string; comparisonId: string; action: VisualReviewAction; note?: string };
     output: { decision: VisualReviewDecision; baseline: VisualBaseline | null };
+  };
+  "run.visual-policy.get": {
+    input: { runId: string };
+    output: { policy: VisualComparisonPolicy };
+  };
+  "run.visual-policy.update": {
+    input: {
+      runId: string;
+      expectedRevision: number;
+      changeThreshold: number;
+      pixelThreshold: number;
+      regions: VisualRegion[];
+    };
+    output: { policy: VisualComparisonPolicy; comparison: VisualComparison };
   };
   "run.visual-baseline.update": {
     input: { runId: string; action: "approve-new-baseline"; note?: string };
@@ -1092,6 +1108,50 @@ const visualReviewInputParser = objectParser<OperationInput<"run.visual.review">
   },
 );
 
+function assertVisualRegion(value: unknown, index: number): void {
+  const region = record(value, `visual region ${index + 1}`);
+  string(region.id, `visual region ${index + 1} id`);
+  string(region.name, `visual region ${index + 1} name`);
+  if (region.mode !== "compare" && region.mode !== "ignore") {
+    fail(`visual region ${index + 1} mode`, "must be compare or ignore");
+  }
+  const frameIndex = number(region.frameIndex, `visual region ${index + 1} frameIndex`);
+  if (!Number.isInteger(frameIndex) || frameIndex < 0) {
+    fail(`visual region ${index + 1} frameIndex`, "must be a non-negative integer");
+  }
+  const x = number(region.x, `visual region ${index + 1} x`);
+  const y = number(region.y, `visual region ${index + 1} y`);
+  const width = number(region.width, `visual region ${index + 1} width`);
+  const height = number(region.height, `visual region ${index + 1} height`);
+  if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1 || y + height > 1) {
+    fail(`visual region ${index + 1}`, "must fit inside normalized frame bounds");
+  }
+}
+
+const visualPolicyGetInputParser = objectParser<OperationInput<"run.visual-policy.get">>(
+  "visual policy input",
+  (input) => string(input.runId, "visual policy runId"),
+);
+
+const visualPolicyUpdateInputParser = objectParser<OperationInput<"run.visual-policy.update">>(
+  "visual policy update input",
+  (input) => {
+    string(input.runId, "visual policy runId");
+    const revision = number(input.expectedRevision, "visual policy expectedRevision");
+    if (!Number.isInteger(revision) || revision < 0)
+      fail("visual policy expectedRevision", "must be a non-negative integer");
+    const changeThreshold = number(input.changeThreshold, "visual policy changeThreshold");
+    if (changeThreshold < 0 || changeThreshold > 1)
+      fail("visual policy changeThreshold", "must be between 0 and 1");
+    const pixelThreshold = number(input.pixelThreshold, "visual policy pixelThreshold");
+    if (!Number.isInteger(pixelThreshold) || pixelThreshold < 0 || pixelThreshold > 255)
+      fail("visual policy pixelThreshold", "must be an integer from 0 to 255");
+    if (!Array.isArray(input.regions) || input.regions.length > 100)
+      fail("visual policy regions", "must be an array with at most 100 regions");
+    input.regions.forEach(assertVisualRegion);
+  },
+);
+
 const visualBaselineInputParser = objectParser<OperationInput<"run.visual-baseline.update">>(
   "visual baseline input",
   (input) => {
@@ -1122,6 +1182,19 @@ const visualBaselineOutputParser = objectParser<OperationOutput<"run.visual-base
     record(input.comparison, "visual baseline comparison");
     record(input.decision, "visual baseline decision");
     record(input.baseline, "visual baseline");
+  },
+);
+
+const visualPolicyOutputParser = objectParser<OperationOutput<"run.visual-policy.get">>(
+  "visual policy response",
+  (input) => record(input.policy, "visual comparison policy"),
+);
+
+const visualPolicyUpdateOutputParser = objectParser<OperationOutput<"run.visual-policy.update">>(
+  "visual policy update response",
+  (input) => {
+    record(input.policy, "visual comparison policy");
+    record(input.comparison, "visual comparison");
   },
 );
 
@@ -2380,6 +2453,23 @@ export const operationDefinitions = [
     input: visualReviewInputParser,
     output: visualReviewOutputParser,
   }),
+  query("run.visual-policy.get", "Get visual comparison policy", "/runs/:runId/visual-policy", {
+    category: "evidence",
+    input: visualPolicyGetInputParser,
+    output: visualPolicyOutputParser,
+  }),
+  command(
+    "run.visual-policy.update",
+    "Update visual comparison policy",
+    "PUT",
+    "/runs/:runId/visual-policy",
+    {
+      category: "evidence",
+      confirmation: "confirm",
+      input: visualPolicyUpdateInputParser,
+      output: visualPolicyUpdateOutputParser,
+    },
+  ),
   command("run.pin.update", "Pin Run", "POST", "/runs/:runId/pin", { category: "execution" }),
   command("step.run", "Run one Journey step", "POST", "/step/run", {
     category: "execution",

@@ -8,6 +8,7 @@ export function persistedAsJob(run: PersistedRun): JobInfo {
     : "error";
   return {
     ...run,
+    persisted: true,
     status,
     queuedAt: run.queuedAt ?? run.startedAt ?? run.writtenAt,
     logs: run.logs ?? [],

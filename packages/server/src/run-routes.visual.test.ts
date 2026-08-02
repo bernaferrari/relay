@@ -20,10 +20,10 @@ const scope: RequestContext = {
   localTrusted: true,
 };
 
-const ONE_PIXEL_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
+const ONE_PIXEL_PNGS = [
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4AWMAgv8AAQQBAP8H9UQAAAAASUVORK5CYII=",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4AWP4z8DwHwAFAAH/e+m+7wAAAABJRU5ErkJggg==",
+];
 
 class CapturedResponse {
   status = 0;
@@ -49,7 +49,7 @@ async function persistFixture(
 ): Promise<PersistedRun> {
   const dir = join(root, `fixture_${id}`);
   await mkdir(join(dir, "frames"), { recursive: true });
-  const frame = Buffer.concat([ONE_PIXEL_PNG, Buffer.from(frameContents)]);
+  const frame = Buffer.from(ONE_PIXEL_PNGS[frameContents === "approved-image" ? 0 : 1]!, "base64");
   await writeFile(join(dir, "frames", "001.png"), frame);
   const run: PersistedRun = {
     schemaVersion: 5,
@@ -161,6 +161,32 @@ test("run routes compare durable visual evidence and require explicit review dec
     assert.equal(comparison.approved.runId, "approved-run");
     assert.equal(comparison.latest.runId, "latest-run");
     assert.equal(comparison.diff.changedFrames, 1);
+
+    const initialPolicy = await requestRoute("GET", "/runs/latest-run/visual-policy");
+    assert.equal((initialPolicy.value.policy as { revision: number }).revision, 0);
+    const policyUpdate = await requestRoute("PUT", "/runs/latest-run/visual-policy", {
+      expectedRevision: 0,
+      changeThreshold: 0.0035,
+      pixelThreshold: 16,
+      regions: [
+        {
+          id: "dynamic-content",
+          name: "Dynamic content",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+      ],
+    });
+    assert.equal((policyUpdate.value.policy as { revision: number }).revision, 1);
+    assert.equal(
+      (policyUpdate.value.comparison as { code: string }).code,
+      "VISUAL_MATCH",
+      "a reviewed ignore region changes comparison semantics without replacing the baseline",
+    );
 
     const kept = await requestRoute("POST", "/runs/latest-run/visual-review", {
       comparisonId: comparison.id,

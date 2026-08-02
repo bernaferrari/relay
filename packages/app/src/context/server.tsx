@@ -113,8 +113,8 @@ import type {
   LocalSchedule,
   SaveSuiteInput,
   TestSuite,
-  VisualComparison,
 } from "../lib/api-types";
+import { visualBaselineFrameUrl as buildVisualBaselineFrameUrl } from "../lib/server-urls";
 
 function mergeJourneyTakes(
   remote: JourneyTake[] | undefined,
@@ -210,7 +210,6 @@ export type {
   SuiteEntry,
   SuiteSection,
   TestSuite,
-  VisualComparison,
 } from "../lib/api-types";
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
@@ -1027,28 +1026,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
-    async function loadVisualComparison(id: string): Promise<VisualComparison | null> {
-      try {
-        return await request<VisualComparison>(`/runs/${encodeURIComponent(id)}/visual-baseline`);
-      } catch {
-        return null;
-      }
-    }
-
-    async function approveVisualBaseline(id: string): Promise<VisualComparison | null> {
-      try {
-        await request(`/runs/${encodeURIComponent(id)}/visual-baseline`, {
-          method: "POST",
-          body: JSON.stringify({ action: "approve-new-baseline" }),
-        });
-        return await loadVisualComparison(id);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        toast(message, "error");
-        return null;
-      }
-    }
-
     async function compareVisualRun(
       id: string,
     ): Promise<import("@relay/protocol").VisualComparison | null> {
@@ -1644,6 +1621,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       appendLog,
       refreshDiscoverySessions,
     });
+    const visualBaselineFrameUrl = (runId: string, frameIndex: number) =>
+      buildVisualBaselineFrameUrl(serverUrl(), runId, frameIndex);
 
     function jumpToJob(jobId: string) {
       setSelectedJobId(jobId);
@@ -1996,8 +1975,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadRunDetail,
       loadRunSignals,
       loadRunEvidence,
-      loadVisualComparison,
-      approveVisualBaseline,
       compareVisualRun,
       reviewVisualRun,
       pollHealth,
@@ -2054,6 +2031,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       keyDevice,
       scrollDevice,
       frameUrlForPersisted,
+      visualBaselineFrameUrl,
       videoUrlForRun,
       recordIosVideo,
       iosVideoUrl,

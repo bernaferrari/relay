@@ -1,77 +1,15 @@
-import { For, Show, createEffect, createMemo, createSignal, on } from "solid-js";
-import type { PersistedRun, TraceFrameRef, TraceStep, VisualComparison } from "../context/server";
-import { useServer } from "../context/server";
-import { Icon } from "./icon";
-import { cn } from "../lib/cn";
-import { diffRgba } from "../lib/visual-diff";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type {
-  VisualComparison as DurableVisualComparison,
+  VisualComparison,
+  VisualFrameDiff,
+  VisualRegion,
   VisualReviewAction,
   VisualReviewDecision,
 } from "@relay/protocol";
-
-type VisualPair = {
-  index: number;
-  title: string;
-  baseline: TraceFrameRef;
-  current: TraceFrameRef;
-  ratio: number | null;
-};
-
-const CHANGE_THRESHOLD = 0.0035;
-
-function afterFrame(step: TraceStep): TraceFrameRef | null {
-  for (let index = step.frames.length - 1; index >= 0; index -= 1) {
-    const frame = step.frames[index]!;
-    if (frame.caption.startsWith("after ·")) return frame;
-  }
-  return step.frames.at(-1) ?? null;
-}
-
-function pairsFor(baseline: PersistedRun, current: PersistedRun): VisualPair[] {
-  return current.steps.flatMap((currentStep, index) => {
-    const baselineStep = baseline.steps[index];
-    if (!baselineStep) return [];
-    const before = afterFrame(baselineStep);
-    const after = afterFrame(currentStep);
-    if (!before || !after) return [];
-    return [{ index, title: currentStep.title, baseline: before, current: after, ratio: null }];
-  });
-}
-
-async function rgbaFromUrl(url: string): Promise<{
-  width: number;
-  height: number;
-  data: Uint8ClampedArray;
-}> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Could not load frame (${response.status})`);
-  const bitmap = await createImageBitmap(await response.blob());
-  const scale = Math.min(1, 280 / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("Visual review could not create a drawing surface");
-  context.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-  return { width, height, data: context.getImageData(0, 0, width, height).data };
-}
-
-function videoFile(run: PersistedRun): string | null {
-  const video = run.artifacts?.find((artifact) => artifact.kind === "video");
-  const files = (video?.data as { files?: Array<{ path?: unknown }> } | undefined)?.files;
-  const path = files?.find((file) => typeof file.path === "string")?.path;
-  return typeof path === "string" ? path : null;
-}
-
-function changeLabel(ratio: number | null): string {
-  if (ratio === null) return "Checking";
-  if (ratio < CHANGE_THRESHOLD) return "No change";
-  return `${Math.max(0.1, ratio * 100).toFixed(1)}% changed`;
-}
+import type { PersistedRun } from "../context/server";
+import { useServer } from "../context/server";
+import { cn } from "../lib/cn";
+import { Icon } from "./icon";
 
 function approvedAt(value: number): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value);
@@ -81,78 +19,39 @@ function targetLabel(run: PersistedRun): string {
   return run.targetProfile?.name ?? run.serial ?? "this device";
 }
 
+function changeLabel(frame: VisualFrameDiff): string {
+  if (frame.changeRatio === undefined) return frame.code.replace("FRAME_", "").toLowerCase();
+  if (frame.changeRatio === 0) return "No change";
+  return `${Math.max(0.1, frame.changeRatio * 100).toFixed(1)}% changed`;
+}
+
+function pairedFrames(comparison: VisualComparison | null): VisualFrameDiff[] {
+  return comparison?.diff.frames.filter((frame) => frame.approved && frame.latest) ?? [];
+}
+
 export function VisualDiffReview(props: {
   comparison: VisualComparison | null;
-  durableComparison: DurableVisualComparison | null;
+  current: PersistedRun;
   decision: VisualReviewDecision | null;
   loading: boolean;
   onReview: (action: VisualReviewAction) => void;
+  onPolicyChange: (regions: VisualRegion[]) => void;
   approving?: boolean;
+  policyBusy?: boolean;
 }) {
   const server = useServer();
-  const [pairs, setPairs] = createSignal<VisualPair[]>([]);
   const [selected, setSelected] = createSignal(0);
-  const [split, setSplit] = createSignal(50);
-  const [checking, setChecking] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const comparisonKey = createMemo(() => {
-    const comparison = props.comparison;
-    return comparison
-      ? `${comparison.baseline?.runId ?? "none"}:${comparison.current.id}:${comparison.current.writtenAt}`
-      : "";
+  const frames = createMemo(() => pairedFrames(props.comparison));
+  const changed = createMemo(() => frames().filter((frame) => frame.code === "FRAME_CHANGED"));
+  const selectedFrame = createMemo(
+    () =>
+      frames().find((frame) => frame.index === selected()) ?? changed()[0] ?? frames()[0] ?? null,
+  );
+  createEffect(() => {
+    const comparisonId = props.comparison?.id;
+    if (!comparisonId) return;
+    setSelected(changed()[0]?.index ?? frames()[0]?.index ?? 0);
   });
-
-  createEffect(
-    on(comparisonKey, async () => {
-      const comparison = props.comparison;
-      if (!comparison?.baseline) {
-        setPairs([]);
-        setError(null);
-        return;
-      }
-      const next = pairsFor(comparison.baseline.run, comparison.current);
-      setPairs(next);
-      setSelected(0);
-      setError(null);
-      if (next.length === 0) return;
-      setChecking(true);
-      let firstChanged: number | null = null;
-      try {
-        for (const pair of next) {
-          const [baseline, current] = await Promise.all([
-            rgbaFromUrl(server.frameUrlForPersisted(comparison.baseline!.run, pair.baseline)),
-            rgbaFromUrl(server.frameUrlForPersisted(comparison.current, pair.current)),
-          ]);
-          const difference = diffRgba(baseline, current);
-          if (difference.ratio >= CHANGE_THRESHOLD && firstChanged === null) {
-            firstChanged = pair.index;
-          }
-          setPairs((items) =>
-            items.map((item) =>
-              item.index === pair.index ? { ...item, ratio: difference.ratio } : item,
-            ),
-          );
-        }
-      } catch (caught) {
-        setError(
-          caught instanceof Error ? caught.message : "Could not compare the captured screens",
-        );
-      } finally {
-        setChecking(false);
-        if (firstChanged !== null) setSelected(firstChanged);
-      }
-    }),
-  );
-
-  const changed = createMemo(() => pairs().filter((pair) => (pair.ratio ?? 0) >= CHANGE_THRESHOLD));
-  const selectedPair = createMemo(() => pairs().find((pair) => pair.index === selected()) ?? null);
-  createEffect(on(selected, () => setSplit(50)));
-  const baselineVideo = createMemo(() =>
-    props.comparison?.baseline ? videoFile(props.comparison.baseline.run) : null,
-  );
-  const currentVideo = createMemo(() =>
-    props.comparison ? videoFile(props.comparison.current) : null,
-  );
 
   return (
     <section class="grid gap-4">
@@ -161,7 +60,7 @@ export function VisualDiffReview(props: {
         fallback={
           <div class="flex min-h-24 items-center gap-2.5 rounded-xl border border-border-weak-base px-3.5 text-[11px] text-text-weak">
             <Icon name="refresh" size={13} class="animate-spin motion-reduce:animate-none" />
-            Loading visual review…
+            Comparing approved and current screens…
           </div>
         }
       >
@@ -175,17 +74,17 @@ export function VisualDiffReview(props: {
                 </span>
                 <div class="min-w-0">
                   <strong class="block text-[13px] font-semibold text-text-strong">
-                    No approved baseline
+                    Set the first approved version
                   </strong>
                   <p class="m-0 mt-0.5 text-[11px]/[1.45] text-text-weak">
-                    Approve this completed run once. Future runs of this test on this device will
-                    show only their changed step screens.
+                    Approve this completed run once. Relay will compare future runs only with this
+                    target and keep the approval author and evidence.
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                class="inline-flex min-h-9 w-fit items-center gap-1.5 self-start rounded-lg bg-surface-interactive-base px-3 text-[12px] font-semibold text-text-on-interactive transition-colors hover:bg-surface-interactive-hover disabled:opacity-50"
+                class="inline-flex min-h-10 w-fit items-center gap-1.5 self-start rounded-lg bg-surface-interactive-base px-3 text-[12px] font-semibold text-text-on-interactive transition-colors hover:bg-surface-interactive-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:opacity-50"
                 disabled={props.loading || props.approving}
                 onClick={() => props.onReview("approve-new-baseline")}
               >
@@ -199,154 +98,119 @@ export function VisualDiffReview(props: {
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <strong class="block text-[13px] font-semibold text-text-strong">
-                    Changes to review
+                    {changed().length > 0 ? "Changes to review" : "Screens match"}
                   </strong>
                   <p class="m-0 mt-0.5 text-[11px]/[1.45] text-text-weak">
-                    {checking()
-                      ? `Scanning ${pairs().length} captured step screens…`
-                      : changed().length > 0
-                        ? `${changed().length} changed step${changed().length === 1 ? "" : "s"} from the approved run.`
-                        : "This run matches the approved screens."}
+                    {changed().length > 0
+                      ? `${changed().length} captured screen${changed().length === 1 ? " is" : "s are"} outside the approved tolerance.`
+                      : "No reviewed area changed enough to require attention."}
                   </p>
                 </div>
+                <span
+                  class={cn(
+                    "rounded-full px-2 py-1 text-[10px] font-semibold",
+                    changed().length > 0
+                      ? "bg-[color-mix(in_srgb,var(--icon-warning-base)_13%,transparent)] text-[var(--icon-warning-base)]"
+                      : "bg-[color-mix(in_srgb,var(--icon-success-base)_13%,transparent)] text-[var(--icon-success-base)]",
+                  )}
+                >
+                  {changed().length > 0 ? `${changed().length} changed` : "Matched"}
+                </span>
               </div>
               <p class="-mt-2 m-0 text-[10px] text-text-weaker">
-                Baseline approved {approvedAt(baseline().approvedAt)} on{" "}
-                {targetLabel(baseline().run)}.
+                Approved {approvedAt(baseline().approvedAt)} on {targetLabel(props.current)} ·
+                policy revision {props.comparison?.policy.revision ?? 0}
               </p>
 
-              <Show when={error()}>
-                <p class="m-0 rounded-lg border border-[color-mix(in_srgb,var(--icon-critical-base)_28%,var(--v2-border-border-muted))] px-2.5 py-2 text-[11px] text-[var(--icon-critical-base)]">
-                  {error()}
-                </p>
-              </Show>
-
               <Show
-                when={checking()}
+                when={frames().length > 0}
                 fallback={
-                  <Show
-                    when={changed().length > 0}
-                    fallback={
-                      <div class="grid gap-2 rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3.5">
-                        <div class="flex items-center gap-2 text-[12px] font-medium text-text-strong">
-                          <span class="size-1.5 rounded-full bg-[var(--icon-positive-base)]" />
-                          No visual changes detected
-                        </div>
-                        <p class="m-0 text-[11px]/[1.45] text-text-weak">
-                          {pairs().length > 0
-                            ? "No review is needed. Keep the approved baseline for the next run."
-                            : "These runs do not have matching step screenshots yet."}
-                        </p>
-                      </div>
-                    }
-                  >
-                    <div class="grid gap-3">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-weaker">
-                          Changed steps
-                        </span>
-                        <span class="text-[10px] text-text-weaker">
-                          {changed().length} to review
-                        </span>
-                      </div>
-                      <div
-                        class="flex max-h-36 flex-col gap-1 overflow-y-auto pr-1"
-                        aria-label="Changed steps"
-                      >
-                        <For each={changed()}>
-                          {(pair) => (
-                            <button
-                              type="button"
-                              class={cn(
-                                "grid min-h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2.5 text-left transition-colors",
-                                selected() === pair.index
-                                  ? "bg-surface-interactive-weak text-text-strong"
-                                  : "hover:bg-surface-base-hover text-text-base",
-                              )}
-                              onClick={() => setSelected(pair.index)}
-                            >
-                              <span class="size-1.5 rounded-full bg-[var(--icon-warning-base)]" />
-                              <span class="truncate text-[11.5px] font-medium">
-                                {pair.index + 1}. {pair.title}
-                              </span>
-                              <span class="text-[10px] text-text-weaker">
-                                {changeLabel(pair.ratio)}
-                              </span>
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                      <Show when={selectedPair()}>
-                        {(pair) => (
-                          <DiffCanvas
-                            baselineSrc={server.frameUrlForPersisted(
-                              baseline().run,
-                              pair().baseline,
-                            )}
-                            currentSrc={server.frameUrlForPersisted(
-                              props.comparison!.current,
-                              pair().current,
-                            )}
-                            split={split()}
-                            onSplit={setSplit}
-                            title={`Step ${pair().index + 1}: ${pair().title}`}
-                          />
-                        )}
-                      </Show>
-                      <VisualReviewActions
-                        comparison={props.durableComparison}
-                        decision={props.decision}
-                        busy={props.approving}
-                        onReview={props.onReview}
-                      />
-                    </div>
-                  </Show>
+                  <div class="rounded-xl border border-border-weak-base bg-surface-base px-3.5 py-3 text-[11px]/[1.45] text-text-weak">
+                    These runs do not yet contain matching captured screens.
+                  </div>
                 }
               >
-                <div class="flex min-h-24 items-center gap-2.5 rounded-xl border border-border-weak-base px-3.5 text-[11px] text-text-weak">
-                  <Icon name="refresh" size={13} class="animate-spin motion-reduce:animate-none" />
-                  Comparing the captured screens…
-                </div>
-              </Show>
-
-              <Show when={baselineVideo() || currentVideo()}>
-                <details class="group border-t border-border-weak-base pt-1">
-                  <summary class="flex min-h-9 cursor-pointer list-none items-center justify-between text-[11px] font-medium text-text-base [&::-webkit-details-marker]:hidden">
-                    Run video context
-                    <Icon
-                      name="chevron-down"
-                      size={13}
-                      class="transition-transform group-open:rotate-180"
-                    />
-                  </summary>
-                  <div
-                    class={cn(
-                      "grid gap-2 pb-2",
-                      baselineVideo() && currentVideo() ? "grid-cols-2" : "grid-cols-1",
-                    )}
-                  >
-                    <Show when={baselineVideo()}>
-                      {(path) => (
-                        <video
-                          class="aspect-[9/16] w-full rounded-lg bg-surface-base"
-                          controls
-                          preload="metadata"
-                          src={server.videoUrlForRun(baseline().run.id, path())}
-                        />
-                      )}
-                    </Show>
-                    <Show when={currentVideo()}>
-                      {(path) => (
-                        <video
-                          class="aspect-[9/16] w-full rounded-lg bg-surface-base"
-                          controls
-                          preload="metadata"
-                          src={server.videoUrlForRun(props.comparison!.current.id, path())}
-                        />
-                      )}
-                    </Show>
+                <div class="grid gap-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-weaker">
+                      Captured screens
+                    </span>
+                    <span class="text-[10px] text-text-weaker">
+                      {changed().length} to review · {frames().length} total
+                    </span>
                   </div>
-                </details>
+                  <div
+                    class="flex max-h-36 flex-col gap-1 overflow-y-auto pr-1"
+                    aria-label="Captured screens"
+                  >
+                    <For each={frames()}>
+                      {(frame) => (
+                        <button
+                          type="button"
+                          class={cn(
+                            "grid min-h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg px-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--border-focus)]",
+                            selectedFrame()?.index === frame.index
+                              ? "bg-surface-interactive-weak text-text-strong"
+                              : "text-text-base hover:bg-surface-base-hover",
+                          )}
+                          onClick={() => setSelected(frame.index)}
+                        >
+                          <span
+                            class={cn(
+                              "size-1.5 rounded-full",
+                              frame.code === "FRAME_CHANGED"
+                                ? "bg-[var(--icon-warning-base)]"
+                                : "bg-[var(--icon-success-base)]",
+                            )}
+                          />
+                          <span class="truncate text-[11.5px] font-medium">
+                            {frame.index + 1}. {frame.latest?.caption ?? "Captured screen"}
+                          </span>
+                          <span class="text-[10px] text-text-weaker">{changeLabel(frame)}</span>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                  <Show when={selectedFrame()}>
+                    {(frame) => {
+                      const currentFrame = () => props.current.frames[frame().index];
+                      return (
+                        <Show when={currentFrame()}>
+                          {(current) => (
+                            <DiffCanvas
+                              baselineSrc={server.visualBaselineFrameUrl(
+                                props.current.id,
+                                frame().index,
+                              )}
+                              currentSrc={server.frameUrlForPersisted(props.current, current())}
+                              frame={frame()}
+                              regions={
+                                props.comparison?.policy.regions.filter(
+                                  (region) => region.frameIndex === frame().index,
+                                ) ?? []
+                              }
+                              busy={props.policyBusy}
+                              onRegionsChange={(next) =>
+                                props.onPolicyChange([
+                                  ...(props.comparison?.policy.regions.filter(
+                                    (region) => region.frameIndex !== frame().index,
+                                  ) ?? []),
+                                  ...next,
+                                ])
+                              }
+                            />
+                          )}
+                        </Show>
+                      );
+                    }}
+                  </Show>
+                  <VisualReviewActions
+                    comparison={props.comparison}
+                    decision={props.decision}
+                    busy={props.approving}
+                    onReview={props.onReview}
+                  />
+                </div>
               </Show>
             </>
           )}
@@ -357,7 +221,7 @@ export function VisualDiffReview(props: {
 }
 
 function VisualReviewActions(props: {
-  comparison: DurableVisualComparison | null;
+  comparison: VisualComparison | null;
   decision: VisualReviewDecision | null;
   busy?: boolean;
   onReview: (action: VisualReviewAction) => void;
@@ -393,7 +257,7 @@ function VisualReviewActions(props: {
             <button
               type="button"
               class={cn(
-                "min-h-10 rounded-lg px-2.5 text-[11px] font-semibold transition-colors disabled:cursor-wait disabled:opacity-50",
+                "min-h-10 rounded-lg px-2.5 text-[11px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:cursor-wait disabled:opacity-50",
                 item.primary
                   ? "bg-surface-interactive-base text-text-on-interactive hover:bg-surface-interactive-hover"
                   : "border border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover",
@@ -421,57 +285,206 @@ function VisualReviewActions(props: {
 }
 
 function DiffCanvas(props: {
-  title: string;
   baselineSrc: string;
   currentSrc: string;
-  split: number;
-  onSplit: (value: number) => void;
+  frame: VisualFrameDiff;
+  regions: VisualRegion[];
+  busy?: boolean;
+  onRegionsChange: (regions: VisualRegion[]) => void;
 }) {
+  const [split, setSplit] = createSignal(50);
+  const [tool, setTool] = createSignal<"compare" | "ignore" | null>(null);
+  const [draft, setDraft] = createSignal<VisualRegion | null>(null);
+  let stage: HTMLDivElement | undefined;
+
+  const point = (event: PointerEvent) => {
+    const bounds = stage!.getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height)),
+    };
+  };
+  const beginRegion = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    const mode = tool();
+    if (!mode || props.busy) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const start = point(event);
+    setDraft({
+      id: `region-${Date.now().toString(36)}`,
+      name: mode === "compare" ? "Compared area" : "Ignored area",
+      mode,
+      frameIndex: props.frame.index,
+      ...start,
+      width: 0,
+      height: 0,
+    });
+  };
+  const moveRegion = (event: PointerEvent) => {
+    const current = draft();
+    if (!current) return;
+    const next = point(event);
+    setDraft({
+      ...current,
+      x: Math.min(current.x, next.x),
+      y: Math.min(current.y, next.y),
+      width: Math.abs(next.x - current.x),
+      height: Math.abs(next.y - current.y),
+    });
+  };
+  const finishRegion = () => {
+    const region = draft();
+    setDraft(null);
+    if (!region || region.width < 0.02 || region.height < 0.02) return;
+    props.onRegionsChange([...props.regions, region]);
+    setTool(null);
+  };
+
   return (
     <figure class="m-0 overflow-hidden rounded-xl border border-border-weak-base bg-surface-base">
-      <figcaption class="flex items-center justify-between gap-2 border-b border-border-weak-base px-2.5 py-2">
-        <span class="truncate text-[11px] font-medium text-text-strong">{props.title}</span>
-        <span class="shrink-0 text-[10px] text-text-weaker">Drag to compare</span>
+      <figcaption class="grid gap-2 border-b border-border-weak-base px-2.5 py-2">
+        <div class="flex items-center justify-between gap-2">
+          <span class="truncate text-[11px] font-medium text-text-strong">
+            {props.frame.latest?.caption ?? `Screen ${props.frame.index + 1}`}
+          </span>
+          <span class="shrink-0 text-[10px] text-text-weaker">
+            {tool() ? "Drag on the screen" : "Drag divider to compare"}
+          </span>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            class={cn(
+              "min-h-9 rounded-lg px-2.5 text-[10.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+              tool() === "compare"
+                ? "bg-surface-interactive-base text-text-on-interactive"
+                : "bg-surface-interactive-weak text-text-interactive-base hover:bg-surface-base-hover",
+            )}
+            aria-pressed={tool() === "compare"}
+            onClick={() => setTool((current) => (current === "compare" ? null : "compare"))}
+          >
+            Compare area
+          </button>
+          <button
+            type="button"
+            class={cn(
+              "min-h-9 rounded-lg px-2.5 text-[10.5px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]",
+              tool() === "ignore"
+                ? "bg-[var(--icon-warning-base)] text-white"
+                : "bg-[color-mix(in_srgb,var(--icon-warning-base)_12%,transparent)] text-[var(--icon-warning-base)] hover:bg-[color-mix(in_srgb,var(--icon-warning-base)_18%,transparent)]",
+            )}
+            aria-pressed={tool() === "ignore"}
+            onClick={() => setTool((current) => (current === "ignore" ? null : "ignore"))}
+          >
+            Ignore area
+          </button>
+          <Show when={props.regions.length === 0}>
+            <span class="text-[10px] text-text-weaker">The whole screen is compared.</span>
+          </Show>
+          <For each={props.regions}>
+            {(region) => (
+              <button
+                type="button"
+                class={cn(
+                  "inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-[10px] font-medium",
+                  region.mode === "compare"
+                    ? "bg-surface-interactive-weak text-text-interactive-base"
+                    : "bg-[color-mix(in_srgb,var(--icon-warning-base)_12%,transparent)] text-[var(--icon-warning-base)]",
+                )}
+                aria-label={`Remove ${region.name}`}
+                disabled={props.busy}
+                onClick={() =>
+                  props.onRegionsChange(props.regions.filter((item) => item.id !== region.id))
+                }
+              >
+                {region.mode === "compare" ? "Compare" : "Ignore"} <Icon name="x" size={9} />
+              </button>
+            )}
+          </For>
+          <Show when={props.busy}>
+            <span class="inline-flex items-center gap-1 text-[10px] text-text-weaker">
+              <Icon name="refresh" size={10} class="animate-spin motion-reduce:animate-none" />
+              Saving…
+            </span>
+          </Show>
+        </div>
       </figcaption>
-      <div class="relative isolate h-72 overflow-hidden bg-background-deep">
-        <img
-          class="absolute inset-0 h-full w-full object-contain"
-          src={props.currentSrc}
-          alt="Current captured screen"
-        />
+      <div class="flex justify-center bg-background-deep p-3">
         <div
-          class="pointer-events-none absolute inset-0 overflow-hidden"
-          style={{ "clip-path": `inset(0 ${100 - props.split}% 0 0)` }}
+          ref={(element) => {
+            stage = element;
+          }}
+          class={cn(
+            "relative inline-grid max-w-full touch-none select-none overflow-hidden rounded-lg",
+            tool() &&
+              "cursor-crosshair ring-2 ring-[var(--border-focus)] ring-offset-2 ring-offset-background-deep",
+          )}
+          onPointerDown={beginRegion}
+          onPointerMove={moveRegion}
+          onPointerUp={finishRegion}
+          onPointerCancel={() => setDraft(null)}
         >
           <img
-            class="absolute inset-0 h-full w-full object-contain"
-            src={props.baselineSrc}
-            alt="Approved baseline screen"
+            class="col-start-1 row-start-1 max-h-[min(48vh,430px)] max-w-full object-contain"
+            src={props.currentSrc}
+            alt="Current captured screen"
+            draggable={false}
           />
-        </div>
-        <span class="pointer-events-none absolute left-2 top-2 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
-          Approved
-        </span>
-        <span class="pointer-events-none absolute right-2 top-2 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
-          Current
-        </span>
-        <span
-          class="pointer-events-none absolute top-0 bottom-0 z-10 w-px bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
-          style={{ left: `${props.split}%` }}
-        >
-          <span class="absolute top-1/2 left-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-background-deep text-text-strong shadow-lg">
-            <Icon name="move" size={12} />
+          <div
+            class="pointer-events-none absolute inset-0 overflow-hidden"
+            style={{ "clip-path": `inset(0 ${100 - split()}% 0 0)` }}
+          >
+            <img
+              class="h-full w-full object-fill"
+              src={props.baselineSrc}
+              alt="Approved baseline screen"
+              draggable={false}
+            />
+          </div>
+          <For each={[...props.regions, ...(draft() ? [draft()!] : [])]}>
+            {(region) => (
+              <span
+                class={cn(
+                  "pointer-events-none absolute z-20 border-2",
+                  region.mode === "compare"
+                    ? "border-[var(--text-interactive-base)] bg-[color-mix(in_srgb,var(--text-interactive-base)_10%,transparent)]"
+                    : "border-[var(--icon-warning-base)] bg-[color-mix(in_srgb,var(--icon-warning-base)_16%,transparent)] [background-image:repeating-linear-gradient(135deg,transparent_0,transparent_6px,color-mix(in_srgb,var(--icon-warning-base)_18%,transparent)_6px,color-mix(in_srgb,var(--icon-warning-base)_18%,transparent)_10px)]",
+                )}
+                style={{
+                  left: `${region.x * 100}%`,
+                  top: `${region.y * 100}%`,
+                  width: `${region.width * 100}%`,
+                  height: `${region.height * 100}%`,
+                }}
+              />
+            )}
+          </For>
+          <Show when={!tool()}>
+            <span
+              class="pointer-events-none absolute inset-y-0 z-10 w-px bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+              style={{ left: `${split()}%` }}
+            >
+              <span class="absolute left-1/2 top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/70 bg-background-deep text-text-strong shadow-lg">
+                <Icon name="move" size={12} />
+              </span>
+            </span>
+            <input
+              class="absolute inset-0 z-30 h-full w-full cursor-ew-resize opacity-0"
+              type="range"
+              min="0"
+              max="100"
+              value={split()}
+              aria-label="Reveal approved baseline or current screen"
+              onInput={(event) => setSplit(Number(event.currentTarget.value))}
+            />
+          </Show>
+          <span class="pointer-events-none absolute left-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
+            Approved
           </span>
-        </span>
-        <input
-          class="absolute inset-0 z-20 h-full w-full cursor-ew-resize opacity-0"
-          type="range"
-          min="0"
-          max="100"
-          value={props.split}
-          aria-label="Reveal approved baseline or current screen"
-          onInput={(event) => props.onSplit(Number(event.currentTarget.value))}
-        />
+          <span class="pointer-events-none absolute right-2 top-2 z-20 rounded bg-background-deep/80 px-1.5 py-1 text-[10px] font-medium text-text-strong">
+            Current
+          </span>
+        </div>
       </div>
     </figure>
   );

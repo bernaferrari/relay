@@ -12,6 +12,7 @@ import {
   listPersistedRuns,
   listRunSummaries,
   readFrameFile,
+  readVisualBaselineFrame,
   readPersistedRun,
   rebuildRunCatalog,
   runArtifactFile,
@@ -20,7 +21,9 @@ import {
   setRunPinned,
   compareVisualBaseline,
   getVisualBaseline,
+  getVisualComparisonPolicy,
   reviewVisualComparison,
+  updateVisualComparisonPolicy,
   VISUAL_REVIEW_ACTIONS,
   VisualVerificationError,
   visualTargetKey,
@@ -213,30 +216,70 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     return true;
   }
 
+  const visualPolicyMatch = matchPath(pathname, "/runs/:id/visual-policy");
+  if (visualPolicyMatch) {
+    const run = await readPersistedRun(visualPolicyMatch.id!);
+    assertRunAccess(scope, run);
+    if (method === "GET") {
+      json(response, 200, { policy: await getVisualComparisonPolicy(runsRoot(), run) });
+      return true;
+    }
+    if (method === "PUT") {
+      const body = (await parseJsonBody(request)) as {
+        expectedRevision?: unknown;
+        changeThreshold?: unknown;
+        pixelThreshold?: unknown;
+        regions?: unknown;
+      };
+      try {
+        const policy = await updateVisualComparisonPolicy(runsRoot(), run, {
+          expectedRevision: body.expectedRevision as number,
+          changeThreshold: body.changeThreshold as number,
+          pixelThreshold: body.pixelThreshold as number,
+          regions: body.regions as import("@relay/protocol").VisualRegion[],
+          actor: reviewActor(context),
+        });
+        const comparison = await compareVisualBaseline(runsRoot(), run);
+        json(response, 200, { policy, comparison });
+      } catch (error) {
+        if (error instanceof VisualVerificationError) {
+          throw visualVerificationHttpError(error);
+        }
+        throw error;
+      }
+      return true;
+    }
+  }
+
+  const visualBaselineFrameMatch = matchPath(pathname, "/runs/:id/visual-baseline-frame/:index");
+  if (method === "GET" && visualBaselineFrameMatch) {
+    const run = await readPersistedRun(visualBaselineFrameMatch.id!);
+    assertRunAccess(scope, run);
+    const baseline = await getVisualBaseline(
+      runsRoot(),
+      run.action,
+      visualTargetKey(run),
+      run.projectId ?? "local",
+    );
+    const frameIndex = Number(visualBaselineFrameMatch.index);
+    const buffer = baseline
+      ? await readVisualBaselineFrame(runsRoot(), baseline.id, frameIndex)
+      : null;
+    if (!buffer) throw new HttpError(404, "Approved baseline frame not found");
+    response.writeHead(200, {
+      "Content-Type": "image/png",
+      "Content-Length": buffer.byteLength,
+      "Cache-Control": "private, max-age=3600",
+      ...CORS_HEADERS,
+    });
+    response.end(buffer);
+    return true;
+  }
+
   const visualMatch = matchPath(pathname, "/runs/:id/visual-baseline");
   if (visualMatch) {
     const run = await readPersistedRun(visualMatch.id!);
     assertRunAccess(scope, run);
-    if (method === "GET") {
-      const targetKey = visualTargetKey(run);
-      const baseline = await getVisualBaseline(
-        runsRoot(),
-        run.action,
-        targetKey,
-        run.projectId ?? "local",
-      );
-      const baselineRun = baseline ? await readPersistedRun(baseline.runId) : null;
-      if (baselineRun) assertRunAccess(scope, baselineRun);
-      json(response, 200, {
-        current: run,
-        latestRunId: run.id,
-        recipeId: run.action,
-        projectKey: run.projectId ?? "local",
-        targetKey,
-        baseline: baseline && baselineRun ? { ...baseline, run: baselineRun } : null,
-      });
-      return true;
-    }
     if (method === "POST") {
       const body = (await parseJsonBody(request)) as { action?: unknown; note?: unknown };
       if (body.action !== "approve-new-baseline") {

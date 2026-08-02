@@ -26,6 +26,36 @@ export type VisualReviewResultCode =
 
 export type VisualReviewActor = { id: string; kind: "human" | "agent" | "system" };
 
+export type VisualRegionMode = "compare" | "ignore";
+
+/** A device-independent rectangle. Coordinates are normalized to the captured frame. */
+export type VisualRegion = {
+  id: string;
+  name: string;
+  mode: VisualRegionMode;
+  frameIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type VisualComparisonPolicy = {
+  schemaVersion: 1;
+  id: string;
+  recipeId: string;
+  projectKey: string;
+  targetKey: string;
+  revision: number;
+  /** Fraction of considered pixels that may change before review is required. */
+  changeThreshold: number;
+  /** Per-channel difference required before one pixel is considered changed. */
+  pixelThreshold: number;
+  regions: VisualRegion[];
+  updatedAt: number;
+  updatedBy: VisualReviewActor;
+};
+
 export type VisualFrameMetadata = {
   index: number;
   path: string;
@@ -70,10 +100,15 @@ export type VisualFrameDiff = {
   code: "FRAME_MATCH" | "FRAME_CHANGED" | "FRAME_ADDED" | "FRAME_REMOVED";
   approved?: VisualFrameMetadata;
   latest?: VisualFrameMetadata;
+  consideredPixels?: number;
+  changedPixels?: number;
+  changeRatio?: number;
+  /** Normalized bounds of changed pixels within the complete frame. */
+  changedBounds?: { x: number; y: number; width: number; height: number };
 };
 
 export type VisualDiffMetadata = {
-  algorithm: "exact-png-sha256-v1";
+  algorithm: "pixel-rgba-regions-v1";
   code: VisualComparisonCode;
   approvedFrameCount: number;
   latestFrameCount: number;
@@ -82,6 +117,7 @@ export type VisualDiffMetadata = {
   addedFrames: number;
   removedFrames: number;
   frames: VisualFrameDiff[];
+  policyRevision: number;
 };
 
 export type VisualComparison = {
@@ -95,6 +131,7 @@ export type VisualComparison = {
   baseline: VisualBaseline | null;
   approved: VisualRunSnapshot | null;
   latest: VisualRunSnapshot;
+  policy: VisualComparisonPolicy;
   diff: VisualDiffMetadata;
 };
 

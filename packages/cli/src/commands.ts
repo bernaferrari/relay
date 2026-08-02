@@ -812,6 +812,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped("run.visual.compare", path("run visual compare", ["runId"])),
   mapped("run.visual.review", path("run visual review", ["runId"])),
+  mapped("run.visual-policy.get", path("run visual-policy get", ["runId"])),
+  mapped("run.visual-policy.update", path("run visual-policy update", ["runId"])),
   mapped(
     "run.pin.update",
     path("run pin update", ["runId"]),

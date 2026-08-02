@@ -184,20 +184,6 @@ export type PersistedRun = Omit<
   evidence?: import("@relay/protocol").EvidenceManifest;
 };
 
-/** A human-approved visual reference for one test on one device profile. */
-export type VisualComparison = {
-  current: PersistedRun;
-  targetKey: string;
-  baseline: {
-    schemaVersion: 1;
-    recipeId: string;
-    targetKey: string;
-    runId: string;
-    approvedAt: number;
-    run: PersistedRun;
-  } | null;
-};
-
 export type CompatibilityReport = import("@relay/protocol").CompatibilityReport;
 
 export type HealthState = "unknown" | "online" | "offline";

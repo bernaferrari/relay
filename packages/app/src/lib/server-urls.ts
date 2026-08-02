@@ -17,3 +17,7 @@ export function videoUrlForRun(base: string, runId: string, path: string): strin
   const file = path.split(/[\\/]/).pop() ?? path;
   return `${base}/runs/${encodeURIComponent(runId)}/video/${encodeURIComponent(file)}`;
 }
+
+export function visualBaselineFrameUrl(base: string, runId: string, frameIndex: number): string {
+  return `${base}/runs/${encodeURIComponent(runId)}/visual-baseline-frame/${frameIndex}`;
+}

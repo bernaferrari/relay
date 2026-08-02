@@ -173,7 +173,11 @@ const reviewSupport = new Set<OperationId>([
   "job.list",
   "job.get",
   "run.list",
+  "run.visual.compare",
   "run.visual-baseline.update",
+  "run.visual.review",
+  "run.visual-policy.get",
+  "run.visual-policy.update",
   "run.pin.update",
 ]);
 

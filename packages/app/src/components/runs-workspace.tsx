@@ -1,10 +1,14 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import {
-  useServer,
-  type JobInfo,
-  type PersistedRun,
-  type VisualComparison,
-} from "../context/server";
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+} from "solid-js";
+import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon, type IconName } from "./icon";
@@ -82,12 +86,12 @@ export function RunsWorkspace(props: {
   >(null);
   const [runEvidenceLoading, setRunEvidenceLoading] = createSignal(false);
   const [runEvidenceRunId, setRunEvidenceRunId] = createSignal<string | null>(null);
-  const [visualComparison, setVisualComparison] = createSignal<VisualComparison | null>(null);
   const [durableVisualComparison, setDurableVisualComparison] =
     createSignal<DurableVisualComparison | null>(null);
   const [visualDecision, setVisualDecision] = createSignal<VisualReviewDecision | null>(null);
   const [visualLoading, setVisualLoading] = createSignal(false);
   const [approvingVisualBaseline, setApprovingVisualBaseline] = createSignal(false);
+  const [visualPolicyBusy, setVisualPolicyBusy] = createSignal(false);
   const [matrixReport, setMatrixReport] = createSignal<
     import("@relay/protocol").CompatibilityReport | null
   >(null);
@@ -98,6 +102,11 @@ export function RunsWorkspace(props: {
   const [runFilter, setRunFilter] = createSignal<"all" | "passed" | "attention" | "active">("all");
   const [historyExpanded, setHistoryExpanded] = createSignal(false);
   const requestedDetails = new Set<string>();
+
+  onMount(() => {
+    if (linkedRun) void server.loadRunDetail(linkedRun);
+  });
+
   async function refreshRuns(): Promise<void> {
     if (refreshing()) return;
     setRefreshing(true);
@@ -202,15 +211,14 @@ export function RunsWorkspace(props: {
   createEffect(() => {
     const job = selected();
     if (tab() !== "visual" || !job?.persisted) {
-      setVisualComparison(null);
       setDurableVisualComparison(null);
       setVisualDecision(null);
       return;
     }
     setVisualLoading(true);
-    void Promise.all([server.loadVisualComparison(job.id), server.compareVisualRun(job.id)])
-      .then(([legacy, durable]) => {
-        setVisualComparison(legacy);
+    void server
+      .compareVisualRun(job.id)
+      .then((durable) => {
         setDurableVisualComparison(durable);
         setVisualDecision(null);
       })
@@ -230,11 +238,7 @@ export function RunsWorkspace(props: {
       if (decision) {
         setVisualDecision(decision);
         if (action === "approve-new-baseline") {
-          const [legacy, durable] = await Promise.all([
-            server.loadVisualComparison(job.id),
-            server.compareVisualRun(job.id),
-          ]);
-          setVisualComparison(legacy);
+          const durable = await server.compareVisualRun(job.id);
           setDurableVisualComparison(durable);
         }
         const labels: Record<VisualReviewAction, string> = {
@@ -248,6 +252,31 @@ export function RunsWorkspace(props: {
       }
     } finally {
       setApprovingVisualBaseline(false);
+    }
+  }
+  async function updateVisualPolicy(
+    regions: import("@relay/protocol").VisualRegion[],
+  ): Promise<void> {
+    const job = selected();
+    const comparison = durableVisualComparison();
+    if (!job?.persisted || !comparison || visualPolicyBusy()) return;
+    setVisualPolicyBusy(true);
+    try {
+      const result = await server.runAction("run.visual-policy.update", {
+        runId: job.id,
+        expectedRevision: comparison.policy.revision,
+        changeThreshold: comparison.policy.changeThreshold,
+        pixelThreshold: comparison.policy.pixelThreshold,
+        regions,
+      });
+      setDurableVisualComparison(result.comparison);
+      toast("Visual review areas updated", "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+      const refreshed = await server.compareVisualRun(job.id);
+      setDurableVisualComparison(refreshed);
+    } finally {
+      setVisualPolicyBusy(false);
     }
   }
   const openRun = (job: JobInfo) => {
@@ -760,12 +789,14 @@ export function RunsWorkspace(props: {
                     }
                   >
                     <VisualDiffReview
-                      comparison={visualComparison()}
-                      durableComparison={durableVisualComparison()}
+                      comparison={durableVisualComparison()}
+                      current={job() as PersistedRun}
                       decision={visualDecision()}
                       loading={visualLoading()}
                       approving={approvingVisualBaseline()}
+                      policyBusy={visualPolicyBusy()}
                       onReview={(action) => void reviewCurrentVisual(action)}
+                      onPolicyChange={(regions) => void updateVisualPolicy(regions)}
                     />
                   </Show>
                 </Show>
