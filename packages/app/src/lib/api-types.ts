@@ -4,6 +4,8 @@
  */
 import type { RecipeParameter, RecipeStep, ScreenIdentity, StepTarget } from "@relay/protocol";
 
+export type { RunEvidenceQuery } from "@relay/protocol";
+
 export type {
   HumanCheckpointReason,
   HorizontalCoordinateAnchor,

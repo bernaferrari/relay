@@ -23,6 +23,7 @@ export * from "./generation.js";
 export * from "./evaluation.js";
 export * from "./outcomes.js";
 export * from "./run-evidence.js";
+export * from "./run-observatory.js";
 export * from "./run-matrix.js";
 export * from "./atlas.js";
 export * from "./schedules.js";

@@ -324,6 +324,11 @@ type SpecificOperationMap = {
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
   "run.list": { input: Record<string, never>; output: { runs: RunSummaryDto[] } };
+  "run.get": { input: { runId: string }; output: { run: OperationRecord } };
+  "run.evidence.get": {
+    input: { runId: string; limit?: number; includeBodies?: boolean };
+    output: { evidence: OperationRecord };
+  };
   "run.visual.compare": {
     input: { runId: string };
     output: { comparison: VisualComparison };
@@ -834,6 +839,37 @@ const runsParser = objectParser<OperationOutput<"run.list">>("runs response", (i
 const jobIdInputParser = objectParser<{ jobId: string }>("job input", (input) => {
   string(input.jobId, "job id");
 });
+
+const runIdInputParser = objectParser<{ runId: string }>("run input", (input) => {
+  string(input.runId, "run id");
+});
+
+const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
+  "run evidence input",
+  (input) => {
+    string(input.runId, "run id");
+    if (input.limit !== undefined) {
+      const rawLimit =
+        typeof input.limit === "string"
+          ? Number(input.limit)
+          : number(input.limit, "run evidence limit");
+      const limit = rawLimit;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 2_000) {
+        fail("run evidence limit", "must be an integer between 1 and 2000");
+      }
+    }
+    if (input.includeBodies !== undefined) {
+      if (
+        input.includeBodies !== true &&
+        input.includeBodies !== false &&
+        input.includeBodies !== "true" &&
+        input.includeBodies !== "false"
+      ) {
+        fail("includeBodies", "must be a boolean");
+      }
+    }
+  },
+);
 
 const targetInputParser = objectParser<OperationRecord>("target operation", (input) => {
   string(input.serial, "target serial");
@@ -2174,6 +2210,14 @@ export const operationDefinitions = [
     cancellable: true,
   }),
   query("run.list", "List Runs", "/runs", { category: "execution", output: runsParser }),
+  query("run.get", "Get Run", "/runs/:runId", {
+    category: "evidence",
+    input: runIdInputParser,
+  }),
+  query("run.evidence.get", "Get Run Evidence", "/runs/:runId/evidence", {
+    category: "evidence",
+    input: runEvidenceInputParser,
+  }),
   command("run.catalog.rebuild", "Rebuild Run catalog", "POST", "/runs/catalog/rebuild", {
     category: "execution",
     confirmation: "confirm",

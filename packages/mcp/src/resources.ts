@@ -20,6 +20,8 @@ export const relayMcpResourceUris = {
   collections: "relay://collections",
   collection: "relay://collections/{collectionId}",
   runs: "relay://runs",
+  run: "relay://runs/{runId}",
+  runEvidence: "relay://runs/{runId}/evidence",
   authoringSessions: "relay://authoring-sessions",
   authoringSession: "relay://authoring-sessions/{sessionId}",
   targets: "relay://targets",
@@ -286,6 +288,59 @@ export function registerRelayResources(
       return { project };
     },
     scope,
+  );
+  server.registerResource(
+    "run",
+    new ResourceTemplate(relayMcpResourceUris.run, {
+      list: async (context) =>
+        resourceList(
+          arrayField(await invokeRead(invoker, "run.list", {}, context.mcpReq.signal), "runs"),
+          "id",
+          "title",
+          (id) => `relay://runs/${id}`,
+        ),
+    }),
+    {
+      title: "Relay Run",
+      description: "One persisted Relay run with its immutable execution evidence.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const runId = variable(variables, "runId", uri);
+      try {
+        const result = await invoker.invoke(
+          "run.get",
+          { runId },
+          { signal: context.mcpReq.signal },
+        );
+        return readResult(uri, scope.projectId, "run", result);
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+    },
+  );
+  server.registerResource(
+    "run-evidence",
+    new ResourceTemplate(relayMcpResourceUris.runEvidence, { list: undefined }),
+    {
+      title: "Relay Run Evidence",
+      description:
+        "Bounded structured logs, network exchanges, performance samples, channel status, and provenance for one run.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const runId = variable(variables, "runId", uri);
+      try {
+        const result = await invoker.invoke(
+          "run.evidence.get",
+          { runId, limit: 500 },
+          { signal: context.mcpReq.signal },
+        );
+        return readResult(uri, scope.projectId, "run-evidence", result);
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+    },
   );
   registerStaticResource(
     server,

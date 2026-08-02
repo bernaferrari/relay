@@ -68,8 +68,20 @@ export function RunsWorkspace(props: {
   const [selectedId, setSelectedId] = createSignal<string | null>(linkedRun);
   const [selectedRunStep, setSelectedRunStep] = createSignal(0);
   const [tab, setTab] = createSignal<
-    "timeline" | "summary" | "visual" | "evaluation" | "network" | "logs" | "compatibility"
+    | "timeline"
+    | "summary"
+    | "visual"
+    | "evaluation"
+    | "network"
+    | "logs"
+    | "performance"
+    | "compatibility"
   >("timeline");
+  const [runEvidence, setRunEvidence] = createSignal<
+    import("@relay/protocol").RunEvidenceQuery | null
+  >(null);
+  const [runEvidenceLoading, setRunEvidenceLoading] = createSignal(false);
+  const [runEvidenceRunId, setRunEvidenceRunId] = createSignal<string | null>(null);
   const [visualComparison, setVisualComparison] = createSignal<VisualComparison | null>(null);
   const [durableVisualComparison, setDurableVisualComparison] =
     createSignal<DurableVisualComparison | null>(null);
@@ -171,6 +183,21 @@ export function RunsWorkspace(props: {
     }
     if (run?.evidence) void server.loadRunSignals(run.id).then(setRegressionSignals);
     else setRegressionSignals([]);
+  });
+  createEffect(() => {
+    const job = selected();
+    const evidenceTab = tab();
+    if (!job?.persisted || !["network", "logs", "performance"].includes(evidenceTab)) return;
+    if (runEvidenceRunId() === job.id && runEvidence()) return;
+    setRunEvidence(null);
+    setRunEvidenceRunId(job.id);
+    setRunEvidenceLoading(true);
+    void server
+      .loadRunEvidence(job.id, { limit: 500 })
+      .then((evidence) => {
+        setRunEvidence(evidence);
+      })
+      .finally(() => setRunEvidenceLoading(false));
   });
   createEffect(() => {
     const job = selected();
@@ -567,6 +594,7 @@ export function RunsWorkspace(props: {
                     ["evaluation", "Checks"],
                     ["network", "Network"],
                     ["logs", "Logs"],
+                    ["performance", "Performance"],
                   ] as const
                 ).map(([id, label]) => (
                   <button
@@ -742,10 +770,7 @@ export function RunsWorkspace(props: {
                   </Show>
                 </Show>
                 <Show when={tab() === "network"}>
-                  <EvidenceList
-                    items={job().artifacts?.filter((item) => item.kind === "network") ?? []}
-                    empty="No network evidence in this run. Add a Capture network step where the traffic matters."
-                  />
+                  <RunNetworkEvidence evidence={runEvidence()} loading={runEvidenceLoading()} />
                 </Show>
                 <Show when={tab() === "evaluation"}>
                   <EvidenceList
@@ -766,9 +791,14 @@ export function RunsWorkspace(props: {
                   />
                 </Show>
                 <Show when={tab() === "logs"}>
-                  <pre class="m-0 max-h-64 overflow-auto rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] p-3 font-mono text-[10px]/[1.45] text-[var(--text-base)]">
-                    {job().logs?.join("\n") || "No logs were captured for this run."}
-                  </pre>
+                  <RunLogsEvidence
+                    evidence={runEvidence()}
+                    loading={runEvidenceLoading()}
+                    orchestrationLogs={job().logs ?? []}
+                  />
+                </Show>
+                <Show when={tab() === "performance"}>
+                  <RunPerformanceEvidence evidence={runEvidence()} loading={runEvidenceLoading()} />
                 </Show>
                 <Show when={tab() === "compatibility"}>
                   <CompatibilityReportPanel
@@ -1607,6 +1637,342 @@ function EvidenceList(props: {
           );
         }}
       </For>
+    </div>
+  );
+}
+
+function EvidenceChannelBanner(props: {
+  title: string;
+  channel: import("@relay/protocol").EvidenceChannelRecord | undefined;
+  loading?: boolean;
+  note?: string;
+}) {
+  const status = () => props.channel?.status ?? "unavailable";
+  const tone = () =>
+    status() === "captured"
+      ? "text-[var(--icon-success-base)]"
+      : status() === "partial"
+        ? "text-[var(--icon-warning-base)]"
+        : "text-[var(--icon-critical-base)]";
+  return (
+    <header class="mb-3 flex flex-wrap items-start justify-between gap-2">
+      <div class="min-w-0">
+        <strong class="block text-[13px] font-semibold text-text-strong">{props.title}</strong>
+        <span class="mt-0.5 block text-[10.5px] leading-[1.4] text-text-weaker">
+          {props.loading
+            ? "Refreshing structured evidence…"
+            : (props.note ??
+              (props.channel
+                ? `${props.channel.entries} entr${props.channel.entries === 1 ? "y" : "ies"} captured`
+                : "This collector did not report a result for the run."))}
+        </span>
+      </div>
+      <span
+        class={cn(
+          "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base px-2 py-1 text-[9px] font-medium",
+          tone(),
+        )}
+      >
+        <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
+        {props.loading ? "Updating" : status()}
+      </span>
+    </header>
+  );
+}
+
+function RunNetworkEvidence(props: {
+  evidence: import("@relay/protocol").RunEvidenceQuery | null;
+  loading: boolean;
+}) {
+  const [filter, setFilter] = createSignal("");
+  const rows = createMemo(() => {
+    const query = filter().trim().toLowerCase();
+    const entries = props.evidence?.network ?? [];
+    return query
+      ? entries.filter((entry) =>
+          [entry.method, entry.url, entry.source, entry.result].some((value) =>
+            value?.toLowerCase().includes(query),
+          ),
+        )
+      : entries;
+  });
+  const channel = () => props.evidence?.channels.network;
+  return (
+    <div>
+      <EvidenceChannelBanner
+        title="Network activity"
+        channel={channel()}
+        loading={props.loading}
+        note={
+          props.evidence?.networkCapture.detail ??
+          (props.evidence?.limits.bodiesIncluded
+            ? "Request and response detail is available for this run."
+            : "Summary traffic is shown. Payloads stay hidden unless consented and requested.")
+        }
+      />
+      <Show
+        when={props.evidence}
+        fallback={
+          <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+            {props.loading
+              ? "Preparing network evidence…"
+              : "No structured network evidence is available for this run."}
+          </div>
+        }
+      >
+        <div class="mb-2 flex items-center gap-2">
+          <div class="relative min-w-0 flex-1">
+            <Icon
+              name="search"
+              size={13}
+              class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-weaker"
+            />
+            <input
+              value={filter()}
+              onInput={(event) => setFilter(event.currentTarget.value)}
+              placeholder="Filter URL, method, or result"
+              aria-label="Filter network evidence"
+              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-[11px] text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
+            />
+          </div>
+          <span class="shrink-0 font-mono text-[10px] text-text-weaker">{rows().length} shown</span>
+        </div>
+        <Show
+          when={rows().length > 0}
+          fallback={
+            <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+              {filter()
+                ? "No requests match this filter."
+                : "No HTTP or WebSocket exchanges were observed."}
+            </div>
+          }
+        >
+          <div class="overflow-hidden rounded-xl border border-border-weak-base">
+            <div class="grid grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3 py-2 text-[9px] font-medium tracking-[0.08em] text-text-weaker uppercase">
+              <span>Result</span>
+              <span>Method</span>
+              <span>URL</span>
+              <span>Status</span>
+              <span>Time</span>
+            </div>
+            <For each={rows()}>
+              {(entry) => (
+                <details class="group border-b border-border-weak-base last:border-0">
+                  <summary class="grid cursor-pointer list-none grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] items-center gap-2 px-3 py-2.5 text-[10.5px] hover:bg-surface-raised-base-hover [&::-webkit-details-marker]:hidden">
+                    <span
+                      class={cn(
+                        "font-medium",
+                        entry.result === "failure"
+                          ? "text-[var(--icon-critical-base)]"
+                          : entry.result === "success"
+                            ? "text-[var(--icon-success-base)]"
+                            : "text-text-weak",
+                      )}
+                    >
+                      {entry.result}
+                    </span>
+                    <code class="text-text-base">{entry.method ?? "—"}</code>
+                    <span
+                      class="min-w-0 truncate font-mono text-[10px] text-text-base"
+                      title={entry.url}
+                    >
+                      {entry.url ?? "Unknown endpoint"}
+                    </span>
+                    <span class="font-mono tabular-nums text-text-weak">{entry.status ?? "—"}</span>
+                    <span class="font-mono tabular-nums text-text-weaker">
+                      {entry.durationMs === undefined ? "—" : `${Math.round(entry.durationMs)}ms`}
+                    </span>
+                  </summary>
+                  <div class="grid gap-2 border-t border-border-weak-base bg-v2-background-bg-deep px-3 py-2.5 text-[10px] text-text-weak">
+                    <Show when={entry.source || entry.at}>
+                      <span>
+                        {entry.source ?? "Runtime"}
+                        {entry.at ? ` · ${new Date(entry.at).toLocaleTimeString()}` : ""}
+                      </span>
+                    </Show>
+                    <Show when={entry.requestBody || entry.responseBody}>
+                      <pre class="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[9.5px]/[1.45] text-text-base">
+                        {entry.requestBody ? `Request\n${entry.requestBody}` : ""}
+                        {entry.responseBody ? `\nResponse\n${entry.responseBody}` : ""}
+                      </pre>
+                    </Show>
+                    <Show when={!entry.requestBody && !entry.responseBody}>
+                      <span>Payloads were not included in this evidence view.</span>
+                    </Show>
+                  </div>
+                </details>
+              )}
+            </For>
+          </div>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
+function RunLogsEvidence(props: {
+  evidence: import("@relay/protocol").RunEvidenceQuery | null;
+  loading: boolean;
+  orchestrationLogs: string[];
+}) {
+  const [filter, setFilter] = createSignal("");
+  const [source, setSource] = createSignal<"device" | "relay">("device");
+  const deviceLogs = createMemo(() => props.evidence?.logs ?? []);
+  const rows = createMemo(() => {
+    const query = filter().trim().toLowerCase();
+    const entries =
+      source() === "device"
+        ? deviceLogs()
+        : props.orchestrationLogs.map((message, index) => ({
+            id: `relay-${index + 1}`,
+            at: undefined as number | undefined,
+            level: "info" as const,
+            message,
+          }));
+    return query ? entries.filter((entry) => entry.message.toLowerCase().includes(query)) : entries;
+  });
+  return (
+    <div>
+      <EvidenceChannelBanner
+        title={source() === "device" ? "Device logs" : "Relay execution log"}
+        channel={source() === "device" ? props.evidence?.channels.logs : undefined}
+        loading={props.loading}
+        note={
+          source() === "device"
+            ? "Captured from the target while the run was active."
+            : "Orchestration messages from Relay; separate from device output."
+        }
+      />
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <div
+          class="flex rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha p-0.5"
+          role="tablist"
+          aria-label="Log source"
+        >
+          {(["device", "relay"] as const).map((kind) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source() === kind}
+              class={cn(
+                "min-h-7 rounded-md px-2.5 text-[10px] font-medium text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base",
+                source() === kind && "bg-surface-base-active text-text-strong",
+              )}
+              onClick={() => setSource(kind)}
+            >
+              {kind === "device"
+                ? `Device${deviceLogs().length ? ` · ${deviceLogs().length}` : ""}`
+                : "Relay"}
+            </button>
+          ))}
+        </div>
+        <div class="relative min-w-[180px] flex-1">
+          <Icon
+            name="search"
+            size={13}
+            class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-weaker"
+          />
+          <input
+            value={filter()}
+            onInput={(event) => setFilter(event.currentTarget.value)}
+            placeholder="Filter log messages"
+            aria-label="Filter log messages"
+            class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-[11px] text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
+          />
+        </div>
+      </div>
+      <Show
+        when={rows().length > 0}
+        fallback={
+          <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+            {props.loading
+              ? "Preparing device logs…"
+              : source() === "device"
+                ? "No device logs were captured for this run."
+                : "No Relay messages were recorded."}
+          </div>
+        }
+      >
+        <div class="max-h-[480px] overflow-auto rounded-xl border border-border-weak-base bg-v2-background-bg-deep">
+          <For each={rows()}>
+            {(entry) => (
+              <div class="grid grid-cols-[48px_62px_minmax(0,1fr)] gap-2 border-b border-border-weak-base px-3 py-2 last:border-0">
+                <span class="font-mono text-[9px] tabular-nums text-text-weaker">
+                  {entry.at
+                    ? new Date(entry.at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })
+                    : "—"}
+                </span>
+                <span
+                  class={cn(
+                    "font-mono text-[9px] uppercase",
+                    entry.level === "error" || entry.level === "warn"
+                      ? "text-[var(--icon-warning-base)]"
+                      : "text-text-weaker",
+                  )}
+                >
+                  {entry.level}
+                </span>
+                <span class="whitespace-pre-wrap break-words font-mono text-[10px]/[1.45] text-text-base">
+                  {entry.message}
+                </span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+function RunPerformanceEvidence(props: {
+  evidence: import("@relay/protocol").RunEvidenceQuery | null;
+  loading: boolean;
+}) {
+  const samples = () => props.evidence?.performance ?? [];
+  return (
+    <div>
+      <EvidenceChannelBanner
+        title="Performance samples"
+        channel={props.evidence?.channels.performance}
+        loading={props.loading}
+        note="Run-level samples are shown with their collector phase and provenance. Deeper traces remain downloadable artifacts."
+      />
+      <Show
+        when={samples().length > 0}
+        fallback={
+          <div class="rounded-[10px] border border-dashed border-border-weak-base px-3 py-5 text-center text-[11px] text-text-weak">
+            {props.loading
+              ? "Preparing performance evidence…"
+              : "No performance samples were captured for this run."}
+          </div>
+        }
+      >
+        <div class="grid gap-2">
+          <For each={samples()}>
+            {(sample) => (
+              <article class="rounded-xl border border-border-weak-base bg-surface-raised-stronger-non-alpha p-3">
+                <header class="flex items-center justify-between gap-2">
+                  <strong class="text-[11px] font-semibold text-text-strong">{sample.phase}</strong>
+                  <span class="font-mono text-[9.5px] text-text-weaker">
+                    {sample.at ? new Date(sample.at).toLocaleTimeString() : "—"}
+                  </span>
+                </header>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  {Object.entries(sample.metrics).map(([key, value]) => (
+                    <span class="rounded-md bg-surface-base-active px-2 py-1 font-mono text-[9.5px] text-text-base">
+                      {key}: {String(value)}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            )}
+          </For>
+        </div>
+      </Show>
     </div>
   );
 }

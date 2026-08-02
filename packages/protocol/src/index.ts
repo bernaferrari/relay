@@ -215,6 +215,77 @@ export type RegressionSignal = {
   reason?: string;
 };
 
+/** A stable, privacy-aware projection of the evidence collected for a run.
+ *
+ * Reports and agents should consume this projection instead of needing to
+ * understand provider-specific artifact payloads. Raw artifacts remain
+ * available through the persisted run for forensic export, but this shape is
+ * the portable, bounded observability contract.
+ */
+export type RunEvidenceLogEntry = {
+  id: string;
+  at?: number;
+  level: "trace" | "debug" | "info" | "warn" | "error" | "unknown";
+  source?: string;
+  message: string;
+};
+
+export type RunEvidenceNetworkEntry = {
+  id: string;
+  at?: number;
+  method?: string;
+  url?: string;
+  status?: number;
+  durationMs?: number;
+  result: "success" | "failure" | "pending" | "unknown";
+  source?: string;
+  requestHeaders?: Record<string, string>;
+  requestBody?: string;
+  responseHeaders?: Record<string, string>;
+  responseBody?: string;
+  responseBodyTruncated?: boolean;
+};
+
+export type RunEvidencePerformanceSample = {
+  id: string;
+  at?: number;
+  phase: "start" | "end" | "sample" | "unknown";
+  metrics: Record<string, number | string | boolean | null>;
+};
+
+export type RunEvidenceArtifactSummary = {
+  kind: string;
+  capturedAt: number;
+  entries?: number;
+  bytes?: number;
+  summary?: string;
+};
+
+export type RunEvidenceQuery = {
+  schemaVersion: 1;
+  runId: string;
+  generatedAt: number;
+  target: {
+    platform?: string;
+    serial?: string;
+    name?: string;
+    profileId?: string;
+  };
+  channels: Partial<Record<EvidenceChannel, EvidenceChannelRecord>>;
+  logs: RunEvidenceLogEntry[];
+  network: RunEvidenceNetworkEntry[];
+  networkCapture: {
+    mode: "browser-events" | "session-log" | "transparent-proxy" | "unavailable";
+    label: string;
+    detail: string;
+  };
+  performance: RunEvidencePerformanceSample[];
+  crashes: unknown[];
+  artifacts: RunEvidenceArtifactSummary[];
+  limits: { requested: number; applied: number; bodiesIncluded: boolean };
+  notes: string[];
+};
+
 function objectValue(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${label} must be an object`);

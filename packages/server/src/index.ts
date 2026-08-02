@@ -1985,6 +1985,7 @@ async function handleRequest(
           { method: "GET", path: "/device/stream", mediaType: "application/x-relay-h264" },
           { method: "GET", path: "/runs/:id/frames/:file", mediaType: "image/*" },
           { method: "GET", path: "/runs/:id/video/:file", mediaType: "video/*" },
+          { method: "GET", path: "/runs/:id/evidence", mediaType: "application/json" },
           { method: "GET", path: "/authoring-evidence/:sha256", mediaType: "image/*|video/*" },
         ],
       });

@@ -106,6 +106,7 @@ import type {
   RecipeInfo,
   RecipeStep,
   RecipeStability,
+  RunEvidenceQuery,
   SnapshotState,
   TraceFrameRef,
   TestAtlas,
@@ -196,6 +197,7 @@ export type {
   RecipeInfo,
   RecipeStability,
   RecipeStep,
+  RunEvidenceQuery,
   SnapshotNode,
   SnapshotState,
   StepPoint,
@@ -1006,6 +1008,24 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         return data.signals ?? [];
       } catch {
         return [];
+      }
+    }
+
+    async function loadRunEvidence(
+      id: string,
+      options: { limit?: number; includeBodies?: boolean } = {},
+    ): Promise<RunEvidenceQuery | null> {
+      try {
+        const query = new URLSearchParams();
+        if (options.limit !== undefined) query.set("limit", String(options.limit));
+        if (options.includeBodies) query.set("includeBodies", "true");
+        const suffix = query.size ? `?${query.toString()}` : "";
+        const data = await request<{ evidence?: RunEvidenceQuery }>(
+          `/runs/${encodeURIComponent(id)}/evidence${suffix}`,
+        );
+        return data.evidence ?? null;
+      } catch {
+        return null;
       }
     }
 
@@ -1974,6 +1994,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       refreshRuns,
       loadRunDetail,
       loadRunSignals,
+      loadRunEvidence,
       loadVisualComparison,
       approveVisualBaseline,
       compareVisualRun,

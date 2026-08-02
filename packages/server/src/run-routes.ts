@@ -6,6 +6,7 @@ import {
   buildCompatibilityReport,
   buildSoakReport,
   compareEvidenceMetrics,
+  buildRunEvidence,
   extractEvidenceMetrics,
   listJobs,
   listPersistedRuns,
@@ -165,6 +166,21 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   }
 
   const signalsMatch = matchPath(pathname, "/runs/:id/signals");
+  const evidenceMatch = matchPath(pathname, "/runs/:id/evidence");
+  if (method === "GET" && evidenceMatch) {
+    const run = await readPersistedRun(evidenceMatch.id!);
+    assertRunAccess(scope, run);
+    const rawLimit = Number(url.searchParams.get("limit") ?? 500);
+    const limit = Number.isFinite(rawLimit)
+      ? Math.max(1, Math.min(2_000, Math.floor(rawLimit)))
+      : 500;
+    const includeBodies = url.searchParams.get("includeBodies") === "true";
+    json(response, 200, {
+      evidence: buildRunEvidence(run, { limit, includeBodies }),
+    });
+    return true;
+  }
+
   if (method === "GET" && signalsMatch) {
     const run = await readPersistedRun(signalsMatch.id!);
     assertRunAccess(scope, run);

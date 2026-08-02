@@ -774,6 +774,16 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("job.soak.start", path("job soak start")),
 
   mapped("run.list", path("run list")),
+  {
+    operationId: "run.get",
+    exclusion: "internal",
+    reason: "Exposed through the read-only `relay run get` resource command.",
+  },
+  {
+    operationId: "run.evidence.get",
+    exclusion: "internal",
+    reason: "Exposed through the read-only `relay run evidence` resource command.",
+  },
   mapped("run.catalog.rebuild", path("run catalog rebuild")),
   mapped("run.retention.apply", path("run retention apply")),
   mapped(
@@ -848,6 +858,52 @@ function runResource(command: string, suffix: string, summary: string): CliResou
 
 export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
   runResource("run get", "", "Get a persisted run and its evidence"),
+  {
+    resourceId: "run.evidence",
+    label: "Get bounded structured run evidence",
+    path: path("run evidence", ["runId"], undefined, {
+      summary: "Inspect logs, network, performance, and collector status",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      inputHelp: [
+        { name: "limit", type: "number", description: "Maximum entries per evidence channel" },
+        {
+          name: "includeBodies",
+          type: "boolean",
+          description: "Include consented request/response bodies",
+        },
+      ],
+      examples: ["relay run evidence <run-id> --input '{\"limit\":200}'"],
+    }),
+    resourcePath(input) {
+      const runId = input.runId;
+      if (typeof runId !== "string" || !runId)
+        throw new UsageError("run evidence requires <runId>");
+      const query = new URLSearchParams();
+      if (input.limit !== undefined) {
+        if (
+          !Number.isInteger(input.limit) ||
+          Number(input.limit) < 1 ||
+          Number(input.limit) > 2_000
+        ) {
+          throw new UsageError("run evidence limit must be an integer between 1 and 2000");
+        }
+        query.set("limit", String(input.limit));
+      }
+      if (input.includeBodies !== undefined) {
+        if (typeof input.includeBodies !== "boolean") {
+          throw new UsageError("run evidence includeBodies must be boolean");
+        }
+        if (input.includeBodies) query.set("includeBodies", "true");
+      }
+      const unknown = Object.keys(input).filter(
+        (key) => !["runId", "limit", "includeBodies"].includes(key),
+      );
+      if (unknown.length)
+        throw new UsageError(`run evidence does not accept: ${unknown.join(", ")}`);
+      const suffix = query.size ? `?${query.toString()}` : "";
+      return `/runs/${encodeURIComponent(runId)}/evidence${suffix}`;
+    },
+  },
   runResource("run signals", "/signals", "Get regression signals for a run"),
   runResource("run compare", "/visual-baseline", "Compare a run with its visual baseline"),
   {

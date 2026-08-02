@@ -70,6 +70,8 @@ function fixtureResult(operationId: string): unknown {
     "collection.list": { collections: [{ id: "collection-1", title: "Smoke" }] },
     "collection.get": { collection: { id: "collection-1", title: "Smoke" } },
     "run.list": { runs: [{ id: "run-1", status: "passed" }] },
+    "run.get": { run: { id: "run-1", status: "passed", artifacts: [] } },
+    "run.evidence.get": { evidence: { runId: "run-1", logs: [], network: [] } },
     "authoring.session.list": { sessions: [session] },
     "authoring.session.get": { session },
     "target.devices.list": {
@@ -181,6 +183,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       "relay://journeys/journey-1",
       "relay://collections/collection-1",
       "relay://authoring-sessions/session-1",
+      "relay://runs/run-1",
     ]) {
       assert.ok(uris.includes(uri), uri);
     }
@@ -198,6 +201,8 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
     assert.deepEqual(
       resourceTemplates.map(({ uriTemplate }) => uriTemplate),
       [
+        relayMcpResourceUris.run,
+        relayMcpResourceUris.runEvidence,
         relayMcpResourceUris.journey,
         relayMcpResourceUris.collection,
         relayMcpResourceUris.authoringSession,

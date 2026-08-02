@@ -26,6 +26,7 @@
     "./evaluation": "./src/evaluation.ts",
     "./outcomes": "./src/outcomes.ts",
     "./run-evidence": "./src/run-evidence.ts",
+    "./run-observatory": "./src/run-observatory.ts",
     "./run-matrix": "./src/run-matrix.ts",
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./atlas": "./src/atlas.ts",
