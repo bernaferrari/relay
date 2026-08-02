@@ -1,0 +1,382 @@
+import { For, Show, createSignal, onMount } from "solid-js";
+import { Button } from "@relay/ui/button";
+import { usePlatform } from "../context/platform";
+import { useServer } from "../context/server";
+import { cn } from "../lib/cn";
+
+const labelClass = "text-12-medium text-text-strong";
+const inputClass =
+  "h-8 w-full rounded-md border border-border-weak-base bg-surface-raised-stronger-non-alpha px-2.5 text-12-regular text-text-strong focus:border-border-focus focus:outline-none";
+
+export function DeviceSettingsPanel(props: { onDone: () => void }) {
+  const server = useServer();
+  const platform = usePlatform();
+  const [appleTeamId, setAppleTeamId] = createSignal("");
+  const [appleBundleId, setAppleBundleId] = createSignal("");
+  const [appleSigningIdentity, setAppleSigningIdentity] = createSignal("");
+  const [appleProvisioningProfile, setAppleProvisioningProfile] = createSignal("");
+  const [appleSetupBusy, setAppleSetupBusy] = createSignal(false);
+  const [appleSetupError, setAppleSetupError] = createSignal("");
+  const [appleSetupSaved, setAppleSetupSaved] = createSignal(false);
+  const [appleAdvancedOpen, setAppleAdvancedOpen] = createSignal(false);
+
+  onMount(() => {
+    void server
+      .refreshAppleDeviceSetup()
+      .then((status) => {
+        const setup = status.setup.ios ?? status.suggestion;
+        if (!setup) return;
+        setAppleTeamId(setup.teamId);
+        setAppleBundleId(setup.bundleId);
+        setAppleSigningIdentity(setup.signingIdentity ?? "");
+        setAppleProvisioningProfile(setup.provisioningProfile ?? "");
+      })
+      .catch(() => undefined);
+    void server.refreshAndroidDeviceSetup().catch(() => undefined);
+  });
+
+  async function saveAppleSetup(event?: SubmitEvent): Promise<void> {
+    event?.preventDefault();
+    setAppleSetupBusy(true);
+    setAppleSetupError("");
+    try {
+      await server.saveAppleDeviceSetup({
+        teamId: appleTeamId(),
+        bundleId: appleBundleId(),
+        signingIdentity: appleSigningIdentity(),
+        provisioningProfile: appleProvisioningProfile(),
+      });
+      setAppleSetupSaved(true);
+      window.setTimeout(() => setAppleSetupSaved(false), 1_500);
+    } catch (error) {
+      setAppleSetupError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAppleSetupBusy(false);
+    }
+  }
+
+  return (
+    <section class="flex max-w-[36rem] flex-col gap-4">
+      <header>
+        <h3 class="m-0 text-14-medium text-text-strong">Mobile devices</h3>
+        <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
+          Relay connects automatically. These checks appear only when a device needs attention.
+        </p>
+      </header>
+
+      <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h4 class="m-0 text-12-medium text-text-strong">Android devices</h4>
+            <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+              Relay bundles streaming. Android Platform Tools provides the local adb connection.
+            </p>
+          </div>
+          <Show when={server.androidDeviceSetup()?.checks[0]}>
+            {(check) => (
+              <span
+                class={cn(
+                  "shrink-0 rounded-full px-2 py-1 text-10-medium",
+                  check().status === "ready"
+                    ? "bg-surface-success-weak text-icon-success-base"
+                    : "bg-surface-warning-weak text-icon-warning-base",
+                )}
+              >
+                {check().status === "ready" ? "Ready" : "Needs setup"}
+              </span>
+            )}
+          </Show>
+        </div>
+        <Show when={server.androidDeviceSetup()?.checks[0]}>
+          {(check) => (
+            <p class="mt-2 mb-0 text-11-regular leading-snug text-text-weak">{check().detail}</p>
+          )}
+        </Show>
+        <Show when={server.androidDeviceSetup()?.checks[0]?.status === "needs-attention"}>
+          <p class="mt-3 mb-0 text-11-regular leading-snug text-text-weak">
+            In Android Studio, open SDK Manager → SDK Tools and install Android SDK Platform-Tools.
+            Then reopen Relay.
+          </p>
+          <div class="mt-3 flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={() =>
+                void platform.openExternal?.(
+                  "https://developer.android.com/tools/releases/platform-tools",
+                )
+              }
+            >
+              Get Platform Tools
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => void server.refreshAndroidDeviceSetup()}
+            >
+              Check again
+            </Button>
+          </div>
+        </Show>
+      </div>
+
+      <div class="border-t border-border-weak-base pt-4">
+        <h4 class="m-0 text-12-medium text-text-strong">Apple devices</h4>
+        <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+          Physical iPhone and iPad control uses Xcode’s local developer tools. Relay handles the
+          connection for you.
+        </p>
+      </div>
+
+      <Show
+        when={server.appleDeviceSetup()}
+        fallback={
+          <div class="flex min-h-[104px] items-start rounded-lg border border-border-weak-base bg-background-base px-3 py-3">
+            <div class="flex items-start gap-2.5">
+              <span
+                class="mt-0.5 size-3.5 shrink-0 animate-spin rounded-full border-2 border-text-weak border-t-transparent motion-reduce:animate-none"
+                role="status"
+                aria-label="Checking Apple device setup"
+              />
+              <div>
+                <p class="m-0 text-12-medium text-text-strong">Checking Apple devices</p>
+                <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+                  Looking for an Apple account already connected to Xcode.
+                </p>
+              </div>
+            </div>
+          </div>
+        }
+      >
+        {(appleStatus) => {
+          const accountReady = () =>
+            appleStatus().checks.some(
+              (check) => check.id === "account" && check.status === "ready",
+            );
+          return (
+            <>
+              <Show
+                when={accountReady() ? appleStatus().setup.ios : undefined}
+                fallback={
+                  <Show
+                    when={accountReady() ? appleStatus().suggestion : undefined}
+                    fallback={
+                      <div class="rounded-lg border border-border-weak-base bg-background-base p-3">
+                        <div class="flex items-start gap-2.5">
+                          <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-warning-base" />
+                          <div class="min-w-0">
+                            <p class="m-0 text-12-medium text-text-strong">
+                              Connect an Apple account in Xcode
+                            </p>
+                            <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+                              Add your Apple account in Xcode once. Relay will handle the device
+                              connection after that.
+                            </p>
+                          </div>
+                        </div>
+                        <div class="mt-3 flex flex-wrap items-center gap-2">
+                          <Show when={platform.openXcode}>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              type="button"
+                              onClick={() => void platform.openXcode?.()}
+                            >
+                              Open Xcode
+                            </Button>
+                          </Show>
+                          <Button
+                            variant={platform.openXcode ? "secondary" : "primary"}
+                            size="sm"
+                            type="button"
+                            onClick={() => void server.refreshAppleDeviceSetup()}
+                          >
+                            Check again
+                          </Button>
+                          <button
+                            class="text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                            type="button"
+                            onClick={() => setAppleAdvancedOpen((open) => !open)}
+                          >
+                            Enter details manually
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  >
+                    {(suggestion) => (
+                      <div class="rounded-lg border border-border-weak-base bg-background-base px-3 py-3 shadow-xs-border-base">
+                        <div class="flex items-start gap-2.5">
+                          <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
+                          <div class="min-w-0">
+                            <p class="m-0 text-12-medium text-text-strong">
+                              Use this Xcode account
+                            </p>
+                            <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
+                              Relay found {suggestion().label} on this Mac.
+                            </p>
+                          </div>
+                        </div>
+                        <div class="mt-3 flex items-center gap-2">
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            type="button"
+                            disabled={appleSetupBusy()}
+                            onClick={() => {
+                              setAppleTeamId(suggestion().teamId);
+                              setAppleBundleId(suggestion().bundleId);
+                              setAppleSigningIdentity("");
+                              setAppleProvisioningProfile("");
+                              void saveAppleSetup();
+                            }}
+                          >
+                            {appleSetupBusy() ? "Setting up…" : "Use this account"}
+                          </Button>
+                          <button
+                            class="text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                            type="button"
+                            onClick={() => setAppleAdvancedOpen((open) => !open)}
+                          >
+                            Change details
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </Show>
+                }
+              >
+                <div class="rounded-lg border border-border-weak-base bg-background-base px-3 py-3">
+                  <div class="flex min-w-0 items-start gap-2.5">
+                    <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
+                    <div class="min-w-0">
+                      <p class="m-0 text-12-medium text-text-strong">
+                        Ready to control Apple devices
+                      </p>
+                      <p class="mt-1 mb-0 text-11-regular text-text-weak">
+                        Relay will connect automatically when you choose an iPhone or iPad.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="mt-3 flex items-center gap-3">
+                    <Button size="sm" type="button" onClick={props.onDone}>
+                      Done
+                    </Button>
+                    <span class="text-11-regular text-text-weak">
+                      You can control it before recording.
+                    </span>
+                    <button
+                      class="ml-auto shrink-0 text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
+                      type="button"
+                      onClick={() => setAppleAdvancedOpen((open) => !open)}
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              </Show>
+
+              <Show when={appleAdvancedOpen()}>
+                <form class="flex flex-col gap-3" onSubmit={saveAppleSetup}>
+                  <div class="grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
+                    <label class="flex flex-col gap-1.5">
+                      <span class={labelClass}>Apple Team ID</span>
+                      <input
+                        class={inputClass}
+                        value={appleTeamId()}
+                        placeholder="ABCDE12345"
+                        autocomplete="off"
+                        spellcheck={false}
+                        onInput={(event) => setAppleTeamId(event.currentTarget.value)}
+                        required
+                      />
+                    </label>
+                    <label class="flex flex-col gap-1.5">
+                      <span class={labelClass}>Local runner ID</span>
+                      <input
+                        class={inputClass}
+                        value={appleBundleId()}
+                        placeholder="com.yourteam.relay.runner"
+                        autocomplete="off"
+                        spellcheck={false}
+                        onInput={(event) => setAppleBundleId(event.currentTarget.value)}
+                        required
+                      />
+                    </label>
+                  </div>
+                  <details class="rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5">
+                    <summary class="cursor-pointer text-12-medium text-text-strong">
+                      More signing options
+                    </summary>
+                    <div class="mt-3 grid grid-cols-2 gap-3 max-[680px]:grid-cols-1">
+                      <label class="flex flex-col gap-1.5">
+                        <span class={labelClass}>Signing identity</span>
+                        <input
+                          class={inputClass}
+                          value={appleSigningIdentity()}
+                          placeholder="Use Xcode automatically"
+                          autocomplete="off"
+                          onInput={(event) => setAppleSigningIdentity(event.currentTarget.value)}
+                        />
+                      </label>
+                      <label class="flex flex-col gap-1.5">
+                        <span class={labelClass}>Provisioning profile</span>
+                        <input
+                          class={inputClass}
+                          value={appleProvisioningProfile()}
+                          placeholder="Use Xcode automatically"
+                          autocomplete="off"
+                          onInput={(event) =>
+                            setAppleProvisioningProfile(event.currentTarget.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                  </details>
+                  <div class="flex items-center gap-2.5">
+                    <Button variant="primary" size="sm" type="submit" disabled={appleSetupBusy()}>
+                      {appleSetupBusy() ? "Saving…" : "Save changes"}
+                    </Button>
+                    <Show when={appleSetupSaved()}>
+                      <span class="text-12-regular text-icon-success-base">Saved</span>
+                    </Show>
+                    <Show when={appleSetupError()}>
+                      <span class="text-12-regular text-icon-critical-base" role="alert">
+                        {appleSetupError()}
+                      </span>
+                    </Show>
+                  </div>
+                </form>
+              </Show>
+
+              <details class="border-t border-border-weak-base pt-3">
+                <summary class="cursor-pointer text-11-medium text-text-weak">
+                  Setup details
+                </summary>
+                <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 max-[680px]:grid-cols-1">
+                  <For each={appleStatus().checks}>
+                    {(check) => (
+                      <div class="flex min-w-0 items-center gap-1.5 text-11-regular text-text-weak">
+                        <span
+                          class={cn(
+                            "size-1.5 shrink-0 rounded-full",
+                            check.status === "ready"
+                              ? "bg-icon-success-base"
+                              : "bg-icon-warning-base",
+                          )}
+                        />
+                        <span class="truncate">{check.label}</span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </details>
+            </>
+          );
+        }}
+      </Show>
+    </section>
+  );
+}
