@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CanvasConnection } from "../lib/journey-prototype";
-import { checkedTargetsLabel, connectionStatusLabel } from "./app-map-canvas-primitives";
+import { checkedTargetsLabel, connectionStatusLabel } from "../lib/connection-presentation";
 
 test("connection evidence names the one target that was actually checked", () => {
   assert.equal(
@@ -34,7 +34,7 @@ const connection = (overrides: Partial<CanvasConnection> = {}): CanvasConnection
 });
 
 test("connection status never calls executable or untested work verified", () => {
-  assert.equal(connectionStatusLabel(connection()), "Ready");
+  assert.equal(connectionStatusLabel(connection()), "Not verified");
   assert.equal(connectionStatusLabel(connection({ takeId: "take-1" })), "Captured");
   assert.equal(
     connectionStatusLabel(

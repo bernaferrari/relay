@@ -240,6 +240,7 @@ export function AppMapWorkspace(props: {
   const [view, setView] = createSignal<CanvasViewport>({ x: 72, y: 68, scale: 0.78 });
   const connections = createMemo(() => canvasConnections(tree(), draft.steps(), metadata().value));
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
+  const [screenInspectorOpen, setScreenInspectorOpen] = createSignal(false);
   const [selectedConnectionId, setSelectedConnectionId] = createSignal<string | null>(null);
   const [keyboardConnectionSourceId, setKeyboardConnectionSourceId] = createSignal<string | null>(
     null,
@@ -397,6 +398,7 @@ export function AppMapWorkspace(props: {
     appMapLoadAttempt();
     deviceAutoOpenedForMap = "";
     setSelectedNodeId(null);
+    setScreenInspectorOpen(false);
     setSelectedConnectionId(null);
     setKeyboardConnectionSourceId(null);
     setCapturedScreenUrls({});
@@ -723,6 +725,7 @@ export function AppMapWorkspace(props: {
   const selectNode = (node: JourneyTreeNode) => {
     setSelectedNodeId(node.id);
     setSelectedConnectionId(null);
+    setScreenInspectorOpen(false);
     setRenamingNodeId(null);
     if (node.representativeStepIndex >= 0) selectStep(node.representativeStepIndex);
   };
@@ -1382,6 +1385,7 @@ export function AppMapWorkspace(props: {
       ),
     );
     setSelectedNodeId(null);
+    setScreenInspectorOpen(false);
     queueCanonicalRemoval({ screenId: node.id });
   };
   const renameScreen = (node: JourneyTreeNode, title: string) => {
@@ -1506,6 +1510,7 @@ export function AppMapWorkspace(props: {
         return;
       }
       setSelectedNodeId(null);
+      setScreenInspectorOpen(false);
       setSelectedConnectionId(null);
       setKeyboardConnectionSourceId(null);
       setHistoryOpen(false);
@@ -1560,6 +1565,7 @@ export function AppMapWorkspace(props: {
             if (!target.closest("[data-app-map-screen-id], aside, button, input, textarea")) {
               setSelectedNodeId(null);
               setSelectedConnectionId(null);
+              setScreenInspectorOpen(false);
             }
             const wantsPan = canvasTool() === "hand" || event.button === 1;
             if (!hasCanvasContent() || !wantsPan || target.closest("button")) return;
@@ -1758,6 +1764,7 @@ export function AppMapWorkspace(props: {
                     onOpenScreen={(screenId) => {
                       setWorkspaceView("map");
                       setSelectedNodeId(screenId);
+                      setScreenInspectorOpen(false);
                       setSelectedConnectionId(null);
                       queueMicrotask(fit);
                     }}
@@ -1839,7 +1846,6 @@ export function AppMapWorkspace(props: {
                   presenceGeometry={presenceGeometry()}
                   positionFor={positionFor}
                   titleFor={titleFor}
-                  stepFor={(node) => draft.steps()[node.representativeStepIndex]}
                   imageFor={(node) =>
                     screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
                     capturedScreenUrls()[node.id] ||
@@ -1860,8 +1866,13 @@ export function AppMapWorkspace(props: {
                   onSelectConnection={(connection) => {
                     setSelectedConnectionId(connection.id);
                     setSelectedNodeId(null);
+                    setScreenInspectorOpen(false);
                   }}
                   onRenameNode={(node) => setRenamingNodeId(node.id)}
+                  onOpenNodeDetails={(node) => {
+                    selectNode(node);
+                    setScreenInspectorOpen(true);
+                  }}
                   onCommitNodeRename={renameScreen}
                   onConnectStart={(event, node) => beginConnection(event, node.id)}
                   onConnectKeyboard={(node) => {
@@ -1923,7 +1934,7 @@ export function AppMapWorkspace(props: {
                   when={selectedConnection()}
                   fallback={
                     <ScreenInspector
-                      node={selectedNode()}
+                      node={screenInspectorOpen() ? selectedNode() : null}
                       title={selectedNode() ? titleFor(selectedNode()!) : ""}
                       connections={connections().filter(
                         (connection) => connection.fromScreenId === selectedNode()?.id,
@@ -1931,12 +1942,13 @@ export function AppMapWorkspace(props: {
                       onSelectConnection={(connection) => {
                         setSelectedConnectionId(connection.id);
                         setSelectedNodeId(null);
+                        setScreenInspectorOpen(false);
                       }}
                       onRemove={() => {
                         const node = selectedNode();
                         if (node) removeScreen(node);
                       }}
-                      onClose={() => setSelectedNodeId(null)}
+                      onClose={() => setScreenInspectorOpen(false)}
                     />
                   }
                 >
@@ -2011,11 +2023,6 @@ export function AppMapWorkspace(props: {
                   else toast("Select the screen where this connection begins", "info");
                 }}
                 onAddNote={addNote}
-                onCreateRoutine={() => {
-                  const connection = selectedConnection();
-                  if (connection) void saveReusableBehavior(connection);
-                  else toast("Select a connection to turn it into a Routine", "info");
-                }}
                 onExplore={() => {
                   closeCapturePanel();
                   setHistoryOpen(false);

@@ -1,6 +1,5 @@
 import { For, Show } from "solid-js";
 import type { CollaborationAwareness, JourneyCanvasNote } from "@relay/protocol";
-import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
 import {
   canvasEdgeGeometry,
@@ -34,7 +33,6 @@ export type AppMapCanvasSceneProps = {
   presenceGeometry: PresenceGeometry;
   positionFor: (node: JourneyTreeNode) => CanvasPoint;
   titleFor: (node: JourneyTreeNode) => string;
-  stepFor: (node: JourneyTreeNode) => RecipeStep | undefined;
   imageFor: (node: JourneyTreeNode) => string;
   isFlowStart: (node: JourneyTreeNode) => boolean;
   screenRunState: (screenId: string) => JourneyRunPresentationState | undefined;
@@ -43,6 +41,7 @@ export type AppMapCanvasSceneProps = {
   onSelectNode: (node: JourneyTreeNode) => void;
   onSelectConnection: (connection: CanvasConnection) => void;
   onRenameNode: (node: JourneyTreeNode) => void;
+  onOpenNodeDetails: (node: JourneyTreeNode) => void;
   onCommitNodeRename: (node: JourneyTreeNode, title: string) => void;
   onConnectStart: (event: PointerEvent, node: JourneyTreeNode) => void;
   onConnectKeyboard: (node: JourneyTreeNode) => void;
@@ -59,6 +58,7 @@ export type AppMapCanvasSceneProps = {
 const markerClass = (
   state: JourneyRunPresentationState | undefined,
   connection: CanvasConnection,
+  selected: boolean,
 ) =>
   state === "failed"
     ? "failed"
@@ -66,17 +66,20 @@ const markerClass = (
       ? "healed"
       : state === "passed"
         ? "verified"
-        : connection.review?.status === "failed"
-          ? "failed"
-          : connection.review?.status === "verified"
-            ? "verified"
-            : connection.kind === "return"
-              ? "return"
-              : "arrow";
+        : selected
+          ? "selected"
+          : connection.review?.status === "failed"
+            ? "failed"
+            : connection.review?.status === "verified"
+              ? "verified"
+              : connection.kind === "return"
+                ? "return"
+                : "arrow";
 
 const connectionStrokeClass = (
   state: JourneyRunPresentationState | undefined,
   connection: CanvasConnection,
+  selected: boolean,
 ) =>
   state === "failed"
     ? "stroke-[var(--icon-critical-base)]"
@@ -86,15 +89,15 @@ const connectionStrokeClass = (
         ? "stroke-[var(--icon-warning-base)]"
         : state === "passed"
           ? "stroke-[var(--icon-success-base)]"
-          : connection.state === "needs-recording"
-            ? "stroke-[var(--icon-warning-base)] [stroke-dasharray:5_5]"
-            : connection.review?.status === "verified"
-              ? "stroke-[var(--icon-success-base)]"
+          : selected
+            ? "stroke-[var(--text-interactive-base)]"
+            : connection.state === "needs-recording"
+              ? "stroke-[var(--text-weak)] [stroke-dasharray:5_5]"
               : connection.review?.status === "failed"
                 ? "stroke-[var(--icon-critical-base)]"
                 : connection.kind === "return"
                   ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
-                  : "stroke-[var(--text-interactive-base)]";
+                  : "stroke-[color-mix(in_srgb,var(--text-weak)_78%,transparent)]";
 
 export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
   const nodeFor = (id: string) => props.nodes.find((node) => node.id === id);
@@ -121,8 +124,9 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
           <For
             each={
               [
-                ["arrow", "var(--text-interactive-base)"],
+                ["arrow", "var(--text-weak)"],
                 ["return", "var(--text-weak)"],
+                ["selected", "var(--text-interactive-base)"],
                 ["verified", "var(--icon-success-base)"],
                 ["failed", "var(--icon-critical-base)"],
                 ["healed", "var(--icon-warning-base)"],
@@ -139,7 +143,12 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                 markerHeight="6"
                 orient="auto"
               >
-                <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: color }} />
+                <path
+                  d="M 1 1 L 8 5 L 1 9"
+                  style={{ fill: "none", stroke: color, "stroke-width": 1.7 }}
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </marker>
             )}
           </For>
@@ -154,17 +163,27 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
                   d={geometry().path}
                   class={cn(
                     "pointer-events-none fill-none",
-                    connectionStrokeClass(runState(), connection),
+                    connectionStrokeClass(
+                      runState(),
+                      connection,
+                      props.selectedConnectionId === connection.id,
+                    ),
                   )}
                   stroke-width={
-                    connection.state === "needs-recording"
+                    props.selectedConnectionId === connection.id
                       ? 2
-                      : connection.kind === "return"
+                      : connection.state === "needs-recording"
                         ? 1.5
-                        : 2
+                        : connection.kind === "return"
+                          ? 1.5
+                          : 1.5
                   }
                   stroke-linecap="round"
-                  marker-end={`url(#app-map-${markerClass(runState(), connection)})`}
+                  marker-end={`url(#app-map-${markerClass(
+                    runState(),
+                    connection,
+                    props.selectedConnectionId === connection.id,
+                  )})`}
                 />
                 <path
                   d={geometry().path}
@@ -208,13 +227,13 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             <button
               type="button"
               class={cn(
-                "group absolute z-[6] flex min-h-8 max-w-44 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] px-2.5 text-[10px] font-medium text-[var(--text-base)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent),0_5px_14px_rgb(0_0_0/12%)] backdrop-blur-[10px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1.5 before:rounded-full hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] hover:shadow-[0_0_0_1px_var(--border-focus),0_7px_18px_rgb(0_0_0/16%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
+                "group absolute z-[6] flex min-h-6 max-w-52 items-center gap-1 rounded-[5px] bg-[color-mix(in_srgb,var(--map-canvas)_94%,transparent)] px-1.5 text-[10.5px] font-medium text-[var(--text-base)] backdrop-blur-[6px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1 before:rounded-[8px] hover:bg-[var(--v2-background-bg-base)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
                 props.selectedConnectionId === connection.id &&
-                  "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[0_0_0_1px_var(--border-focus),0_7px_18px_rgb(0_0_0/16%)]",
+                  "bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]",
               )}
               style={{
                 left: `${geometry().labelPoint.x}px`,
-                top: `${geometry().labelPoint.y}px`,
+                top: `${geometry().labelPoint.y - 19}px`,
                 transform: "translate(-50%, -50%)",
               }}
               aria-label={`Open connection from ${source() ? props.titleFor(source()!) : "source screen"} to ${target() ? props.titleFor(target()!) : "destination screen"}`}
@@ -230,8 +249,10 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
               </span>
               <Show when={count()}>
                 {(value) => (
-                  <span class="relative grid min-w-5 place-items-center rounded-full bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-white after:absolute after:-right-0.5 after:-top-0.5 after:-z-10 after:size-full after:rounded-full after:bg-[color-mix(in_srgb,var(--text-interactive-base)_32%,transparent)]">
-                    {value().exact ? value().count : `~${value().count}`}
+                  <span class="inline-flex items-center gap-1 text-[9.5px] font-normal tabular-nums text-[var(--text-weak)]">
+                    <span aria-hidden="true">·</span>{" "}
+                    {value().exact ? value().count : `~${value().count}`}{" "}
+                    {value().count === 1 ? "case" : "cases"}
                   </span>
                 )}
               </Show>
@@ -251,11 +272,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
         {(node) => (
           <ScreenCard
             node={node}
-            step={props.stepFor(node)}
             isFlowStart={props.isFlowStart(node)}
-            outgoingCount={
-              props.connections.filter((connection) => connection.fromScreenId === node.id).length
-            }
             title={props.titleFor(node)}
             selected={props.selectedNodeId === node.id}
             editing={props.renamingNodeId === node.id}
@@ -264,6 +281,7 @@ export function AppMapCanvasScene(props: AppMapCanvasSceneProps) {
             src={() => props.imageFor(node)}
             onSelect={() => props.onSelectNode(node)}
             onRename={() => props.onRenameNode(node)}
+            onOpenDetails={() => props.onOpenNodeDetails(node)}
             onCommitRename={(title) => props.onCommitNodeRename(node, title)}
             onConnectStart={(event) => props.onConnectStart(event, node)}
             onConnectKeyboard={() => props.onConnectKeyboard(node)}

@@ -30,7 +30,7 @@ test("canvas geometry is total while a graph is mid-edit", () => {
       [start, settings],
       (node) => node,
     ).path,
-    /^M 196 124 C/,
+    /^M 180 190 C/,
   );
 });
 

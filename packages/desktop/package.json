@@ -8,6 +8,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "inspect": "node scripts/inspect.mjs",
     "build": "node scripts/build.mjs",
     "package": "node scripts/build.mjs && electron-builder --mac dir",
     "dist": "node scripts/build.mjs && electron-builder --mac dmg zip",

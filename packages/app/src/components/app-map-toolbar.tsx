@@ -14,7 +14,7 @@ export function AppMapOverviewToolbar(props: {
   onViewChange: (view: AppMapWorkspaceView) => void;
 }) {
   const views = [
-    ["map", "move", "Map"],
+    ["map", "map", "Map"],
     ["screens", "grid", "Screens"],
     ["coverage", "check", "Coverage"],
   ] as const;
@@ -85,7 +85,6 @@ export function AppMapToolbar(props: {
   onCaptureScreen: () => void;
   onCreateConnection: () => void;
   onAddNote: () => void;
-  onCreateRoutine: () => void;
   onExplore: () => void;
   onToggleDevice: () => void;
 }) {
@@ -124,7 +123,7 @@ export function AppMapToolbar(props: {
         data-tip="Pan canvas · H"
         onClick={() => props.onToolChange("hand")}
       >
-        <Icon name="move" size={15} />
+        <Icon name="hand" size={15} />
       </button>
       <span class="mx-0.5 h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
       <button
@@ -134,7 +133,7 @@ export function AppMapToolbar(props: {
         data-tip="Capture screen · S"
         onClick={props.onCaptureScreen}
       >
-        <Icon name="smartphone" size={15} />
+        <Icon name="camera" size={15} />
       </button>
       <button
         type="button"
@@ -154,15 +153,6 @@ export function AppMapToolbar(props: {
         onClick={props.onAddNote}
       >
         <Icon name="edit" size={15} />
-      </button>
-      <button
-        type="button"
-        class={mapControlButton}
-        aria-label="Create Routine"
-        data-tip="Save as Routine"
-        onClick={props.onCreateRoutine}
-      >
-        <Icon name="copy" size={15} />
       </button>
       <button
         type="button"

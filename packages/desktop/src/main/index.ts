@@ -12,6 +12,15 @@ const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
 const PRODUCT_NAME = "Relay";
 const PRODUCT_VERSION = "0.1.0";
 
+const debugPort = process.env.RELAY_DEBUG_PORT?.trim();
+if (debugPort && /^\d+$/.test(debugPort)) {
+  // Development-only inspection of the real Electron renderer. The dev
+  // launcher chooses an ephemeral port and publishes it in out/ so automation
+  // never needs to guess or expose the endpoint beyond this machine.
+  app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
+  app.commandLine.appendSwitch("remote-debugging-port", debugPort);
+}
+
 function serverProbeOptions() {
   const authorizationToken = (
     process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN

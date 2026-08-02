@@ -15,6 +15,11 @@ export type ConnectionCaseStackProps = {
   onOpenVariables: () => void;
 };
 
+function humanizeName(value: string): string {
+  const words = value.trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  return words ? words[0]!.toLocaleUpperCase() + words.slice(1) : value;
+}
+
 export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
   const [open, setOpen] = createSignal(false);
   const [variableIds, setVariableIds] = createSignal<string[]>([]);
@@ -36,25 +41,27 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
   const reusableStacks = () => props.stacks.filter((stack) => stack.id !== props.stack?.id);
 
   return (
-    <section class="mt-3 rounded-[10px] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_72%,transparent)] p-1.5">
+    <section class="mt-3 border-t border-[var(--v2-border-border-muted)] pt-2">
       <button
         type="button"
-        class="flex min-h-11 w-full items-center gap-2 rounded-[8px] px-2 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
+        class="flex min-h-11 w-full items-center gap-2 rounded-[8px] px-1.5 text-left transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--border-focus)]"
         aria-expanded={open()}
         onClick={() => setOpen((value) => !value)}
       >
-        <span class="relative grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] before:absolute before:-right-0.5 before:-top-0.5 before:size-2 before:rounded-[2px] before:border before:border-[var(--v2-background-bg-layer-02)] before:bg-current">
+        <span class="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)]">
           <Icon name="grid" size={11} />
         </span>
         <span class="min-w-0 flex-1">
           <strong class="block text-[10.5px] font-medium text-[var(--text-strong)]">
-            {props.stack ? props.stack.name : "Cases"}
+            {props.stack
+              ? `${countFor(props.stack).exact ? "" : "~"}${countFor(props.stack).count} test cases`
+              : "Test cases"}
           </strong>
           <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
             {props.stack
-              ? `${countFor(props.stack).exact ? "" : "~"}${countFor(props.stack).count} variations · ${selectedVariables()
-                  .map((variable) => variable.name)
-                  .join(", ")}`
+              ? selectedVariables()
+                  .map((variable) => humanizeName(variable.name))
+                  .join(", ")
               : "Repeat this connection with different inputs"}
           </span>
         </span>
@@ -64,7 +71,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
       </button>
 
       <Show when={open()}>
-        <div class="mt-1 grid gap-2 border-t border-[var(--v2-border-border-muted)] px-1.5 pb-1 pt-2">
+        <div class="mt-1 grid gap-2 rounded-[9px] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-02)_66%,transparent)] px-2 py-2">
           <Show when={reusableStacks().length > 0}>
             <div class="grid gap-1">
               <span class="px-1 text-[9px] font-medium text-[var(--text-weak)]">Saved stacks</span>
@@ -83,7 +90,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                     >
                       <Icon name="grid" size={11} class="text-[var(--text-interactive-base)]" />
                       <span class="min-w-0 flex-1 truncate text-[var(--text-base)]">
-                        {stack.name}
+                        {humanizeName(stack.name)}
                       </span>
                       <span class="text-[9px] tabular-nums text-[var(--text-weak)]">
                         {count().exact ? "" : "~"}
@@ -150,7 +157,7 @@ export function ConnectionCaseStack(props: ConnectionCaseStackProps) {
                         </Show>
                       </span>
                       <span class="min-w-0 flex-1 truncate text-[var(--text-base)]">
-                        {variable.name}
+                        {humanizeName(variable.name)}
                       </span>
                       <span class="text-[9px] text-[var(--text-weak)]">
                         {variable.scope === "private"

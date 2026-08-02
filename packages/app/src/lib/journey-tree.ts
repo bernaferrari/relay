@@ -121,8 +121,8 @@ export function buildJourneyTree(steps: RecipeStep[]): JourneyTree {
     const childYs = node.childIds.map((child) => place(child, depth + 1));
     const y = childYs.length
       ? childYs.reduce((sum, value) => sum + value, 0) / childYs.length
-      : leaf++ * 328;
-    laidOut.set(id, { ...node, depth, x: depth * 284, y });
+      : leaf++ * 400;
+    laidOut.set(id, { ...node, depth, x: depth * 304, y });
     return y;
   };
   for (const root of rootIds) place(root, 0);

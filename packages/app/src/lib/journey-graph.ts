@@ -614,7 +614,7 @@ export function buildJourneyGraphTree(graph: JourneyGraph, steps: RecipeStep[]):
           (value) => value >= 0 && value < steps.length,
         ),
         depth,
-        x: depth * 284,
+        x: depth * 304,
         y: row * 328,
       };
     })

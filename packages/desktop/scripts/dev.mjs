@@ -3,7 +3,7 @@
  * Avoids electron-vite, which is incompatible with vite-plus-core.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { createServer } from "vite";
 import { resolve, dirname } from "node:path";
@@ -12,6 +12,7 @@ import { bundleElectron } from "./bundle-electron.mjs";
 import { prepareMacOSDevApp } from "./macos-dev-app.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const inspectionManifest = resolve(root, "out/desktop-inspection.json");
 
 function resolveElectronCli() {
   try {
@@ -70,6 +71,13 @@ async function main() {
   const relayUrl = `http://127.0.0.1:${relayPort}`;
   console.log(`[desktop] Relay server ${relayUrl}`);
 
+  // The dev app exposes Chromium's loopback-only DevTools Protocol so visual
+  // inspection drives the real Electron renderer (preload, IPC, and all), not
+  // a browser approximation. A fresh port avoids collisions between sessions.
+  const debugPort = await reserveLoopbackPort();
+  const debugUrl = `http://127.0.0.1:${debugPort}`;
+  console.log(`[desktop] inspector ${debugUrl}`);
+
   const electronCliPath = resolveElectronCli();
   const executable =
     process.platform === "darwin" ? prepareMacOSDevApp(electronCliPath, root) : process.execPath;
@@ -84,9 +92,27 @@ async function main() {
       ELECTRON_RENDERER_URL: rendererUrl,
       RELAY_DESKTOP_ROOT: root,
       RELAY_URL: relayUrl,
+      RELAY_DEBUG_PORT: String(debugPort),
     },
     stdio: "inherit",
   });
+  mkdirSync(dirname(inspectionManifest), { recursive: true });
+  writeFileSync(
+    inspectionManifest,
+    `${JSON.stringify(
+      {
+        version: 1,
+        pid: child.pid,
+        debugUrl,
+        rendererUrl,
+        relayUrl,
+        startedAt: Date.now(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(`[desktop] inspection manifest ${inspectionManifest}`);
 
   let shuttingDown = false;
   const waitForExit = (timeoutMs) =>
@@ -110,12 +136,14 @@ async function main() {
       child.kill("SIGKILL");
       await waitForExit(1_000);
     }
+    rmSync(inspectionManifest, { force: true });
     await Promise.all([server.close(), watchers.mainCtx.dispose(), watchers.preloadCtx.dispose()]);
   };
   process.on("SIGINT", () => void shutdown().finally(() => process.exit(0)));
   process.on("SIGTERM", () => void shutdown().finally(() => process.exit(0)));
 
   child.on("exit", (code, signal) => {
+    rmSync(inspectionManifest, { force: true });
     console.log(`[desktop] app exited code=${code ?? "none"} signal=${signal ?? "none"}`);
     if (!shuttingDown) void shutdown().finally(() => process.exit(code ?? 0));
   });

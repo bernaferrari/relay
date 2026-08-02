@@ -12,6 +12,7 @@
     "dev:mcp": "pnpm --filter @relay/mcp start",
     "dev:app": "pnpm --filter @relay/app dev",
     "dev:desktop": "pnpm --filter @relay/desktop dev",
+    "inspect:desktop": "pnpm --filter @relay/desktop inspect",
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",

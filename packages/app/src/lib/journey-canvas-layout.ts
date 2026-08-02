@@ -4,8 +4,10 @@ import type { JourneyTreeNode } from "./journey-tree";
 export type CanvasPoint = { x: number; y: number };
 export type CanvasViewport = CanvasPoint & { scale: number };
 
-export const SCREEN_CARD_WIDTH = 196;
-export const SCREEN_CARD_HEIGHT = 248;
+export const SCREEN_CARD_WIDTH = 180;
+export const SCREEN_CARD_HEIGHT = 350;
+export const SCREEN_FRAME_TOP = 30;
+export const SCREEN_FRAME_HEIGHT = 320;
 export const MIN_CANVAS_SCALE = 0.3;
 export const MAX_CANVAS_SCALE = 1.25;
 
@@ -64,9 +66,9 @@ export function canvasEdgeGeometry(
   const toPosition = positionFor(to);
   if (edge.kind === "return") {
     const startX = fromPosition.x + SCREEN_CARD_WIDTH / 2;
-    const startY = fromPosition.y;
+    const startY = fromPosition.y + SCREEN_FRAME_TOP;
     const endX = toPosition.x + SCREEN_CARD_WIDTH / 2;
-    const endY = toPosition.y;
+    const endY = toPosition.y + SCREEN_FRAME_TOP;
     const railY = Math.min(startY, endY) - 34;
     return {
       path: `M ${startX} ${startY} C ${startX} ${railY}, ${endX} ${railY}, ${endX} ${endY}`,
@@ -77,9 +79,9 @@ export function canvasEdgeGeometry(
     };
   }
   const startX = fromPosition.x + SCREEN_CARD_WIDTH;
-  const startY = fromPosition.y + SCREEN_CARD_HEIGHT / 2;
+  const startY = fromPosition.y + SCREEN_FRAME_TOP + SCREEN_FRAME_HEIGHT / 2;
   const endX = toPosition.x;
-  const endY = toPosition.y + SCREEN_CARD_HEIGHT / 2;
+  const endY = toPosition.y + SCREEN_FRAME_TOP + SCREEN_FRAME_HEIGHT / 2;
   return {
     path: `M ${startX} ${startY} C ${startX + 48} ${startY}, ${endX - 48} ${endY}, ${endX} ${endY}`,
     labelPoint: {
@@ -99,6 +101,6 @@ export function draftCanvasConnectionPath(
   if (!from) return "";
   const origin = positionFor(from);
   const startX = origin.x + SCREEN_CARD_WIDTH;
-  const startY = origin.y + SCREEN_CARD_HEIGHT / 2;
+  const startY = origin.y + SCREEN_FRAME_TOP + SCREEN_FRAME_HEIGHT / 2;
   return `M ${startX} ${startY} C ${startX + 48} ${startY}, ${point.x - 48} ${point.y}, ${point.x} ${point.y}`;
 }

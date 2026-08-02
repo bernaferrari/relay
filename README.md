@@ -243,8 +243,23 @@ as reviewable proposals rather than silently changing the map.
 | -------- | ------------------ | --------------------------------------------- |
 | Stage UI | `pnpm dev:app`     | Offline gate, empty states, theme (OC tokens) |
 | Electron | `pnpm dev:desktop` | Same app + native window tint                 |
-| TUI      | `pnpm dev` / `tui` | Terminal workspace                            |
-| Doctor   | `pnpm doctor`      | Node ≥22, adb, devices                        |
+
+### Inspecting the real Electron app
+
+`pnpm dev:desktop` publishes a loopback-only DevTools endpoint for its exact
+renderer, including preload, IPC, and the private Relay service it spawned. In
+another terminal, capture a screenshot and a machine-readable UI report with:
+
+```bash
+pnpm inspect:desktop
+```
+
+The command writes `packages/desktop/out/relay-electron.png` plus a JSON report
+containing the renderer URL, viewport, console failures, layout overflow, and
+accessible interactive controls. Pass `--reload`, `--settle 1200`, or
+`--screenshot /tmp/relay.png` after `--` when a specific state needs inspection.
+| TUI | `pnpm dev` / `tui` | Terminal workspace |
+| Doctor | `pnpm doctor` | Node ≥22, adb, devices |
 
 ### UI behavior (quality bar)
 

@@ -81,7 +81,7 @@ export function AppMapBrowseView(props: {
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <Button variant="primary" size="lg" onClick={props.onOpenAgent}>
+            <Button variant="secondary" size="md" onClick={props.onOpenAgent}>
               <Icon name="scan" size={13} /> Explore with Relay
             </Button>
           </div>
@@ -90,7 +90,7 @@ export function AppMapBrowseView(props: {
         <div
           class={cn(
             "sticky top-[64px] z-10 mb-5 flex min-h-12 items-center gap-2 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[inset_0_0_0_1px_var(--v2-border-border-muted),0_6px_18px_rgb(0_0_0/6%)] backdrop-blur-[14px] max-[680px]:flex-wrap",
-            props.mode === "screens" && "max-w-[520px]",
+            props.mode === "screens" && "max-w-[420px]",
           )}
         >
           <label class="relative min-w-[180px] flex-1">
@@ -140,7 +140,7 @@ export function AppMapBrowseView(props: {
           when={props.mode === "screens"}
           fallback={<CoverageTable rows={filteredRows()} onOpenRun={props.onOpenRun} />}
         >
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,268px),1fr))] items-start gap-x-7 gap-y-8">
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),260px))] items-start gap-x-6 gap-y-8">
             <For
               each={filteredAreas()}
               fallback={
@@ -230,20 +230,13 @@ function ScreenTile(props: {
       class="group min-w-0 rounded-[10px] bg-transparent p-0 text-left outline-none transition-transform duration-150 hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-3 focus-visible:ring-offset-[var(--map-canvas)] motion-reduce:hover:translate-y-0"
       onClick={props.onOpen}
     >
-      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-[10px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_70%,var(--map-canvas))] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-shadow duration-150 group-hover:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong),0_8px_20px_rgb(0_0_0/7%)]">
+      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-shadow duration-150 group-hover:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong),0_8px_20px_rgb(0_0_0/7%)]">
         <Show
           when={props.image}
           fallback={
-            <div class="grid max-w-[190px] justify-items-center gap-2 px-4 text-center">
-              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--v2-background-bg-base)] text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-                <Icon name="camera" size={15} />
-              </span>
-              <span class="text-[10.5px] font-medium text-[var(--text-base)]">
-                No screenshot yet
-              </span>
-              <small class="text-[9.5px]/[1.4] text-[var(--text-weak)]">
-                Capture or replay this state to add a preview
-              </small>
+            <div class="grid justify-items-center gap-2 px-4 text-center text-[var(--text-weak)] transition-colors group-hover:text-[var(--text-base)]">
+              <Icon name="camera" size={15} />
+              <span class="text-[10.5px] font-medium">Capture preview</span>
             </div>
           }
         >
@@ -273,9 +266,17 @@ function ScreenTile(props: {
           />
         </div>
         <div class="flex min-w-0 items-center gap-2 text-[10px] text-[var(--text-weak)]">
-          <span class="tabular-nums">{props.incoming} in</span>
+          <span class="tabular-nums">
+            {props.incoming
+              ? `${props.incoming} ${props.incoming === 1 ? "path" : "paths"} in`
+              : "Entry screen"}
+          </span>
           <i class="size-0.5 rounded-full bg-[var(--text-weak)] opacity-60" />
-          <span class="tabular-nums">{props.outgoing} out</span>
+          <span class="tabular-nums">
+            {props.outgoing
+              ? `${props.outgoing} ${props.outgoing === 1 ? "path" : "paths"} out`
+              : "End"}
+          </span>
           <Show when={props.targets.length}>
             <i class="size-0.5 rounded-full bg-[var(--text-weak)] opacity-60" />
             <span class="truncate">
