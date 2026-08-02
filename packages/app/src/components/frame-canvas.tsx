@@ -78,7 +78,7 @@ export function FrameCanvas(props: {
   );
 
   const nodes = createMemo(() => layoutScreenGraph(rawItems(), overrides(), undefined, aspects()));
-  const journeyId = createMemo(() => server.selectedRecipeId() ?? rawItems()[0]?.id ?? "empty");
+  const journeyId = createMemo(() => server.selectedAppMapId() ?? rawItems()[0]?.id ?? "empty");
   const edges = createMemo(() =>
     buildEdges(nodes()).map((edge) => {
       const custom = edgeConfig()[`${edge.from}:${edge.to}`];

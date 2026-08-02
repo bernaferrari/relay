@@ -262,7 +262,7 @@ export const { use: useWorkbench, provider: WorkbenchProvider } = createSimpleCo
 
     // New test selected → focus first step so the artboard always shows *something*.
     createEffect(
-      on(server.selectedRecipeId, (id) => {
+      on(server.selectedAppMapId, (id) => {
         if (!id) {
           setFocusedIndex(null);
           return;

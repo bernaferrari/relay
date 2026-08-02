@@ -128,7 +128,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     const decision = appMapStartupDecision({
       online: server.health() === "online",
       loaded: server.appMapsLoaded(),
-      selectedId: server.selectedRecipeId(),
+      selectedId: server.selectedAppMapId(),
       maps: server.appMaps(),
     });
     if (decision.kind === "wait") return;
@@ -138,13 +138,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
     if (decision.kind === "select") {
       restoredInitialMap = true;
-      server.setSelectedRecipeId(decision.id);
+      server.setSelectedAppMapId(decision.id);
       return;
     }
     // No saved maps yet. The renderer now owns an unsaved canvas until the
     // first capture/edit, so launching Relay never manufactures an empty file.
     restoredInitialMap = true;
-    server.setSelectedRecipeId(null);
+    server.setSelectedAppMapId(null);
   });
   const libraryArea = createMemo<MapLibraryArea>(() => area());
   let titleBeforeEdit = "";
@@ -271,11 +271,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   // An App Map is authored on its canvas. The live device remains available
   // inside that workspace, but merely connecting hardware must never change
   // what the user is editing or reopen yesterday's draft on launch.
-  let openedRecipeId: string | null | undefined;
+  let openedAppMapId: string | null | undefined;
   createEffect(() => {
-    const id = server.selectedRecipeId();
-    if (openedRecipeId === id) return;
-    openedRecipeId = id;
+    const id = server.selectedAppMapId();
+    if (openedAppMapId === id) return;
+    openedAppMapId = id;
     setStudioView("map");
     setSettingsOpen(false);
     setVariablesOpen(false);
@@ -376,7 +376,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       );
       return null;
     }
-    server.setSelectedRecipeId(saved.id);
+    server.setSelectedAppMapId(saved.id);
     setArea("tests");
     setStudioView("map");
     setSettingsOpen(false);
@@ -461,7 +461,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         name: title,
       });
       await server.refreshAppMaps();
-      server.setSelectedRecipeId(duplicateId);
+      server.setSelectedAppMapId(duplicateId);
       toast(`Duplicated ${displayTitle(appMap.name)}`, "success");
     } catch (error) {
       if (recipeCopy) await server.deleteRecipeRemote(recipeCopy.id).catch(() => undefined);
@@ -470,7 +470,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   }
 
   async function renameCanonicalMap(name: string): Promise<void> {
-    const appMapId = server.selectedRecipeId();
+    const appMapId = server.selectedAppMapId();
     if (!appMapId) return;
     const map = server.appMaps().find((candidate) => candidate.id === appMapId);
     if (!map || map.name === name) return;
@@ -497,13 +497,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         await server.runAction("app-map.remove", { appMapId });
         await server.deleteRecipeRemote(appMapId).catch(() => undefined);
         await server.refreshAppMaps();
-        if (server.selectedRecipeId() === appMapId) server.setSelectedRecipeId(null);
+        if (server.selectedAppMapId() === appMapId) server.setSelectedAppMapId(null);
       },
     });
   }
 
   function deleteSelected(): void {
-    const appMapId = server.selectedRecipeId();
+    const appMapId = server.selectedAppMapId();
     if (appMapId) confirmDeleteMap(appMapId);
   }
 
@@ -512,7 +512,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   }
 
   function openRecipe(id: string): void {
-    server.setSelectedRecipeId(id);
+    server.setSelectedAppMapId(id);
     setArea("tests");
     setStudioView("map");
     setSettingsOpen(false);
@@ -525,7 +525,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
    * capture or note, so browsing and reopening Relay cannot create drafts. */
   function startNewMap(): void {
     setArea("tests");
-    server.setSelectedRecipeId(null);
+    server.setSelectedAppMapId(null);
     setStudioView("map");
     setSettingsOpen(false);
     setNavOpen(false);
@@ -535,7 +535,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     <div
       class={shellRoot}
       style={shellRootNavVar(navOpen())}
-      data-selected-recipe-id={server.selectedRecipeId() ?? ""}
+      data-selected-app-map-id={server.selectedAppMapId() ?? ""}
     >
       <div class={shellDragStrip} aria-hidden="true" />
 
@@ -552,7 +552,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         query={query()}
         onQuery={setQuery}
         items={mapItems()}
-        selectedId={server.selectedRecipeId()}
+        selectedId={server.selectedAppMapId()}
         onSelect={openRecipe}
         onDelete={deleteMap}
         onCreate={startNewMap}

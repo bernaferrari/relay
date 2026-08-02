@@ -64,7 +64,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
 
   createEffect(() => {
     const index = currentIndex();
-    server.selectedRecipeId();
+    server.selectedAppMapId();
     // Recipe selection seeds the draft and initially focuses its first step in
     // a microtask. Follow it so opening a completed run lands on the observed
     // (usually failed) moment across the list, device, and inspector.

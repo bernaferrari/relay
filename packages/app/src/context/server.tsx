@@ -248,13 +248,13 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [authoringSessions, setAuthoringSessions] = createSignal<AuthoringSession[]>([]);
     const [suites, setSuites] = createSignal<TestSuite[]>([]);
     const [selectedSuiteId, setSelectedSuiteId] = createSignal<string | null>(null);
-    // Reopen the last journey like a document editor. Hardware selection and
+    // Reopen the last App Map like a document editor. Hardware selection and
     // the live-device panel remain separate state, so resuming the canvas does
     // not imply that a recording has started.
-    const [selectedRecipeId, setSelectedRecipeIdState] = createSignal<string | null>(null);
-    function setSelectedRecipeId(id: string | null): void {
-      setSelectedRecipeIdState(id);
-      void Promise.resolve(platform.storage.set("selectedRecipe", id ?? "")).catch(() => undefined);
+    const [selectedAppMapId, setSelectedAppMapIdState] = createSignal<string | null>(null);
+    function setSelectedAppMapId(id: string | null): void {
+      setSelectedAppMapIdState(id);
+      void Promise.resolve(platform.storage.set("selectedAppMap", id ?? "")).catch(() => undefined);
     }
     const [jobs, setJobs] = createSignal<JobInfo[]>([]);
     const [persistedRuns, setPersistedRuns] = createSignal<PersistedRun[]>([]);
@@ -653,7 +653,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }): Promise<{ recipe: RecipeInfo; warnings: string[] }> {
       const data = await promoteDiscoveryPath(request, input);
       await refreshRecipes();
-      setSelectedRecipeId(data.recipe.id);
+      setSelectedAppMapId(data.recipe.id);
       return data;
     }
 
@@ -1545,7 +1545,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         const recipe = await importRecipeYamlRemote(request, yaml, conflict);
         await refreshRecipes();
-        setSelectedRecipeId(recipe.id);
+        setSelectedAppMapId(recipe.id);
         toast(`Imported “${recipe.title}”`, "success");
         return recipe;
       } catch (err) {
@@ -1573,7 +1573,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function deleteRecipeRemote(id: string): Promise<void> {
       try {
         await deleteRecipe(request, id);
-        if (selectedRecipeId() === id) setSelectedRecipeId(null);
+        if (selectedAppMapId() === id) setSelectedAppMapId(null);
         await refreshRecipes();
         toast("Journey deleted", "success");
       } catch (err) {
@@ -1650,8 +1650,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         /* ignore */
       }
       try {
-        const savedRecipe = await platform.storage.get("selectedRecipe");
-        if (savedRecipe) setSelectedRecipeIdState(savedRecipe);
+        const savedAppMap = await platform.storage.get("selectedAppMap");
+        if (savedAppMap) setSelectedAppMapIdState(savedAppMap);
       } catch {
         /* ignore */
       }
@@ -1672,15 +1672,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshRedactionPolicy(),
           refreshEvidenceCollectionPolicy(),
         ]);
-        const selectedMapId = selectedRecipeId();
+        const selectedMapId = selectedAppMapId();
         if (selectedMapId && !appMaps().some((map) => map.id === selectedMapId)) {
-          setSelectedRecipeId(null);
+          setSelectedAppMapId(null);
         }
-        if (!selectedRecipeId()) {
+        if (!selectedAppMapId()) {
           const latestMap = appMaps().toSorted(
             (left, right) => right.updatedAt - left.updatedAt,
           )[0];
-          if (latestMap) setSelectedRecipeId(latestMap.id);
+          if (latestMap) setSelectedAppMapId(latestMap.id);
         }
         connectSse();
       }
@@ -1817,10 +1817,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     });
 
     const selectedAppMap = createMemo(
-      () => appMaps().find((appMap) => appMap.id === selectedRecipeId()) ?? null,
+      () => appMaps().find((appMap) => appMap.id === selectedAppMapId()) ?? null,
     );
     const selectedRecipe = createMemo(
-      () => recipes().find((recipe) => recipe.id === selectedRecipeId()) ?? null,
+      () => recipes().find((recipe) => recipe.id === selectedAppMapId()) ?? null,
     );
 
     function createJourneyCollaboration(journeyId: string, doc: Y.Doc) {
@@ -1896,8 +1896,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       suites,
       selectedSuiteId,
       setSelectedSuiteId,
-      selectedRecipeId,
-      setSelectedRecipeId,
+      selectedAppMapId,
+      setSelectedAppMapId,
       selectedAppMap,
       selectedRecipe,
       jobs,

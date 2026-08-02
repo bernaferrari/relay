@@ -73,7 +73,7 @@ export function RecipeStepsEditor(): JSX.Element {
 
   // Reset editor chrome when switching tests — never when merely focusing a step.
   createEffect(() => {
-    const id = server.selectedRecipeId();
+    const id = server.selectedAppMapId();
     void id;
     setExpanded(null);
     draft.setExpandedStep(null);

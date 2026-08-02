@@ -78,11 +78,11 @@ import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-proj
 import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
 
-type JourneyLoadState =
+type AppMapLoadState =
   | { status: "idle" }
-  | { status: "loading"; recipeId: string }
-  | { status: "ready"; recipeId: string }
-  | { status: "error"; recipeId: string };
+  | { status: "loading"; appMapId: string }
+  | { status: "ready"; appMapId: string }
+  | { status: "error"; appMapId: string };
 
 /**
  * The graph is the authoring surface for a journey. A card is a captured
@@ -112,11 +112,11 @@ export function AppMapWorkspace(props: {
     value: EMPTY_JOURNEY_METADATA,
     updatedAt: 0,
   });
-  const [loadedRecipeId, setLoadedRecipeId] = createSignal<string | null>(null);
-  const [journeyLoadState, setJourneyLoadState] = createSignal<JourneyLoadState>({
+  const [loadedAppMapId, setLoadedAppMapId] = createSignal<string | null>(null);
+  const [appMapLoadState, setAppMapLoadState] = createSignal<AppMapLoadState>({
     status: "idle",
   });
-  const [journeyLoadAttempt, setJourneyLoadAttempt] = createSignal(0);
+  const [appMapLoadAttempt, setAppMapLoadAttempt] = createSignal(0);
   const [targetSetOpen, setTargetSetOpen] = createSignal(false);
   const [workspaceView, setWorkspaceView] = createSignal<AppMapWorkspaceView>("map");
   const [agentOpen, setAgentOpen] = createSignal(false);
@@ -127,7 +127,7 @@ export function AppMapWorkspace(props: {
     return id ? (server.matrices().find((matrix) => matrix.id === id) ?? null) : null;
   });
   const activeAppMap = createMemo(() =>
-    server.appMaps().find((candidate) => candidate.id === server.selectedRecipeId()),
+    server.appMaps().find((candidate) => candidate.id === server.selectedAppMapId()),
   );
   const pendingProposals = createMemo(() =>
     Object.values(activeAppMap()?.proposals ?? {})
@@ -140,14 +140,14 @@ export function AppMapWorkspace(props: {
     () => server.devices().find((device) => device.serial === server.selectedDevice()) ?? null,
   );
   const graphRunJob = createMemo(() => {
-    const recipeId = server.selectedRecipeId();
-    if (!recipeId) return null;
+    const appMapId = server.selectedAppMapId();
+    if (!appMapId) return null;
     return (
       server
         .jobs()
         .find(
           (job) =>
-            job.action === recipeId &&
+            job.action === appMapId &&
             job.artifacts?.some((artifact) => artifact.kind === "journey-graph-plan"),
         ) ?? null
     );
@@ -306,8 +306,8 @@ export function AppMapWorkspace(props: {
   let pendingConnectionId: string | null = null;
   let recordingSourceScreenId: string | null = null;
   let recordRequestedAfterDeviceSelection = false;
-  let deviceAutoOpenedForRecipe = "";
-  let initiallyFittedRecipeId = "";
+  let deviceAutoOpenedForMap = "";
+  let initiallyFittedAppMapId = "";
   let metadataSaveSequence = 0;
   let destinationResolvedForTake = "";
   let captureCloseTimer: number | undefined;
@@ -403,9 +403,9 @@ export function AppMapWorkspace(props: {
   });
 
   createEffect(() => {
-    const recipeId = server.selectedRecipeId();
-    journeyLoadAttempt();
-    deviceAutoOpenedForRecipe = "";
+    const appMapId = server.selectedAppMapId();
+    appMapLoadAttempt();
+    deviceAutoOpenedForMap = "";
     setSelectedNodeId(null);
     setSelectedConnectionId(null);
     setKeyboardConnectionSourceId(null);
@@ -414,40 +414,40 @@ export function AppMapWorkspace(props: {
     setHistoryOpen(false);
     setCaptureOpen(false);
     appliedCanonicalRevision = "";
-    if (!recipeId) {
+    if (!appMapId) {
       closeJourneyDocument();
-      setLoadedRecipeId(null);
-      setJourneyLoadState({ status: "idle" });
+      setLoadedAppMapId(null);
+      setAppMapLoadState({ status: "idle" });
       setCanvasHistory({ undo: false, redo: false });
       setMetadata({ revision: 0, value: EMPTY_JOURNEY_METADATA, updatedAt: 0 });
       return;
     }
     closeJourneyDocument();
-    setLoadedRecipeId(null);
-    setJourneyLoadState({ status: "loading", recipeId });
+    setLoadedAppMapId(null);
+    setAppMapLoadState({ status: "loading", appMapId });
     void server
-      .loadJourney(recipeId)
+      .loadJourney(appMapId)
       .then((next) => {
-        if (server.selectedRecipeId() === recipeId) {
+        if (server.selectedAppMapId() === appMapId) {
           setMetadata(next);
-          openJourneyDocument(recipeId, next.value);
+          openJourneyDocument(appMapId, next.value);
           setCanvasHistory({ undo: false, redo: false });
-          setLoadedRecipeId(recipeId);
-          setJourneyLoadState({ status: "ready", recipeId });
+          setLoadedAppMapId(appMapId);
+          setAppMapLoadState({ status: "ready", appMapId });
         }
       })
       .catch(() => {
-        if (server.selectedRecipeId() === recipeId) {
+        if (server.selectedAppMapId() === appMapId) {
           setCanvasHistory({ undo: false, redo: false });
-          setJourneyLoadState({ status: "error", recipeId });
+          setAppMapLoadState({ status: "error", appMapId });
         }
       });
   });
 
   createEffect(() => {
-    const appMapId = server.selectedRecipeId();
+    const appMapId = server.selectedAppMapId();
     const appMap = server.appMaps().find((candidate) => candidate.id === appMapId);
-    if (!appMapId || !appMap || loadedRecipeId() !== appMapId) return;
+    if (!appMapId || !appMap || loadedAppMapId() !== appMapId) return;
     const revisionKey = `${appMapId}:${appMap.revision}`;
     if (appliedCanonicalRevision === revisionKey) return;
     appliedCanonicalRevision = revisionKey;
@@ -468,16 +468,16 @@ export function AppMapWorkspace(props: {
   // is established there, not through a modal or a second empty-state CTA.
   // Populated maps keep the canvas unobstructed until Device is requested.
   createEffect(() => {
-    const recipeId = server.selectedRecipeId();
+    const appMapId = server.selectedAppMapId();
     if (
-      !recipeId ||
-      loadedRecipeId() !== recipeId ||
+      !appMapId ||
+      loadedAppMapId() !== appMapId ||
       props.navigatorOpen ||
       hasMap() ||
-      deviceAutoOpenedForRecipe === recipeId
+      deviceAutoOpenedForMap === appMapId
     )
       return;
-    deviceAutoOpenedForRecipe = recipeId;
+    deviceAutoOpenedForMap = appMapId;
     setCaptureOpen(true);
   });
   // Recording starts from the navigator as well as from this workspace. The
@@ -489,7 +489,7 @@ export function AppMapWorkspace(props: {
 
   createEffect(() => {
     if (!props.navigatorOpen || recorder.recording()) return;
-    deviceAutoOpenedForRecipe = "";
+    deviceAutoOpenedForMap = "";
     setCaptureOpen(false);
   });
 
@@ -647,7 +647,7 @@ export function AppMapWorkspace(props: {
       .filter(
         (recipe) =>
           recipe.source === "custom" &&
-          recipe.id !== server.selectedRecipeId() &&
+          recipe.id !== server.selectedAppMapId() &&
           (recipe.description?.startsWith("Reusable connection behavior") ||
             recipe.description?.startsWith("Reusable transition behavior")) &&
           recipe.steps.length > 0,
@@ -684,11 +684,11 @@ export function AppMapWorkspace(props: {
   }));
 
   createEffect(() => {
-    const journeyId = loadedRecipeId();
+    const appMapId = loadedAppMapId();
     const runtime = collaborationRuntime;
     const element = canvas;
     const currentView = view();
-    if (!journeyId || !runtime?.enabled || !element) return;
+    if (!appMapId || !runtime?.enabled || !element) return;
     runtime.updateAwareness({
       activity: collaborationActivity({
         recording: recorder.recording(),
@@ -720,12 +720,12 @@ export function AppMapWorkspace(props: {
   };
 
   createEffect(() => {
-    const recipeId = loadedRecipeId();
-    if (!recipeId || journeyLoadState().status !== "ready" || initiallyFittedRecipeId === recipeId)
+    const appMapId = loadedAppMapId();
+    if (!appMapId || appMapLoadState().status !== "ready" || initiallyFittedAppMapId === appMapId)
       return;
     // Fit an existing map once when it opens. A blank map is also marked as
     // handled so its first capture does not yank the camera away from the user.
-    initiallyFittedRecipeId = recipeId;
+    initiallyFittedAppMapId = appMapId;
     if (hasCanvasContent()) requestAnimationFrame(fit);
   });
 
@@ -751,7 +751,7 @@ export function AppMapWorkspace(props: {
     );
   };
   function syncCanonicalProjection(value: JourneyMetadata): void {
-    const appMapId = server.selectedRecipeId();
+    const appMapId = server.selectedAppMapId();
     if (!appMapId) return;
     canonicalProjectionQueue = canonicalProjectionQueue
       .then(async () => {
@@ -833,8 +833,8 @@ export function AppMapWorkspace(props: {
     syncCanonicalProjection(next.value);
   };
   const persistMetadata = (value: JourneyMetadata) => {
-    const recipeId = server.selectedRecipeId();
-    if (!recipeId) return;
+    const appMapId = server.selectedAppMapId();
+    if (!appMapId) return;
     const current = metadata();
     const nextValue = journeyDocument?.replace(value) ?? value;
     setCanvasHistory({
@@ -848,12 +848,12 @@ export function AppMapWorkspace(props: {
       updatedAt: Date.now(),
     });
     syncCanonicalProjection(nextValue);
-    // When opted in, the provider is the only draft writer. The revisioned
-    // Journey endpoint remains the sole writer when collaboration is disabled.
+    // When opted in, the provider is the only canvas writer. The revisioned
+    // compatibility document remains the sole writer while collaboration is disabled.
     if (collaborationRuntime?.enabled) return;
     const sequence = ++metadataSaveSequence;
     void server
-      .saveJourney(recipeId, current, nextValue)
+      .saveJourney(appMapId, current, nextValue)
       .then((next) => {
         if (sequence === metadataSaveSequence) applyRemoteMetadata(next);
       })
@@ -864,7 +864,7 @@ export function AppMapWorkspace(props: {
   const persistPositions = (next: Record<string, CanvasPoint>) =>
     persistMetadata(withJourneyGraph({ ...metadata().value, positions: next }, graph()));
   const persistNotes = (notes: JourneyCanvasNote[]) => {
-    if (!server.selectedRecipeId()) return;
+    if (!server.selectedAppMapId()) return;
     persistMetadata(withJourneyGraph({ ...metadata().value, notes }, graph()));
   };
   const chooseTargetSet = (targetSetId?: string) => {
@@ -949,7 +949,7 @@ export function AppMapWorkspace(props: {
     if (
       automaticStartCaptureHandled ||
       !props.captureStartOnReady ||
-      loadedRecipeId() !== server.selectedRecipeId() ||
+      loadedAppMapId() !== server.selectedAppMapId() ||
       hasMap() ||
       !canRecord() ||
       startCaptureBusy()
@@ -976,7 +976,7 @@ export function AppMapWorkspace(props: {
     if (
       automaticFirstNoteHandled ||
       !props.addNoteOnReady ||
-      loadedRecipeId() !== server.selectedRecipeId()
+      loadedAppMapId() !== server.selectedAppMapId()
     )
       return;
     automaticFirstNoteHandled = true;
@@ -1013,7 +1013,7 @@ export function AppMapWorkspace(props: {
       destination: reviewDestination(),
     });
     if (committed) {
-      const appMapId = server.selectedRecipeId();
+      const appMapId = server.selectedAppMapId();
       const next = appMapId ? await server.loadAppMap(appMapId) : null;
       const destination = committed.committedConnectionId
         ? next?.connections[committed.committedConnectionId]?.destination
@@ -1297,7 +1297,7 @@ export function AppMapWorkspace(props: {
     queueCanonicalRemoval({ connectionIds: [connection.id] });
   };
   const queueCanonicalRemoval = (input: { connectionIds?: string[]; screenId?: string }) => {
-    const appMapId = server.selectedRecipeId();
+    const appMapId = server.selectedAppMapId();
     if (!appMapId) return;
     canonicalProjectionQueue = canonicalProjectionQueue
       .then(async () => {
@@ -1411,12 +1411,12 @@ export function AppMapWorkspace(props: {
       const value = journeyDocument.undoOnce();
       setCanvasHistory({ undo: journeyDocument.canUndo(), redo: journeyDocument.canRedo() });
       setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
-      const recipeId = server.selectedRecipeId();
+      const appMapId = server.selectedAppMapId();
       if (collaborationRuntime?.enabled) return;
       const sequence = ++metadataSaveSequence;
-      if (recipeId)
+      if (appMapId)
         void server
-          .saveJourney(recipeId, current, value)
+          .saveJourney(appMapId, current, value)
           .then((next) => sequence === metadataSaveSequence && applyRemoteMetadata(next));
       return;
     }
@@ -1428,12 +1428,12 @@ export function AppMapWorkspace(props: {
       const value = journeyDocument.redoOnce();
       setCanvasHistory({ undo: journeyDocument.canUndo(), redo: journeyDocument.canRedo() });
       setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
-      const recipeId = server.selectedRecipeId();
+      const appMapId = server.selectedAppMapId();
       if (collaborationRuntime?.enabled) return;
       const sequence = ++metadataSaveSequence;
-      if (recipeId)
+      if (appMapId)
         void server
-          .saveJourney(recipeId, current, value)
+          .saveJourney(appMapId, current, value)
           .then((next) => sequence === metadataSaveSequence && applyRemoteMetadata(next));
       return;
     }
@@ -1517,13 +1517,13 @@ export function AppMapWorkspace(props: {
     <section
       class={cn(
         "app-map-canvas relative grid min-h-0 flex-1 overflow-hidden",
-        journeyLoadState().status === "ready" && reviewingTake()
+        appMapLoadState().status === "ready" && reviewingTake()
           ? "grid-cols-[minmax(280px,320px)_minmax(0,1fr)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(260px,42%)_minmax(0,1fr)]"
           : "grid-cols-1",
       )}
-      aria-busy={journeyLoadState().status === "loading"}
+      aria-busy={appMapLoadState().status === "loading"}
     >
-      <Show when={journeyLoadState().status === "ready" && !reviewingTake()}>
+      <Show when={appMapLoadState().status === "ready" && !reviewingTake()}>
         <section
           ref={(element) => {
             canvas = element;
@@ -1745,7 +1745,7 @@ export function AppMapWorkspace(props: {
                     mode={workspaceView() === "coverage" ? "coverage" : "screens"}
                     appMap={appMap()}
                     runs={server.persistedRuns()}
-                    recipeId={server.selectedRecipeId() ?? appMap().id}
+                    recipeId={server.selectedAppMapId() ?? appMap().id}
                     deviceOpen={captureOpen()}
                     imageForScreen={(screenId) => {
                       const node = tree().nodes.find((candidate) => candidate.id === screenId);
@@ -2262,7 +2262,7 @@ export function AppMapWorkspace(props: {
           </Show>
         </section>
       </Show>
-      <Show when={journeyLoadState().status === "ready" && reviewingTake() && recorder.take()}>
+      <Show when={appMapLoadState().status === "ready" && reviewingTake() && recorder.take()}>
         {(take) => (
           <>
             <TakeReviewSidebar
@@ -2319,7 +2319,7 @@ export function AppMapWorkspace(props: {
           </>
         )}
       </Show>
-      <Show when={journeyLoadState().status === "ready" && captureOpen() && !reviewingTake()}>
+      <Show when={appMapLoadState().status === "ready" && captureOpen() && !reviewingTake()}>
         <AppMapDeviceCompanion
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}
@@ -2358,10 +2358,10 @@ export function AppMapWorkspace(props: {
           onStop={() => void recorder.stopRecording()}
         />
       </Show>
-      <Show when={journeyLoadState().status !== "ready"}>
+      <Show when={appMapLoadState().status !== "ready"}>
         <AppMapLoadFeedback
-          status={journeyLoadState().status === "error" ? "error" : "loading"}
-          onRetry={() => setJourneyLoadAttempt((attempt) => attempt + 1)}
+          status={appMapLoadState().status === "error" ? "error" : "loading"}
+          onRetry={() => setAppMapLoadAttempt((attempt) => attempt + 1)}
         />
       </Show>
     </section>

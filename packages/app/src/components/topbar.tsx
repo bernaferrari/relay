@@ -246,7 +246,7 @@ export function Topbar(props: { onSettings: () => void }) {
               title="Jump to this run"
               onClick={() => {
                 const j = job();
-                server.setSelectedRecipeId(j.action);
+                server.setSelectedAppMapId(j.action);
                 server.jumpToJob(j.id);
               }}
             >

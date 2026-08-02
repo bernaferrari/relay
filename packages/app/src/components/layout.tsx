@@ -283,7 +283,7 @@ export function Layout(props: {
               ? "Grok"
               : "Play Store",
         run: () => {
-          server.setSelectedRecipeId(r.id);
+          server.setSelectedAppMapId(r.id);
         },
       })),
     );

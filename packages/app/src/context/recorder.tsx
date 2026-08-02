@@ -207,7 +207,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
 
     const activeSession = createMemo(() =>
       selectProjectedAuthoringSession(server.authoringSessions(), {
-        appMapId: server.selectedRecipeId(),
+        appMapId: server.selectedAppMapId(),
         targetId: server.selectedDevice(),
         actorId: server.actorId(),
       }),
@@ -268,7 +268,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
         return false;
       }
-      const appMapId = server.selectedRecipeId();
+      const appMapId = server.selectedAppMapId();
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
       const leaseId = server.selectedLeaseId();
       if (!appMapId || !device || !leaseId) {
@@ -321,7 +321,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         window.dispatchEvent(new CustomEvent("relay:open-device-picker"));
         return null;
       }
-      const appMapId = server.selectedRecipeId();
+      const appMapId = server.selectedAppMapId();
       const device = server.devices().find((item) => item.serial === server.selectedDevice());
       const leaseId = server.selectedLeaseId();
       if (!appMapId || !device || !leaseId) {
@@ -651,7 +651,7 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
         steps: recipe.steps,
       });
       if (saved) {
-        server.setSelectedRecipeId(saved.id);
+        server.setSelectedAppMapId(saved.id);
         toast(`Created a copy of “${recipe.title}”`, "success");
       }
     }

@@ -182,7 +182,7 @@ export function RunsWorkspace(props: {
    */
   function selectRunStep(index: number): void {
     setSelectedRunStep(index);
-    if (server.selectedRecipeId() === selected()?.action) workbench.focusStep(index);
+    if (server.selectedAppMapId() === selected()?.action) workbench.focusStep(index);
   }
   createEffect(() => {
     const run = selected();
