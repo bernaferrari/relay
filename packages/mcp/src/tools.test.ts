@@ -165,7 +165,7 @@ test("defines deterministic role profiles with a compact authoring default", () 
   );
   assert.ok(
     relayMcpToolsForProfile("author").some(
-      ({ operationId }) => operationId === "app-map.connection.create",
+      ({ operationId }) => operationId === "app-map.proposal.submit",
     ),
   );
   assert.ok(
@@ -176,6 +176,18 @@ test("defines deterministic role profiles with a compact authoring default", () 
   assert.equal(
     relayMcpToolsForProfile("author").some(({ operationId }) =>
       operationId.startsWith("discovery."),
+    ),
+    false,
+  );
+  assert.equal(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "app-map.proposal.approve",
+    ),
+    false,
+  );
+  assert.equal(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "app-map.connection.create",
     ),
     false,
   );

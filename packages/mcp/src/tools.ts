@@ -90,7 +90,6 @@ export const relayMcpTools: readonly RelayMcpToolDescriptor[] = Object.freeze(
 const authorSupport = new Set<OperationId>([
   "system.health.get",
   "system.doctor.get",
-  "target.actions.list",
   "target.devices.list",
   "target.list",
   "target.preflight",
@@ -98,23 +97,25 @@ const authorSupport = new Set<OperationId>([
   "target.snapshot.capture",
   "target.screenshot.capture",
   "target.interact",
-  "target.touch",
-  "target.key",
-  "target.scroll",
-  "target.video.start",
   "lease.list",
   "lease.create",
   "lease.release",
-  "action.run",
   "workspace.variables.get",
   "workspace.variables.update",
+  "app-map.list",
+  "app-map.get",
+  "app-map.create",
+  "app-map.export",
+  "app-map.update",
+  "app-map.flow.run",
+  "app-map.case-stack.save",
+  "app-map.case-stack.attach",
+  "app-map.case-stack.remove",
+  "app-map.routine.save",
+  "app-map.routine.remove",
+  "app-map.proposal.submit",
+  "app-map.observations.propose",
   "generation.create",
-  "matrix.list",
-  "matrix.resolve",
-  "job.list",
-  "job.get",
-  "run.list",
-  "step.run",
 ]);
 
 const executePrefixes = ["job."] as const;
@@ -182,11 +183,7 @@ function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): 
   const definition = operationDefinitions.find(({ id }) => id === tool.operationId)!;
   if (profile === "observe") return definition.mode === "query";
   if (profile === "author") {
-    return (
-      tool.operationId.startsWith("app-map.") ||
-      tool.operationId.startsWith("authoring.") ||
-      authorSupport.has(tool.operationId)
-    );
+    return tool.operationId.startsWith("authoring.") || authorSupport.has(tool.operationId);
   }
   if (profile === "execute") {
     return (
