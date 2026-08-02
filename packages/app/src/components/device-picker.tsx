@@ -227,19 +227,6 @@ export function DevicePicker(props: {
               else setOpen(true);
             }}
           >
-            <i
-              class={cn(
-                "size-1.5 shrink-0 rounded-full",
-                ready()
-                  ? "bg-[var(--icon-success-base)]"
-                  : !online()
-                    ? "bg-[var(--icon-critical-base)]"
-                    : scanning()
-                      ? "bg-[var(--text-interactive-base)] motion-safe:animate-pulse"
-                      : "bg-[var(--icon-weak)]",
-              )}
-              aria-hidden="true"
-            />
             <Icon
               name={
                 scanning() && !device()

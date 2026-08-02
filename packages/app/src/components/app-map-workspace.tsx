@@ -198,11 +198,29 @@ export function AppMapWorkspace(props: {
   };
   const canRecord = () => recordState() === "ready";
   const livePanelStatus = () => {
-    if (recorder.recording()) return { label: "Recording", tone: "critical" } as const;
-    if (server.health() !== "online") return { label: "Relay offline", tone: "critical" } as const;
-    if (!selectedDevice()) return { label: "Choose a device", tone: "weak" } as const;
-    if (canRecord()) return { label: "Live", tone: "success" } as const;
-    return { label: "Connecting", tone: "warning" } as const;
+    if (recorder.recording()) return { label: "Recording", kind: "recording" } as const;
+    if (!selectedDevice()) return { label: "Device", kind: "idle" } as const;
+    if (server.health() !== "online") return { label: "Relay offline", kind: "attention" } as const;
+    switch (recordState()) {
+      case "ready":
+        return { label: "Live", kind: "ready" } as const;
+      case "checking-ios":
+        return { label: "Checking device", kind: "progress" } as const;
+      case "preparing-ios":
+        return { label: "Preparing device", kind: "progress" } as const;
+      case "preparing-screen":
+        return { label: "Starting live view", kind: "progress" } as const;
+      case "device-unavailable":
+        return { label: "Device unavailable", kind: "attention" } as const;
+      case "capture-error":
+        return { label: "Screen unavailable", kind: "attention" } as const;
+      case "enable-developer-mode":
+      case "setup-check-failed":
+      case "setup-ios":
+        return { label: "Device setup needed", kind: "attention" } as const;
+      default:
+        return { label: "Starting live view", kind: "progress" } as const;
+    }
   };
   const liveScreenSrc = createMemo(() => {
     const device = selectedDevice();
@@ -2084,17 +2102,15 @@ export function AppMapWorkspace(props: {
           captureBusy={startCaptureBusy()}
           canRecord={canRecord()}
           recordLabel={
-            !canRecord()
-              ? "Preparing screen…"
-              : recorder.arming() || startCaptureBusy()
-                ? "Preparing…"
-                : !hasCanvasContent()
-                  ? "Capture screen"
-                  : selectedConnection()
-                    ? selectedConnection()!.state === "needs-recording"
-                      ? "Record"
-                      : "Rewrite"
-                    : "Record"
+            recorder.arming() || startCaptureBusy()
+              ? "Preparing…"
+              : !hasCanvasContent()
+                ? "Capture screen"
+                : selectedConnection()
+                  ? selectedConnection()!.state === "needs-recording"
+                    ? "Record"
+                    : "Rewrite"
+                  : "Record"
           }
           captureContextLabel={captureContextLabel()}
           onClose={closeCapturePanel}

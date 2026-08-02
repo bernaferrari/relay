@@ -1264,7 +1264,7 @@ function DiscoveryCanvas(props: {
                     class={cn(
                       "absolute -top-2 -right-2 z-[1] grid size-6 place-items-center rounded-[8px] font-mono text-[10px] font-semibold",
                       props.selectedScreenId === screen.id
-                        ? "bg-[var(--v2-background-bg-accent)] text-white"
+                        ? "bg-[var(--v2-background-bg-accent)] text-[var(--text-on-brand-base)]"
                         : "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-base)] ring-1 ring-[var(--v2-border-border-strong)]",
                     )}
                   >

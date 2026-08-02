@@ -183,6 +183,9 @@ export function DeviceStage(_props: {
    * device utilities here.
    */
   recordingControls?: "full" | "embedded";
+  /** The App Map owns the authoritative stream lifecycle while its device
+   * companion is open. Keep transient frame misses in a loading state. */
+  preparing?: boolean;
 }) {
   const server = useServer();
   const rec = useRecorder();
@@ -514,7 +517,6 @@ export function DeviceStage(_props: {
   const [videoReady, setVideoReady] = createSignal(false);
   const [videoFailed, setVideoFailed] = createSignal(false);
   const [videoAttempt, setVideoAttempt] = createSignal(0);
-  const [previewUnavailable, setPreviewUnavailable] = createSignal(false);
   // iOS has to sign and install its local runner once before Relay can ask it
   // for pixels. Keep that preflight separate from frame polling so the stage
   // never briefly promises a loading screen and then jumps to setup.
@@ -919,7 +921,6 @@ export function DeviceStage(_props: {
     if (resumedIosPreview === resumeKey) return;
     resumedIosPreview = resumeKey;
     server.clearLiveCaptureIssue();
-    setPreviewUnavailable(false);
     if (liveControlActive()) {
       void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
     }
@@ -1220,6 +1221,7 @@ export function DeviceStage(_props: {
     currentDevice()?.platform === "ios" &&
     ["idle", "checking"].includes(iosSetupState());
   const emptyStageTitle = () => {
+    if (_props.preparing) return "Starting live view";
     if (!targetReady()) return "Device unavailable";
     if (developerModeDisabled()) return "Turn on Developer Mode";
     if (iosDeviceSupportPending()) return "Preparing this iPad";
@@ -1247,15 +1249,6 @@ export function DeviceStage(_props: {
     setVideoReady(false);
     setVideoFailed(false);
   });
-  createEffect(() => {
-    const waitingForScreen = targetReady() && liveControlActive() && !displayImageSrc();
-    if (!waitingForScreen) {
-      setPreviewUnavailable(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setPreviewUnavailable(true), 3000);
-    onCleanup(() => window.clearTimeout(timer));
-  });
   function retryScreenPreview(): void {
     if (currentDevice()?.platform === "ios" && iosSetupState() !== "ready") {
       setIosSetupCheck((check) => check + 1);
@@ -1266,7 +1259,6 @@ export function DeviceStage(_props: {
       void rec.enterRecordMode();
       return;
     }
-    setPreviewUnavailable(false);
     void Promise.all([server.pollLiveFrame(), server.pollLiveSnapshot()]);
   }
   function retryVideo(): void {
@@ -1409,6 +1401,8 @@ export function DeviceStage(_props: {
         fallback={
           <ChooseDeviceEmptyState
             purpose="live"
+            scanning={server.deviceDiscoveryStatus() === "scanning"}
+            offline={server.health() !== "online"}
             onChooseDevice={() => window.dispatchEvent(new CustomEvent("relay:open-device-picker"))}
           />
         }
@@ -1457,8 +1451,7 @@ export function DeviceStage(_props: {
                                   targetReady() &&
                                   (needsIosSetup() ||
                                     developerModeDisabled() ||
-                                    Boolean(liveCaptureIssue()) ||
-                                    (previewUnavailable() && !preparingIosScreen()))
+                                    Boolean(liveCaptureIssue()))
                                 }
                                 fallback={
                                   <Show
@@ -1534,7 +1527,7 @@ export function DeviceStage(_props: {
                                   <Show when={!developerModeDisabled()}>
                                     <button
                                       type="button"
-                                      class="min-h-11 rounded-[8px] px-3 text-[11px] font-medium text-[var(--text-interactive-base)] transition-colors duration-150 hover:bg-[var(--v2-background-bg-layer-02)]"
+                                      class="inline-flex min-h-11 min-w-[92px] items-center justify-center rounded-[10px] border border-[var(--phone-rim)] bg-[var(--phone-fill-strong)] px-4 text-[11px] font-semibold text-[var(--phone-fg)] shadow-[0_6px_18px_rgb(0_0_0/20%)] transition-[background-color,border-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--phone-fg)_22%,transparent)] active:scale-[0.96] motion-reduce:active:scale-100"
                                       onClick={() => {
                                         if (hasIosSetupIssue()) {
                                           window.dispatchEvent(
@@ -1547,7 +1540,7 @@ export function DeviceStage(_props: {
                                         retryScreenPreview();
                                       }}
                                     >
-                                      {hasIosSetupIssue() ? "Open iPad setup" : "Retry"}
+                                      {hasIosSetupIssue() ? "Open device setup" : "Try again"}
                                     </button>
                                   </Show>
                                 </div>

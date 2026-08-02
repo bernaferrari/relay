@@ -137,7 +137,7 @@ export function ScreenCard(props: {
       </Show>
       <header class="order-2 flex h-7 min-w-0 items-center gap-2 px-1">
         <span
-          class="grid size-[18px] shrink-0 place-items-center rounded-[6px] text-white"
+          class="grid size-[18px] shrink-0 place-items-center rounded-[6px] text-[var(--text-invert-strong)]"
           style={{
             background: props.step ? accentForStep(props.step) : "var(--text-interactive-base)",
           }}

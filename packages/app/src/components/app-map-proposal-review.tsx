@@ -99,7 +99,7 @@ export function AppMapProposalReview(props: {
                 <div class="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    class="min-h-10 rounded-[8px] bg-[var(--product-accent)] px-3 text-[10.5px] font-semibold text-white disabled:opacity-50"
+                    class="min-h-10 rounded-[8px] bg-[var(--product-accent)] px-3 text-[10.5px] font-semibold text-[var(--text-on-brand-base)] disabled:opacity-50"
                     disabled={Boolean(props.busyId)}
                     onClick={() => props.onApprove(proposal.id)}
                   >

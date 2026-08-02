@@ -106,7 +106,7 @@ export function StepPlaybackPreview(props: {
               aria-hidden="true"
               data-step-playback="type"
             >
-              <span class="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-[rgb(13_17_28/90%)] px-2.5 py-1.5 text-[10.5px] text-white shadow-[0_8px_22px_rgb(0_0_0/38%)]">
+              <span class="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-[rgb(13_17_28/90%)] px-2.5 py-1.5 text-[10.5px] text-[var(--text-invert-strong)] shadow-[0_8px_22px_rgb(0_0_0/38%)]">
                 <Icon name="keyboard" size={12} />
                 <span class="max-w-[18ch] truncate font-mono">{step.text}</span>
               </span>
@@ -123,7 +123,7 @@ export function StepPlaybackPreview(props: {
               aria-hidden="true"
               data-step-playback="key"
             >
-              <span class="inline-flex items-center gap-1.5 rounded-lg bg-[rgb(13_17_28/90%)] px-2.5 py-1.5 text-[10.5px] text-white shadow-[0_8px_22px_rgb(0_0_0/38%)]">
+              <span class="inline-flex items-center gap-1.5 rounded-lg bg-[rgb(13_17_28/90%)] px-2.5 py-1.5 text-[10.5px] text-[var(--text-invert-strong)] shadow-[0_8px_22px_rgb(0_0_0/38%)]">
                 <Icon name="keyboard" size={12} /> {step.key === "back" ? "Back" : "Home"}
               </span>
             </span>

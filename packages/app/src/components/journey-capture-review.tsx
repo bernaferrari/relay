@@ -692,7 +692,7 @@ export function GraphEmptyState(props: {
   };
   return (
     <>
-      <Show when={!props.deviceOpen || props.deviceSelected}>
+      <Show when={!props.deviceOpen || isRecording() || props.take}>
         <div
           class={cn(
             "absolute inset-y-0 left-0 z-[1] grid place-items-center px-6 max-[760px]:right-0",

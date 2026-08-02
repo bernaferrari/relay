@@ -116,7 +116,7 @@ export function CollaborationPresence(props: {
                     />
                   </svg>
                   <span
-                    class="mt-3 max-w-32 truncate rounded-full px-2 py-0.5 text-[9px] font-semibold text-white shadow-sm"
+                    class="mt-3 max-w-32 truncate rounded-full px-2 py-0.5 text-[9px] font-semibold text-[var(--text-invert-strong)] shadow-sm"
                     style={{ background: visual.color }}
                   >
                     {visual.label}

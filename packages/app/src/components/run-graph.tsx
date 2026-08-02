@@ -398,12 +398,12 @@ function RunGraphNode(props: {
           <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pt-8 pb-2.5">
             <Show when={glyph()}>
               {(g) => (
-                <small class="mb-0.5 block text-[9px] font-semibold tracking-[0.08em] text-white/65 uppercase">
+                <small class="mb-0.5 block text-[9px] font-semibold tracking-[0.08em] text-[color-mix(in_srgb,var(--text-invert-strong)_65%,transparent)] uppercase">
                   {g().label}
                 </small>
               )}
             </Show>
-            <strong class="line-clamp-1 block text-[13px] font-semibold text-white">
+            <strong class="line-clamp-1 block text-[13px] font-semibold text-[var(--text-invert-strong)]">
               {props.moment.title}
             </strong>
           </div>

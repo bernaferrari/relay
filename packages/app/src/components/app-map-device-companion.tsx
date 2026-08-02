@@ -4,11 +4,7 @@ import { cn } from "../lib/cn";
 import { DeviceStage } from "./stage";
 import { Icon } from "./icon";
 import { TakeCaptureBar } from "./journey-capture-review";
-
-export type AppMapDeviceStatus = {
-  label: string;
-  tone: "success" | "critical" | "weak" | "warning";
-};
+import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
 
 export function AppMapDeviceCompanion(props: {
   closing: boolean;
@@ -38,26 +34,7 @@ export function AppMapDeviceCompanion(props: {
       aria-label="Device"
     >
       <header class="relative z-[100] flex min-h-12 shrink-0 items-center justify-between border-b border-[var(--map-divider)] px-4">
-        <span
-          class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]"
-          role="status"
-          aria-live="polite"
-        >
-          <i
-            class={cn(
-              "size-1.5 shrink-0 rounded-full",
-              props.status.tone === "success"
-                ? "bg-[var(--icon-success-base)]"
-                : props.status.tone === "critical"
-                  ? "bg-[var(--icon-critical-base)]"
-                  : props.status.tone === "weak"
-                    ? "bg-[var(--icon-weak)]"
-                    : "bg-[var(--icon-warning-base)]",
-            )}
-            aria-hidden="true"
-          />
-          {props.status.label}
-        </span>
+        <DeviceStatusLabel status={props.status} />
         <Show when={!props.recording}>
           <button
             type="button"
@@ -71,12 +48,18 @@ export function AppMapDeviceCompanion(props: {
         </Show>
       </header>
       <div class="relative z-0 min-h-0 flex-1 overflow-visible">
-        <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
+        <DeviceStage
+          onOpenTargets={props.onOpenTargets}
+          recordingControls="embedded"
+          preparing={props.status.kind === "progress"}
+        />
       </div>
       <Show
         when={props.recording ? props.take : null}
         fallback={
-          <Show when={props.deviceSelected}>
+          <Show
+            when={props.deviceSelected && (props.canRecord || props.arming || props.captureBusy)}
+          >
             <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
               <button
                 type="button"

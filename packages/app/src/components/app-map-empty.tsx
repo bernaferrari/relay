@@ -2,6 +2,7 @@ import { Show, createMemo, createSignal } from "solid-js";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { deviceReadiness } from "../lib/device-readiness";
+import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
 import { DeviceStage } from "./stage";
 import { Icon } from "./icon";
 
@@ -31,11 +32,25 @@ export function EmptyAppMap(props: {
     }),
   );
   const ready = () => readiness().kind === "ready";
-  const status = () => {
-    if (server.health() !== "online") return { label: "Relay offline", tone: "critical" } as const;
-    if (!device()) return { label: "Choose a device", tone: "weak" } as const;
-    if (ready()) return { label: "Live", tone: "success" } as const;
-    return { label: "Connecting", tone: "warning" } as const;
+  const status = (): AppMapDeviceStatus => {
+    if (!device()) return { label: "Device", kind: "idle" };
+    if (server.health() !== "online") return { label: "Relay offline", kind: "attention" };
+    switch (readiness().kind) {
+      case "ready":
+        return { label: "Live", kind: "ready" };
+      case "checking-ios":
+        return { label: "Checking device", kind: "progress" };
+      case "ios-preparing":
+        return { label: "Preparing device", kind: "progress" };
+      case "screen-preparing":
+        return { label: "Starting live view", kind: "progress" };
+      case "device-unavailable":
+        return { label: "Device unavailable", kind: "attention" };
+      case "capture-error":
+        return { label: "Screen unavailable", kind: "attention" };
+      default:
+        return { label: "Device setup needed", kind: "attention" };
+    }
   };
 
   return (
@@ -76,22 +91,7 @@ export function EmptyAppMap(props: {
           aria-label="Live device"
         >
           <header class="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-[var(--map-divider)] px-4">
-            <span class="inline-flex min-w-0 items-center gap-2 text-[12px] font-medium text-[var(--text-base)]">
-              <i
-                class={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  status().tone === "success"
-                    ? "bg-[var(--icon-success-base)]"
-                    : status().tone === "critical"
-                      ? "bg-[var(--icon-critical-base)]"
-                      : status().tone === "weak"
-                        ? "bg-[var(--icon-weak)]"
-                        : "bg-[var(--icon-warning-base)]",
-                )}
-                aria-hidden="true"
-              />
-              <span>{status().label}</span>
-            </span>
+            <DeviceStatusLabel status={status()} />
             <button
               type="button"
               class="app-map-icon-button"
@@ -103,25 +103,31 @@ export function EmptyAppMap(props: {
             </button>
           </header>
           <div class="relative min-h-0 flex-1">
-            <DeviceStage onOpenTargets={props.onOpenTargets} recordingControls="embedded" />
+            <DeviceStage
+              onOpenTargets={props.onOpenTargets}
+              recordingControls="embedded"
+              preparing={status().kind === "progress"}
+            />
           </div>
-          <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
-            <button
-              type="button"
-              class="app-map-record-button"
-              disabled={!ready() || props.creating}
-              aria-busy={props.creating}
-              onClick={props.onCaptureFirstScreen}
-            >
-              <Show
-                when={props.creating}
-                fallback={<i class="size-2 rounded-full bg-current" aria-hidden="true" />}
+          <Show when={ready() || props.creating}>
+            <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
+              <button
+                type="button"
+                class="app-map-record-button"
+                disabled={props.creating}
+                aria-busy={props.creating}
+                onClick={props.onCaptureFirstScreen}
               >
-                <Icon name="refresh" size={14} class="ui-refresh-spin" />
-              </Show>
-              {props.creating ? "Capturing…" : "Capture first screen"}
-            </button>
-          </footer>
+                <Show
+                  when={props.creating}
+                  fallback={<i class="size-2 rounded-full bg-current" aria-hidden="true" />}
+                >
+                  <Icon name="refresh" size={14} class="ui-refresh-spin" />
+                </Show>
+                {props.creating ? "Capturing…" : "Capture first screen"}
+              </button>
+            </footer>
+          </Show>
         </aside>
       </Show>
 
