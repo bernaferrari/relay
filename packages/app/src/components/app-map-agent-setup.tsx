@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import type { DeviceInfo } from "../lib/api-types";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
@@ -13,7 +13,9 @@ export function AppMapAgentSetup(props: {
   minutes: number;
   devices: DeviceInfo[];
   targetIds: string[];
+  selectedTargetCount: number;
   modelIds: string[];
+  onOpenTargets: () => void;
   onGoal: (value: string) => void;
   onMinutes: (value: number) => void;
   onTargetIds: (value: string[]) => void;
@@ -23,9 +25,9 @@ export function AppMapAgentSetup(props: {
     values.includes(id) ? values.filter((value) => value !== id) : [...values, id];
 
   return (
-    <div class="grid gap-5">
+    <div class="grid gap-4">
       <section>
-        <h2 class="text-[21px]/[1.15] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
+        <h2 class="text-[19px]/[1.2] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
           What should Relay learn?
         </h2>
         <p class="mt-1.5 max-w-[34ch] text-[12px]/[1.55] text-[var(--text-weak)]">
@@ -37,7 +39,7 @@ export function AppMapAgentSetup(props: {
       <label class="grid gap-1.5">
         <span class="text-[10.5px] font-semibold text-[var(--text-base)]">Goal</span>
         <textarea
-          class="min-h-28 resize-y rounded-[11px] border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[16px]/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--v2-background-bg-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)] min-[681px]:text-[12.5px]"
+          class="min-h-24 resize-y rounded-[10px] border border-[var(--v2-border-border-strong)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[16px]/[1.5] text-[var(--text-strong)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--text-interactive-base)] focus:bg-[var(--v2-background-bg-base)] focus:shadow-[0_0_0_3px_var(--product-accent-soft)] min-[681px]:text-[12.5px]"
           value={props.goal}
           placeholder="Map onboarding and find every safe path into settings"
           onInput={(event) => props.onGoal(event.currentTarget.value)}
@@ -66,12 +68,33 @@ export function AppMapAgentSetup(props: {
         </div>
       </fieldset>
 
-      <details class="group rounded-[12px] bg-[var(--v2-background-bg-layer-01)] open:pb-2">
-        <summary class="flex min-h-12 cursor-pointer list-none items-center gap-2 rounded-[12px] px-3 text-[11.5px] font-medium text-[var(--text-strong)] hover:bg-[var(--v2-background-bg-layer-02)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--text-interactive-base)]">
+      <Show when={props.selectedTargetCount === 0}>
+        <button
+          type="button"
+          class="group flex min-h-14 items-center gap-3 rounded-[11px] bg-[var(--product-accent-soft)] px-3 text-left shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-interactive-base)_20%,transparent)] transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--product-accent-soft)_78%,var(--v2-background-bg-layer-02))]"
+          onClick={props.onOpenTargets}
+        >
+          <span class="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[0_1px_4px_rgb(0_0_0/10%)]">
+            <Icon name="smartphone" size={15} />
+          </span>
+          <span class="min-w-0 flex-1">
+            <strong class="block text-[11.5px] font-semibold text-[var(--text-strong)]">
+              Choose where Relay should explore
+            </strong>
+            <small class="mt-0.5 block text-[10px]/[1.4] text-[var(--text-weak)]">
+              Select one device or several targets to run in parallel.
+            </small>
+          </span>
+          <Icon name="arrow-right" size={13} class="text-[var(--text-interactive-base)]" />
+        </button>
+      </Show>
+
+      <details class="group border-y border-[var(--v2-border-border-muted)] open:pb-2">
+        <summary class="flex min-h-12 cursor-pointer list-none items-center gap-2 px-1 text-[11.5px] font-medium text-[var(--text-strong)] hover:text-[var(--text-interactive-base)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--text-interactive-base)]">
           <Icon name="grid" size={14} class="text-[var(--text-weak)]" />
           <span class="flex-1">Coverage</span>
           <span class="font-normal text-[var(--text-weak)]">
-            {props.targetIds.length} target{props.targetIds.length === 1 ? "" : "s"} ·{" "}
+            {props.selectedTargetCount} target{props.selectedTargetCount === 1 ? "" : "s"} ·{" "}
             {props.modelIds.length} perspective{props.modelIds.length === 1 ? "" : "s"}
           </span>
           <Icon
@@ -80,7 +103,7 @@ export function AppMapAgentSetup(props: {
             class="text-[var(--text-weak)] transition-transform duration-150 group-open:rotate-180"
           />
         </summary>
-        <div class="grid gap-4 px-3 pb-2 pt-2">
+        <div class="grid gap-4 px-1 pb-2 pt-2">
           <fieldset class="grid gap-2">
             <legend class="text-[10px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
               Targets

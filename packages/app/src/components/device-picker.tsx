@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import type { CompatibilityMatrix } from "@relay/protocol";
 import { useServer, type DeviceInfo } from "../context/server";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
@@ -11,6 +12,9 @@ export function DevicePicker(props: {
   onManageTargets?: () => void;
   onOpenLive?: () => void;
   liveOpen?: boolean;
+  targetSets?: readonly CompatibilityMatrix[];
+  activeTargetSetId?: string;
+  onChooseTargetSet?: (targetSetId?: string) => void;
 }) {
   let trigger: HTMLButtonElement | undefined;
   let dialog: HTMLDivElement | undefined;
@@ -22,11 +26,16 @@ export function DevicePicker(props: {
   const [refreshing, setRefreshing] = createSignal(false);
   const [scanPhase, setScanPhase] = createSignal<"android" | "ios">("android");
   const device = () => server.devices().find((item) => item.serial === server.selectedDevice());
+  const [rememberedDevice, setRememberedDevice] = createSignal<DeviceInfo>();
+  const presentedDevice = () => device() ?? rememberedDevice();
+  const activeTargetSet = () =>
+    props.targetSets?.find((targetSet) => targetSet.id === props.activeTargetSetId);
   const online = () => server.health() === "online";
   const scanning = () => server.deviceDiscoveryStatus() === "scanning";
-  const ready = () => targetIsReady(device(), online());
+  const ready = () => targetIsReady(presentedDevice(), online());
   const targetLabel = () => {
-    if (device()) return device()!.name;
+    if (activeTargetSet()) return activeTargetSet()!.name;
+    if (presentedDevice()) return presentedDevice()!.name;
     if (!online()) return "Relay offline";
     if (scanning()) return scanPhase() === "android" ? "Looking for Android…" : "Checking iOS…";
     return "Choose device";
@@ -78,6 +87,17 @@ export function DevicePicker(props: {
     virtualGroups().some((group) => group.item.serial === server.selectedDevice());
 
   createEffect(() => {
+    const serial = server.selectedDevice();
+    const current = device();
+    if (!serial) {
+      setRememberedDevice();
+      return;
+    }
+    if (current) setRememberedDevice(current);
+    else if (!scanning()) setRememberedDevice();
+  });
+
+  createEffect(() => {
     if (!scanning()) {
       setScanPhase("android");
       return;
@@ -116,6 +136,7 @@ export function DevicePicker(props: {
    */
   function selectTarget(serial: string): void {
     closePicker(true);
+    props.onChooseTargetSet?.();
     void server.setSelectedDevice(serial).then(() => server.refreshDevices());
     window.dispatchEvent(new CustomEvent("relay:device-selected", { detail: { serial } }));
   }
@@ -131,7 +152,7 @@ export function DevicePicker(props: {
       if (server.devices().length > 8) searchInput?.focus();
       else {
         const firstTarget = dialog?.querySelector<HTMLButtonElement>("[data-target-option]");
-        (firstTarget ?? dialog?.querySelector<HTMLButtonElement>("button"))?.focus();
+        (firstTarget ?? dialog?.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus();
       }
     });
   });
@@ -181,17 +202,19 @@ export function DevicePicker(props: {
           >
             <Icon
               name={
-                scanning() && !device()
-                  ? "refresh"
-                  : device()?.platform === "browser"
-                    ? "server"
-                    : "smartphone"
+                activeTargetSet()
+                  ? "grid"
+                  : scanning() && !presentedDevice()
+                    ? "refresh"
+                    : presentedDevice()?.platform === "browser"
+                      ? "server"
+                      : "smartphone"
               }
               size={14}
               class={cn(
                 ready() ? "text-[var(--text-base)]" : "text-[var(--text-weak)]",
-                device() && !ready() && "text-[var(--icon-warning-base)]",
-                scanning() && !device() && "ui-refresh-spin motion-reduce:opacity-70",
+                presentedDevice() && !ready() && "text-[var(--icon-warning-base)]",
+                scanning() && !presentedDevice() && "ui-refresh-spin motion-reduce:opacity-70",
               )}
             />
             <span class="max-w-[150px] truncate">{targetLabel()}</span>
@@ -219,24 +242,40 @@ export function DevicePicker(props: {
             class="inline-flex min-w-0 items-center gap-2 px-3 text-[12px] font-medium text-[var(--text-base)] transition-[background-color,color] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
             aria-pressed={props.liveOpen}
             aria-label={
-              device() ? `${props.liveOpen ? "Hide" : "Show"} ${device()!.name}` : "Choose a device"
+              activeTargetSet()
+                ? `Choose run target, currently ${activeTargetSet()!.name}`
+                : presentedDevice()
+                  ? `${props.liveOpen ? "Hide" : "Show"} ${presentedDevice()!.name}`
+                  : "Choose a device"
             }
-            data-tip={device() ? `${props.liveOpen ? "Hide" : "Show"} device · D` : "Choose device"}
-            onClick={() => {
-              if (device()) props.onOpenLive?.();
-              else setOpen(true);
+            data-tip={
+              presentedDevice() ? `${props.liveOpen ? "Hide" : "Show"} device · D` : "Choose device"
+            }
+            onClick={(event) => {
+              if (activeTargetSet()) {
+                trigger = event.currentTarget;
+                setOpen(true);
+              } else if (presentedDevice()) props.onOpenLive?.();
+              else {
+                trigger = event.currentTarget;
+                setOpen(true);
+              }
             }}
           >
             <Icon
               name={
-                scanning() && !device()
-                  ? "refresh"
-                  : device()?.platform === "browser"
-                    ? "server"
-                    : "smartphone"
+                activeTargetSet()
+                  ? "grid"
+                  : scanning() && !presentedDevice()
+                    ? "refresh"
+                    : presentedDevice()?.platform === "browser"
+                      ? "server"
+                      : "smartphone"
               }
               size={14}
-              class={cn(scanning() && !device() && "ui-refresh-spin motion-reduce:opacity-70")}
+              class={cn(
+                scanning() && !presentedDevice() && "ui-refresh-spin motion-reduce:opacity-70",
+              )}
             />
             <span class="max-w-[150px] truncate max-[560px]:hidden">{targetLabel()}</span>
           </button>
@@ -266,7 +305,7 @@ export function DevicePicker(props: {
         <div
           ref={(element) => (dialog = element)}
           id="target-picker-dialog"
-          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[90] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-[11px] border border-[var(--v2-border-border-strong)] bg-surface-raised-stronger-non-alpha text-[var(--text-strong)] shadow-[0_18px_50px_rgb(0_0_0/38%)]"
+          class="ui-pop absolute top-[calc(100%+7px)] right-0 z-[90] flex max-h-[min(520px,calc(100vh-76px))] w-[286px] origin-top-right flex-col overflow-hidden rounded-[11px] bg-surface-raised-stronger-non-alpha text-[var(--text-strong)] shadow-[var(--map-elevation-panel)]"
           role="dialog"
           aria-labelledby="target-picker-title"
           onKeyDown={(event) => {
@@ -335,6 +374,39 @@ export function DevicePicker(props: {
             </label>
           </Show>
           <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
+            <Show when={(props.targetSets?.length ?? 0) > 0}>
+              <section class="mb-1 border-b border-[var(--v2-border-border-muted)] pb-1">
+                <span class="block px-2.5 pt-1 pb-1.5 text-[9.5px] font-semibold tracking-[0.08em] text-[var(--text-weak)] uppercase">
+                  Target sets
+                </span>
+                <For each={props.targetSets}>
+                  {(targetSet) => (
+                    <button
+                      type="button"
+                      data-target-option
+                      class={cn(
+                        "flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors hover:bg-[var(--v2-background-bg-layer-02)]",
+                        props.activeTargetSetId === targetSet.id &&
+                          "bg-[var(--v2-background-bg-layer-02)]",
+                      )}
+                      aria-current={props.activeTargetSetId === targetSet.id ? "true" : undefined}
+                      onClick={() => {
+                        closePicker(true);
+                        props.onChooseTargetSet?.(targetSet.id);
+                      }}
+                    >
+                      <span class="grid size-[22px] place-items-center text-[var(--text-weak)]">
+                        <Icon name="grid" size={14} />
+                      </span>
+                      <span class="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--text-base)]">
+                        {targetSet.name}
+                      </span>
+                      <span class="text-[9.5px] text-[var(--text-weak)]">Parallel</span>
+                    </button>
+                  )}
+                </For>
+              </section>
+            </Show>
             <Show
               when={server.devices().length > 0}
               fallback={

@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { Button } from "@relay/ui/button";
 import type {
   VisualComparison,
   VisualFrameDiff,
@@ -82,14 +83,15 @@ export function VisualDiffReview(props: {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                class="inline-flex min-h-10 w-fit items-center gap-1.5 self-start rounded-lg bg-surface-interactive-base px-3 text-[12px] font-semibold text-text-on-interactive transition-colors hover:bg-surface-interactive-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] disabled:opacity-50"
+              <Button
+                variant="primary"
+                size="lg"
+                class="w-fit self-start"
                 disabled={props.loading || props.approving}
                 onClick={() => props.onReview("approve-new-baseline")}
               >
                 <Icon name="check" size={13} /> Use this run as baseline
-              </button>
+              </Button>
             </div>
           }
         >

@@ -52,7 +52,6 @@ export function createAppMapEventOrchestration(options: {
   onToggleDevicePanel: () => void;
   onCloseDevicePanel: () => void;
   onRunMap: () => void;
-  onCloseTargetSet: () => void;
   onUndoRequest: (event: Event, redo: boolean) => void;
   onToolChange: (tool: AppMapCanvasTool) => void;
   onCaptureScreen: () => void;
@@ -81,11 +80,6 @@ export function createAppMapEventOrchestration(options: {
     const onToggleDevicePanel = () => options.onToggleDevicePanel();
     const onCloseDevicePanel = () => options.onCloseDevicePanel();
     const onRunMap = () => options.onRunMap();
-    const onOutsideTargetSet = (event: PointerEvent) => {
-      if (!(event.target as HTMLElement | null)?.closest?.("[data-target-set-picker]")) {
-        options.onCloseTargetSet();
-      }
-    };
     const onUndoRequest = (event: Event) => {
       const request = event as CustomEvent<{ redo: boolean }>;
       options.onUndoRequest(event, request.detail.redo);
@@ -149,7 +143,6 @@ export function createAppMapEventOrchestration(options: {
     window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
     window.addEventListener("relay:run-app-map", onRunMap);
     window.addEventListener("relay:undo-request", onUndoRequest);
-    window.addEventListener("pointerdown", onOutsideTargetSet);
     window.addEventListener("keydown", onCanvasKey);
     window.addEventListener("keyup", onCanvasKeyUp);
     onCleanup(() => {
@@ -158,7 +151,6 @@ export function createAppMapEventOrchestration(options: {
       window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
       window.removeEventListener("relay:run-app-map", onRunMap);
       window.removeEventListener("relay:undo-request", onUndoRequest);
-      window.removeEventListener("pointerdown", onOutsideTargetSet);
       window.removeEventListener("keydown", onCanvasKey);
       window.removeEventListener("keyup", onCanvasKeyUp);
     });

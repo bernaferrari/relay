@@ -17,7 +17,7 @@ import {
 
 const MAX_WORKERS = 12;
 
-export function useAppMapAgentExploration(appMap: () => AppMap) {
+export function useAppMapAgentExploration(appMap: () => AppMap | undefined) {
   const server = useServer();
   const [goal, setGoal] = createSignal(
     "Explore the important paths in this app and map distinct screens.",
@@ -38,7 +38,14 @@ export function useAppMapAgentExploration(appMap: () => AppMap) {
   });
 
   const selectedTargets = createMemo(() =>
-    server.devices().filter((device) => targetIds().includes(device.serial)),
+    server
+      .devices()
+      .filter(
+        (device) =>
+          targetIds().includes(device.serial) &&
+          device.connectionState !== "offline" &&
+          device.connectionState !== "unauthorized",
+      ),
   );
   const selectedModels = createMemo(() =>
     AGENT_MODELS.filter((model) => modelIds().includes(model.id)),
@@ -138,15 +145,15 @@ export function useAppMapAgentExploration(appMap: () => AppMap) {
     };
   }
 
-  async function runWorker(worker: AgentWorker, token: number): Promise<void> {
+  async function runWorker(worker: AgentWorker, token: number, runMap: AppMap): Promise<void> {
     updateWorker(worker.id, { status: "running", stage: "Connecting to the live app" });
     try {
       const session = await server.createDiscoverySession({
-        name: `${appMap().name} · ${worker.model.label} · ${worker.targetName}`,
+        name: `${runMap.name} · ${worker.model.label} · ${worker.targetName}`,
         targetId: worker.targetId,
         agent: {
           workerId: worker.id,
-          appMapId: appMap().id,
+          appMapId: runMap.id,
           goal: goal().trim(),
           provider: worker.model.provider,
           ...(worker.model.model ? { model: worker.model.model } : {}),
@@ -210,7 +217,7 @@ export function useAppMapAgentExploration(appMap: () => AppMap) {
       }
 
       updateWorker(worker.id, { stage: "Preparing a reviewable proposal" });
-      const currentMap = await server.loadAppMap(appMap().id);
+      const currentMap = await server.loadAppMap(runMap.id);
       const result = await server.runAction("app-map.observations.propose", {
         appMapId: currentMap.id,
         sessionId: session.id,
@@ -234,6 +241,11 @@ export function useAppMapAgentExploration(appMap: () => AppMap) {
 
   async function start(): Promise<void> {
     if (state() === "running") return;
+    const runMap = appMap();
+    if (!runMap) {
+      toast("Open an App Map before starting exploration.", "warning");
+      return;
+    }
     if (!goal().trim() || !selectedTargets().length || !selectedModels().length) {
       toast("Add a goal, at least one target, and one agent perspective.", "warning");
       return;
@@ -254,7 +266,9 @@ export function useAppMapAgentExploration(appMap: () => AppMap) {
     const targetQueues = agentTargetQueues(plan).map(async (queue) => {
       for (const worker of queue) {
         if (token !== runToken) break;
-        await runWorker(worker, token);
+        // Freeze the map for this run. Switching maps while agents work must
+        // never redirect their proposals into a different document.
+        await runWorker(worker, token, runMap);
       }
     });
     await Promise.allSettled(targetQueues);
@@ -304,6 +318,7 @@ export function useAppMapAgentExploration(appMap: () => AppMap) {
 
   return {
     devices: server.devices,
+    targetCount: () => selectedTargets().length,
     goal,
     minutes,
     targetIds,
@@ -321,3 +336,5 @@ export function useAppMapAgentExploration(appMap: () => AppMap) {
     stop,
   };
 }
+
+export type AppMapAgentExploration = ReturnType<typeof useAppMapAgentExploration>;

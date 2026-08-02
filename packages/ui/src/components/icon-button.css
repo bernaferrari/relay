@@ -17,7 +17,7 @@
 
   &[data-variant="primary"] {
     background-color: var(--button-primary-base, var(--icon-strong-base));
-    color: var(--icon-invert-base);
+    color: var(--button-primary-foreground, var(--icon-invert-base));
 
     &:hover:not(:disabled) {
       background-color: var(--icon-strong-hover);
@@ -29,7 +29,9 @@
       background-color: var(--icon-strong-active);
     }
     &:disabled {
-      background-color: var(--icon-strong-disabled);
+      background-color: var(--button-secondary-base);
+      color: var(--text-weaker);
+      box-shadow: var(--shadow-xs-border-base);
       cursor: not-allowed;
     }
   }

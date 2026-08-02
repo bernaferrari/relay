@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import type { AppMap, Screen } from "@relay/protocol";
+import { Button } from "@relay/ui/button";
 import type { PersistedRun } from "../context/server";
 import { cn } from "../lib/cn";
 import {
@@ -7,7 +8,6 @@ import {
   deriveAppMapAreas,
   type BrowseRunOutcome,
 } from "../lib/app-map-browse";
-import { productPrimary, productSecondary } from "../lib/ui";
 import { Icon } from "./icon";
 
 export type AppMapBrowseMode = "screens" | "coverage";
@@ -61,7 +61,7 @@ export function AppMapBrowseView(props: {
   return (
     <div
       class={cn(
-        "absolute inset-0 min-h-0 overflow-y-auto bg-[var(--v2-background-bg-deep)] pt-[76px] pb-24 transition-[padding] duration-150",
+        "absolute inset-0 min-h-0 overflow-y-auto bg-[var(--map-canvas)] pt-[72px] pb-24 transition-[padding] duration-150",
         // The live companion grows to 548px for landscape tablets. Reserve
         // its largest desktop footprint so search, filters, and primary
         // actions never render underneath a perfectly visible device.
@@ -69,38 +69,30 @@ export function AppMapBrowseView(props: {
       )}
     >
       <div class="mx-auto w-full max-w-[1440px] px-[clamp(18px,3vw,44px)]">
-        <header class="mb-6 flex items-end justify-between gap-5 max-[720px]:items-start max-[720px]:flex-col">
+        <header class="mb-4 flex items-center justify-between gap-5 max-[720px]:items-start max-[720px]:flex-col">
           <div class="min-w-0">
-            <span class="text-[10.5px] font-semibold tracking-[0.1em] text-[var(--text-weak)] uppercase">
-              {props.mode === "screens" ? "Screen library" : "Execution coverage"}
-            </span>
-            <h2 class="mt-1 text-[24px]/[1.15] font-semibold tracking-[-0.035em] text-[var(--text-strong)]">
-              {props.mode === "screens"
-                ? "Every state, arranged by area"
-                : "What worked, where, and for whom"}
+            <h2 class="text-[21px]/[1.15] font-semibold tracking-[-0.03em] text-[var(--text-strong)]">
+              {props.mode === "screens" ? "Screens" : "Coverage"}
             </h2>
-            <p class="mt-1.5 max-w-[680px] text-[12.5px]/[1.55] text-[var(--text-weak)]">
+            <p class="mt-1 max-w-[680px] text-[12px]/[1.5] text-[var(--text-weak)]">
               {props.mode === "screens"
-                ? "Relay derives areas from the map’s top-level branches, so Settings and everything reached inside it stay together."
-                : "Results stay separate for every target and actor. A passing phone never hides a failing tablet."}
+                ? `${Object.keys(props.appMap.screens).length} ${Object.keys(props.appMap.screens).length === 1 ? "screen" : "screens"} across ${areas().length} ${areas().length === 1 ? "area" : "areas"}.`
+                : `${rows().length} ${rows().length === 1 ? "result" : "results"}. Every device and actor stays independently inspectable.`}
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              class={productSecondary}
-              aria-pressed={props.deviceOpen}
-              onClick={props.onToggleDevice}
-            >
-              <Icon name="smartphone" size={14} /> {props.deviceOpen ? "Hide device" : "Device"}
-            </button>
-            <button type="button" class={productPrimary} onClick={props.onOpenAgent}>
-              <Icon name="sparkle" size={13} /> Explore with AI
-            </button>
+            <Button variant="primary" size="lg" onClick={props.onOpenAgent}>
+              <Icon name="scan" size={13} /> Explore with Relay
+            </Button>
           </div>
         </header>
 
-        <div class="sticky top-[68px] z-10 mb-5 flex min-h-12 items-center gap-2 rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_92%,transparent)] p-1.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_82%,transparent),0_10px_30px_rgb(0_0_0/10%)] backdrop-blur-[14px] max-[680px]:flex-wrap">
+        <div
+          class={cn(
+            "sticky top-[64px] z-10 mb-5 flex min-h-12 items-center gap-2 rounded-[11px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1 shadow-[inset_0_0_0_1px_var(--v2-border-border-muted),0_6px_18px_rgb(0_0_0/6%)] backdrop-blur-[14px] max-[680px]:flex-wrap",
+            props.mode === "screens" && "max-w-[520px]",
+          )}
+        >
           <label class="relative min-w-[180px] flex-1">
             <span class="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-[var(--text-weak)]">
               <Icon name="search" size={14} />
@@ -148,7 +140,7 @@ export function AppMapBrowseView(props: {
           when={props.mode === "screens"}
           fallback={<CoverageTable rows={filteredRows()} onOpenRun={props.onOpenRun} />}
         >
-          <div class="grid gap-8">
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,268px),1fr))] items-start gap-x-7 gap-y-8">
             <For
               each={filteredAreas()}
               fallback={
@@ -182,7 +174,7 @@ export function AppMapBrowseView(props: {
               {(area) => (
                 <section
                   aria-labelledby={`area-${area.id}`}
-                  class="[content-visibility:auto] [contain-intrinsic-size:auto_320px]"
+                  class="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_320px]"
                 >
                   <header class="mb-3 flex items-baseline gap-2.5">
                     <h3
@@ -195,7 +187,7 @@ export function AppMapBrowseView(props: {
                       {area.screenIds.length} {area.screenIds.length === 1 ? "screen" : "screens"}
                     </span>
                   </header>
-                  <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,218px),1fr))] gap-3.5">
+                  <div class="grid gap-3.5">
                     <For each={area.screenIds}>
                       {(screenId) => {
                         const screen = () => props.appMap.screens[screenId]!;
@@ -235,20 +227,32 @@ function ScreenTile(props: {
   return (
     <button
       type="button"
-      class="group min-w-0 rounded-[13px] bg-[var(--v2-background-bg-base)] p-1.5 text-left shadow-[0_0_0_1px_var(--v2-border-border-muted),0_8px_24px_rgb(0_0_0/6%)] outline-none transition-[box-shadow,transform,background-color] duration-150 hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_var(--v2-border-border-strong),0_14px_34px_rgb(0_0_0/11%)] focus-visible:shadow-[0_0_0_2px_var(--text-interactive-base),0_14px_34px_rgb(0_0_0/11%)] motion-reduce:transform-none"
+      class="group min-w-0 rounded-[10px] bg-transparent p-0 text-left outline-none transition-transform duration-150 hover:-translate-y-px focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-3 focus-visible:ring-offset-[var(--map-canvas)] motion-reduce:hover:translate-y-0"
       onClick={props.onOpen}
     >
-      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-[9px] bg-[var(--v2-background-bg-layer-01)]">
+      <div class="relative grid aspect-[4/3] place-items-center overflow-hidden rounded-[10px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_70%,var(--map-canvas))] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)] transition-shadow duration-150 group-hover:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong),0_8px_20px_rgb(0_0_0/7%)]">
         <Show
           when={props.image}
-          fallback={<Icon name="smartphone" size={25} class="text-[var(--text-weak)] opacity-70" />}
+          fallback={
+            <div class="grid max-w-[190px] justify-items-center gap-2 px-4 text-center">
+              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--v2-background-bg-base)] text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+                <Icon name="camera" size={15} />
+              </span>
+              <span class="text-[10.5px] font-medium text-[var(--text-base)]">
+                No screenshot yet
+              </span>
+              <small class="text-[9.5px]/[1.4] text-[var(--text-weak)]">
+                Capture or replay this state to add a preview
+              </small>
+            </div>
+          }
         >
           <img
             src={props.image}
             alt=""
             loading="lazy"
             decoding="async"
-            class="block size-full object-contain transition-transform duration-150 group-hover:scale-[1.015] motion-reduce:transform-none"
+            class="block size-full object-contain"
           />
         </Show>
         <Show when={props.state && props.state !== "idle"}>
@@ -257,7 +261,7 @@ function ScreenTile(props: {
           </span>
         </Show>
       </div>
-      <div class="grid gap-2 px-2 pt-2.5 pb-2">
+      <div class="grid gap-2 px-1 pt-2.5 pb-1">
         <div class="flex min-w-0 items-start justify-between gap-2">
           <strong class="truncate text-[12.5px] font-semibold text-[var(--text-strong)]">
             {props.screen.title}
@@ -451,9 +455,9 @@ function BrowseEmpty(props: {
   onAction?: () => void;
 }) {
   return (
-    <section class="grid min-h-64 place-items-center rounded-[14px] border border-dashed border-[var(--v2-border-border-strong)] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_56%,transparent)] px-6 text-center">
+    <section class="grid min-h-56 place-items-center px-6 text-center">
       <div class="grid max-w-[380px] justify-items-center gap-3">
-        <span class="grid size-11 place-items-center rounded-[12px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)]">
+        <span class="grid size-10 place-items-center rounded-[11px] bg-[var(--v2-background-bg-base)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
           <Icon name={props.icon} size={17} />
         </span>
         <div>
@@ -461,9 +465,9 @@ function BrowseEmpty(props: {
           <p class="mt-1 text-[12px]/[1.5] text-[var(--text-weak)]">{props.body}</p>
         </div>
         <Show when={props.actionLabel && props.onAction}>
-          <button type="button" class={productSecondary} onClick={props.onAction}>
+          <Button variant="secondary" size="lg" onClick={props.onAction}>
             {props.actionLabel}
-          </button>
+          </Button>
         </Show>
       </div>
     </section>

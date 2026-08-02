@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 
@@ -47,14 +48,10 @@ export function ChooseDeviceEmptyState(props: {
             : "Connect a phone or start a simulator, then choose it here."}
       </p>
       <Show when={!props.scanning && !props.offline}>
-        <button
-          type="button"
-          class="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-[10px] border border-transparent bg-[var(--v2-background-bg-accent)] px-4 text-[11.5px] font-semibold text-[var(--text-on-brand-base)] shadow-[0_8px_24px_color-mix(in_srgb,var(--v2-background-bg-accent)_24%,transparent)] transition-[background-color,box-shadow,transform] duration-150 ease-out hover:brightness-110 active:scale-[0.96] motion-reduce:active:scale-100"
-          onClick={props.onChooseDevice}
-        >
+        <Button variant="primary" size="lg" class="mt-4" onClick={props.onChooseDevice}>
           <Icon name="smartphone" size={13} />
           Choose device
-        </button>
+        </Button>
       </Show>
     </section>
   );

@@ -8,7 +8,7 @@
  * 3. Primary ink = text-text-strong. Actions/icons on rows = text-text-strong.
  *    text-text-weak / text-text-weaker only for true secondary meta.
  * 4. List selection = AB: hover:bg-surface-raised-base-hover + active:bg-surface-base-active.
- * 5. Buttons = recipes below (or @relay/ui Button data-component). One system.
+ * 5. Text buttons come from @relay/ui/button. This file only keeps structural chrome recipes.
  * 6. Type = AB scale: text-12-regular/medium, text-14-regular/medium, text-16-medium.
  * 7. cn() does NOT merge — never stack exclusive color recipes.
  */
@@ -76,19 +76,6 @@ export const menuOptionOn = "bg-surface-base-active text-text-strong";
 /** Expanded (not selected) — AB: hover wash, not active */
 export const listRowExpanded = "bg-surface-raised-base-hover";
 
-/* ─── Buttons (single system) ─── */
-/**
- * Text buttons — color wash only (no press scale). Prefer @relay/ui Button
- * when adding new surfaces; recipes remain for dense product chrome.
- */
-export const btn = cn(
-  "inline-flex h-7 min-h-7 items-center justify-center gap-1.5 rounded-md",
-  "border border-transparent px-2.5",
-  "text-12-medium text-text-strong select-none",
-  tColor,
-  "disabled:cursor-not-allowed disabled:text-text-weak",
-);
-
 /** Full-width / chrome bar control — color wash only, no scale */
 export const btnBar = cn(
   "inline-flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5",
@@ -96,45 +83,6 @@ export const btnBar = cn(
   "transition-[background-color,box-shadow,color,border-color] duration-150",
   easeOut,
   "disabled:cursor-not-allowed disabled:text-text-weak",
-);
-
-/** AgentBoard ghost — transparent, strong ink, hover wash */
-export const btnGhost = cn(
-  btn,
-  "bg-transparent text-text-strong",
-  "hover:enabled:bg-surface-base-hover",
-);
-
-export const btnGhostOn = cn(btnGhost, "bg-surface-base-active");
-
-/** Product primary CTA — AB ink primary (not brand pastel). Prefer <Button variant="primary">. */
-export const btnAcc = cn(btn, "btn-primary-ink px-3");
-export const btnPrimaryInk = btnAcc;
-
-/** Secondary solid paper + border */
-export const btnBordered = cn(
-  btn,
-  "border-transparent bg-button-secondary-base text-text-strong shadow-xs-border-base",
-  "hover:enabled:bg-button-secondary-hover",
-);
-
-/** @deprecated Prefer <IconButton variant="ghost" size="normal"> from @relay/ui */
-export const iconBtn = cn(
-  "grid size-6 shrink-0 place-items-center rounded-md select-none",
-  "text-icon-base",
-  "transition-[background-color,color,opacity] duration-150",
-  easeHover,
-  "hover:enabled:bg-surface-base-hover hover:enabled:text-text-strong",
-  "active:enabled:bg-surface-base-active",
-  "disabled:cursor-default disabled:opacity-50",
-);
-
-/** Phone chrome controls — colors from [data-device-chrome] only */
-export const btnOnDevice = cn(
-  "inline-flex h-7 min-h-7 items-center justify-center gap-1.5 px-3 rounded-md",
-  "text-12-medium select-none",
-  tColor,
-  "disabled:cursor-not-allowed",
 );
 
 export const deviceTitle = "device-title";
@@ -262,31 +210,6 @@ export const tabUnderline = cn(
 );
 
 export const tabUnderlineActive = "text-text-strong after:scale-x-100";
-
-const productControl = cn(
-  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[10px] px-3.5",
-  "text-[13px] font-semibold select-none",
-  "transition-[color,background-color,box-shadow,transform] duration-150",
-  "active:enabled:scale-[0.97]",
-  "disabled:cursor-not-allowed",
-);
-
-/** Brand/product primary CTA shared by Run and confirmation actions. */
-export const productPrimary = cn(
-  productControl,
-  "bg-[var(--button-primary-base)] text-[var(--text-on-brand-base)] shadow-[var(--map-elevation-control)]",
-  "hover:enabled:bg-[color-mix(in_oklch,var(--button-primary-base)_88%,black)]",
-  "disabled:bg-surface-raised-strong disabled:text-text-weaker disabled:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
-  "data-[blocked]:cursor-not-allowed data-[blocked]:bg-surface-raised-strong data-[blocked]:text-text-weaker data-[blocked]:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
-);
-
-/** Quiet secondary control */
-export const productSecondary = cn(
-  productControl,
-  "bg-surface-raised-strong text-text-base shadow-[inset_0_0_0_1px_var(--border-weak-hover)]",
-  "hover:enabled:bg-surface-raised-stronger-non-alpha hover:enabled:text-text-strong",
-  "disabled:bg-background-base disabled:text-text-weaker disabled:shadow-[inset_0_0_0_1px_var(--border-weak-base)]",
-);
 
 /** Compact 36×36 chrome icon with a 44×44 effective pointer target. */
 export const productIconButton = cn(

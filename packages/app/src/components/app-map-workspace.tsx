@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import type {
   CaseExpansionStrategy,
   CaseStack,
@@ -70,6 +70,7 @@ import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
 import { AppMapCanvasScene } from "./app-map-canvas-scene";
 import { AppMapTakeReview } from "./app-map-take-review";
+import { useAppMapAgentExploration } from "../lib/use-app-map-agent-exploration";
 
 type AppMapLoadState =
   | { status: "idle" }
@@ -110,18 +111,16 @@ export function AppMapWorkspace(props: {
     status: "idle",
   });
   const [appMapLoadAttempt, setAppMapLoadAttempt] = createSignal(0);
-  const [targetSetOpen, setTargetSetOpen] = createSignal(false);
   const [workspaceView, setWorkspaceView] = createSignal<AppMapWorkspaceView>("map");
   const [agentOpen, setAgentOpen] = createSignal(false);
   const graph = createMemo(() => ensureJourneyGraph(metadata().value, draft.steps()));
   const activeFlow = createMemo(() => graph().flows[0] ?? null);
-  const activeTargetSet = createMemo(() => {
-    const id = activeFlow()?.targetSetId;
-    return id ? (server.matrices().find((matrix) => matrix.id === id) ?? null) : null;
-  });
   const activeAppMap = createMemo(() =>
     server.appMaps().find((candidate) => candidate.id === server.selectedAppMapId()),
   );
+  // Exploration belongs to the workspace, not to its drawer. Closing the
+  // drawer only hides progress; it never cancels a 20-minute agent run.
+  const agentExploration = useAppMapAgentExploration(activeAppMap);
   const pendingProposals = createMemo(() =>
     Object.values(activeAppMap()?.proposals ?? {})
       .filter((proposal) => proposal.status === "pending")
@@ -272,7 +271,6 @@ export function AppMapWorkspace(props: {
     state: ReplayState;
     error?: string;
   }>({ connectionId: null, state: "idle" });
-  const [canvasHistory, setCanvasHistory] = createSignal({ undo: false, redo: false });
   const [canvasTool, setCanvasTool] = createSignal<"select" | "hand">("select");
   const [remoteAwareness, setRemoteAwareness] = createSignal<readonly CollaborationAwareness[]>([]);
   const [localCursor, setLocalCursor] = createSignal<CanvasPoint | undefined>();
@@ -367,7 +365,6 @@ export function AppMapWorkspace(props: {
         value: next,
         updatedAt: Date.now(),
       }));
-      setCanvasHistory({ undo: document.canUndo(), redo: document.canRedo() });
     });
     collaborationRuntime = server.createJourneyCollaboration(journeyId, document.doc);
     unsubscribeAwareness = collaborationRuntime.subscribeAwareness(setRemoteAwareness);
@@ -411,7 +408,6 @@ export function AppMapWorkspace(props: {
       closeJourneyDocument();
       setLoadedAppMapId(null);
       setAppMapLoadState({ status: "idle" });
-      setCanvasHistory({ undo: false, redo: false });
       setMetadata({ revision: 0, value: EMPTY_JOURNEY_METADATA, updatedAt: 0 });
       return;
     }
@@ -424,14 +420,12 @@ export function AppMapWorkspace(props: {
         if (server.selectedAppMapId() === appMapId) {
           setMetadata(next);
           openJourneyDocument(appMapId, next.value);
-          setCanvasHistory({ undo: false, redo: false });
           setLoadedAppMapId(appMapId);
           setAppMapLoadState({ status: "ready", appMapId });
         }
       })
       .catch(() => {
         if (server.selectedAppMapId() === appMapId) {
-          setCanvasHistory({ undo: false, redo: false });
           setAppMapLoadState({ status: "error", appMapId });
         }
       });
@@ -818,10 +812,6 @@ export function AppMapWorkspace(props: {
   }
   const applyRemoteMetadata = (next: Revisioned<JourneyMetadata>) => {
     journeyDocument?.replace(next.value, "remote");
-    setCanvasHistory({
-      undo: journeyDocument?.canUndo() ?? false,
-      redo: journeyDocument?.canRedo() ?? false,
-    });
     setMetadata(next);
     syncCanonicalProjection(next.value);
   };
@@ -830,10 +820,6 @@ export function AppMapWorkspace(props: {
     if (!appMapId) return;
     const current = metadata();
     const nextValue = journeyDocument?.replace(value) ?? value;
-    setCanvasHistory({
-      undo: journeyDocument?.canUndo() ?? false,
-      redo: journeyDocument?.canRedo() ?? false,
-    });
     setMetadata({
       ...current,
       revision: current.revision + 1,
@@ -877,8 +863,31 @@ export function AppMapWorkspace(props: {
       }),
     };
     persistMetadata(withJourneyGraph(metadata().value, next));
-    setTargetSetOpen(false);
   };
+  createEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("relay:target-set-state", {
+        detail: { targetSetId: activeFlow()?.targetSetId },
+      }),
+    );
+  });
+  onMount(() => {
+    const chooseFromShell = (event: Event) => {
+      const detail = (event as CustomEvent<{ targetSetId?: string }>).detail;
+      chooseTargetSet(detail?.targetSetId);
+    };
+    const toggleHistoryFromShell = () => {
+      const opening = !historyOpen();
+      if (opening) setCaptureOpen(false);
+      setHistoryOpen(opening);
+    };
+    window.addEventListener("relay:choose-target-set", chooseFromShell);
+    window.addEventListener("relay:toggle-map-history", toggleHistoryFromShell);
+    onCleanup(() => {
+      window.removeEventListener("relay:choose-target-set", chooseFromShell);
+      window.removeEventListener("relay:toggle-map-history", toggleHistoryFromShell);
+    });
+  });
   const decideProposal = async (proposalId: string, decision: "approve" | "reject") => {
     const appMap = activeAppMap();
     if (!appMap || proposalBusyId()) return;
@@ -1402,7 +1411,6 @@ export function AppMapWorkspace(props: {
     if (journeyDocument?.canUndo()) {
       const current = metadata();
       const value = journeyDocument.undoOnce();
-      setCanvasHistory({ undo: journeyDocument.canUndo(), redo: journeyDocument.canRedo() });
       setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
       const appMapId = server.selectedAppMapId();
       if (collaborationRuntime?.enabled) return;
@@ -1419,7 +1427,6 @@ export function AppMapWorkspace(props: {
     if (journeyDocument?.canRedo()) {
       const current = metadata();
       const value = journeyDocument.redoOnce();
-      setCanvasHistory({ undo: journeyDocument.canUndo(), redo: journeyDocument.canRedo() });
       setMetadata({ ...current, revision: current.revision + 1, value, updatedAt: Date.now() });
       const appMapId = server.selectedAppMapId();
       if (collaborationRuntime?.enabled) return;
@@ -1451,7 +1458,6 @@ export function AppMapWorkspace(props: {
     },
     onCloseDevicePanel: closeCapturePanel,
     onRunMap: runJourneyGraph,
-    onCloseTargetSet: () => setTargetSetOpen(false),
     onUndoRequest: (event, shouldRedo) => {
       if (shouldRedo) {
         if (!journeyDocument?.canRedo()) return;
@@ -1690,20 +1696,10 @@ export function AppMapWorkspace(props: {
             connectionCount={connections().length}
             view={workspaceView()}
             proposalCount={pendingProposals().length}
-            targetSetOpen={targetSetOpen()}
-            activeTargetSetId={activeFlow()?.targetSetId}
-            runTargetLabel={activeTargetSet()?.name ?? selectedDevice()?.name ?? "Current device"}
-            targetSets={server.matrices()}
             onViewChange={(next) => {
               setWorkspaceView(next);
               setHistoryOpen(false);
               setKeyboardConnectionSourceId(null);
-            }}
-            onTargetSetOpenChange={setTargetSetOpen}
-            onChooseTargetSet={chooseTargetSet}
-            onManageTargetSets={() => {
-              setTargetSetOpen(false);
-              props.onOpenTargets();
             }}
             onOpenProposals={() => setProposalReviewOpen(true)}
           />
@@ -1718,16 +1714,25 @@ export function AppMapWorkspace(props: {
             />
           </Show>
           <Show when={agentOpen() && activeAppMap()}>
-            {(appMap) => (
-              <AppMapAgentPanel
-                appMap={appMap()}
-                onClose={() => setAgentOpen(false)}
-                onProposalReady={() => {
-                  setAgentOpen(false);
-                  setProposalReviewOpen(true);
-                }}
-              />
-            )}
+            <AppMapAgentPanel
+              exploration={agentExploration}
+              onOpenTargets={() => {
+                setAgentOpen(false);
+                openDevicePicker();
+              }}
+              onClose={() => {
+                setAgentOpen(false);
+                queueMicrotask(() =>
+                  document
+                    .querySelector<HTMLButtonElement>('[aria-label="Explore with Relay"]')
+                    ?.focus(),
+                );
+              }}
+              onProposalReady={() => {
+                setAgentOpen(false);
+                setProposalReviewOpen(true);
+              }}
+            />
           </Show>
           <Show
             when={workspaceView() === "map"}
@@ -1996,22 +2001,14 @@ export function AppMapWorkspace(props: {
                 tool={canvasTool()}
                 deviceOpen={captureOpen()}
                 shiftForDevice={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
-                canUndo={canvasHistory().undo || draft.canUndo()}
-                canRedo={canvasHistory().redo || draft.canRedo()}
-                historyOpen={historyOpen()}
+                explorationState={agentExploration.state()}
+                explorationCount={agentExploration.workers().length}
                 onToolChange={setCanvasTool}
                 onCaptureScreen={() => void captureCurrentScreen()}
                 onCreateConnection={() => {
                   const node = selectedNode();
                   if (node) setKeyboardConnectionSourceId(node.id);
                   else toast("Select the screen where this connection begins", "info");
-                }}
-                onUndo={undo}
-                onRedo={redo}
-                onToggleHistory={() => {
-                  const opening = !historyOpen();
-                  if (opening) setCaptureOpen(false);
-                  setHistoryOpen(opening);
                 }}
                 onAddNote={addNote}
                 onCreateRoutine={() => {

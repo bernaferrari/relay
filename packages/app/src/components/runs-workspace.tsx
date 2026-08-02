@@ -8,6 +8,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { RunSummary, friendlyError, readableFailure } from "./run-summary";
@@ -19,15 +20,7 @@ import { fmtAgo, fmtDur } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
 import { toast } from "../context/toast";
 import { nextRovingIndex } from "../lib/roving-focus";
-import {
-  eyebrow,
-  mono,
-  productPrimary,
-  productSecondary,
-  productPage,
-  tabUnderline,
-  tabUnderlineActive,
-} from "../lib/ui";
+import { eyebrow, mono, productPage, tabUnderline, tabUnderlineActive } from "../lib/ui";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
 import { kindIcon } from "./step-list-metadata";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
@@ -363,9 +356,9 @@ export function RunsWorkspace(props: {
             Run history
           </h2>
           <Show when={rows().length > 0}>
-            <button
-              type="button"
-              class={productSecondary}
+            <Button
+              variant="secondary"
+              size="lg"
               disabled={refreshing()}
               aria-busy={refreshing()}
               onClick={() => void refreshRuns()}
@@ -379,7 +372,7 @@ export function RunsWorkspace(props: {
                 )}
               />{" "}
               Refresh
-            </button>
+            </Button>
           </Show>
         </div>
       </Show>
@@ -548,9 +541,10 @@ export function RunsWorkspace(props: {
                   </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    class={cn(productSecondary, "min-h-8 px-2.5 text-[11px]")}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    class="text-[11px]"
                     disabled={Boolean(selectedAppMapId()) && !selectedAppMapAvailable()}
                     onClick={() => {
                       if (selectedAppMapId() && !selectedAppMapAvailable()) return;
@@ -564,15 +558,16 @@ export function RunsWorkspace(props: {
                         ? "Open map"
                         : "Map deleted"
                       : "Open test"}
-                  </button>
+                  </Button>
                   <Show when={job().status === "error" || job().status === "cancelled"}>
-                    <button
-                      type="button"
-                      class={cn(productPrimary, "min-h-8 px-2.5 text-[11px]")}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      class="text-[11px]"
                       onClick={() => void server.retrySelectedJob(job().id)}
                     >
                       <Icon name="refresh" size={12} /> Retry
-                    </button>
+                    </Button>
                   </Show>
                 </div>
                 <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-[11px] text-text-weak">

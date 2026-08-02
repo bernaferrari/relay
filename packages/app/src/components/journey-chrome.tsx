@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { useRecipeDraft } from "../context/recipe-draft";
 import {
   useServer,
@@ -37,7 +38,7 @@ import { ActionPicker } from "./action-picker";
 import { CoordinateConstraintPicker } from "./coordinate-constraint-picker";
 import { MaterialDiscreteSlider } from "./material-discrete-slider";
 import { StepEditor } from "./step-editor";
-import { productPrimary, propertySeg, propertySegBtn, propertySegBtnOn } from "../lib/ui";
+import { propertySeg, propertySegBtn, propertySegBtnOn } from "../lib/ui";
 
 const chromePanel =
   "relative z-[2] flex min-h-0 min-w-0 flex-col bg-[color-mix(in_srgb,var(--v2-background-bg-base)_96%,var(--v2-background-bg-deep))]";
@@ -585,16 +586,17 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
           >
             <Icon name="play" size={11} /> Preview
           </button>
-          <button
-            type="button"
-            class={cn(productPrimary, "h-7 !min-h-7 shrink-0 px-2.5 text-[10.5px]")}
+          <Button
+            variant="primary"
+            size="sm"
+            class="shrink-0 text-[10.5px]"
             aria-label={`Run step ${index() + 1}`}
             disabled={workbench.running()}
             onClick={runSelected}
           >
             <Icon name="play" size={11} />
             {annotation().status === "running" ? "Running" : "Run"}
-          </button>
+          </Button>
           <div
             ref={(element) => (stepMenuRoot = element)}
             class="relative"

@@ -1,10 +1,11 @@
 import { For, Show, type JSX } from "solid-js";
+import { Button } from "@relay/ui/button";
 import type { JobInfo } from "../context/server";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { platformLabel } from "../lib/target-presentation";
-import { mono, productSecondary, productStatus } from "../lib/ui";
+import { mono, productStatus } from "../lib/ui";
 
 type RunSummaryProps = {
   job: JobInfo;
@@ -112,14 +113,10 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
       </Show>
       <Show when={job().status === "error" || job().status === "cancelled"}>
         <div class="mt-3.5 mb-px flex items-center justify-end gap-2">
-          <button
-            type="button"
-            class={productSecondary}
-            onClick={() => props.onOpenRecipe(job().action)}
-          >
+          <Button variant="secondary" size="lg" onClick={() => props.onOpenRecipe(job().action)}>
             <span>Fix in test</span>
             <Icon name="arrow-right" size={13} />
-          </button>
+          </Button>
         </div>
       </Show>
     </div>

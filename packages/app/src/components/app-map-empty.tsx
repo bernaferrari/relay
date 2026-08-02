@@ -1,4 +1,5 @@
 import { Show, createMemo, createSignal } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { deviceReadiness } from "../lib/device-readiness";
@@ -76,8 +77,8 @@ export function EmptyAppMap(props: {
                 Start from any screen
               </h1>
               <p class="m-0 max-w-[40ch] text-[13px]/[1.55] text-[var(--text-weak)]">
-                Use the device above, navigate where you want to begin, then capture that screen.
-                Relay will build the map as you continue.
+                Open the live device, navigate where you want to begin, then capture that screen.
+                Relay builds the map as you continue.
               </p>
             </div>
             <button
@@ -97,7 +98,7 @@ export function EmptyAppMap(props: {
       <Show when={props.deviceOpen}>
         <aside
           class={cn(
-            "ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex min-w-0 flex-col overflow-hidden rounded-[18px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] ring-1 ring-[color-mix(in_srgb,var(--map-divider)_72%,transparent)] transition-[width] duration-180 ease-out motion-reduce:transition-none max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto",
+            "ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex min-w-0 flex-col overflow-hidden rounded-[14px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] transition-[width] duration-180 ease-out motion-reduce:transition-none max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto",
             deviceOrientation() === "landscape"
               ? "w-[min(548px,calc(100%-32px))]"
               : "w-[min(388px,calc(100%-32px))]",
@@ -124,9 +125,9 @@ export function EmptyAppMap(props: {
           />
           <Show when={ready() || props.creating}>
             <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
-              <button
-                type="button"
-                class="app-map-record-button"
+              <Button
+                variant="primary"
+                size="lg"
                 disabled={props.creating}
                 aria-busy={props.creating}
                 onClick={props.onCaptureFirstScreen}
@@ -138,7 +139,7 @@ export function EmptyAppMap(props: {
                   <Icon name="refresh" size={14} class="ui-refresh-spin" />
                 </Show>
                 {props.creating ? "Capturing…" : "Capture first screen"}
-              </button>
+              </Button>
             </footer>
           </Show>
         </aside>

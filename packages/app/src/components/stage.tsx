@@ -14,6 +14,7 @@ import { useWorkbench } from "../context/workbench";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { Icon } from "./icon";
 import { ChooseDeviceEmptyState } from "./choose-device-empty-state";
+import { Button } from "@relay/ui/button";
 import { IconButton } from "@relay/ui/icon-button";
 import { Switch } from "@relay/ui/switch";
 import { useCommand } from "../context/command";
@@ -2150,9 +2151,10 @@ export function DeviceStage(_props: {
             </div>
 
             <footer class="flex items-center justify-end gap-1.5 border-t border-[var(--v2-border-border-muted)] px-2.5 py-2.5">
-              <button
-                type="button"
-                class="inline-flex h-8 items-center justify-center rounded-lg px-2.5 text-[10.5px] font-semibold text-[var(--text-base)] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.97] disabled:opacity-40"
+              <Button
+                variant="secondary"
+                size="sm"
+                class="text-[10.5px]"
                 disabled={!selectedStrategy()}
                 onClick={() => {
                   const strategy = selectedStrategy();
@@ -2160,10 +2162,11 @@ export function DeviceStage(_props: {
                 }}
               >
                 Add step
-              </button>
-              <button
-                type="button"
-                class="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[var(--button-primary-base)] px-3 text-[10.5px] font-semibold text-[var(--text-on-brand-base)] transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:enabled:bg-[var(--icon-strong-hover,var(--button-primary-base))] active:enabled:scale-[0.97] disabled:opacity-40"
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                class="text-[10.5px]"
                 disabled={!selectedStrategy()}
                 onClick={() => {
                   const strategy = selectedStrategy();
@@ -2171,7 +2174,7 @@ export function DeviceStage(_props: {
                 }}
               >
                 <Icon name="pointer" size={12} /> Tap device
-              </button>
+              </Button>
             </footer>
           </div>
         </div>

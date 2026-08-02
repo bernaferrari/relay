@@ -1,4 +1,5 @@
 import { Show, createEffect, createMemo } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { useServer, type JobInfo } from "../context/server";
 import { useWorkbench } from "../context/workbench";
 import { cn } from "../lib/cn";
@@ -12,7 +13,7 @@ import {
   executionStateLabel,
   type ExecutionMomentState,
 } from "../lib/execution-moments";
-import { eyebrow, productPrimary, productSecondary } from "../lib/ui";
+import { eyebrow } from "../lib/ui";
 import { friendlyError } from "./run-summary";
 import { Icon } from "./icon";
 
@@ -185,14 +186,10 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
       </div>
 
       <footer class="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-2 border-t border-[var(--v2-border-border-muted)] p-3">
-        <button
-          type="button"
-          class={productSecondary}
-          onClick={() => props.onOpenReport(props.job.id)}
-        >
+        <Button variant="secondary" size="lg" onClick={() => props.onOpenReport(props.job.id)}>
           View report
-        </button>
-        <button type="button" class={productPrimary} onClick={action}>
+        </Button>
+        <Button variant="primary" size="lg" onClick={action}>
           <Icon
             name={
               state() === "paused"
@@ -216,7 +213,7 @@ export function ExecutionInspector(props: { job: JobInfo; onOpenReport: (id: str
                 : state() === "passed"
                   ? "Review"
                   : "Pause"}
-        </button>
+        </Button>
         <Show when={state() === "running" || state() === "paused"}>
           <button
             type="button"

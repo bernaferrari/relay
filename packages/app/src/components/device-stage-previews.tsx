@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { Button } from "@relay/ui/button";
 import type { RecipeStep } from "../context/server";
 import { targetPointGuide } from "../lib/target-inspector";
 import { cn } from "../lib/cn";
@@ -72,16 +73,12 @@ export function DevicePanelStatus(props: {
 
       <Show when={props.state.primaryAction && props.state.primaryLabel}>
         <div class="flex min-h-10 flex-wrap items-center justify-center gap-1.5">
-          <button
-            type="button"
-            class="inline-flex min-h-10 items-center justify-center gap-2 rounded-[9px] bg-[var(--button-primary-base)] px-4 text-[12px] font-semibold text-[var(--text-on-brand-base)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--button-primary-base)_72%,transparent),0_1px_2px_rgb(0_0_0/8%),0_7px_18px_-10px_color-mix(in_srgb,var(--button-primary-base)_52%,transparent)] transition-[background-color,box-shadow,transform] duration-150 ease-out hover:bg-[var(--button-primary-hover,var(--button-primary-base))] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--text-strong)] active:scale-[0.96] motion-reduce:active:scale-100"
-            onClick={runPrimary}
-          >
+          <Button variant="primary" size="lg" onClick={runPrimary}>
             <Show when={props.state.primaryAction === "open-xcode"}>
               <Icon name="external" size={13} />
             </Show>
             {props.state.primaryLabel}
-          </button>
+          </Button>
           <Show when={props.state.secondaryRetry}>
             <button
               type="button"

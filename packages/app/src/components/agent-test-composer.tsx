@@ -1,11 +1,11 @@
 import { Show, createSignal } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { planTestPrompt } from "../lib/natural-language-plan";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
-import { productPrimary } from "../lib/ui";
 
 export function AgentTestComposer(
   props: {
@@ -120,14 +120,14 @@ export function AgentTestComposer(
           />
           <footer class="flex min-h-10 items-center justify-between gap-3">
             <span class="text-[10.5px] text-[var(--text-weak)]">⌘ Enter</span>
-            <button
-              type="button"
-              class={productPrimary}
+            <Button
+              variant="primary"
+              size="lg"
               disabled={!prompt().trim() || generating()}
               onClick={() => void createSteps()}
             >
               <Icon name="sparkle" size={14} /> {generating() ? "Creating…" : "Create steps"}
-            </button>
+            </Button>
           </footer>
         </div>
       </Show>

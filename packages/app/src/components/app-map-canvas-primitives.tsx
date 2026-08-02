@@ -138,12 +138,23 @@ export function ScreenCard(props: {
       </Show>
       <header class="order-2 flex h-7 min-w-0 items-center gap-2 px-1">
         <span
-          class="grid size-[18px] shrink-0 place-items-center rounded-[6px] text-[var(--text-invert-strong)]"
-          style={{
-            background: props.step ? accentForStep(props.step) : "var(--text-interactive-base)",
-          }}
+          class={cn(
+            "grid size-[18px] shrink-0 place-items-center rounded-[6px]",
+            props.step || props.isFlowStart
+              ? "text-[var(--text-invert-strong)]"
+              : "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)]",
+          )}
+          style={
+            props.step || props.isFlowStart
+              ? {
+                  background: props.step
+                    ? accentForStep(props.step)
+                    : "var(--text-interactive-base)",
+                }
+              : undefined
+          }
         >
-          <Icon name={props.step ? iconForStep(props.step) : "play"} size={9} />
+          <Icon name={props.step ? iconForStep(props.step) : "smartphone"} size={9} />
         </span>
         <Show
           when={props.editing}
@@ -176,17 +187,20 @@ export function ScreenCard(props: {
         fallback={
           <div
             data-screen-frame
-            class="order-1 grid min-h-0 flex-1 place-items-center overflow-hidden rounded-[18px] bg-[radial-gradient(circle_at_50%_35%,color-mix(in_srgb,var(--v2-background-bg-accent)_10%,transparent),transparent_44%),var(--v2-background-bg-deep)] px-5 text-center shadow-[var(--map-elevation-control)]"
+            class="order-1 grid min-h-0 flex-1 place-items-center overflow-hidden rounded-[15px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_72%,var(--map-canvas))] px-5 text-center shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_62%,transparent)]"
           >
-            <div class="grid justify-items-center gap-2">
-              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--v2-background-bg-layer-02)] text-[var(--text-interactive-base)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
-                <Icon name={props.step ? iconForStep(props.step) : "play"} size={17} />
+            <div class="grid max-w-[152px] justify-items-center gap-2">
+              <span class="grid size-9 place-items-center rounded-[10px] bg-[var(--v2-background-bg-base)] text-[var(--text-weak)] shadow-[inset_0_0_0_1px_var(--v2-border-border-muted)]">
+                <Icon name={props.step ? iconForStep(props.step) : "camera"} size={15} />
               </span>
-              <Show when={props.isFlowStart}>
-                <span class="text-[10px] font-medium text-[var(--text-base)]">
-                  Flow starts here
-                </span>
-              </Show>
+              <span class="text-[11px] font-medium text-[var(--text-base)]">
+                {props.isFlowStart ? "Starting screen" : "No screenshot yet"}
+              </span>
+              <span class="text-[9.5px]/[1.45] text-[var(--text-weak)]">
+                {props.isFlowStart
+                  ? "Capture the live app to add its preview"
+                  : "Capture or replay this state to add a preview"}
+              </span>
             </div>
           </div>
         }
@@ -194,7 +208,7 @@ export function ScreenCard(props: {
         {(src) => (
           <div
             data-screen-frame
-            class="order-1 min-h-0 flex-1 overflow-hidden rounded-[18px] bg-[oklch(0.12_0.01_270)] shadow-[var(--map-elevation-control)]"
+            class="order-1 min-h-0 flex-1 overflow-hidden rounded-[15px] bg-[oklch(0.12_0.01_270)] shadow-[var(--map-elevation-control)]"
           >
             <img
               src={src()}

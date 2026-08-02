@@ -43,6 +43,7 @@ const groupLabel = cn(
  */
 export function MapLibrary(props: {
   open: boolean;
+  onClose: () => void;
   area: MapLibraryArea;
   onArea: (area: MapLibraryArea) => void;
   query: string;
@@ -102,11 +103,20 @@ export function MapLibrary(props: {
     >
       {/* Clearance for the desktop traffic lights only — the wordmark and the
           overflow menu are parked until they have a real home. */}
-      <div class="shell-drag relative h-[var(--nav-top-pad,56px)] shrink-0" aria-hidden="true">
-        <span class="absolute right-3 bottom-[13px] hidden items-center gap-1.5 text-[12px] font-semibold tracking-[-0.02em] text-text-base [.qa--desktop_&]:flex">
+      <div class="shell-drag relative h-[var(--nav-top-pad,56px)] shrink-0">
+        <span class="absolute right-12 bottom-[13px] hidden items-center gap-1.5 text-[12px] font-semibold tracking-[-0.02em] text-text-base [.qa--desktop_&]:flex">
           <RelayMark size={17} />
           Relay
         </span>
+        <button
+          type="button"
+          class="absolute right-2 bottom-2 grid size-10 place-items-center rounded-[9px] text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-strong"
+          aria-label="Close library"
+          data-tip="Close library · Esc"
+          onClick={props.onClose}
+        >
+          <Icon name="x" size={14} />
+        </button>
       </div>
 
       {/* Padding, never margin: direct children are pinned to the panel width
@@ -119,20 +129,41 @@ export function MapLibrary(props: {
           aria-label="Workspace area"
         >
           <For each={AREA_TABS}>
-            {(tab) => {
+            {(tab, index) => {
               const active = () => props.area === tab.id;
               return (
                 <button
                   type="button"
                   role="tab"
                   aria-selected={active()}
+                  tabindex={active() ? 0 : -1}
+                  data-library-tab={tab.id}
                   class={cn(
-                    "min-h-9 flex-1 rounded-[7px] text-[11.5px] font-medium transition-colors duration-150",
+                    "min-h-11 flex-1 rounded-[7px] text-[11.5px] font-medium transition-colors duration-150",
                     active()
                       ? "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base"
                       : "text-text-weak hover:text-text-base",
                   )}
                   onClick={() => props.onArea(tab.id)}
+                  onKeyDown={(event) => {
+                    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                    event.preventDefault();
+                    const nextIndex =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? AREA_TABS.length - 1
+                          : (index() + (event.key === "ArrowRight" ? 1 : -1) + AREA_TABS.length) %
+                            AREA_TABS.length;
+                    const next = AREA_TABS[nextIndex]!;
+                    props.onArea(next.id);
+                    queueMicrotask(() => {
+                      if (!props.open) return;
+                      document
+                        .querySelector<HTMLButtonElement>(`[data-library-tab="${next.id}"]`)
+                        ?.focus();
+                    });
+                  }}
                 >
                   {tab.label}
                 </button>
@@ -144,7 +175,7 @@ export function MapLibrary(props: {
 
       <Show when={props.area === "tests"}>
         <div class="mb-1.5 shrink-0 px-2.5">
-          <label class="relative flex h-[32px] w-full items-center gap-2 rounded-[9px] bg-v2-background-bg-base px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:text-text-base focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base),0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_10%,transparent)]">
+          <label class="relative flex h-11 w-full items-center gap-2 rounded-[9px] bg-v2-background-bg-base px-2.5 text-text-weaker shadow-[inset_0_0_0_1px_var(--border-weak-base)] focus-within:text-text-base focus-within:shadow-[inset_0_0_0_1px_var(--border-interactive-base),0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_10%,transparent)]">
             <Icon name="search" size={14} />
             <span class="sr-only">Search maps</span>
             <input

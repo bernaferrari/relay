@@ -132,10 +132,10 @@ export function DeviceCompanionStage(props: {
         host = element;
       }}
       class={cn(
-        "relative z-0 min-h-0 flex-1 overflow-hidden bg-[var(--v2-background-bg-layer-01)]",
+        "relative z-0 min-h-0 flex-1 overflow-hidden bg-[color-mix(in_srgb,var(--v2-background-bg-base)_76%,var(--map-canvas))]",
         "[&>section]:!p-4",
         "[&_[data-device-chrome]]:!bg-transparent [&_[data-device-chrome]]:!p-0 [&_[data-device-chrome]]:!shadow-none",
-        "[&_.phone-screen]:!rounded-[12px] [&_.phone-screen]:shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)]",
+        "[&_.phone-screen]:!rounded-[10px] [&_.phone-screen]:shadow-[0_1px_2px_rgb(0_0_0/10%),0_16px_42px_-24px_rgb(0_0_0/34%)]",
       )}
     >
       <DeviceStage

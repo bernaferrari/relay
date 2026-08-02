@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import type { TestVariable } from "@relay/protocol";
+import { Button } from "@relay/ui/button";
 import { useServer } from "../../context/server";
 import { toast } from "../../context/toast";
 import { cn } from "../../lib/cn";
@@ -11,8 +12,6 @@ import {
 } from "../../lib/private-variables";
 import {
   eyebrow,
-  productPrimary,
-  productSecondary,
   productPage,
   productPageHero,
   productPageTitle,
@@ -152,12 +151,12 @@ export function DataWorkspace(props: {
           </Show>
         </div>
         <div class="flex items-center gap-2">
-          <button type="button" class={productSecondary} onClick={props.onConfigureProvider}>
+          <Button variant="secondary" size="lg" onClick={props.onConfigureProvider}>
             Generation settings
-          </button>
-          <button type="button" class={productPrimary} onClick={addRow}>
+          </Button>
+          <Button variant="primary" size="lg" onClick={addRow}>
             <Icon name="plus" size={15} /> New variable
-          </button>
+          </Button>
           <Show when={props.embedded && props.onClose}>
             <button
               type="button"
@@ -245,9 +244,9 @@ export function DataWorkspace(props: {
                   Use a list to cover plans or locales. Keep logins private so each teammate can use
                   their own account without sharing credentials.
                 </p>
-                <button type="button" class={cn(productPrimary, "mt-4")} onClick={addRow}>
+                <Button variant="primary" size="lg" class="mt-4" onClick={addRow}>
                   <Icon name="plus" size={14} /> Add first variable
-                </button>
+                </Button>
               </div>
             </div>
           </Show>

@@ -1,6 +1,7 @@
 import { Show, createEffect, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
-import { modalPanel, modalScrim, productSecondary } from "../lib/ui";
+import { modalPanel, modalScrim } from "../lib/ui";
 import { trapFocus } from "../lib/modal";
 
 export type ConfirmRequest = {
@@ -83,20 +84,16 @@ export function ConfirmDialogHost(): JSX.Element {
                 {active().body}
               </p>
               <div class="flex justify-end gap-2">
-                <button type="button" class={productSecondary} onClick={close}>
+                <Button variant="secondary" size="lg" onClick={close}>
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  class={cn(
-                    productSecondary,
-                    active().tone !== "default" &&
-                      "bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)] text-icon-critical-base shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--icon-critical-base)_38%,transparent)] hover:enabled:bg-[color-mix(in_srgb,var(--icon-critical-base)_22%,transparent)] hover:enabled:text-icon-critical-base",
-                  )}
+                </Button>
+                <Button
+                  variant={active().tone === "default" ? "primary" : "danger"}
+                  size="lg"
                   onClick={confirm}
                 >
                   {active().confirmLabel}
-                </button>
+                </Button>
               </div>
             </section>
           </div>

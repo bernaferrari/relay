@@ -1,4 +1,5 @@
 import { Show, createMemo, createSignal } from "solid-js";
+import { Button } from "@relay/ui/button";
 import type { RecordingTake } from "../context/recorder";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
@@ -36,16 +37,16 @@ export function AppMapDeviceCompanion(props: {
   return (
     <aside
       class={cn(
-        "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] ring-1 ring-[color-mix(in_srgb,var(--map-divider)_72%,transparent)] transition-[width] duration-180 ease-out motion-reduce:transition-none",
+        "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] transition-[width] duration-180 ease-out motion-reduce:transition-none",
         props.closing && "ui-device-companion--closing",
         props.deviceSelected
           ? cn(
-              "bottom-4 rounded-[18px] max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto",
+              "bottom-4 rounded-[14px] max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto",
               renderedOrientation() === "landscape"
                 ? "w-[min(548px,calc(100%-32px))]"
                 : "w-[min(388px,calc(100%-32px))]",
             )
-          : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[18px] max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto",
+          : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[14px] max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto",
       )}
       data-frame-orientation={renderedOrientation()}
       aria-label="Device"
@@ -74,9 +75,10 @@ export function AppMapDeviceCompanion(props: {
         fallback={
           <Show when={footerMode() !== "hidden"}>
             <footer class="flex min-h-[68px] shrink-0 items-center justify-center border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-4">
-              <button
-                type="button"
-                class="app-map-record-button min-w-[148px]"
+              <Button
+                variant="primary"
+                size="lg"
+                class="min-w-[148px]"
                 disabled={footerMode() === "busy"}
                 aria-busy={footerMode() === "busy"}
                 onClick={props.onRecord}
@@ -88,7 +90,7 @@ export function AppMapDeviceCompanion(props: {
                   <Icon name="refresh" size={13} class="ui-refresh-spin motion-reduce:opacity-70" />
                 </Show>
                 {props.recordLabel}
-              </button>
+              </Button>
             </footer>
           </Show>
         }

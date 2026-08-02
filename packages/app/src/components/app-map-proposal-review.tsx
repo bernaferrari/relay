@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { Proposal, ProposalChange } from "@relay/protocol";
+import { Button } from "@relay/ui/button";
 import { Icon } from "./icon";
 
 function describeChange(change: ProposalChange): string {
@@ -21,7 +22,7 @@ export function AppMapProposalReview(props: {
 }) {
   return (
     <aside
-      class="absolute top-4 right-4 z-30 flex max-h-[calc(100%-88px)] w-[min(360px,calc(100%-32px))] flex-col overflow-hidden rounded-[14px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_var(--v2-border-border-strong),0_22px_64px_rgb(0_0_0/24%)]"
+      class="absolute top-3 right-3 z-30 flex max-h-[calc(100%-80px)] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--v2-background-bg-base)] shadow-[var(--map-elevation-panel)]"
       aria-label="Agent proposals"
     >
       <header class="flex min-h-12 items-center gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
@@ -97,14 +98,14 @@ export function AppMapProposalReview(props: {
                   </span>
                 </Show>
                 <div class="mt-3 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    class="min-h-10 rounded-[8px] bg-[var(--product-accent)] px-3 text-[10.5px] font-semibold text-[var(--text-on-brand-base)] disabled:opacity-50"
+                  <Button
+                    variant="primary"
+                    size="lg"
                     disabled={Boolean(props.busyId)}
                     onClick={() => props.onApprove(proposal.id)}
                   >
                     {props.busyId === proposal.id ? "Applying…" : "Approve"}
-                  </button>
+                  </Button>
                   <button
                     type="button"
                     class="min-h-10 rounded-[8px] bg-[var(--v2-background-bg-layer-02)] px-3 text-[10.5px] font-medium text-[var(--text-base)] hover:text-[var(--text-strong)] disabled:opacity-50"

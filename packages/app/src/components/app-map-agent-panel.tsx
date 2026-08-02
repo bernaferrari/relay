@@ -1,34 +1,45 @@
 import { Show } from "solid-js";
-import type { AppMap } from "@relay/protocol";
-import { useAppMapAgentExploration } from "../lib/use-app-map-agent-exploration";
-import { productPrimary, productSecondary } from "../lib/ui";
+import type { AppMapAgentExploration } from "../lib/use-app-map-agent-exploration";
+import { Button } from "@relay/ui/button";
 import { AppMapAgentProgress } from "./app-map-agent-progress";
 import { AppMapAgentSetup } from "./app-map-agent-setup";
 import { Icon } from "./icon";
 
 export function AppMapAgentPanel(props: {
-  appMap: AppMap;
+  exploration: AppMapAgentExploration;
   onClose: () => void;
+  onOpenTargets: () => void;
   onProposalReady: () => void;
 }) {
-  const exploration = useAppMapAgentExploration(() => props.appMap);
+  let panel: HTMLElement | undefined;
+  const exploration = props.exploration;
 
   return (
     <aside
-      class="ui-panel-in absolute top-3 right-3 bottom-3 z-40 flex w-[min(420px,calc(100%-24px))] flex-col overflow-hidden rounded-[16px] bg-[var(--v2-background-bg-base)] shadow-[0_0_0_1px_var(--v2-border-border-strong),0_22px_70px_rgb(0_0_0/24%)]"
+      ref={(element) => {
+        panel = element;
+        queueMicrotask(() => panel?.focus());
+      }}
+      class="ui-panel-in absolute top-3 right-3 bottom-3 z-40 flex w-[min(376px,calc(100%-24px))] flex-col overflow-hidden rounded-[14px] bg-[var(--v2-background-bg-base)] shadow-[var(--map-elevation-panel)]"
       aria-label="Explore App Map with Relay"
+      tabindex={-1}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        props.onClose();
+      }}
     >
-      <header class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-4">
+      <header class="flex min-h-[52px] shrink-0 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-3.5">
         <div class="flex min-w-0 items-center gap-2.5">
-          <span class="grid size-8 shrink-0 place-items-center rounded-[9px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
-            <Icon name="scan" size={15} />
+          <span class="grid size-7 shrink-0 place-items-center rounded-[8px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
+            <Icon name="scan" size={13} />
           </span>
           <span class="min-w-0">
             <strong class="block truncate text-[13px] font-semibold text-[var(--text-strong)]">
               Explore with Relay
             </strong>
-            <small class="block truncate text-[10px] text-[var(--text-weak)]">
-              Parallel, attributable, and always reviewable
+            <small class="block truncate text-[10.5px] text-[var(--text-weak)]">
+              Changes always come back for review
             </small>
           </span>
         </div>
@@ -58,7 +69,9 @@ export function AppMapAgentPanel(props: {
             minutes={exploration.minutes()}
             devices={exploration.devices()}
             targetIds={exploration.targetIds()}
+            selectedTargetCount={exploration.targetCount()}
             modelIds={exploration.modelIds()}
+            onOpenTargets={props.onOpenTargets}
             onGoal={exploration.setGoal}
             onMinutes={exploration.setMinutes}
             onTargetIds={exploration.setTargetIds}
@@ -67,7 +80,7 @@ export function AppMapAgentPanel(props: {
         </Show>
       </div>
 
-      <footer class="flex min-h-[68px] shrink-0 items-center justify-between gap-2 border-t border-[var(--v2-border-border-muted)] px-4">
+      <footer class="flex min-h-16 shrink-0 items-center justify-between gap-2 border-t border-[var(--v2-border-border-muted)] px-4">
         <Show when={exploration.state() === "idle" && exploration.workers().length === 0}>
           <span class="text-[10px] text-[var(--text-weak)] tabular-nums">
             {exploration.workerCount()} agent{exploration.workerCount() === 1 ? "" : "s"}
@@ -80,35 +93,44 @@ export function AppMapAgentPanel(props: {
             <Show
               when={exploration.proposalCount() > 0}
               fallback={
-                <button
-                  type="button"
-                  class={productPrimary}
-                  disabled={!exploration.goal().trim() || exploration.workerCount() === 0}
-                  onClick={() => void exploration.start()}
+                <Show
+                  when={exploration.targetCount() > 0}
+                  fallback={
+                    <Button variant="primary" size="lg" onClick={props.onOpenTargets}>
+                      <Icon name="smartphone" size={13} /> Choose a device
+                    </Button>
+                  }
                 >
-                  <Icon name="play" size={13} />
-                  {exploration.workerCount() > 1
-                    ? `Explore with ${exploration.workerCount()} agents`
-                    : "Start exploring"}
-                </button>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    disabled={!exploration.goal().trim() || exploration.workerCount() === 0}
+                    onClick={() => void exploration.start()}
+                  >
+                    <Icon name="play" size={13} />
+                    {exploration.workerCount() > 1
+                      ? `Explore with ${exploration.workerCount()} agents`
+                      : "Start exploring"}
+                  </Button>
+                </Show>
               }
             >
-              <button type="button" class={productPrimary} onClick={props.onProposalReady}>
+              <Button variant="primary" size="lg" onClick={props.onProposalReady}>
                 <Icon name="check" size={13} /> Review {exploration.proposalCount()} proposal
                 {exploration.proposalCount() === 1 ? "" : "s"}
-              </button>
+              </Button>
             </Show>
           }
         >
-          <button
-            type="button"
-            class={productSecondary}
+          <Button
+            variant="secondary"
+            size="lg"
             disabled={exploration.state() === "stopping"}
             onClick={() => void exploration.stop()}
           >
             <Icon name="square" size={12} />
             {exploration.state() === "stopping" ? "Stopping…" : "Stop"}
-          </button>
+          </Button>
         </Show>
       </footer>
     </aside>
