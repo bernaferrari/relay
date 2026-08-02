@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { IosRunnerSetupError, normalizeIosRunnerError } from "./ios-device-adapter.js";
+import {
+  diagnoseIosRunnerError,
+  IosRunnerSetupError,
+  normalizeIosRunnerError,
+} from "./ios-device-adapter.js";
 
 test("maps signing failures to the Relay iOS setup action", () => {
   const error = normalizeIosRunnerError(
@@ -32,6 +39,30 @@ test("explains when Xcode has no account for the configured Apple team", () => {
   );
   assert.ok(error instanceof IosRunnerSetupError);
   assert.match(error.message, /Xcode is not signed in to this Apple team/);
+});
+
+test("reads signing diagnostics from the selected iPad session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-ios-runner-log-"));
+  const previousStateDir = process.env.AGENT_DEVICE_STATE_DIR;
+  const udid = "device:with/unsafe characters";
+  try {
+    process.env.AGENT_DEVICE_STATE_DIR = root;
+    const session = join(root, "sessions", "relay-ios-device-with-unsafe-characters");
+    await mkdir(session, { recursive: true });
+    await writeFile(
+      join(session, "runner.log"),
+      'error: No Account for Team "ABCDE12345". Add a new account in Accounts settings.\n',
+      "utf8",
+    );
+
+    const error = await diagnoseIosRunnerError(new Error("xcodebuild failed"), udid);
+    assert.ok(error instanceof IosRunnerSetupError);
+    assert.match(error.message, /Xcode is not signed in to this Apple team/);
+  } finally {
+    if (previousStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
+    else process.env.AGENT_DEVICE_STATE_DIR = previousStateDir;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("keeps regular runner failures intact", () => {

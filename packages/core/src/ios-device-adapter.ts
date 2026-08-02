@@ -67,32 +67,53 @@ function valueFrom(result: unknown, key: "path" | "warning"): string | undefined
  * *fresh* log only after that compact error so Relay can distinguish a missing
  * Xcode account from an unplugged iPad without exposing the full build log.
  */
-async function recentIosRunnerFailure(): Promise<string | undefined> {
+function iosSessionName(udid: string): string {
+  const identity = udid
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `relay-ios-${identity || "target"}`;
+}
+
+async function recentIosRunnerFailure(udid?: string): Promise<string | undefined> {
   const stateDir = process.env.AGENT_DEVICE_STATE_DIR?.trim() || join(homedir(), ".agent-device");
-  const session = process.env.AGENT_DEVICE_SESSION?.trim() || "relay-actions";
-  const path = join(stateDir, "sessions", session, "runner.log");
-  try {
-    const info = await stat(path);
-    if (Date.now() - info.mtimeMs > 60_000) return undefined;
-    const log = (await readFile(path, "utf8")).slice(-32_768);
-    if (/no account for team|valid credentials/i.test(log)) {
-      return "No Account for Team";
+  const configuredSession = process.env.AGENT_DEVICE_SESSION?.trim();
+  // `createDevice` isolates every physical target into its own agent-device
+  // session. The old generic lookup missed exactly the log produced by the
+  // selected iPad, so a precise Xcode account failure became a vague signing
+  // message. Prefer the target session, while retaining the explicit and
+  // legacy names for callers that intentionally override session isolation.
+  const sessions = [
+    ...(udid ? [iosSessionName(udid)] : []),
+    ...(configuredSession ? [configuredSession] : []),
+    "relay-actions",
+  ].filter((session, index, values) => values.indexOf(session) === index);
+
+  for (const session of sessions) {
+    const path = join(stateDir, "sessions", session, "runner.log");
+    try {
+      const info = await stat(path);
+      if (Date.now() - info.mtimeMs > 60_000) continue;
+      const log = (await readFile(path, "utf8")).slice(-32_768);
+      if (/no account for team|valid credentials/i.test(log)) {
+        return "No Account for Team";
+      }
+      if (/developer mode/i.test(log)) {
+        return "Developer Mode disabled";
+      }
+      if (/developer disk image|ddi services/i.test(log)) {
+        return "Developer Disk Image unavailable";
+      }
+      if (/no profiles? for|provisioning profiles? matching/i.test(log)) {
+        return "No profiles for Relay's local runner";
+      }
+      if (/automatically signed.*manually specified|conflicting provisioning settings/i.test(log)) {
+        return "Automatically signed runner has a manually specified signing identity";
+      }
+    } catch {
+      // This candidate is optional; try the next known session before falling
+      // back to the compact SDK error.
     }
-    if (/developer mode/i.test(log)) {
-      return "Developer Mode disabled";
-    }
-    if (/developer disk image|ddi services/i.test(log)) {
-      return "Developer Disk Image unavailable";
-    }
-    if (/no profiles? for|provisioning profiles? matching/i.test(log)) {
-      return "No profiles for Relay's local runner";
-    }
-    if (/automatically signed.*manually specified|conflicting provisioning settings/i.test(log)) {
-      return "Automatically signed runner has a manually specified signing identity";
-    }
-  } catch {
-    // The runner log is optional diagnostic context. Preserve the original
-    // device error when it does not exist or cannot be read.
   }
   return undefined;
 }
@@ -116,8 +137,8 @@ export function normalizeIosRunnerError(error: unknown): Error {
  * freshly written runner log as well, so screenshot, snapshot, and video all
  * present the same actionable setup state.
  */
-export async function diagnoseIosRunnerError(error: unknown): Promise<Error> {
-  const diagnostic = await recentIosRunnerFailure();
+export async function diagnoseIosRunnerError(error: unknown, udid?: string): Promise<Error> {
+  const diagnostic = await recentIosRunnerFailure(udid);
   return normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
 }
 
@@ -135,7 +156,7 @@ export async function prepareIosRunner(device: Device, selection: { udid: string
       timeoutMs: 240_000,
     });
   } catch (error) {
-    const diagnostic = await recentIosRunnerFailure();
+    const diagnostic = await recentIosRunnerFailure(selection.udid);
     throw normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
   }
 }
@@ -167,7 +188,7 @@ export async function recordIosVideo(
       ...(valueFrom(result, "warning") ? { warning: valueFrom(result, "warning") } : {}),
     };
   } catch (error) {
-    const diagnostic = await recentIosRunnerFailure();
+    const diagnostic = await recentIosRunnerFailure(input.udid);
     throw normalizeIosRunnerError(diagnostic ? new Error(diagnostic) : error);
   }
 }

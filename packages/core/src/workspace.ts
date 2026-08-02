@@ -573,7 +573,7 @@ export async function captureSnapshot(opts?: {
       snapshot = await snapshotForTarget(target, opts?.interactiveOnly ?? false);
     } catch (error) {
       if (target.context.kind === "device" && target.context.platform === "ios") {
-        const normalized = await diagnoseIosRunnerError(error);
+        const normalized = await diagnoseIosRunnerError(error, target.context.serial);
         throw normalized;
       }
       throw error;
@@ -651,7 +651,7 @@ export async function captureScreenshot(opts?: {
         );
       } catch (error) {
         if (context.kind === "device" && context.platform === "ios") {
-          const normalized = await diagnoseIosRunnerError(error);
+          const normalized = await diagnoseIosRunnerError(error, context.serial);
           throw normalized;
         }
         throw error;
