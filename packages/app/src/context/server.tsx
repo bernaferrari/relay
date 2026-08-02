@@ -689,10 +689,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         const list = asArray<RecipeInfo>(data, "journeys");
         setRecipes(list);
         setRecipesLoaded(true);
-        // A restored selection may point at a deleted recipe — fall back to
-        // the first-run empty state, never silently to the first builtin.
-        const sel = selectedRecipeId();
-        if (sel && !list.some((r) => r.id === sel)) setSelectedRecipeId(null);
       } catch {
         /* ignore — recipes are non-critical for connectivity UX */
       }
@@ -1676,13 +1672,15 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshRedactionPolicy(),
           refreshEvidenceCollectionPolicy(),
         ]);
+        const selectedMapId = selectedRecipeId();
+        if (selectedMapId && !appMaps().some((map) => map.id === selectedMapId)) {
+          setSelectedRecipeId(null);
+        }
         if (!selectedRecipeId()) {
-          const latestJourney = recipes()
-            .filter((recipe) => recipe.source === "custom")
-            .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-          if (latestJourney) {
-            setSelectedRecipeId(latestJourney.id);
-          }
+          const latestMap = appMaps().toSorted(
+            (left, right) => right.updatedAt - left.updatedAt,
+          )[0];
+          if (latestMap) setSelectedRecipeId(latestMap.id);
         }
         connectSse();
       }

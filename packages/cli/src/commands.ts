@@ -284,6 +284,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: ['relay map create checkout --input \'{"name":"Checkout"}\''],
     }),
   ),
+  mapped("app-map.remove", path("map remove", ["appMapId"])),
   mapped("app-map.update", path("map rename", ["appMapId"])),
   mapped("app-map.screen.add", path("screen add", ["appMapId"])),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),

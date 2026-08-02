@@ -492,6 +492,24 @@ export async function readAppMap(projectId: string, appMapId: string): Promise<A
   return value ? validateAppMap(value) : null;
 }
 
+export async function deleteAppMap(projectId: string, appMapId: string): Promise<boolean> {
+  return mutate((state) => {
+    const key = appMapKey(projectId, appMapId);
+    const current = state.appMaps[key];
+    if (!current) return false;
+    delete state.appMaps[key];
+    emit({
+      type: "resource.deleted",
+      at: now(),
+      projectId,
+      resource: "app-map",
+      resourceId: appMapId,
+      revision: current.revision,
+    });
+    return true;
+  });
+}
+
 export async function createAppMap(input: {
   organizationId: string;
   projectId: string;

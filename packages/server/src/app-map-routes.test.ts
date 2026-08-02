@@ -127,6 +127,14 @@ test("App Map operations are equivalent for human and agent actors", async () =>
         return true;
       },
     );
+
+    assert.deepEqual(await human.invoke("app-map.remove", { appMapId: "store" }), { ok: true });
+    await assert.rejects(human.invoke("app-map.get", { appMapId: "store" }), (error) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.status, 404);
+      return true;
+    });
+    assert.deepEqual(await human.invoke("app-map.list", {}), { appMaps: [] });
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;

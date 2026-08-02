@@ -165,7 +165,6 @@ export function AppMapWorkspace(props: {
   let requestedAppleSetupFor = "";
   let canonicalProjectionQueue = Promise.resolve();
   let appliedCanonicalRevision = "";
-  let canonicalMapRequest = "";
   createEffect(() => {
     const device = selectedDevice();
     const setup = server.appleDeviceSetup();
@@ -465,32 +464,6 @@ export function AppMapWorkspace(props: {
     setMetadata({ ...current, value, updatedAt: Math.max(current.updatedAt, appMap.updatedAt) });
   });
 
-  // Older local projects can have a canvas document without its normalized
-  // App Map projection. Ensure that projection as soon as the selected canvas
-  // is ready so Screens, Coverage, CLI, and MCP never disagree about whether
-  // the map exists. This does not create another draft: both records share the
-  // selected map id and all subsequent mutations go through App Map actions.
-  createEffect(() => {
-    const appMapId = server.selectedRecipeId();
-    const isReady = loadedRecipeId() === appMapId && journeyLoadState().status === "ready";
-    const mapsLoaded = server.appMapsLoaded();
-    const alreadyExists = server.appMaps().some((candidate) => candidate.id === appMapId);
-    if (!appMapId || !isReady || !mapsLoaded || alreadyExists || canonicalMapRequest === appMapId)
-      return;
-    canonicalMapRequest = appMapId;
-    void server
-      .loadAppMap(appMapId)
-      .then(() => server.refreshAppMaps())
-      .catch(() => server.createAppMap(appMapId, draft.title().trim() || "Untitled"))
-      .then(() => syncCanonicalProjection(metadata().value))
-      .catch((caught) => {
-        canonicalMapRequest = "";
-        toast(
-          `The App Map projection could not be prepared: ${caught instanceof Error ? caught.message : String(caught)}`,
-          "warning",
-        );
-      });
-  });
   // A blank journey starts with its device companion visible: the first screen
   // is established there, not through a modal or a second empty-state CTA.
   // Populated maps keep the canvas unobstructed until Device is requested.

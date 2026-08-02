@@ -46,8 +46,7 @@ import {
   shellDragStrip,
 } from "../lib/shell-layout";
 import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
-import { ensureJourneyGraph } from "../lib/journey-graph";
-import { journeyStartupDecision } from "../lib/journey-startup";
+import { appMapStartupDecision } from "../lib/app-map-startup";
 import type { JourneyRunReadiness as GraphRunReadiness } from "../lib/journey-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
@@ -112,28 +111,28 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   // become visible before that asynchronous restore has selected a canvas.
   // It also gives browser-only sessions (with empty storage) the most recent
   // authored journey immediately.
-  let restoredInitialJourney = false;
+  let restoredInitialMap = false;
   createEffect(() => {
-    if (restoredInitialJourney) return;
-    const decision = journeyStartupDecision({
+    if (restoredInitialMap) return;
+    const decision = appMapStartupDecision({
       online: server.health() === "online",
-      loaded: server.recipesLoaded(),
+      loaded: server.appMapsLoaded(),
       selectedId: server.selectedRecipeId(),
-      journeys: server.recipes(),
+      maps: server.appMaps(),
     });
     if (decision.kind === "wait") return;
     if (decision.kind === "keep") {
-      restoredInitialJourney = true;
+      restoredInitialMap = true;
       return;
     }
     if (decision.kind === "select") {
-      restoredInitialJourney = true;
+      restoredInitialMap = true;
       server.setSelectedRecipeId(decision.id);
       return;
     }
     // No saved maps yet. The renderer now owns an unsaved canvas until the
     // first capture/edit, so launching Relay never manufactures an empty file.
-    restoredInitialJourney = true;
+    restoredInitialMap = true;
     server.setSelectedRecipeId(null);
   });
   const navigatorArea = createMemo<NavigatorArea>(() => area());
@@ -339,13 +338,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
     void server.runRecipeRemote(recipe.id);
   };
-  const filteredRecipes = createMemo(() => {
+  const mapItems = createMemo(() => {
     const needle = query().trim().toLowerCase();
-    // Journeys are the work people create and review. Built-in operational
-    // commands remain available to the runner, but do not belong in this
-    // library beside authored work.
-    const rows = server.recipes().filter((recipe) => recipe.source === "custom");
-    rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    const recipes = new Map(server.recipes().map((recipe) => [recipe.id, recipe]));
+    const rows: RecipeInfo[] = server.appMaps().map((map) => {
+      const recipe = recipes.get(map.id);
+      return {
+        id: map.id,
+        title: map.name,
+        source: "custom",
+        steps: recipe?.steps ?? [],
+        createdAt: map.createdAt,
+        updatedAt: map.updatedAt,
+        ...(recipe?.description ? { description: recipe.description } : {}),
+      };
+    });
+    rows.sort((a, b) => b.updatedAt - a.updatedAt);
     return needle
       ? rows.filter((recipe) =>
           `${recipe.title} ${recipe.description ?? ""}`.toLowerCase().includes(needle),
@@ -357,7 +365,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       openDevicePicker();
       return null;
     }
-    const title = nextUntitledMapTitle(server.recipes());
+    const title = nextUntitledMapTitle(server.appMaps());
     const saved = await server.saveRecipeRemote({
       title,
       steps: [],
@@ -467,25 +475,29 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     }
   }
 
-  function confirmDeleteJourney(recipe: RecipeInfo): void {
+  function confirmDeleteMap(appMapId: string): void {
+    const appMap = server.appMaps().find((candidate) => candidate.id === appMapId);
+    if (!appMap) return;
     confirmAction({
       title: "Delete map?",
-      body: `“${displayTitle(recipe.title)}” and its version history will be removed. This cannot be undone.`,
+      body: `“${appMap.name}” and its version history will be removed. This cannot be undone.`,
       confirmLabel: "Delete map",
       onConfirm: async () => {
-        await server.deleteRecipeRemote(recipe.id);
+        await server.runAction("app-map.remove", { appMapId });
+        await server.deleteRecipeRemote(appMapId).catch(() => undefined);
+        await server.refreshAppMaps();
+        if (server.selectedRecipeId() === appMapId) server.setSelectedRecipeId(null);
       },
     });
   }
 
   function deleteSelected(): void {
-    const recipe = selected();
-    if (recipe) confirmDeleteJourney(recipe);
+    const appMapId = server.selectedRecipeId();
+    if (appMapId) confirmDeleteMap(appMapId);
   }
 
-  function deleteJourney(id: string): void {
-    const recipe = server.recipes().find((item) => item.id === id);
-    if (recipe) confirmDeleteJourney(recipe);
+  function deleteMap(id: string): void {
+    confirmDeleteMap(id);
   }
 
   function openRecipe(id: string): void {
@@ -498,42 +510,14 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setNavOpen(false);
   }
 
-  async function reusableEmptyJourney(): Promise<RecipeInfo | null> {
-    const candidates = server
-      .recipes()
-      .filter((recipe) => recipe.source === "custom" && recipe.steps.length === 0)
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-    for (const candidate of candidates) {
-      try {
-        const metadata = await server.loadJourney(candidate.id);
-        const graph = ensureJourneyGraph(metadata.value, candidate.steps);
-        const hasAuthoredContent =
-          graph.screens.length > 0 ||
-          graph.transitions.length > 0 ||
-          Boolean(metadata.value.notes?.length) ||
-          Boolean(metadata.value.takes?.length);
-        if (!hasAuthoredContent) return candidate;
-      } catch {
-        // A failed metadata read is not proof that a journey is empty.
-      }
-    }
-    return null;
-  }
-
-  /** New journey reuses an untouched blank canvas before creating another
-   * durable document. This keeps instant creation without filling the library
-   * with abandoned “Untitled journey 19, 20, 21…” entries. */
-  async function startNewJourney(): Promise<void> {
+  /** New Map is a local blank canvas. It becomes durable only after its first
+   * capture or note, so browsing and reopening Relay cannot create drafts. */
+  function startNewMap(): void {
     setArea("tests");
-    const reusable = await reusableEmptyJourney();
-    if (reusable) {
-      server.setSelectedRecipeId(reusable.id);
-      setStudioView("map");
-      setSettingsOpen(false);
-      setNavOpen(false);
-      return;
-    }
-    await createTest(false);
+    server.setSelectedRecipeId(null);
+    setStudioView("map");
+    setSettingsOpen(false);
+    setNavOpen(false);
   }
 
   return (
@@ -556,11 +540,11 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         }}
         query={query()}
         onQuery={setQuery}
-        items={filteredRecipes()}
+        items={mapItems()}
         selectedId={server.selectedRecipeId()}
         onSelect={openRecipe}
-        onDelete={deleteJourney}
-        onCreate={startNewJourney}
+        onDelete={deleteMap}
+        onCreate={startNewMap}
         onOpenRun={(id) => server.setSelectedJobId(id)}
         onImport={importTestYaml}
         onOpenSettings={() => props.onOpenSettings()}
@@ -1016,8 +1000,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   );
 }
 
-function nextUntitledMapTitle(recipes: RecipeInfo[]): string {
-  const used = new Set(recipes.map((recipe) => recipe.title));
+function nextUntitledMapTitle(maps: Array<{ name: string }>): string {
+  const used = new Set(maps.map((map) => map.name));
   if (!used.has("Untitled")) return "Untitled";
   let index = 2;
   while (used.has(`Untitled ${index}`)) index++;

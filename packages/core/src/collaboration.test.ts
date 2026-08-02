@@ -6,6 +6,7 @@ import test from "node:test";
 import { RevisionConflict } from "@relay/protocol";
 import {
   createAppMap,
+  deleteAppMap,
   leaseDevice,
   deleteCompatibilityMatrix,
   listCompatibilityMatrices,
@@ -77,6 +78,9 @@ test("App Maps persist normalized revisions and reject unsafe stored mutations",
       mutateStoredAppMap("mobile", "store", (map) => ({ ...map, revision: map.revision + 2 })),
       /exactly one revision/u,
     );
+    assert.equal(await deleteAppMap("mobile", "store"), true);
+    assert.equal(await readAppMap("mobile", "store"), null);
+    assert.equal(await deleteAppMap("mobile", "store"), false);
   } finally {
     if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
     else process.env.GROK_DEVICE_STATE_DIR = previous;

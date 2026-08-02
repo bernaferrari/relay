@@ -374,6 +374,7 @@ type SpecificOperationMap = {
   };
   "app-map.list": { input: Record<string, never>; output: { appMaps: AppMap[] } };
   "app-map.get": { input: { appMapId: string }; output: { appMap: AppMap } };
+  "app-map.remove": { input: { appMapId: string }; output: { ok: true } };
   "app-map.create": {
     input: { appMapId: string; name: string };
     output: { appMap: AppMap };
@@ -1741,6 +1742,12 @@ export const operationDefinitions = [
     category: "authoring",
     input: appMapRefParser,
     output: appMapOutputParser,
+  }),
+  command("app-map.remove", "Remove App Map", "POST", "/app-maps/:appMapId/remove", {
+    category: "authoring",
+    confirmation: "confirm",
+    input: appMapRefParser,
+    output: okParser,
   }),
   command("app-map.create", "Create App Map", "POST", "/app-maps", {
     category: "authoring",

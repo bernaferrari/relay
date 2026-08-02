@@ -7,6 +7,7 @@ import {
   connectAppMapScreens,
   createAppMap,
   currentOperationContext,
+  deleteAppMap,
   listAppMaps,
   mutateStoredAppMap,
   now,
@@ -114,6 +115,14 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
     }
+    return true;
+  }
+
+  const mapRemove = matchPath(pathname, "/app-maps/:appMapId/remove");
+  if (method === "POST" && mapRemove) {
+    const removed = await deleteAppMap(scope.projectId, mapRemove.appMapId!);
+    if (!removed) throw new HttpError(404, `App Map ${mapRemove.appMapId} not found`);
+    json(response, 200, { ok: true });
     return true;
   }
 
