@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type {
   CaseExpansionStrategy,
   CaseStack,
@@ -39,7 +39,6 @@ import {
   canvasBounds,
   canvasEdgeGeometry,
   clampCanvasScale,
-  draftCanvasConnectionPath,
   fitCanvasViewport,
   type CanvasPoint,
   type CanvasViewport,
@@ -52,15 +51,8 @@ import { replayTransitionSteps } from "../lib/transition-replay";
 import { toast } from "../context/toast";
 import { evidenceForStep } from "./journey-step-presentation";
 import { GraphEmptyState, RecordedTakePlayer, TakeReviewSidebar } from "./journey-capture-review";
-import {
-  CanvasNote,
-  ConnectionInspector,
-  KeyboardConnectionChooser,
-  ScreenCard,
-  ScreenInspector,
-} from "./journey-canvas-primitives";
+import { ConnectionInspector, ScreenInspector } from "./journey-canvas-primitives";
 import { JourneyHistoryPanel } from "./journey-history-panel";
-import { CollaborationPresence } from "./collaboration-presence";
 import { collaborationActivity } from "../lib/collaboration-awareness";
 import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-runtime";
 import { AppMapDeviceCompanion } from "./app-map-device-companion";
@@ -77,6 +69,7 @@ import { Icon } from "./icon";
 import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-projection";
 import { AppMapProposalReview } from "./app-map-proposal-review";
 import { caseStackCount } from "../lib/case-stack-presentation";
+import { AppMapCanvasScene } from "./app-map-canvas-scene";
 
 type AppMapLoadState =
   | { status: "idle" }
@@ -1565,7 +1558,7 @@ export function AppMapWorkspace(props: {
             const wantsPan = canvasTool() === "hand" || event.button === 1;
             if (!hasCanvasContent() || !wantsPan || target.closest("button")) return;
             pan = { x: event.clientX, y: event.clientY, view: view() };
-            event.currentTarget.setPointerCapture(event.pointerId);
+            (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
           }}
           onPointerMove={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
@@ -1819,330 +1812,106 @@ export function AppMapWorkspace(props: {
                   transform: `translate3d(${view().x}px, ${view().y}px, 0) scale(${view().scale})`,
                 }}
               >
-                <svg
-                  class="absolute inset-0 overflow-visible"
+                <AppMapCanvasScene
+                  nodes={tree().nodes}
+                  connections={connections()}
+                  notes={metadata().value.notes ?? []}
                   width={bounds().width}
                   height={bounds().height}
-                  aria-label="Map connections"
-                >
-                  <defs>
-                    <marker
-                      id="journey-graph-arrow"
-                      viewBox="0 0 10 10"
-                      refX="8"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-interactive-base)]" />
-                    </marker>
-                    <marker
-                      id="journey-graph-return"
-                      viewBox="0 0 10 10"
-                      refX="8"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-weak)]" />
-                    </marker>
-                    <marker
-                      id="journey-graph-verified"
-                      viewBox="0 0 10 10"
-                      refX="8"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-success-base)]" />
-                    </marker>
-                    <marker
-                      id="journey-graph-failed"
-                      viewBox="0 0 10 10"
-                      refX="8"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-critical-base)]" />
-                    </marker>
-                    <marker
-                      id="journey-graph-healed"
-                      viewBox="0 0 10 10"
-                      refX="8"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-warning-base)]" />
-                    </marker>
-                  </defs>
-                  <For each={connections()}>
-                    {(connection) => {
-                      const runState = () => runProjection().transitions[connection.id]?.state;
-                      const geometry = () =>
-                        canvasEdgeGeometry(
-                          {
-                            from: connection.fromScreenId,
-                            to: connection.toScreenId,
-                            kind: connection.kind,
-                          },
-                          tree().nodes,
-                          positionFor,
-                        );
-                      return (
-                        <g>
-                          <path
-                            d={geometry().path}
-                            class={cn(
-                              "pointer-events-none fill-none",
-                              runState() === "failed"
-                                ? "stroke-[var(--icon-critical-base)]"
-                                : runState() === "running"
-                                  ? "stroke-[var(--text-interactive-base)] [stroke-dasharray:7_4] motion-safe:animate-pulse"
-                                  : runState() === "healed"
-                                    ? "stroke-[var(--icon-warning-base)]"
-                                    : runState() === "passed"
-                                      ? "stroke-[var(--icon-success-base)]"
-                                      : connection.state === "needs-recording"
-                                        ? "stroke-[var(--icon-warning-base)] [stroke-dasharray:5_5]"
-                                        : connection.review?.status === "verified"
-                                          ? "stroke-[var(--icon-success-base)]"
-                                          : connection.review?.status === "failed"
-                                            ? "stroke-[var(--icon-critical-base)]"
-                                            : connection.kind === "return"
-                                              ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
-                                              : "stroke-[var(--text-interactive-base)]",
-                            )}
-                            stroke-width={
-                              connection.state === "needs-recording"
-                                ? 2
-                                : connection.kind === "return"
-                                  ? 1.5
-                                  : 2
-                            }
-                            stroke-linecap="round"
-                            marker-end={`url(#journey-graph-${
-                              runState() === "failed"
-                                ? "failed"
-                                : runState() === "healed"
-                                  ? "healed"
-                                  : runState() === "passed"
-                                    ? "verified"
-                                    : connection.review?.status === "failed"
-                                      ? "failed"
-                                      : connection.review?.status === "verified"
-                                        ? "verified"
-                                        : connection.kind === "return"
-                                          ? "return"
-                                          : "arrow"
-                            })`}
-                          />
-                          <path
-                            d={geometry().path}
-                            class="cursor-pointer fill-none stroke-transparent"
-                            stroke-width="16"
-                            aria-hidden="true"
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSelectedConnectionId(connection.id);
-                              setSelectedNodeId(null);
-                            }}
-                          />
-                        </g>
-                      );
-                    }}
-                  </For>
-                  <Show when={connectionPreview() && connectionDrag}>
-                    <path
-                      d={draftCanvasConnectionPath(
-                        connectionDrag!.fromScreenId,
-                        connectionPreview()!,
-                        tree().nodes,
-                        positionFor,
-                      )}
-                      class="pointer-events-none fill-none stroke-[var(--text-interactive-base)] [stroke-dasharray:5_5]"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                    />
-                  </Show>
-                </svg>
-                <For each={connections()}>
-                  {(connection) => {
-                    const geometry = () =>
-                      canvasEdgeGeometry(
-                        {
-                          from: connection.fromScreenId,
-                          to: connection.toScreenId,
-                          kind: connection.kind,
-                        },
-                        tree().nodes,
-                        positionFor,
-                      );
-                    const stack = () => caseStackFor(connection);
-                    const stackCount = () => {
-                      const value = stack();
-                      return value
-                        ? caseStackCount(value, server.projectVariables().value)
-                        : undefined;
-                    };
-                    const source = () =>
-                      tree().nodes.find((node) => node.id === connection.fromScreenId);
-                    const target = () =>
-                      tree().nodes.find((node) => node.id === connection.toScreenId);
-                    return (
-                      <button
-                        type="button"
-                        class={cn(
-                          "group absolute z-[6] flex min-h-8 max-w-44 items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] px-2.5 text-[10px] font-medium text-[var(--text-base)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_72%,transparent),0_5px_14px_rgb(0_0_0/12%)] backdrop-blur-[10px] transition-[background-color,box-shadow,color] duration-150 before:absolute before:-inset-1.5 before:rounded-full hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] hover:shadow-[0_0_0_1px_var(--border-focus),0_7px_18px_rgb(0_0_0/16%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]",
-                          selectedConnectionId() === connection.id &&
-                            "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)] shadow-[0_0_0_1px_var(--border-focus),0_7px_18px_rgb(0_0_0/16%)]",
-                        )}
-                        style={{
-                          left: `${geometry().labelPoint.x}px`,
-                          top: `${geometry().labelPoint.y}px`,
-                          transform: "translate(-50%, -50%)",
-                        }}
-                        aria-label={`Open connection from ${source() ? titleFor(source()!) : "source screen"} to ${target() ? titleFor(target()!) : "destination screen"}`}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelectedConnectionId(connection.id);
-                          setSelectedNodeId(null);
-                        }}
-                      >
-                        <span class="truncate">
-                          {connection.label ||
-                            (connection.state === "needs-recording" ? "Add action" : "Open")}
-                        </span>
-                        <Show when={stackCount()}>
-                          {(count) => (
-                            <span class="relative grid min-w-5 place-items-center rounded-full bg-[var(--text-interactive-base)] px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-white after:absolute after:-right-0.5 after:-top-0.5 after:-z-10 after:size-full after:rounded-full after:bg-[color-mix(in_srgb,var(--text-interactive-base)_32%,transparent)]">
-                              {count().exact ? count().count : `~${count().count}`}
-                            </span>
-                          )}
-                        </Show>
-                      </button>
-                    );
-                  }}
-                </For>
-                <CollaborationPresence
+                  selectedNodeId={selectedNodeId()}
+                  selectedConnectionId={selectedConnectionId()}
+                  renamingNodeId={renamingNodeId()}
+                  keyboardConnectionSourceId={keyboardConnectionSourceId()}
+                  connectionPreview={
+                    connectionPreview() && connectionDrag
+                      ? {
+                          fromScreenId: connectionDrag.fromScreenId,
+                          point: connectionPreview()!,
+                        }
+                      : undefined
+                  }
                   awareness={remoteAwareness()}
-                  geometry={presenceGeometry()}
-                  width={bounds().width}
-                  height={bounds().height}
+                  presenceGeometry={presenceGeometry()}
+                  positionFor={positionFor}
+                  titleFor={titleFor}
+                  stepFor={(node) => draft.steps()[node.representativeStepIndex]}
+                  imageFor={(node) =>
+                    screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
+                    capturedScreenUrls()[node.id] ||
+                    ""
+                  }
+                  isFlowStart={(node) => graph().flows.some((flow) => flow.screenId === node.id)}
+                  screenRunState={(screenId) => runProjection().screens[screenId]?.state}
+                  connectionRunState={(connectionId) =>
+                    runProjection().transitions[connectionId]?.state
+                  }
+                  caseCountFor={(connection) => {
+                    const stack = caseStackFor(connection);
+                    return stack
+                      ? caseStackCount(stack, server.projectVariables().value)
+                      : undefined;
+                  }}
+                  onSelectNode={selectNode}
+                  onSelectConnection={(connection) => {
+                    setSelectedConnectionId(connection.id);
+                    setSelectedNodeId(null);
+                  }}
+                  onRenameNode={(node) => setRenamingNodeId(node.id)}
+                  onCommitNodeRename={renameScreen}
+                  onConnectStart={(event, node) => beginConnection(event, node.id)}
+                  onConnectKeyboard={(node) => {
+                    selectNode(node);
+                    setKeyboardConnectionSourceId(node.id);
+                  }}
+                  onNodePointerDown={(event, node) => {
+                    if (canvasTool() === "hand") {
+                      event.stopPropagation();
+                      pan = { x: event.clientX, y: event.clientY, view: view() };
+                      canvas?.setPointerCapture(event.pointerId);
+                      return;
+                    }
+                    event.stopPropagation();
+                    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+                    nodeDrag = {
+                      id: node.id,
+                      x: event.clientX,
+                      y: event.clientY,
+                      origin: positionFor(node),
+                      moved: false,
+                    };
+                  }}
+                  onChooseKeyboardConnection={chooseKeyboardConnection}
+                  onCreateKeyboardDestination={createKeyboardDestination}
+                  onCancelKeyboardConnection={() => setKeyboardConnectionSourceId(null)}
+                  onNotePointerDown={(event, note) => {
+                    event.stopPropagation();
+                    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+                    noteDrag = {
+                      id: note.id,
+                      x: event.clientX,
+                      y: event.clientY,
+                      origin: { x: note.x, y: note.y },
+                      moved: false,
+                    };
+                  }}
+                  onNoteText={(note, text) =>
+                    setMetadata((current) => ({
+                      ...current,
+                      value: {
+                        ...current.value,
+                        notes: (current.value.notes ?? []).map((entry) =>
+                          entry.id === note.id ? { ...entry, text, updatedAt: Date.now() } : entry,
+                        ),
+                      },
+                    }))
+                  }
+                  onCommitNote={() => persistNotes(metadata().value.notes ?? [])}
+                  onDeleteNote={(note) =>
+                    persistNotes(
+                      (metadata().value.notes ?? []).filter((entry) => entry.id !== note.id),
+                    )
+                  }
                 />
-                <For each={tree().nodes}>
-                  {(node) => {
-                    const isFlowStart = () =>
-                      graph().flows.some((flow) => flow.screenId === node.id);
-                    return (
-                      <ScreenCard
-                        node={node}
-                        step={draft.steps()[node.representativeStepIndex]}
-                        isFlowStart={isFlowStart()}
-                        outgoingCount={
-                          connections().filter((connection) => connection.fromScreenId === node.id)
-                            .length
-                        }
-                        title={titleFor(node)}
-                        selected={selectedNode()?.id === node.id}
-                        editing={renamingNodeId() === node.id}
-                        runState={runProjection().screens[node.id]?.state}
-                        position={positionFor(node)}
-                        src={() =>
-                          screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
-                          capturedScreenUrls()[node.id] ||
-                          ""
-                        }
-                        onSelect={() => selectNode(node)}
-                        onRename={() => setRenamingNodeId(node.id)}
-                        onCommitRename={(title) => renameScreen(node, title)}
-                        onConnectStart={(event) => beginConnection(event, node.id)}
-                        onConnectKeyboard={() => {
-                          selectNode(node);
-                          setKeyboardConnectionSourceId(node.id);
-                        }}
-                        onPointerDown={(event) => {
-                          if (canvasTool() === "hand") {
-                            event.stopPropagation();
-                            pan = { x: event.clientX, y: event.clientY, view: view() };
-                            canvas?.setPointerCapture(event.pointerId);
-                            return;
-                          }
-                          event.stopPropagation();
-                          event.currentTarget.setPointerCapture(event.pointerId);
-                          nodeDrag = {
-                            id: node.id,
-                            x: event.clientX,
-                            y: event.clientY,
-                            origin: positionFor(node),
-                            moved: false,
-                          };
-                        }}
-                      />
-                    );
-                  }}
-                </For>
-                <Show when={keyboardConnectionSourceId()}>
-                  {(sourceId) => {
-                    const source = () => tree().nodes.find((node) => node.id === sourceId());
-                    return (
-                      <KeyboardConnectionChooser
-                        sourceTitle={source() ? titleFor(source()!) : "Selected screen"}
-                        destinations={tree()
-                          .nodes.filter((node) => node.id !== sourceId())
-                          .map((node) => ({ id: node.id, title: titleFor(node) }))}
-                        onChoose={(targetId) => chooseKeyboardConnection(sourceId(), targetId)}
-                        onCreate={() => createKeyboardDestination(sourceId())}
-                        onCancel={() => setKeyboardConnectionSourceId(null)}
-                      />
-                    );
-                  }}
-                </Show>
-                <For each={metadata().value.notes ?? []}>
-                  {(note) => (
-                    <CanvasNote
-                      note={note}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        event.currentTarget.setPointerCapture(event.pointerId);
-                        noteDrag = {
-                          id: note.id,
-                          x: event.clientX,
-                          y: event.clientY,
-                          origin: { x: note.x, y: note.y },
-                          moved: false,
-                        };
-                      }}
-                      onText={(text) =>
-                        setMetadata((current) => ({
-                          ...current,
-                          value: {
-                            ...current.value,
-                            notes: (current.value.notes ?? []).map((entry) =>
-                              entry.id === note.id
-                                ? { ...entry, text, updatedAt: Date.now() }
-                                : entry,
-                            ),
-                          },
-                        }))
-                      }
-                      onCommit={() => persistNotes(metadata().value.notes ?? [])}
-                      onDelete={() =>
-                        persistNotes(
-                          (metadata().value.notes ?? []).filter((entry) => entry.id !== note.id),
-                        )
-                      }
-                    />
-                  )}
-                </For>
               </div>
               <Show when={!captureOpen()}>
                 <Show
