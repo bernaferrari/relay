@@ -81,6 +81,104 @@ test('BrowserStack facade prepares capabilities, uploads apps, and returns artif
   });
 }, 15_000);
 
+test('BrowserStack facade nests device-feature capabilities inside bstack:options', async () => {
+  await withProviderScenarioResource(FakeCloudProviderServer.start, async (server) => {
+    const provider = createProviderWebDriver({
+      clientVersion: CLIENT_VERSION,
+      runHostCommand: unexpectedHostCommand,
+    });
+    const runtime = runtimeFor(
+      provider.createDefaultRuntimes({
+        BROWSERSTACK_USERNAME: 'user',
+        BROWSERSTACK_ACCESS_KEY: 'key',
+        BROWSERSTACK_WEBDRIVER_ENDPOINT: `${server.url}/wd/hub/`,
+        BROWSERSTACK_SESSION_DETAILS_ENDPOINT: `${server.url}/app-automate/sessions`,
+      }),
+      CLOUD_WEBDRIVER_PROVIDERS.browserStack,
+    );
+    const lease = makeLease(CLOUD_WEBDRIVER_PROVIDERS.browserStack);
+    const context = browserStackContext(lease);
+    try {
+      await runtime.leaseLifecycle.allocate?.(lease, {
+        flags: {
+          ...context.flags,
+          providerDeviceOrientation: 'portrait',
+          providerGeoLocation: 'US',
+          providerTimezone: 'New_York',
+          providerLanguage: 'Fr',
+          providerLocale: 'Fr',
+          providerNetworkProfile: '4g-lte-advanced-good',
+        },
+      });
+    } finally {
+      await runtime.shutdown();
+    }
+
+    const session = server.calls.find((call) => call.path === '/wd/hub/session');
+    const alwaysMatch = (
+      session?.body as { capabilities?: { alwaysMatch?: Record<string, unknown> } } | undefined
+    )?.capabilities?.alwaysMatch;
+    // Device features merge into bstack:options rather than replacing it, so the session labels
+    // built alongside them survive.
+    assert.deepEqual(alwaysMatch?.['bstack:options'], {
+      projectName: 'agent-device',
+      buildName: `build-${lease.runId}`,
+      sessionName: `session-${lease.leaseId}`,
+      deviceOrientation: 'portrait',
+      geoLocation: 'US',
+      timezone: 'New_York',
+      language: 'Fr',
+      locale: 'Fr',
+      networkProfile: '4g-lte-advanced-good',
+    });
+    // Vendor capabilities stay nested; only BrowserStack's legacy selectors sit at the top level.
+    assert.equal(alwaysMatch?.deviceOrientation, undefined);
+  });
+}, 15_000);
+
+test('AWS Device Farm facade rejects BrowserStack-owned device features at session preparation', async () => {
+  await withProviderScenarioResource(FakeCloudProviderServer.start, async (server) => {
+    const host = new FakeAwsHostCommand(`${server.url}/wd/hub/`);
+    const provider = createProviderWebDriver({
+      clientVersion: CLIENT_VERSION,
+      runHostCommand: host.run,
+    });
+    const runtime = runtimeFor(
+      provider.createDefaultRuntimes({ AWS_REGION: 'us-west-2' }),
+      CLOUD_WEBDRIVER_PROVIDERS.awsDeviceFarm,
+    );
+    const lease = makeLease(CLOUD_WEBDRIVER_PROVIDERS.awsDeviceFarm);
+    const context = awsContext(lease);
+
+    try {
+      // Straight at the runtime boundary, bypassing the CLI profile builder entirely — this is the
+      // route a typed client or a hand-authored remote-config profile takes.
+      await assert.rejects(
+        async () =>
+          await runtime.leaseLifecycle.allocate?.(lease, {
+            ...context,
+            flags: {
+              ...context.flags,
+              providerDeviceOrientation: 'portrait',
+              providerNetworkProfile: '4g-lte-advanced-good',
+            },
+          }),
+        (error: unknown) => {
+          assert.match(
+            (error as Error).message,
+            /--provider-device-orientation, --provider-network-profile are only supported by BrowserStack, not aws-device-farm/,
+          );
+          return true;
+        },
+      );
+      // Rejected before any provider session was created, so nothing needs unwinding.
+      assert.deepEqual(host.calls, []);
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+}, 15_000);
+
 test('AWS Device Farm facade uses the injected host-command capability for its full lifecycle', async () => {
   await withProviderScenarioResource(FakeCloudProviderServer.start, async (server) => {
     const host = new FakeAwsHostCommand(`${server.url}/wd/hub/`);

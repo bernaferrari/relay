@@ -1,7 +1,8 @@
-import type {
-  CloudProviderProfileFields,
-  RemoteConfigMetroOptions,
-  RemoteConnectionProfileFields,
+import {
+  PROVIDER_DEVICE_ORIENTATIONS,
+  type CloudProviderProfileFields,
+  type RemoteConfigMetroOptions,
+  type RemoteConnectionProfileFields,
 } from '@agent-device/contracts/remote';
 // Declared in contracts/ so zones below remote/ can be stated in terms of the field vocabulary;
 // re-exported here because this module is where consumers already import it from.
@@ -80,6 +81,18 @@ export const REMOTE_CONFIG_FIELD_SPECS = [
   { key: 'providerProject', type: 'string' },
   { key: 'providerBuild', type: 'string' },
   { key: 'providerSessionName', type: 'string' },
+  {
+    key: 'providerDeviceOrientation',
+    type: 'enum',
+    enumValues: PROVIDER_DEVICE_ORIENTATIONS,
+  },
+  { key: 'providerGeoLocation', type: 'string' },
+  { key: 'providerTimezone', type: 'string' },
+  { key: 'providerLanguage', type: 'string' },
+  { key: 'providerLocale', type: 'string' },
+  { key: 'providerNetworkProfile', type: 'string' },
+  { key: 'providerCustomNetwork', type: 'string' },
+  { key: 'providerNoResignApp', type: 'boolean' },
   { key: 'awsProjectArn', type: 'string' },
   { key: 'awsDeviceArn', type: 'string' },
   { key: 'awsAppArn', type: 'string' },
