@@ -73,7 +73,7 @@ test('a close-less replay reports sessionActive: true (real producer, session st
   expect(response.ok).toBe(true);
   if (!response.ok) return;
   expect(sessionStore.get(sessionName)).toBeDefined();
-  expect((response.data as { sessionActive: boolean }).sessionActive).toBe(true);
+  expect(response.data).toMatchObject({ sessionActive: true, replayed: 2 });
 });
 
 test('a replay whose terminal close removes the session reports sessionActive: false', async () => {
@@ -125,7 +125,7 @@ test('Maestro YAML uses the typed engine while .ad remains generic', async () =>
   const yamlResponse = await runReplayScriptFile({
     req: baseReq({
       positionals: [yamlPath],
-      flags: { replayBackend: 'maestro', platform: 'ios' },
+      flags: { replayBackend: 'maestro', platform: 'ios', replayKeepSession: false },
     }),
     sessionName,
     logPath: path.join(root, 'daemon.log'),

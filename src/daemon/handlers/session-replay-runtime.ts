@@ -64,6 +64,12 @@ import {
   healedScriptSiblingPath,
   type ReplayCoordinator,
 } from '../session-replay-coordinator.ts';
+import {
+  countExecutedReplayActions,
+  isExecutableReplayAction,
+  requireLiveSessionForKeepSession,
+  resolveSuppressedTerminalCloseIndex,
+} from './session-replay-terminal-lifecycle.ts';
 
 /** Per-run invariants for a single replay step (ADR 0012 step 4 verify + dispatch + guard). */
 type ReplayStepContext = {
@@ -220,6 +226,7 @@ export async function runReplayScriptFile(params: {
   }
 
   const startedAt = Date.now();
+  const keepSession = req.flags?.replayKeepSession === true;
   let resolved = '';
   const artifactPaths = new Set<string>();
   // #1478 P4b: the one locked coordinator this request reaches the repair
@@ -231,6 +238,12 @@ export async function runReplayScriptFile(params: {
       return errorResponse('INVALID_ARGS', maestroBackendRequiredMessage('replay', filePath));
     }
     if (resolveReplayFormat(resolved, req.flags?.replayBackend) === 'maestro') {
+      if (keepSession) {
+        return errorResponse(
+          'INVALID_ARGS',
+          '--keep-session is supported only for native .ad replay; Maestro YAML owns its lifecycle.',
+        );
+      }
       if (coordinator.view()?.repairBoundary !== undefined) {
         return errorResponse(
           'INVALID_ARGS',
@@ -246,6 +259,7 @@ export async function runReplayScriptFile(params: {
       tracePath,
       resolved,
       coordinator,
+      keepSession,
     });
     if (!planPreparation.ok) return planPreparation.response;
     const {
@@ -258,6 +272,7 @@ export async function runReplayScriptFile(params: {
       scope,
       actionTracePath,
       snapshotDiagnosticSamples,
+      suppressedTerminalCloseIndex,
     } = planPreparation.value;
     const sessionPreparation = prepareReplaySession({
       req,
@@ -302,6 +317,7 @@ export async function runReplayScriptFile(params: {
       snapshotDiagnosticSamples,
       onStep,
       armSaveScript: sessionPreparation.armSaveScript,
+      suppressedTerminalCloseIndex,
     });
     if (failure) return failure;
     return completeReplayRun({
@@ -314,6 +330,8 @@ export async function runReplayScriptFile(params: {
       snapshotDiagnosticSamples,
       armSaveScript: sessionPreparation.armSaveScript,
       coordinator,
+      keepSession,
+      suppressedTerminalCloseIndex,
     });
   } catch (err) {
     const appErr = asAppError(err);
@@ -342,6 +360,7 @@ type ReplayActionExecution = {
   snapshotDiagnosticSamples: SnapshotTimingSample[];
   onStep: ReplayTestAttemptStepSink | undefined;
   armSaveScript: () => void;
+  suppressedTerminalCloseIndex: number | undefined;
 };
 
 async function executeReplayActions(
@@ -357,6 +376,7 @@ async function executeReplayActions(
     snapshotDiagnosticSamples,
     onStep,
     armSaveScript,
+    suppressedTerminalCloseIndex,
   } = params;
   for (let index = entryIndex; index < actions.length; index += 1) {
     const action = actions[index];
@@ -364,16 +384,7 @@ async function executeReplayActions(
     // Arm before checking terminal close so `[open, close]` records the
     // session created by `open` before treating `close` as lifecycle.
     armSaveScript();
-    if (
-      isRepairArmedTerminalClose({
-        action,
-        index,
-        totalActions: actions.length,
-        coordinator: stepContext.coordinator,
-      })
-    ) {
-      continue;
-    }
+    if (index === suppressedTerminalCloseIndex) continue;
     onStep?.(replayActionStep(index, actions.length, action));
     const sampleStart = readSessionSnapshotSampleCount(sessionStore, sessionName);
     const response = await resolveReplayStepResponse(stepContext, action, index, [
@@ -387,10 +398,6 @@ async function executeReplayActions(
     return await buildReplayActionFailure(params, action, index, response);
   }
   return undefined;
-}
-
-function isExecutableReplayAction(action: SessionAction | undefined): action is SessionAction {
-  return Boolean(action && action.command !== 'replay');
 }
 
 async function buildReplayActionFailure(
@@ -434,6 +441,8 @@ function completeReplayRun(params: {
   snapshotDiagnosticSamples: SnapshotTimingSample[];
   armSaveScript: () => void;
   coordinator: ReplayCoordinator;
+  keepSession: boolean;
+  suppressedTerminalCloseIndex: number | undefined;
 }): DaemonResponse {
   const {
     startedAt,
@@ -445,11 +454,24 @@ function completeReplayRun(params: {
     snapshotDiagnosticSamples,
     armSaveScript,
     coordinator,
+    keepSession,
+    suppressedTerminalCloseIndex,
   } = params;
   armSaveScript();
   coordinator.markCompleteIfArmed();
   const completedSession = sessionStore.get(sessionName);
-  const replayedCount = actions.length - entryIndex;
+  const keepSessionFailure = requireLiveSessionForKeepSession({
+    keepSession,
+    sessionName,
+    completedSession,
+    artifactPaths,
+  });
+  if (keepSessionFailure) return keepSessionFailure;
+  const replayedCount = countExecutedReplayActions({
+    actions,
+    entryIndex,
+    suppressedTerminalCloseIndex,
+  });
   const snapshotDiagnosticsSummary = summarizeSnapshotTimingSamples(snapshotDiagnosticSamples);
   return {
     ok: true,
@@ -514,6 +536,7 @@ type PreparedReplayPlan = {
   scope: ReplayVarScope;
   actionTracePath: string | undefined;
   snapshotDiagnosticSamples: SnapshotTimingSample[];
+  suppressedTerminalCloseIndex: number | undefined;
 };
 
 type ParsedReplayInput = ReturnType<typeof parseReplayInput>;
@@ -525,8 +548,9 @@ function prepareReplayPlan(params: {
   tracePath: string | undefined;
   resolved: string;
   coordinator: ReplayCoordinator;
+  keepSession: boolean;
 }): { ok: true; value: PreparedReplayPlan } | { ok: false; response: DaemonResponse } {
-  const { req, sessionName, sessionStore, tracePath, resolved, coordinator } = params;
+  const { req, sessionName, sessionStore, tracePath, resolved, coordinator, keepSession } = params;
   const parsedResult = parseReplayScript(resolved, req);
   if (!parsedResult.ok) return parsedResult;
   const parsed = parsedResult.value;
@@ -564,6 +588,12 @@ function prepareReplayPlan(params: {
       scope: buildPreparedReplayScope({ req, replayReq, sessionName, resolved, metadata }),
       actionTracePath: tracePath ?? preEntrySession?.trace?.outPath,
       snapshotDiagnosticSamples: [],
+      suppressedTerminalCloseIndex: resolveSuppressedTerminalCloseIndex({
+        actions,
+        keepSession,
+        saveScript: req.flags?.saveScript,
+        repairActive: coordinator.view()?.repairBoundary !== undefined,
+      }),
     },
   };
 }
@@ -784,31 +814,6 @@ function preflightSaveScriptTarget(params: {
     'COMMAND_FAILED',
     `A file already exists at ${targetPath}; remove it, pass replay --save-script=<other-path>, or pass --force/--overwrite to replace it.`,
   );
-}
-
-/**
- * ADR 0012 decision 6 (Fix 3): the source plan's own terminal `close` is
- * lifecycle, not a script step to replay, while a repair is armed — the agent
- * finalizes the transaction with `close --save-script` instead
- * (`session-close.ts`). Replaying the recorded `close` here would dispatch it
- * as an ordinary step: it tears the session down (and, absent Fix 1/2, could
- * even publish or diverge) before the agent gets that chance. Skipped exactly
- * like the `replay` pseudo-command just above it in the loop — never
- * dispatched, never divergence-checked, and (like that skip) not counted out
- * of `replayedCount`. Checked against session state, not this invocation's
- * own flags, matching R2: a repair stays armed across separate `--from` legs
- * regardless of whether `--save-script` is repeated on each one.
- */
-function isRepairArmedTerminalClose(params: {
-  action: SessionAction;
-  index: number;
-  totalActions: number;
-  coordinator: ReplayCoordinator;
-}): boolean {
-  const { action, index, totalActions, coordinator } = params;
-  if (action.command !== 'close') return false;
-  if (index !== totalActions - 1) return false;
-  return coordinator.view()?.repairBoundary !== undefined;
 }
 
 /**
