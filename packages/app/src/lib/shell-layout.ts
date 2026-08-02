@@ -81,14 +81,14 @@ export const shellStudioBody = cn(
 );
 
 /**
- * Journey cannot be composed with `shellStudioBody`: both recipes set
+ * The focused workbench cannot be composed with `shellStudioBody`: both recipes set
  * grid-template-columns, and utility stylesheet order would decide which one
  * wins. Keep this as a complete grid recipe and select it directly.
  *
  * Two tracks, not three — the step outline lives in the navigator now, so the
  * body is exactly the device and the properties for the selected step.
  */
-export const shellStudioBodyJourney = cn(
+export const shellStudioBodyWorkbench = cn(
   "grid min-h-0 min-w-0 flex-1",
   "grid-cols-[minmax(420px,1fr)_336px]",
   "max-[1380px]:min-[901px]:grid-cols-[minmax(360px,1fr)_312px]",

@@ -102,6 +102,7 @@ test("expired and local entries are never exposed", async () => {
 
 test("remote presence expires locally between polls", async () => {
   const now = Date.now();
+  let localNow = now;
   const transport: RelayAwarenessTransport = {
     actorId: "human:one",
     async publish(input) {
@@ -123,13 +124,25 @@ test("remote presence expires locally between polls", async () => {
     transport,
     pollMs: 1_000,
     heartbeatMs: 1_000,
+    clock: () => localNow,
   });
-  controller.start();
-  await wait(5);
-  assert.equal(controller.snapshot.length, 1);
-  await wait(35);
-  assert.equal(controller.snapshot.length, 0);
-  controller.destroy();
+  let resolveAppeared!: () => void;
+  const appeared = new Promise<void>((resolve) => {
+    resolveAppeared = resolve;
+  });
+  const unsubscribe = controller.subscribe((entries) => {
+    if (entries.length === 1) resolveAppeared();
+  });
+  try {
+    controller.start();
+    await appeared;
+    assert.equal(controller.snapshot.length, 1);
+    localNow += 26;
+    assert.equal(controller.snapshot.length, 0);
+  } finally {
+    unsubscribe();
+    controller.destroy();
+  }
 });
 
 test("activity precedence is obvious and deterministic", () => {

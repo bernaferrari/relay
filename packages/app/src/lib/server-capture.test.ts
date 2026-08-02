@@ -8,6 +8,7 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
   const frames: Array<Record<string, unknown>> = [];
   let snapshot: unknown = null;
   let liveFrame: unknown = null;
+  let liveFrameUpdates = 0;
   let busy = false;
   const logs: string[] = [];
   const copied: Array<{ base64: string; mime: string }> = [];
@@ -56,6 +57,7 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
     setShowOverlays: () => undefined,
     setLiveFrame: (value) => {
       liveFrame = value;
+      liveFrameUpdates += 1;
     },
     pushFrame: (frame) => {
       const full = { ...frame, id: "frame-1" };
@@ -78,6 +80,7 @@ function createHarness(options: { activeDiscoveryId?: string | null } = {}) {
     copied,
     getSnapshot: () => snapshot,
     getLiveFrame: () => liveFrame,
+    getLiveFrameUpdates: () => liveFrameUpdates,
     isBusy: () => busy,
   };
 }
@@ -103,6 +106,16 @@ test("capture boundary keeps screenshot and snapshot transport details out of th
   assert.equal((harness.getLiveFrame() as { id: string }).id, "live-123");
   assert.equal(harness.isBusy(), false);
   assert.ok(harness.logs.some((line) => line.startsWith("snapshot ")));
+});
+
+test("live capture leaves an identical device frame mounted", async () => {
+  const harness = createHarness();
+
+  await harness.capture.pollLiveFrame();
+  await harness.capture.pollLiveFrame();
+
+  assert.equal(harness.calls.length, 2, "polling still proves that the device is reachable");
+  assert.equal(harness.getLiveFrameUpdates(), 1, "unchanged pixels are not decoded and remounted");
 });
 
 test("copy screenshot is ephemeral and does not create a Relay frame or log", async () => {

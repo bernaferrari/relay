@@ -147,7 +147,7 @@ export function createAppMapEventOrchestration(options: {
     window.addEventListener("relay:device-selected", options.onDeviceSelected);
     window.addEventListener("relay:toggle-device-panel", onToggleDevicePanel);
     window.addEventListener("relay:close-device-panel", onCloseDevicePanel);
-    window.addEventListener("relay:run-journey-graph", onRunMap);
+    window.addEventListener("relay:run-app-map", onRunMap);
     window.addEventListener("relay:undo-request", onUndoRequest);
     window.addEventListener("pointerdown", onOutsideTargetSet);
     window.addEventListener("keydown", onCanvasKey);
@@ -156,7 +156,7 @@ export function createAppMapEventOrchestration(options: {
       window.removeEventListener("relay:device-selected", options.onDeviceSelected);
       window.removeEventListener("relay:toggle-device-panel", onToggleDevicePanel);
       window.removeEventListener("relay:close-device-panel", onCloseDevicePanel);
-      window.removeEventListener("relay:run-journey-graph", onRunMap);
+      window.removeEventListener("relay:run-app-map", onRunMap);
       window.removeEventListener("relay:undo-request", onUndoRequest);
       window.removeEventListener("pointerdown", onOutsideTargetSet);
       window.removeEventListener("keydown", onCanvasKey);

@@ -9,10 +9,10 @@ import { mono } from "../lib/ui";
 import { RelayMark } from "./relay-mark";
 import { Icon, type IconName } from "./icon";
 
-export type NavigatorArea = "tests" | "runs";
+export type MapLibraryArea = "tests" | "runs";
 type RunFilter = "all" | "attention" | "active";
 
-const AREA_TABS: { id: NavigatorArea; label: string }[] = [
+const AREA_TABS: { id: MapLibraryArea; label: string }[] = [
   { id: "tests", label: "Maps" },
   { id: "runs", label: "Runs" },
 ];
@@ -31,19 +31,19 @@ const groupLabel = cn(
 );
 
 /**
- * One navigator for every area.
+ * One compact project library for every area.
  *
- * The rail, the journey library, and the step outline used to be separate
+ * The rail, the map library, and the step outline used to be separate
  * columns showing the same row grammar at three zoom levels — and Collections and
  * Runs then opened a *fourth* list inside the main pane. Everything nameable
- * lives here instead: areas at the top and journeys below. A journey's actual
+ * lives here instead: areas at the top and maps below. A map's actual
  * screen/action structure belongs to the center canvas, its only source of
  * truth, rather than being duplicated in a narrow navigation column.
  */
-export function JourneyNavigator(props: {
+export function MapLibrary(props: {
   open: boolean;
-  area: NavigatorArea;
-  onArea: (area: NavigatorArea) => void;
+  area: MapLibraryArea;
+  onArea: (area: MapLibraryArea) => void;
   query: string;
   onQuery: (value: string) => void;
   items: RecipeInfo[];
@@ -57,23 +57,24 @@ export function JourneyNavigator(props: {
 }) {
   let searchInput: HTMLInputElement | undefined;
   const recorder = useRecorder();
-  const [draftsOpen, setDraftsOpen] = createSignal(false);
-  const [allDraftsVisible, setAllDraftsVisible] = createSignal(false);
-  const journeys = () => props.items.filter((recipe) => recipe.steps.length > 0);
-  const drafts = () => props.items.filter((recipe) => recipe.steps.length === 0);
-  const visibleDrafts = createMemo(() => {
-    const items = drafts();
-    if (allDraftsVisible() || props.query.trim()) return items;
+  const [unfinishedOpen, setUnfinishedOpen] = createSignal(false);
+  const [allUnfinishedVisible, setAllUnfinishedVisible] = createSignal(false);
+  const runnableMaps = () => props.items.filter((map) => map.steps.length > 0);
+  const unfinishedMaps = () => props.items.filter((map) => map.steps.length === 0);
+  const visibleUnfinishedMaps = createMemo(() => {
+    const items = unfinishedMaps();
+    if (allUnfinishedVisible() || props.query.trim()) return items;
     const recent = items.slice(0, 6);
     const selected = items.find((recipe) => recipe.id === props.selectedId);
     return selected && !recent.some((recipe) => recipe.id === selected.id)
       ? [selected, ...recent.slice(0, 5)]
       : recent;
   });
-  const hiddenDraftCount = () => Math.max(0, drafts().length - visibleDrafts().length);
+  const hiddenUnfinishedCount = () =>
+    Math.max(0, unfinishedMaps().length - visibleUnfinishedMaps().length);
 
   createEffect(() => {
-    if (drafts().some((recipe) => recipe.id === props.selectedId)) setDraftsOpen(true);
+    if (unfinishedMaps().some((map) => map.id === props.selectedId)) setUnfinishedOpen(true);
   });
 
   onMount(() => {
@@ -163,54 +164,58 @@ export function JourneyNavigator(props: {
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-          <For each={journeys()}>
-            {(recipe) => (
-              <JourneyBranch
-                recipe={recipe}
-                selected={props.selectedId === recipe.id}
+          <For each={runnableMaps()}>
+            {(map) => (
+              <MapLibraryRow
+                recipe={map}
+                selected={props.selectedId === map.id}
                 onSelect={props.onSelect}
                 onDelete={props.onDelete}
               />
             )}
           </For>
 
-          <Show when={drafts().length > 0}>
+          <Show when={unfinishedMaps().length > 0}>
             <section class="mt-2 border-t border-border-weak-base pt-1.5">
               <button
                 type="button"
                 class={groupLabel}
-                aria-expanded={draftsOpen()}
-                onClick={() => setDraftsOpen((open) => !open)}
+                aria-expanded={unfinishedOpen()}
+                onClick={() => setUnfinishedOpen((open) => !open)}
               >
                 <span>Unfinished</span>
-                <span>{drafts().length}</span>
-                <Icon name={draftsOpen() ? "chevron-up" : "chevron-down"} size={13} />
+                <span>{unfinishedMaps().length}</span>
+                <Icon name={unfinishedOpen() ? "chevron-up" : "chevron-down"} size={13} />
               </button>
-              <Show when={draftsOpen()}>
-                <For each={visibleDrafts()}>
-                  {(recipe) => (
-                    <JourneyBranch
-                      recipe={recipe}
-                      selected={props.selectedId === recipe.id}
+              <Show when={unfinishedOpen()}>
+                <For each={visibleUnfinishedMaps()}>
+                  {(map) => (
+                    <MapLibraryRow
+                      recipe={map}
+                      selected={props.selectedId === map.id}
                       onSelect={props.onSelect}
                       onDelete={props.onDelete}
                     />
                   )}
                 </For>
-                <Show when={hiddenDraftCount() > 0}>
+                <Show when={hiddenUnfinishedCount() > 0}>
                   <button
                     type="button"
                     class="flex min-h-9 w-full items-center justify-center rounded-lg text-[11px] font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
-                    onClick={() => setAllDraftsVisible(true)}
+                    onClick={() => setAllUnfinishedVisible(true)}
                   >
-                    Show {hiddenDraftCount()} more
+                    Show {hiddenUnfinishedCount()} more
                   </button>
                 </Show>
-                <Show when={allDraftsVisible() && drafts().length > 6 && !props.query.trim()}>
+                <Show
+                  when={
+                    allUnfinishedVisible() && unfinishedMaps().length > 6 && !props.query.trim()
+                  }
+                >
                   <button
                     type="button"
                     class="flex min-h-9 w-full items-center justify-center rounded-lg text-[11px] font-medium text-text-weaker transition-colors hover:bg-surface-base-hover hover:text-text-base"
-                    onClick={() => setAllDraftsVisible(false)}
+                    onClick={() => setAllUnfinishedVisible(false)}
                   >
                     Show fewer
                   </button>
@@ -268,10 +273,10 @@ export function JourneyNavigator(props: {
   );
 }
 
-/** A library row deliberately stops at the journey boundary. The screen tree
+/** A library row deliberately stops at the map boundary. The screen tree
  * is authored in the canvas, so the same action never competes for attention
  * in both the sidebar and the workspace. */
-function JourneyBranch(props: {
+function MapLibraryRow(props: {
   recipe: RecipeInfo;
   selected: boolean;
   onSelect: (id: string) => void;

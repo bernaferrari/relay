@@ -1,10 +1,11 @@
-import { Show } from "solid-js";
+import { Show, createMemo, createSignal } from "solid-js";
 import type { RecordingTake } from "../context/recorder";
 import { cn } from "../lib/cn";
-import { DeviceStage } from "./stage";
 import { Icon } from "./icon";
 import { TakeCaptureBar } from "./journey-capture-review";
 import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
+import { companionFooterMode } from "./app-map-device-companion-geometry";
+import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 
 export function AppMapDeviceCompanion(props: {
   closing: boolean;
@@ -22,15 +23,31 @@ export function AppMapDeviceCompanion(props: {
   onRecord: () => void;
   onStop: () => void;
 }) {
+  const [renderedOrientation, setRenderedOrientation] =
+    createSignal<DeviceCompanionOrientation>("unknown");
+  const footerMode = createMemo(() =>
+    companionFooterMode({
+      deviceSelected: props.deviceSelected,
+      canRecord: props.canRecord,
+      arming: props.arming,
+      captureBusy: props.captureBusy,
+    }),
+  );
   return (
     <aside
       class={cn(
-        "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)]",
+        "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] ring-1 ring-[color-mix(in_srgb,var(--map-divider)_72%,transparent)] transition-[width] duration-180 ease-out motion-reduce:transition-none",
         props.closing && "ui-device-companion--closing",
         props.deviceSelected
-          ? "bottom-4 w-[min(388px,calc(100%-32px))] rounded-[18px] max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto"
+          ? cn(
+              "bottom-4 rounded-[18px] max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto",
+              renderedOrientation() === "landscape"
+                ? "w-[min(548px,calc(100%-32px))]"
+                : "w-[min(388px,calc(100%-32px))]",
+            )
           : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[18px] max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto",
       )}
+      data-frame-orientation={renderedOrientation()}
       aria-label="Device"
     >
       <header class="relative z-[100] flex min-h-12 shrink-0 items-center justify-between border-b border-[var(--map-divider)] px-4">
@@ -47,29 +64,25 @@ export function AppMapDeviceCompanion(props: {
           </button>
         </Show>
       </header>
-      <div class="relative z-0 min-h-0 flex-1 overflow-visible">
-        <DeviceStage
-          onOpenTargets={props.onOpenTargets}
-          recordingControls="embedded"
-          preparing={props.status.kind === "progress"}
-        />
-      </div>
+      <DeviceCompanionStage
+        onOpenTargets={props.onOpenTargets}
+        preparing={props.status.kind === "progress"}
+        onOrientation={setRenderedOrientation}
+      />
       <Show
         when={props.recording ? props.take : null}
         fallback={
-          <Show
-            when={props.deviceSelected && (props.canRecord || props.arming || props.captureBusy)}
-          >
-            <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
+          <Show when={footerMode() !== "hidden"}>
+            <footer class="flex min-h-[68px] shrink-0 items-center justify-center border-t border-[var(--map-divider)] bg-[var(--map-control-surface)] px-4">
               <button
                 type="button"
                 class="app-map-record-button min-w-[148px]"
-                disabled={!props.canRecord || props.arming || props.captureBusy}
-                aria-busy={props.arming || props.captureBusy}
+                disabled={footerMode() === "busy"}
+                aria-busy={footerMode() === "busy"}
                 onClick={props.onRecord}
               >
                 <Show
-                  when={props.arming || props.captureBusy}
+                  when={footerMode() === "busy"}
                   fallback={<i class="size-2 rounded-full bg-white/90" />}
                 >
                   <Icon name="refresh" size={13} class="ui-refresh-spin motion-reduce:opacity-70" />

@@ -314,6 +314,29 @@ export function DeviceStage(_props: {
   });
   const frameDataUrl = (value: { mime: string; base64: string }) =>
     `data:${value.mime};base64,${value.base64}`;
+  const [liveFrameSrc, setLiveFrameSrc] = createSignal("");
+  let liveFrameObjectUrl = "";
+  createEffect(() => {
+    const live = server.liveFrame();
+    const previous = liveFrameObjectUrl;
+    if (!live?.base64) {
+      liveFrameObjectUrl = "";
+      setLiveFrameSrc("");
+      if (previous) URL.revokeObjectURL(previous);
+      return;
+    }
+    const binary = atob(live.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    liveFrameObjectUrl = URL.createObjectURL(new Blob([bytes], { type: live.mime || "image/png" }));
+    setLiveFrameSrc(liveFrameObjectUrl);
+    if (previous) URL.revokeObjectURL(previous);
+  });
+  onCleanup(() => {
+    if (liveFrameObjectUrl) URL.revokeObjectURL(liveFrameObjectUrl);
+  });
   const [stageView, setStageView] = createSignal<"recorded" | "live">("live");
   const [stepPlayback, setStepPlayback] = createSignal<{
     index: number;
@@ -356,8 +379,7 @@ export function DeviceStage(_props: {
     }
 
     if (stageView() === "live") {
-      const live = server.liveFrame();
-      return live ? frameDataUrl(live) : "";
+      return liveFrameSrc();
     }
     const recorded = recordedEvidenceSrc();
     if (recorded) return recorded;
@@ -1070,7 +1092,12 @@ export function DeviceStage(_props: {
     if (!displayImageSrc()) void tickLiveFrame();
     if (policy.pollFallbackFrame) {
       void tickLiveFrame();
-      frameTimer = setInterval(() => void tickLiveFrame(), supportsH264Stream() ? 125 : 650);
+      // Android normally promotes to H.264 and only polls while recovering.
+      // Physical iOS currently uses PNG fallback; its full-resolution frames
+      // can be several megabytes, so a calm cadence avoids saturating the UI.
+      // Post-interaction refreshes remain immediate through
+      // `scheduleLiveSnapshot` and the touch/keyboard completion paths.
+      frameTimer = setInterval(() => void tickLiveFrame(), supportsH264Stream() ? 125 : 1_500);
     }
     onCleanup(stopLiveTimers);
   });
@@ -1852,6 +1879,7 @@ export function DeviceStage(_props: {
                     }}
                     alt={displayCaption() || "Recorded device evidence"}
                     aria-label="Interactive device screen"
+                    data-live-frame={stageView() === "live" && liveFrameSrc() ? "true" : undefined}
                     src={displayImageSrc()}
                     draggable={false}
                     tabindex={0}

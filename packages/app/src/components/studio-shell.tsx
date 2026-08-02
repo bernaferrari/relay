@@ -12,7 +12,7 @@ import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
 import { AppMapWorkspace } from "./app-map-workspace";
-import { JourneyNavigator, type NavigatorArea } from "./journey-navigator";
+import { MapLibrary, type MapLibraryArea } from "./map-library";
 import { DevicePicker } from "./device-picker";
 import { EmptyAppMap } from "./app-map-empty";
 import { TestSettingsPanel } from "./test-details-panel";
@@ -41,7 +41,7 @@ import {
   shellBreadcrumb,
   shellStudio,
   shellSaveState,
-  shellStudioBodyJourney,
+  shellStudioBodyWorkbench,
   shellStageWrap,
   shellDragStrip,
 } from "../lib/shell-layout";
@@ -77,9 +77,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const [area, setArea] = createSignal<ProductArea>(
     new URLSearchParams(window.location.search).has("run") ? "runs" : "tests",
   );
-  // The graph is the journey's source of truth. Device remains one click away
+  // The App Map is the source of truth. Device remains one click away
   // for direct editing, while the graph keeps each captured screen and its
-  // outgoing actions visible as the journey grows.
+  // outgoing actions visible as the map grows.
   const [studioView, setStudioView] = createSignal<StudioView>("map");
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
@@ -110,7 +110,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   // this reactive fallback closes the small renderer race where recipes can
   // become visible before that asynchronous restore has selected a canvas.
   // It also gives browser-only sessions (with empty storage) the most recent
-  // authored journey immediately.
+  // authored map immediately.
   let restoredInitialMap = false;
   createEffect(() => {
     if (restoredInitialMap) return;
@@ -135,7 +135,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     restoredInitialMap = true;
     server.setSelectedRecipeId(null);
   });
-  const navigatorArea = createMemo<NavigatorArea>(() => area());
+  const libraryArea = createMemo<MapLibraryArea>(() => area());
   let titleBeforeEdit = "";
   let variablesDialog: HTMLElement | undefined;
   let importReviewDialog: HTMLElement | undefined;
@@ -257,7 +257,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     setSettingsOpen(false);
     window.dispatchEvent(new CustomEvent("relay:close-device-panel"));
   });
-  // A journey is authored on its graph. The live device remains available
+  // An App Map is authored on its canvas. The live device remains available
   // inside that workspace, but merely connecting hardware must never change
   // what the user is editing or reopen yesterday's draft on launch.
   let openedRecipeId: string | null | undefined;
@@ -333,7 +333,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     const recipe = selected();
     if (!recipe) return;
     if (studioView() === "map") {
-      window.dispatchEvent(new CustomEvent("relay:run-journey-graph"));
+      window.dispatchEvent(new CustomEvent("relay:run-app-map"));
       return;
     }
     void server.runRecipeRemote(recipe.id);
@@ -528,9 +528,9 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     >
       <div class={shellDragStrip} aria-hidden="true" />
 
-      <JourneyNavigator
+      <MapLibrary
         open={navOpen()}
-        area={navigatorArea()}
+        area={libraryArea()}
         onArea={(nextArea) => {
           setArea(nextArea);
           // Run history already owns its own filters and result list. Keeping
@@ -559,7 +559,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       </Show>
 
       <main class={shellMain}>
-        {/* One toolbar. The journey's name, its view, and its actions used to
+        {/* One toolbar. The map's name, its view, and its actions used to
             be split across two stacked bars for no reason a user could name. */}
         <header class={cn(shellTopbar, !navOpen() && "pl-[calc(var(--traffic-pad,12px)+18px)]")}>
           <div class={shellTopbarContext}>
@@ -745,7 +745,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   class={cn(productPrimary, "min-h-9 px-3.5 text-[12px]")}
                   aria-describedby={
                     (studioView() === "map" ? graphBlockedReason() : testBlockedReason())
-                      ? "journey-run-blocker"
+                      ? "app-map-run-blocker"
                       : undefined
                   }
                   data-blocked={
@@ -767,7 +767,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </button>
                 <Show when={studioView() === "map" ? graphBlockedReason() : testBlockedReason()}>
                   {(reason) => (
-                    <span id="journey-run-blocker" class="sr-only">
+                    <span id="app-map-run-blocker" class="sr-only">
                       {reason()}
                     </span>
                   )}
@@ -784,7 +784,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 selected()
                   ? studioView() === "map"
                     ? "relative flex min-h-0 min-w-0 flex-1"
-                    : shellStudioBodyJourney
+                    : shellStudioBodyWorkbench
                   : "grid min-h-0 min-w-0 flex-1 grid-cols-1"
               }
             >

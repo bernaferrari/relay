@@ -537,7 +537,98 @@ export type SnapshotPayload = {
   screenIdentity: import("@relay/protocol").ScreenIdentity;
 };
 
-function inferBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
+export type IosSnapshotGeometry = {
+  rotation: "none" | "left";
+  logicalWidth: number;
+  logicalHeight: number;
+};
+
+const iosSnapshotGeometryBySerial = new Map<string, IosSnapshotGeometry>();
+
+export function inferIosSnapshotGeometry(nodes: SnapshotNode[]): IosSnapshotGeometry | undefined {
+  const application = nodes.find(
+    (node) =>
+      node.depth === 0 &&
+      node.type === "Application" &&
+      node.rect &&
+      node.rect.width >= 100 &&
+      node.rect.height >= 100,
+  );
+  if (!application?.rect) return undefined;
+  const logicalWidth = application.rect.width;
+  const logicalHeight = application.rect.height;
+  const nativeWindow = nodes.find(
+    (node) =>
+      node.depth === 1 &&
+      node.type === "Window" &&
+      node.rect &&
+      Math.abs(node.rect.width - logicalHeight) <= 2 &&
+      Math.abs(node.rect.height - logicalWidth) <= 2,
+  );
+  return {
+    rotation: nativeWindow && logicalWidth > logicalHeight ? "left" : "none",
+    logicalWidth,
+    logicalHeight,
+  };
+}
+
+export function iosDriverPoint(
+  point: { x: number; y: number },
+  geometry: IosSnapshotGeometry,
+): { x: number; y: number } {
+  if (geometry.rotation === "none") return point;
+  return {
+    x: geometry.logicalHeight - point.y,
+    y: point.x,
+  };
+}
+
+/** Normalize XCTest's portrait-buffer child rects into the logical viewport. */
+export function normalizeIosSnapshotNodes(
+  nodes: SnapshotNode[],
+  geometry = inferIosSnapshotGeometry(nodes),
+): SnapshotNode[] {
+  if (!geometry || geometry.rotation === "none") return nodes;
+  return nodes.map((node) => {
+    if (!node.rect || (node.depth === 0 && node.type === "Application")) return node;
+    const rect = node.rect;
+    return {
+      ...node,
+      rect: {
+        x: rect.y,
+        y: geometry.logicalHeight - (rect.x + rect.width),
+        width: rect.height,
+        height: rect.width,
+      },
+    };
+  });
+}
+
+export function inferSnapshotBounds(
+  nodes: SnapshotNode[],
+  platform?: DevicePlatform,
+): { width: number; height: number } | undefined {
+  if (platform === "ios") {
+    // XCTest can expose portrait-oriented Window children while its root
+    // Application already describes the logical landscape viewport. Taking
+    // max child extents turns a 1112×834 iPad into a fictitious 1112×1112
+    // square and shifts every normalized point interaction. The application
+    // root is the authoritative coordinate space used by XCTest actions.
+    const application = nodes.find(
+      (node) =>
+        node.depth === 0 &&
+        node.type === "Application" &&
+        node.rect &&
+        node.rect.width >= 100 &&
+        node.rect.height >= 100,
+    );
+    if (application?.rect) {
+      return {
+        width: Math.round(application.rect.width),
+        height: Math.round(application.rect.height),
+      };
+    }
+  }
   let maxX = 0;
   let maxY = 0;
   for (const n of nodes) {
@@ -612,9 +703,23 @@ export async function captureSnapshot(opts?: {
       }
       throw error;
     }
-    const { nodes, ...capture } = snapshot;
+    const { nodes: capturedNodes, ...capture } = snapshot;
+    const context = target.context;
+    const iosGeometry =
+      context.kind === "device" && context.platform === "ios"
+        ? inferIosSnapshotGeometry(capturedNodes)
+        : undefined;
+    const nodes = iosGeometry
+      ? normalizeIosSnapshotNodes(capturedNodes, iosGeometry)
+      : capturedNodes;
+    if (context.kind === "device" && context.platform === "ios" && context.serial && iosGeometry) {
+      iosSnapshotGeometryBySerial.set(context.serial, iosGeometry);
+    }
     const interactive = nodes.filter((n) => n.hittable || n.enabled !== false);
-    const bounds = inferBounds(nodes);
+    const bounds = inferSnapshotBounds(
+      nodes,
+      target.context.kind === "device" ? target.context.platform : undefined,
+    );
     const serial = targetIdentity();
     publish({ type: "snapshot.captured", at: now(), serial, nodeCount: nodes.length });
     const observedIdentity = observeScreenIdentity(nodes);
@@ -824,27 +929,53 @@ export async function interact(input: InteractInput, opts?: { serial?: string })
     }
     try {
       await withSession(target.device, async () => {
-        switch (input.kind) {
+        let resolvedInput = input;
+        if (
+          context.kind === "device" &&
+          context.platform === "ios" &&
+          (input.kind === "point" || input.kind === "swipe")
+        ) {
+          let geometry = iosSnapshotGeometryBySerial.get(context.serial);
+          if (!geometry) {
+            geometry = inferIosSnapshotGeometry(await snapshotThroughSdk(target.device, false));
+            if (geometry) iosSnapshotGeometryBySerial.set(context.serial, geometry);
+          }
+          if (geometry && input.kind === "point") {
+            resolvedInput = { kind: "point", ...iosDriverPoint(input, geometry) };
+          } else if (geometry && input.kind === "swipe") {
+            resolvedInput = {
+              ...input,
+              from: iosDriverPoint(input.from, geometry),
+              to: iosDriverPoint(input.to, geometry),
+            };
+          }
+        }
+        switch (resolvedInput.kind) {
           case "label":
-            await pressLabel(target.device, input.label);
+            await pressLabel(target.device, resolvedInput.label);
             return;
           case "point":
-            await pressPoint(target.device, input.x, input.y);
+            await pressPoint(target.device, resolvedInput.x, resolvedInput.y);
             return;
           case "ref":
-            await pressRef(target.device, input.ref);
+            await pressRef(target.device, resolvedInput.ref);
             return;
           case "find":
-            await findClick(target.device, input.query);
+            await findClick(target.device, resolvedInput.query);
             return;
           case "text-match":
-            await pressMatchingText(target.device, input.match);
+            await pressMatchingText(target.device, resolvedInput.match);
             return;
           case "swipe":
-            await swipeGesture(target.device, input.from, input.to, input.durationMs ?? 250);
+            await swipeGesture(
+              target.device,
+              resolvedInput.from,
+              resolvedInput.to,
+              resolvedInput.durationMs ?? 250,
+            );
             return;
           case "type":
-            await typeText(target.device, input.text);
+            await typeText(target.device, resolvedInput.text);
             return;
         }
       });

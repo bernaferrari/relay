@@ -78,6 +78,8 @@ function serialFor(deps: CaptureServerDeps): string | undefined {
 
 export function createServerCapture(deps: CaptureServerDeps) {
   let keyboardChain = Promise.resolve(true);
+  let lastLiveFrameBase64 = "";
+  let lastLiveFrameSerial: string | undefined;
 
   async function recordIosVideo(action: "start" | "stop"): Promise<DeviceVideoTake | null> {
     const serial = serialFor(deps);
@@ -288,13 +290,25 @@ export function createServerCapture(deps: CaptureServerDeps) {
         undefined,
         30_000,
       );
+      const responseSerial = data.serial ?? serial;
+      // Physical Apple devices commonly return a multi-megabyte PNG even when
+      // not one pixel changed. Replacing the image URL for every identical
+      // poll forces Chromium to decode the same frame again and can make the
+      // whole workbench feel frozen. Keep the current frame mounted; an input
+      // or genuine visual change still produces a new payload immediately.
+      if (responseSerial === lastLiveFrameSerial && data.base64 === lastLiveFrameBase64) {
+        deps.setLiveCaptureIssue?.(null);
+        return;
+      }
+      lastLiveFrameSerial = responseSerial;
+      lastLiveFrameBase64 = data.base64;
       deps.setLiveFrame({
         id: `live-${data.capturedAt}`,
         capturedAt: data.capturedAt,
         mime: data.mime,
         base64: data.base64,
         bytes: data.bytes,
-        serial: data.serial ?? serial,
+        serial: responseSerial,
         caption: `live · ${new Date(data.capturedAt).toLocaleTimeString(undefined, { hour12: false })}`,
       });
       deps.setLiveCaptureIssue?.(null);

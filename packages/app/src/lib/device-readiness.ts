@@ -79,6 +79,13 @@ export function deviceReadiness(
     };
   }
 
+  // A current frame from this selected device is stronger evidence than a
+  // still-pending setup summary. Apple setup and first capture race on cold
+  // connections; once pixels arrive, continuing to say "Checking device"
+  // contradicts the visible, controllable screen. Recording errors above
+  // remain authoritative and are never hidden by an old frame.
+  if (context.liveScreenAvailable) return { kind: "ready" };
+
   if (device.platform === "ios" && context.appleSetup !== undefined) {
     if (context.appleSetup === null) {
       return {

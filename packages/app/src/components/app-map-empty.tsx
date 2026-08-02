@@ -3,7 +3,7 @@ import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { deviceReadiness } from "../lib/device-readiness";
 import { DeviceStatusLabel, type AppMapDeviceStatus } from "./device-status-label";
-import { DeviceStage } from "./stage";
+import { DeviceCompanionStage, type DeviceCompanionOrientation } from "./device-companion-stage";
 import { Icon } from "./icon";
 
 /**
@@ -21,6 +21,8 @@ export function EmptyAppMap(props: {
 }) {
   const server = useServer();
   const [tool, setTool] = createSignal<"select" | "hand">("select");
+  const [deviceOrientation, setDeviceOrientation] =
+    createSignal<DeviceCompanionOrientation>("unknown");
   const device = createMemo(() =>
     server.devices().find((candidate) => candidate.serial === server.selectedDevice()),
   );
@@ -29,6 +31,9 @@ export function EmptyAppMap(props: {
       ...(device()?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
       liveCaptureIssue: server.liveCaptureIssue(),
       requireLiveScreen: false,
+      liveScreenAvailable:
+        Boolean(server.liveFrame()?.base64) &&
+        (!server.liveFrame()?.serial || server.liveFrame()?.serial === device()?.serial),
     }),
   );
   const ready = () => readiness().kind === "ready";
@@ -87,8 +92,14 @@ export function EmptyAppMap(props: {
 
       <Show when={props.deviceOpen}>
         <aside
-          class="ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex w-[min(404px,calc(100%-32px))] min-w-0 flex-col overflow-hidden rounded-[18px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto"
+          class={cn(
+            "ui-device-companion app-map-device-panel absolute top-4 right-4 bottom-4 z-40 flex min-w-0 flex-col overflow-hidden rounded-[18px] bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)] ring-1 ring-[color-mix(in_srgb,var(--map-divider)_72%,transparent)] transition-[width] duration-180 ease-out motion-reduce:transition-none max-[720px]:top-2 max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:w-auto",
+            deviceOrientation() === "landscape"
+              ? "w-[min(548px,calc(100%-32px))]"
+              : "w-[min(388px,calc(100%-32px))]",
+          )}
           aria-label="Live device"
+          data-frame-orientation={deviceOrientation()}
         >
           <header class="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-[var(--map-divider)] px-4">
             <DeviceStatusLabel status={status()} />
@@ -102,13 +113,11 @@ export function EmptyAppMap(props: {
               <Icon name="x" size={13} />
             </button>
           </header>
-          <div class="relative min-h-0 flex-1">
-            <DeviceStage
-              onOpenTargets={props.onOpenTargets}
-              recordingControls="embedded"
-              preparing={status().kind === "progress"}
-            />
-          </div>
+          <DeviceCompanionStage
+            onOpenTargets={props.onOpenTargets}
+            preparing={status().kind === "progress"}
+            onOrientation={setDeviceOrientation}
+          />
           <Show when={ready() || props.creating}>
             <footer class="flex min-h-16 shrink-0 items-center justify-center border-t border-[var(--map-divider)] px-4">
               <button
@@ -134,7 +143,14 @@ export function EmptyAppMap(props: {
       <div
         class={cn(
           "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-50 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]",
-          props.deviceOpen ? "left-[calc((100%-404px)/2)] max-[720px]:left-1/2" : "left-1/2",
+          props.deviceOpen
+            ? cn(
+                "max-[720px]:left-1/2",
+                deviceOrientation() === "landscape"
+                  ? "left-[calc((100%-548px)/2)]"
+                  : "left-[calc((100%-388px)/2)]",
+              )
+            : "left-1/2",
         )}
         role="toolbar"
         aria-label="App Map tools"

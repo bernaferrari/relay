@@ -129,6 +129,11 @@ test("one session-readiness rule blocks recording for Apple setup and capture fa
   const ipad = { serial: "ipad", name: "iPad", platform: "ios" as const, booted: true };
   assert.equal(deviceReadiness(ipad, true, { appleSetup: null }).kind, "checking-ios");
   assert.equal(
+    deviceReadiness(ipad, true, { appleSetup: null, liveScreenAvailable: true }).kind,
+    "ready",
+    "a real selected-device frame wins over a lagging setup check",
+  );
+  assert.equal(
     deviceReadiness(ipad, true, {
       appleSetup: {
         setup: { ios: {} },
