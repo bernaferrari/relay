@@ -106,6 +106,9 @@ const authorSupport = new Set<OperationId>([
   "lease.create",
   "lease.release",
   "action.run",
+  "workspace.variables.get",
+  "workspace.variables.update",
+  "generation.create",
   "matrix.list",
   "matrix.resolve",
   "job.list",
@@ -182,7 +185,6 @@ function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): 
     return (
       tool.operationId.startsWith("app-map.") ||
       tool.operationId.startsWith("authoring.") ||
-      tool.operationId.startsWith("discovery.") ||
       authorSupport.has(tool.operationId)
     );
   }

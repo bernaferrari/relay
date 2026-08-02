@@ -9,7 +9,7 @@ import { UsageError } from "./errors.js";
 
 const familyGroups = [
   ["App Map", ["map", "screen", "connect", "flow"]],
-  ["Create", ["proposal", "routine"]],
+  ["Author", ["proposal", "routine", "case-stack"]],
   ["Operate", ["device", "run", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],

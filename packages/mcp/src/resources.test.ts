@@ -66,6 +66,11 @@ function fixtureResult(operationId: string): unknown {
     },
     "app-map.list": { appMaps: [{ id: "map-1", name: "Sign in" }] },
     "app-map.get": { appMap: { id: "map-1", name: "Sign in", screens: {} } },
+    "workspace.variables.get": {
+      revision: 2,
+      updatedAt: 200,
+      value: [{ id: "thinking-level", name: "thinking_level", kind: "list" }],
+    },
     "run.list": { runs: [{ id: "run-1", status: "passed" }] },
     "run.get": { run: { id: "run-1", status: "passed", artifacts: [] } },
     "run.evidence.get": { evidence: { runId: "run-1", logs: [], network: [] } },
@@ -172,6 +177,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
     const uris = resources.map(({ uri }) => uri);
     for (const uri of [
       relayMcpResourceUris.project,
+      relayMcpResourceUris.variables,
       relayMcpResourceUris.appMaps,
       relayMcpResourceUris.runs,
       relayMcpResourceUris.authoringSessions,
@@ -235,9 +241,18 @@ test("reads the configured project and detail resources through Relay queries", 
     assert.deepEqual((JSON.parse(appMap.text) as Record<string, unknown>).data, {
       appMap: { id: "map-1", name: "Sign in", screens: {} },
     });
+    const variables = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.variables }),
+    );
+    assert.deepEqual((JSON.parse(variables.text) as Record<string, unknown>).data, {
+      revision: 2,
+      updatedAt: 200,
+      value: [{ id: "thinking-level", kind: "list", name: "thinking_level" }],
+    });
     assert.deepEqual(calls, [
       { operationId: "project.list", input: {} },
       { operationId: "app-map.get", input: { appMapId: "map-1" } },
+      { operationId: "workspace.variables.get", input: {} },
     ]);
   } finally {
     await session.close();

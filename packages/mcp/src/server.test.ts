@@ -319,6 +319,7 @@ test("profile selection exposes deterministic least-privilege tool sets", async 
   const compact = relayMcpToolsForProfile(defaultRelayMcpProfile);
   assert.ok(compact.length < relayMcpTools.length / 2);
   assert.ok(compact.some(({ operationId }) => operationId === "app-map.screen.add"));
+  assert.ok(compact.some(({ operationId }) => operationId === "workspace.variables.update"));
   assert.ok(compact.some(({ operationId }) => operationId === "authoring.session.commit"));
   assert.equal(
     relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),

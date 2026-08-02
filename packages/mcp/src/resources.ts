@@ -15,6 +15,7 @@ export const relayMcpResourceMimeType = "application/json";
 
 export const relayMcpResourceUris = {
   project: "relay://project/current",
+  variables: "relay://workspace/variables",
   appMaps: "relay://app-maps",
   appMap: "relay://app-maps/{appMapId}",
   runs: "relay://runs",
@@ -346,6 +347,14 @@ export function registerRelayResources(
     "Relay App Maps",
     relayMcpResourceUris.appMaps,
     (signal) => invokeRead(invoker, "app-map.list", {}, signal),
+    scope,
+  );
+  registerStaticResource(
+    server,
+    "workspace-variables",
+    "Relay Workspace Variables",
+    relayMcpResourceUris.variables,
+    (signal) => invokeRead(invoker, "workspace.variables.get", {}, signal),
     scope,
   );
   registerStaticResource(

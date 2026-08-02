@@ -302,7 +302,7 @@ export function AppMapZoomControls(props: {
   onFit: () => void;
 }) {
   return (
-    <div class="absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_78%,transparent),0_8px_24px_rgb(0_0_0/16%)] backdrop-blur-[12px] max-[680px]:right-2 max-[680px]:bottom-[calc(68px+env(safe-area-inset-bottom))]">
+    <div class="absolute right-4 bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_78%,transparent),0_8px_24px_rgb(0_0_0/16%)] backdrop-blur-[12px] max-[900px]:right-2 max-[900px]:bottom-[calc(68px+env(safe-area-inset-bottom))]">
       <button
         type="button"
         class={mapControlButton}

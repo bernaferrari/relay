@@ -169,6 +169,17 @@ test("defines deterministic role profiles with a compact authoring default", () 
     ),
   );
   assert.ok(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "workspace.variables.update",
+    ),
+  );
+  assert.equal(
+    relayMcpToolsForProfile("author").some(({ operationId }) =>
+      operationId.startsWith("discovery."),
+    ),
+    false,
+  );
+  assert.ok(
     relayMcpToolsForProfile("execute").some(({ operationId }) => operationId === "job.start"),
   );
   assert.ok(
