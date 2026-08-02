@@ -556,7 +556,7 @@ export function JourneyInspector(props: { onOpenTargets: () => void; compact?: b
         chromePanel,
         "border-l border-[var(--v2-border-border-muted)] max-[900px]:absolute max-[900px]:right-0 max-[900px]:bottom-0 max-[900px]:z-[6] max-[900px]:flex max-[900px]:h-[calc(100%-104px)] max-[900px]:w-[min(340px,calc(100vw-64px))] max-[900px]:shadow-[-20px_0_50px_rgb(0_0_0/35%)]",
       )}
-      aria-label="Selected journey action"
+      aria-label="Selected flow action"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
         const editingText = target.matches("input, textarea, select, [contenteditable='true']");

@@ -110,7 +110,7 @@ export function DevicePicker(props: {
 
   /**
    * Selection is visible immediately, while the control plane refreshes the
-   * target's readiness in the background. The event lets an empty journey
+   * target's readiness in the background. The event lets an empty map
    * advance from “Choose a device” to “Preparing” without waiting for the
    * next polling interval.
    */

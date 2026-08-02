@@ -39,7 +39,7 @@ export type Platform = {
   openXcode?(): void | Promise<void>;
   /** System notification */
   notify?(title: string, body?: string): void | Promise<void>;
-  /** Copy a captured image without adding it to a journey or run. */
+  /** Copy a captured image without adding it to an App Map or run. */
   copyImage?(base64: string, mime: string): void | Promise<void>;
   /** Current server base URL (no trailing slash) */
   getServerUrl(): string | Promise<string>;

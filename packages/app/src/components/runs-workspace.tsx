@@ -141,7 +141,7 @@ export function RunsWorkspace(props: {
             ? rows().filter((row) => ["queued", "running", "paused"].includes(row.status))
             : rows();
     // The default should answer “what needs review?” rather than repeat the
-    // same journey forty times. Full chronology remains one deliberate click
+    // same flow forty times. Full chronology remains one deliberate click
     // away for audit work.
     if (filter !== "all" || historyExpanded()) return filtered;
     const seenJourneys = new Set<string>();
@@ -430,11 +430,7 @@ export function RunsWorkspace(props: {
                   </Show>
                   <span class="font-mono text-[10.5px] text-text-weaker">
                     {visibleRows().length}{" "}
-                    {historyExpanded()
-                      ? "runs"
-                      : visibleRows().length === 1
-                        ? "journey"
-                        : "journeys"}
+                    {historyExpanded() ? "runs" : visibleRows().length === 1 ? "flow" : "flows"}
                   </span>
                 </div>
               </div>

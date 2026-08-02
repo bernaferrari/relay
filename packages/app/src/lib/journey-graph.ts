@@ -146,7 +146,7 @@ export function addJourneyStartScreen(
   input: { title?: string; at?: number } = {},
 ): { graph: JourneyGraph; screen: JourneyGraphScreen } {
   if (graph.screens.length || graph.flows.length) {
-    throw new Error("A start screen can only be added to an empty journey");
+    throw new Error("A start screen can only be added to an empty App Map");
   }
   const at = input.at ?? Date.now();
   const copy = cloneGraph(graph);
@@ -448,7 +448,7 @@ export function addGraphConnection(
   const copy = cloneGraph(graph);
   const known = new Set(copy.screens.map((screen) => screen.id));
   if (!known.has(input.fromScreenId) || !known.has(input.toScreenId)) {
-    throw new Error("Connections can only join screens in this journey");
+    throw new Error("Connections can only join screens in this App Map");
   }
   const transition: JourneyGraphTransition = {
     id: id("transition", at),
