@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import type {
   JourneyCanvasNote,
   JourneyMetadata,
@@ -27,6 +27,7 @@ import {
   addJourneyStartScreen,
   buildJourneyGraphTree,
   ensureJourneyGraph,
+  removeJourneyGraphScreen,
   screenForObservation,
   type TakeDestination,
   withJourneyGraph,
@@ -62,7 +63,16 @@ import { collaborationActivity } from "../lib/collaboration-awareness";
 import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-runtime";
 import { AppMapDeviceCompanion } from "./app-map-device-companion";
 import { AppMapOverviewToolbar, AppMapToolbar, AppMapZoomControls } from "./app-map-toolbar";
-import { createAppMapEventOrchestration } from "./app-map-events";
+import { canvasWheelAction, createAppMapEventOrchestration } from "./app-map-events";
+import { Icon } from "./icon";
+import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-projection";
+import { AppMapProposalReview } from "./app-map-proposal-review";
+
+type JourneyLoadState =
+  | { status: "idle" }
+  | { status: "loading"; recipeId: string }
+  | { status: "ready"; recipeId: string }
+  | { status: "error"; recipeId: string };
 
 /**
  * The graph is the authoring surface for a journey. A card is a captured
@@ -91,6 +101,10 @@ export function AppMapWorkspace(props: {
     updatedAt: 0,
   });
   const [loadedRecipeId, setLoadedRecipeId] = createSignal<string | null>(null);
+  const [journeyLoadState, setJourneyLoadState] = createSignal<JourneyLoadState>({
+    status: "idle",
+  });
+  const [journeyLoadAttempt, setJourneyLoadAttempt] = createSignal(0);
   const [targetSetOpen, setTargetSetOpen] = createSignal(false);
   const graph = createMemo(() => ensureJourneyGraph(metadata().value, draft.steps()));
   const activeFlow = createMemo(() => graph().flows[0] ?? null);
@@ -98,6 +112,14 @@ export function AppMapWorkspace(props: {
     const id = activeFlow()?.targetSetId;
     return id ? (server.matrices().find((matrix) => matrix.id === id) ?? null) : null;
   });
+  const activeAppMap = createMemo(() =>
+    server.appMaps().find((candidate) => candidate.id === server.selectedRecipeId()),
+  );
+  const pendingProposals = createMemo(() =>
+    Object.values(activeAppMap()?.proposals ?? {})
+      .filter((proposal) => proposal.status === "pending")
+      .sort((left, right) => left.createdAt - right.createdAt),
+  );
   const tree = createMemo(() => buildJourneyGraphTree(graph(), draft.steps()));
   const hasMap = () => tree().nodes.length > 0;
   const selectedDevice = createMemo(
@@ -127,6 +149,8 @@ export function AppMapWorkspace(props: {
   const [appleSetupCheckAttempt] = createSignal(0);
   const [appleSetupCheckFailed, setAppleSetupCheckFailed] = createSignal(false);
   let requestedAppleSetupFor = "";
+  let canonicalProjectionQueue = Promise.resolve();
+  let appliedCanonicalRevision = "";
   createEffect(() => {
     const device = selectedDevice();
     const setup = server.appleDeviceSetup();
@@ -201,6 +225,9 @@ export function AppMapWorkspace(props: {
   const [connectionPreview, setConnectionPreview] = createSignal<CanvasPoint | null>(null);
   const [renamingNodeId, setRenamingNodeId] = createSignal<string | null>(null);
   const [historyOpen, setHistoryOpen] = createSignal(false);
+  const [proposalReviewOpen, setProposalReviewOpen] = createSignal(false);
+  const [proposalBusyId, setProposalBusyId] = createSignal<string>();
+  const [proposalError, setProposalError] = createSignal<string>();
   const [captureOpen, setCaptureOpen] = createSignal(false);
   const [captureClosing, setCaptureClosing] = createSignal(false);
   const [waitingForRecordTarget, setWaitingForRecordTarget] = createSignal(false);
@@ -247,7 +274,7 @@ export function AppMapWorkspace(props: {
   let recordingSourceScreenId: string | null = null;
   let recordRequestedAfterDeviceSelection = false;
   let deviceAutoOpenedForRecipe = "";
-  let fittedSignature = "";
+  let initiallyFittedRecipeId = "";
   let metadataSaveSequence = 0;
   let destinationResolvedForTake = "";
   let captureCloseTimer: number | undefined;
@@ -343,6 +370,7 @@ export function AppMapWorkspace(props: {
 
   createEffect(() => {
     const recipeId = server.selectedRecipeId();
+    journeyLoadAttempt();
     deviceAutoOpenedForRecipe = "";
     setSelectedNodeId(null);
     setSelectedConnectionId(null);
@@ -351,14 +379,18 @@ export function AppMapWorkspace(props: {
     setRenamingNodeId(null);
     setHistoryOpen(false);
     setCaptureOpen(false);
+    appliedCanonicalRevision = "";
     if (!recipeId) {
       closeJourneyDocument();
       setLoadedRecipeId(null);
+      setJourneyLoadState({ status: "idle" });
       setCanvasHistory({ undo: false, redo: false });
       setMetadata({ revision: 0, value: EMPTY_JOURNEY_METADATA, updatedAt: 0 });
       return;
     }
+    closeJourneyDocument();
     setLoadedRecipeId(null);
+    setJourneyLoadState({ status: "loading", recipeId });
     void server
       .loadJourney(recipeId)
       .then((next) => {
@@ -367,16 +399,35 @@ export function AppMapWorkspace(props: {
           openJourneyDocument(recipeId, next.value);
           setCanvasHistory({ undo: false, redo: false });
           setLoadedRecipeId(recipeId);
+          setJourneyLoadState({ status: "ready", recipeId });
         }
       })
       .catch(() => {
         if (server.selectedRecipeId() === recipeId) {
-          setMetadata({ revision: 0, value: EMPTY_JOURNEY_METADATA, updatedAt: 0 });
-          openJourneyDocument(recipeId, EMPTY_JOURNEY_METADATA);
           setCanvasHistory({ undo: false, redo: false });
-          setLoadedRecipeId(recipeId);
+          setJourneyLoadState({ status: "error", recipeId });
         }
       });
+  });
+
+  createEffect(() => {
+    const appMapId = server.selectedRecipeId();
+    const appMap = server.appMaps().find((candidate) => candidate.id === appMapId);
+    if (!appMapId || !appMap || loadedRecipeId() !== appMapId) return;
+    const revisionKey = `${appMapId}:${appMap.revision}`;
+    if (appliedCanonicalRevision === revisionKey) return;
+    appliedCanonicalRevision = revisionKey;
+    const current = metadata();
+    const value = mergeAppMapProjection(current.value, appMap);
+    if (
+      JSON.stringify(value.graph) === JSON.stringify(current.value.graph) &&
+      JSON.stringify(value.positions) === JSON.stringify(current.value.positions) &&
+      JSON.stringify(value.screenTitles) === JSON.stringify(current.value.screenTitles)
+    ) {
+      return;
+    }
+    journeyDocument?.replace(value, "remote");
+    setMetadata({ ...current, value, updatedAt: Math.max(current.updatedAt, appMap.updatedAt) });
   });
   // A blank journey starts with its device companion visible: the first screen
   // is established there, not through a modal or a second empty-state CTA.
@@ -552,19 +603,14 @@ export function AppMapWorkspace(props: {
     );
   };
 
-  onMount(() => requestAnimationFrame(fit));
   createEffect(() => {
-    const signature = [
-      ...tree().nodes.map((node) => node.id),
-      ...connections().map((connection) => connection.id),
-      ...(metadata().value.notes ?? []).map((note) => note.id),
-    ].join("|");
-    if (!signature || signature === fittedSignature) return;
-    fittedSignature = signature;
-    setSelectedNodeId((current) =>
-      current && tree().nodes.some((node) => node.id === current) ? current : null,
-    );
-    requestAnimationFrame(fit);
+    const recipeId = loadedRecipeId();
+    if (!recipeId || journeyLoadState().status !== "ready" || initiallyFittedRecipeId === recipeId)
+      return;
+    // Fit an existing map once when it opens. A blank map is also marked as
+    // handled so its first capture does not yank the camera away from the user.
+    initiallyFittedRecipeId = recipeId;
+    if (hasCanvasContent()) requestAnimationFrame(fit);
   });
 
   const selectStep = (index: number) => {
@@ -588,6 +634,79 @@ export function AppMapWorkspace(props: {
       zoomViewportAtPoint(current, clampCanvasScale(current.scale + delta), anchor),
     );
   };
+  function syncCanonicalProjection(value: JourneyMetadata): void {
+    const appMapId = server.selectedRecipeId();
+    if (!appMapId) return;
+    canonicalProjectionQueue = canonicalProjectionQueue
+      .then(async () => {
+        let appMap;
+        try {
+          appMap = await server.loadAppMap(appMapId);
+        } catch {
+          return;
+        }
+        const projectedGraph = ensureJourneyGraph(value, draft.steps());
+        const changes = planAppMapProjection({
+          appMap,
+          graph: projectedGraph,
+          positions: value.positions,
+          recipeSteps: draft.steps(),
+        });
+        for (const change of changes) {
+          if (change.kind === "screen.add") {
+            appMap = (
+              await server.runAction("app-map.screen.add", {
+                appMapId,
+                expectedRevision: appMap.revision,
+                input: { screen: change.screen },
+              })
+            ).appMap;
+          } else if (change.kind === "screen.update") {
+            appMap = (
+              await server.runAction("app-map.screen.update", {
+                appMapId,
+                screenId: change.screenId,
+                expectedRevision: appMap.revision,
+                input: { patch: change.patch },
+              })
+            ).appMap;
+          } else if (change.kind === "connection.create") {
+            appMap = (
+              await server.runAction("app-map.connection.create", {
+                appMapId,
+                expectedRevision: appMap.revision,
+                connection: change.connection,
+              })
+            ).appMap;
+          } else if (change.kind === "connection.update") {
+            appMap = (
+              await server.runAction("app-map.connection.update", {
+                appMapId,
+                connectionId: change.connectionId,
+                expectedRevision: appMap.revision,
+                patch: change.patch,
+              })
+            ).appMap;
+          } else {
+            appMap = (
+              await server.runAction("app-map.flow.save", {
+                appMapId,
+                flowId: change.flow.id,
+                expectedRevision: appMap.revision,
+                flow: change.flow,
+              })
+            ).appMap;
+          }
+        }
+        if (changes.length) await server.refreshAppMaps();
+      })
+      .catch((error) => {
+        toast(
+          `Canvas saved, but its shared App Map projection needs attention: ${error instanceof Error ? error.message : String(error)}`,
+          "warning",
+        );
+      });
+  }
   const applyRemoteMetadata = (next: Revisioned<JourneyMetadata>) => {
     journeyDocument?.replace(next.value, "remote");
     setCanvasHistory({
@@ -595,6 +714,7 @@ export function AppMapWorkspace(props: {
       redo: journeyDocument?.canRedo() ?? false,
     });
     setMetadata(next);
+    syncCanonicalProjection(next.value);
   };
   const persistMetadata = (value: JourneyMetadata) => {
     const recipeId = server.selectedRecipeId();
@@ -611,6 +731,7 @@ export function AppMapWorkspace(props: {
       value: nextValue,
       updatedAt: Date.now(),
     });
+    syncCanonicalProjection(nextValue);
     // When opted in, the provider is the only draft writer. The revisioned
     // Journey endpoint remains the sole writer when collaboration is disabled.
     if (collaborationRuntime?.enabled) return;
@@ -648,6 +769,25 @@ export function AppMapWorkspace(props: {
     };
     persistMetadata(withJourneyGraph(metadata().value, next));
     setTargetSetOpen(false);
+  };
+  const decideProposal = async (proposalId: string, decision: "approve" | "reject") => {
+    const appMap = activeAppMap();
+    if (!appMap || proposalBusyId()) return;
+    setProposalBusyId(proposalId);
+    setProposalError();
+    try {
+      await server.runAction(`app-map.proposal.${decision}` as const, {
+        appMapId: appMap.id,
+        proposalId,
+        expectedRevision: appMap.revision,
+      });
+      await server.refreshAppMaps();
+      toast(decision === "approve" ? "Proposal added to the map" : "Proposal rejected", "success");
+    } catch (error) {
+      setProposalError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setProposalBusyId();
+    }
   };
   const useCurrentScreenAsStart = async () => {
     if (startCaptureBusy() || hasMap()) return;
@@ -784,7 +924,6 @@ export function AppMapWorkspace(props: {
             destinationScreenId?.kind === "screen" && node.id === destinationScreenId.screenId,
         );
         if (addedScreen) selectNode(addedScreen);
-        fit();
       });
     }
   };
@@ -1045,6 +1184,93 @@ export function AppMapWorkspace(props: {
     if (connection.source !== "authored") return;
     persistMetadata(removeAuthoredConnection(metadata().value, connection.id));
     setSelectedConnectionId(null);
+    queueCanonicalRemoval({ connectionIds: [connection.id] });
+  };
+  const queueCanonicalRemoval = (input: { connectionIds?: string[]; screenId?: string }) => {
+    const appMapId = server.selectedRecipeId();
+    if (!appMapId) return;
+    canonicalProjectionQueue = canonicalProjectionQueue
+      .then(async () => {
+        let appMap = await server.loadAppMap(appMapId);
+        const connectionIds = new Set(input.connectionIds ?? []);
+        if (input.screenId) {
+          for (const connection of Object.values(appMap.connections)) {
+            if (
+              connection.fromScreenId === input.screenId ||
+              (connection.destination.kind === "screen" &&
+                connection.destination.screenId === input.screenId)
+            ) {
+              connectionIds.add(connection.id);
+            }
+          }
+        }
+        for (const flow of Object.values(appMap.flows)) {
+          if (input.screenId && flow.startScreenId === input.screenId) {
+            appMap = (
+              await server.runAction("app-map.flow.remove", {
+                appMapId,
+                flowId: flow.id,
+                expectedRevision: appMap.revision,
+              })
+            ).appMap;
+            continue;
+          }
+          const nextConnectionIds = flow.connectionIds.filter((id) => !connectionIds.has(id));
+          if (nextConnectionIds.length !== flow.connectionIds.length) {
+            appMap = (
+              await server.runAction("app-map.flow.save", {
+                appMapId,
+                flowId: flow.id,
+                expectedRevision: appMap.revision,
+                flow: { ...flow, connectionIds: nextConnectionIds, updatedAt: Date.now() },
+              })
+            ).appMap;
+          }
+        }
+        for (const connectionId of connectionIds) {
+          if (!appMap.connections[connectionId]) continue;
+          appMap = (
+            await server.runAction("app-map.connection.remove", {
+              appMapId,
+              connectionId,
+              expectedRevision: appMap.revision,
+            })
+          ).appMap;
+        }
+        if (input.screenId && appMap.screens[input.screenId]) {
+          appMap = (
+            await server.runAction("app-map.screen.remove", {
+              appMapId,
+              screenId: input.screenId,
+              expectedRevision: appMap.revision,
+            })
+          ).appMap;
+        }
+        await server.refreshAppMaps();
+      })
+      .catch(async (error) => {
+        toast(
+          error instanceof Error ? error.message : "This map item could not be removed safely",
+          "warning",
+        );
+        await server.refreshAppMaps();
+      });
+  };
+  const removeScreen = (node: JourneyTreeNode) => {
+    const current = metadata().value;
+    const nextGraph = removeJourneyGraphScreen(graph(), node.id);
+    const nextPositions = { ...current.positions };
+    const nextTitles = { ...current.screenTitles };
+    delete nextPositions[node.id];
+    delete nextTitles[node.id];
+    persistMetadata(
+      withJourneyGraph(
+        { ...current, positions: nextPositions, screenTitles: nextTitles },
+        nextGraph,
+      ),
+    );
+    setSelectedNodeId(null);
+    queueCanonicalRemoval({ screenId: node.id });
   };
   const renameScreen = (node: JourneyTreeNode, title: string) => {
     const next = title.trim();
@@ -1156,6 +1382,15 @@ export function AppMapWorkspace(props: {
       else if (selectedNode()) recordFromHere();
       else toast("Select a screen or connection to record", "info");
     },
+    onDeleteSelection: () => {
+      const connection = selectedConnection();
+      if (connection) {
+        removeConnection(connection);
+        return;
+      }
+      const node = selectedNode();
+      if (node) removeScreen(node);
+    },
     onEscape: () => {
       setSelectedNodeId(null);
       setSelectedConnectionId(null);
@@ -1168,12 +1403,13 @@ export function AppMapWorkspace(props: {
     <section
       class={cn(
         "app-map-canvas relative grid min-h-0 flex-1 overflow-hidden",
-        reviewingTake()
+        journeyLoadState().status === "ready" && reviewingTake()
           ? "grid-cols-[minmax(280px,320px)_minmax(0,1fr)] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(260px,42%)_minmax(0,1fr)]"
           : "grid-cols-1",
       )}
+      aria-busy={journeyLoadState().status === "loading"}
     >
-      <Show when={!reviewingTake()}>
+      <Show when={journeyLoadState().status === "ready" && !reviewingTake()}>
         <section
           ref={(element) => {
             canvas = element;
@@ -1184,9 +1420,27 @@ export function AppMapWorkspace(props: {
           )}
           aria-label="App Map"
           onWheel={(event) => {
-            if (!hasCanvasContent() || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
+            if (!hasCanvasContent()) return;
+            const action = canvasWheelAction({
+              deltaX: event.deltaX,
+              deltaY: event.deltaY,
+              deltaMode: event.deltaMode,
+              shiftKey: event.shiftKey,
+              ctrlKey: event.ctrlKey,
+              metaKey: event.metaKey,
+              viewportHeight: event.currentTarget.clientHeight,
+            });
+            if (!action) return;
             event.preventDefault();
-            zoom(event.deltaY > 0 ? -0.08 : 0.08, { x: event.clientX, y: event.clientY });
+            if (action.kind === "zoom") {
+              zoom(action.delta, { x: event.clientX, y: event.clientY });
+              return;
+            }
+            setView((current) => ({
+              ...current,
+              x: current.x + action.x,
+              y: current.y + action.y,
+            }));
           }}
           onPointerDown={(event) => {
             const target = event.target as HTMLElement;
@@ -1246,7 +1500,10 @@ export function AppMapWorkspace(props: {
                     }
                   : note,
               );
-              setMetadata((current) => ({ ...current, value: { ...current.value, notes: next } }));
+              setMetadata((current) => ({
+                ...current,
+                value: { ...current.value, notes: next },
+              }));
               return;
             }
             if (!pan) return;
@@ -1321,10 +1578,11 @@ export function AppMapWorkspace(props: {
           onPointerLeave={() => setLocalCursor(undefined)}
         >
           <div class="app-map-grid pointer-events-none absolute inset-0" aria-hidden="true" />
-          <Show when={hasCanvasContent()}>
+          <Show when={hasCanvasContent() || pendingProposals().length > 0}>
             <AppMapOverviewToolbar
               screenCount={tree().nodes.length}
               connectionCount={connections().length}
+              proposalCount={pendingProposals().length}
               targetSetOpen={targetSetOpen()}
               activeTargetSetId={activeFlow()?.targetSetId}
               runTargetLabel={activeTargetSet()?.name ?? selectedDevice()?.name ?? "Current device"}
@@ -1335,6 +1593,17 @@ export function AppMapWorkspace(props: {
                 setTargetSetOpen(false);
                 props.onOpenTargets();
               }}
+              onOpenProposals={() => setProposalReviewOpen(true)}
+            />
+          </Show>
+          <Show when={proposalReviewOpen()}>
+            <AppMapProposalReview
+              proposals={pendingProposals()}
+              busyId={proposalBusyId()}
+              error={proposalError()}
+              onApprove={(proposalId) => void decideProposal(proposalId, "approve")}
+              onReject={(proposalId) => void decideProposal(proposalId, "reject")}
+              onClose={() => setProposalReviewOpen(false)}
             />
           </Show>
           <Show when={historyOpen()}>
@@ -1662,6 +1931,10 @@ export function AppMapWorkspace(props: {
                       setSelectedConnectionId(connection.id);
                       setSelectedNodeId(null);
                     }}
+                    onRemove={() => {
+                      const node = selectedNode();
+                      if (node) removeScreen(node);
+                    }}
                     onClose={() => setSelectedNodeId(null)}
                   />
                 }
@@ -1669,9 +1942,6 @@ export function AppMapWorkspace(props: {
                 {(connection) => (
                   <ConnectionInspector
                     connection={connection()}
-                    targetSetName={
-                      activeTargetSet()?.name ?? selectedDevice()?.name ?? "current device"
-                    }
                     sourceTitle={titleFor(
                       tree().nodes.find((node) => node.id === connection().fromScreenId)!,
                     )}
@@ -1746,7 +2016,7 @@ export function AppMapWorkspace(props: {
           </Show>
         </section>
       </Show>
-      <Show when={reviewingTake() && recorder.take()}>
+      <Show when={journeyLoadState().status === "ready" && reviewingTake() && recorder.take()}>
         {(take) => (
           <>
             <TakeReviewSidebar
@@ -1767,6 +2037,12 @@ export function AppMapWorkspace(props: {
               onDiscard={() => void discardTake()}
               onReplay={() => void replayTake()}
               onRewrite={() => void rewriteTake()}
+              onReorderActions={(actionIds) => recorder.reorderTakeActions(actionIds)}
+              onReplaceAction={(actionId, interaction) =>
+                recorder.replaceTakeAction(actionId, interaction)
+              }
+              onRemoveAction={(actionId) => recorder.removeTakeAction(actionId)}
+              onReviewInvalidated={() => setTakeReplay({ takeId: take().id, state: "idle" })}
               replayState={takeReplay().takeId === take().id ? takeReplay().state : "idle"}
               {...(takeReplay().takeId === take().id && takeReplay().error
                 ? { replayError: takeReplay().error }
@@ -1797,7 +2073,7 @@ export function AppMapWorkspace(props: {
           </>
         )}
       </Show>
-      <Show when={captureOpen() && !reviewingTake()}>
+      <Show when={journeyLoadState().status === "ready" && captureOpen() && !reviewingTake()}>
         <AppMapDeviceCompanion
           closing={captureClosing()}
           deviceSelected={Boolean(selectedDevice())}
@@ -1838,7 +2114,56 @@ export function AppMapWorkspace(props: {
           onStop={() => void recorder.stopRecording()}
         />
       </Show>
+      <Show when={journeyLoadState().status !== "ready"}>
+        <AppMapLoadFeedback
+          status={journeyLoadState().status === "error" ? "error" : "loading"}
+          onRetry={() => setJourneyLoadAttempt((attempt) => attempt + 1)}
+        />
+      </Show>
     </section>
+  );
+}
+
+function AppMapLoadFeedback(props: { status: "loading" | "error"; onRetry: () => void }) {
+  return (
+    <div class="app-map-canvas relative grid h-full min-h-0 w-full min-w-0 place-items-center overflow-hidden px-6 text-center">
+      <div
+        class="app-map-grid pointer-events-none absolute inset-0 opacity-60"
+        aria-hidden="true"
+      />
+      <section
+        class="relative z-[1] grid max-w-[380px] justify-items-center gap-3"
+        role={props.status === "error" ? "alert" : "status"}
+        aria-live={props.status === "error" ? "assertive" : "polite"}
+      >
+        <span class="grid size-11 place-items-center rounded-[13px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
+          <Icon
+            name={props.status === "error" ? "alert" : "refresh"}
+            size={17}
+            class={props.status === "loading" ? "ui-refresh-spin motion-reduce:opacity-70" : ""}
+          />
+        </span>
+        <div class="grid gap-1.5">
+          <h2 class="m-0 text-[18px]/[1.25] font-semibold tracking-[-0.025em] text-[var(--text-strong)] text-balance">
+            {props.status === "error" ? "This map couldn’t be opened" : "Opening map…"}
+          </h2>
+          <p class="m-0 text-[12.5px]/[1.55] text-[var(--text-weak)]">
+            {props.status === "error"
+              ? "Your saved map has not been replaced. Check Relay’s connection and try again."
+              : "Loading its screens, connections, and evidence."}
+          </p>
+        </div>
+        <Show when={props.status === "error"}>
+          <button
+            type="button"
+            class="canvas-tool-control inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-[var(--product-accent-soft)] px-4 text-[12px] font-semibold text-[var(--text-interactive-base)] outline-none transition-[background-color,transform] duration-150 hover:bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_18%,transparent)] active:scale-[0.96] focus-visible:ring-1 focus-visible:ring-white/70"
+            onClick={props.onRetry}
+          >
+            <Icon name="refresh" size={13} /> Try again
+          </button>
+        </Show>
+      </section>
+    </div>
   );
 }
 

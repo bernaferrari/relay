@@ -26,6 +26,8 @@ Run the package from this workspace and pass an explicit Relay scope and agent i
         "mobile-app",
         "--actor",
         "agent:mcp:qa",
+        "--profile",
+        "author",
         "--credential-source",
         "env:RELAY_AUTH_TOKEN"
       ],
@@ -44,6 +46,27 @@ in client configuration, arguments, logs, or prompts. For an unauthenticated loc
 variables are also supported, but organization, project, and actor identity should always be chosen
 deliberately.
 
+## Tool profiles
+
+Relay advertises a role-sized tool set instead of sending every operation to every agent. Select one
+with `--profile <name>` or `RELAY_MCP_PROFILE`; the default is the compact `author` profile.
+
+| Profile   | Intended use                                                               |
+| --------- | -------------------------------------------------------------------------- |
+| `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection |
+| `author`  | Default App Map editing, device recording, and proposal creation           |
+| `execute` | Device control, reusable actions, jobs, matrices, and individual steps     |
+| `review`  | Proposal/take repair, replay, approval, and run-baseline review            |
+| `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention    |
+| `full`    | Every canonical Relay operation; intended for trusted orchestration only   |
+
+Tools advertise and take operation fields directly. For example, capture a screenshot with
+`{"serial":"emulator-5554"}`. Existing clients that send the legacy
+`{"input":{"serial":"emulator-5554"}}` envelope remain compatible, while discovery still publishes
+the precise direct shape. Known operation contracts expose specific required fields, types, and
+enums; intentionally generic Relay operations remain extensible objects and are still validated by
+the canonical protocol parser before invocation.
+
 ## Surface and safety model
 
 - Resources expose bounded, sanitized project, Journey, Collection, Run, Authoring Session, Target,
@@ -59,6 +82,9 @@ deliberately.
   user approval; confirmation-protected tools additionally require the literal `confirm: true` field.
 - MCP request cancellation is forwarded to the Relay client. A cancelled request does not grant
   permission to retry, take over a lease, or overwrite a newer revision.
+- Failed operations return a sanitized structured error with a stable code, HTTP status when known,
+  a bounded recovery action, and the current revision when Relay supplies one. Arbitrary response
+  bodies, credentials, and host paths are never forwarded.
 
 There is intentionally no MCP HTTP transport in this package. Run the Relay HTTP server separately;
 the MCP process is a scoped stdio adapter, not the source of truth.

@@ -114,6 +114,12 @@
     min-width: 44px;
     height: 44px;
   }
+
+  .app-map-icon-button,
+  .app-map-canvas [role="toolbar"][aria-label="App Map tools"] > button {
+    min-width: 44px;
+    height: 44px;
+  }
 }
 
 @keyframes ui-device-companion-in {
@@ -168,6 +174,30 @@
   background-image: radial-gradient(circle, var(--map-grid-dot) 1px, transparent 1.15px);
   background-position: 0 0;
   background-size: 20px 20px;
+}
+
+/* Empty canvases expose only commands that can act on the current state. The
+ * persisted empty map still owns an older static toolbar, so remove its inert
+ * editing modes until a screen exists and the real map toolbar takes over. */
+.app-map-canvas
+  [role="toolbar"][aria-label="App Map tools"]
+  > button:is(
+    [aria-label="Select tool"],
+    [aria-label="Hand tool"],
+    [aria-label="Create connection"],
+    [aria-label="Create Routine"]
+  ),
+.app-map-canvas
+  [role="toolbar"][aria-label="App Map tools"]
+  > button[aria-label="Hand tool"]
+  + span {
+  display: none;
+}
+
+.app-map-canvas [role="toolbar"][aria-label="App Map tools"] > button:focus-visible,
+.app-map-icon-button:focus-visible {
+  outline: 1px solid var(--text-strong);
+  outline-offset: 2px;
 }
 
 .app-map-icon-button {
@@ -238,8 +268,15 @@
   }
 
   .app-map-icon-button,
-  .app-map-record-button {
+  .app-map-record-button,
+  .canvas-tool-control,
+  .app-map-canvas [role="toolbar"][aria-label="App Map tools"] > button {
     transition: none;
+  }
+
+  .canvas-tool-control:active,
+  .app-map-canvas [role="toolbar"][aria-label="App Map tools"] > button:active {
+    transform: none;
   }
 }
 

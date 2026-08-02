@@ -60,10 +60,39 @@ test("compatibility matrices freeze an explained, stable target expansion", () =
   );
   assert.match(expansion.excluded[0]!.reason, /platform is ios/);
   assert.equal(expansion.profiles[0]!.viewport?.width, 1280);
+  assert.equal(expansion.profiles[0]!.capabilities.includes("stream"), false);
   assert.equal(
     expansion.profiles.find((profile) => profile.targetId === "android-1")?.osVersion,
     "15",
   );
+});
+
+test("does not select managed browsers for Android-only live streaming", () => {
+  const profiles = buildTargetProfiles({
+    devices: [],
+    targets: [
+      {
+        id: "web",
+        name: "Chat web",
+        kind: "browser",
+        createdAt: 1,
+        updatedAt: 1,
+        browser: { startUrl: "https://example.com" },
+      },
+    ],
+    observedAt: 10,
+  });
+  const expansion = resolveCompatibilityMatrix(
+    {
+      ...matrix,
+      id: "streaming-targets",
+      selectors: [{ requiredCapabilities: ["stream"] }],
+    },
+    profiles,
+    20,
+  );
+  assert.deepEqual(expansion.profiles, []);
+  assert.match(expansion.excluded[0]!.reason, /missing stream/);
 });
 
 test("OS selectors match observed versions and explain unknown devices", () => {

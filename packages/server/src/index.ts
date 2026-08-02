@@ -14,6 +14,7 @@ import {
   isLoopbackHost,
   listAuditEvents,
   recordAudit,
+  resolveCommandActor,
   resolveRequestContext,
   type RequestContext,
 } from "./security.js";
@@ -30,6 +31,7 @@ import {
   formatMatrixYaml,
   parseMatrixYaml,
   getActiveJob,
+  getActiveJobs,
   getJob,
   interact,
   IdempotencyConflict,
@@ -39,6 +41,7 @@ import {
   bootDevice,
   requestAndroidAuthorization,
   listJobs,
+  listTargetWorkers,
   listRecipes,
   readRecipe,
   readRecipeEvidenceImage,
@@ -160,6 +163,7 @@ import {
 } from "./live-video.js";
 import {
   readIosVideoTake,
+  pruneIosVideoTakes,
   reconcileIosVideoTake,
   startIosVideoTake,
   stopIosVideoTake,
@@ -171,6 +175,11 @@ import {
 } from "./operations.js";
 import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
 import { handleActivityRoute, recordOperationActivity } from "./activity-routes.js";
+import { handleAppMapRoute } from "./app-map-routes.js";
+import {
+  handleTargetRuntimeRoute,
+  type TargetRuntimeRouteRuntime,
+} from "./target-runtime-routes.js";
 import {
   createCollaborationRouteService,
   handleCollaborationRoute,
@@ -191,6 +200,7 @@ import type {
   RevisionWrite,
   TestVariable,
   SensitiveEvidenceChannel,
+  ActorKind,
 } from "@relay/protocol";
 
 export type StartServerOptions = {
@@ -198,6 +208,9 @@ export type StartServerOptions = {
   host?: string;
   token?: string;
   authoringRuntime?: AuthoringRuntime;
+  /** Test seam for the host-owned Android stream transport. */
+  liveVideoStream?: (response: http.ServerResponse, serial: string) => Promise<void>;
+  targetRuntime?: Partial<TargetRuntimeRouteRuntime>;
   collaboration?: {
     enabled: boolean;
     store?: DurableCollaborativeJourneyStore;
@@ -262,6 +275,69 @@ const serverStartedAt = Date.now();
 let lastKnownDeviceCount: number | null = null;
 const PRODUCT_VERSION = "0.1.0";
 
+function actorKindForLeaseOwner(ownerId: string, scope: RequestContext): ActorKind {
+  if (!scope.localTrusted) return "agent";
+  if (ownerId.startsWith("agent:")) return "agent";
+  if (ownerId.startsWith("system:")) return "system";
+  return "human";
+}
+
+async function liveStreamOperationContext(
+  request: http.IncomingMessage,
+  scope: RequestContext,
+  targetId: string,
+  leaseId: string | undefined,
+) {
+  if (!leaseId) throw new HttpError(403, "A target lease is required for live streaming");
+  const lease = (await listDeviceLeases(scope.projectId)).find(
+    (candidate) =>
+      candidate.id === leaseId &&
+      candidate.deviceSerial === targetId &&
+      candidate.status === "leased" &&
+      candidate.expiresAt > now(),
+  );
+  const requestedActorHeader = request.headers["x-relay-actor-id"];
+  let requestedActor: { actorId: string; actorKind: ActorKind } | undefined;
+  if (requestedActorHeader !== undefined) {
+    try {
+      requestedActor = resolveCommandActor(request.headers, scope);
+    } catch (error) {
+      throw new HttpError(403, error instanceof Error ? error.message : String(error));
+    }
+  }
+  const attributable =
+    lease &&
+    (!requestedActor || requestedActor.actorId === lease.ownerId) &&
+    (scope.localTrusted || lease.ownerId === scope.subject);
+  if (!attributable) {
+    recordAudit(scope, {
+      action: "target.stream",
+      resource: "lease",
+      target: targetId,
+      result: "deny",
+    });
+    throw new HttpError(403, "The live-stream target lease is unavailable");
+  }
+  recordAudit(scope, {
+    action: "target.stream",
+    resource: "lease",
+    target: targetId,
+    result: "allow",
+  });
+  const requestId = crypto.randomUUID();
+  return {
+    schemaVersion: 1 as const,
+    actorId: lease.ownerId,
+    actorKind: requestedActor?.actorKind ?? actorKindForLeaseOwner(lease.ownerId, scope),
+    organizationId: scope.organizationId,
+    projectId: scope.projectId,
+    operationId: "target.stream.open",
+    requestId,
+    idempotencyKey: requestId,
+    issuedAt: now(),
+  };
+}
+
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -270,6 +346,8 @@ async function handleRequest(
   sse = createSseHub(CORS_HEADERS),
   authoringRuntime?: AuthoringRuntime,
   collaboration?: CollaborationRouteService,
+  liveVideoStream = streamAndroidVideo,
+  targetRuntime?: Partial<TargetRuntimeRouteRuntime>,
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -317,6 +395,18 @@ async function handleRequest(
     const operation = bindOperationRequest(req, res, method, pathname, url, scope);
     if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
     if (operation) await recordOperationActivity({ operation, pathname, scope });
+    if (await handleAppMapRoute({ method, pathname, request: req, response: res, scope })) return;
+    if (
+      await handleTargetRuntimeRoute({
+        method,
+        pathname,
+        request: req,
+        response: res,
+        scope,
+        runtime: targetRuntime,
+      })
+    )
+      return;
     if (
       await handleCollaborationRoute({
         method,
@@ -463,6 +553,11 @@ async function handleRequest(
     }
     if (method === "GET" && pathname === "/health") {
       const currentActive = getActiveJob();
+      const visibleActiveJobs = getActiveJobs().filter(
+        (job) =>
+          scope.localTrusted ||
+          (job.projectId === scope.projectId && job.ownerId === scope.subject),
+      );
       const active =
         currentActive &&
         (scope.localTrusted ||
@@ -491,6 +586,13 @@ async function handleRequest(
               startedAt: active.startedAt ?? null,
             }
           : null,
+        activeJobs: visibleActiveJobs.map((job) => ({
+          id: job.id,
+          status: job.status,
+          targetId: job.browserTargetId ?? job.serial,
+          workerId: job.workerId,
+        })),
+        targetWorkers: listTargetWorkers(),
         jobs: visibleJobCount,
         // Health is a liveness probe and must answer within Electron's short
         // startup timeout. Device discovery can invoke adb/simctl and belongs
@@ -1603,8 +1705,12 @@ async function handleRequest(
     if (method === "GET" && pathname === "/device/stream") {
       const serial = url.searchParams.get("serial")?.trim();
       if (!serial) throw new HttpError(400, "serial is required");
-      await assertTargetLease(scope, serial, url.searchParams.get("lease") ?? undefined);
-      await streamAndroidVideo(res, serial);
+      const leaseId = url.searchParams.get("lease") ?? undefined;
+      const streamContext = await liveStreamOperationContext(req, scope, serial, leaseId);
+      await runWithOperationContext(streamContext, async () => {
+        await assertTargetLease(scope, serial, leaseId);
+        await liveVideoStream(res, serial);
+      });
       return;
     }
 
@@ -1693,7 +1799,7 @@ async function handleRequest(
       ) {
         throw new HttpError(400, "x and y must be finite normalized coordinates");
       }
-      if (getActiveJob()?.status === "running") {
+      if (getActiveJob(serial)?.status === "running") {
         throw new HttpError(
           409,
           "A job is running — pause or cancel it before interacting manually",
@@ -1709,7 +1815,7 @@ async function handleRequest(
       const body = (await parseJsonBody(req)) as Record<string, unknown>;
       const serial = typeof body.serial === "string" ? body.serial.trim() : "";
       if (!serial) throw new HttpError(400, "serial is required");
-      if (getActiveJob()?.status === "running") {
+      if (getActiveJob(serial)?.status === "running") {
         throw new HttpError(
           409,
           "A job is running — pause or cancel it before interacting manually",
@@ -1739,7 +1845,7 @@ async function handleRequest(
       if (!values.every((value) => typeof value === "number" && Number.isFinite(value))) {
         throw new HttpError(400, "x, y, scrollX, and scrollY must be finite numbers");
       }
-      if (getActiveJob()?.status === "running") {
+      if (getActiveJob(serial)?.status === "running") {
         throw new HttpError(
           409,
           "A job is running — pause or cancel it before interacting manually",
@@ -1762,13 +1868,13 @@ async function handleRequest(
       if (!body || typeof body !== "object" || !("kind" in body)) {
         throw new HttpError(400, "body.kind required (label|point|ref|find|text-match|swipe|type)");
       }
-      if (getActiveJob()?.status === "running") {
+      const { serial, ...input } = body;
+      if (getActiveJob(serial)?.status === "running") {
         throw new HttpError(
           409,
           "A job is running — pause or cancel it before interacting manually",
         );
       }
-      const { serial, ...input } = body;
       await assertTargetControl(scope, serial);
       await interact(input as InteractInput, { serial });
       json(res, 200, { ok: true });
@@ -1791,7 +1897,7 @@ async function handleRequest(
       if (step.kind === "pause") {
         throw new HttpError(400, "pause steps cannot run standalone");
       }
-      if (getActiveJob()?.status === "running") {
+      if (getActiveJob(body.serial)?.status === "running") {
         throw new HttpError(
           409,
           "A job is running — pause or cancel it before interacting manually",
@@ -1870,7 +1976,7 @@ async function handleRequest(
         operations: serverOperationManifest(),
         resources: [
           { method: "GET", path: "/events", mediaType: "text/event-stream" },
-          { method: "GET", path: "/device/stream", mediaType: "multipart/x-mixed-replace" },
+          { method: "GET", path: "/device/stream", mediaType: "application/x-relay-h264" },
           { method: "GET", path: "/runs/:id/frames/:file", mediaType: "image/*" },
           { method: "GET", path: "/runs/:id/video/:file", mediaType: "video/*" },
           { method: "GET", path: "/authoring-evidence/:sha256", mediaType: "image/*|video/*" },
@@ -1903,7 +2009,7 @@ async function handleRequest(
       return;
     }
     if (err instanceof HttpError) {
-      json(res, err.status, { error: err.message });
+      json(res, err.status, err.body ?? { error: err.message });
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -1952,6 +2058,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
         }),
     );
   }
+  await pruneIosVideoTakes();
   assertSafeBinding(host, token);
   if (!isLoopbackHost(host) && !redaction.enabled) {
     throw new Error("Refusing a non-local binding while evidence redaction is disabled");
@@ -1978,6 +2085,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Starte
       sse,
       opts.authoringRuntime,
       collaboration,
+      opts.liveVideoStream,
+      opts.targetRuntime,
     );
   });
   const scheduler = startScheduler();

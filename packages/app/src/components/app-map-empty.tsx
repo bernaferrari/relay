@@ -148,7 +148,7 @@ export function EmptyAppMap(props: {
           class={cn(emptyMapToolButton, tool() === "hand" && emptyMapToolActive)}
           aria-label="Hand tool"
           aria-pressed={tool() === "hand"}
-          data-tip="Hand · H"
+          data-tip="Pan canvas · H"
           onClick={() => setTool("hand")}
         >
           <Icon name="move" size={14} />
@@ -158,7 +158,7 @@ export function EmptyAppMap(props: {
           type="button"
           class={emptyMapToolButton}
           aria-label="Capture screen"
-          data-tip="Capture screen · S"
+          data-tip="Capture screen"
           onClick={props.onCaptureFirstScreen}
         >
           <Icon name="smartphone" size={14} />
@@ -176,7 +176,7 @@ export function EmptyAppMap(props: {
           type="button"
           class={emptyMapToolButton}
           aria-label="Add note"
-          data-tip="Note · N"
+          data-tip="Add note"
           onClick={props.onAddFirstNote}
         >
           <Icon name="edit" size={14} />
@@ -185,7 +185,7 @@ export function EmptyAppMap(props: {
           type="button"
           class={emptyMapToolButton}
           aria-label="Create Routine"
-          data-tip="Add a connection before creating a Routine"
+          data-tip="Select a connection to create a Routine"
           disabled
         >
           <Icon name="sparkle" size={14} />
@@ -207,5 +207,5 @@ export function EmptyAppMap(props: {
 }
 
 const emptyMapToolButton =
-  "grid size-10 place-items-center rounded-[9px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-30";
+  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.96] focus-visible:ring-1 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-30";
 const emptyMapToolActive = "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]";

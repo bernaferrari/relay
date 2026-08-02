@@ -9,9 +9,15 @@ import {
   previewRoutineImpact,
   rejectAppMapProposal,
   removeAppMapConnection,
+  removeAppMapFlow,
+  removeAppMapRoutine,
   removeAppMapScreen,
+  saveAppMapFlow,
+  saveAppMapRoutine,
   serializeAppMap,
+  submitAppMapProposal,
   updateAppMapConnection,
+  updateAppMap,
   updateAppMapScreen,
   validateAppMap,
   type ActionSpec,
@@ -572,13 +578,17 @@ test("previews direct and transitive routine impact in deterministic order", () 
   });
 });
 
-test("approves a proposal atomically with one revision and one activity event", () => {
+test("submits and approves a proposal with attributable revisioned events", () => {
   const input = mapFixture();
-  input.proposals["proposal-1"] = pendingProposal(input.revision);
-  const next = approveAppMapProposal(
+  const submitted = submitAppMapProposal(
     input,
+    pendingProposal(input.revision),
+    context(input, "submit-for-approval"),
+  );
+  const next = approveAppMapProposal(
+    submitted,
     "proposal-1",
-    context(input, "approve-proposal"),
+    context(submitted, "approve-proposal", submitted.updatedAt + 1),
     "Looks correct",
   );
 
@@ -587,11 +597,11 @@ test("approves a proposal atomically with one revision and one activity event", 
   assert.equal(next.proposals["proposal-1"]?.status, "approved");
   assert.deepEqual(next.proposals["proposal-1"]?.decision, {
     actorId: "person-1",
-    at: at + 1,
+    at: at + 2,
     reason: "Looks correct",
   });
-  assert.equal(next.revision, input.revision + 1);
-  assert.equal(Object.keys(next.activity).length, 1);
+  assert.equal(next.revision, input.revision + 2);
+  assert.equal(Object.keys(next.activity).length, 2);
   expectError("proposal-state", () =>
     approveAppMapProposal(next, "proposal-1", context(next, "approve-again")),
   );
@@ -599,14 +609,14 @@ test("approves a proposal atomically with one revision and one activity event", 
 
 test("proposal approval rejects stale or invalid changes without mutating the source map", () => {
   const stale = mapFixture();
-  stale.proposals["proposal-1"] = pendingProposal(stale.revision - 1);
+  stale.proposals["proposal-1"] = pendingProposal(stale.revision - 2);
   expectError("revision-conflict", () =>
     approveAppMapProposal(stale, "proposal-1", context(stale, "approve-stale")),
   );
 
   const invalid = mapFixture();
   invalid.proposals["proposal-1"] = {
-    ...pendingProposal(invalid.revision),
+    ...pendingProposal(invalid.revision - 1),
     changes: [{ kind: "screen.add", input: { screen: screen("home") } }],
   };
   const before = structuredClone(invalid);
@@ -630,6 +640,77 @@ test("rejects a proposal without applying its changes", () => {
   assert.equal(next.proposals["proposal-1"]?.status, "rejected");
   assert.equal(next.proposals["proposal-1"]?.decision?.reason, "Not now");
   assert.equal(next.activity["reject-proposal"]?.eventType, "proposal.rejected");
+});
+
+test("saves and removes reusable Flows and Routines through revisioned operations", () => {
+  const input = mapFixture();
+  const flow = {
+    ...entity("alternate"),
+    name: "Alternate",
+    startScreenId: "start",
+    connectionIds: ["open-home"],
+  };
+  const withFlow = saveAppMapFlow(input, flow, context(input, "save-flow"));
+  assert.equal(withFlow.flows.alternate?.name, "Alternate");
+  assert.equal(withFlow.activity["save-flow"]?.eventType, "flow.saved");
+  const withoutFlow = removeAppMapFlow(
+    withFlow,
+    "alternate",
+    context(withFlow, "remove-flow", withFlow.updatedAt + 1),
+  );
+  assert.equal(withoutFlow.flows.alternate, undefined);
+
+  const helper = routine("dismiss-keyboard", [{ id: "back", kind: "back" }]);
+  const withRoutine = saveAppMapRoutine(
+    withoutFlow,
+    helper,
+    context(withoutFlow, "save-routine", withoutFlow.updatedAt + 1),
+  );
+  assert.equal(withRoutine.routines[helper.id]?.actions[0]?.kind, "back");
+  const withoutRoutine = removeAppMapRoutine(
+    withRoutine,
+    helper.id,
+    context(withRoutine, "remove-routine", withRoutine.updatedAt + 1),
+  );
+  assert.equal(withoutRoutine.routines[helper.id], undefined);
+});
+
+test("renames an App Map and stores finite collaborative screen positions", () => {
+  const input = mapFixture();
+  const renamed = updateAppMap(input, { name: "Storefront" }, context(input, "rename-map"));
+  const positioned = updateAppMapScreen(
+    renamed,
+    "start",
+    { patch: { position: { x: 128, y: -64 } } },
+    context(renamed, "move-screen", renamed.updatedAt + 1),
+  );
+
+  assert.equal(renamed.name, "Storefront");
+  assert.equal(renamed.activity["rename-map"]?.eventType, "app-map.updated");
+  assert.deepEqual(positioned.screens.start?.position, { x: 128, y: -64 });
+  expectError("invalid-map", () =>
+    updateAppMapScreen(
+      positioned,
+      "start",
+      { patch: { position: { x: Number.NaN, y: 0 } } },
+      context(positioned, "bad-position", positioned.updatedAt + 1),
+    ),
+  );
+});
+
+test("submits agent work as an attributable pending proposal", () => {
+  const input = mapFixture();
+  const proposal = pendingProposal(input.revision);
+  const next = submitAppMapProposal(input, proposal, {
+    ...context(input, "submit-proposal"),
+    actorId: "agent:explorer",
+    actorKind: "agent",
+  });
+
+  assert.equal(next.proposals[proposal.id]?.status, "pending");
+  assert.equal(next.screens.settings, undefined);
+  assert.equal(next.activity["submit-proposal"]?.actorId, "agent:explorer");
+  assert.equal(next.activity["submit-proposal"]?.eventType, "proposal.submitted");
 });
 
 test("serializes a deterministic YAML-ready plain object without sharing references", () => {

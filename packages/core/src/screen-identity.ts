@@ -1,39 +1,19 @@
 import { createHash } from "node:crypto";
+import type {
+  NormalizedSemanticNode,
+  ScreenIdentityObservation,
+  SemanticField,
+  VolatileSemanticKind,
+} from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 
-export type VolatileSemanticKind =
-  | "clock"
-  | "counter"
-  | "date"
-  | "percentage"
-  | "relative-time"
-  | "uuid";
-
-export type SemanticField = "identifier" | "label" | "value";
-
-export type VolatileSemanticSignal = {
-  kind: VolatileSemanticKind;
-  field: SemanticField;
-  node: number;
-};
-
-export type NormalizedSemanticNode = {
-  role: string;
-  label?: string;
-  value?: string;
-  identifier?: string;
-  enabled?: boolean;
-  selected?: boolean;
-  focused?: boolean;
-  hittable?: boolean;
-  depth?: number;
-};
-
-export type ScreenIdentityObservation = {
-  fingerprint: string;
-  nodes: NormalizedSemanticNode[];
-  volatileSignals: VolatileSemanticSignal[];
-};
+export type {
+  NormalizedSemanticNode,
+  ScreenIdentityObservation,
+  SemanticField,
+  VolatileSemanticKind,
+  VolatileSemanticSignal,
+} from "@relay/protocol";
 
 export type ScreenIdentitySignalKind =
   | "exact-fingerprint"

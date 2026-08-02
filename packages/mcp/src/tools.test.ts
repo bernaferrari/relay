@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertRelayMcpToolParity,
+  defaultRelayMcpProfile,
   relayMcpExclusions,
+  relayMcpProfiles,
   relayMcpTools,
+  relayMcpToolsForProfile,
   relayToolName,
 } from "./tools.js";
 
@@ -83,17 +86,67 @@ test("marks delete and dangerous operations as destructive and confirmation-requ
 });
 
 test("maps screenshot capture to its stable Relay tool descriptor", () => {
-  assert.deepEqual(tool("target.screenshot.capture"), {
-    name: "relay_target_screenshot_capture",
-    operationId: "target.screenshot.capture",
-    title: "Capture target screenshot",
-    description: "Capture target screenshot. Input: target operation.",
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
+  const screenshot = tool("target.screenshot.capture");
+  assert.deepEqual(
+    {
+      name: screenshot.name,
+      operationId: screenshot.operationId,
+      title: screenshot.title,
+      description: screenshot.description,
+      annotations: screenshot.annotations,
+      requiresConfirmation: screenshot.requiresConfirmation,
     },
-    requiresConfirmation: false,
+    {
+      name: "relay_target_screenshot_capture",
+      operationId: "target.screenshot.capture",
+      title: "Capture target screenshot",
+      description:
+        "Capture target screenshot. Pass operation fields directly. Target capabilities: screenshot. Lease: shared.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      requiresConfirmation: false,
+    },
+  );
+  assert.deepEqual(screenshot.inputSchema.parse({ serial: "device-1" }), {
+    serial: "device-1",
   });
+  assert.deepEqual(screenshot.inputSchema.parse({ input: { serial: "device-1" } }), {
+    serial: "device-1",
+  });
+});
+
+test("defines deterministic role profiles with a compact authoring default", () => {
+  assert.deepEqual(relayMcpProfiles, ["observe", "author", "execute", "review", "admin", "full"]);
+  assert.equal(defaultRelayMcpProfile, "author");
+  assert.deepEqual(relayMcpToolsForProfile("full"), relayMcpTools);
+  assert.equal(
+    relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),
+    true,
+  );
+  assert.ok(
+    relayMcpToolsForProfile("author").some(
+      ({ operationId }) => operationId === "app-map.connection.create",
+    ),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("execute").some(({ operationId }) => operationId === "job.start"),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("review").some(
+      ({ operationId }) => operationId === "app-map.proposal.approve",
+    ),
+  );
+  assert.ok(
+    relayMcpToolsForProfile("admin").some(
+      ({ operationId }) => operationId === "workspace.privacy.update",
+    ),
+  );
+  for (const profile of relayMcpProfiles) {
+    const selected = relayMcpToolsForProfile(profile);
+    assert.equal(new Set(selected.map(({ operationId }) => operationId)).size, selected.length);
+  }
 });

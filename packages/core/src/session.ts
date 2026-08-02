@@ -12,7 +12,13 @@ import {
   type RunActionOptions,
   type RunActionResult,
 } from "./actions.js";
-import { base, createDevice, type Device, type DevicePlatform } from "./device.js";
+import {
+  base,
+  createDevice,
+  resetDeviceClient,
+  type Device,
+  type DevicePlatform,
+} from "./device.js";
 import {
   glyphsFromLogLine,
   planForAction,
@@ -31,7 +37,7 @@ import {
   requestCancel,
   requestPause,
   requestResume,
-  setExecutingJobId,
+  runWithJobControl,
   cooperativeCheckpoint,
   throwIfCancelled,
   raceCancel,
@@ -57,6 +63,11 @@ import {
 import { getBrowserDevice } from "./browser-target.js";
 import { preflightTarget, readTarget } from "./targets.js";
 import { runWithTargetContext, type TargetContext } from "./target-context.js";
+import {
+  TargetWorkerScheduler,
+  defaultTargetWorkerAssignment,
+  type TargetWorkerStatus,
+} from "./target-worker.js";
 import {
   currentOperationContext,
   requireOperationContext,
@@ -127,6 +138,9 @@ export type TestJob = {
   browserTargetId?: string;
   /** Frozen facts used to select this run from a compatibility matrix. */
   targetProfile?: TargetProfile;
+  /** Scheduler provenance. Optional only when reading older persisted runs. */
+  workerId?: string;
+  workerCapacity?: number;
   status: JobStatus;
   queuedAt: number;
   startedAt?: number;
@@ -190,9 +204,8 @@ export type TestJob = {
 const jobs = new Map<string, TestJob>();
 const jobOrder: string[] = [];
 const MAX_JOBS = 100;
-let activeJobId: string | null = null;
-const queue: string[] = [];
-let draining = false;
+const activeJobIds = new Set<string>();
+const scheduler = new TargetWorkerScheduler();
 
 export function listJobs(limit = 50): TestJob[] {
   return jobOrder
@@ -229,8 +242,18 @@ export function getJob(id: string): TestJob | undefined {
   return jobs.get(id);
 }
 
-export function getActiveJob(): TestJob | null {
-  return activeJobId ? (jobs.get(activeJobId) ?? null) : null;
+export function getActiveJobs(): TestJob[] {
+  return [...activeJobIds].map((id) => jobs.get(id)).filter((job): job is TestJob => Boolean(job));
+}
+
+export function getActiveJob(targetId?: string): TestJob | null {
+  const active = getActiveJobs();
+  if (!targetId) return active.at(-1) ?? null;
+  return active.find((job) => (job.browserTargetId ?? job.serial) === targetId) ?? null;
+}
+
+export function listTargetWorkers(): TargetWorkerStatus[] {
+  return scheduler.statuses();
 }
 
 function remember(job: TestJob): void {
@@ -274,6 +297,8 @@ export type EnqueueJobInput = {
   projectId?: string;
   ownerId?: string;
   evidencePolicy?: EvidenceCollectionPolicy;
+  workerId?: string;
+  workerCapacity?: number;
 };
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
@@ -302,6 +327,12 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
   const targetId = targetContext.kind === "browser" ? targetContext.targetId : targetContext.serial;
   if (!targetId) throw new Error("Every Relay job requires an explicit target");
   const operationContext = currentOperationContext() ?? parent?.operationContext;
+  const assignment = defaultTargetWorkerAssignment({
+    targetId,
+    platform: targetContext.platform,
+    workerId: input.workerId ?? parent?.workerId,
+    workerCapacity: input.workerCapacity ?? parent?.workerCapacity,
+  });
   const baseJob = {
     id,
     projectId: input.projectId ?? parent?.projectId,
@@ -316,6 +347,8 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
     targetKind,
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     targetProfile: input.targetProfile ?? parent?.targetProfile,
+    workerId: assignment.workerId,
+    workerCapacity: assignment.capacity,
     status: "queued" as const,
     queuedAt: now(),
     logs: [] as string[],
@@ -390,8 +423,21 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
     action: job.action,
     serial: job.serial,
   });
-  queue.push(job.id);
-  void drainQueue();
+  scheduler.enqueue({
+    id: job.id,
+    workerId: job.workerId!,
+    targetId: job.browserTargetId ?? job.serial!,
+    capacity: job.workerCapacity!,
+    run: async () => {
+      if (job.status === "cancelled") return;
+      const execute = () =>
+        runWithJobControl(job.id, () =>
+          runWithTargetContext(job.targetContext, () => executeJob(job.id)),
+        );
+      if (job.operationContext) await runWithOperationContext(job.operationContext, execute);
+      else await execute();
+    },
+  });
   return job;
 }
 
@@ -413,6 +459,11 @@ export function retryJob(id: string): TestJob {
     batchId: parent.batchId,
     caseIndex: parent.caseIndex,
     caseCount: parent.caseCount,
+    targetKind: parent.targetKind,
+    browserTargetId: parent.browserTargetId,
+    targetProfile: parent.targetProfile,
+    workerId: parent.workerId,
+    workerCapacity: parent.workerCapacity,
   });
 }
 
@@ -480,24 +531,6 @@ function observeStepActions(step: TraceStep, glyphs: Glyph[]): void {
   step.actions = [...(step.actions ?? []), ...glyphs.map((kind) => ({ kind, at }))];
 }
 
-async function drainQueue(): Promise<void> {
-  if (draining) return;
-  draining = true;
-  try {
-    while (queue.length > 0) {
-      const id = queue.shift()!;
-      const job = jobs.get(id);
-      // skipped if cancelled while still queued
-      if (!job || job.status === "cancelled") continue;
-      const execute = () => runWithTargetContext(job.targetContext, () => executeJob(id));
-      if (job.operationContext) await runWithOperationContext(job.operationContext, execute);
-      else await execute();
-    }
-  } finally {
-    draining = false;
-  }
-}
-
 function finalizeCancelled(job: TestJob, primary?: TraceStep): void {
   job.finishedAt = now();
   job.status = "cancelled";
@@ -543,12 +576,12 @@ export function cancelJob(id: string): TestJob {
 
   requestCancel(id);
   if (job.status === "running" || job.status === "paused") {
-    void hardStopDeviceSession();
+    void hardStopDeviceSession(job.targetContext);
+    resetDeviceClient(job.targetContext);
   }
 
   if (job.status === "queued") {
-    const idx = queue.indexOf(id);
-    if (idx >= 0) queue.splice(idx, 1);
+    scheduler.remove(id);
     job.startedAt = job.startedAt ?? now();
     finalizeCancelled(job);
     void persistRun(job).catch(() => undefined);
@@ -610,8 +643,8 @@ export function resumeJob(id: string): TestJob {
 }
 
 /** Cancel the active job if any. */
-export function cancelActiveJob(): TestJob | null {
-  const active = getActiveJob();
+export function cancelActiveJob(targetId?: string): TestJob | null {
+  const active = getActiveJob(targetId);
   if (!active) return null;
   return cancelJob(active.id);
 }
@@ -627,6 +660,7 @@ async function runLegacyAction(
     throw new Error(`not a legacy action: ${job.action}`);
   }
   const opts: RunActionOptions = {
+    ...(job.options?.prodAccountMatch ? { prodAccountMatch: job.options.prodAccountMatch } : {}),
     onLog: (line) => {
       throwIfCancelled(job.id);
       pushLog(line);
@@ -735,8 +769,7 @@ async function executeJob(id: string): Promise<void> {
   if (job.status === "cancelled") return;
 
   ensureControl(id);
-  setExecutingJobId(id);
-  activeJobId = id;
+  activeJobIds.add(id);
   job.status = "running";
   job.startedAt = now();
   const browserTarget = job.browserTargetId ? await readTarget(job.browserTargetId) : null;
@@ -754,13 +787,6 @@ async function executeJob(id: string): Promise<void> {
     action: job.action,
     serial: job.serial,
   });
-
-  // Target identity is carried by AsyncLocalStorage through drainQueue. The
-  // account match remains a legacy action option and is restored below.
-  const savedProdMatch = process.env.PROD_ACCOUNT_MATCH;
-  if (job.options?.prodAccountMatch?.trim()) {
-    process.env.PROD_ACCOUNT_MATCH = job.options.prodAccountMatch.trim();
-  }
 
   const isRecipeJob = Boolean(job.recipeId);
 
@@ -855,7 +881,8 @@ async function executeJob(id: string): Promise<void> {
       device = await getBrowserDevice(browserTarget.id);
     } else {
       // Release stale mobile bindings so this job can bind cleanly.
-      await hardStopDeviceSession();
+      await hardStopDeviceSession(job.targetContext);
+      resetDeviceClient(job.targetContext);
       device = createDevice();
     }
     evidence = await startRunEvidence(job, device, pushLog, evidence);
@@ -867,7 +894,8 @@ async function executeJob(id: string): Promise<void> {
         throwIfCancelled(id);
       } catch (err) {
         pendingCancel = err instanceof Error ? err : new Error(String(err));
-        void hardStopDeviceSession();
+        void hardStopDeviceSession(job.targetContext);
+        resetDeviceClient(job.targetContext);
       }
     }, 50);
 
@@ -995,11 +1023,8 @@ async function executeJob(id: string): Promise<void> {
     await persistRun(job).catch(() => undefined);
   } finally {
     await finishEvidence();
-    setExecutingJobId(null);
-    activeJobId = null;
+    activeJobIds.delete(id);
     clearControl(id);
-    if (savedProdMatch === undefined) delete process.env.PROD_ACCOUNT_MATCH;
-    else process.env.PROD_ACCOUNT_MATCH = savedProdMatch;
   }
 }
 

@@ -14,6 +14,9 @@ import type {
   JourneyDeviceVariant,
   JourneyGraph,
   JourneyTake,
+  OperationId,
+  OperationInput,
+  OperationOutput,
   CompatibilityMatrix,
   Revisioned,
   ServerConnection,
@@ -24,6 +27,7 @@ import type {
   AuthoringSession,
   AuthoringInteraction,
   AuthoringCommitDestination,
+  AppMap,
 } from "@relay/protocol";
 import { usePlatform } from "./platform";
 import { toast } from "./toast";
@@ -237,6 +241,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     );
     const [actions, setActions] = createSignal<ActionInfo[]>([]);
     const [recipes, setRecipes] = createSignal<RecipeInfo[]>([]);
+    const [appMaps, setAppMaps] = createSignal<AppMap[]>([]);
+    const [appMapsLoaded, setAppMapsLoaded] = createSignal(false);
     const [recipesLoaded, setRecipesLoaded] = createSignal(false);
     const [authoringSessions, setAuthoringSessions] = createSignal<AuthoringSession[]>([]);
     const [suites, setSuites] = createSignal<TestSuite[]>([]);
@@ -691,6 +697,27 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     }
 
+    async function refreshAppMaps(): Promise<AppMap[]> {
+      if (health() === "offline") return appMaps();
+      const result = await runAction("app-map.list", {});
+      setAppMaps(result.appMaps);
+      setAppMapsLoaded(true);
+      return result.appMaps;
+    }
+
+    async function loadAppMap(appMapId: string): Promise<AppMap> {
+      return (await runAction("app-map.get", { appMapId })).appMap;
+    }
+
+    async function createAppMap(appMapId: string, name: string): Promise<AppMap> {
+      const result = await runAction("app-map.create", { appMapId, name });
+      setAppMaps((current) => [
+        result.appMap,
+        ...current.filter((candidate) => candidate.id !== result.appMap.id),
+      ]);
+      return result.appMap;
+    }
+
     function projectAuthoringSession(session: AuthoringSession): AuthoringSession {
       setAuthoringSessions((current) => [
         session,
@@ -994,9 +1021,43 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       try {
         await request(`/runs/${encodeURIComponent(id)}/visual-baseline`, {
           method: "POST",
-          body: JSON.stringify({}),
+          body: JSON.stringify({ action: "approve-new-baseline" }),
         });
         return await loadVisualComparison(id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toast(message, "error");
+        return null;
+      }
+    }
+
+    async function compareVisualRun(
+      id: string,
+    ): Promise<import("@relay/protocol").VisualComparison | null> {
+      try {
+        return (await runAction("run.visual.compare", { runId: id })).comparison;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        toast(message, "error");
+        return null;
+      }
+    }
+
+    async function reviewVisualRun(
+      id: string,
+      comparisonId: string,
+      action: import("@relay/protocol").VisualReviewAction,
+      note?: string,
+    ): Promise<import("@relay/protocol").VisualReviewDecision | null> {
+      try {
+        return (
+          await runAction("run.visual.review", {
+            runId: id,
+            comparisonId,
+            action,
+            ...(note?.trim() ? { note: note.trim() } : {}),
+          })
+        ).decision;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         toast(message, "error");
@@ -1054,6 +1115,17 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     async function loadJourney(recipeId: string): Promise<Revisioned<JourneyMetadata>> {
       if (!client) await resolveConnection();
       return client!.journey(recipeId);
+    }
+
+    async function runAction<Id extends OperationId>(
+      operationId: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (!client) await resolveConnection();
+      return client!.invoke(operationId, input, {
+        requestId: crypto.randomUUID(),
+        idempotencyKey: crypto.randomUUID(),
+      });
     }
 
     async function saveJourney(
@@ -1176,6 +1248,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshDevices(),
         refreshActions(),
         refreshRecipes(),
+        refreshAppMaps(),
         refreshSuites(),
         refreshJobs(),
         refreshRuns(),
@@ -1192,6 +1265,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       const refreshers: Record<EventRefresh, () => Promise<unknown>> = {
         devices: refreshDevices,
         journeys: refreshRecipes,
+        appMaps: refreshAppMaps,
         collections: refreshSuites,
         jobs: refreshJobs,
         runs: refreshRuns,
@@ -1595,6 +1669,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshTargets(),
           refreshActions(),
           refreshRecipes(),
+          refreshAppMaps(),
           refreshSuites(),
           refreshJobs(),
           refreshRuns(),
@@ -1787,6 +1862,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       projectVariables,
       refreshProjectVariables,
       saveProjectVariables,
+      runAction,
       loadJourney,
       saveJourney,
       generate,
@@ -1810,6 +1886,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       actions,
       recipes,
       recipesLoaded,
+      appMaps,
+      appMapsLoaded,
+      refreshAppMaps,
+      loadAppMap,
+      createAppMap,
       authoringSessions,
       suites,
       selectedSuiteId,
@@ -1895,6 +1976,8 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadRunSignals,
       loadVisualComparison,
       approveVisualBaseline,
+      compareVisualRun,
+      reviewVisualRun,
       pollHealth,
       retryConnection,
       runRecipeRemote,

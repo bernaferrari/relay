@@ -70,6 +70,7 @@ test("a replay gap requests one scoped refresh of every live projection", () => 
   assert.deepEqual(projection.refresh, [
     "devices",
     "journeys",
+    "appMaps",
     "collections",
     "jobs",
     "runs",
@@ -78,6 +79,21 @@ test("a replay gap requests one scoped refresh of every live projection", () => 
     "discoveries",
     "authoring",
   ]);
+});
+
+test("App Map resource changes refresh the canonical map projection", () => {
+  const projection = projectRelayEvent(
+    0,
+    event(1, {
+      type: "resource.updated",
+      at: 1,
+      projectId: "default",
+      resource: "app-map",
+      resourceId: "store",
+      revision: 2,
+    }),
+  );
+  assert.deepEqual(projection.refresh, ["appMaps"]);
 });
 
 test("recording activity refreshes Authoring Sessions without replacing Journey focus", () => {

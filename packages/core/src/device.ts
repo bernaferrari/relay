@@ -8,7 +8,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry } from "./retry.js";
-import { currentTargetContext, targetIdentity } from "./target-context.js";
+import {
+  currentTargetContext,
+  targetIdentity,
+  targetSessionName,
+  type TargetContext,
+} from "./target-context.js";
 import { captureNativeCrashEvidence, type CrashEvidenceResult } from "./crash-evidence.js";
 
 export type DevicePlatform = "android" | "ios";
@@ -122,24 +127,25 @@ export type SnapshotNode = {
   parentIndex?: number;
 };
 
-// Singleton client — reusing one client avoids "session already bound"
-// conflicts that arise when each operation creates a fresh client that
-// tries to re-bind the session to the device. Recipes call `open` once
-// to establish the binding; subsequent captures/interactions reuse it.
-let _device: Device | null = null;
-export function createDevice(): Device {
-  if (!_device) {
+// One client per explicit target preserves SDK session reuse without binding
+// unrelated concurrently executing targets to the same agent-device session.
+const devicesByTarget = new Map<string, Device>();
+export function createDevice(explicitContext?: TargetContext): Device {
+  const context = explicitContext ?? currentTargetContext();
+  const key = `${context.platform}:${targetIdentity(context)}`;
+  let device = devicesByTarget.get(key);
+  if (!device) {
     const native = createAgentDeviceClient({
-      session: process.env.AGENT_DEVICE_SESSION?.trim() || "relay-actions",
+      session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(context),
     });
-    _device = {
+    device = {
       ...native,
       observability: {
         ...native.observability,
         crashes: ({ action, since }) =>
           action === "start"
             ? Promise.resolve({
-                platform: selectedPlatform(),
+                platform: context.kind === "device" ? context.platform : "android",
                 since,
                 entries: [],
                 truncated: false,
@@ -147,8 +153,13 @@ export function createDevice(): Device {
             : captureNativeCrashEvidence(since),
       },
     };
+    devicesByTarget.set(key, device);
   }
-  return _device;
+  return device;
+}
+
+export function resetDeviceClient(context = currentTargetContext()): void {
+  devicesByTarget.delete(`${context.platform}:${targetIdentity(context)}`);
 }
 
 export function base() {

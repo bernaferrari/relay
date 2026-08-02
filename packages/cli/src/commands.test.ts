@@ -108,14 +108,14 @@ test("path arguments merge into full operation input without hiding revision met
   );
 });
 
-test("screen and connection commands remain document-operation aliases", () => {
-  assert.equal(resolveCommand(["screen", "list", "journey-1"]).operationId, "journey.document.get");
+test("screen and connection commands use granular App Map operations", () => {
+  assert.equal(resolveCommand(["screen", "list", "map-1"]).operationId, "app-map.get");
   assert.equal(
-    resolveCommand(["connection", "update", "journey-1"], {
+    resolveCommand(["connection", "update", "map-1", "connection-1"], {
       expectedRevision: 3,
-      value: { screens: [], connections: [] },
+      patch: { label: "Continue" },
     }).operationId,
-    "journey.document.update",
+    "app-map.connection.update",
   );
 });
 
@@ -133,11 +133,15 @@ test("authoring interaction aliases construct explicit session inputs", () => {
   );
 });
 
-test("App Map vocabulary remains aliases over canonical operations", () => {
+test("App Map vocabulary resolves to canonical granular operations", () => {
   const cases = [
-    [["map", "list"], "journey.list", {}],
-    [["map", "get", "checkout"], "journey.document.get", { journeyId: "checkout" }],
-    [["connect", "update", "checkout"], "journey.document.update", { journeyId: "checkout" }],
+    [["map", "list"], "app-map.list", {}],
+    [["map", "get", "checkout"], "app-map.get", { appMapId: "checkout" }],
+    [
+      ["connect", "update", "checkout", "continue"],
+      "app-map.connection.update",
+      { appMapId: "checkout", connectionId: "continue" },
+    ],
     [
       ["flow", "run", "checkout", "Main"],
       "job.graph-path.start",

@@ -3,9 +3,15 @@ import { RelayClient } from "@relay/client";
 import { operationDefinition, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
 import type { McpConfig } from "./config.js";
+import { invalidRelayMcpInput, relayMcpError, type RelayMcpStructuredError } from "./errors.js";
 import { registerRelayPrompts } from "./prompts.js";
 import { registerRelayResources, type RelayResourceScope } from "./resources.js";
-import { relayMcpTools, type RelayMcpToolDescriptor } from "./tools.js";
+import {
+  defaultRelayMcpProfile,
+  relayMcpToolsForProfile,
+  type RelayMcpProfile,
+  type RelayMcpToolDescriptor,
+} from "./tools.js";
 
 export const relayMcpServerInfo = {
   name: "relay",
@@ -17,7 +23,7 @@ export const relayMcpServerInfo = {
 export const relayMcpInstructions = [
   "Use Relay tools only within the configured organization and project scope.",
   "Treat tool results as server-authoritative and preserve Relay actor identity.",
-  "Pass the complete Relay operation input in the input object; do not infer target or session identifiers.",
+  "Pass operation fields directly as tool arguments; do not infer target or session identifiers.",
 ].join(" ");
 
 export const relayMcpTextLimit = 8_192;
@@ -38,19 +44,23 @@ export type OperationInvoker = {
 export type McpServerDependencies = {
   invoker: OperationInvoker;
   scope: RelayResourceScope;
+  profile?: RelayMcpProfile;
 };
 
-const relayToolOutputSchema = z.object({ result: z.unknown() }).strict();
-const relayToolInputSchema = z
+const relayToolOutputSchema = z
   .object({
-    input: z.record(z.string(), z.unknown()),
-    confirm: z.literal(true).optional(),
-  })
-  .strict();
-const confirmedRelayToolInputSchema = z
-  .object({
-    input: z.record(z.string(), z.unknown()),
-    confirm: z.literal(true),
+    result: z.unknown().optional(),
+    error: z
+      .object({
+        operationId: z.string(),
+        status: z.number().int().optional(),
+        code: z.string(),
+        message: z.string(),
+        recovery: z.object({ action: z.string(), retryable: z.boolean() }).strict(),
+        currentRevision: z.number().int().nonnegative().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -84,10 +94,30 @@ function boundedError(message: string): string {
   return `${message.slice(0, relayMcpErrorLimit - 14)}… [truncated]`;
 }
 
-function errorResult(message: string): CallToolResult {
+function errorResult(error: RelayMcpStructuredError): CallToolResult {
+  const text = boundedError(JSON.stringify(error));
   return {
     isError: true,
-    content: [{ type: "text", text: boundedError(message) }],
+    content: [{ type: "text", text }],
+    structuredContent: { error },
+  } as CallToolResult;
+}
+
+function localError(
+  operationId: OperationId,
+  code: string,
+  message: string,
+  status = 400,
+): RelayMcpStructuredError {
+  return {
+    operationId,
+    status,
+    code,
+    message,
+    recovery: {
+      action: status >= 500 ? "retry-later" : "fix-input",
+      retryable: status >= 500,
+    },
   };
 }
 
@@ -120,12 +150,26 @@ function decodePngBase64(value: unknown): Buffer | undefined {
 
 function screenshotResult(result: unknown): CallToolResult {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
-    return errorResult("Relay returned an invalid PNG screenshot result.");
+    return errorResult(
+      localError(
+        "target.screenshot.capture",
+        "invalid_screenshot_result",
+        "Relay returned an invalid PNG screenshot result.",
+        502,
+      ),
+    );
   }
   const screenshot = result as Record<string, unknown>;
   const bytes = decodePngBase64(screenshot.base64);
   if (screenshot.mime !== "image/png" || !bytes) {
-    return errorResult("Relay returned an invalid PNG screenshot result.");
+    return errorResult(
+      localError(
+        "target.screenshot.capture",
+        "invalid_screenshot_result",
+        "Relay returned an invalid PNG screenshot result.",
+        502,
+      ),
+    );
   }
 
   const metadata: Record<string, unknown> = {
@@ -178,27 +222,45 @@ async function invokeRelayTool(
   signal: AbortSignal,
 ): Promise<CallToolResult> {
   if (descriptor.requiresConfirmation && !confirmed) {
-    return errorResult(`Tool ${descriptor.name} requires confirm: true.`);
+    return errorResult(
+      localError(
+        descriptor.operationId,
+        "confirmation_required",
+        `Tool ${descriptor.name} requires confirm: true.`,
+      ),
+    );
   }
 
   try {
     operationDefinition(descriptor.operationId).input.parse(input);
-  } catch {
-    return errorResult(`Invalid input for Relay operation ${descriptor.operationId}.`);
+  } catch (error) {
+    return errorResult(
+      invalidRelayMcpInput(
+        descriptor.operationId,
+        error instanceof Error ? error.message : undefined,
+      ),
+    );
   }
 
   let result: unknown;
   try {
     result = await invoker.invoke(descriptor.operationId, input, { signal });
-  } catch {
-    return errorResult(`Relay operation ${descriptor.operationId} failed.`);
+  } catch (error) {
+    return errorResult(relayMcpError(descriptor.operationId, error));
   }
 
   if (descriptor.operationId === "target.screenshot.capture") return screenshotResult(result);
   try {
     return normalResult(result);
   } catch {
-    return errorResult(`Relay operation ${descriptor.operationId} returned an invalid result.`);
+    return errorResult(
+      localError(
+        descriptor.operationId,
+        "invalid_operation_result",
+        `Relay operation ${descriptor.operationId} returned an invalid result.`,
+        502,
+      ),
+    );
   }
 }
 
@@ -212,32 +274,27 @@ function registerRelayTool(
     description: descriptor.description,
     outputSchema: relayToolOutputSchema,
     annotations: descriptor.annotations,
+    inputSchema: descriptor.inputSchema,
   };
 
-  if (descriptor.requiresConfirmation) {
-    server.registerTool(
-      descriptor.name,
-      { ...config, inputSchema: confirmedRelayToolInputSchema },
-      ({ input, confirm }, context) =>
-        invokeRelayTool(descriptor, input, confirm === true, invoker, context.mcpReq.signal),
-    );
-    return;
-  }
-
-  server.registerTool(
-    descriptor.name,
-    { ...config, inputSchema: relayToolInputSchema },
-    ({ input, confirm }, context) =>
-      invokeRelayTool(descriptor, input, confirm === true, invoker, context.mcpReq.signal),
-  );
+  server.registerTool(descriptor.name, config, (argumentsValue, context) => {
+    const { confirm, ...input } = argumentsValue as Record<string, unknown>;
+    return invokeRelayTool(descriptor, input, confirm === true, invoker, context.mcpReq.signal);
+  });
 }
 
-export function createMcpServer({ invoker, scope }: McpServerDependencies): McpServer {
+export function createMcpServer({
+  invoker,
+  scope,
+  profile = defaultRelayMcpProfile,
+}: McpServerDependencies): McpServer {
   const server = new McpServer(relayMcpServerInfo, {
     instructions: relayMcpInstructions,
   });
 
-  for (const descriptor of relayMcpTools) registerRelayTool(server, descriptor, invoker);
+  for (const descriptor of relayMcpToolsForProfile(profile)) {
+    registerRelayTool(server, descriptor, invoker);
+  }
   registerRelayResources(server, { invoker, scope });
   registerRelayPrompts(server, scope);
 

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { Device } from "./device.js";
 import {
+  initializeRunEvidence,
   startRunEvidence as startRunEvidenceWithoutContext,
   stopRunEvidence as stopRunEvidenceWithoutContext,
   withTimeout,
@@ -233,4 +234,85 @@ test("timed-out collectors compensate when they start late", async () => {
   resolveStart?.({ started: true });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(cleaned, true);
+});
+
+test("deferred evidence preserves source capture time and is chronologically resequenced", async () => {
+  const job = {
+    id: "evidence-source-time",
+    action: "timeline",
+    platform: "android",
+    targetContext: testTarget,
+    status: "running",
+    queuedAt: Date.now(),
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Source chronology",
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+  } as TestJob;
+  const handle = initializeRunEvidence(job);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const frame = {
+    path: "frames/001.png",
+    caption: "captured",
+    capturedAt: handle.startedAt + 8,
+    bytes: 5,
+  };
+  job.frames.push(frame);
+  job.steps.push({
+    id: "step-1",
+    index: 0,
+    kind: "Replay",
+    tone: "acc",
+    title: "Tap",
+    glyphs: ["tap"],
+    actions: [{ kind: "tap", at: handle.startedAt + 12, label: "Continue" }],
+    startedAt: handle.startedAt + 2,
+    finishedAt: handle.startedAt + 14,
+    frames: [frame],
+    log: "",
+  });
+  job.artifacts.push(
+    {
+      kind: "ui-tree",
+      capturedAt: handle.startedAt + 4,
+      data: { stepId: "step-1", phase: "before", nodes: [{ id: "button" }] },
+    },
+    {
+      kind: "command-attempt",
+      capturedAt: handle.startedAt + 10,
+      data: { stepId: "step-1", command: { action: "tap" } },
+    },
+  );
+
+  await stopRunEvidence(handle, job, undefined, () => undefined);
+
+  const events = job.evidence!.events;
+  const tree = events.find((item) => item.kind === "snapshot.before")!;
+  const frameEvent = events.find((item) => item.kind === "frame")!;
+  const command = events.find((item) => item.kind === "command.attempt")!;
+  const action = events.find((item) => item.kind === "tap")!;
+  assert.deepEqual(
+    [tree.at, frameEvent.at, command.at, action.at],
+    [handle.startedAt + 4, handle.startedAt + 8, handle.startedAt + 10, handle.startedAt + 12],
+  );
+  assert.deepEqual(
+    [tree.monotonicMs, frameEvent.monotonicMs, command.monotonicMs, action.monotonicMs],
+    [4, 8, 10, 12],
+  );
+  assert.deepEqual(
+    events.map((item) => item.sequence),
+    events.map((_item, index) => index + 1),
+  );
+  assert.ok(
+    events.every(
+      (item, index) => index === 0 || events[index - 1]!.monotonicMs <= item.monotonicMs,
+    ),
+  );
 });

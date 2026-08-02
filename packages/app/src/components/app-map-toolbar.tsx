@@ -7,6 +7,7 @@ export type AppMapCanvasTool = "select" | "hand";
 export function AppMapOverviewToolbar(props: {
   screenCount: number;
   connectionCount: number;
+  proposalCount: number;
   targetSetOpen: boolean;
   activeTargetSetId?: string;
   runTargetLabel: string;
@@ -14,6 +15,7 @@ export function AppMapOverviewToolbar(props: {
   onTargetSetOpenChange: (open: boolean) => void;
   onChooseTargetSet: (targetSetId?: string) => void;
   onManageTargetSets: () => void;
+  onOpenProposals: () => void;
 }) {
   return (
     <header class="absolute top-4 left-4 z-20 flex min-h-10 items-center gap-1 rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_80%,transparent),0_8px_24px_rgb(0_0_0/14%)] backdrop-blur-[14px]">
@@ -28,6 +30,17 @@ export function AppMapOverviewToolbar(props: {
         </span>
       </div>
       <span class="h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+      <Show when={props.proposalCount > 0}>
+        <button
+          type="button"
+          class="inline-flex min-h-8 items-center gap-1.5 rounded-[8px] bg-[var(--product-accent-soft)] px-2 text-[10.5px] font-medium text-[var(--text-interactive-base)] hover:brightness-105"
+          onClick={props.onOpenProposals}
+        >
+          <Icon name="sparkle" size={11} />
+          {props.proposalCount} {props.proposalCount === 1 ? "proposal" : "proposals"}
+        </button>
+        <span class="h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
+      </Show>
       <div class="relative" data-target-set-picker>
         <button
           type="button"
@@ -129,6 +142,8 @@ export function AppMapToolbar(props: {
         "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_76%,transparent),0_16px_46px_rgb(0_0_0/28%)] backdrop-blur-[16px]",
         props.shiftForDevice ? "left-[calc((100%-388px)/2)] max-[720px]:left-1/2" : "left-1/2",
       )}
+      role="toolbar"
+      aria-label="Map editing tools"
     >
       <button
         type="button"
@@ -269,4 +284,4 @@ export function AppMapZoomControls(props: {
 }
 
 const mapControlButton =
-  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35";
+  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[10.5px] text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] active:scale-[0.96] focus-visible:ring-1 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-35";

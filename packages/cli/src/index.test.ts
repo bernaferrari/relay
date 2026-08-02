@@ -89,13 +89,25 @@ test("friendly command families invoke through the operation client", async () =
     },
     {
       argv: ["screen", "list", "onboarding"],
-      operationId: "journey.document.get",
-      input: { journeyId: "onboarding" },
+      operationId: "app-map.get",
+      input: { appMapId: "onboarding" },
     },
     {
-      argv: ["connection", "update", "onboarding", "--input", '{"expectedRevision":4}'],
-      operationId: "journey.document.update",
-      input: { journeyId: "onboarding", expectedRevision: 4 },
+      argv: [
+        "connection",
+        "update",
+        "onboarding",
+        "continue",
+        "--input",
+        '{"expectedRevision":4,"patch":{"label":"Continue"}}',
+      ],
+      operationId: "app-map.connection.update",
+      input: {
+        appMapId: "onboarding",
+        connectionId: "continue",
+        expectedRevision: 4,
+        patch: { label: "Continue" },
+      },
     },
     {
       argv: ["target", "screenshot", "pixel-9"],
@@ -120,7 +132,7 @@ test("friendly command families invoke through the operation client", async () =
     {
       argv: ["run", "visual-baseline", "update", "run-7"],
       operationId: "run.visual-baseline.update",
-      input: { runId: "run-7" },
+      input: { runId: "run-7", action: "approve-new-baseline" },
     },
     {
       argv: ["discovery", "capture", "discovery-1", "pixel-9"],
@@ -333,9 +345,9 @@ test("root and family help are useful without creating a client", async () => {
     {
       argv: ["screen", "--help"],
       matches: [
-        /screen list <mapId>/,
-        /whole App Map documents/,
-        /expectedRevision \(number, required\)/,
+        /screen list <appMapId>/,
+        /granular, revision-safe App Map operations/,
+        /screen update <appMapId> <screenId>/,
       ],
     },
     {

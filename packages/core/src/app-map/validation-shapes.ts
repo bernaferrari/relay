@@ -153,6 +153,11 @@ export function assertScreen(screen: Screen, scope: AppMapScope, label: string):
   requiredText(screen.title, `${label}.title`);
   optionalText(screen.description, `${label}.description`);
   if (screen.identity) assertIdentity(screen.identity, `${label}.identity`);
+  if (screen.position) {
+    if (!Number.isFinite(screen.position.x) || !Number.isFinite(screen.position.y)) {
+      appMapFail("invalid-map", `${label}.position must contain finite coordinates`);
+    }
+  }
   stringArray(screen.variantIds, `${label}.variantIds`);
 }
 
@@ -270,6 +275,13 @@ export function assertScreenPatch(patch: ScreenPatch, label: string): void {
     requiredText(patch.description, `${label}.description`);
   if (patch.identity !== undefined && patch.identity !== null)
     assertIdentity(patch.identity, `${label}.identity`);
+  if (
+    patch.position !== undefined &&
+    patch.position !== null &&
+    (!Number.isFinite(patch.position.x) || !Number.isFinite(patch.position.y))
+  ) {
+    appMapFail("invalid-map", `${label}.position must contain finite coordinates`);
+  }
 }
 
 export function assertConnectionPatch(patch: ConnectionPatch, label: string): void {
@@ -412,12 +424,18 @@ export function assertActivity(
   if (!(event.actorKind === "human" || event.actorKind === "agent" || event.actorKind === "system"))
     appMapFail("invalid-map", `${label}.actorKind is unsupported`);
   const eventTypes: ActivityEvent["eventType"][] = [
+    "app-map.updated",
     "screen.added",
     "screen.updated",
     "screen.removed",
     "connection.connected",
     "connection.updated",
     "connection.removed",
+    "flow.saved",
+    "flow.removed",
+    "routine.saved",
+    "routine.removed",
+    "proposal.submitted",
     "proposal.approved",
     "proposal.rejected",
   ];
@@ -429,6 +447,8 @@ export function assertActivity(
       event.subject.kind === "app-map" ||
       event.subject.kind === "screen" ||
       event.subject.kind === "connection" ||
+      event.subject.kind === "flow" ||
+      event.subject.kind === "routine" ||
       event.subject.kind === "proposal"
     )
   )

@@ -132,7 +132,9 @@ export async function runAction(
   opts: RunActionOptions = {},
 ): Promise<RunActionResult> {
   const log = opts.onLog ?? ((line: string) => console.log(line));
-  const flow: AccountFlowOptions = {};
+  const flow: AccountFlowOptions = opts.prodAccountMatch
+    ? { prodAccountMatch: opts.prodAccountMatch }
+    : {};
 
   try {
     log(`==> ${action}`);

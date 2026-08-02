@@ -14,6 +14,8 @@ test("configuration uses arguments over environment over CLI-compatible defaults
       "agent:explicit",
       "--timeout",
       "321",
+      "--profile",
+      "review",
     ],
     {
       RELAY_URL: "https://env.example",
@@ -21,6 +23,7 @@ test("configuration uses arguments over environment over CLI-compatible defaults
       RELAY_PROJECT_ID: "env-project",
       RELAY_ACTOR_ID: "agent:env",
       RELAY_TIMEOUT_MS: "999",
+      RELAY_MCP_PROFILE: "execute",
     },
     42,
   );
@@ -31,6 +34,7 @@ test("configuration uses arguments over environment over CLI-compatible defaults
   assert.equal(config.connection.actorId, "agent:explicit");
   assert.equal(config.connection.actorKind, "agent");
   assert.equal(config.timeoutMs, 321);
+  assert.equal(config.profile, "review");
 
   const defaults = parseMcpConfig([], {}, 42);
   assert.equal(defaults.connection.url, "http://127.0.0.1:8787");
@@ -38,6 +42,7 @@ test("configuration uses arguments over environment over CLI-compatible defaults
   assert.equal(defaults.connection.projectId, "default");
   assert.equal(defaults.connection.actorId, "agent:mcp:42");
   assert.equal(defaults.connection.actorKind, "agent");
+  assert.equal(defaults.profile, "author");
 });
 
 test("explicit actor IDs remain agent actors", () => {
@@ -60,6 +65,7 @@ test("credential source reads a named environment variable without exposing it",
   assert.doesNotMatch(rendered, /super-secret-token/);
   assert.match(rendered, /env:MY_RELAY_TOKEN/);
   assert.match(rendered, /configured/);
+  assert.match(rendered, /author/);
 });
 
 test("credential validation matches CLI semantics", () => {
@@ -87,4 +93,13 @@ test("invalid options and timeouts are rejected before stdio starts", () => {
   assert.throws(() => parseMcpConfig(["unexpected"], {}, 42), /Unknown option/);
   assert.throws(() => parseMcpConfig(["--timeout", "0"], {}, 42), /positive integer/);
   assert.throws(() => parseMcpConfig(["--project"], {}, 42), /requires a value/);
+  assert.throws(() => parseMcpConfig(["--profile", "everything"], {}, 42), /profile must be/);
+});
+
+test("profile selection supports environment configuration", () => {
+  assert.equal(parseMcpConfig([], { RELAY_MCP_PROFILE: "observe" }, 42).profile, "observe");
+  assert.equal(
+    parseMcpConfig(["--profile", "full"], { RELAY_MCP_PROFILE: "observe" }, 42).profile,
+    "full",
+  );
 });

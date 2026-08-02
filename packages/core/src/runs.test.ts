@@ -111,3 +111,46 @@ test("persisted browser runs retain browser identity instead of becoming Android
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("persisted runs retain bounded non-secret execution provenance", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-provenance-"));
+  const run = job(join(root, "run"));
+  run.operationContext = {
+    schemaVersion: 1,
+    actorId: "agent:test",
+    actorKind: "agent",
+    organizationId: "organization:test",
+    projectId: "project:test",
+    operationId: "operation:test",
+    requestId: "request:test",
+    idempotencyKey: "must-not-be-persisted",
+    issuedAt: 1_786_000_000_000,
+    causationId: "cause:test",
+    correlationId: "c".repeat(400),
+    authoringSessionId: "authoring:test",
+    leaseId: "lease:test",
+  };
+  try {
+    const persisted = await persistRun(run);
+    assert.deepEqual(persisted.executionProvenance, {
+      schemaVersion: 1,
+      actorId: "agent:test",
+      actorKind: "agent",
+      organizationId: "organization:test",
+      projectId: "project:test",
+      operationId: "operation:test",
+      requestId: "request:test",
+      issuedAt: 1_786_000_000_000,
+      causationId: "cause:test",
+      correlationId: "c".repeat(256),
+      authoringSessionId: "authoring:test",
+      leaseId: "lease:test",
+    });
+    assert.equal(
+      "idempotencyKey" in (persisted.executionProvenance as Record<string, unknown>),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

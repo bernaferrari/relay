@@ -13,4 +13,13 @@ export {
 } from "./app-map/connection-operations.js";
 export { previewRoutineImpact } from "./app-map/routine-operations.js";
 export { approveAppMapProposal, rejectAppMapProposal } from "./app-map/proposal-operations.js";
+export {
+  removeAppMapFlow,
+  removeAppMapRoutine,
+  saveAppMapFlow,
+  saveAppMapRoutine,
+  submitAppMapProposal,
+  updateAppMap,
+} from "./app-map/entity-operations.js";
 export { serializeAppMap } from "./app-map/serialization.js";
+export { proposalFromDiscovery } from "./app-map/observation-proposal.js";

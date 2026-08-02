@@ -1,3 +1,6 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { currentTargetContext, targetSessionName, type TargetContext } from "./target-context.js";
+
 /**
  * Job control — cooperative pause + aggressive cancel.
  *
@@ -76,18 +79,23 @@ export function getControl(jobId: string): JobControlState | undefined {
   return controls.get(jobId);
 }
 
-let executingJobId: string | null = null;
+let legacyExecutingJobId: string | null = null;
+const executingJobs = new AsyncLocalStorage<string>();
 
 export function setExecutingJobId(id: string | null): void {
-  executingJobId = id;
+  legacyExecutingJobId = id;
 }
 
 export function getExecutingJobId(): string | null {
-  return executingJobId;
+  return executingJobs.getStore() ?? legacyExecutingJobId;
+}
+
+export function runWithJobControl<T>(jobId: string, operation: () => Promise<T>): Promise<T> {
+  return executingJobs.run(jobId, operation);
 }
 
 export function throwIfCancelled(jobId?: string | null): void {
-  const id = jobId ?? executingJobId;
+  const id = jobId ?? getExecutingJobId();
   if (!id) return;
   if (controls.get(id)?.cancel) throw new JobCancelledError();
 }
@@ -101,7 +109,7 @@ export function throwIfCancelled(jobId?: string | null): void {
  * wins the race — so a normal completion no longer leaks a 40 ms timer.
  */
 export async function raceCancel<T>(promise: Promise<T>, jobId?: string | null): Promise<T> {
-  const id = jobId ?? executingJobId;
+  const id = jobId ?? getExecutingJobId();
   if (!id) return promise;
   throwIfCancelled(id);
 
@@ -132,7 +140,7 @@ export async function raceCancel<T>(promise: Promise<T>, jobId?: string | null):
 }
 
 export async function cooperativeCheckpoint(jobId?: string | null): Promise<void> {
-  const id = jobId ?? executingJobId;
+  const id = jobId ?? getExecutingJobId();
   if (!id) return;
   const c = controls.get(id);
   if (!c) return;
@@ -177,11 +185,22 @@ export async function cooperativeCheckpointWithTimeout(
 }
 
 /** Best-effort: close agent-device session so in-flight commands drop. */
-export async function hardStopDeviceSession(): Promise<void> {
+export async function hardStopDeviceSession(target?: TargetContext): Promise<void> {
   try {
     const { createAgentDeviceClient } = await import("agent-device");
+    let context = target;
+    if (!context) {
+      try {
+        context = currentTargetContext();
+      } catch {
+        // Legacy callers without an explicit target can only address the
+        // explicitly configured shared session.
+      }
+    }
     const client = createAgentDeviceClient({
-      session: process.env.AGENT_DEVICE_SESSION?.trim() || "relay-actions",
+      session:
+        process.env.AGENT_DEVICE_SESSION?.trim() ||
+        (context ? targetSessionName(context) : "relay-actions"),
     });
     await client.sessions.close({ shutdown: false });
   } catch {

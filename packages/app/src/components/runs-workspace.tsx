@@ -52,6 +52,11 @@ import {
   sourceTimeToReviewMs,
 } from "../lib/review-cut";
 import { seg, segBtn, segBtnOn } from "../lib/ui";
+import type {
+  VisualComparison as DurableVisualComparison,
+  VisualReviewAction,
+  VisualReviewDecision,
+} from "@relay/protocol";
 
 export function RunsWorkspace(props: {
   onOpenRecipe: (id: string) => void;
@@ -66,6 +71,9 @@ export function RunsWorkspace(props: {
     "timeline" | "summary" | "visual" | "evaluation" | "network" | "logs" | "compatibility"
   >("timeline");
   const [visualComparison, setVisualComparison] = createSignal<VisualComparison | null>(null);
+  const [durableVisualComparison, setDurableVisualComparison] =
+    createSignal<DurableVisualComparison | null>(null);
+  const [visualDecision, setVisualDecision] = createSignal<VisualReviewDecision | null>(null);
   const [visualLoading, setVisualLoading] = createSignal(false);
   const [approvingVisualBaseline, setApprovingVisualBaseline] = createSignal(false);
   const [matrixReport, setMatrixReport] = createSignal<
@@ -168,23 +176,48 @@ export function RunsWorkspace(props: {
     const job = selected();
     if (tab() !== "visual" || !job?.persisted) {
       setVisualComparison(null);
+      setDurableVisualComparison(null);
+      setVisualDecision(null);
       return;
     }
     setVisualLoading(true);
-    void server
-      .loadVisualComparison(job.id)
-      .then(setVisualComparison)
+    void Promise.all([server.loadVisualComparison(job.id), server.compareVisualRun(job.id)])
+      .then(([legacy, durable]) => {
+        setVisualComparison(legacy);
+        setDurableVisualComparison(durable);
+        setVisualDecision(null);
+      })
       .finally(() => setVisualLoading(false));
   });
-  async function approveCurrentVisualBaseline(): Promise<void> {
+  async function reviewCurrentVisual(action: VisualReviewAction): Promise<void> {
     const job = selected();
     if (!job?.persisted || approvingVisualBaseline()) return;
+    const comparison = durableVisualComparison();
+    if (!comparison) {
+      toast("Visual comparison is not ready yet", "error");
+      return;
+    }
     setApprovingVisualBaseline(true);
     try {
-      const comparison = await server.approveVisualBaseline(job.id);
-      if (comparison) {
-        setVisualComparison(comparison);
-        toast("Visual baseline approved", "success");
+      const decision = await server.reviewVisualRun(job.id, comparison.id, action);
+      if (decision) {
+        setVisualDecision(decision);
+        if (action === "approve-new-baseline") {
+          const [legacy, durable] = await Promise.all([
+            server.loadVisualComparison(job.id),
+            server.compareVisualRun(job.id),
+          ]);
+          setVisualComparison(legacy);
+          setDurableVisualComparison(durable);
+        }
+        const labels: Record<VisualReviewAction, string> = {
+          "approve-new-baseline": "New baseline approved",
+          "keep-baseline": "Approved baseline kept",
+          "fix-connection": "Connection marked for repair",
+          retry: "Retry requested",
+          "mark-expected-variation": "Expected variation recorded",
+        };
+        toast(labels[action], "success");
       }
     } finally {
       setApprovingVisualBaseline(false);
@@ -700,9 +733,11 @@ export function RunsWorkspace(props: {
                   >
                     <VisualDiffReview
                       comparison={visualComparison()}
+                      durableComparison={durableVisualComparison()}
+                      decision={visualDecision()}
                       loading={visualLoading()}
                       approving={approvingVisualBaseline()}
-                      onApprove={() => void approveCurrentVisualBaseline()}
+                      onReview={(action) => void reviewCurrentVisual(action)}
                     />
                   </Show>
                 </Show>

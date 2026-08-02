@@ -54,10 +54,10 @@ export function approveAppMapProposal(
       if (proposal.status !== "pending") {
         appMapFail("proposal-state", `Proposal ${proposalId} is already ${proposal.status}`);
       }
-      if (proposal.baseRevision !== draft.revision) {
+      if (proposal.baseRevision + 1 !== draft.revision) {
         appMapFail(
           "revision-conflict",
-          `Proposal ${proposalId} targets revision ${proposal.baseRevision}, current revision is ${draft.revision}`,
+          `Proposal ${proposalId} targets revision ${proposal.baseRevision}, but the current revision is ${draft.revision}`,
         );
       }
       for (const change of proposal.changes) {

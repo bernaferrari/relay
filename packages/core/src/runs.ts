@@ -7,7 +7,13 @@ import { join, basename } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
-import type { EvidenceManifest, FailureCategory, RunOutcome, TargetProfile } from "@relay/protocol";
+import type {
+  ActorKind,
+  EvidenceManifest,
+  FailureCategory,
+  RunOutcome,
+  TargetProfile,
+} from "@relay/protocol";
 import { now } from "./events.js";
 import {
   redactResolvedInputs,
@@ -24,6 +30,21 @@ import {
 import type { RunSummary } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
 export { findWorkspaceRoot } from "./workspace-root.js";
+
+export type PersistedExecutionProvenance = {
+  schemaVersion: 1;
+  actorId: string;
+  actorKind: ActorKind;
+  organizationId: string;
+  projectId: string;
+  operationId: string;
+  requestId: string;
+  issuedAt: number;
+  causationId?: string;
+  correlationId?: string;
+  authoringSessionId?: string;
+  leaseId?: string;
+};
 
 export type PersistedRun = {
   schemaVersion: 2 | 3 | 4 | 5;
@@ -65,6 +86,8 @@ export type PersistedRun = {
   inputDigest: string;
   resolvedInputs: Record<string, string>;
   evidence?: EvidenceManifest;
+  /** Bounded, non-secret identity and causality captured when execution was accepted. */
+  executionProvenance?: PersistedExecutionProvenance;
 };
 
 export type RunArtifact = TestJob["artifacts"][number];
@@ -209,6 +232,38 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     inputDigest: createHash("sha256").update(frozenInput).digest("hex"),
     resolvedInputs: redactResolvedInputs(job.resolvedInputs),
     evidence: redactValue(job.evidence) as EvidenceManifest | undefined,
+    executionProvenance: persistedExecutionProvenance(job),
+  };
+}
+
+const MAX_PROVENANCE_IDENTIFIER_LENGTH = 256;
+
+function persistedExecutionProvenance(job: TestJob): PersistedExecutionProvenance | undefined {
+  const context = job.operationContext;
+  if (!context) return undefined;
+  const optional = (value: string | undefined): string | undefined => {
+    const bounded = value?.trim().slice(0, MAX_PROVENANCE_IDENTIFIER_LENGTH);
+    return bounded || undefined;
+  };
+  const required = (value: string): string =>
+    value.trim().slice(0, MAX_PROVENANCE_IDENTIFIER_LENGTH);
+  const causationId = optional(context.causationId);
+  const correlationId = optional(context.correlationId);
+  const authoringSessionId = optional(context.authoringSessionId);
+  const leaseId = optional(context.leaseId);
+  return {
+    schemaVersion: 1,
+    actorId: required(context.actorId),
+    actorKind: context.actorKind,
+    organizationId: required(context.organizationId),
+    projectId: required(context.projectId),
+    operationId: required(context.operationId),
+    requestId: required(context.requestId),
+    issuedAt: context.issuedAt,
+    ...(causationId ? { causationId } : {}),
+    ...(correlationId ? { correlationId } : {}),
+    ...(authoringSessionId ? { authoringSessionId } : {}),
+    ...(leaseId ? { leaseId } : {}),
   };
 }
 
@@ -445,3 +500,15 @@ export function runArtifactFile(runDir: string, area: "video", file: string): st
   if (!safe || safe !== file || !/\.(mp4|webm)$/i.test(safe)) return null;
   return join(runDir, area, safe);
 }
+
+export {
+  RelayRunBundleError,
+  exportRelayRunBundle,
+  verifyRelayRunBundle,
+  type RelayRunBundleEntry,
+  type RelayRunBundleErrorCode,
+  type RelayRunBundleLimits,
+  type RelayRunBundleManifest,
+  type RelayRunBundleResult,
+  type RelayRunBundleVerification,
+} from "./run-bundle.js";

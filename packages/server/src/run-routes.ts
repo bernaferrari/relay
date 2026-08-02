@@ -17,11 +17,14 @@ import {
   runsRoot,
   runStorageHealth,
   setRunPinned,
-  approveVisualBaseline,
+  compareVisualBaseline,
   getVisualBaseline,
+  reviewVisualComparison,
+  VISUAL_REVIEW_ACTIONS,
+  VisualVerificationError,
   visualTargetKey,
 } from "@relay/core";
-import { recordAudit, type RequestContext } from "./security.js";
+import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
 
 export type RunRouteContext = {
@@ -56,6 +59,22 @@ function assertLocalMaintenance(scope: RequestContext): void {
   if (!scope.localTrusted) {
     throw new HttpError(403, "Run storage maintenance is available only on the local Relay host");
   }
+}
+
+function visualVerificationHttpError(error: VisualVerificationError): HttpError {
+  const status = error.code === "VISUAL_COMPARISON_NOT_FOUND" ? 404 : 409;
+  return new HttpError(status, error.message, {
+    code: error.code,
+    recovery: error.recovery,
+  });
+}
+
+function reviewActor(context: RunRouteContext): {
+  id: string;
+  kind: "human" | "agent" | "system";
+} {
+  const actor = resolveCommandActor(context.request.headers, context.scope);
+  return { id: actor.actorId, kind: actor.actorKind };
 }
 
 export async function handleRunRoute(context: RunRouteContext): Promise<boolean> {
@@ -184,27 +203,111 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     assertRunAccess(scope, run);
     if (method === "GET") {
       const targetKey = visualTargetKey(run);
-      const baseline = await getVisualBaseline(runsRoot(), run.action, targetKey);
+      const baseline = await getVisualBaseline(
+        runsRoot(),
+        run.action,
+        targetKey,
+        run.projectId ?? "local",
+      );
       const baselineRun = baseline ? await readPersistedRun(baseline.runId) : null;
       if (baselineRun) assertRunAccess(scope, baselineRun);
       json(response, 200, {
         current: run,
+        latestRunId: run.id,
+        recipeId: run.action,
+        projectKey: run.projectId ?? "local",
         targetKey,
-        baseline: baselineRun && baseline ? { ...baseline, run: baselineRun } : null,
+        baseline: baseline && baselineRun ? { ...baseline, run: baselineRun } : null,
       });
       return true;
     }
     if (method === "POST") {
-      if (run.frames.length === 0) {
+      const body = (await parseJsonBody(request)) as { action?: unknown; note?: unknown };
+      if (body.action !== "approve-new-baseline") {
         throw new HttpError(
-          409,
-          "This run has no step screenshots to approve as a visual baseline",
+          400,
+          "Visual baseline approval must be an explicit approve-new-baseline review action",
+          {
+            code: "VISUAL_REVIEW_ACTION_REQUIRED",
+            recovery:
+              "Send action=approve-new-baseline, or use the visual-review operation for another decision.",
+          },
         );
       }
-      const baseline = await approveVisualBaseline(runsRoot(), run);
-      json(response, 200, { baseline });
+      try {
+        const comparison = await compareVisualBaseline(runsRoot(), run);
+        const reviewed = await reviewVisualComparison(runsRoot(), run, {
+          comparisonId: comparison.id,
+          action: "approve-new-baseline",
+          actor: reviewActor(context),
+          ...(typeof body.note === "string" ? { note: body.note } : {}),
+        });
+        json(response, 200, { comparison, ...reviewed });
+      } catch (error) {
+        if (error instanceof VisualVerificationError) {
+          throw visualVerificationHttpError(error);
+        }
+        throw error;
+      }
       return true;
     }
+  }
+
+  const visualComparisonMatch = matchPath(pathname, "/runs/:id/visual-comparison");
+  if (method === "POST" && visualComparisonMatch) {
+    const run = await readPersistedRun(visualComparisonMatch.id!);
+    assertRunAccess(scope, run);
+    await parseJsonBody(request);
+    try {
+      json(response, 200, { comparison: await compareVisualBaseline(runsRoot(), run) });
+    } catch (error) {
+      if (error instanceof VisualVerificationError) {
+        throw visualVerificationHttpError(error);
+      }
+      throw error;
+    }
+    return true;
+  }
+
+  const visualReviewMatch = matchPath(pathname, "/runs/:id/visual-review");
+  if (method === "POST" && visualReviewMatch) {
+    const run = await readPersistedRun(visualReviewMatch.id!);
+    assertRunAccess(scope, run);
+    const body = (await parseJsonBody(request)) as {
+      comparisonId?: unknown;
+      action?: unknown;
+      note?: unknown;
+    };
+    if (typeof body.comparisonId !== "string" || !body.comparisonId.trim()) {
+      throw new HttpError(400, "comparisonId is required", {
+        code: "VISUAL_COMPARISON_ID_REQUIRED",
+        recovery: "Run visual comparison first and pass its comparison ID.",
+      });
+    }
+    if (!VISUAL_REVIEW_ACTIONS.includes(body.action as (typeof VISUAL_REVIEW_ACTIONS)[number])) {
+      throw new HttpError(400, "Unknown visual review action", {
+        code: "VISUAL_REVIEW_ACTION_INVALID",
+        recovery: `Choose one of: ${VISUAL_REVIEW_ACTIONS.join(", ")}.`,
+      });
+    }
+    try {
+      json(
+        response,
+        200,
+        await reviewVisualComparison(runsRoot(), run, {
+          comparisonId: body.comparisonId,
+          action: body.action as (typeof VISUAL_REVIEW_ACTIONS)[number],
+          actor: reviewActor(context),
+          ...(typeof body.note === "string" ? { note: body.note } : {}),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof VisualVerificationError) {
+        throw visualVerificationHttpError(error);
+      }
+      throw error;
+    }
+    return true;
   }
 
   const pinMatch = matchPath(pathname, "/runs/:id/pin");

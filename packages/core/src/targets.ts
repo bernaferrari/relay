@@ -97,10 +97,10 @@ export async function deleteTarget(id: string): Promise<void> {
   await writeTargets((await listTargets()).filter((target) => target.id !== id));
 }
 
-const BROWSER_CAPABILITIES: TargetCapability[] = [
+/** Capabilities implemented by the managed Playwright adapter. */
+export const BROWSER_TARGET_CAPABILITIES: readonly TargetCapability[] = [
   "snapshot",
   "screenshot",
-  "stream",
   "recording",
   "tap",
   "type",
@@ -128,7 +128,7 @@ export async function preflightTarget(target: TargetDefinition): Promise<TargetP
       targetId: target.id,
       ok: false,
       checkedAt: Date.now(),
-      capabilities: BROWSER_CAPABILITIES,
+      capabilities: [...BROWSER_TARGET_CAPABILITIES],
       checks,
     };
   }
@@ -191,7 +191,7 @@ export async function preflightTarget(target: TargetDefinition): Promise<TargetP
     targetId: target.id,
     ok: !checks.some((check) => check.status === "fail"),
     checkedAt: Date.now(),
-    capabilities: BROWSER_CAPABILITIES,
+    capabilities: [...BROWSER_TARGET_CAPABILITIES],
     checks,
   };
 }

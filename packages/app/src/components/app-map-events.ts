@@ -2,6 +2,46 @@ import { createEffect, onCleanup, onMount, type Accessor } from "solid-js";
 import type { JourneyRunReadiness } from "../lib/journey-run-readiness";
 import type { AppMapCanvasTool } from "./app-map-toolbar";
 
+export type CanvasWheelAction =
+  | { kind: "pan"; x: number; y: number }
+  | { kind: "zoom"; delta: number }
+  | null;
+
+/** Normalize mouse wheels and trackpads into the two canvas gestures people
+ * already expect: unmodified two-axis pan, and anchored Cmd/Ctrl-wheel zoom. */
+export function canvasWheelAction(input: {
+  deltaX: number;
+  deltaY: number;
+  deltaMode: number;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  viewportHeight: number;
+}): CanvasWheelAction {
+  const unit = input.deltaMode === 1 ? 16 : input.deltaMode === 2 ? input.viewportHeight : 1;
+  let deltaX = input.deltaX * unit;
+  let deltaY = input.deltaY * unit;
+
+  if (input.ctrlKey || input.metaKey) {
+    if (deltaY === 0) return null;
+    return {
+      kind: "zoom",
+      delta: Math.max(-0.16, Math.min(0.16, -deltaY * 0.0015)),
+    };
+  }
+
+  if (input.shiftKey && Math.abs(deltaX) < 0.01) {
+    deltaX = deltaY;
+    deltaY = 0;
+  }
+  if (deltaX === 0 && deltaY === 0) return null;
+  return {
+    kind: "pan",
+    x: deltaX === 0 ? 0 : -deltaX,
+    y: deltaY === 0 ? 0 : -deltaY,
+  };
+}
+
 export function createAppMapEventOrchestration(options: {
   devicePanelOpen: Accessor<boolean>;
   reviewingTake: Accessor<boolean>;
@@ -19,6 +59,7 @@ export function createAppMapEventOrchestration(options: {
   onAddNote: () => void;
   onCreateConnection: () => void;
   onRecord: () => void;
+  onDeleteSelection: () => void;
   onEscape: () => void;
 }) {
   createEffect(() => {
@@ -87,6 +128,11 @@ export function createAppMapEventOrchestration(options: {
       if (event.key === "r" || event.key === "R") {
         event.preventDefault();
         options.onRecord();
+        return;
+      }
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        options.onDeleteSelection();
         return;
       }
       if (event.key !== "Escape" || options.renamingScreen()) return;

@@ -1,4 +1,5 @@
 import { InMemoryTransport } from "@modelcontextprotocol/server";
+import { ApiError } from "@relay/client";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -9,7 +10,12 @@ import {
   relayMcpTextLimit,
   type OperationInvoker,
 } from "./server.js";
-import { relayMcpTools } from "./tools.js";
+import {
+  defaultRelayMcpProfile,
+  relayMcpTools,
+  relayMcpToolsForProfile,
+  type RelayMcpProfile,
+} from "./tools.js";
 
 type RpcResponse = {
   id: number;
@@ -35,8 +41,8 @@ type ToolCallResult = {
   isError?: boolean;
 };
 
-async function connectMcp(invoker: OperationInvoker) {
-  const server = createMcpServer({ invoker, scope: { projectId: "project-a" } });
+async function connectMcp(invoker: OperationInvoker, profile: RelayMcpProfile = "full") {
+  const server = createMcpServer({ invoker, scope: { projectId: "project-a" }, profile });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const pending = new Map<
     number,
@@ -94,7 +100,7 @@ function callResult(response: RpcResponse): ToolCallResult {
   return response.result as ToolCallResult;
 }
 
-test("SDK initialization lists every generated Relay tool exactly once", async () => {
+test("full-profile SDK initialization lists every generated Relay tool exactly once", async () => {
   const session = await connectMcp({ async invoke() {} });
   try {
     assert.deepEqual(session.initialized.result?.serverInfo, relayMcpServerInfo);
@@ -123,14 +129,19 @@ test("SDK initialization lists every generated Relay tool exactly once", async (
       assert.equal(tool.title, descriptor.title);
       assert.equal(tool.description, descriptor.description);
       assert.deepEqual(tool.annotations, descriptor.annotations);
-      assert.equal(tool.inputSchema.additionalProperties, false);
-      assert.deepEqual(Object.keys(tool.inputSchema.properties ?? {}).sort(), ["confirm", "input"]);
-      assert.equal(tool.inputSchema.required?.includes("input"), true);
+      assert.equal(typeof tool.inputSchema.properties, "object");
       assert.equal(
         tool.inputSchema.required?.includes("confirm") ?? false,
         descriptor.requiresConfirmation,
       );
     }
+    const screenshot = tools.find(({ name }) => name === "relay_target_screenshot_capture");
+    assert.ok(screenshot);
+    assert.deepEqual(Object.keys(screenshot.inputSchema.properties ?? {}).sort(), [
+      "confirm",
+      "serial",
+    ]);
+    assert.deepEqual(screenshot.inputSchema.required, ["serial"]);
   } finally {
     await session.close();
   }
@@ -154,25 +165,25 @@ test("invokes representative read, write, and confirmed operations with exact in
   };
   const session = await connectMcp(invoker);
   const readInput = {};
-  const writeInput = { name: "Pixel", metadata: { owner: "qa" } };
+  const writeInput = { name: "Web app", startUrl: "https://example.test" };
   const confirmedInput = { channel: "audio", enabled: true, reason: "test run" };
   try {
     const read = callResult(
       await session.request("tools/call", {
         name: "relay_system_health_get",
-        arguments: { input: readInput },
+        arguments: readInput,
       }),
     );
     const write = callResult(
       await session.request("tools/call", {
         name: "relay_target_create",
-        arguments: { input: writeInput },
+        arguments: writeInput,
       }),
     );
     const confirmed = callResult(
       await session.request("tools/call", {
         name: "relay_workspace_evidence_update",
-        arguments: { input: confirmedInput, confirm: true },
+        arguments: { ...confirmedInput, confirm: true },
       }),
     );
 
@@ -197,7 +208,7 @@ test("invokes representative read, write, and confirmed operations with exact in
   }
 });
 
-test("rejects invalid Relay input before invoking the operation", async () => {
+test("publishes operation-shaped schemas and rejects invalid arguments before invocation", async () => {
   const calls: string[] = [];
   const session = await connectMcp({
     async invoke(operationId) {
@@ -208,12 +219,54 @@ test("rejects invalid Relay input before invoking the operation", async () => {
     const result = callResult(
       await session.request("tools/call", {
         name: "relay_target_screenshot_capture",
-        arguments: { input: {} },
+        arguments: {},
       }),
     );
     assert.equal(result.isError, true);
-    assert.match(String(result.content[0]?.text), /Invalid input/);
+    assert.match(String(result.content[0]?.text), /serial/i);
     assert.deepEqual(calls, []);
+  } finally {
+    await session.close();
+  }
+});
+
+test("accepts legacy wrapped input without weakening the advertised operation schema", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp({
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      return { lease: { id: "lease-1" } };
+    },
+  });
+  const legacyInput = {
+    poolId: "pool-1",
+    deviceSerial: "device-1",
+    expiresAt: Date.now() + 60_000,
+  };
+  try {
+    const listed = await session.request("tools/list", {});
+    const leaseTool = ((listed.result?.tools as ListedTool[] | undefined) ?? []).find(
+      ({ name }) => name === "relay_lease_create",
+    );
+    assert.ok(leaseTool);
+    assert.deepEqual(Object.keys(leaseTool.inputSchema.properties ?? {}).sort(), [
+      "confirm",
+      "deviceSerial",
+      "expiresAt",
+      "poolId",
+    ]);
+    assert.equal("input" in (leaseTool.inputSchema.properties ?? {}), false);
+
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_lease_create",
+        arguments: { input: legacyInput, confirm: true },
+      }),
+    );
+
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.structuredContent, { result: { lease: { id: "lease-1" } } });
+    assert.deepEqual(calls, [{ operationId: "lease.create", input: legacyInput }]);
   } finally {
     await session.close();
   }
@@ -228,7 +281,7 @@ test("requires literal confirmation for confirmation-protected operations", asyn
   });
   const input = { channel: "audio", enabled: true };
   try {
-    for (const argumentsValue of [{ input }, { input, confirm: false }]) {
+    for (const argumentsValue of [input, { ...input, confirm: false }]) {
       const result = callResult(
         await session.request("tools/call", {
           name: "relay_workspace_evidence_update",
@@ -236,8 +289,74 @@ test("requires literal confirmation for confirmation-protected operations", asyn
         }),
       );
       assert.equal(result.isError, true);
+      assert.match(String(result.content[0]?.text), /confirm/i);
     }
     assert.deepEqual(calls, []);
+  } finally {
+    await session.close();
+  }
+});
+
+test("profile selection exposes deterministic least-privilege tool sets", async () => {
+  for (const profile of ["observe", "author", "execute", "review", "admin", "full"] as const) {
+    const session = await connectMcp({ async invoke() {} }, profile);
+    try {
+      const listed = await session.request("tools/list", {});
+      assert.equal(listed.error, undefined);
+      const names = ((listed.result?.tools as ListedTool[] | undefined) ?? []).map(
+        ({ name }) => name,
+      );
+      assert.deepEqual(
+        names,
+        relayMcpToolsForProfile(profile).map(({ name }) => name),
+      );
+      assert.equal(new Set(names).size, names.length);
+    } finally {
+      await session.close();
+    }
+  }
+
+  const compact = relayMcpToolsForProfile(defaultRelayMcpProfile);
+  assert.ok(compact.length < relayMcpTools.length / 2);
+  assert.ok(compact.some(({ operationId }) => operationId === "app-map.screen.add"));
+  assert.ok(compact.some(({ operationId }) => operationId === "authoring.session.commit"));
+  assert.equal(
+    relayMcpToolsForProfile("observe").every(({ annotations }) => annotations.readOnlyHint),
+    true,
+  );
+});
+
+test("returns sanitized structured ApiError recovery without losing revision state", async () => {
+  const session = await connectMcp({
+    async invoke() {
+      throw new ApiError(409, "Revision conflict", {
+        code: "revision_conflict",
+        error: "Refresh after /Users/example/private/map.json with Bearer private-credential",
+        current: { revision: 17, privateState: "not-public" },
+        recovery: { action: "refresh-and-retry", retryable: true },
+      });
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_list",
+        arguments: {},
+      }),
+    );
+    assert.equal(result.isError, true);
+    assert.deepEqual(result.structuredContent, {
+      error: {
+        operationId: "target.list",
+        status: 409,
+        code: "revision_conflict",
+        message: "Refresh after [local path redacted] with Bearer [redacted]",
+        recovery: { action: "refresh-and-retry", retryable: true },
+        currentRevision: 17,
+      },
+    });
+    const serialized = JSON.stringify(result);
+    assert.doesNotMatch(serialized, /private-credential|privateState|Users\/example/);
   } finally {
     await session.close();
   }
@@ -258,7 +377,7 @@ test("bounds normal text and errors without exposing truncated paths or credenti
     const success = callResult(
       await session.request("tools/call", {
         name: "relay_system_doctor_get",
-        arguments: { input: {} },
+        arguments: {},
       }),
     );
     const text = String(success.content[0]?.text);
@@ -280,7 +399,7 @@ test("bounds normal text and errors without exposing truncated paths or credenti
     const failure = callResult(
       await session.request("tools/call", {
         name: "relay_target_list",
-        arguments: { input: {} },
+        arguments: {},
       }),
     );
     const errorText = String(failure.content[0]?.text);
@@ -328,7 +447,7 @@ test("returns screenshots as native PNG content without path or base64 metadata 
     const result = callResult(
       await session.request("tools/call", {
         name: "relay_target_screenshot_capture",
-        arguments: { input: { serial: "emulator-5554" } },
+        arguments: { serial: "emulator-5554" },
       }),
     );
     assert.equal(result.isError, undefined);
@@ -394,7 +513,7 @@ test("rejects screenshot results without canonical PNG base64", async () => {
       const result = callResult(
         await session.request("tools/call", {
           name: "relay_target_screenshot_capture",
-          arguments: { input: { serial: "emulator-5554" } },
+          arguments: { serial: "emulator-5554" },
         }),
       );
       assert.equal(result.isError, true);

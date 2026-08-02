@@ -97,14 +97,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("workspace.variables.get", path("data variables get")),
   mapped("workspace.variables.update", path("data variables update")),
 
-  mapped(
-    "target.actions.list",
-    path("action list"),
-    path("routine list", [], undefined, {
-      summary: "List reusable routines",
-      examples: ["relay routine list"],
-    }),
-  ),
+  mapped("target.actions.list", path("action list")),
   mapped(
     "target.devices.list",
     path("target device list"),
@@ -248,51 +241,75 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("project.save", path("project save")),
   mapped("build.list", path("build list")),
   mapped("build.save", path("build save")),
+  mapped("build.preflight", path("build preflight", ["buildId"])),
+  mapped("build.install", path("build install", ["buildId", "serial"])),
+  mapped("build.launch", path("build launch", ["buildId", "serial"])),
   mapped("device-pool.list", path("device-pool list")),
   mapped("device-pool.save", path("device-pool save")),
+  mapped("device-pool.preflight", path("device-pool preflight", ["poolId"])),
+  mapped("target-worker.list", path("target worker list")),
   mapped("lease.list", path("lease list")),
   mapped("lease.create", path("lease create")),
   mapped("lease.release", path("lease release", ["leaseId"])),
 
   mapped(
-    "journey.list",
-    path("journey list"),
+    "app-map.list",
     path("map list", [], undefined, {
       summary: "List App Maps",
       examples: ["relay map list"],
     }),
   ),
-  mapped("journey.get", path("journey get", ["journeyId"])),
   mapped(
-    "journey.create",
-    path("journey create"),
-    path("map create", [], undefined, {
-      summary: "Create an App Map",
-      inputHelp: [
-        {
-          name: "expectedRevision",
-          type: "number",
-          required: true,
-          description: "Expected initial revision, normally 0",
-        },
-        {
-          name: "title",
-          type: "string",
-          required: true,
-          description: "Human-readable title",
-        },
-        {
-          name: "steps",
-          type: "object[]",
-          required: true,
-          description: "Initial routine steps; use [] for an empty map",
-        },
+    "app-map.get",
+    path("map get", ["appMapId"], undefined, {
+      summary: "Inspect an App Map",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      examples: ["relay map get checkout"],
+    }),
+    path("screen list", ["appMapId"]),
+    path("connection list", ["appMapId"]),
+    path("connect list", ["appMapId"]),
+    path("flow list", ["appMapId"]),
+    path("routine list", ["appMapId"]),
+    path("proposal list", ["appMapId"]),
+  ),
+  mapped(
+    "app-map.create",
+    path("map create", ["appMapId"], undefined, {
+      summary: "Create an empty App Map",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "Stable App Map identifier" },
       ],
-      examples: [
-        'relay map create --input \'{"expectedRevision":0,"title":"Checkout","steps":[]}\'',
-      ],
+      inputHelp: [{ name: "name", type: "string", required: true, description: "Map name" }],
+      examples: ['relay map create checkout --input \'{"name":"Checkout"}\''],
     }),
   ),
+  mapped("app-map.update", path("map rename", ["appMapId"])),
+  mapped("app-map.screen.add", path("screen add", ["appMapId"])),
+  mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
+  mapped("app-map.screen.remove", path("screen remove", ["appMapId", "screenId"])),
+  mapped("app-map.connection.create", path("connect create", ["appMapId"])),
+  mapped(
+    "app-map.connection.update",
+    path("connect update", ["appMapId", "connectionId"]),
+    path("connection update", ["appMapId", "connectionId"]),
+  ),
+  mapped("app-map.connection.remove", path("connect remove", ["appMapId", "connectionId"])),
+  mapped("app-map.flow.save", path("flow save", ["appMapId", "flowId"])),
+  mapped("app-map.flow.remove", path("flow remove", ["appMapId", "flowId"])),
+  mapped("app-map.routine.save", path("routine save", ["appMapId", "routineId"])),
+  mapped("app-map.routine.remove", path("routine remove", ["appMapId", "routineId"])),
+  mapped("app-map.proposal.submit", path("proposal submit", ["appMapId"])),
+  mapped(
+    "app-map.observations.propose",
+    path("map propose-observations", ["appMapId", "sessionId"]),
+  ),
+  mapped("app-map.proposal.approve", path("proposal approve", ["appMapId", "proposalId"])),
+  mapped("app-map.proposal.reject", path("proposal reject", ["appMapId", "proposalId"])),
+
+  mapped("journey.list", path("journey list")),
+  mapped("journey.get", path("journey get", ["journeyId"])),
+  mapped("journey.create", path("journey create")),
   mapped("journey.update", path("journey update", ["journeyId"])),
   mapped(
     "journey.delete",
@@ -335,92 +352,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped("journey.evidence.save", path("journey evidence save", ["journeyId"])),
-  mapped(
-    "journey.document.get",
-    path("journey document get", ["journeyId"]),
-    path("screen list", ["journeyId"], undefined, {
-      summary: "List screens in an App Map",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      note: "Returns the complete revisioned App Map document.",
-    }),
-    path("connection list", ["journeyId"]),
-    path("map get", ["journeyId"], undefined, {
-      summary: "Get the revisioned App Map document",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      examples: ["relay map get checkout"],
-    }),
-    path("connect list", ["journeyId"], undefined, {
-      summary: "List connections in an App Map",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      note: "Returns the complete revisioned App Map document.",
-    }),
-    path("flow list", ["journeyId"], undefined, {
-      summary: "List named flows in an App Map",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      note: "Returns the complete revisioned App Map document.",
-    }),
-  ),
-  mapped(
-    "journey.document.update",
-    path("journey document update", ["journeyId"]),
-    path("screen update", ["journeyId"], undefined, {
-      summary: "Update screens in an App Map",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      inputHelp: [
-        {
-          name: "expectedRevision",
-          type: "number",
-          required: true,
-          description: "Current map revision",
-        },
-        { name: "value", type: "object", required: true, description: "Complete App Map document" },
-      ],
-      note: "Screens are updated through the complete revisioned App Map document.",
-    }),
-    path("connection update", ["journeyId"]),
-    path("map update", ["journeyId"], undefined, {
-      summary: "Replace a revisioned App Map document",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      inputHelp: [
-        {
-          name: "expectedRevision",
-          type: "number",
-          required: true,
-          description: "Revision used for optimistic concurrency",
-        },
-        { name: "value", type: "object", required: true, description: "Complete App Map document" },
-      ],
-      note: "This is a revision-safe whole-document update, not a partial patch.",
-    }),
-    path("connect update", ["journeyId"], undefined, {
-      summary: "Update connections in an App Map",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      inputHelp: [
-        {
-          name: "expectedRevision",
-          type: "number",
-          required: true,
-          description: "Current map revision",
-        },
-        { name: "value", type: "object", required: true, description: "Complete App Map document" },
-      ],
-      note: "Connections are updated through the complete revisioned App Map document.",
-    }),
-    path("flow update", ["journeyId"], undefined, {
-      summary: "Update named flows in an App Map",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      inputHelp: [
-        {
-          name: "expectedRevision",
-          type: "number",
-          required: true,
-          description: "Current map revision",
-        },
-        { name: "value", type: "object", required: true, description: "Complete App Map document" },
-      ],
-      note: "Flows are updated through the complete revisioned App Map document.",
-    }),
-  ),
+  mapped("journey.document.get", path("journey document get", ["journeyId"])),
+  mapped("journey.document.update", path("journey document update", ["journeyId"])),
   mapped("collaboration.document.bootstrap", path("collaboration bootstrap", ["journeyId"])),
   mapped("collaboration.document.sync", path("collaboration sync", ["journeyId"])),
   mapped("collaboration.update.append", path("collaboration update append", ["journeyId"])),
@@ -431,11 +364,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("collaboration.awareness.list", path("collaboration awareness list", ["journeyId"])),
   mapped("collaboration.awareness.remove", path("collaboration awareness remove", ["journeyId"])),
 
-  mapped(
-    "authoring.session.list",
-    path("session list"),
-    path("proposal list", [], undefined, { summary: "List recording proposals" }),
-  ),
+  mapped("authoring.session.list", path("session list")),
   mapped(
     "authoring.session.get",
     path("session get", ["sessionId"]),
@@ -849,12 +778,19 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("run.retention.apply", path("run retention apply")),
   mapped(
     "run.visual-baseline.update",
-    path("run visual-baseline update", ["runId"]),
-    path("run approve", ["runId"], undefined, {
-      summary: "Approve a run as the visual baseline",
-      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
-    }),
+    path("run visual-baseline update", ["runId"], { action: "approve-new-baseline" }),
+    path(
+      "run approve",
+      ["runId"],
+      { action: "approve-new-baseline" },
+      {
+        summary: "Approve a run as the visual baseline",
+        argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      },
+    ),
   ),
+  mapped("run.visual.compare", path("run visual compare", ["runId"])),
+  mapped("run.visual.review", path("run visual review", ["runId"])),
   mapped(
     "run.pin.update",
     path("run pin update", ["runId"]),

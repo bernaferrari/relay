@@ -357,11 +357,22 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       openDevicePicker();
       return null;
     }
+    const title = nextUntitledMapTitle(server.recipes());
     const saved = await server.saveRecipeRemote({
-      title: nextUntitledMapTitle(server.recipes()),
+      title,
       steps: [],
     });
     if (!saved) return null;
+    try {
+      await server.createAppMap(saved.id, title);
+    } catch (error) {
+      await server.deleteRecipeRemote(saved.id).catch(() => undefined);
+      toast(
+        `The App Map could not be initialized: ${error instanceof Error ? error.message : String(error)}`,
+        "error",
+      );
+      return null;
+    }
     server.setSelectedRecipeId(saved.id);
     setArea("tests");
     setStudioView("map");
@@ -433,7 +444,27 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       description: recipe.description,
       steps: draft.steps(),
     });
-    if (saved) server.setSelectedRecipeId(saved.id);
+    if (saved) {
+      await server.createAppMap(saved.id, title);
+      server.setSelectedRecipeId(saved.id);
+    }
+  }
+
+  async function renameCanonicalMap(name: string): Promise<void> {
+    const appMapId = server.selectedRecipeId();
+    if (!appMapId) return;
+    const map = server.appMaps().find((candidate) => candidate.id === appMapId);
+    if (!map || map.name === name) return;
+    try {
+      await server.runAction("app-map.update", {
+        appMapId,
+        expectedRevision: map.revision,
+        patch: { name },
+      });
+      await server.refreshAppMaps();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
   }
 
   function confirmDeleteJourney(recipe: RecipeInfo): void {
@@ -577,6 +608,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                   onInput={(event) => draft.setTitle(event.currentTarget.value)}
                   onBlur={() => {
                     if (!draft.title().trim()) draft.setTitle("Untitled");
+                    void renameCanonicalMap(draft.title().trim() || "Untitled");
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();

@@ -186,11 +186,23 @@ test("event follow retains its command path and rejects single-object JSON outpu
 
 test("friendly aliases and lifecycle commands construct operation inputs", () => {
   const cases = [
-    [["screen", "list", "journey-1"], "journey.document.get", { journeyId: "journey-1" }],
+    [["screen", "list", "map-1"], "app-map.get", { appMapId: "map-1" }],
     [
-      ["connection", "update", "journey-1", "--input", '{"expectedRevision":3}'],
-      "journey.document.update",
-      { journeyId: "journey-1", expectedRevision: 3 },
+      [
+        "connection",
+        "update",
+        "map-1",
+        "continue",
+        "--input",
+        '{"expectedRevision":3,"patch":{"label":"Continue"}}',
+      ],
+      "app-map.connection.update",
+      {
+        appMapId: "map-1",
+        connectionId: "continue",
+        expectedRevision: 3,
+        patch: { label: "Continue" },
+      },
     ],
     [
       ["session", "tap", "session-1", "--input", '{"interaction":{"target":{"x":4,"y":8}}}'],

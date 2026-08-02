@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   RevisionConflict,
+  type AppMap,
   type Build,
   type CompatibilityMatrix,
   type DeviceLease,
@@ -17,6 +18,8 @@ import { now, publish } from "./events.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitJourneyAggregate, readJourneyAggregate } from "./journey-aggregate.js";
 import { currentOperationContext } from "./operation-context.js";
+import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
+import { validateDevicePool } from "./device-pool.js";
 
 type CollaborationState = {
   projects: Project[];
@@ -26,6 +29,7 @@ type CollaborationState = {
   leases: DeviceLease[];
   variables: Record<string, Revisioned<TestVariable[]>>;
   journeys: Record<string, Revisioned<JourneyMetadata>>;
+  appMaps: Record<string, AppMap>;
   idempotency: Record<string, number>;
 };
 
@@ -64,6 +68,7 @@ function emptyState(): CollaborationState {
     leases: [],
     variables: {},
     journeys: {},
+    appMaps: {},
     idempotency: {},
   };
 }
@@ -73,7 +78,12 @@ async function readState(): Promise<CollaborationState> {
     const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<CollaborationState>;
     // State files are intentionally forwards-compatible. New resources do not
     // make an existing local project unreadable after an upgrade.
-    return { ...emptyState(), ...parsed, matrices: parsed.matrices ?? [] };
+    return {
+      ...emptyState(),
+      ...parsed,
+      matrices: parsed.matrices ?? [],
+      appMaps: parsed.appMaps ?? {},
+    };
   } catch {
     return emptyState();
   }
@@ -147,6 +157,10 @@ export async function listBuilds(projectId: string): Promise<Build[]> {
   return (await readState()).builds.filter((item) => item.projectId === projectId);
 }
 
+export async function readBuild(projectId: string, id: string): Promise<Build | null> {
+  return (await listBuilds(projectId)).find((item) => item.id === id) ?? null;
+}
+
 export async function saveBuild(input: Omit<Build, "createdAt" | "updatedAt">): Promise<Build> {
   return mutate((state) => {
     const at = now();
@@ -168,9 +182,14 @@ export async function listDevicePools(projectId: string): Promise<DevicePool[]> 
   return (await readState()).pools.filter((item) => item.projectId === projectId);
 }
 
+export async function readDevicePool(projectId: string, id: string): Promise<DevicePool | null> {
+  return (await listDevicePools(projectId)).find((item) => item.id === id) ?? null;
+}
+
 export async function saveDevicePool(
   input: Omit<DevicePool, "createdAt" | "updatedAt">,
 ): Promise<DevicePool> {
+  validateDevicePool(input);
   return mutate((state) => {
     const at = now();
     const existing = state.pools.find((item) => item.id === input.id);
@@ -413,5 +432,98 @@ export async function writeJourney(
       revision: next.revision,
     });
     return next;
+  });
+}
+
+function appMapKey(projectId: string, appMapId: string): string {
+  return `${projectId}:${appMapId}`;
+}
+
+export async function listAppMaps(projectId: string): Promise<AppMap[]> {
+  return Object.values((await readState()).appMaps)
+    .filter((appMap) => appMap.projectId === projectId)
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .map((appMap) => validateAppMap(appMap));
+}
+
+export async function readAppMap(projectId: string, appMapId: string): Promise<AppMap | null> {
+  const value = (await readState()).appMaps[appMapKey(projectId, appMapId)];
+  return value ? validateAppMap(value) : null;
+}
+
+export async function createAppMap(input: {
+  organizationId: string;
+  projectId: string;
+  appMapId: string;
+  name: string;
+  at?: number;
+}): Promise<AppMap> {
+  return mutate((state) => {
+    const key = appMapKey(input.projectId, input.appMapId);
+    if (state.appMaps[key]) throw new Error(`App Map ${input.appMapId} already exists`);
+    const at = input.at ?? now();
+    const appMap = validateAppMap({
+      schemaVersion: APP_MAP_SCHEMA_VERSION,
+      id: input.appMapId,
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      name: input.name.trim() || "Untitled",
+      revision: 0,
+      screens: {},
+      screenVariants: {},
+      connections: {},
+      routines: {},
+      flows: {},
+      runs: {},
+      targetResults: {},
+      proposals: {},
+      activity: {},
+      createdAt: at,
+      updatedAt: at,
+    });
+    state.appMaps[key] = appMap;
+    emit({
+      type: "resource.created",
+      at,
+      projectId: input.projectId,
+      resource: "app-map",
+      resourceId: input.appMapId,
+      revision: 0,
+    });
+    return validateAppMap(appMap);
+  });
+}
+
+export async function mutateStoredAppMap(
+  projectId: string,
+  appMapId: string,
+  transform: (current: AppMap) => AppMap,
+): Promise<AppMap> {
+  return mutate((state) => {
+    const key = appMapKey(projectId, appMapId);
+    const current = state.appMaps[key];
+    if (!current) throw new Error(`App Map ${appMapId} not found`);
+    const validatedCurrent = validateAppMap(current);
+    const next = validateAppMap(transform(validatedCurrent));
+    if (
+      next.id !== appMapId ||
+      next.projectId !== projectId ||
+      next.organizationId !== validatedCurrent.organizationId
+    ) {
+      throw new Error("App Map mutation changed its scope");
+    }
+    if (next.revision !== validatedCurrent.revision + 1) {
+      throw new Error("App Map mutation must advance exactly one revision");
+    }
+    state.appMaps[key] = next;
+    emit({
+      type: "resource.updated",
+      at: next.updatedAt,
+      projectId,
+      resource: "app-map",
+      resourceId: appMapId,
+      revision: next.revision,
+    });
+    return validateAppMap(next);
   });
 }

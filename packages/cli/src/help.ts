@@ -156,7 +156,7 @@ ${globalOptions}
     .join("\n");
   const aliasNote =
     family === "screen" || family === "connect" || family === "flow"
-      ? "\nScreen, connection, and flow edits use revision-safe whole App Map documents.\n"
+      ? "\nScreen, connection, and flow edits are granular, revision-safe App Map operations.\n"
       : "";
 
   return `Relay ${family} commands

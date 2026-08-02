@@ -65,6 +65,9 @@ export function patchScreen(
   if (input.patch.identity === null) delete screen.identity;
   else if (input.patch.identity !== undefined)
     screen.identity = structuredClone(input.patch.identity);
+  if (input.patch.position === null) delete screen.position;
+  else if (input.patch.position !== undefined)
+    screen.position = structuredClone(input.patch.position);
   screen.variantIds = [...variantIds].sort();
   screen.updatedAt = at;
 }

@@ -1,5 +1,6 @@
 import { createMemo, createSignal } from "solid-js";
 import type {
+  AuthoringActionSource,
   AuthoringInteraction,
   AuthoringObservation,
   AuthoringSession,
@@ -22,6 +23,15 @@ import { toast } from "./toast";
 
 export type RecLevel = "smart" | "element" | "point";
 
+export type RecordingTakeAction = {
+  id: string;
+  source: AuthoringActionSource;
+  label?: string;
+  steps: RecipeStep[];
+  stepStartIndex: number;
+  evidenceUrl?: string;
+};
+
 /** UI shape projected from the server-owned immutable Take revision. */
 export type RecordingTake = {
   id: string;
@@ -34,6 +44,7 @@ export type RecordingTake = {
   startedAt: number;
   finishedAt?: number;
   group: string;
+  actions: RecordingTakeAction[];
   steps: RecipeStep[];
   actionIds: string[];
   stepEvidenceUrls: string[];
@@ -109,7 +120,7 @@ function projectedObservation(value: AuthoringObservation): JourneyScreenObserva
   return structuredClone(value.screen as JourneyScreenObservation);
 }
 
-function projectTake(
+export function projectTake(
   session: AuthoringSession,
   evidenceUrl: (uri: string, mime?: string) => string,
 ): RecordingTake | null {
@@ -117,6 +128,7 @@ function projectTake(
   const revision = sessionRevision(session);
   if (!take || !revision) return null;
   const evidenceById = new Map(revision.evidence.map((item) => [item.id, item]));
+  const actions: RecordingTakeAction[] = [];
   const steps: RecipeStep[] = [];
   const actionIds: string[] = [];
   const stepEvidenceUrls: string[] = [];
@@ -124,8 +136,17 @@ function projectTake(
     const screenshot = action.evidenceIds
       .map((id) => evidenceById.get(id))
       .find((item) => item?.kind === "screenshot");
-    for (const step of action.steps) {
-      steps.push(structuredClone(step));
+    const projectedSteps = action.steps.map((step) => structuredClone(step));
+    actions.push({
+      id: action.id,
+      source: action.source,
+      ...(action.label ? { label: action.label } : {}),
+      steps: projectedSteps,
+      stepStartIndex: steps.length,
+      ...(screenshot ? { evidenceUrl: evidenceUrl(screenshot.uri, screenshot.mime) } : {}),
+    });
+    for (const step of projectedSteps) {
+      steps.push(step);
       actionIds.push(action.id);
       stepEvidenceUrls.push(screenshot ? evidenceUrl(screenshot.uri, screenshot.mime) : "");
     }
@@ -142,6 +163,7 @@ function projectTake(
     startedAt: take.createdAt,
     ...(session.state !== "recording" ? { finishedAt: take.updatedAt } : {}),
     group: session.group ?? "",
+    actions,
     steps,
     actionIds,
     stepEvidenceUrls,
@@ -520,6 +542,42 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       }
     }
 
+    async function reorderTakeActions(actionIds: string[]): Promise<void> {
+      const current = take();
+      const session = activeSession();
+      if (!current || !session || session.state !== "reviewing" || !ownsActiveSession()) return;
+      await server.reorderAuthoringTake(session.id, [...actionIds]);
+    }
+
+    async function replaceTakeAction(
+      actionId: string,
+      interaction: AuthoringInteraction,
+    ): Promise<void> {
+      const current = take();
+      const session = activeSession();
+      if (
+        !current ||
+        !session ||
+        session.state !== "reviewing" ||
+        !ownsActiveSession() ||
+        !current.actions.some((action) => action.id === actionId)
+      )
+        return;
+      await server.replaceAuthoringAction(session.id, actionId, interaction);
+    }
+
+    async function removeTakeAction(actionId: string): Promise<void> {
+      const current = take();
+      const session = activeSession();
+      if (!current || !session || session.state !== "reviewing" || !ownsActiveSession()) return;
+      if (!current.actions.some((action) => action.id === actionId)) return;
+      await server.trimAuthoringTake(session.id, {
+        actionIds: current.actions
+          .map((action) => action.id)
+          .filter((candidate) => candidate !== actionId),
+      });
+    }
+
     async function setTakeVideoClip(videoClip: JourneyVideoClip): Promise<void> {
       const session = activeSession();
       if (!session || !ownsActiveSession()) return;
@@ -619,6 +677,9 @@ export const { use: useRecorder, provider: RecorderProvider } = createSimpleCont
       replayTake,
       discardTake,
       removeTakeStep,
+      reorderTakeActions,
+      replaceTakeAction,
+      removeTakeAction,
       setTakeVideoClip,
       setRecordingGroup,
       setRecordingSourceScreen,

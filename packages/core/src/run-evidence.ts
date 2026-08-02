@@ -117,11 +117,18 @@ function event(
   kind: string,
   data?: unknown,
   stepId?: string,
+  timing?: { at?: number; monotonicMs?: number },
 ): void {
+  const capturedAt = finiteTimestamp(timing?.at) ?? now();
+  const monotonicMs =
+    finiteOffset(timing?.monotonicMs) ??
+    (timing?.at === undefined
+      ? Math.max(0, performance.now() - handle.monotonicStart)
+      : Math.max(0, capturedAt - handle.startedAt));
   handle.manifest.events.push({
     sequence: handle.manifest.events.length + 1,
-    at: now(),
-    monotonicMs: Math.max(0, performance.now() - handle.monotonicStart),
+    at: capturedAt,
+    monotonicMs,
     channel: name,
     kind,
     ...(stepId ? { stepId } : {}),
@@ -487,10 +494,12 @@ export async function stopRunEvidence(
 
   for (const step of job.steps) {
     for (const action of step.actions ?? []) {
-      event(handle, "input", action.kind, { label: action.label }, step.id);
+      event(handle, "input", action.kind, { label: action.label }, step.id, { at: action.at });
     }
     for (const frame of step.frames) {
-      event(handle, "screenshot", "frame", { path: frame.path, bytes: frame.bytes }, step.id);
+      event(handle, "screenshot", "frame", { path: frame.path, bytes: frame.bytes }, step.id, {
+        at: frame.capturedAt,
+      });
     }
   }
   const treeArtifacts = job.artifacts.filter((artifact) => artifact.kind === "ui-tree");
@@ -502,11 +511,14 @@ export async function stopRunEvidence(
       `snapshot.${data.phase ?? "unknown"}`,
       { nodes: data.nodes?.length ?? 0 },
       data.stepId,
+      { at: artifact.capturedAt },
     );
   }
   for (const artifact of job.artifacts.filter((item) => item.kind === "command-attempt")) {
     const data = artifact.data as { stepId?: string; command?: unknown };
-    event(handle, "input", "command.attempt", data.command, data.stepId);
+    event(handle, "input", "command.attempt", data.command, data.stepId, {
+      at: artifact.capturedAt,
+    });
   }
   const screenshots = channel(handle, "screenshot");
   screenshots.entries = job.frames.length;
@@ -515,9 +527,6 @@ export async function stopRunEvidence(
     screenshots.status = screenshots.entries > 0 ? "captured" : "partial";
   }
   screenshots.finishedAt = now();
-  const input = channel(handle, "input");
-  input.entries = handle.manifest.events.filter((item) => item.channel === "input").length;
-  input.finishedAt = now();
   const trees = channel(handle, "ui-tree");
   trees.entries = treeArtifacts.length;
   trees.bytes = byteCount(treeArtifacts.map((artifact) => artifact.data));
@@ -526,8 +535,29 @@ export async function stopRunEvidence(
   }
   trees.finishedAt = now();
   handle.manifest.finishedAt = now();
-  event(handle, "input", "run.finished");
+  event(handle, "input", "run.finished", undefined, undefined, {
+    at: handle.manifest.finishedAt,
+  });
+  resequenceChronologically(handle.manifest);
+  const input = channel(handle, "input");
+  input.entries = handle.manifest.events.filter((item) => item.channel === "input").length;
+  input.finishedAt = handle.manifest.finishedAt;
   job.evidence = handle.manifest;
+}
+
+function finiteTimestamp(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function finiteOffset(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function resequenceChronologically(manifest: EvidenceManifest): void {
+  manifest.events.sort(
+    (left, right) => left.monotonicMs - right.monotonicMs || left.sequence - right.sequence,
+  );
+  for (const [index, item] of manifest.events.entries()) item.sequence = index + 1;
 }
 
 async function videoFiles(job: TestJob): Promise<Array<{ path: string; bytes: number }>> {

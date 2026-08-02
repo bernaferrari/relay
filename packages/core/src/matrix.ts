@@ -7,6 +7,7 @@ import type {
   TargetSelector,
 } from "@relay/protocol";
 import type { ListedDevice } from "./workspace.js";
+import { BROWSER_TARGET_CAPABILITIES } from "./targets.js";
 
 const MOBILE_CAPABILITIES: Record<"android" | "ios", TargetCapability[]> = {
   android: [
@@ -43,19 +44,6 @@ const MOBILE_CAPABILITIES: Record<"android" | "ios", TargetCapability[]> = {
   ],
 };
 
-const BROWSER_CAPABILITIES: TargetCapability[] = [
-  "snapshot",
-  "screenshot",
-  "stream",
-  "recording",
-  "tap",
-  "type",
-  "scroll",
-  "clipboard",
-  "network",
-  "logs",
-];
-
 /** Build profiles only from facts reported by the adapter or configured target. */
 export function buildTargetProfiles(input: {
   devices: ListedDevice[];
@@ -83,7 +71,7 @@ export function buildTargetProfiles(input: {
       platform: "browser" as const,
       name: target.name,
       ...(target.browser?.viewport ? { viewport: { ...target.browser.viewport } } : {}),
-      capabilities: [...BROWSER_CAPABILITIES],
+      capabilities: [...BROWSER_TARGET_CAPABILITIES],
       observedAt,
     }));
   return [...mobile, ...browsers].sort((left, right) => left.id.localeCompare(right.id));

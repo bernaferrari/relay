@@ -1,4 +1,5 @@
 import type { ServerConnection } from "@relay/protocol";
+import { defaultRelayMcpProfile, relayMcpProfiles, type RelayMcpProfile } from "./tools.js";
 
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
 
@@ -6,6 +7,7 @@ export type McpConfig = {
   connection: ServerConnection;
   credentialSource: CredentialSource;
   timeoutMs: number;
+  profile: RelayMcpProfile;
 };
 
 type Environment = Record<string, string | undefined>;
@@ -16,6 +18,7 @@ const defaults = {
   project: "default",
   credentialSource: "env:RELAY_AUTH_TOKEN",
   timeout: "20000",
+  profile: defaultRelayMcpProfile,
 } as const;
 
 const valueFlags = new Set([
@@ -25,6 +28,7 @@ const valueFlags = new Set([
   "--credential-source",
   "--actor",
   "--timeout",
+  "--profile",
 ]);
 
 function parseArguments(argv: readonly string[]): Map<string, string> {
@@ -53,6 +57,11 @@ function parseCredentialSource(value: string): CredentialSource {
   throw new TypeError("--credential-source must be 'none' or 'env:NAME'");
 }
 
+function parseProfile(value: string): RelayMcpProfile {
+  if (relayMcpProfiles.includes(value as RelayMcpProfile)) return value as RelayMcpProfile;
+  throw new TypeError(`--profile must be one of: ${relayMcpProfiles.join(", ")}`);
+}
+
 export function parseMcpConfig(
   argv: readonly string[],
   env: Environment = process.env,
@@ -76,6 +85,9 @@ export function parseMcpConfig(
   }
 
   const actorId = choose(values.get("--actor"), env.RELAY_ACTOR_ID, `agent:mcp:${processId}`);
+  const profile = parseProfile(
+    choose(values.get("--profile"), env.RELAY_MCP_PROFILE, defaults.profile),
+  );
   const connection: ServerConnection = {
     url: choose(values.get("--server"), env.RELAY_URL, defaults.server),
     organizationId: choose(
@@ -89,7 +101,7 @@ export function parseMcpConfig(
     auth: credential ? { type: "bearer", token: credential } : { type: "none" },
   };
 
-  return { connection, credentialSource, timeoutMs };
+  return { connection, credentialSource, timeoutMs, profile };
 }
 
 export function redactedMcpConfig(config: McpConfig): Record<string, unknown> {
@@ -103,5 +115,6 @@ export function redactedMcpConfig(config: McpConfig): Record<string, unknown> {
       config.credentialSource.type === "none" ? "none" : `env:${config.credentialSource.name}`,
     credential: config.connection.auth.type === "none" ? "none" : "configured",
     timeoutMs: config.timeoutMs,
+    profile: config.profile,
   };
 }

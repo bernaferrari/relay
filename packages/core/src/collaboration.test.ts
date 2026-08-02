@@ -5,17 +5,84 @@ import { join } from "node:path";
 import test from "node:test";
 import { RevisionConflict } from "@relay/protocol";
 import {
+  createAppMap,
   leaseDevice,
   deleteCompatibilityMatrix,
   listCompatibilityMatrices,
+  listAppMaps,
   listDeviceLeases,
   readJourney,
+  readAppMap,
   readProjectVariables,
   releaseDeviceLease,
   saveCompatibilityMatrix,
+  mutateStoredAppMap,
   writeJourney,
   writeProjectVariables,
 } from "./collaboration.js";
+import { addAppMapScreen } from "./app-map.js";
+
+test("App Maps persist normalized revisions and reject unsafe stored mutations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-maps-"));
+  const previous = process.env.GROK_DEVICE_STATE_DIR;
+  process.env.GROK_DEVICE_STATE_DIR = root;
+  try {
+    const created = await createAppMap({
+      organizationId: "acme",
+      projectId: "mobile",
+      appMapId: "store",
+      name: "Store",
+      at: 100,
+    });
+    assert.equal(created.revision, 0);
+    assert.deepEqual(
+      (await listAppMaps("mobile")).map((map) => map.id),
+      ["store"],
+    );
+
+    const saved = await mutateStoredAppMap("mobile", "store", (map) =>
+      addAppMapScreen(
+        map,
+        {
+          screen: {
+            id: "welcome",
+            organizationId: "acme",
+            projectId: "mobile",
+            appMapId: "store",
+            title: "Welcome",
+            variantIds: [],
+            createdAt: 101,
+            updatedAt: 101,
+          },
+        },
+        {
+          expectedRevision: 0,
+          eventId: "event-add-welcome",
+          actorId: "agent:mapper",
+          actorKind: "agent",
+          at: 101,
+        },
+      ),
+    );
+    assert.equal(saved.revision, 1);
+    assert.equal(saved.screens.welcome?.title, "Welcome");
+    assert.equal(saved.activity["event-add-welcome"]?.actorKind, "agent");
+    assert.equal((await readAppMap("mobile", "store"))?.revision, 1);
+
+    await assert.rejects(
+      mutateStoredAppMap("mobile", "store", (map) => ({ ...map, projectId: "other" })),
+      /scope/u,
+    );
+    await assert.rejects(
+      mutateStoredAppMap("mobile", "store", (map) => ({ ...map, revision: map.revision + 2 })),
+      /exactly one revision/u,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
+    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("revisioned project data detects conflicts and preserves idempotency", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-state-"));

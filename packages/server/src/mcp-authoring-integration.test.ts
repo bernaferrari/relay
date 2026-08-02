@@ -327,7 +327,7 @@ test("MCP agent authors a transition observed by an app client", async () => {
     const screenshot = callResult(
       await callTool(mcp, "relay_target_screenshot_capture", { serial: targetId }),
     );
-    assert.equal(screenshot.isError, undefined);
+    assert.equal(screenshot.isError, undefined, JSON.stringify(screenshot.content));
     const image = screenshot.content.find((item) => item.type === "image");
     assert.ok(image);
     assert.equal(image.mimeType, "image/png");

@@ -41,6 +41,7 @@ export type ResourceKind =
   | "device-pool"
   | "lease"
   | "variables"
+  | "app-map"
   | "journey"
   | "collection"
   | "matrix"

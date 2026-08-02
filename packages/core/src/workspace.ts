@@ -294,7 +294,10 @@ async function observedAndroidVersion(serial: string): Promise<string | undefine
 }
 
 export async function listDevices(): Promise<ListedDevice[]> {
-  const client = createDevice();
+  // Discovery is intentionally isolated from every controllable target. It
+  // may enumerate all adapters, but it can never inherit an app session or
+  // input authority from whichever device a human or agent used last.
+  const client = createDevice({ kind: "device", platform: "android", serial: "discovery" });
   // USB/ADB is the source of truth for attached Android hardware. The optional
   // SDK adapter can occasionally wait on an app session, so never let its
   // discovery call freeze the device picker or hide a phone ADB can see.
@@ -420,7 +423,7 @@ function mergeAdbObservation(
  * without leaving the app. Physical devices reject this server-side.
  */
 export async function bootDevice(serial: string, platform: DevicePlatform): Promise<void> {
-  const client = createDevice();
+  const client = createDevice({ kind: "device", platform, serial });
   await client.devices.boot(platform === "ios" ? { platform, udid: serial } : { platform, serial });
   publish({ type: "device.booted", at: now(), serial });
 }
@@ -460,9 +463,10 @@ async function resolveRuntimeTarget(
   if (provided) return { context: currentTargetContext(), device: provided };
   if (serial) {
     if (await readTarget(serial)) {
+      const context = { kind: "browser", platform: "browser", targetId: serial } as const;
       return {
-        context: { kind: "browser", platform: "browser", targetId: serial },
-        device: await getBrowserDevice(serial),
+        context,
+        device: await runWithTargetContext(context, () => getBrowserDevice(serial)),
       };
     }
     // HTTP callers identify a device by serial, but they do not share the
@@ -471,9 +475,10 @@ async function resolveRuntimeTarget(
     // be routed through Android's adb screenshot/input paths.
     const platform = (await devicePlatformForSerial(serial)) ?? undefined;
     if (!platform) throw new Error(`Target ${serial} is not connected or configured`);
+    const context = { kind: "device", platform, serial } as const;
     return {
-      context: { kind: "device", platform, serial },
-      device: createDevice(),
+      context,
+      device: await runWithTargetContext(context, async () => createDevice()),
     };
   }
   const context = currentTargetContext();
@@ -675,7 +680,7 @@ export async function captureScreenshot(opts?: {
     let framePath: string | undefined;
     let jobId = opts?.jobId;
     if (!opts?.ephemeral) {
-      const active = opts?.jobId ? { id: opts.jobId } : getActiveJob();
+      const active = opts?.jobId ? { id: opts.jobId } : getActiveJob(serial);
       if (active) {
         const frame = await attachJobFrame({
           jobId: active.id,

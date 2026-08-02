@@ -119,6 +119,24 @@ export function emptyJourneyGraph(): JourneyGraph {
   return { schemaVersion: 1, screens: [], transitions: [], flows: [] };
 }
 
+/** Remove one authored screen and the canvas-only routes that depend on it.
+ * Executable recipe steps are deliberately left intact until their connection
+ * is explicitly rewritten, so deleting layout never silently deletes test
+ * behavior. The canonical App Map operation performs the final reference
+ * safety check before the removal is shared. */
+export function removeJourneyGraphScreen(graph: JourneyGraph, screenId: string): JourneyGraph {
+  const copy = cloneGraph(graph);
+  if (!copy.screens.some((screen) => screen.id === screenId)) return copy;
+  copy.screens = copy.screens.filter((screen) => screen.id !== screenId);
+  copy.transitions = copy.transitions.filter(
+    (transition) =>
+      transition.fromScreenId !== screenId &&
+      !(transition.destination.kind === "screen" && transition.destination.screenId === screenId),
+  );
+  copy.flows = copy.flows.filter((flow) => flow.screenId !== screenId);
+  return copy;
+}
+
 /** Establish the first canvas node without creating a fake transition or
  * executable screenshot step. The observation is the durable screen identity;
  * recording can begin later from this explicit entry point. */

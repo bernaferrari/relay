@@ -11,6 +11,7 @@ import {
   emptyJourneyGraph,
   ensureJourneyGraph,
   reviewGraphTransition,
+  removeJourneyGraphScreen,
   withJourneyGraph,
 } from "./journey-graph";
 
@@ -43,6 +44,26 @@ test("the current device screen can become the entry node without an executable 
   assert.deepEqual(captured.screen.observations, [observation]);
   assert.equal(buildJourneyGraphTree(captured.graph, []).nodes[0]?.representativeStepIndex, -1);
   assert.throws(() => addJourneyStartScreen(captured.graph, observation, { at: 20 }));
+});
+
+test("removing a screen removes its canvas routes and entry flow without deleting recipe steps", () => {
+  const committed = commitTakeToJourneyGraph(emptyJourneyGraph(), {
+    steps: [steps[0]!],
+    at: 10,
+  });
+  const removed = removeJourneyGraphScreen(committed.graph, committed.destinationScreenId!);
+
+  assert.equal(removed.screens.length, 1);
+  assert.equal(removed.transitions.length, 0);
+  assert.equal(removed.flows.length, 1);
+  assert.equal(steps[0]?.id, "open-settings");
+
+  const withoutStart = removeJourneyGraphScreen(
+    committed.graph,
+    committed.graph.flows[0]!.screenId,
+  );
+  assert.equal(withoutStart.flows.length, 0);
+  assert.equal(withoutStart.transitions.length, 0);
 });
 
 test("capturing a screen creates unique nodes and refreshes matching observations", () => {

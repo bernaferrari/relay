@@ -111,6 +111,17 @@ function mobileRuntime(enqueued: EnqueueJobInput[]) {
       },
     ],
     listTargets: async () => [],
+    listDevicePools: async () => [
+      {
+        id: "mobile",
+        projectId,
+        name: "Mobile worker",
+        platform: "mixed",
+        deviceSerials: ["android-1", "ios-1"],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
     assertTargetControl: control,
     enqueueJob: enqueue,
   };
@@ -232,6 +243,8 @@ test("freezes one Journey path and reusable graph across iOS and Android profile
         assert.equal(job.projectId, projectId);
         assert.equal(job.ownerId, scope.subject);
         assert.equal(job.targetProfile?.targetId, job.serial);
+        assert.equal(job.workerId, "pool:mobile");
+        assert.equal(job.workerCapacity, 2);
       }
       const plans = enqueued.map(
         (job) => job.artifacts?.find((artifact) => artifact.kind === "journey-graph-plan")?.data,

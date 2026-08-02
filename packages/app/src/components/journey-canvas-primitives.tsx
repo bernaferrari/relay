@@ -342,6 +342,7 @@ export function ScreenInspector(props: {
   title: string;
   connections: CanvasConnection[];
   onSelectConnection: (connection: CanvasConnection) => void;
+  onRemove: () => void;
   onClose: () => void;
 }) {
   return (
@@ -357,14 +358,25 @@ export function ScreenInspector(props: {
                 {props.title}
               </strong>
             </div>
-            <button
-              type="button"
-              class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
-              aria-label="Close screen details"
-              onClick={props.onClose}
-            >
-              <Icon name="x" size={12} />
-            </button>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--icon-critical-base)]"
+                aria-label="Remove screen"
+                title="Remove screen (Delete)"
+                onClick={props.onRemove}
+              >
+                <Icon name="trash" size={12} />
+              </button>
+              <button
+                type="button"
+                class="relative grid size-10 place-items-center rounded-[8px] text-[var(--text-weak)] before:absolute before:-inset-0.5 transition-colors hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                aria-label="Close screen details"
+                onClick={props.onClose}
+              >
+                <Icon name="x" size={12} />
+              </button>
+            </div>
           </div>
           <div class="mt-2 grid gap-0.5 border-t border-[var(--v2-border-border-muted)] pt-1.5">
             <span class="px-1.5 pb-0.5 text-[10.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)]">
@@ -421,7 +433,6 @@ export function ConnectionInspector(props: {
   connection: CanvasConnection;
   sourceTitle: string;
   targetTitle: string;
-  targetSetName: string;
   setup: {
     behaviors: Array<{ id: string; label: string; actionCount: number }>;
     onRecord: () => void;
@@ -512,7 +523,7 @@ export function ConnectionInspector(props: {
                 Reach {props.targetTitle}
               </strong>
               <span class="block truncate text-[9.5px] text-[var(--text-weak)]">
-                Checked on {props.targetSetName}
+                {checkedTargetsLabel(props.connection.review?.targets)}
               </span>
             </span>
             <span class="text-[9.5px] font-medium text-[var(--text-weak)]">
@@ -702,4 +713,12 @@ export function ConnectionInspector(props: {
       </Show>
     </aside>
   );
+}
+
+export function checkedTargetsLabel(
+  targets: readonly { targetId: string; targetName?: string }[] | undefined,
+): string {
+  if (!targets?.length) return "No target evidence recorded";
+  if (targets.length === 1) return `Checked on ${targets[0]!.targetName ?? targets[0]!.targetId}`;
+  return `Checked on ${targets.length} targets`;
 }

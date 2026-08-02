@@ -22,3 +22,12 @@ export function runWithTargetContext<T>(
 export function targetIdentity(context = currentTargetContext()): string {
   return context.kind === "browser" ? context.targetId : context.serial;
 }
+
+/** Stable, filesystem-safe agent-device session isolation per selected target. */
+export function targetSessionName(context = currentTargetContext()): string {
+  const identity = targetIdentity(context)
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `relay-${context.platform}-${identity || "target"}`;
+}

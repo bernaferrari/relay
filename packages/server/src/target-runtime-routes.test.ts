@@ -1,0 +1,148 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { startServer } from "./index.js";
+
+function headers(operationId: string): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    "x-project-id": "runtime-project",
+    "x-organization-id": "relay",
+    "x-relay-actor-id": "human:runtime-test",
+    "x-relay-actor-kind": "human",
+    "x-relay-operation-id": operationId,
+    "x-relay-request-id": crypto.randomUUID(),
+    "x-relay-command-at": String(Date.now()),
+    "idempotency-key": crypto.randomUUID(),
+  };
+}
+
+test("exposes pool capacity and installs and launches a registered artifact through one leased target", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-runtime-"));
+  const artifact = join(root, "app.apk");
+  await writeFile(artifact, "apk");
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const commands: Array<[string, string[]]> = [];
+  let controlChecks = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "pixel",
+          serial: "pixel-1",
+          name: "Pixel",
+          platform: "android",
+          kind: "Pixel 9",
+          booted: true,
+        },
+      ],
+      listDeviceLeases: async () => [
+        {
+          id: "lease",
+          projectId: "runtime-project",
+          poolId: "phones",
+          deviceSerial: "pixel-1",
+          ownerId: "human:runtime-test",
+          status: "leased",
+          leasedAt: 1,
+          expiresAt: Date.now() + 60_000,
+        },
+      ],
+      assertTargetControl: async () => {
+        controlChecks += 1;
+        return {
+          id: "lease",
+          projectId: "runtime-project",
+          poolId: "phones",
+          deviceSerial: "pixel-1",
+          ownerId: "human:runtime-test",
+          status: "leased",
+          leasedAt: 1,
+          expiresAt: Date.now() + 60_000,
+        };
+      },
+      runBuildCommand: async (command, args) => {
+        commands.push([command, args]);
+        return { stdout: command === "apkanalyzer" ? "com.example.app\n" : "" };
+      },
+    },
+  });
+  const base = `http://127.0.0.1:${server.port}`;
+  try {
+    const build = await fetch(`${base}/builds`, {
+      method: "POST",
+      headers: headers("build.save"),
+      body: JSON.stringify({
+        id: "android",
+        name: "Android",
+        platform: "android",
+        sourceUrl: artifact,
+        status: "ready",
+      }),
+    });
+    assert.equal(build.status, 201);
+
+    const pool = await fetch(`${base}/device-pools`, {
+      method: "POST",
+      headers: headers("device-pool.save"),
+      body: JSON.stringify({
+        id: "phones",
+        name: "Phones",
+        platform: "android",
+        deviceSerials: ["pixel-1"],
+      }),
+    });
+    assert.equal(pool.status, 201);
+
+    const poolPreflight = await fetch(`${base}/device-pools/phones/preflight`, {
+      method: "POST",
+      headers: headers("device-pool.preflight"),
+      body: "{}",
+    });
+    const poolBody = (await poolPreflight.json()) as {
+      preflight: { capacity: { connected: number; available: number; leased: number } };
+    };
+    assert.deepEqual(poolBody.preflight.capacity, {
+      configured: 1,
+      connected: 1,
+      available: 0,
+      leased: 1,
+    });
+
+    const preflight = await fetch(`${base}/builds/android/preflight`, {
+      method: "POST",
+      headers: headers("build.preflight"),
+      body: JSON.stringify({ serial: "pixel-1" }),
+    });
+    const preflightBody = (await preflight.json()) as {
+      preflight: {
+        ok: boolean;
+        applicationId?: string;
+        capabilities: { install: boolean; launch: boolean };
+      };
+    };
+    assert.equal(preflightBody.preflight.ok, true);
+    assert.equal(preflightBody.preflight.applicationId, "com.example.app");
+    assert.deepEqual(preflightBody.preflight.capabilities, { install: true, launch: true });
+
+    const install = await fetch(`${base}/builds/android/install`, {
+      method: "POST",
+      headers: headers("build.install"),
+      body: JSON.stringify({ serial: "pixel-1", launch: true }),
+    });
+    assert.equal(install.status, 200);
+    assert.equal(controlChecks, 1);
+    assert.ok(commands.some(([command, args]) => command === "adb" && args.includes("install")));
+    assert.ok(commands.some(([command, args]) => command === "adb" && args.includes("monkey")));
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

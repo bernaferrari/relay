@@ -6,6 +6,7 @@ import {
   freezeRecipeExecution,
   freezeRecipeGraph,
   listDevices,
+  listDevicePools,
   listTargets,
   now,
   readCompatibilityMatrix,
@@ -31,6 +32,7 @@ export type CompatibilityBatchInput = {
 export type CompatibilityBatchRuntime = {
   listDevices: typeof listDevices;
   listTargets: typeof listTargets;
+  listDevicePools: typeof listDevicePools;
   assertTargetControl: typeof assertTargetControl;
   enqueueJob: typeof enqueueJob;
 };
@@ -38,6 +40,7 @@ export type CompatibilityBatchRuntime = {
 const defaultRuntime: CompatibilityBatchRuntime = {
   listDevices,
   listTargets,
+  listDevicePools,
   assertTargetControl,
   enqueueJob,
 };
@@ -136,10 +139,11 @@ export async function enqueueCompatibilityBatch(
       `Compatibility matrix “${matrix.name}” matched no targets${details ? ` (${details})` : ""}`,
     );
   }
-  const leases = new Map<string, string>();
+  const leases = new Map<string, Awaited<ReturnType<typeof assertTargetControl>>>();
   for (const profile of expansion.profiles) {
-    leases.set(profile.targetId, (await runtime.assertTargetControl(scope, profile.targetId)).id);
+    leases.set(profile.targetId, await runtime.assertTargetControl(scope, profile.targetId));
   }
+  const pools = await runtime.listDevicePools(scope.projectId);
   const repetitions = Math.min(
     Math.max(Math.floor(body.repetitions ?? 1), 1),
     options.maxRepetitions,
@@ -155,7 +159,7 @@ export async function enqueueCompatibilityBatch(
   const jobs = expansion.profiles.flatMap((profile) =>
     Array.from({ length: repetitions }, (_, repetition) =>
       runWithOperationContext(
-        { ...requireOperationContext(), leaseId: leases.get(profile.targetId) },
+        { ...requireOperationContext(), leaseId: leases.get(profile.targetId)?.id },
         () =>
           runtime.enqueueJob({
             recipe: body.recipe,
@@ -198,6 +202,18 @@ export async function enqueueCompatibilityBatch(
             ],
             projectId: scope.projectId,
             ownerId: currentOperationContext()!.actorId,
+            ...(leases.get(profile.targetId)
+              ? {
+                  workerId: `pool:${leases.get(profile.targetId)!.poolId}`,
+                  workerCapacity: Math.max(
+                    1,
+                    new Set(
+                      pools.find((pool) => pool.id === leases.get(profile.targetId)!.poolId)
+                        ?.deviceSerials ?? [profile.targetId],
+                    ).size,
+                  ),
+                }
+              : {}),
           }),
       ),
     ),

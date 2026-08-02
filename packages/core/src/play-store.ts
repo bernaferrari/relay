@@ -27,9 +27,7 @@ export const HOME_ACCOUNT_MATCH =
 
 export type GrokListingAction = "updated" | "installed" | "already-latest";
 
-/** Reserved for future alpha-flow knobs. Account switch is always enforced. */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export type AccountFlowOptions = {};
+export type AccountFlowOptions = { prodAccountMatch?: string };
 
 function blobOf(n: SnapshotNode): string {
   return `${n.label ?? ""} ${n.value ?? ""} ${n.identifier ?? ""}`;
@@ -368,9 +366,9 @@ export async function reinstallLastAlpha(
 /** UPDATE only on prod/personal account (no reinstall). Requires PROD_ACCOUNT_MATCH. */
 export async function updateLastProd(
   device: Device,
-  _opts?: AccountFlowOptions,
+  opts?: AccountFlowOptions,
 ): Promise<GrokListingAction> {
-  const match = process.env.PROD_ACCOUNT_MATCH?.trim();
+  const match = opts?.prodAccountMatch?.trim() || process.env.PROD_ACCOUNT_MATCH?.trim();
   if (!match) {
     throw new Error("PROD_ACCOUNT_MATCH is required for update-last-prod (e.g. gmail.com).");
   }
@@ -379,8 +377,8 @@ export async function updateLastProd(
 }
 
 /** Reinstall on prod account (Uninstall → Install). Requires PROD_ACCOUNT_MATCH. */
-export async function installLastProd(device: Device, _opts?: AccountFlowOptions): Promise<void> {
-  const match = process.env.PROD_ACCOUNT_MATCH?.trim();
+export async function installLastProd(device: Device, opts?: AccountFlowOptions): Promise<void> {
+  const match = opts?.prodAccountMatch?.trim() || process.env.PROD_ACCOUNT_MATCH?.trim();
   if (!match) {
     throw new Error("PROD_ACCOUNT_MATCH is required for install-last-prod (e.g. gmail.com).");
   }

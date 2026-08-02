@@ -35,6 +35,30 @@ import {
   type CollaborationJourneyInput,
   type CollaborationSyncInput,
 } from "./collaboration.js";
+import type {
+  AddScreenInput,
+  AppMap,
+  AppMapPatch,
+  Connection,
+  ConnectionPatch,
+  Flow,
+  Proposal,
+  Routine,
+  UpdateScreenInput,
+} from "./app-map.js";
+import type {
+  VisualBaseline,
+  VisualComparison,
+  VisualReviewAction,
+  VisualReviewDecision,
+} from "./visual-verification.js";
+import type {
+  DevicePoolPreflight,
+  InstalledBuild,
+  LaunchedBuild,
+  RegisteredBuildPreflight,
+  TargetWorkerStatus,
+} from "./target-runtime.js";
 type RedactionPolicyDto = {
   enabled: boolean;
   source: "default" | "workspace" | "environment";
@@ -300,6 +324,22 @@ type SpecificOperationMap = {
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
   "run.list": { input: Record<string, never>; output: { runs: RunSummaryDto[] } };
+  "run.visual.compare": {
+    input: { runId: string };
+    output: { comparison: VisualComparison };
+  };
+  "run.visual.review": {
+    input: { runId: string; comparisonId: string; action: VisualReviewAction; note?: string };
+    output: { decision: VisualReviewDecision; baseline: VisualBaseline | null };
+  };
+  "run.visual-baseline.update": {
+    input: { runId: string; action: "approve-new-baseline"; note?: string };
+    output: {
+      comparison: VisualComparison;
+      decision: VisualReviewDecision;
+      baseline: VisualBaseline;
+    };
+  };
   "workspace.variables.get": {
     input: Record<string, never>;
     output: RevisionedDto<TestVariableDto[]>;
@@ -307,6 +347,116 @@ type SpecificOperationMap = {
   "workspace.variables.update": {
     input: RevisionWriteDto<TestVariableDto[]>;
     output: RevisionedDto<TestVariableDto[]>;
+  };
+  "app-map.list": { input: Record<string, never>; output: { appMaps: AppMap[] } };
+  "app-map.get": { input: { appMapId: string }; output: { appMap: AppMap } };
+  "app-map.create": {
+    input: { appMapId: string; name: string };
+    output: { appMap: AppMap };
+  };
+  "app-map.update": {
+    input: { appMapId: string; expectedRevision: number; eventId?: string; patch: AppMapPatch };
+    output: { appMap: AppMap };
+  };
+  "app-map.screen.add": {
+    input: { appMapId: string; expectedRevision: number; eventId?: string; input: AddScreenInput };
+    output: { appMap: AppMap };
+  };
+  "app-map.screen.update": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      expectedRevision: number;
+      eventId?: string;
+      input: UpdateScreenInput;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.screen.remove": {
+    input: { appMapId: string; screenId: string; expectedRevision: number; eventId?: string };
+    output: { appMap: AppMap };
+  };
+  "app-map.connection.create": {
+    input: { appMapId: string; expectedRevision: number; eventId?: string; connection: Connection };
+    output: { appMap: AppMap };
+  };
+  "app-map.connection.update": {
+    input: {
+      appMapId: string;
+      connectionId: string;
+      expectedRevision: number;
+      eventId?: string;
+      patch: ConnectionPatch;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.connection.remove": {
+    input: { appMapId: string; connectionId: string; expectedRevision: number; eventId?: string };
+    output: { appMap: AppMap };
+  };
+  "app-map.flow.save": {
+    input: {
+      appMapId: string;
+      flowId: string;
+      expectedRevision: number;
+      eventId?: string;
+      flow: Flow;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.flow.remove": {
+    input: { appMapId: string; flowId: string; expectedRevision: number; eventId?: string };
+    output: { appMap: AppMap };
+  };
+  "app-map.routine.save": {
+    input: {
+      appMapId: string;
+      routineId: string;
+      expectedRevision: number;
+      eventId?: string;
+      routine: Routine;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.routine.remove": {
+    input: { appMapId: string; routineId: string; expectedRevision: number; eventId?: string };
+    output: { appMap: AppMap };
+  };
+  "app-map.proposal.submit": {
+    input: { appMapId: string; expectedRevision: number; eventId?: string; proposal: Proposal };
+    output: { appMap: AppMap };
+  };
+  "app-map.observations.propose": {
+    input: {
+      appMapId: string;
+      sessionId: string;
+      expectedRevision: number;
+      proposalId?: string;
+      title?: string;
+      transitionIds?: string[];
+      eventId?: string;
+    };
+    output: { appMap: AppMap; proposalId: string };
+  };
+  "app-map.proposal.approve": {
+    input: {
+      appMapId: string;
+      proposalId: string;
+      expectedRevision: number;
+      eventId?: string;
+      reason?: string;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.proposal.reject": {
+    input: {
+      appMapId: string;
+      proposalId: string;
+      expectedRevision: number;
+      eventId?: string;
+      reason?: string;
+    };
+    output: { appMap: AppMap };
   };
   "journey.document.get": {
     input: { journeyId: string };
@@ -423,10 +573,30 @@ type SpecificOperationMap = {
     input: Omit<BuildDto, "projectId" | "createdAt" | "updatedAt">;
     output: { build: BuildDto };
   };
+  "build.preflight": {
+    input: { buildId: string; serial?: string };
+    output: { preflight: RegisteredBuildPreflight };
+  };
+  "build.install": {
+    input: { buildId: string; serial: string; launch?: boolean; applicationId?: string };
+    output: { installed: InstalledBuild; launched?: LaunchedBuild };
+  };
+  "build.launch": {
+    input: { buildId: string; serial: string; applicationId?: string };
+    output: { launched: LaunchedBuild };
+  };
   "device-pool.list": { input: Record<string, never>; output: { pools: DevicePoolDto[] } };
   "device-pool.save": {
     input: Omit<DevicePoolDto, "projectId" | "createdAt" | "updatedAt">;
     output: { pool: DevicePoolDto };
+  };
+  "device-pool.preflight": {
+    input: { poolId: string };
+    output: { preflight: DevicePoolPreflight };
+  };
+  "target-worker.list": {
+    input: Record<string, never>;
+    output: { workers: TargetWorkerStatus[] };
   };
   "lease.list": { input: Record<string, never>; output: { leases: DeviceLeaseDto[] } };
   "lease.create": {
@@ -513,7 +683,6 @@ type GenericOperationId =
   | "job.soak.start"
   | "run.catalog.rebuild"
   | "run.retention.apply"
-  | "run.visual-baseline.update"
   | "run.pin.update"
   | "step.run";
 
@@ -713,6 +882,161 @@ const revisionedJourneyParser = objectParser<RevisionedDto<unknown>>(
     number(input.updatedAt, "Journey updatedAt");
     record(input.value, "Journey document");
   },
+);
+
+const appMapRefParser = objectParser<{ appMapId: string }>("App Map reference", (input) => {
+  string(input.appMapId, "App Map id");
+});
+
+const appMapCreateParser = objectParser<OperationInput<"app-map.create">>(
+  "App Map creation",
+  (input) => {
+    string(input.appMapId, "App Map id");
+    string(input.name, "App Map name");
+  },
+);
+
+function appMapMutationParser<Id extends OperationId>(
+  description: string,
+  nested?: string,
+  requiredIds: readonly string[] = [],
+): RuntimeParser<OperationInput<Id>> {
+  return objectParser<OperationInput<Id>>(description, (input) => {
+    string(input.appMapId, `${description} appMapId`);
+    number(input.expectedRevision, `${description} expectedRevision`);
+    if (input.eventId !== undefined) string(input.eventId, `${description} eventId`);
+    for (const field of requiredIds) string(input[field], `${description} ${field}`);
+    if (nested) record(input[nested], `${description} ${nested}`);
+  });
+}
+
+const appMapOutputParser = objectFieldParser<{ appMap: AppMap }>("App Map response", "appMap");
+
+const observationProposalInputParser = objectParser<OperationInput<"app-map.observations.propose">>(
+  "observation proposal",
+  (input) => {
+    string(input.appMapId, "observation proposal appMapId");
+    string(input.sessionId, "observation proposal sessionId");
+    number(input.expectedRevision, "observation proposal expectedRevision");
+    if (input.proposalId !== undefined) string(input.proposalId, "observation proposal proposalId");
+    if (input.title !== undefined) string(input.title, "observation proposal title");
+    if (
+      input.transitionIds !== undefined &&
+      (!Array.isArray(input.transitionIds) ||
+        input.transitionIds.some((id) => typeof id !== "string" || !id.trim()))
+    ) {
+      fail("observation proposal transitionIds", "must contain non-empty strings");
+    }
+    if (input.eventId !== undefined) string(input.eventId, "observation proposal eventId");
+  },
+);
+
+const observationProposalOutputParser = objectParser<
+  OperationOutput<"app-map.observations.propose">
+>("observation proposal response", (input) => {
+  record(input.appMap, "observation proposal App Map");
+  string(input.proposalId, "observation proposal proposalId");
+});
+
+const visualCompareInputParser = objectParser<OperationInput<"run.visual.compare">>(
+  "visual comparison input",
+  (input) => string(input.runId, "visual comparison runId"),
+);
+
+const visualReviewInputParser = objectParser<OperationInput<"run.visual.review">>(
+  "visual review input",
+  (input) => {
+    string(input.runId, "visual review runId");
+    string(input.comparisonId, "visual review comparisonId");
+    const action = string(input.action, "visual review action");
+    if (
+      ![
+        "approve-new-baseline",
+        "keep-baseline",
+        "fix-connection",
+        "retry",
+        "mark-expected-variation",
+      ].includes(action)
+    ) {
+      fail("visual review action", "is unsupported");
+    }
+    if (input.note !== undefined) string(input.note, "visual review note");
+  },
+);
+
+const visualBaselineInputParser = objectParser<OperationInput<"run.visual-baseline.update">>(
+  "visual baseline input",
+  (input) => {
+    string(input.runId, "visual baseline runId");
+    if (input.action !== "approve-new-baseline") {
+      fail("visual baseline action", "must be approve-new-baseline");
+    }
+    if (input.note !== undefined) string(input.note, "visual baseline note");
+  },
+);
+
+const visualComparisonOutputParser = objectFieldParser<OperationOutput<"run.visual.compare">>(
+  "visual comparison response",
+  "comparison",
+);
+
+const visualReviewOutputParser = objectParser<OperationOutput<"run.visual.review">>(
+  "visual review response",
+  (input) => {
+    record(input.decision, "visual review decision");
+    if (input.baseline !== null) record(input.baseline, "visual review baseline");
+  },
+);
+
+const visualBaselineOutputParser = objectParser<OperationOutput<"run.visual-baseline.update">>(
+  "visual baseline response",
+  (input) => {
+    record(input.comparison, "visual baseline comparison");
+    record(input.decision, "visual baseline decision");
+    record(input.baseline, "visual baseline");
+  },
+);
+
+const buildPreflightInputParser = objectParser<OperationInput<"build.preflight">>(
+  "build preflight input",
+  (input) => {
+    string(input.buildId, "build preflight buildId");
+    if (input.serial !== undefined) string(input.serial, "build preflight serial");
+  },
+);
+
+const buildInstallInputParser = objectParser<OperationInput<"build.install">>(
+  "build install input",
+  (input) => {
+    string(input.buildId, "build install buildId");
+    string(input.serial, "build install serial");
+    if (input.launch !== undefined) boolean(input.launch, "build install launch");
+    if (input.applicationId !== undefined)
+      string(input.applicationId, "build install applicationId");
+  },
+);
+
+const buildInstallOutputParser = objectParser<OperationOutput<"build.install">>(
+  "build install response",
+  (input) => {
+    record(input.installed, "installed build");
+    if (input.launched !== undefined) record(input.launched, "launched build");
+  },
+);
+
+const buildLaunchInputParser = objectParser<OperationInput<"build.launch">>(
+  "build launch input",
+  (input) => {
+    string(input.buildId, "build launch buildId");
+    string(input.serial, "build launch serial");
+    if (input.applicationId !== undefined)
+      string(input.applicationId, "build launch applicationId");
+  },
+);
+
+const poolPreflightInputParser = objectParser<OperationInput<"device-pool.preflight">>(
+  "device pool preflight input",
+  (input) => string(input.poolId, "device pool preflight poolId"),
 );
 
 const generationInputParser = objectParser<GenerationRequestDto>("generation input", (input) => {
@@ -1124,12 +1448,57 @@ export const operationDefinitions = [
   command("build.save", "Save build", "POST", "/builds", {
     output: objectFieldParser("build response", "build"),
   }),
+  command("build.preflight", "Preflight build", "POST", "/builds/:buildId/preflight", {
+    category: "target",
+    input: buildPreflightInputParser,
+    output: objectFieldParser<OperationOutput<"build.preflight">>(
+      "build preflight response",
+      "preflight",
+    ),
+  }),
+  command("build.install", "Install build", "POST", "/builds/:buildId/install", {
+    category: "target",
+    targetCapabilities: ["install"],
+    lease: "exclusive",
+    confirmation: "confirm",
+    input: buildInstallInputParser,
+    output: buildInstallOutputParser,
+  }),
+  command("build.launch", "Launch build", "POST", "/builds/:buildId/launch", {
+    category: "target",
+    targetCapabilities: ["launch"],
+    lease: "exclusive",
+    input: buildLaunchInputParser,
+    output: objectFieldParser<OperationOutput<"build.launch">>("build launch response", "launched"),
+  }),
   query("device-pool.list", "List device pools", "/device-pools", {
     input: emptyInputParser,
     output: arrayFieldParser("device pools response", "pools"),
   }),
   command("device-pool.save", "Save device pool", "POST", "/device-pools", {
     output: objectFieldParser("device pool response", "pool"),
+  }),
+  command(
+    "device-pool.preflight",
+    "Preflight device pool",
+    "POST",
+    "/device-pools/:poolId/preflight",
+    {
+      category: "target",
+      input: poolPreflightInputParser,
+      output: objectFieldParser<OperationOutput<"device-pool.preflight">>(
+        "device pool preflight response",
+        "preflight",
+      ),
+    },
+  ),
+  query("target-worker.list", "List target workers", "/target-workers", {
+    category: "target",
+    input: emptyInputParser,
+    output: arrayFieldParser<OperationOutput<"target-worker.list">>(
+      "target workers response",
+      "workers",
+    ),
   }),
   query("lease.list", "List target leases", "/device-leases", {
     input: emptyInputParser,
@@ -1154,6 +1523,186 @@ export const operationDefinitions = [
   command("workspace.variables.update", "Update project variables", "PUT", "/project/variables", {
     output: revisionedVariablesParser,
   }),
+  query("app-map.list", "List App Maps", "/app-maps", {
+    category: "authoring",
+    input: emptyInputParser,
+    output: arrayFieldParser<{ appMaps: AppMap[] }>("App Maps response", "appMaps"),
+  }),
+  query("app-map.get", "Get App Map", "/app-maps/:appMapId", {
+    category: "authoring",
+    input: appMapRefParser,
+    output: appMapOutputParser,
+  }),
+  command("app-map.create", "Create App Map", "POST", "/app-maps", {
+    category: "authoring",
+    input: appMapCreateParser,
+    output: appMapOutputParser,
+  }),
+  command("app-map.update", "Update App Map", "PUT", "/app-maps/:appMapId", {
+    category: "authoring",
+    input: appMapMutationParser<"app-map.update">("App Map update", "patch"),
+    output: appMapOutputParser,
+  }),
+  command("app-map.screen.add", "Add App Map screen", "POST", "/app-maps/:appMapId/screens", {
+    category: "authoring",
+    input: appMapMutationParser<"app-map.screen.add">("screen addition", "input"),
+    output: appMapOutputParser,
+  }),
+  command(
+    "app-map.screen.update",
+    "Update App Map screen",
+    "PUT",
+    "/app-maps/:appMapId/screens/:screenId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.screen.update">("screen update", "input", ["screenId"]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.screen.remove",
+    "Remove App Map screen",
+    "POST",
+    "/app-maps/:appMapId/screens/:screenId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.screen.remove">("screen removal", undefined, [
+        "screenId",
+      ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.connection.create",
+    "Create App Map connection",
+    "POST",
+    "/app-maps/:appMapId/connections",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.connection.create">("connection creation", "connection"),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.connection.update",
+    "Update App Map connection",
+    "PUT",
+    "/app-maps/:appMapId/connections/:connectionId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.connection.update">("connection update", "patch", [
+        "connectionId",
+      ]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.connection.remove",
+    "Remove App Map connection",
+    "POST",
+    "/app-maps/:appMapId/connections/:connectionId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.connection.remove">("connection removal", undefined, [
+        "connectionId",
+      ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command("app-map.flow.save", "Save App Map Flow", "PUT", "/app-maps/:appMapId/flows/:flowId", {
+    category: "authoring",
+    input: appMapMutationParser<"app-map.flow.save">("Flow save", "flow", ["flowId"]),
+    output: appMapOutputParser,
+  }),
+  command(
+    "app-map.flow.remove",
+    "Remove App Map Flow",
+    "POST",
+    "/app-maps/:appMapId/flows/:flowId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.flow.remove">("Flow removal", undefined, ["flowId"]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.routine.save",
+    "Save App Map Routine",
+    "PUT",
+    "/app-maps/:appMapId/routines/:routineId",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.routine.save">("Routine save", "routine", ["routineId"]),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.routine.remove",
+    "Remove App Map Routine",
+    "POST",
+    "/app-maps/:appMapId/routines/:routineId/remove",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.routine.remove">("Routine removal", undefined, [
+        "routineId",
+      ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.proposal.submit",
+    "Submit App Map proposal",
+    "POST",
+    "/app-maps/:appMapId/proposals",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.proposal.submit">("proposal submission", "proposal"),
+      output: appMapOutputParser,
+    },
+  ),
+  command(
+    "app-map.observations.propose",
+    "Propose observed App Map path",
+    "POST",
+    "/app-maps/:appMapId/observation-proposals",
+    {
+      category: "authoring",
+      input: observationProposalInputParser,
+      output: observationProposalOutputParser,
+    },
+  ),
+  command(
+    "app-map.proposal.approve",
+    "Approve App Map proposal",
+    "POST",
+    "/app-maps/:appMapId/proposals/:proposalId/approve",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.proposal.approve">("proposal approval", undefined, [
+        "proposalId",
+      ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
+  command(
+    "app-map.proposal.reject",
+    "Reject App Map proposal",
+    "POST",
+    "/app-maps/:appMapId/proposals/:proposalId/reject",
+    {
+      category: "authoring",
+      input: appMapMutationParser<"app-map.proposal.reject">("proposal rejection", undefined, [
+        "proposalId",
+      ]),
+      output: appMapOutputParser,
+      confirmation: "confirm",
+    },
+  ),
   query("journey.list", "List Journeys", "/journeys", {
     category: "authoring",
     input: emptyInputParser,
@@ -1635,14 +2184,33 @@ export const operationDefinitions = [
   }),
   command(
     "run.visual-baseline.update",
-    "Update visual baseline",
+    "Explicitly approve visual baseline",
     "POST",
     "/runs/:runId/visual-baseline",
     {
       category: "evidence",
       confirmation: "confirm",
+      input: visualBaselineInputParser,
+      output: visualBaselineOutputParser,
     },
   ),
+  command(
+    "run.visual.compare",
+    "Compare Run with approved visual baseline",
+    "POST",
+    "/runs/:runId/visual-comparison",
+    {
+      category: "evidence",
+      input: visualCompareInputParser,
+      output: visualComparisonOutputParser,
+    },
+  ),
+  command("run.visual.review", "Review visual comparison", "POST", "/runs/:runId/visual-review", {
+    category: "evidence",
+    confirmation: "confirm",
+    input: visualReviewInputParser,
+    output: visualReviewOutputParser,
+  }),
   command("run.pin.update", "Pin Run", "POST", "/runs/:runId/pin", { category: "execution" }),
   command("step.run", "Run one Journey step", "POST", "/step/run", {
     category: "execution",

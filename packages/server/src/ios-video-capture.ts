@@ -6,9 +6,10 @@
  * `live-video.ts` prevents a future Android streaming change from changing
  * Apple capture semantics.
  */
-import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { captureDeviceVideo, runsRoot } from "@relay/core";
+import { access, mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { captureDeviceVideo } from "@relay/core";
 
 export type IosVideoTake = {
   id: string;
@@ -22,21 +23,23 @@ export type IosVideoTake = {
 
 const takesById = new Map<string, IosVideoTake>();
 const activeTakeBySerial = new Map<string, string>();
+const DEFAULT_READY_TAKE_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 
 function id(): string {
   return `ios-take-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function takeDirectory(): string {
-  return join(runsRoot(), "ios-takes");
+export function iosVideoTakeDirectory(): string {
+  const temporaryRoot = process.env.RELAY_TEMP_ROOT?.trim() || tmpdir();
+  return join(temporaryRoot, "relay", "ios-takes");
 }
 
 function videoPath(takeId: string): string {
-  return join(takeDirectory(), `${takeId}.mp4`);
+  return join(iosVideoTakeDirectory(), `${takeId}.mp4`);
 }
 
 function metadataPath(takeId: string): string {
-  return join(takeDirectory(), `${takeId}.json`);
+  return join(iosVideoTakeDirectory(), `${takeId}.json`);
 }
 
 function isTakeId(value: string): boolean {
@@ -59,7 +62,54 @@ async function persistTake(take: IosVideoTake): Promise<void> {
   await writeFile(metadataPath(take.id), JSON.stringify(take), { mode: 0o600 });
 }
 
+function pathBelongsToTakeDirectory(path: string): boolean {
+  return resolve(dirname(path)) === resolve(iosVideoTakeDirectory());
+}
+
+/**
+ * Review takes are recoverable across a server restart, but they are temporary:
+ * canonical authoring evidence is persisted separately. Keep ready takes for a
+ * bounded review window and never let them masquerade as committed run folders.
+ */
+export async function pruneIosVideoTakes(
+  options: { now?: number; maxAgeMs?: number } = {},
+): Promise<number> {
+  const now = options.now ?? Date.now();
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_READY_TAKE_MAX_AGE_MS;
+  let files: string[];
+  try {
+    files = await readdir(iosVideoTakeDirectory());
+  } catch {
+    return 0;
+  }
+
+  let removed = 0;
+  for (const file of files.filter((name) => name.endsWith(".json"))) {
+    const takeId = file.slice(0, -5);
+    if (!isTakeId(takeId)) continue;
+    try {
+      const stored = JSON.parse(await readFile(metadataPath(takeId), "utf8")) as unknown;
+      if (!isStoredTake(stored, takeId) || stored.state !== "ready") continue;
+      const ageFrom = stored.finishedAt ?? stored.startedAt;
+      if (now - ageFrom <= maxAgeMs) continue;
+      if (pathBelongsToTakeDirectory(stored.path)) {
+        await unlink(stored.path).catch(() => undefined);
+      }
+      await unlink(metadataPath(takeId));
+      takesById.delete(takeId);
+      if (activeTakeBySerial.get(stored.serial) === takeId) {
+        activeTakeBySerial.delete(stored.serial);
+      }
+      removed += 1;
+    } catch {
+      // Damaged or concurrently consumed metadata is left for diagnostics.
+    }
+  }
+  return removed;
+}
+
 export async function startIosVideoTake(serial: string): Promise<IosVideoTake> {
+  await pruneIosVideoTakes();
   const currentId = activeTakeBySerial.get(serial);
   if (currentId) {
     const current = takesById.get(currentId);
@@ -67,7 +117,7 @@ export async function startIosVideoTake(serial: string): Promise<IosVideoTake> {
   }
   const takeId = id();
   const path = videoPath(takeId);
-  await mkdir(takeDirectory(), { recursive: true, mode: 0o700 });
+  await mkdir(iosVideoTakeDirectory(), { recursive: true, mode: 0o700 });
   const result = await captureDeviceVideo({ serial, action: "start", path });
   const take: IosVideoTake = {
     id: takeId,
@@ -127,7 +177,7 @@ export async function readIosVideoTake(takeId: string): Promise<IosVideoTake | n
 export async function reconcileIosVideoTake(serial: string): Promise<IosVideoTake | null> {
   let files: string[];
   try {
-    files = await readdir(takeDirectory());
+    files = await readdir(iosVideoTakeDirectory());
   } catch {
     return null;
   }

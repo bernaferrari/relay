@@ -8,6 +8,7 @@ import {
   freezeRecipeExecution,
   freezeRecipeGraph,
   getActiveJob,
+  getActiveJobs,
   getJob,
   listJobs,
   pauseJob,
@@ -38,6 +39,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   if (method === "GET" && pathname === "/jobs") {
     const limit = parseLimit(url.searchParams.get("limit"), 50);
     const full = url.searchParams.get("full") !== "0";
+    const activeJobs = getActiveJobs().filter(
+      (job) =>
+        scope.localTrusted || (job.projectId === scope.projectId && job.ownerId === scope.subject),
+    );
     json(res, 200, {
       jobs: (scope.localTrusted
         ? listJobs(limit)
@@ -45,11 +50,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             (job) => job.projectId === scope.projectId && job.ownerId === scope.subject,
           )
       ).map((job) => (full ? job : summarizeJob(job))),
-      active:
-        scope.localTrusted ||
-        (getActiveJob()?.projectId === scope.projectId && getActiveJob()?.ownerId === scope.subject)
-          ? getActiveJob()
-          : null,
+      // `active` remains a compatibility convenience; `activeJobs` is the
+      // truthful capacity-aware view.
+      active: activeJobs.at(-1) ?? null,
+      activeJobs,
     });
     return true;
   }
@@ -97,8 +101,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   }
 
   if (method === "POST" && pathname === "/jobs/active/cancel") {
-    assertJobAccess(scope, getActiveJob() ?? undefined);
-    const job = cancelActiveJob();
+    const body = (await parseJsonBody(req)) as { targetId?: unknown };
+    const targetId = typeof body.targetId === "string" ? body.targetId.trim() : undefined;
+    assertJobAccess(scope, getActiveJob(targetId) ?? undefined);
+    const job = cancelActiveJob(targetId);
     if (!job) throw new HttpError(404, "No active job");
     json(res, 200, { job });
     return true;

@@ -16,7 +16,12 @@ export function runMcp(
   const config = parseMcpConfig(argv, env);
   const invoker = createRelayOperationInvoker(config);
   return serveStdio(
-    () => createMcpServer({ invoker, scope: { projectId: config.connection.projectId } }),
+    () =>
+      createMcpServer({
+        invoker,
+        scope: { projectId: config.connection.projectId },
+        profile: config.profile,
+      }),
     { onerror: diagnostic },
   );
 }

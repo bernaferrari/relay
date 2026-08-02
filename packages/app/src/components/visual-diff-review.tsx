@@ -4,6 +4,11 @@ import { useServer } from "../context/server";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
 import { diffRgba } from "../lib/visual-diff";
+import type {
+  VisualComparison as DurableVisualComparison,
+  VisualReviewAction,
+  VisualReviewDecision,
+} from "@relay/protocol";
 
 type VisualPair = {
   index: number;
@@ -78,8 +83,10 @@ function targetLabel(run: PersistedRun): string {
 
 export function VisualDiffReview(props: {
   comparison: VisualComparison | null;
+  durableComparison: DurableVisualComparison | null;
+  decision: VisualReviewDecision | null;
   loading: boolean;
-  onApprove: () => void;
+  onReview: (action: VisualReviewAction) => void;
   approving?: boolean;
 }) {
   const server = useServer();
@@ -180,7 +187,7 @@ export function VisualDiffReview(props: {
                 type="button"
                 class="inline-flex min-h-9 w-fit items-center gap-1.5 self-start rounded-lg bg-surface-interactive-base px-3 text-[12px] font-semibold text-text-on-interactive transition-colors hover:bg-surface-interactive-hover disabled:opacity-50"
                 disabled={props.loading || props.approving}
-                onClick={props.onApprove}
+                onClick={() => props.onReview("approve-new-baseline")}
               >
                 <Icon name="check" size={13} /> Use this run as baseline
               </button>
@@ -286,24 +293,12 @@ export function VisualDiffReview(props: {
                           />
                         )}
                       </Show>
-                      <div class="flex items-center justify-between gap-3 rounded-lg bg-surface-base px-2.5 py-2">
-                        <span class="text-[10.5px]/[1.35] text-text-weak">
-                          Keep baseline if any change is unexpected.
-                        </span>
-                        <button
-                          type="button"
-                          class="shrink-0 rounded-lg bg-surface-interactive-base px-2.5 py-2 text-[11px] font-semibold text-text-on-interactive transition-colors hover:bg-surface-interactive-hover disabled:opacity-50"
-                          disabled={props.approving}
-                          onClick={props.onApprove}
-                        >
-                          <Show
-                            when={props.approving}
-                            fallback={`Accept ${changed().length} change${changed().length === 1 ? "" : "s"}`}
-                          >
-                            Saving…
-                          </Show>
-                        </button>
-                      </div>
+                      <VisualReviewActions
+                        comparison={props.durableComparison}
+                        decision={props.decision}
+                        busy={props.approving}
+                        onReview={props.onReview}
+                      />
                     </div>
                   </Show>
                 }
@@ -358,6 +353,70 @@ export function VisualDiffReview(props: {
         </Show>
       </Show>
     </section>
+  );
+}
+
+function VisualReviewActions(props: {
+  comparison: DurableVisualComparison | null;
+  decision: VisualReviewDecision | null;
+  busy?: boolean;
+  onReview: (action: VisualReviewAction) => void;
+}) {
+  const actions: Array<{ action: VisualReviewAction; label: string; primary?: boolean }> = [
+    { action: "keep-baseline", label: "Keep baseline" },
+    { action: "fix-connection", label: "Fix connection" },
+    { action: "retry", label: "Retry" },
+    { action: "mark-expected-variation", label: "Expected variation" },
+    { action: "approve-new-baseline", label: "Approve new baseline", primary: true },
+  ];
+  return (
+    <div class="grid gap-2 rounded-xl border border-border-weak-base bg-surface-base p-2.5">
+      <div class="flex items-center justify-between gap-3 px-0.5">
+        <span class="text-[10.5px]/[1.35] text-text-weak">
+          Choose what this change means. Relay records the decision and its author.
+        </span>
+        <Show when={props.comparison}>
+          {(comparison) => (
+            <code class="shrink-0 text-[9px] text-text-weaker">
+              {comparison().code.replace("VISUAL_", "").toLowerCase()}
+            </code>
+          )}
+        </Show>
+      </div>
+      <div
+        class="flex flex-wrap justify-end gap-1.5"
+        role="group"
+        aria-label="Visual review decision"
+      >
+        <For each={actions}>
+          {(item) => (
+            <button
+              type="button"
+              class={cn(
+                "min-h-10 rounded-lg px-2.5 text-[11px] font-semibold transition-colors disabled:cursor-wait disabled:opacity-50",
+                item.primary
+                  ? "bg-surface-interactive-base text-text-on-interactive hover:bg-surface-interactive-hover"
+                  : "border border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover",
+              )}
+              disabled={props.busy || !props.comparison}
+              onClick={() => props.onReview(item.action)}
+            >
+              {props.busy && item.primary ? "Saving…" : item.label}
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={props.decision}>
+        {(decision) => (
+          <p
+            class="m-0 rounded-lg bg-[color-mix(in_srgb,var(--icon-success-base)_12%,transparent)] px-2.5 py-2 text-[10.5px]/[1.4] text-[var(--icon-success-base)]"
+            role="status"
+          >
+            Decision recorded as {decision().action.replaceAll("-", " ")}.
+          </p>
+        )}
+      </Show>
+    </div>
   );
 }
 

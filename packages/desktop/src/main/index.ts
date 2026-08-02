@@ -1,19 +1,27 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerIpcHandlers } from "./ipc.js";
+import { isCompatibleServer, waitForCompatibleServer } from "./server-readiness.js";
 import { DesktopUpdater } from "./updates.js";
 import { createMainWindow, loadRenderer, resolveAppIconPath } from "./windows.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
-const HEALTH_TIMEOUT_MS = 800;
 const PRODUCT_NAME = "Relay";
 const PRODUCT_VERSION = "0.1.0";
+
+function serverProbeOptions() {
+  const authorizationToken = (
+    process.env.RELAY_AUTH_TOKEN ?? process.env.GROK_DEVICE_AUTH_TOKEN
+  )?.trim();
+  return {
+    product: "relay",
+    version: PRODUCT_VERSION,
+    ...(authorizationToken ? { authorizationToken } : {}),
+  } as const;
+}
 
 app.setName(PRODUCT_NAME);
 process.title = PRODUCT_NAME;
@@ -25,54 +33,7 @@ let serverChild: ChildProcess | null = null;
 const updates = new DesktopUpdater();
 
 async function isServerCompatible(url: string): Promise<boolean> {
-  const healthUrl = new URL(`${url.replace(/\/+$/, "")}/health`);
-  const request = healthUrl.protocol === "https:" ? httpsRequest : httpRequest;
-
-  return await new Promise((resolveHealthy) => {
-    const req = request(
-      healthUrl,
-      {
-        method: "GET",
-        headers: {
-          "X-Relay-Actor-Id": "system:desktop-main",
-          "X-Relay-Actor-Kind": "system",
-          "X-Relay-Operation-Id": "system.health.get",
-          "X-Relay-Request-Id": randomUUID(),
-          "X-Relay-Command-At": String(Date.now()),
-          "Idempotency-Key": randomUUID(),
-        },
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        let bytes = 0;
-        response.on("data", (chunk: Buffer) => {
-          bytes += chunk.byteLength;
-          if (bytes <= 64 * 1024) chunks.push(chunk);
-        });
-        response.on("end", () => {
-          if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-            resolveHealthy(false);
-            return;
-          }
-          try {
-            const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-              product?: unknown;
-              version?: unknown;
-            };
-            resolveHealthy(body.product === "relay" && body.version === PRODUCT_VERSION);
-          } catch {
-            resolveHealthy(false);
-          }
-        });
-      },
-    );
-    req.setTimeout(HEALTH_TIMEOUT_MS, () => {
-      req.destroy();
-      resolveHealthy(false);
-    });
-    req.on("error", () => resolveHealthy(false));
-    req.end();
-  });
+  return await isCompatibleServer(url, serverProbeOptions());
 }
 
 function resolveServerEntry(): string | null {
@@ -96,14 +57,6 @@ function resolveServerEntry(): string | null {
   return null;
 }
 
-async function waitForHealthy(url: string, attempts = 30, delayMs = 200): Promise<boolean> {
-  for (let i = 0; i < attempts; i++) {
-    if (await isServerCompatible(url)) return true;
-    await new Promise((r) => setTimeout(r, delayMs));
-  }
-  return false;
-}
-
 /**
  * Prefer an already-running server (user ran `relay serve`).
  * Otherwise spawn packages/server via tsx/node when possible.
@@ -119,10 +72,9 @@ async function ensureServer(): Promise<string> {
 
   const entry = resolveServerEntry();
   if (!entry) {
-    console.warn(
-      `[desktop] no server at ${preferred} and could not locate packages/server — UI may fail until you run \`pnpm dev:serve\``,
+    throw new Error(
+      `Relay could not find its local service and nothing is listening at ${preferred}. Reinstall Relay, or run \`pnpm dev:serve\` when working from source.`,
     );
-    return preferred;
   }
 
   const url = new URL(preferred);
@@ -168,15 +120,28 @@ async function ensureServer(): Promise<string> {
     serverChild = null;
   });
 
-  void waitForHealthy(preferred).then((ok) => {
-    if (!ok) {
-      console.warn(
-        `[desktop] server did not become healthy at ${preferred} — connect manually with RELAY_URL or \`pnpm dev:serve\``,
+  const child = serverChild;
+  const failedToStart = new Promise<never>((_resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      reject(
+        new Error(
+          `Relay's local service exited before it was ready (code=${code ?? "none"}, signal=${signal ?? "none"}).`,
+        ),
       );
-      return;
-    }
-    console.log(`[desktop] server ready at ${preferred}`);
+    });
   });
+  const healthy = await Promise.race([
+    waitForCompatibleServer(preferred, serverProbeOptions()),
+    failedToStart,
+  ]);
+  if (!healthy) {
+    killServerChild();
+    throw new Error(
+      `Relay's local service did not become ready at ${preferred}. Check the desktop logs, or run \`pnpm dev:serve\` when working from source.`,
+    );
+  }
+  console.log(`[desktop] server ready at ${preferred}`);
   return preferred;
 }
 
@@ -249,5 +214,7 @@ app.on("before-quit", () => {
 
 bootstrap().catch((err: unknown) => {
   console.error("[desktop] failed to start", err);
+  const message = err instanceof Error ? err.message : String(err);
+  if (app.isReady()) dialog.showErrorBox("Relay couldn’t start", message);
   app.quit();
 });

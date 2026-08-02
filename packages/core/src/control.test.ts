@@ -9,6 +9,7 @@ import {
   requestCancel,
   requestPause,
   requestResume,
+  runWithJobControl,
   setExecutingJobId,
   throwIfCancelled,
   cooperativeCheckpoint,
@@ -63,5 +64,27 @@ describe("job control", () => {
     assert.equal(debugWaiterCount("j4"), 0);
     clearControl("j4");
     setExecutingJobId(null);
+  });
+
+  it("keeps cancellation scoped across concurrent jobs", async () => {
+    ensureControl("parallel-a");
+    ensureControl("parallel-b");
+    requestCancel("parallel-a");
+    const [a, b] = await Promise.all([
+      runWithJobControl("parallel-a", async () => {
+        await Promise.resolve();
+        assert.throws(() => throwIfCancelled(), JobCancelledError);
+        return "cancelled";
+      }),
+      runWithJobControl("parallel-b", async () => {
+        await Promise.resolve();
+        assert.doesNotThrow(() => throwIfCancelled());
+        return "ok";
+      }),
+    ]);
+    assert.equal(a, "cancelled");
+    assert.equal(b, "ok");
+    clearControl("parallel-a");
+    clearControl("parallel-b");
   });
 });

@@ -1,11 +1,13 @@
-import { For, Show, createSignal } from "solid-js";
-import type { JourneyGraphScreen, JourneyVideoClip } from "@relay/protocol";
+import { For, Show, createEffect, createSignal } from "solid-js";
+import type { AuthoringInteraction, JourneyGraphScreen, JourneyVideoClip } from "@relay/protocol";
 import type { RecipeStep } from "../context/server";
 import { cn } from "../lib/cn";
 import type { TakeDestination } from "../lib/journey-graph";
 import { phoneScreen } from "../lib/ui";
 import { describeStep, type RecordingTake } from "../context/recorder";
 import { Icon } from "./icon";
+import { TakeActionEditor } from "./journey-take-action-editor";
+import { TakeActionList } from "./journey-take-action-list";
 
 const controlButton =
   "grid min-h-11 min-w-11 place-items-center rounded-[7px] px-1.5 text-[11px] text-[var(--text-base)] transition-colors duration-100 hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)] disabled:cursor-not-allowed disabled:opacity-35";
@@ -23,7 +25,7 @@ export function TakeCaptureBar(props: {
   contextLabel?: string;
   onStop: () => void;
 }) {
-  const count = () => props.take.steps.length;
+  const count = () => props.take.actions.length;
   const actionLabel = () =>
     count() === 0 ? "No actions yet" : `${count()} action${count() === 1 ? "" : "s"}`;
   return (
@@ -52,7 +54,7 @@ export function TakeCaptureBar(props: {
 
 /** A stopped take is a decision, not a live-control state. The list decides
  * what survives and the player provides the immutable recorded frame. */
-export function TakeReviewSidebar(props: {
+export type TakeReviewSidebarProps = {
   take: RecordingTake;
   selectedIndex: number;
   sourceTitle: string;
@@ -64,12 +66,98 @@ export function TakeReviewSidebar(props: {
   onDiscard: () => void;
   onReplay: () => void;
   onRewrite: () => void;
-  onRemove: (index: number) => void;
+  onRemove: (index: number) => void | Promise<void>;
+  onReorderActions?: (actionIds: string[]) => void | Promise<void>;
+  onReplaceAction?: (actionId: string, interaction: AuthoringInteraction) => void | Promise<void>;
+  onRemoveAction?: (actionId: string) => void | Promise<void>;
+  onReviewInvalidated?: () => void;
   replayState: "idle" | "running" | "passed" | "failed";
   replayError?: string;
-}) {
-  const count = () => props.take.steps.length;
+};
+
+export function TakeReviewSidebar(props: TakeReviewSidebarProps) {
+  const count = () => props.take.actions.length;
   const actionLabel = () => `${count()} action${count() === 1 ? "" : "s"}`;
+  const [selectedActionId, setSelectedActionId] = createSignal(
+    props.take.actionIds[props.selectedIndex] ?? props.take.actions[0]?.id,
+  );
+  const [editingActionId, setEditingActionId] = createSignal<string>();
+  const [pendingMutation, setPendingMutation] = createSignal(false);
+  const [reviewInvalidated, setReviewInvalidated] = createSignal(false);
+  const [replayStartedAfterMutation, setReplayStartedAfterMutation] = createSignal(false);
+  const [mutationError, setMutationError] = createSignal<string>();
+  let currentTakeId = props.take.id;
+  let currentSelectedIndex = props.selectedIndex;
+  let editTrigger: HTMLButtonElement | undefined;
+
+  createEffect(() => {
+    if (props.take.id !== currentTakeId) {
+      currentTakeId = props.take.id;
+      setEditingActionId(undefined);
+      setPendingMutation(false);
+      setReviewInvalidated(false);
+      setReplayStartedAfterMutation(false);
+      setMutationError(undefined);
+      setSelectedActionId(props.take.actionIds[props.selectedIndex] ?? props.take.actions[0]?.id);
+      currentSelectedIndex = props.selectedIndex;
+      return;
+    }
+    if (props.selectedIndex === currentSelectedIndex) return;
+    currentSelectedIndex = props.selectedIndex;
+    const actionId = props.take.actionIds[props.selectedIndex];
+    if (actionId) setSelectedActionId(actionId);
+  });
+
+  createEffect(() => {
+    if (!reviewInvalidated()) return;
+    if (props.replayState === "running") setReplayStartedAfterMutation(true);
+    if (props.replayState === "passed" && replayStartedAfterMutation()) {
+      setReviewInvalidated(false);
+      setReplayStartedAfterMutation(false);
+    }
+  });
+
+  const selectedAction = () => props.take.actions.find((action) => action.id === editingActionId());
+  const canApprove = () =>
+    props.replayState === "passed" && !reviewInvalidated() && !pendingMutation();
+  const controlsDisabled = () => props.replayState === "running" || pendingMutation();
+
+  function invalidateReview(): void {
+    setReviewInvalidated(true);
+    setReplayStartedAfterMutation(false);
+    props.onReviewInvalidated?.();
+  }
+
+  async function mutate(work: () => void | Promise<void>): Promise<boolean> {
+    if (controlsDisabled()) return false;
+    setPendingMutation(true);
+    setMutationError(undefined);
+    try {
+      await work();
+      invalidateReview();
+      return true;
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : String(error));
+      return false;
+    } finally {
+      setPendingMutation(false);
+    }
+  }
+
+  function selectAction(actionId: string): void {
+    const action = props.take.actions.find((candidate) => candidate.id === actionId);
+    if (!action) return;
+    setSelectedActionId(action.id);
+    if (action.steps.length > 0) props.onSelect(action.stepStartIndex);
+  }
+
+  function focusAction(actionId: string): void {
+    const item = [...document.querySelectorAll<HTMLElement>("[data-action-id]")].find(
+      (candidate) => candidate.dataset.actionId === actionId,
+    );
+    item?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+  }
+
   return (
     <aside
       class="flex min-h-0 min-w-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[760px]:border-r-0 max-[760px]:border-b"
@@ -83,8 +171,8 @@ export function TakeReviewSidebar(props: {
           Review this take
         </strong>
         <p class="m-0 mt-1 text-[11px]/[1.45] text-[var(--text-weak)]">
-          {actionLabel()} from {props.sourceTitle}. Remove anything accidental, then choose its
-          destination.
+          {actionLabel()} from {props.sourceTitle}. Fix anything accidental, then replay the exact
+          connection you want to keep.
         </p>
       </header>
 
@@ -97,52 +185,79 @@ export function TakeReviewSidebar(props: {
             </div>
           }
         >
-          <ol class="m-0 grid list-none gap-1 p-0">
-            <For each={props.take.steps}>
-              {(step, displayIndex) => {
-                const index = () => displayIndex();
-                const description = () => describeStep(step);
-                return (
-                  <li
-                    class={cn(
-                      "group flex min-h-11 min-w-0 items-center gap-2.5 rounded-[9px] px-2.5 text-[11.5px] text-[var(--text-base)] transition-colors",
-                      props.selectedIndex === index()
-                        ? "bg-[var(--product-accent-soft)] text-[var(--text-strong)]"
-                        : "hover:bg-[var(--v2-background-bg-layer-02)]",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      class="flex min-w-0 flex-1 self-stretch items-center gap-2.5 text-left"
-                      aria-current={props.selectedIndex === index() ? "step" : undefined}
-                      onClick={() => props.onSelect(index())}
-                    >
-                      <span
-                        class={cn(
-                          "grid size-6 shrink-0 place-items-center rounded-[6px] font-mono text-[9.5px]",
-                          props.selectedIndex === index()
-                            ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_20%,transparent)] text-[var(--text-interactive-base)]"
-                            : "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-weak)]",
-                        )}
-                      >
-                        {String(index() + 1).padStart(2, "0")}
-                      </span>
-                      <span class="min-w-0 flex-1 truncate font-medium">{description()}</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="grid size-11 shrink-0 place-items-center rounded-[8px] text-[var(--text-weak)] opacity-60 transition-[background-color,color,opacity] duration-150 group-hover:opacity-100 hover:bg-[var(--v2-background-bg-layer-03)] hover:text-[var(--icon-critical-base)] focus-visible:opacity-100"
-                      aria-label={`Remove ${description()}`}
-                      title="Remove action"
-                      onClick={() => props.onRemove(index())}
-                    >
-                      <Icon name="x" size={12} />
-                    </button>
-                  </li>
-                );
-              }}
-            </For>
-          </ol>
+          <TakeActionList
+            actions={props.take.actions}
+            selectedActionId={selectedActionId()}
+            editingActionId={editingActionId()}
+            disabled={controlsDisabled()}
+            onSelect={(action) => selectAction(action.id)}
+            {...(props.onReplaceAction
+              ? {
+                  onEdit: (
+                    action: (typeof props.take.actions)[number],
+                    trigger: HTMLButtonElement,
+                  ) => {
+                    editTrigger = trigger;
+                    selectAction(action.id);
+                    setEditingActionId((current) =>
+                      current === action.id ? undefined : action.id,
+                    );
+                  },
+                }
+              : {})}
+            {...(props.onReorderActions
+              ? {
+                  onReorder: async (actionIds: string[]) => {
+                    await mutate(() => props.onReorderActions?.(actionIds));
+                  },
+                }
+              : {})}
+            {...(props.onRemoveAction ||
+            props.take.actions.every((action) => action.steps.length === 1)
+              ? {
+                  onRemove: async (action: (typeof props.take.actions)[number]) => {
+                    const actionIndex = props.take.actions.findIndex(
+                      (candidate) => candidate.id === action.id,
+                    );
+                    const remaining = props.take.actions.filter(
+                      (candidate) => candidate.id !== action.id,
+                    );
+                    const nextAction = remaining[Math.min(actionIndex, remaining.length - 1)];
+                    const removed = await mutate(() =>
+                      props.onRemoveAction
+                        ? props.onRemoveAction(action.id)
+                        : props.onRemove(action.stepStartIndex),
+                    );
+                    if (!removed) return;
+                    setEditingActionId(undefined);
+                    if (nextAction) {
+                      selectAction(nextAction.id);
+                      queueMicrotask(() => focusAction(nextAction.id));
+                    }
+                  },
+                }
+              : {})}
+          />
+          <Show when={props.onReplaceAction ? selectedAction() : undefined}>
+            {(action) => (
+              <TakeActionEditor
+                action={action()}
+                pending={pendingMutation()}
+                onCancel={() => {
+                  setEditingActionId(undefined);
+                  queueMicrotask(() => editTrigger?.focus({ preventScroll: true }));
+                }}
+                onSave={async (interaction) => {
+                  const saved = await mutate(() =>
+                    props.onReplaceAction?.(action().id, interaction),
+                  );
+                  if (!saved) return;
+                  setEditingActionId(undefined);
+                  queueMicrotask(() => editTrigger?.focus({ preventScroll: true }));
+                }}
+              />
+            )}
+          </Show>
         </Show>
         <section class="mt-4 border-t border-[var(--v2-border-border-muted)] px-1 pt-3">
           <span class="block text-[9.5px] font-semibold tracking-[0.11em] text-[var(--text-weak)] uppercase">
@@ -162,6 +277,7 @@ export function TakeReviewSidebar(props: {
                     ? "end"
                     : `screen:${props.destination.screenId}`
               }
+              disabled={controlsDisabled()}
               onChange={(event) => {
                 const value = event.currentTarget.value;
                 if (value === "new") props.onDestination({ kind: "new-screen" });
@@ -171,6 +287,7 @@ export function TakeReviewSidebar(props: {
                     kind: "screen",
                     screenId: value.slice("screen:".length),
                   });
+                invalidateReview();
               }}
             >
               <option value="new">New screen</option>
@@ -181,10 +298,21 @@ export function TakeReviewSidebar(props: {
             </select>
           </label>
         </section>
+        <Show when={mutationError()}>
+          {(message) => (
+            <section
+              class="mt-3 flex items-start gap-2 rounded-[9px] border border-[color-mix(in_srgb,var(--icon-critical-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)] px-3 py-2.5 text-[10px]/[1.45] text-[var(--icon-critical-base)]"
+              role="alert"
+            >
+              <Icon name="alert" size={12} class="mt-0.5 shrink-0" />
+              <span>That change was not saved. {message()}</span>
+            </section>
+          )}
+        </Show>
         <section
           class={cn(
             "mt-3 rounded-[9px] border px-3 py-2.5",
-            props.replayState === "passed"
+            canApprove()
               ? "border-[color-mix(in_srgb,var(--icon-success-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-success-base)_8%,transparent)]"
               : props.replayState === "failed"
                 ? "border-[color-mix(in_srgb,var(--icon-critical-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--icon-critical-base)_7%,transparent)]"
@@ -193,16 +321,10 @@ export function TakeReviewSidebar(props: {
         >
           <div class="flex items-center gap-2">
             <Icon
-              name={
-                props.replayState === "passed"
-                  ? "check"
-                  : props.replayState === "failed"
-                    ? "alert"
-                    : "play"
-              }
+              name={canApprove() ? "check" : props.replayState === "failed" ? "alert" : "play"}
               size={12}
               class={
-                props.replayState === "passed"
+                canApprove()
                   ? "text-[var(--icon-success-base)]"
                   : props.replayState === "failed"
                     ? "text-[var(--icon-critical-base)]"
@@ -210,21 +332,29 @@ export function TakeReviewSidebar(props: {
               }
             />
             <strong class="text-[10.5px] font-semibold text-[var(--text-strong)]">
-              {props.replayState === "passed"
-                ? "Replayed successfully"
-                : props.replayState === "failed"
-                  ? "Needs another pass"
-                  : props.replayState === "running"
-                    ? "Replaying on device…"
-                    : "Ready to test"}
+              {pendingMutation()
+                ? "Saving change…"
+                : reviewInvalidated()
+                  ? "Replay required"
+                  : canApprove()
+                    ? "Replayed successfully"
+                    : props.replayState === "failed"
+                      ? "Needs another pass"
+                      : props.replayState === "running"
+                        ? "Replaying on device…"
+                        : "Ready to test"}
             </strong>
           </div>
           <p class="m-0 mt-1 text-[9.5px]/[1.45] text-[var(--text-weak)]">
-            {props.replayState === "passed"
-              ? "Approve it if the device reached the right screen."
-              : props.replayState === "failed"
-                ? props.replayError || "The connection stopped before it finished."
-                : "Relay will try only this connection before you add it to the map."}
+            {pendingMutation()
+              ? "Relay is saving this action before it can be tested."
+              : reviewInvalidated()
+                ? "You changed this take. Replay the edited actions before approving the connection."
+                : canApprove()
+                  ? "Approve it if the device reached the right screen."
+                  : props.replayState === "failed"
+                    ? props.replayError || "The connection stopped before it finished."
+                    : "Relay will try only this connection before you add it to the map."}
           </p>
         </section>
       </div>
@@ -233,17 +363,11 @@ export function TakeReviewSidebar(props: {
         <button
           type="button"
           class={cn(primaryButton, "justify-center")}
-          disabled={props.replayState === "running"}
-          onClick={props.replayState === "passed" ? props.onKeep : props.onReplay}
+          disabled={props.replayState === "running" || pendingMutation()}
+          onClick={canApprove() ? props.onKeep : props.onReplay}
         >
           <Icon
-            name={
-              props.replayState === "passed"
-                ? "check"
-                : props.replayState === "running"
-                  ? "refresh"
-                  : "play"
-            }
+            name={canApprove() ? "check" : props.replayState === "running" ? "refresh" : "play"}
             size={12}
             class={
               props.replayState === "running"
@@ -251,13 +375,15 @@ export function TakeReviewSidebar(props: {
                 : ""
             }
           />
-          {props.replayState === "passed"
+          {canApprove()
             ? "Approve connection"
             : props.replayState === "running"
               ? "Replaying…"
-              : props.replayState === "failed"
-                ? "Try again"
-                : "Replay on device"}
+              : reviewInvalidated()
+                ? "Replay edited take"
+                : props.replayState === "failed"
+                  ? "Try again"
+                  : "Replay on device"}
         </button>
         <div class="flex items-center justify-between">
           <button type="button" class={secondaryButton} onClick={props.onDiscard}>
@@ -534,7 +660,7 @@ export function GraphEmptyState(props: {
       case "choose-device":
         return {
           title: "Start from any screen",
-          detail: "Choose a target above, then navigate to where this flow begins.",
+          detail: "Choose a device in the panel, then navigate to where this flow begins.",
         };
       case "setup-ios":
       case "enable-developer-mode":
@@ -566,63 +692,73 @@ export function GraphEmptyState(props: {
   };
   return (
     <>
-      <div
-        class={cn(
-          "absolute inset-y-0 left-0 z-[1] grid place-items-center px-6 max-[760px]:right-0",
-          props.deviceOpen && "max-[720px]:hidden",
-        )}
-        style={{ right: props.deviceOpen && props.deviceSelected ? "min(420px, 50vw)" : "0" }}
-      >
-        <section class="grid w-[min(410px,calc(100vw-48px))] justify-items-center text-center">
-          <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
-            <Icon name={isRecording() ? "camera" : "smartphone"} size={20} />
-          </span>
-          <h2 class="m-0 mt-4 text-[22px]/[1.2] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance">
-            {guidance().title}
-          </h2>
-          <p class="m-0 mt-2 max-w-[42ch] text-[13px]/[1.55] text-[var(--text-weak)] text-pretty">
-            {guidance().detail}
-          </p>
-          <Show when={!props.take}>
-            <div class="mt-4 flex min-h-11 items-center gap-3">
-              <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
-                <i
-                  class={cn(
-                    "size-1.5 rounded-full",
-                    props.recordState === "ready"
-                      ? "bg-[var(--icon-success-base)]"
-                      : "bg-[var(--icon-warning-base)] motion-safe:animate-pulse",
-                  )}
-                />
-                {props.recordState === "ready"
-                  ? "Ready to capture"
-                  : props.deviceOpen
-                    ? "Preparing live control"
-                    : "Press D to show the device"}
-              </span>
-              <Show when={props.recordState === "ready"}>
-                <button
-                  type="button"
-                  class={cn(
-                    primaryButton,
-                    "ml-auto shrink-0 justify-center px-4 shadow-[0_8px_24px_-12px_color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)]",
-                  )}
-                  disabled={props.captureBusy}
-                  aria-busy={props.captureBusy}
-                  onClick={props.onUseCurrentScreen}
-                >
-                  <Icon
-                    name={props.captureBusy ? "refresh" : "camera"}
-                    size={13}
-                    class={props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : ""}
+      <Show when={!props.deviceOpen || props.deviceSelected}>
+        <div
+          class={cn(
+            "absolute inset-y-0 left-0 z-[1] grid place-items-center px-6 max-[760px]:right-0",
+            props.deviceOpen && "max-[900px]:hidden",
+          )}
+          style={{ right: props.deviceOpen && props.deviceSelected ? "min(420px, 50vw)" : "0" }}
+        >
+          <section class="grid w-[min(410px,calc(100vw-48px))] justify-items-center text-center">
+            <span class="grid size-12 place-items-center rounded-[14px] bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
+              <Icon name={isRecording() ? "camera" : "smartphone"} size={20} />
+            </span>
+            <h2 class="m-0 mt-4 text-[22px]/[1.2] font-semibold tracking-[-0.035em] text-[var(--text-strong)] text-balance">
+              {guidance().title}
+            </h2>
+            <p class="m-0 mt-2 max-w-[42ch] text-[13px]/[1.55] text-[var(--text-weak)] text-pretty">
+              {guidance().detail}
+            </p>
+            <Show when={!props.take}>
+              <div class="mt-4 flex min-h-11 items-center gap-3">
+                <span class="inline-flex items-center gap-2 text-[11px] text-[var(--text-weak)]">
+                  <i
+                    class={cn(
+                      "size-1.5 rounded-full",
+                      props.recordState === "ready"
+                        ? "bg-[var(--icon-success-base)]"
+                        : "bg-[var(--icon-warning-base)] motion-safe:animate-pulse",
+                    )}
                   />
-                  {props.captureBusy ? "Saving…" : "Use current screen"}
-                </button>
-              </Show>
-            </div>
-          </Show>
-        </section>
-      </div>
+                  {props.recordState === "ready"
+                    ? "Ready to capture"
+                    : props.recordState === "choose-device"
+                      ? "Waiting for a device"
+                      : props.recordState === "device-unavailable"
+                        ? "Device unavailable"
+                        : props.recordState === "setup-ios" ||
+                            props.recordState === "enable-developer-mode" ||
+                            props.recordState === "setup-check-failed"
+                          ? "Setup needed"
+                          : props.deviceOpen
+                            ? "Connecting…"
+                            : "Press D to show the device"}
+                </span>
+                <Show when={props.recordState === "ready"}>
+                  <button
+                    type="button"
+                    class={cn(
+                      primaryButton,
+                      "ml-auto shrink-0 justify-center px-4 shadow-[0_8px_24px_-12px_color-mix(in_srgb,var(--v2-background-bg-accent)_58%,transparent)]",
+                    )}
+                    disabled={props.captureBusy}
+                    aria-busy={props.captureBusy}
+                    onClick={props.onUseCurrentScreen}
+                  >
+                    <Icon
+                      name={props.captureBusy ? "refresh" : "camera"}
+                      size={13}
+                      class={props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : ""}
+                    />
+                    {props.captureBusy ? "Saving…" : "Use current screen"}
+                  </button>
+                </Show>
+              </div>
+            </Show>
+          </section>
+        </div>
+      </Show>
       <div
         class={cn(
           "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-30 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[var(--map-control-surface)] p-1.5 shadow-[var(--map-elevation-panel)]",

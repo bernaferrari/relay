@@ -4,6 +4,9 @@ export * from "./operations.js";
 export * from "./coordination.js";
 export * from "./authoring.js";
 export * from "./collaboration.js";
+export * from "./app-map.js";
+export * from "./visual-verification.js";
+export * from "./target-runtime.js";
 import type { RecipeStep } from "./recipes.js";
 import type { ActorKind, ResourceEventPayload } from "./coordination.js";
 
@@ -38,7 +41,9 @@ export type TargetCapability =
   | "location"
   | "rotation"
   | "lock-screen"
-  | "app-switcher";
+  | "app-switcher"
+  | "install"
+  | "launch";
 
 export type EvidenceChannel =
   | "input"
