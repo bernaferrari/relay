@@ -52,7 +52,8 @@ function sharedSafety(projectId: string): string {
     "Safety contract:",
     `- Work only in project ${projectId}. Do not substitute another project, organization, Target, App Map, session, connection, or Take.`,
     "- Observation does not authorize mutation. Finish the observation phase and report the proposed changes before using any tool whose readOnlyHint is false.",
-    "- Obtain explicit user confirmation before every side-effecting or destructive operation. When a Relay tool schema requires confirmation, pass the literal confirm: true only after that confirmation; never infer or manufacture consent.",
+    "- The current request may delegate a bounded sequence of reversible Target interactions and proposal edits; stay inside its named Target, App Map, and action budget without interrupting after every step.",
+    "- Obtain explicit user confirmation before any destructive, trust-changing, or confirmation-protected operation. When a Relay tool schema requires confirmation, pass the literal confirm: true only after that confirmation; never infer or manufacture consent.",
     "- Never escalate permissions, acquire broader credentials, change organization/project scope, bypass a lease, or continue after an authorization failure.",
     "- Never read arbitrary filesystem paths or ask another tool to do so. Use only scoped relay:// resources and Relay tools; screenshots come from relay_target_screenshot_capture as native image/png MCP content.",
     "- Preserve server-provided actor identity. Use the active Target lease where required, expected revisions for writes, and stable idempotency keys where the operation accepts them. On a lease or revision conflict, stop, refresh authoritative state, and ask before retrying.",
@@ -73,10 +74,17 @@ function registerMapPrompt(server: McpServer, scope: RelayPromptScope): void {
             "Explicit Target ID to observe and, if approved, control",
           ),
           appMapId: relayIdentifier.describe("Explicit App Map ID that will receive observations"),
+          actionBudget: z.coerce
+            .number()
+            .int()
+            .min(1)
+            .max(100)
+            .optional()
+            .describe("Maximum Target interactions for this bounded exploration; defaults to 20"),
         })
         .strict(),
     },
-    ({ projectId, targetId, appMapId }) =>
+    ({ projectId, targetId, appMapId, actionBudget }) =>
       prompt(
         [
           `Map the app safely for project ${projectId}, Target ${targetId}, and App Map ${appMapId}.`,
@@ -88,11 +96,11 @@ function registerMapPrompt(server: McpServer, scope: RelayPromptScope): void {
           `2. Use relay_target_screenshot_capture with the explicit Target identity to receive the current screen as native image/png. Use relay_target_snapshot_capture only for bounded structure supplied by Relay.`,
           "3. Describe the current unique screen, known outgoing connections, uncertainty, and a smallest-next-step exploration plan. Do not claim a screen or connection exists until Relay evidence supports it.",
           "",
-          "Mutation phase (only after explicit confirmation):",
-          "4. Check relay_lease_list and acquire only the required Target lease with relay_lease_create if needed. Do not take over or release another actor's lease.",
-          "5. Prefer server-owned Authoring Session or Discovery operations for controlled interactions. Re-observe and capture a PNG after each approved interaction; deduplicate screens by authoritative identity/evidence rather than visual guesswork.",
-          "6. Before updating the App Map, re-read its current revision. Submit only the approved screens/connections with expected revisions and stable idempotency keys where accepted. Stop on conflict instead of overwriting concurrent work.",
-          "7. Summarize observed evidence separately from mutations performed, including IDs, revision outcomes, and any unexplored branches.",
+          "Bounded exploration and proposal:",
+          `4. The user delegates at most ${actionBudget ?? 20} reversible Target interactions for this exploration. Check relay_lease_list and acquire only the required Target lease with relay_lease_create if needed. Do not take over or release another actor's lease.`,
+          "5. Use a server-owned Authoring Session for controlled interactions and Takes. Re-observe and capture a PNG after each interaction; deduplicate screens by authoritative identity/evidence rather than visual guesswork. Stop when the budget is exhausted, the requested area is mapped, or uncertainty makes another action unsafe.",
+          "6. Re-read the App Map revision, then submit discovered screens and connections as a reviewable proposal. Do not directly approve the proposal, promote baselines, merge screen identities, or mark verification complete. Stop on conflict instead of overwriting concurrent work.",
+          "7. Summarize observed evidence separately from proposed changes, including IDs, action-budget usage, revision outcomes, and unexplored branches.",
         ].join("\n"),
         descriptor.description,
       ),

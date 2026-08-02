@@ -111,6 +111,7 @@ test("lists the three curated Relay prompts with required scoped arguments", asy
             { name: "projectId", required: true },
             { name: "targetId", required: true },
             { name: "appMapId", required: true },
+            { name: "actionBudget", required: false },
           ],
         },
         {
@@ -152,7 +153,7 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
         headings: [
           "Safety contract:",
           "Observation phase (no mutation):",
-          "Mutation phase (only after explicit confirmation):",
+          "Bounded exploration and proposal:",
         ],
       },
     },
@@ -275,6 +276,25 @@ test("prompt snapshots preserve the observation, authority, and evidence safety 
       assert.match(text, /bypass a lease/i);
       assert.doesNotMatch(text, /file:\/\//);
     }
+  } finally {
+    await session.close();
+  }
+});
+
+test("mapping prompt turns one delegation into a bounded autonomous proposal", async () => {
+  const session = await connectMcp();
+  try {
+    const { text } = promptText(
+      await session.request("prompts/get", {
+        name: relayMcpPromptNames.mapAppSafely,
+        arguments: { projectId, targetId: "target-1", appMapId: "map-1", actionBudget: "7" },
+      }),
+    );
+    assert.match(text, /at most 7 reversible Target interactions/);
+    assert.match(text, /server-owned Authoring Session/);
+    assert.match(text, /reviewable proposal/);
+    assert.match(text, /Do not directly approve the proposal/);
+    assert.doesNotMatch(text, /Discovery operations/);
   } finally {
     await session.close();
   }
