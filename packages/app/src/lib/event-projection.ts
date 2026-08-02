@@ -4,7 +4,6 @@ export type EventRefresh =
   | "devices"
   | "journeys"
   | "appMaps"
-  | "collections"
   | "jobs"
   | "runs"
   | "variables"
@@ -31,7 +30,6 @@ const RESOURCE_REFRESH: Partial<Record<ResourceKind, EventRefresh>> = {
   variables: "variables",
   journey: "journeys",
   "app-map": "appMaps",
-  collection: "collections",
   matrix: "matrices",
   "discovery-session": "discoveries",
   "recording-session": "authoring",
@@ -41,7 +39,6 @@ const GAP_REFRESH: EventRefresh[] = [
   "devices",
   "journeys",
   "appMaps",
-  "collections",
   "jobs",
   "runs",
   "variables",

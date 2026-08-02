@@ -86,14 +86,6 @@ import {
   createRelayCollaborationTransport,
 } from "../lib/relay-collaboration-transport";
 import type * as Y from "yjs";
-import {
-  deleteSuite as deleteSuiteRequest,
-  listSuites as listSuitesRequest,
-  loadSuiteHistory as loadSuiteHistoryRequest,
-  restoreSuite as restoreSuiteRequest,
-  runSuite as runSuiteRequest,
-  saveSuite as saveSuiteRequest,
-} from "../lib/server-suite-remote";
 import type {
   ActionInfo,
   DeviceInfo,
@@ -109,10 +101,7 @@ import type {
   RunEvidenceQuery,
   SnapshotState,
   TraceFrameRef,
-  TestAtlas,
   LocalSchedule,
-  SaveSuiteInput,
-  TestSuite,
 } from "../lib/api-types";
 import { visualBaselineFrameUrl as buildVisualBaselineFrameUrl } from "../lib/server-urls";
 
@@ -204,12 +193,7 @@ export type {
   StepTarget,
   TraceFrameRef,
   TraceStep,
-  TestAtlas,
   LocalSchedule,
-  SaveSuiteInput,
-  SuiteEntry,
-  SuiteSection,
-  TestSuite,
 } from "../lib/api-types";
 
 export const { use: useServer, provider: ServerProvider } = createSimpleContext({
@@ -246,8 +230,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const [appMapsLoaded, setAppMapsLoaded] = createSignal(false);
     const [recipesLoaded, setRecipesLoaded] = createSignal(false);
     const [authoringSessions, setAuthoringSessions] = createSignal<AuthoringSession[]>([]);
-    const [suites, setSuites] = createSignal<TestSuite[]>([]);
-    const [selectedSuiteId, setSelectedSuiteId] = createSignal<string | null>(null);
     // Reopen the last App Map like a document editor. Hardware selection and
     // the live-device panel remain separate state, so resuming the canvas does
     // not imply that a recording has started.
@@ -841,78 +823,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return `${serverUrl()}/authoring-evidence/${sha256}${query}`;
     }
 
-    async function refreshSuites() {
-      if (health() === "offline") return;
-      try {
-        const list = await listSuitesRequest(request);
-        setSuites(list);
-        const selected = selectedSuiteId();
-        if (selected && !list.some((suite) => suite.id === selected)) setSelectedSuiteId(null);
-      } catch {
-        /* suites do not block the rest of the workspace */
-      }
-    }
-
-    async function saveSuiteRemote(
-      input: Omit<SaveSuiteInput, "expectedRevision">,
-    ): Promise<TestSuite | null> {
-      try {
-        const suite = await saveSuiteRequest(request, {
-          ...input,
-          expectedRevision: suites().find((item) => item.id === input.id)?.updatedAt ?? 0,
-        });
-        await refreshSuites();
-        setSelectedSuiteId(suite.id);
-        return suite;
-      } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "error");
-        return null;
-      }
-    }
-
-    async function deleteSuiteRemote(id: string): Promise<void> {
-      await deleteSuiteRequest(request, id);
-      if (selectedSuiteId() === id) setSelectedSuiteId(null);
-      await refreshSuites();
-      toast("Suite deleted", "success");
-    }
-
-    async function restoreSuiteRemote(id: string, updatedAt: number): Promise<TestSuite> {
-      const suite = await restoreSuiteRequest(request, id, updatedAt);
-      await refreshSuites();
-      return suite;
-    }
-
-    async function runSuiteRemote(id: string): Promise<void> {
-      if (health() !== "online") {
-        toast("Relay isn’t connected — can’t run yet", "warning");
-        return;
-      }
-      const serial = selectedDevice() ?? undefined;
-      if (!serial) {
-        toast("Choose a phone or browser first", "warning");
-        return;
-      }
-      const target = devices().find((device) => device.serial === serial);
-      const targetKind = target?.platform === "browser" ? "browser" : "device";
-      try {
-        const result = await runSuiteRequest(request, id, {
-          serial,
-          platform: target?.platform === "ios" ? "ios" : "android",
-          targetKind,
-          ...(targetKind === "browser" ? { browserTargetId: serial } : {}),
-        });
-        if (result.jobs[0]) setSelectedJobId(result.jobs[0].id);
-        toast(
-          `${result.jobs.length} ${result.jobs.length === 1 ? "test" : "tests"} queued`,
-          "success",
-        );
-        await refreshJobs();
-      } catch (error) {
-        toast(error instanceof Error ? error.message : String(error), "error");
-      }
-    }
-
     async function refreshJobs() {
       if (health() === "offline") return;
       try {
@@ -1175,11 +1085,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       return client!.generate(input);
     }
 
-    async function loadAtlas(): Promise<TestAtlas> {
-      const data = await request<{ atlas: TestAtlas }>("/atlas");
-      return data.atlas;
-    }
-
     async function scheduleRecipe(input: {
       recipeId: string;
       intervalMinutes: number;
@@ -1240,7 +1145,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         refreshActions(),
         refreshRecipes(),
         refreshAppMaps(),
-        refreshSuites(),
         refreshJobs(),
         refreshRuns(),
         refreshSchedules(),
@@ -1257,7 +1161,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         devices: refreshDevices,
         journeys: refreshRecipes,
         appMaps: refreshAppMaps,
-        collections: refreshSuites,
         jobs: refreshJobs,
         runs: refreshRuns,
         variables: refreshProjectVariables,
@@ -1575,7 +1478,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         await deleteRecipe(request, id);
         if (selectedAppMapId() === id) setSelectedAppMapId(null);
         await refreshRecipes();
-        toast("Journey deleted", "success");
+        toast("Map deleted", "success");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         appendLog(msg, "error");
@@ -1663,7 +1566,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           refreshActions(),
           refreshRecipes(),
           refreshAppMaps(),
-          refreshSuites(),
           refreshJobs(),
           refreshRuns(),
           refreshSchedules(),
@@ -1698,7 +1600,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
             void refreshActions();
             void refreshTargets();
             void refreshRecipes();
-            void refreshSuites();
             void refreshRuns();
             void refreshAuthoringSessions();
             void refreshRedactionPolicy();
@@ -1867,7 +1768,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadJourney,
       saveJourney,
       generate,
-      loadAtlas,
       scheduleRecipe,
       refreshSchedules,
       deleteLocalSchedule,
@@ -1893,9 +1793,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       loadAppMap,
       createAppMap,
       authoringSessions,
-      suites,
-      selectedSuiteId,
-      setSelectedSuiteId,
       selectedAppMapId,
       setSelectedAppMapId,
       selectedAppMap,
@@ -1947,7 +1844,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       discardAuthoringSession,
       cancelAuthoringSession,
       authoringEvidenceUrl,
-      refreshSuites,
       refreshDevices,
       refreshTargets,
       refreshTargetProfiles,
@@ -1994,11 +1890,6 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       restoreRecipeVersion,
       loadRecipeStability,
       deleteRecipeRemote,
-      saveSuiteRemote,
-      deleteSuite: deleteSuiteRemote,
-      loadSuiteHistory: (id: string) => loadSuiteHistoryRequest(request, id),
-      restoreSuite: restoreSuiteRemote,
-      runSuiteRemote,
       cancelJob: cancelJobRemote,
       pauseJob: pauseJobRemote,
       resumeJob: resumeJobRemote,

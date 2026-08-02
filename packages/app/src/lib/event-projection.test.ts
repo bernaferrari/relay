@@ -71,7 +71,6 @@ test("a replay gap requests one scoped refresh of every live projection", () => 
     "devices",
     "journeys",
     "appMaps",
-    "collections",
     "jobs",
     "runs",
     "variables",
