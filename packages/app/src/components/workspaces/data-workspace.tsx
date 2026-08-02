@@ -43,25 +43,36 @@ export function DataWorkspace(props: {
   const [rows, setRows] = createSignal<DataRow[]>([]);
   const [hydrated, setHydrated] = createSignal(false);
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
+  const [draftIds, setDraftIds] = createSignal<ReadonlySet<string>>(new Set());
   const selectedRow = () => rows().find((row) => row.id === selectedId()) ?? null;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastSavedSnapshot = "";
 
   createEffect(() => {
     const remote = server.projectVariables();
     if (remote.updatedAt <= 0 || hydrated()) return;
     const privateValues = readPrivateVariableValues(server.projectId());
-    setRows(
-      remote.value.map((variable) => variableToDataRow(variable, privateValues[variable.id])),
+    const nextRows = remote.value.map((variable) =>
+      variableToDataRow(variable, privateValues[variable.id]),
     );
+    setRows(nextRows);
+    lastSavedSnapshot = JSON.stringify(nextRows.map(dataRowToVariable));
     setHydrated(true);
   });
   createEffect(() => {
-    const value = rows();
+    const value = rows()
+      .filter((row) => !draftIds().has(row.id))
+      .map(dataRowToVariable);
     if (!hydrated()) return;
+    const snapshot = JSON.stringify(value);
+    if (snapshot === lastSavedSnapshot) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       void server
-        .saveProjectVariables(value.map(dataRowToVariable))
+        .saveProjectVariables(value)
+        .then(() => {
+          lastSavedSnapshot = snapshot;
+        })
         .catch((error: unknown) =>
           toast(error instanceof Error ? error.message : String(error), "error"),
         );
@@ -69,15 +80,29 @@ export function DataWorkspace(props: {
   });
   onCleanup(() => clearTimeout(saveTimer));
 
-  const patchRow = (id: string, changes: Partial<DataRow>) =>
+  const patchRow = (id: string, changes: Partial<DataRow>) => {
+    setDraftIds((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
     setRows((items) => items.map((item) => (item.id === id ? { ...item, ...changes } : item)));
+  };
   const deleteRow = (id: string) => {
     removePrivateVariableValue(server.projectId(), id);
+    setDraftIds((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
     setRows((items) => items.filter((item) => item.id !== id));
     if (selectedId() === id) setSelectedId(null);
   };
   const addRow = () => {
     const id = crypto.randomUUID();
+    setDraftIds((current) => new Set(current).add(id));
     setRows((current) => [
       ...current,
       {
@@ -176,11 +201,13 @@ export function DataWorkspace(props: {
                     {row.name}
                   </strong>
                   <small class="mt-1 block truncate text-[10px]/[1.25] text-text-weaker">
-                    {row.scope === "private"
-                      ? "Value stays on this computer"
-                      : row.mode === "List"
-                        ? `${row.values?.length ?? 1} allowed values`
-                        : "Shared across tests"}
+                    {draftIds().has(row.id)
+                      ? "Not saved yet"
+                      : row.scope === "private"
+                        ? "Value stays on this computer"
+                        : row.mode === "List"
+                          ? `${row.values?.length ?? 1} allowed values`
+                          : "Shared across tests"}
                   </small>
                 </span>
                 <span class="w-fit rounded-md bg-surface-weak px-2 py-1 text-[10px]/[1.25] text-text-weak">
@@ -393,7 +420,11 @@ export function DataWorkspace(props: {
                 >
                   <Icon name="trash" size={14} /> Delete variable
                 </button>
-                <span class="text-[10px]/[1.25] text-text-weaker">Changes save automatically</span>
+                <span class="text-[10px]/[1.25] text-text-weaker">
+                  {draftIds().has(row().id)
+                    ? "Edit anything to save"
+                    : "Changes save automatically"}
+                </span>
               </footer>
             </aside>
           )}
