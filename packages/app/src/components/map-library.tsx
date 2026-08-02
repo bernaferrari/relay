@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useRecorder } from "../context/recorder";
-import { useServer, type JobInfo, type RecipeInfo } from "../context/server";
+import { useServer, type JobInfo } from "../context/server";
+import type { MapLibraryItem } from "../lib/app-map-library";
 import { cn } from "../lib/cn";
 import { displayTitle, fmtAgo, fmtDur, titleize } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
@@ -46,7 +47,7 @@ export function MapLibrary(props: {
   onArea: (area: MapLibraryArea) => void;
   query: string;
   onQuery: (value: string) => void;
-  items: RecipeInfo[];
+  items: MapLibraryItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -59,8 +60,8 @@ export function MapLibrary(props: {
   const recorder = useRecorder();
   const [unfinishedOpen, setUnfinishedOpen] = createSignal(false);
   const [allUnfinishedVisible, setAllUnfinishedVisible] = createSignal(false);
-  const runnableMaps = () => props.items.filter((map) => map.steps.length > 0);
-  const unfinishedMaps = () => props.items.filter((map) => map.steps.length === 0);
+  const authoredMaps = () => props.items.filter((map) => map.screenCount > 0);
+  const unfinishedMaps = () => props.items.filter((map) => map.screenCount === 0);
   const visibleUnfinishedMaps = createMemo(() => {
     const items = unfinishedMaps();
     if (allUnfinishedVisible() || props.query.trim()) return items;
@@ -164,10 +165,10 @@ export function MapLibrary(props: {
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-          <For each={runnableMaps()}>
+          <For each={authoredMaps()}>
             {(map) => (
               <MapLibraryRow
-                recipe={map}
+                appMap={map}
                 selected={props.selectedId === map.id}
                 onSelect={props.onSelect}
                 onDelete={props.onDelete}
@@ -191,7 +192,7 @@ export function MapLibrary(props: {
                 <For each={visibleUnfinishedMaps()}>
                   {(map) => (
                     <MapLibraryRow
-                      recipe={map}
+                      appMap={map}
                       selected={props.selectedId === map.id}
                       onSelect={props.onSelect}
                       onDelete={props.onDelete}
@@ -277,7 +278,7 @@ export function MapLibrary(props: {
  * is authored in the canvas, so the same action never competes for attention
  * in both the sidebar and the workspace. */
 function MapLibraryRow(props: {
-  recipe: RecipeInfo;
+  appMap: MapLibraryItem;
   selected: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -294,8 +295,8 @@ function MapLibraryRow(props: {
           "focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus",
         )}
         aria-current={props.selected ? "page" : undefined}
-        title={displayTitle(props.recipe.title)}
-        onClick={() => props.onSelect(props.recipe.id)}
+        title={displayTitle(props.appMap.name)}
+        onClick={() => props.onSelect(props.appMap.id)}
       >
         <span
           class={cn(
@@ -304,16 +305,16 @@ function MapLibraryRow(props: {
           )}
           aria-hidden="true"
         >
-          <Icon name={recipeIcon(props.recipe)} size={13} />
+          <Icon name={appMapIcon(props.appMap)} size={13} />
         </span>
         <span
           class={cn("truncate text-[12.5px]/[1.3] font-[550]", !props.selected && "text-text-weak")}
         >
-          {displayTitle(props.recipe.title)}
+          {displayTitle(props.appMap.name)}
         </span>
-        <Show when={props.recipe.steps.length > 0}>
+        <Show when={props.appMap.screenCount > 0}>
           <small class={cn("shrink-0 text-[10px] text-text-weaker", mono)}>
-            {props.recipe.steps.length}
+            {props.appMap.screenCount}
           </small>
         </Show>
       </button>
@@ -321,9 +322,9 @@ function MapLibraryRow(props: {
         <button
           type="button"
           class="grid size-7 shrink-0 place-items-center rounded-[6px] text-text-weaker transition-colors hover:bg-surface-raised-base-hover hover:text-[var(--icon-critical-base)] focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-border-strong-focus"
-          aria-label={`Delete ${displayTitle(props.recipe.title)}`}
+          aria-label={`Delete ${displayTitle(props.appMap.name)}`}
           title="Delete map"
-          onClick={() => props.onDelete(props.recipe.id)}
+          onClick={() => props.onDelete(props.appMap.id)}
         >
           <Icon name="trash" size={13} />
         </button>
@@ -452,13 +453,8 @@ function statusTint(status: string): string {
   return "bg-[var(--text-weak)]";
 }
 
-function recipeIcon(recipe: RecipeInfo): IconName {
-  const kind = recipe.steps[0]?.kind;
-  if (kind === "module" || kind === "flow" || kind === "branch" || kind === "repeat") return "move";
-  if (kind === "expect" || kind === "assert-content" || kind === "evaluate-semantic")
-    return "check";
-  if (kind === "type" || kind === "clipboard") return "keyboard";
-  if (kind === "screenshot") return "camera";
-  if (kind === "tap") return "pointer";
-  return recipe.steps.length === 0 ? "circle" : "bolt";
+function appMapIcon(appMap: MapLibraryItem): IconName {
+  if (appMap.connectionCount > 0) return "move";
+  if (appMap.screenCount > 0) return "smartphone";
+  return "circle";
 }

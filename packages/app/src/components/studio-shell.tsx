@@ -11,10 +11,7 @@ import {
 import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
-import { AppMapWorkspace } from "./app-map-workspace";
-import { MapLibrary, type MapLibraryArea } from "./map-library";
 import { DevicePicker } from "./device-picker";
-import { EmptyAppMap } from "./app-map-empty";
 import { TestSettingsPanel } from "./test-details-panel";
 import { Icon } from "./icon";
 import { cn } from "../lib/cn";
@@ -47,10 +44,12 @@ import {
 } from "../lib/shell-layout";
 import { blockerIsDeviceRelated, testRunBlocker } from "../lib/test-run-readiness";
 import { appMapStartupDecision } from "../lib/app-map-startup";
+import { appMapLibraryItem } from "../lib/app-map-library";
 import type { JourneyRunReadiness as GraphRunReadiness } from "../lib/journey-run-readiness";
 import type { SettingsSection } from "../pages/settings";
 
 type ProductArea = "tests" | "runs";
+type MapLibraryArea = ProductArea;
 type StudioView = "workbench" | "map";
 const DataWorkspace = lazy(() =>
   import("./workspaces/data-workspace").then((module) => ({ default: module.DataWorkspace })),
@@ -60,6 +59,15 @@ const RunsWorkspace = lazy(() =>
 );
 const TestWorkbench = lazy(() =>
   import("./test-workbench").then((module) => ({ default: module.TestWorkbench })),
+);
+const AppMapWorkspace = lazy(() =>
+  import("./app-map-workspace").then((module) => ({ default: module.AppMapWorkspace })),
+);
+const EmptyAppMap = lazy(() =>
+  import("./app-map-empty").then((module) => ({ default: module.EmptyAppMap })),
+);
+const MapLibrary = lazy(() =>
+  import("./map-library").then((module) => ({ default: module.MapLibrary })),
 );
 
 function WorkspaceLoading(props: { label: string }) {
@@ -104,7 +112,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     canonicalYaml: string;
   } | null>(null);
 
-  const selected = createMemo(() => server.selectedRecipe());
+  const selectedMap = createMemo(() => server.selectedAppMap());
+  const selectedRecipe = createMemo(() => server.selectedRecipe());
+  const [mapNameDraft, setMapNameDraft] = createSignal("");
+  createEffect(() => setMapNameDraft(selectedMap()?.name ?? ""));
   // Opening Relay should feel like reopening a design file, not entering a
   // creation wizard. The provider restores the persisted id during startup;
   // this reactive fallback closes the small renderer race where recipes can
@@ -241,7 +252,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
         toggleDevicePanel();
         return;
       }
-      if (key === "r" && !selected()) {
+      if (key === "r" && !selectedMap()) {
         event.preventDefault();
         void captureFirstScreenFromBlankMap();
       }
@@ -294,7 +305,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   const selectedTargetIsReady = () => selectedDeviceReadiness().kind === "ready";
   const toggleDevicePanel = () => {
     setSettingsOpen(false);
-    if (selected()) {
+    if (selectedMap()) {
       window.dispatchEvent(new CustomEvent("relay:toggle-device-panel"));
       return;
     }
@@ -330,35 +341,19 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
       }
       return;
     }
-    const recipe = selected();
-    if (!recipe) return;
     if (studioView() === "map") {
       window.dispatchEvent(new CustomEvent("relay:run-app-map"));
       return;
     }
+    const recipe = selectedRecipe();
+    if (!recipe) return;
     void server.runRecipeRemote(recipe.id);
   };
   const mapItems = createMemo(() => {
     const needle = query().trim().toLowerCase();
-    const recipes = new Map(server.recipes().map((recipe) => [recipe.id, recipe]));
-    const rows: RecipeInfo[] = server.appMaps().map((map) => {
-      const recipe = recipes.get(map.id);
-      return {
-        id: map.id,
-        title: map.name,
-        source: "custom",
-        steps: recipe?.steps ?? [],
-        createdAt: map.createdAt,
-        updatedAt: map.updatedAt,
-        ...(recipe?.description ? { description: recipe.description } : {}),
-      };
-    });
+    const rows = server.appMaps().map(appMapLibraryItem);
     rows.sort((a, b) => b.updatedAt - a.updatedAt);
-    return needle
-      ? rows.filter((recipe) =>
-          `${recipe.title} ${recipe.description ?? ""}`.toLowerCase().includes(needle),
-        )
-      : rows;
+    return needle ? rows.filter((appMap) => appMap.name.toLowerCase().includes(needle)) : rows;
   });
   async function createTest(record = false): Promise<RecipeInfo | null> {
     if (record && !selectedTargetIsReady()) {
@@ -440,11 +435,13 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   }
 
   async function duplicateSelected(): Promise<void> {
-    const recipe = selected();
+    const appMap = selectedMap();
+    const recipe = selectedRecipe();
+    if (!appMap) return;
     if (!recipe) return;
     // Copies of copies get "(copy 2)", never "… (copy) copy".
-    const base = displayTitle(recipe.title).replace(/\s*\((copy)(?:\s+\d+)?\)\s*$/i, "");
-    const titles = new Set(server.recipes().map((item) => displayTitle(item.title)));
+    const base = displayTitle(appMap.name).replace(/\s*\((copy)(?:\s+\d+)?\)\s*$/i, "");
+    const titles = new Set(server.appMaps().map((item) => displayTitle(item.name)));
     let title = `${base} (copy)`;
     for (let index = 2; titles.has(title); index++) title = `${base} (copy ${index})`;
     const saved = await server.saveRecipeRemote({
@@ -574,30 +571,32 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             </button>
             <div class={shellBreadcrumb}>
               <Show
-                when={area() === "tests" && selected()}
+                when={area() === "tests" && selectedMap()}
                 fallback={<strong>{area() === "runs" ? "Run history" : "Untitled"}</strong>}
               >
                 <input
                   type="text"
-                  size={Math.max(12, Math.min(34, displayTitle(draft.title()).length + 1))}
+                  size={Math.max(12, Math.min(34, displayTitle(mapNameDraft()).length + 1))}
                   class="h-8 min-w-[120px] max-w-[min(32vw,360px)] rounded-md bg-transparent px-1.5 font-medium text-[var(--text-base)] outline-none transition-[background-color,box-shadow,color] duration-150 placeholder:text-[var(--text-weak)] hover:bg-[var(--v2-background-bg-layer-01)] focus:bg-[var(--v2-background-bg-layer-01)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_0_0_1px_var(--v2-border-border-strong)] max-[680px]:max-w-[26vw] max-[520px]:min-w-0"
                   aria-label="Map name"
                   data-tip="Rename map"
-                  value={displayTitle(draft.title())}
+                  value={displayTitle(mapNameDraft())}
                   placeholder="Untitled"
                   spellcheck={false}
                   onFocus={() => {
-                    titleBeforeEdit = draft.title();
+                    titleBeforeEdit = mapNameDraft();
                   }}
-                  onInput={(event) => draft.setTitle(event.currentTarget.value)}
+                  onInput={(event) => setMapNameDraft(event.currentTarget.value)}
                   onBlur={() => {
-                    if (!draft.title().trim()) draft.setTitle("Untitled");
-                    void renameCanonicalMap(draft.title().trim() || "Untitled");
+                    const name = mapNameDraft().trim() || "Untitled";
+                    setMapNameDraft(name);
+                    draft.setTitle(name);
+                    void renameCanonicalMap(name);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") event.currentTarget.blur();
                     if (event.key === "Escape") {
-                      draft.setTitle(titleBeforeEdit);
+                      setMapNameDraft(titleBeforeEdit);
                       event.currentTarget.blur();
                     }
                   }}
@@ -613,7 +612,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 onManageTargets={() => props.onOpenSettings("targets")}
               />
             </Show>
-            <Show when={area() === "tests" && selected()}>
+            <Show when={area() === "tests" && selectedMap()}>
               <Show when={draft.saveState() === "saving" || draft.saveState() === "invalid"}>
                 <span class={shellSaveState}>
                   {draft.saveState() === "saving"
@@ -634,7 +633,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </button>
               </Show>
             </Show>
-            <Show when={area() === "tests" && selected()}>
+            <Show when={area() === "tests" && selectedMap()}>
               <div class="relative flex items-center gap-1.5">
                 <button
                   type="button"
@@ -781,7 +780,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
           <section class={shellStudio}>
             <div
               class={
-                selected()
+                selectedMap()
                   ? studioView() === "map"
                     ? "relative flex min-h-0 min-w-0 flex-1"
                     : shellStudioBodyWorkbench
@@ -789,16 +788,18 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
               }
             >
               <Show
-                when={selected()}
+                when={selectedMap()}
                 fallback={
-                  <EmptyAppMap
-                    deviceOpen={devicePanelOpen()}
-                    creating={creatingBlankMap()}
-                    onToggleDevice={toggleDevicePanel}
-                    onOpenTargets={() => props.onOpenSettings("targets")}
-                    onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
-                    onAddFirstNote={() => void addFirstNoteToBlankMap()}
-                  />
+                  <Suspense fallback={<WorkspaceLoading label="canvas" />}>
+                    <EmptyAppMap
+                      deviceOpen={devicePanelOpen()}
+                      creating={creatingBlankMap()}
+                      onToggleDevice={toggleDevicePanel}
+                      onOpenTargets={() => props.onOpenSettings("targets")}
+                      onCaptureFirstScreen={() => void captureFirstScreenFromBlankMap()}
+                      onAddFirstNote={() => void addFirstNoteToBlankMap()}
+                    />
+                  </Suspense>
                 }
               >
                 <Show when={studioView() === "workbench"}>
@@ -823,26 +824,28 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </Show>
                 <Show when={studioView() === "map"}>
                   <div class={cn(shellStageWrap, "flex flex-1")}>
-                    <AppMapWorkspace
-                      navigatorOpen={navOpen()}
-                      captureStartOnReady={captureStartOnReady()}
-                      addNoteOnReady={addNoteOnReady()}
-                      onCaptureStartHandled={() => {
-                        setCaptureStartOnReady(false);
-                        setCreatingBlankMap(false);
-                      }}
-                      onAddNoteHandled={() => {
-                        setAddNoteOnReady(false);
-                        setCreatingBlankMap(false);
-                      }}
-                      onOpenTargets={() => props.onOpenSettings("targets")}
-                      onOpenActions={() => setStudioView("workbench")}
-                      onOpenVariables={() => setVariablesOpen(true)}
-                      onOpenRun={(id) => {
-                        server.setSelectedJobId(id);
-                        setArea("runs");
-                      }}
-                    />
+                    <Suspense fallback={<WorkspaceLoading label="map" />}>
+                      <AppMapWorkspace
+                        navigatorOpen={navOpen()}
+                        captureStartOnReady={captureStartOnReady()}
+                        addNoteOnReady={addNoteOnReady()}
+                        onCaptureStartHandled={() => {
+                          setCaptureStartOnReady(false);
+                          setCreatingBlankMap(false);
+                        }}
+                        onAddNoteHandled={() => {
+                          setAddNoteOnReady(false);
+                          setCreatingBlankMap(false);
+                        }}
+                        onOpenTargets={() => props.onOpenSettings("targets")}
+                        onOpenActions={() => setStudioView("workbench")}
+                        onOpenVariables={() => setVariablesOpen(true)}
+                        onOpenRun={(id) => {
+                          server.setSelectedJobId(id);
+                          setArea("runs");
+                        }}
+                      />
+                    </Suspense>
                   </div>
                   <Show when={settingsOpen()}>
                     <TestSettingsPanel

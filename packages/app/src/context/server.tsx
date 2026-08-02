@@ -1816,6 +1816,9 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       notify: platform.notify,
     });
 
+    const selectedAppMap = createMemo(
+      () => appMaps().find((appMap) => appMap.id === selectedRecipeId()) ?? null,
+    );
     const selectedRecipe = createMemo(
       () => recipes().find((recipe) => recipe.id === selectedRecipeId()) ?? null,
     );
@@ -1895,6 +1898,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       setSelectedSuiteId,
       selectedRecipeId,
       setSelectedRecipeId,
+      selectedAppMap,
       selectedRecipe,
       jobs,
       persistedRuns,
