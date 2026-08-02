@@ -12,7 +12,7 @@ export function AppMapHistoryPanel(props: {
     <aside class="absolute top-14 right-4 z-30 w-[min(320px,calc(100%-32px))] overflow-hidden rounded-[12px] border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] shadow-[0_16px_40px_rgb(0_0_0/28%)]">
       <header class="flex min-h-14 items-center justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-3 py-2.5">
         <div>
-          <strong class="block text-[12px] text-[var(--text-strong)]">Journey history</strong>
+          <strong class="block text-[12px] text-[var(--text-strong)]">Map history</strong>
           <span class="text-[10.5px]/[1.4] text-[var(--text-weak)]">
             Restore any prior save. Your current state stays recoverable.
           </span>

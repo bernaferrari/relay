@@ -106,7 +106,7 @@
 }
 
 @media (pointer: coarse) {
-  .journey-connect-handle {
+  .app-map-connect-handle {
     opacity: 1;
   }
 

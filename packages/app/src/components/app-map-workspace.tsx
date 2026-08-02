@@ -78,7 +78,7 @@ type AppMapLoadState =
   | { status: "error"; appMapId: string };
 
 /**
- * The graph is the authoring surface for a journey. A card is a captured
+ * The graph is the authoring surface for an App Map. A card is a captured
  * screen; the small actions attached to it are the things a person can do
  * there. Recording remains the only way to create the real transitions, so
  * the canvas never promises a route that the runner cannot execute.
@@ -457,7 +457,7 @@ export function AppMapWorkspace(props: {
     setMetadata({ ...current, value, updatedAt: Math.max(current.updatedAt, appMap.updatedAt) });
   });
 
-  // A blank journey starts with its device companion visible: the first screen
+  // A blank App Map starts with its device companion visible: the first screen
   // is established there, not through a modal or a second empty-state CTA.
   // Populated maps keep the canvas unobstructed until Device is requested.
   createEffect(() => {
@@ -474,7 +474,7 @@ export function AppMapWorkspace(props: {
     setCaptureOpen(true);
   });
   // Recording starts from the navigator as well as from this workspace. The
-  // drawer must follow that state so a fresh journey never appears to be an
+  // drawer must follow that state so a fresh map never appears to be an
   // empty graph while it is already capturing real work.
   createEffect(() => {
     if (recorder.recording() || recorder.take()) setCaptureOpen(true);
@@ -1551,7 +1551,7 @@ export function AppMapWorkspace(props: {
           }}
           onPointerDown={(event) => {
             const target = event.target as HTMLElement;
-            if (!target.closest("[data-journey-screen-id], aside, button, input, textarea")) {
+            if (!target.closest("[data-app-map-screen-id], aside, button, input, textarea")) {
               setSelectedNodeId(null);
               setSelectedConnectionId(null);
             }
@@ -1624,8 +1624,8 @@ export function AppMapWorkspace(props: {
             if (connectionDrag) {
               const source = connectionDrag.fromScreenId;
               const hit = document.elementFromPoint(event.clientX, event.clientY);
-              const target = hit?.closest<HTMLElement>("[data-journey-screen-id]")?.dataset
-                .journeyScreenId;
+              const target = hit?.closest<HTMLElement>("[data-app-map-screen-id]")?.dataset
+                .appMapScreenId;
               let next: JourneyMetadata | null = null;
               if (target && target !== source) {
                 next = addPlannedConnection(

@@ -76,7 +76,7 @@ export function ScreenCard(props: {
     <article
       tabIndex={0}
       aria-label={`${props.title} screen${props.selected ? ", selected" : ""}`}
-      data-journey-screen-id={props.node.id}
+      data-app-map-screen-id={props.node.id}
       class={cn(
         "group/screen absolute flex h-[272px] w-[208px] flex-col gap-2 overflow-visible rounded-[18px] p-1 text-left outline-none transition-[transform,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-[var(--border-strong-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--map-canvas)]",
         props.runState === "failed"
@@ -241,7 +241,7 @@ export function ScreenCard(props: {
       <button
         type="button"
         class={cn(
-          "journey-connect-handle group absolute top-1/2 right-[-20px] z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
+          "app-map-connect-handle group absolute top-1/2 right-[-20px] z-10 grid size-11 -translate-y-1/2 cursor-crosshair place-items-center rounded-full opacity-0 outline-none transition-opacity duration-150 group-hover/screen:opacity-100 focus-visible:opacity-100",
           props.selected && "opacity-100",
         )}
         aria-label={`Connect ${props.title} to another screen`}

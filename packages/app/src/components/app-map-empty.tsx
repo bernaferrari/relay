@@ -30,7 +30,7 @@ export function EmptyAppMap(props: {
     deviceReadiness(device(), server.health() === "online", {
       ...(device()?.platform === "ios" ? { appleSetup: server.appleDeviceSetup() } : {}),
       liveCaptureIssue: server.liveCaptureIssue(),
-      requireLiveScreen: false,
+      requireLiveScreen: true,
       liveScreenAvailable:
         Boolean(server.liveFrame()?.base64) &&
         (!server.liveFrame()?.serial || server.liveFrame()?.serial === device()?.serial),
@@ -80,12 +80,16 @@ export function EmptyAppMap(props: {
                 Relay will build the map as you continue.
               </p>
             </div>
-            <span class="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-[var(--map-control-surface)] px-3 text-[12px] font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)]">
+            <button
+              type="button"
+              class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-[10px] bg-[var(--map-control-surface)] px-3 text-[12px] font-medium text-[var(--text-base)] shadow-[var(--map-elevation-control)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--v2-background-bg-layer-01)] hover:text-[var(--text-strong)] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+              onClick={props.onToggleDevice}
+            >
               <kbd class="rounded-[5px] bg-[var(--v2-background-bg-layer-02)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-weak)]">
                 D
               </kbd>
               Show device
-            </span>
+            </button>
           </div>
         </div>
       </Show>
