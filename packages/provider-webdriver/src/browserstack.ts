@@ -15,6 +15,10 @@ import {
 import type { DeviceLease, ProviderDeviceRuntime } from '@agent-device/contracts/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { CLOUD_WEBDRIVER_PROVIDERS } from './providers.ts';
+import {
+  buildBrowserStackDeviceFeatureCapabilities,
+  type BrowserStackDeviceFeatureFields,
+} from './browserstack-device-features.ts';
 import { agentDeviceRequestHeaders } from './request-headers.ts';
 import { cloudArtifactsReadyOrPending } from './artifact-results.ts';
 import {
@@ -56,6 +60,7 @@ export type BrowserStackWebDriverRuntimeOptions = {
   projectName?: string;
   buildName?: LeaseValue<string>;
   sessionName?: LeaseValue<string>;
+  deviceFeatures?: BrowserStackDeviceFeatureFields;
   webdriverCapabilities?:
     | Record<string, unknown>
     | ((lease: DeviceLease) => Record<string, unknown>);
@@ -74,6 +79,8 @@ export type BrowserStackCapabilitiesOptions = {
   projectName?: string;
   buildName: string;
   sessionName: string;
+  /** Vendor device-feature capabilities, already projected onto their `bstack:options` keys. */
+  deviceFeatures?: Record<string, unknown>;
   configured?: Record<string, unknown>;
 };
 
@@ -121,6 +128,10 @@ export function createBrowserStackWebDriverRuntime(
         projectName: options.projectName,
         buildName: resolveLeaseValue(options.buildName, lease) ?? lease.runId,
         sessionName: resolveLeaseValue(options.sessionName, lease) ?? lease.leaseId,
+        deviceFeatures: buildBrowserStackDeviceFeatureCapabilities(
+          options.deviceFeatures ?? {},
+          options.platform,
+        ),
         configured: resolveConfiguredBrowserStackCapabilities(options, lease),
       }),
     uploadApp: createBrowserStackUploadApp({
@@ -211,17 +222,28 @@ export function createBrowserStackUploadApp(
 export function buildBrowserStackCapabilities(
   options: BrowserStackCapabilitiesOptions,
 ): Record<string, unknown> {
+  const { 'bstack:options': configuredBstackOptions, ...configured } = options.configured ?? {};
   return {
     device: options.deviceName,
     os_version: options.osVersion,
     ...(options.app ? { app: options.app } : {}),
+    ...configured,
+    // Merged per key, never assigned: `configured` carrying its own `bstack:options` used to
+    // replace the whole object and silently drop the session/build labels below.
     'bstack:options': {
       ...(options.projectName ? { projectName: options.projectName } : {}),
       buildName: options.buildName,
       sessionName: options.sessionName,
+      ...(options.deviceFeatures ?? {}),
+      ...asRecord(configuredBstackOptions),
     },
-    ...(options.configured ?? {}),
   };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function resolveConfiguredBrowserStackCapabilities(

@@ -1,4 +1,4 @@
-import type { DeviceRotation } from '@agent-device/contracts/device';
+import { DEVICE_ROTATION_SURFACE_INDEX, type DeviceRotation } from '@agent-device/contracts/device';
 import {
   buildGesturePlan,
   buildScrollGesturePlan,
@@ -320,18 +320,11 @@ export async function scrollAndroid(
 }
 
 function resolveAndroidUserRotation(orientation: DeviceRotation): string {
-  switch (orientation) {
-    case 'portrait':
-      return '0';
-    case 'landscape-left':
-      return '1';
-    case 'portrait-upside-down':
-      return '2';
-    case 'landscape-right':
-      return '3';
-    default:
-      throw new AppError('INVALID_ARGS', `Unsupported Android rotation: ${orientation}`);
+  const index = DEVICE_ROTATION_SURFACE_INDEX[orientation];
+  if (index === undefined) {
+    throw new AppError('INVALID_ARGS', `Unsupported Android rotation: ${orientation}`);
   }
+  return String(index);
 }
 
 async function assertAndroidShellInputIsAppOwned(
