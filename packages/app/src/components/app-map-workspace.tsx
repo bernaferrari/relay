@@ -62,7 +62,14 @@ import { CollaborationPresence } from "./collaboration-presence";
 import { collaborationActivity } from "../lib/collaboration-awareness";
 import type { JourneyCollaborationRuntime } from "../lib/journey-collaboration-runtime";
 import { AppMapDeviceCompanion } from "./app-map-device-companion";
-import { AppMapOverviewToolbar, AppMapToolbar, AppMapZoomControls } from "./app-map-toolbar";
+import {
+  AppMapOverviewToolbar,
+  AppMapToolbar,
+  AppMapZoomControls,
+  type AppMapWorkspaceView,
+} from "./app-map-toolbar";
+import { AppMapBrowseView } from "./app-map-browse-view";
+import { AppMapAgentPanel } from "./app-map-agent-panel";
 import { canvasWheelAction, createAppMapEventOrchestration } from "./app-map-events";
 import { Icon } from "./icon";
 import { mergeAppMapProjection, planAppMapProjection } from "../lib/app-map-projection";
@@ -83,6 +90,7 @@ type JourneyLoadState =
 export function AppMapWorkspace(props: {
   onOpenTargets: () => void;
   onOpenActions: () => void;
+  onOpenRun?: (id: string) => void;
   navigatorOpen?: boolean;
   captureStartOnReady?: boolean;
   onCaptureStartHandled?: () => void;
@@ -106,6 +114,8 @@ export function AppMapWorkspace(props: {
   });
   const [journeyLoadAttempt, setJourneyLoadAttempt] = createSignal(0);
   const [targetSetOpen, setTargetSetOpen] = createSignal(false);
+  const [workspaceView, setWorkspaceView] = createSignal<AppMapWorkspaceView>("map");
+  const [agentOpen, setAgentOpen] = createSignal(false);
   const graph = createMemo(() => ensureJourneyGraph(metadata().value, draft.steps()));
   const activeFlow = createMemo(() => graph().flows[0] ?? null);
   const activeTargetSet = createMemo(() => {
@@ -151,6 +161,7 @@ export function AppMapWorkspace(props: {
   let requestedAppleSetupFor = "";
   let canonicalProjectionQueue = Promise.resolve();
   let appliedCanonicalRevision = "";
+  let canonicalMapRequest = "";
   createEffect(() => {
     const device = selectedDevice();
     const setup = server.appleDeviceSetup();
@@ -312,6 +323,7 @@ export function AppMapWorkspace(props: {
     captureCloseTimer = undefined;
     setCaptureClosing(false);
     setHistoryOpen(false);
+    setAgentOpen(false);
     setCaptureOpen(true);
   };
 
@@ -446,6 +458,33 @@ export function AppMapWorkspace(props: {
     }
     journeyDocument?.replace(value, "remote");
     setMetadata({ ...current, value, updatedAt: Math.max(current.updatedAt, appMap.updatedAt) });
+  });
+
+  // Older local projects can have a canvas document without its normalized
+  // App Map projection. Ensure that projection as soon as the selected canvas
+  // is ready so Screens, Coverage, CLI, and MCP never disagree about whether
+  // the map exists. This does not create another draft: both records share the
+  // selected map id and all subsequent mutations go through App Map actions.
+  createEffect(() => {
+    const appMapId = server.selectedRecipeId();
+    const isReady = loadedRecipeId() === appMapId && journeyLoadState().status === "ready";
+    const mapsLoaded = server.appMapsLoaded();
+    const alreadyExists = server.appMaps().some((candidate) => candidate.id === appMapId);
+    if (!appMapId || !isReady || !mapsLoaded || alreadyExists || canonicalMapRequest === appMapId)
+      return;
+    canonicalMapRequest = appMapId;
+    void server
+      .loadAppMap(appMapId)
+      .then(() => server.refreshAppMaps())
+      .catch(() => server.createAppMap(appMapId, draft.title().trim() || "Untitled"))
+      .then(() => syncCanonicalProjection(metadata().value))
+      .catch((caught) => {
+        canonicalMapRequest = "";
+        toast(
+          `The App Map projection could not be prepared: ${caught instanceof Error ? caught.message : String(caught)}`,
+          "warning",
+        );
+      });
   });
   // A blank journey starts with its device companion visible: the first screen
   // is established there, not through a modal or a second empty-state CTA.
@@ -1410,6 +1449,10 @@ export function AppMapWorkspace(props: {
       if (node) removeScreen(node);
     },
     onEscape: () => {
+      if (agentOpen()) {
+        setAgentOpen(false);
+        return;
+      }
       setSelectedNodeId(null);
       setSelectedConnectionId(null);
       setKeyboardConnectionSourceId(null);
@@ -1596,24 +1639,28 @@ export function AppMapWorkspace(props: {
           onPointerLeave={() => setLocalCursor(undefined)}
         >
           <div class="app-map-grid pointer-events-none absolute inset-0" aria-hidden="true" />
-          <Show when={hasCanvasContent() || pendingProposals().length > 0}>
-            <AppMapOverviewToolbar
-              screenCount={tree().nodes.length}
-              connectionCount={connections().length}
-              proposalCount={pendingProposals().length}
-              targetSetOpen={targetSetOpen()}
-              activeTargetSetId={activeFlow()?.targetSetId}
-              runTargetLabel={activeTargetSet()?.name ?? selectedDevice()?.name ?? "Current device"}
-              targetSets={server.matrices()}
-              onTargetSetOpenChange={setTargetSetOpen}
-              onChooseTargetSet={chooseTargetSet}
-              onManageTargetSets={() => {
-                setTargetSetOpen(false);
-                props.onOpenTargets();
-              }}
-              onOpenProposals={() => setProposalReviewOpen(true)}
-            />
-          </Show>
+          <AppMapOverviewToolbar
+            screenCount={tree().nodes.length}
+            connectionCount={connections().length}
+            view={workspaceView()}
+            proposalCount={pendingProposals().length}
+            targetSetOpen={targetSetOpen()}
+            activeTargetSetId={activeFlow()?.targetSetId}
+            runTargetLabel={activeTargetSet()?.name ?? selectedDevice()?.name ?? "Current device"}
+            targetSets={server.matrices()}
+            onViewChange={(next) => {
+              setWorkspaceView(next);
+              setHistoryOpen(false);
+              setKeyboardConnectionSourceId(null);
+            }}
+            onTargetSetOpenChange={setTargetSetOpen}
+            onChooseTargetSet={chooseTargetSet}
+            onManageTargetSets={() => {
+              setTargetSetOpen(false);
+              props.onOpenTargets();
+            }}
+            onOpenProposals={() => setProposalReviewOpen(true)}
+          />
           <Show when={proposalReviewOpen()}>
             <AppMapProposalReview
               proposals={pendingProposals()}
@@ -1624,413 +1671,479 @@ export function AppMapWorkspace(props: {
               onClose={() => setProposalReviewOpen(false)}
             />
           </Show>
-          <Show when={historyOpen()}>
-            <JourneyHistoryPanel
-              loading={draft.historyLoading()}
-              entries={draft.savedHistory()}
-              onClose={() => setHistoryOpen(false)}
-              onRestore={(updatedAt) => {
-                void draft.restoreSavedHistory(updatedAt);
-                setHistoryOpen(false);
-              }}
-            />
+          <Show when={agentOpen() && activeAppMap()}>
+            {(appMap) => (
+              <AppMapAgentPanel
+                appMap={appMap()}
+                onClose={() => setAgentOpen(false)}
+                onProposalReady={() => {
+                  setAgentOpen(false);
+                  setProposalReviewOpen(true);
+                }}
+              />
+            )}
           </Show>
           <Show
-            when={hasCanvasContent()}
+            when={workspaceView() === "map"}
             fallback={
-              <GraphEmptyState
-                take={recorder.take()}
-                recordState={recordState()}
-                selectedDeviceName={selectedDevice()?.name ?? server.selectedDevice() ?? undefined}
-                deviceOpen={captureOpen()}
-                deviceSelected={Boolean(selectedDevice())}
-                liveScreenSrc={liveScreenSrc()}
-                captureBusy={startCaptureBusy()}
-                onUseCurrentScreen={() => void useCurrentScreenAsStart()}
-                onAddNote={addNote}
-                onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
-              />
+              <Show when={activeAppMap()}>
+                {(appMap) => (
+                  <AppMapBrowseView
+                    mode={workspaceView() === "coverage" ? "coverage" : "screens"}
+                    appMap={appMap()}
+                    runs={server.persistedRuns()}
+                    recipeId={server.selectedRecipeId() ?? appMap().id}
+                    deviceOpen={captureOpen()}
+                    imageForScreen={(screenId) => {
+                      const node = tree().nodes.find((candidate) => candidate.id === screenId);
+                      if (!node) return capturedScreenUrls()[screenId] ?? "";
+                      return (
+                        screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
+                        capturedScreenUrls()[screenId] ||
+                        ""
+                      );
+                    }}
+                    stateForScreen={(screenId) => runProjection().screens[screenId]?.state}
+                    onOpenScreen={(screenId) => {
+                      setWorkspaceView("map");
+                      setSelectedNodeId(screenId);
+                      setSelectedConnectionId(null);
+                      queueMicrotask(fit);
+                    }}
+                    onOpenRun={(runId) => {
+                      server.setSelectedJobId(runId);
+                      props.onOpenRun?.(runId);
+                    }}
+                    onToggleDevice={() =>
+                      captureOpen() ? closeCapturePanel() : openCapturePanel()
+                    }
+                    onCaptureScreen={() => void captureCurrentScreen()}
+                    onOpenAgent={() => {
+                      closeCapturePanel();
+                      setHistoryOpen(false);
+                      setAgentOpen(true);
+                    }}
+                  />
+                )}
+              </Show>
             }
           >
-            <div
-              class="absolute top-0 left-0 origin-top-left will-change-transform"
-              style={{
-                width: `${bounds().width}px`,
-                height: `${bounds().height}px`,
-                transform: `translate3d(${view().x}px, ${view().y}px, 0) scale(${view().scale})`,
-              }}
+            <Show when={historyOpen()}>
+              <JourneyHistoryPanel
+                loading={draft.historyLoading()}
+                entries={draft.savedHistory()}
+                onClose={() => setHistoryOpen(false)}
+                onRestore={(updatedAt) => {
+                  void draft.restoreSavedHistory(updatedAt);
+                  setHistoryOpen(false);
+                }}
+              />
+            </Show>
+            <Show
+              when={hasCanvasContent()}
+              fallback={
+                <GraphEmptyState
+                  take={recorder.take()}
+                  recordState={recordState()}
+                  selectedDeviceName={
+                    selectedDevice()?.name ?? server.selectedDevice() ?? undefined
+                  }
+                  deviceOpen={captureOpen()}
+                  deviceSelected={Boolean(selectedDevice())}
+                  liveScreenSrc={liveScreenSrc()}
+                  captureBusy={startCaptureBusy()}
+                  onUseCurrentScreen={() => void useCurrentScreenAsStart()}
+                  onAddNote={addNote}
+                  onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
+                />
+              }
             >
-              <svg
-                class="absolute inset-0 overflow-visible"
-                width={bounds().width}
-                height={bounds().height}
-                aria-label="Map connections"
+              <div
+                class="absolute top-0 left-0 origin-top-left will-change-transform"
+                style={{
+                  width: `${bounds().width}px`,
+                  height: `${bounds().height}px`,
+                  transform: `translate3d(${view().x}px, ${view().y}px, 0) scale(${view().scale})`,
+                }}
               >
-                <defs>
-                  <marker
-                    id="journey-graph-arrow"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-interactive-base)]" />
-                  </marker>
-                  <marker
-                    id="journey-graph-return"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-weak)]" />
-                  </marker>
-                  <marker
-                    id="journey-graph-verified"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-success-base)]" />
-                  </marker>
-                  <marker
-                    id="journey-graph-failed"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-critical-base)]" />
-                  </marker>
-                  <marker
-                    id="journey-graph-healed"
-                    viewBox="0 0 10 10"
-                    refX="8"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-warning-base)]" />
-                  </marker>
-                </defs>
-                <For each={connections()}>
-                  {(connection) => {
-                    const runState = () => runProjection().transitions[connection.id]?.state;
-                    const geometry = () =>
-                      canvasEdgeGeometry(
-                        {
-                          from: connection.fromScreenId,
-                          to: connection.toScreenId,
-                          kind: connection.kind,
-                        },
+                <svg
+                  class="absolute inset-0 overflow-visible"
+                  width={bounds().width}
+                  height={bounds().height}
+                  aria-label="Map connections"
+                >
+                  <defs>
+                    <marker
+                      id="journey-graph-arrow"
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-interactive-base)]" />
+                    </marker>
+                    <marker
+                      id="journey-graph-return"
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--text-weak)]" />
+                    </marker>
+                    <marker
+                      id="journey-graph-verified"
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-success-base)]" />
+                    </marker>
+                    <marker
+                      id="journey-graph-failed"
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-critical-base)]" />
+                    </marker>
+                    <marker
+                      id="journey-graph-healed"
+                      viewBox="0 0 10 10"
+                      refX="8"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" class="fill-[var(--icon-warning-base)]" />
+                    </marker>
+                  </defs>
+                  <For each={connections()}>
+                    {(connection) => {
+                      const runState = () => runProjection().transitions[connection.id]?.state;
+                      const geometry = () =>
+                        canvasEdgeGeometry(
+                          {
+                            from: connection.fromScreenId,
+                            to: connection.toScreenId,
+                            kind: connection.kind,
+                          },
+                          tree().nodes,
+                          positionFor,
+                        );
+                      return (
+                        <g>
+                          <path
+                            d={geometry().path}
+                            class={cn(
+                              "pointer-events-none fill-none",
+                              runState() === "failed"
+                                ? "stroke-[var(--icon-critical-base)]"
+                                : runState() === "running"
+                                  ? "stroke-[var(--text-interactive-base)] [stroke-dasharray:7_4] motion-safe:animate-pulse"
+                                  : runState() === "healed"
+                                    ? "stroke-[var(--icon-warning-base)]"
+                                    : runState() === "passed"
+                                      ? "stroke-[var(--icon-success-base)]"
+                                      : connection.state === "needs-recording"
+                                        ? "stroke-[var(--icon-warning-base)] [stroke-dasharray:5_5]"
+                                        : connection.review?.status === "verified"
+                                          ? "stroke-[var(--icon-success-base)]"
+                                          : connection.review?.status === "failed"
+                                            ? "stroke-[var(--icon-critical-base)]"
+                                            : connection.kind === "return"
+                                              ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
+                                              : "stroke-[var(--text-interactive-base)]",
+                            )}
+                            stroke-width={
+                              connection.state === "needs-recording"
+                                ? 2
+                                : connection.kind === "return"
+                                  ? 1.5
+                                  : 2
+                            }
+                            stroke-linecap="round"
+                            marker-end={`url(#journey-graph-${
+                              runState() === "failed"
+                                ? "failed"
+                                : runState() === "healed"
+                                  ? "healed"
+                                  : runState() === "passed"
+                                    ? "verified"
+                                    : connection.review?.status === "failed"
+                                      ? "failed"
+                                      : connection.kind === "return"
+                                        ? "return"
+                                        : "arrow"
+                            })`}
+                          />
+                          <path
+                            d={geometry().path}
+                            class="cursor-pointer fill-none stroke-transparent outline-none focus-visible:stroke-[var(--text-interactive-base)] focus-visible:[stroke-dasharray:4_3]"
+                            stroke-width="16"
+                            tabindex={0}
+                            role="button"
+                            aria-label={`Select connection from ${titleFor(
+                              tree().nodes.find((node) => node.id === connection.fromScreenId)!,
+                            )} to ${titleFor(
+                              tree().nodes.find((node) => node.id === connection.toScreenId)!,
+                            )}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedConnectionId(connection.id);
+                              setSelectedNodeId(null);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              setSelectedConnectionId(connection.id);
+                              setSelectedNodeId(null);
+                            }}
+                          />
+                        </g>
+                      );
+                    }}
+                  </For>
+                  <Show when={connectionPreview() && connectionDrag}>
+                    <path
+                      d={draftCanvasConnectionPath(
+                        connectionDrag!.fromScreenId,
+                        connectionPreview()!,
                         tree().nodes,
                         positionFor,
-                      );
+                      )}
+                      class="pointer-events-none fill-none stroke-[var(--text-interactive-base)] [stroke-dasharray:5_5]"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </Show>
+                </svg>
+                <CollaborationPresence
+                  awareness={remoteAwareness()}
+                  geometry={presenceGeometry()}
+                  width={bounds().width}
+                  height={bounds().height}
+                />
+                <For each={tree().nodes}>
+                  {(node) => {
+                    const isFlowStart = () =>
+                      graph().flows.some((flow) => flow.screenId === node.id);
                     return (
-                      <g>
-                        <path
-                          d={geometry().path}
-                          class={cn(
-                            "pointer-events-none fill-none",
-                            runState() === "failed"
-                              ? "stroke-[var(--icon-critical-base)]"
-                              : runState() === "running"
-                                ? "stroke-[var(--text-interactive-base)] [stroke-dasharray:7_4] motion-safe:animate-pulse"
-                                : runState() === "healed"
-                                  ? "stroke-[var(--icon-warning-base)]"
-                                  : runState() === "passed"
-                                    ? "stroke-[var(--icon-success-base)]"
-                                    : connection.state === "needs-recording"
-                                      ? "stroke-[var(--icon-warning-base)] [stroke-dasharray:5_5]"
-                                      : connection.review?.status === "verified"
-                                        ? "stroke-[var(--icon-success-base)]"
-                                        : connection.review?.status === "failed"
-                                          ? "stroke-[var(--icon-critical-base)]"
-                                          : connection.kind === "return"
-                                            ? "stroke-[var(--text-weak)] [stroke-dasharray:6_6]"
-                                            : "stroke-[var(--text-interactive-base)]",
-                          )}
-                          stroke-width={
-                            connection.state === "needs-recording"
-                              ? 2
-                              : connection.kind === "return"
-                                ? 1.5
-                                : 2
-                          }
-                          stroke-linecap="round"
-                          marker-end={`url(#journey-graph-${
-                            runState() === "failed"
-                              ? "failed"
-                              : runState() === "healed"
-                                ? "healed"
-                                : runState() === "passed"
-                                  ? "verified"
-                                  : connection.review?.status === "failed"
-                                    ? "failed"
-                                    : connection.kind === "return"
-                                      ? "return"
-                                      : "arrow"
-                          })`}
-                        />
-                        <path
-                          d={geometry().path}
-                          class="cursor-pointer fill-none stroke-transparent outline-none focus-visible:stroke-[var(--text-interactive-base)] focus-visible:[stroke-dasharray:4_3]"
-                          stroke-width="16"
-                          tabindex={0}
-                          role="button"
-                          aria-label={`Select connection from ${titleFor(
-                            tree().nodes.find((node) => node.id === connection.fromScreenId)!,
-                          )} to ${titleFor(
-                            tree().nodes.find((node) => node.id === connection.toScreenId)!,
-                          )}`}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
+                      <ScreenCard
+                        node={node}
+                        step={draft.steps()[node.representativeStepIndex]}
+                        isFlowStart={isFlowStart()}
+                        outgoingCount={
+                          connections().filter((connection) => connection.fromScreenId === node.id)
+                            .length
+                        }
+                        title={titleFor(node)}
+                        selected={selectedNode()?.id === node.id}
+                        editing={renamingNodeId() === node.id}
+                        runState={runProjection().screens[node.id]?.state}
+                        position={positionFor(node)}
+                        src={() =>
+                          screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
+                          capturedScreenUrls()[node.id] ||
+                          ""
+                        }
+                        onSelect={() => selectNode(node)}
+                        onRename={() => setRenamingNodeId(node.id)}
+                        onCommitRename={(title) => renameScreen(node, title)}
+                        onConnectStart={(event) => beginConnection(event, node.id)}
+                        onConnectKeyboard={() => {
+                          selectNode(node);
+                          setKeyboardConnectionSourceId(node.id);
+                        }}
+                        onPointerDown={(event) => {
+                          if (canvasTool() === "hand") {
                             event.stopPropagation();
-                            setSelectedConnectionId(connection.id);
-                            setSelectedNodeId(null);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter" && event.key !== " ") return;
-                            event.preventDefault();
-                            setSelectedConnectionId(connection.id);
-                            setSelectedNodeId(null);
-                          }}
-                        />
-                      </g>
+                            pan = { x: event.clientX, y: event.clientY, view: view() };
+                            canvas?.setPointerCapture(event.pointerId);
+                            return;
+                          }
+                          event.stopPropagation();
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                          nodeDrag = {
+                            id: node.id,
+                            x: event.clientX,
+                            y: event.clientY,
+                            origin: positionFor(node),
+                            moved: false,
+                          };
+                        }}
+                      />
                     );
                   }}
                 </For>
-                <Show when={connectionPreview() && connectionDrag}>
-                  <path
-                    d={draftCanvasConnectionPath(
-                      connectionDrag!.fromScreenId,
-                      connectionPreview()!,
-                      tree().nodes,
-                      positionFor,
-                    )}
-                    class="pointer-events-none fill-none stroke-[var(--text-interactive-base)] [stroke-dasharray:5_5]"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                  />
+                <Show when={keyboardConnectionSourceId()}>
+                  {(sourceId) => {
+                    const source = () => tree().nodes.find((node) => node.id === sourceId());
+                    return (
+                      <KeyboardConnectionChooser
+                        sourceTitle={source() ? titleFor(source()!) : "Selected screen"}
+                        destinations={tree()
+                          .nodes.filter((node) => node.id !== sourceId())
+                          .map((node) => ({ id: node.id, title: titleFor(node) }))}
+                        onChoose={(targetId) => chooseKeyboardConnection(sourceId(), targetId)}
+                        onCreate={() => createKeyboardDestination(sourceId())}
+                        onCancel={() => setKeyboardConnectionSourceId(null)}
+                      />
+                    );
+                  }}
                 </Show>
-              </svg>
-              <CollaborationPresence
-                awareness={remoteAwareness()}
-                geometry={presenceGeometry()}
-                width={bounds().width}
-                height={bounds().height}
-              />
-              <For each={tree().nodes}>
-                {(node) => {
-                  const isFlowStart = () => graph().flows.some((flow) => flow.screenId === node.id);
-                  return (
-                    <ScreenCard
-                      node={node}
-                      step={draft.steps()[node.representativeStepIndex]}
-                      isFlowStart={isFlowStart()}
-                      outgoingCount={
-                        connections().filter((connection) => connection.fromScreenId === node.id)
-                          .length
-                      }
-                      title={titleFor(node)}
-                      selected={selectedNode()?.id === node.id}
-                      editing={renamingNodeId() === node.id}
-                      runState={runProjection().screens[node.id]?.state}
-                      position={positionFor(node)}
-                      src={() =>
-                        screenshotUrl(server, draft.steps()[node.representativeStepIndex]) ||
-                        capturedScreenUrls()[node.id] ||
-                        ""
-                      }
-                      onSelect={() => selectNode(node)}
-                      onRename={() => setRenamingNodeId(node.id)}
-                      onCommitRename={(title) => renameScreen(node, title)}
-                      onConnectStart={(event) => beginConnection(event, node.id)}
-                      onConnectKeyboard={() => {
-                        selectNode(node);
-                        setKeyboardConnectionSourceId(node.id);
-                      }}
+                <For each={metadata().value.notes ?? []}>
+                  {(note) => (
+                    <CanvasNote
+                      note={note}
                       onPointerDown={(event) => {
-                        if (canvasTool() === "hand") {
-                          event.stopPropagation();
-                          pan = { x: event.clientX, y: event.clientY, view: view() };
-                          canvas?.setPointerCapture(event.pointerId);
-                          return;
-                        }
                         event.stopPropagation();
                         event.currentTarget.setPointerCapture(event.pointerId);
-                        nodeDrag = {
-                          id: node.id,
+                        noteDrag = {
+                          id: note.id,
                           x: event.clientX,
                           y: event.clientY,
-                          origin: positionFor(node),
+                          origin: { x: note.x, y: note.y },
                           moved: false,
                         };
                       }}
+                      onText={(text) =>
+                        setMetadata((current) => ({
+                          ...current,
+                          value: {
+                            ...current.value,
+                            notes: (current.value.notes ?? []).map((entry) =>
+                              entry.id === note.id
+                                ? { ...entry, text, updatedAt: Date.now() }
+                                : entry,
+                            ),
+                          },
+                        }))
+                      }
+                      onCommit={() => persistNotes(metadata().value.notes ?? [])}
+                      onDelete={() =>
+                        persistNotes(
+                          (metadata().value.notes ?? []).filter((entry) => entry.id !== note.id),
+                        )
+                      }
                     />
-                  );
-                }}
-              </For>
-              <Show when={keyboardConnectionSourceId()}>
-                {(sourceId) => {
-                  const source = () => tree().nodes.find((node) => node.id === sourceId());
-                  return (
-                    <KeyboardConnectionChooser
-                      sourceTitle={source() ? titleFor(source()!) : "Selected screen"}
-                      destinations={tree()
-                        .nodes.filter((node) => node.id !== sourceId())
-                        .map((node) => ({ id: node.id, title: titleFor(node) }))}
-                      onChoose={(targetId) => chooseKeyboardConnection(sourceId(), targetId)}
-                      onCreate={() => createKeyboardDestination(sourceId())}
-                      onCancel={() => setKeyboardConnectionSourceId(null)}
+                  )}
+                </For>
+              </div>
+              <Show when={!captureOpen()}>
+                <Show
+                  when={selectedConnection()}
+                  fallback={
+                    <ScreenInspector
+                      node={selectedNode()}
+                      title={selectedNode() ? titleFor(selectedNode()!) : ""}
+                      connections={connections().filter(
+                        (connection) => connection.fromScreenId === selectedNode()?.id,
+                      )}
+                      onSelectConnection={(connection) => {
+                        setSelectedConnectionId(connection.id);
+                        setSelectedNodeId(null);
+                      }}
+                      onRemove={() => {
+                        const node = selectedNode();
+                        if (node) removeScreen(node);
+                      }}
+                      onClose={() => setSelectedNodeId(null)}
                     />
-                  );
-                }}
-              </Show>
-              <For each={metadata().value.notes ?? []}>
-                {(note) => (
-                  <CanvasNote
-                    note={note}
-                    onPointerDown={(event) => {
-                      event.stopPropagation();
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                      noteDrag = {
-                        id: note.id,
-                        x: event.clientX,
-                        y: event.clientY,
-                        origin: { x: note.x, y: note.y },
-                        moved: false,
-                      };
-                    }}
-                    onText={(text) =>
-                      setMetadata((current) => ({
-                        ...current,
-                        value: {
-                          ...current.value,
-                          notes: (current.value.notes ?? []).map((entry) =>
-                            entry.id === note.id
-                              ? { ...entry, text, updatedAt: Date.now() }
-                              : entry,
-                          ),
+                  }
+                >
+                  {(connection) => (
+                    <ConnectionInspector
+                      connection={connection()}
+                      sourceTitle={titleFor(
+                        tree().nodes.find((node) => node.id === connection().fromScreenId)!,
+                      )}
+                      targetTitle={titleFor(
+                        tree().nodes.find((node) => node.id === connection().toScreenId)!,
+                      )}
+                      setup={{
+                        behaviors: reusableBehaviors(),
+                        onRecord: () => recordConnection(connection()),
+                        onBack: () => attachBackBehavior(connection()),
+                        onAutomatic: () => attachAutomaticBehavior(connection()),
+                        onAttachBehavior: (recipeId) =>
+                          attachReusableBehavior(connection(), recipeId),
+                      }}
+                      replay={{
+                        state: replayStateFor(connection()),
+                        ...(replayErrorFor(connection())
+                          ? { error: replayErrorFor(connection()) }
+                          : {}),
+                        onRun: () => void replayConnection(connection()),
+                        onRewrite: () => recordConnection(connection()),
+                        onSaveReusable: () => void saveReusableBehavior(connection()),
+                        onSelectStep: () => {
+                          const index = draft
+                            .steps()
+                            .findIndex((step) => step.id === connection().stepId);
+                          if (index >= 0) selectStep(index);
+                          props.onOpenActions();
                         },
-                      }))
-                    }
-                    onCommit={() => persistNotes(metadata().value.notes ?? [])}
-                    onDelete={() =>
-                      persistNotes(
-                        (metadata().value.notes ?? []).filter((entry) => entry.id !== note.id),
-                      )
-                    }
-                  />
-                )}
-              </For>
-            </div>
-            <Show when={!captureOpen()}>
-              <Show
-                when={selectedConnection()}
-                fallback={
-                  <ScreenInspector
-                    node={selectedNode()}
-                    title={selectedNode() ? titleFor(selectedNode()!) : ""}
-                    connections={connections().filter(
-                      (connection) => connection.fromScreenId === selectedNode()?.id,
-                    )}
-                    onSelectConnection={(connection) => {
-                      setSelectedConnectionId(connection.id);
-                      setSelectedNodeId(null);
-                    }}
-                    onRemove={() => {
-                      const node = selectedNode();
-                      if (node) removeScreen(node);
-                    }}
-                    onClose={() => setSelectedNodeId(null)}
-                  />
-                }
-              >
-                {(connection) => (
-                  <ConnectionInspector
-                    connection={connection()}
-                    sourceTitle={titleFor(
-                      tree().nodes.find((node) => node.id === connection().fromScreenId)!,
-                    )}
-                    targetTitle={titleFor(
-                      tree().nodes.find((node) => node.id === connection().toScreenId)!,
-                    )}
-                    setup={{
-                      behaviors: reusableBehaviors(),
-                      onRecord: () => recordConnection(connection()),
-                      onBack: () => attachBackBehavior(connection()),
-                      onAutomatic: () => attachAutomaticBehavior(connection()),
-                      onAttachBehavior: (recipeId) =>
-                        attachReusableBehavior(connection(), recipeId),
-                    }}
-                    replay={{
-                      state: replayStateFor(connection()),
-                      ...(replayErrorFor(connection())
-                        ? { error: replayErrorFor(connection()) }
-                        : {}),
-                      onRun: () => void replayConnection(connection()),
-                      onRewrite: () => recordConnection(connection()),
-                      onSaveReusable: () => void saveReusableBehavior(connection()),
-                      onSelectStep: () => {
-                        const index = draft
-                          .steps()
-                          .findIndex((step) => step.id === connection().stepId);
-                        if (index >= 0) selectStep(index);
-                        props.onOpenActions();
-                      },
-                    }}
-                    onRemove={() => removeConnection(connection())}
-                    onClose={() => setSelectedConnectionId(null)}
-                  />
-                )}
+                      }}
+                      onRemove={() => removeConnection(connection())}
+                      onClose={() => setSelectedConnectionId(null)}
+                    />
+                  )}
+                </Show>
               </Show>
+              <AppMapToolbar
+                tool={canvasTool()}
+                deviceOpen={captureOpen()}
+                shiftForDevice={Boolean((captureOpen() && selectedDevice()) || agentOpen())}
+                canUndo={canvasHistory().undo || draft.canUndo()}
+                canRedo={canvasHistory().redo || draft.canRedo()}
+                historyOpen={historyOpen()}
+                onToolChange={setCanvasTool}
+                onCaptureScreen={() => void captureCurrentScreen()}
+                onCreateConnection={() => {
+                  const node = selectedNode();
+                  if (node) setKeyboardConnectionSourceId(node.id);
+                  else toast("Select the screen where this connection begins", "info");
+                }}
+                onUndo={undo}
+                onRedo={redo}
+                onToggleHistory={() => {
+                  const opening = !historyOpen();
+                  if (opening) setCaptureOpen(false);
+                  setHistoryOpen(opening);
+                }}
+                onAddNote={addNote}
+                onCreateRoutine={() => {
+                  const connection = selectedConnection();
+                  if (connection) void saveReusableBehavior(connection);
+                  else toast("Select a connection to turn it into a Routine", "info");
+                }}
+                onExplore={() => {
+                  closeCapturePanel();
+                  setHistoryOpen(false);
+                  setAgentOpen(true);
+                }}
+                onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
+              />
+              <AppMapZoomControls
+                percentage={Math.round(view().scale * 100)}
+                onZoomOut={() => zoom(-0.1)}
+                onZoomIn={() => zoom(0.1)}
+                onFit={fit}
+              />
             </Show>
-            <AppMapToolbar
-              tool={canvasTool()}
-              deviceOpen={captureOpen()}
-              shiftForDevice={Boolean(captureOpen() && selectedDevice())}
-              canUndo={canvasHistory().undo || draft.canUndo()}
-              canRedo={canvasHistory().redo || draft.canRedo()}
-              historyOpen={historyOpen()}
-              onToolChange={setCanvasTool}
-              onCaptureScreen={() => void captureCurrentScreen()}
-              onCreateConnection={() => {
-                const node = selectedNode();
-                if (node) setKeyboardConnectionSourceId(node.id);
-                else toast("Select the screen where this connection begins", "info");
-              }}
-              onUndo={undo}
-              onRedo={redo}
-              onToggleHistory={() => {
-                const opening = !historyOpen();
-                if (opening) setCaptureOpen(false);
-                setHistoryOpen(opening);
-              }}
-              onAddNote={addNote}
-              onCreateRoutine={() => {
-                const connection = selectedConnection();
-                if (connection) void saveReusableBehavior(connection);
-                else toast("Select a connection to turn it into a Routine", "info");
-              }}
-              onToggleDevice={() => (captureOpen() ? closeCapturePanel() : openCapturePanel())}
-            />
-            <AppMapZoomControls
-              percentage={Math.round(view().scale * 100)}
-              onZoomOut={() => zoom(-0.1)}
-              onZoomIn={() => zoom(0.1)}
-              onFit={fit}
-            />
           </Show>
         </section>
       </Show>

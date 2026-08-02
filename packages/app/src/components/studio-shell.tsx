@@ -853,6 +853,10 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                       }}
                       onOpenTargets={() => props.onOpenSettings("targets")}
                       onOpenActions={() => setStudioView("workbench")}
+                      onOpenRun={(id) => {
+                        server.setSelectedJobId(id);
+                        setArea("runs");
+                      }}
                     />
                   </div>
                   <Show when={settingsOpen()}>

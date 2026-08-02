@@ -3,10 +3,12 @@ import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 
 export type AppMapCanvasTool = "select" | "hand";
+export type AppMapWorkspaceView = "map" | "screens" | "coverage";
 
 export function AppMapOverviewToolbar(props: {
   screenCount: number;
   connectionCount: number;
+  view: AppMapWorkspaceView;
   proposalCount: number;
   targetSetOpen: boolean;
   activeTargetSetId?: string;
@@ -16,10 +18,11 @@ export function AppMapOverviewToolbar(props: {
   onChooseTargetSet: (targetSetId?: string) => void;
   onManageTargetSets: () => void;
   onOpenProposals: () => void;
+  onViewChange: (view: AppMapWorkspaceView) => void;
 }) {
   return (
     <header class="absolute top-4 left-4 z-20 flex min-h-10 items-center gap-1 rounded-[12px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_90%,transparent)] p-1 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-muted)_80%,transparent),0_8px_24px_rgb(0_0_0/14%)] backdrop-blur-[14px]">
-      <div class="flex min-w-0 items-center gap-2 px-2">
+      <div class="flex min-w-0 items-center gap-2 px-2 max-[860px]:hidden">
         <span class="grid size-6 shrink-0 place-items-center rounded-[7px] bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]">
           <Icon name="move" size={12} />
         </span>
@@ -28,6 +31,34 @@ export function AppMapOverviewToolbar(props: {
           <span class="mx-1.5 text-[var(--text-weak)]">·</span>
           {props.connectionCount} {props.connectionCount === 1 ? "connection" : "connections"}
         </span>
+      </div>
+      <span
+        class="h-6 w-px bg-[var(--v2-border-border-muted)] max-[860px]:hidden"
+        aria-hidden="true"
+      />
+      <div class="flex items-center gap-0.5" role="tablist" aria-label="App Map view">
+        {(
+          [
+            ["map", "move", "Map"],
+            ["screens", "grid", "Screens"],
+            ["coverage", "check", "Coverage"],
+          ] as const
+        ).map(([id, icon, label]) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={props.view === id}
+            class={cn(
+              "inline-flex min-h-8 items-center gap-1.5 rounded-[8px] px-2 text-[10.5px] font-medium text-[var(--text-weak)] outline-none transition-[background-color,color] duration-150 hover:text-[var(--text-strong)] focus-visible:ring-1 focus-visible:ring-[var(--text-interactive-base)]",
+              props.view === id &&
+                "bg-[var(--v2-background-bg-layer-02)] text-[var(--text-strong)] shadow-[0_1px_3px_rgb(0_0_0/10%)]",
+            )}
+            onClick={() => props.onViewChange(id)}
+          >
+            <Icon name={icon} size={11} />
+            <span class="max-[620px]:hidden">{label}</span>
+          </button>
+        ))}
       </div>
       <span class="h-6 w-px bg-[var(--v2-border-border-muted)]" aria-hidden="true" />
       <Show when={props.proposalCount > 0}>
@@ -134,13 +165,14 @@ export function AppMapToolbar(props: {
   onToggleHistory: () => void;
   onAddNote: () => void;
   onCreateRoutine: () => void;
+  onExplore: () => void;
   onToggleDevice: () => void;
 }) {
   return (
     <div
       class={cn(
         "absolute bottom-[calc(16px+env(safe-area-inset-bottom))] z-20 flex -translate-x-1/2 items-center gap-1 rounded-[13px] bg-[color-mix(in_srgb,var(--v2-background-bg-base)_94%,transparent)] p-1.5 shadow-[0_0_0_1px_color-mix(in_srgb,var(--v2-border-border-strong)_76%,transparent),0_16px_46px_rgb(0_0_0/28%)] backdrop-blur-[16px]",
-        props.shiftForDevice ? "left-[calc((100%-388px)/2)] max-[720px]:left-1/2" : "left-1/2",
+        props.shiftForDevice ? "left-[calc((100%-388px)/2)] max-[900px]:left-1/2" : "left-1/2",
       )}
       role="toolbar"
       aria-label="Map editing tools"
@@ -233,6 +265,15 @@ export function AppMapToolbar(props: {
         aria-label="Create Routine"
         data-tip="Save as Routine"
         onClick={props.onCreateRoutine}
+      >
+        <Icon name="copy" size={13} />
+      </button>
+      <button
+        type="button"
+        class={mapControlButton}
+        aria-label="Explore with Relay"
+        data-tip="Explore with AI"
+        onClick={props.onExplore}
       >
         <Icon name="sparkle" size={13} />
       </button>

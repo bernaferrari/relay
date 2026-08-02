@@ -28,8 +28,8 @@ export function AppMapDeviceCompanion(props: {
         "ui-device-companion absolute top-4 right-4 z-40 flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--map-control-surface)] shadow-[var(--map-elevation-panel)]",
         props.closing && "ui-device-companion--closing",
         props.deviceSelected
-          ? "bottom-4 w-[min(388px,calc(100%-32px))] rounded-[18px] max-[720px]:top-auto max-[720px]:right-2 max-[720px]:bottom-2 max-[720px]:left-2 max-[720px]:h-[min(72vh,680px)] max-[720px]:w-auto"
-          : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[18px] max-[720px]:right-2 max-[720px]:left-2 max-[720px]:w-auto",
+          ? "bottom-4 w-[min(388px,calc(100%-32px))] rounded-[18px] max-[900px]:top-auto max-[900px]:right-2 max-[900px]:bottom-2 max-[900px]:left-2 max-[900px]:h-[min(72vh,680px)] max-[900px]:w-auto"
+          : "h-[276px] w-[min(344px,calc(100%-32px))] rounded-[18px] max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto",
       )}
       aria-label="Device"
     >

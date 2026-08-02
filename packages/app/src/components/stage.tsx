@@ -611,6 +611,12 @@ export function DeviceStage(_props: {
     });
   }
   const [frameAspect, setFrameAspect] = createSignal("9 / 19.5");
+  const [frameRatio, setFrameRatio] = createSignal(9 / 19.5);
+  function updateFrameAspect(width: number, height: number): void {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    setFrameAspect(`${width} / ${height}`);
+    setFrameRatio(width / height);
+  }
   const [videoReady, setVideoReady] = createSignal(false);
   const [videoFailed, setVideoFailed] = createSignal(false);
   const [videoAttempt, setVideoAttempt] = createSignal(0);
@@ -1586,10 +1592,12 @@ export function DeviceStage(_props: {
               data-device-chrome
               class={cn(
                 phoneShell,
-                "relative z-[2] w-auto max-w-[min(440px,calc(100%-40px))] shrink-0",
-                embeddedRecordingControls()
-                  ? "h-[min(790px,calc(100%-32px))]"
-                  : "h-[min(760px,calc(100%-148px))]",
+                "relative z-[2] shrink-0",
+                frameRatio() >= 0.65
+                  ? "h-auto w-[min(440px,calc(100%-40px))]"
+                  : embeddedRecordingControls()
+                    ? "h-[min(790px,calc(100%-32px))] w-auto max-w-[min(440px,calc(100%-40px))]"
+                    : "h-[min(760px,calc(100%-148px))] w-auto max-w-[min(440px,calc(100%-40px))]",
               )}
               style={{ "aspect-ratio": frameAspect() }}
             >
@@ -1825,7 +1833,7 @@ export function DeviceStage(_props: {
                             setVideoReady(true);
                           }}
                           onFailure={retryVideo}
-                          onSize={(width, height) => setFrameAspect(`${width} / ${height}`)}
+                          onSize={updateFrameAspect}
                         />
                       </div>
                     )}
@@ -1851,7 +1859,7 @@ export function DeviceStage(_props: {
                     onLoad={(e) => {
                       const img = e.currentTarget;
                       if (img.naturalWidth && img.naturalHeight) {
-                        setFrameAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
+                        updateFrameAspect(img.naturalWidth, img.naturalHeight);
                       }
                     }}
                     onPointerDown={(e) => {

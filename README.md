@@ -13,7 +13,7 @@ teams like PostHog: clear empty states, CI exits, doctor checks, evidence on dis
 packages/
   protocol/  canonical operations · actors · resources · collaboration DTOs
   client/    authenticated project-scoped HTTP + SSE client
-  collaboration/ safe granular Yjs Journey document
+  collaboration/ safe granular Yjs App Map document
   core/      authoring · graph compiler · jobs · evidence · target adapters
   server/    operation HTTP API · SSE · durable collaboration
   cli/       server-first human/agent operation client
@@ -33,12 +33,13 @@ pnpm dev:serve             # terminal 1 — API on :8787
 pnpm dev:app               # terminal 2 — Stage UI
 ```
 
-Relay reopens the latest Journey as a blank, free-form canvas and opens the focused device for a new
-map. Use the device normally, then press the single **Record** control when you want to capture a
-connection. Stopping creates a temporary Take: trim accidental actions, choose whether it reaches a
-new screen, an existing screen, or the end, and replay it until it is flawless. Only **Add to map**
-commits its executable steps, evidence, and Connection. The permanent **Device** control reopens the
-live target at any time; it is not an empty-state action or a separate mode.
+Relay reopens the latest **App Map** as a free-form canvas. A new project starts with one unsaved
+blank map instead of accumulating drafts. Use the device normally, then press the single **Record**
+control when you want to capture a connection. Stopping creates a temporary Take: trim accidental
+actions, choose whether it reaches a new screen, an existing screen, or the end, and replay it until
+it is flawless. Only **Add to map** commits its executable steps, evidence, and Connection. The
+permanent **Device** control reopens the live target at any time; it is not an empty-state action or
+a separate mode.
 
 For a website, open **Settings → Targets**, add its start URL, and choose **Open & sign in**. Relay
 opens a visible, isolated Chrome profile so login, MFA, consent, and CAPTCHA can be completed by a
@@ -57,13 +58,14 @@ Tests remain target-neutral: a tap/click, text entry, wait, screenshot, assertio
 has one recipe representation. Adapters translate it to the selected iOS, Android, or browser
 target, and unsupported device-only operations fail explicitly instead of being silently skipped.
 
-### Journey maps
+### App Maps
 
-Journey metadata is versioned independently of recipes. The current graph document has three small,
-stable primitives: **screens**, **transitions**, and named **flow starts**. Layout and notes are
-document concerns; a selected graph path compiles to the existing target-neutral recipe IR when it
-runs. That seam makes the canvas the visual source of truth while keeping every device adapter and
-existing recipe compatible.
+An App Map is the canonical product model: **screens** are unique app states, **connections** are
+actions or transitions, and **flows** are reusable paths through the same graph. Layout and notes
+are document concerns; a selected path compiles to the target-neutral recipe IR when it runs. That
+seam makes the canvas the visual source of truth while keeping every device adapter and existing
+recipe compatible. The same map also has **Screens** and **Coverage** projections for browsing large
+products and comparing per-device, per-actor results without creating another source of truth.
 
 ```text
 Start screen ── recorded transition ──> Settings
@@ -190,7 +192,7 @@ poor data. The HTTP equivalents are `POST /jobs/soak` and `GET /reports/soak/:ba
 
 The CLI is a server-first operation client. It never starts an invisible second Relay runtime and
 never imports core domain state. The app, CLI, TUI, and MCP adapter therefore see the same actor,
-target lease, Authoring Session, Take revisions, Journey revision, progress, and events.
+target lease, Authoring Session, Take revisions, App Map revision, progress, and events.
 
 ```bash
 export RELAY_URL=http://127.0.0.1:8787
@@ -203,7 +205,7 @@ pnpm --filter @relay/cli exec tsx src/index.ts --help
 pnpm --filter @relay/cli exec tsx src/index.ts session --help
 
 # Inspect state and receive a canonical PNG payload
-pnpm --filter @relay/cli exec tsx src/index.ts journey list --json
+pnpm --filter @relay/cli exec tsx src/index.ts map list --json
 pnpm --filter @relay/cli exec tsx src/index.ts target screenshot <serial> --json
 
 # Every recording action names its server-owned session explicitly
@@ -220,6 +222,20 @@ Use `--credential-source env:RELAY_AUTH_TOKEN` instead of putting a token in arg
 can run `pnpm dev:mcp`; `relay_target_screenshot_capture` returns native `image/png` content directly
 to the model, while every mutation still goes through the same confirmations, leases, revisions, and
 cancellation path. See [packages/mcp/README.md](./packages/mcp/README.md).
+
+Relay can explore from the UI or through the same discovery and App Map operations available to CLI
+and MCP clients. OpenRouter is optional: without it Relay follows its deterministic semantic control
+ordering; with it, the planner chooses only among controls Relay has already observed and marked safe.
+
+```bash
+export OPENROUTER_API_KEY=...
+export OPENROUTER_MODEL=openai/gpt-4.1-mini # optional
+export RELAY_GENERATION_PROVIDER=openrouter # default provider for generation.create
+```
+
+Agent exploration remains bounded by screen, transition, and time budgets. Purchases, deletion,
+logout, password fields, and permission prompts stay blocked by default, and discovered paths arrive
+as reviewable proposals rather than silently changing the map.
 
 ## Product surfaces
 

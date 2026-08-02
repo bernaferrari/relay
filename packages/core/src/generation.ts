@@ -66,10 +66,67 @@ function parseValues(text: string, count: number): string[] {
 
 function generationPrompt(input: GenerationRequest): string {
   const count = Math.max(1, Math.min(input.count ?? 1, 20));
+  if (input.purpose === "test-plan") {
+    return `${input.prompt}\nReturn only JSON {"values":[...]} with at most ${count} value(s).`;
+  }
   return `Generate ${count} varied test value(s) for this request: ${input.prompt}. Return only JSON {"values":[...]}.`;
 }
 
+export function createOpenRouterGenerationProvider(
+  apiKey: string,
+  options: { model?: string; siteUrl?: string; siteName?: string } = {},
+): GenerationProvider {
+  return {
+    id: "openrouter",
+    async generate(input) {
+      const model = input.model ?? options.model ?? "openai/gpt-4.1-mini";
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          ...(options.siteUrl ? { "HTTP-Referer": options.siteUrl } : {}),
+          ...(options.siteName ? { "X-Title": options.siteName } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: generationPrompt(input) }],
+          temperature: input.purpose === "test-plan" ? 0.1 : 0.7,
+          response_format: { type: "json_object" },
+        }),
+      });
+      if (!response.ok) {
+        const detail = (await response.text()).slice(0, 240).trim();
+        throw new Error(
+          `OpenRouter generation failed (${response.status})${detail ? `: ${detail}` : ""}`,
+        );
+      }
+      const body = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string | null } }>;
+      };
+      const text = body.choices?.[0]?.message?.content ?? "";
+      return {
+        provider: "openrouter",
+        model,
+        values: parseValues(text, input.count ?? 1),
+        generatedAt: Date.now(),
+      };
+    },
+  };
+}
+
 function registerBuiltins(): void {
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  if (openRouterKey) {
+    registerGenerationProvider(
+      createOpenRouterGenerationProvider(openRouterKey, {
+        model: process.env.OPENROUTER_MODEL,
+        siteUrl: process.env.OPENROUTER_SITE_URL,
+        siteName: process.env.OPENROUTER_SITE_NAME ?? "Relay",
+      }),
+    );
+  }
+
   const openAiKey = process.env.OPENAI_API_KEY;
   if (openAiKey) {
     registerGenerationProvider({
