@@ -151,7 +151,6 @@ export async function prepareIosRunner(device: Device, selection: { udid: string
     await device.command.prepare({
       platform: "ios",
       udid: selection.udid,
-      device: selection.udid,
       action: "ios-runner",
       timeoutMs: 240_000,
     });

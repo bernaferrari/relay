@@ -29,7 +29,7 @@ test("target contexts remain isolated across interleaved operations", async () =
     identity: "android-a",
   });
   assert.deepEqual(ios, {
-    base: { platform: "ios", udid: "ios-b", device: "ios-b" },
+    base: { platform: "ios", udid: "ios-b" },
     platform: "ios",
     identity: "ios-b",
   });

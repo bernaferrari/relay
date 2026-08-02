@@ -973,7 +973,8 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                 <header>
                   <h3 class="m-0 text-14-medium text-text-strong">Mobile devices</h3>
                   <p class="mt-1 mb-0 text-12-regular leading-relaxed text-text-weak">
-                    Check what Relay needs before you connect a phone or tablet.
+                    Relay connects automatically. These checks are only here when a device needs
+                    attention.
                   </p>
                 </header>
 
@@ -1040,7 +1041,8 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                 <div class="border-t border-border-weak-base pt-4">
                   <h4 class="m-0 text-12-medium text-text-strong">Apple devices</h4>
                   <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
-                    Relay uses Xcode to sign a small local runner for your iPhone or iPad.
+                    Physical iPhone and iPad control uses Xcode’s local developer tools. Relay
+                    handles the connection for you.
                   </p>
                 </div>
 
@@ -1055,11 +1057,9 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                           aria-label="Checking Apple recording setup"
                         />
                         <div>
-                          <p class="m-0 text-12-medium text-text-strong">
-                            Checking Apple recording
-                          </p>
+                          <p class="m-0 text-12-medium text-text-strong">Checking Apple devices</p>
                           <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
-                            Looking for Xcode and a signing identity on this Mac.
+                            Looking for an Apple account already connected to Xcode.
                           </p>
                         </div>
                       </div>
@@ -1085,12 +1085,11 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                                       <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-warning-base" />
                                       <div class="min-w-0">
                                         <p class="m-0 text-12-medium text-text-strong">
-                                          Sign in to Xcode to enable Apple recording
+                                          Connect an Apple account in Xcode
                                         </p>
                                         <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
-                                          Relay found a development certificate, but Xcode needs an
-                                          account for that Apple team before it can provision the
-                                          runner.
+                                          Add your Apple account in Xcode once. Relay will handle
+                                          the device connection after that.
                                         </p>
                                       </div>
                                     </div>
@@ -1130,11 +1129,10 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                                       <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
                                       <div class="min-w-0">
                                         <p class="m-0 text-12-medium text-text-strong">
-                                          Set up Apple recording
+                                          Use this Xcode account
                                         </p>
                                         <p class="mt-1 mb-0 text-11-regular leading-snug text-text-weak">
-                                          Use {suggestion().label} to create Relay's private local
-                                          runner.
+                                          Relay found {suggestion().label} on this Mac.
                                         </p>
                                       </div>
                                     </div>
@@ -1155,9 +1153,7 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                                           void saveAppleSetup();
                                         }}
                                       >
-                                        {appleSetupBusy()
-                                          ? "Setting up…"
-                                          : "Set up Apple recording"}
+                                        {appleSetupBusy() ? "Setting up…" : "Use this account"}
                                       </Button>
                                       <button
                                         class="text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"
@@ -1172,28 +1168,28 @@ export function SettingsPage(props: { onClose: () => void; initialSection?: Sett
                               </Show>
                             }
                           >
-                            {(setup) => (
+                            {(_setup) => (
                               <div class="rounded-lg border border-border-weak-base bg-background-base px-3 py-3">
                                 <div class="flex items-start justify-between gap-3">
                                   <div class="flex min-w-0 items-start gap-2.5">
                                     <span class="mt-1 size-1.5 shrink-0 rounded-full bg-icon-success-base" />
                                     <div class="min-w-0">
                                       <p class="m-0 text-12-medium text-text-strong">
-                                        Apple runner details saved
+                                        Ready to control Apple devices
                                       </p>
                                       <p class="mt-1 mb-0 truncate text-11-regular text-text-weak">
-                                        Relay will ask Xcode to sign {setup().bundleId} when you
-                                        record.
+                                        Relay will connect automatically when you choose an iPhone
+                                        or iPad.
                                       </p>
                                     </div>
                                   </div>
                                 </div>
                                 <div class="mt-3 flex items-center gap-3">
                                   <Button size="sm" type="button" onClick={props.onClose}>
-                                    Close settings
+                                    Done
                                   </Button>
                                   <span class="text-11-regular text-text-weak">
-                                    Return to your iPad to start recording.
+                                    You can inspect and control it before recording.
                                   </span>
                                   <button
                                     class="ml-auto shrink-0 text-12-medium text-text-weak transition-colors duration-150 hover:text-text-strong"

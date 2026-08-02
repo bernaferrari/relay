@@ -83,9 +83,11 @@ test("loopback API rejects hostile browser origins and reflects Relay origins", 
 test("mobile setup endpoints report prerequisites and persist Apple runner settings", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-device-settings-"));
   const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousAgentDeviceStateDir = process.env.AGENT_DEVICE_STATE_DIR;
   const previousTeam = process.env.AGENT_DEVICE_IOS_TEAM_ID;
   const previousBundle = process.env.AGENT_DEVICE_IOS_BUNDLE_ID;
   process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.AGENT_DEVICE_STATE_DIR = join(root, "agent-device");
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
     const baseUrl = `http://127.0.0.1:${server.port}`;
@@ -121,6 +123,8 @@ test("mobile setup endpoints report prerequisites and persist Apple runner setti
     await server.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousAgentDeviceStateDir === undefined) delete process.env.AGENT_DEVICE_STATE_DIR;
+    else process.env.AGENT_DEVICE_STATE_DIR = previousAgentDeviceStateDir;
     if (previousTeam === undefined) delete process.env.AGENT_DEVICE_IOS_TEAM_ID;
     else process.env.AGENT_DEVICE_IOS_TEAM_ID = previousTeam;
     if (previousBundle === undefined) delete process.env.AGENT_DEVICE_IOS_BUNDLE_ID;

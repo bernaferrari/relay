@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
 
@@ -154,6 +157,34 @@ type AppleSigningIdentity = {
   name: string;
 };
 
+export type XcodeProvisioningTeam = {
+  teamId: string;
+  name: string;
+  personal: boolean;
+};
+
+/** Parse the accounts Xcode can actually provision with, not stale certificates. */
+export function findXcodeProvisioningTeams(output: string | null): XcodeProvisioningTeam[] {
+  if (!output) return [];
+  const teams: XcodeProvisioningTeam[] = [];
+  const seen = new Set<string>();
+  const records = output.match(/\{[\s\S]*?teamID\s*=\s*[A-Z0-9]{6,32};[\s\S]*?\}/g) ?? [];
+  for (const record of records) {
+    const teamId = record.match(/teamID\s*=\s*([A-Z0-9]{6,32});/)?.[1]?.trim();
+    const quotedName = record.match(/teamName\s*=\s*"([^"]+)";/)?.[1];
+    const bareName = record.match(/teamName\s*=\s*([^;\n]+);/)?.[1];
+    const name = (quotedName ?? bareName)?.trim();
+    if (!teamId || !name || seen.has(teamId)) continue;
+    seen.add(teamId);
+    teams.push({
+      teamId,
+      name,
+      personal: /isFreeProvisioningTeam\s*=\s*1;/.test(record) || /Personal Team/i.test(record),
+    });
+  }
+  return teams;
+}
+
 /**
  * `security find-identity` already exposes the development team Xcode will use.
  * Keep this parser deliberately small and tolerant: it only turns a valid Apple
@@ -181,7 +212,16 @@ function privateRunnerBundleId(teamId: string): string {
 
 export function suggestAppleDeviceSetup(
   identitiesOutput: string | null,
+  xcodeTeamsOutput?: string | null,
 ): AppleSetupStatus["suggestion"] {
+  const xcodeTeam = findXcodeProvisioningTeams(xcodeTeamsOutput ?? null)[0];
+  if (xcodeTeam) {
+    return {
+      teamId: xcodeTeam.teamId,
+      bundleId: privateRunnerBundleId(xcodeTeam.teamId),
+      label: xcodeTeam.name,
+    };
+  }
   const identity = findAppleSigningIdentities(identitiesOutput)[0];
   if (!identity) return undefined;
   return {
@@ -198,19 +238,22 @@ export function suggestAppleDeviceSetup(
  */
 export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
   const setup = await readDeviceSetup();
-  const [xcode, devicectl, identities] = await Promise.all([
+  const [xcode, devicectl, identities, xcodeTeamsOutput] = await Promise.all([
     commandAvailable("xcodebuild", ["-version"]),
     // `devicectl version` is not a valid CoreDevice command in current Xcode.
     // Listing devices is fast, read-only, and confirms the command we actually
     // rely on for physical iPhone and iPad discovery.
     commandAvailable("xcrun", ["devicectl", "list", "devices"]),
     commandAvailable("security", ["find-identity", "-v", "-p", "codesigning"]),
+    commandAvailable("defaults", ["read", "com.apple.dt.Xcode", "IDEProvisioningTeamByIdentifier"]),
   ]);
   const availableIdentities = findAppleSigningIdentities(identities);
-  const matchingIdentity = setup.ios
-    ? availableIdentities.find((identity) => identity.teamId === setup.ios?.teamId)
+  const xcodeTeams = findXcodeProvisioningTeams(xcodeTeamsOutput);
+  const matchingTeam = setup.ios
+    ? xcodeTeams.find((team) => team.teamId === setup.ios?.teamId)
     : undefined;
-  const suggestion = setup.ios ? undefined : suggestAppleDeviceSetup(identities);
+  const suggestion = setup.ios ? undefined : suggestAppleDeviceSetup(identities, xcodeTeamsOutput);
+  const hasDevelopmentIdentity = availableIdentities.length > 0;
   return {
     setup,
     checks: [
@@ -230,46 +273,73 @@ export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
       },
       {
         id: "account",
-        label: "Xcode signing identity",
-        status:
-          matchingIdentity || (!setup.ios && availableIdentities.length > 0)
-            ? "ready"
-            : "needs-attention",
-        detail: matchingIdentity
-          ? `Xcode can sign with ${matchingIdentity.name}.`
+        label: "Xcode account",
+        status: matchingTeam || (!setup.ios && xcodeTeams.length > 0) ? "ready" : "needs-attention",
+        detail: matchingTeam
+          ? `${matchingTeam.name} is available in Xcode.`
           : setup.ios
-            ? "Open Xcode → Settings → Accounts and sign in to the Apple team selected in Relay."
-            : availableIdentities.length > 0
-              ? "Choose the development identity Relay should use."
+            ? "The selected Apple team is not available in Xcode. Choose an account that appears in Xcode Settings."
+            : xcodeTeams.length > 0
+              ? "Choose the Xcode account Relay should use."
               : "Open Xcode → Settings → Accounts and sign in to your Apple Developer account.",
       },
       {
         id: "signing",
         label: "Development certificate",
-        status:
-          identities && /\b[1-9]\d*\s+valid identities\b/i.test(identities)
-            ? "ready"
-            : "needs-attention",
-        detail:
-          identities && /\b[1-9]\d*\s+valid identities\b/i.test(identities)
-            ? "A development certificate is in Keychain. Xcode account access is verified when Relay starts the runner."
-            : "Sign into an Apple Developer account in Xcode.",
+        status: hasDevelopmentIdentity ? "ready" : "needs-attention",
+        detail: hasDevelopmentIdentity
+          ? "Xcode has a development certificate available."
+          : "Xcode will create a development certificate after you finish signing in.",
       },
       {
         id: "relay",
         label: "Relay runner",
-        status: setup.ios && matchingIdentity ? "ready" : "needs-attention",
-        detail: !matchingIdentity
-          ? "Relay can create the runner after Xcode has a development identity for this team."
+        status: setup.ios && matchingTeam && hasDevelopmentIdentity ? "ready" : "needs-attention",
+        detail: !matchingTeam
+          ? "Choose an Apple team that is signed in to Xcode."
           : setup.ios
-            ? `Relay will ask Xcode to sign ${setup.ios.bundleId} when you start recording.`
+            ? "Relay will connect automatically when you choose this iPhone or iPad."
             : suggestion
-              ? "Relay can finish setup with the Apple account found on this Mac."
+              ? "Relay can use the Apple account already connected to Xcode."
               : "Sign into an Apple Developer account in Xcode, then check again.",
       },
     ],
     ...(suggestion ? { suggestion } : {}),
   };
+}
+
+/**
+ * agent-device inherits Apple signing settings when its daemon starts. Stop
+ * only that verified helper process after a team change so the next device
+ * action starts it with the newly saved account. Other processes are ignored.
+ */
+export async function restartAgentDeviceDaemonForSetup(): Promise<boolean> {
+  const stateDir = process.env.AGENT_DEVICE_STATE_DIR?.trim() || join(homedir(), ".agent-device");
+  let pid: number | undefined;
+  try {
+    const value = JSON.parse(await readFile(join(stateDir, "daemon.json"), "utf8")) as {
+      pid?: unknown;
+      stateDir?: unknown;
+    };
+    if (typeof value.pid !== "number" || !Number.isInteger(value.pid) || value.pid <= 1)
+      return false;
+    if (typeof value.stateDir === "string" && value.stateDir !== stateDir) return false;
+    pid = value.pid;
+    const command = await commandAvailable("ps", ["-p", String(pid), "-o", "command="]);
+    if (!command || !/agent-device\/.*internal\/daemon\.js/.test(command)) return false;
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return false;
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
 }
 
 /** Read-only availability check for Android Platform Tools. */

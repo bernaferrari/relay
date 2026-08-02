@@ -162,12 +162,17 @@ export function resetDeviceClient(context = currentTargetContext()): void {
   devicesByTarget.delete(`${context.platform}:${targetIdentity(context)}`);
 }
 
+/** Drop cached SDK clients after host-level device configuration changes. */
+export function resetDeviceClients(): void {
+  devicesByTarget.clear();
+}
+
 export function base() {
   const context = currentTargetContext();
   const platform = context.kind === "device" ? context.platform : "android";
   const serial = context.kind === "device" ? context.serial : undefined;
   return platform === "ios"
-    ? ({ platform, ...(serial ? { udid: serial, device: serial } : {}) } as const)
+    ? ({ platform, ...(serial ? { udid: serial } : {}) } as const)
     : ({ platform, ...(serial ? { serial, device: serial } : {}) } as const);
 }
 

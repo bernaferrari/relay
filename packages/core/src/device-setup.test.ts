@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   findAppleSigningIdentities,
+  findXcodeProvisioningTeams,
   readDeviceSetup,
   saveAppleDeviceSetup,
   suggestAppleDeviceSetup,
@@ -25,6 +26,33 @@ test("derives a safe local runner suggestion from an Apple Development identity"
     label: "Apple Development: Bernardo Ferrari",
   });
   assert.equal(suggestAppleDeviceSetup("0 valid identities found"), undefined);
+});
+
+test("prefers the Personal Team connected to Xcode over a stale Keychain identity", () => {
+  const identities =
+    '  1) HASH "Apple Development: Bernardo Ferrari (DESXYH8838)"\n     1 valid identities found';
+  const xcodeTeams = `{
+    "ACCOUNT" = (
+      {
+        isFreeProvisioningTeam = 1;
+        teamID = M74VKW2N97;
+        teamName = "Bernardo Ferrari (Personal Team)";
+        teamType = "Personal Team";
+      }
+    );
+  }`;
+  assert.deepEqual(findXcodeProvisioningTeams(xcodeTeams), [
+    {
+      teamId: "M74VKW2N97",
+      name: "Bernardo Ferrari (Personal Team)",
+      personal: true,
+    },
+  ]);
+  assert.deepEqual(suggestAppleDeviceSetup(identities, xcodeTeams), {
+    teamId: "M74VKW2N97",
+    bundleId: "com.relay.local.m74vkw2n97.runner",
+    label: "Bernardo Ferrari (Personal Team)",
+  });
 });
 
 test("Apple device setup persists in the Relay workspace and applies at runtime", async () => {

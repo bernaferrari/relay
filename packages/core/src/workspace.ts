@@ -64,6 +64,12 @@ const iosRunnerPreparations = new Map<string, Promise<void>>();
 const iosRunnerFailures = new Map<string, { error: Error; expiresAt: number }>();
 const IOS_RUNNER_FAILURE_TTL_MS = 10_000;
 
+/** Forget runner preparation state after the Apple account or team changes. */
+export function resetIosRunnerState(): void {
+  iosRunnerPreparations.clear();
+  iosRunnerFailures.clear();
+}
+
 function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> {
   const recentFailure = iosRunnerFailures.get(serial);
   if (recentFailure && recentFailure.expiresAt > Date.now()) {
@@ -75,6 +81,19 @@ function ensureIosRunnerPrepared(device: Device, serial: string): Promise<void> 
   if (existing) return existing;
 
   const preparation = prepareIosRunner(device, { udid: serial })
+    .then(async () => {
+      // Preparing XCTest only installs the helper; it does not create the app
+      // session required by screenshots and input. SpringBoard is the stable,
+      // system-owned control surface for a device that has no app selected yet.
+      // From there a human or agent can launch the app it wants to exercise.
+      await device.apps.open({
+        platform: "ios",
+        udid: serial,
+        app: "com.apple.springboard",
+        relaunch: false,
+        noRecord: true,
+      });
+    })
     .then(() => {
       iosRunnerFailures.delete(serial);
     })
@@ -105,6 +124,21 @@ async function withSession<T>(device: Device, op: () => Promise<T>): Promise<T> 
     return await op();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const context = currentTargetContext();
+    if (
+      /no active session|session[_ ]not[_ ]found/i.test(msg) &&
+      context.kind === "device" &&
+      context.platform === "ios" &&
+      context.serial
+    ) {
+      // The helper can outlive Relay while its app session is closed (or be
+      // closed by another client). Re-open the control surface once and retry
+      // instead of surfacing an implementation detail to the user.
+      iosRunnerPreparations.delete(context.serial);
+      iosRunnerFailures.delete(context.serial);
+      await ensureIosRunnerPrepared(device, context.serial);
+      return await op();
+    }
     if (/already bound/i.test(msg) && !getExecutingJobId()) {
       await hardStopDeviceSession().catch(() => undefined);
       return await op();

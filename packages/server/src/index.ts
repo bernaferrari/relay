@@ -127,6 +127,9 @@ import {
   readDeviceSetup,
   runWithTargetContext,
   saveAppleDeviceSetup,
+  restartAgentDeviceDaemonForSetup,
+  resetDeviceClients,
+  resetIosRunnerState,
   authoringSessions,
   runWithOperationContext,
   readAuthoringEvidence,
@@ -514,6 +517,9 @@ async function handleRequest(
           ? { provisioningProfile: body.provisioningProfile }
           : {}),
       });
+      resetDeviceClients();
+      resetIosRunnerState();
+      await restartAgentDeviceDaemonForSetup();
       json(res, 200, { setup });
       return;
     }
