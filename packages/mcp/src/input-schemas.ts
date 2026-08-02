@@ -278,7 +278,7 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       platform: z.enum(["android", "ios"]).optional(),
       targetKind: z.enum(["device", "browser"]).optional(),
       browserTargetId: identifier("Managed browser target identifier").optional(),
-      variables: z.record(z.string(), z.string()).optional(),
+      variables: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
     })
     .strict(),
   "app-map.routine.save": z

@@ -8,6 +8,7 @@ import {
   onCleanup,
   onMount,
 } from "solid-js";
+import type { AppMap } from "@relay/protocol";
 import { useServer, type RecipeInfo } from "../context/server";
 import { useRecipeDraft } from "../context/recipe-draft";
 import { useRecorder } from "../context/recorder";
@@ -107,9 +108,8 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   });
   const [importReview, setImportReview] = createSignal<{
     yaml: string;
-    recipe: RecipeInfo;
+    appMap: AppMap;
     exists: boolean;
-    canonicalYaml: string;
   } | null>(null);
 
   const selectedMap = createMemo(() => server.selectedAppMap());
@@ -417,8 +417,12 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
 
   async function importTestYaml(yaml: string): Promise<void> {
     try {
-      const preview = await server.previewRecipeYaml(yaml);
-      setImportReview({ yaml, ...preview });
+      const preview = await server.runAction("app-map.import", { yaml, dryRun: true });
+      setImportReview({
+        yaml,
+        appMap: preview.appMap,
+        exists: server.appMaps().some((candidate) => candidate.id === preview.appMap.id),
+      });
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), "error");
     }
@@ -427,11 +431,40 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
   async function confirmImport(conflict: "replace" | "copy"): Promise<void> {
     const review = importReview();
     if (!review) return;
-    const saved = await server.importRecipeYaml(review.yaml, review.exists ? conflict : "reject");
-    if (!saved) return;
-    setImportReview(null);
-    setArea("tests");
-    // Default view is decided per-test by the effect above (content vs. empty).
+    try {
+      const result = await server.runAction("app-map.import", {
+        yaml: review.yaml,
+        conflict: review.exists ? conflict : "reject",
+      });
+      await server.refreshAppMaps();
+      server.setSelectedAppMapId(result.appMap.id);
+      setImportReview(null);
+      setArea("tests");
+      setStudioView("map");
+      setNavOpen(false);
+      toast(`Imported ${displayTitle(result.appMap.name)}`, "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
+  }
+
+  async function exportSelected(): Promise<void> {
+    const appMap = selectedMap();
+    if (!appMap) return;
+    try {
+      const result = await server.runAction("app-map.export", { appMapId: appMap.id });
+      const url = URL.createObjectURL(
+        new Blob([result.yaml], { type: "application/yaml;charset=utf-8" }),
+      );
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast(`Exported ${displayTitle(appMap.name)}`, "success");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error), "error");
+    }
   }
 
   async function duplicateSelected(): Promise<void> {
@@ -737,6 +770,17 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                     <button
                       type="button"
                       role="menuitem"
+                      class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)] hover:text-[var(--text-strong)]"
+                      onClick={() => {
+                        setStudioActionsOpen(false);
+                        void exportSelected();
+                      }}
+                    >
+                      <Icon name="download" size={14} /> Export map
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
                       class="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-[var(--icon-critical-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
                       onClick={() => {
                         setStudioActionsOpen(false);
@@ -938,7 +982,7 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
             >
               <header class="flex items-start justify-between gap-3 border-b border-[var(--v2-border-border-muted)] px-4 py-3.5">
                 <div>
-                  <span class={eyebrow}>Relay YAML</span>
+                  <span class={eyebrow}>App Map YAML</span>
                   <h3
                     id="import-review-title"
                     class="mt-1 text-[16px] font-semibold text-[var(--text-strong)]"
@@ -961,27 +1005,29 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
                 </span>
                 <div class="min-w-0">
                   <strong class="block text-[13px] text-[var(--text-strong)]">
-                    {review().recipe.title}
+                    {review().appMap.name}
                   </strong>
                   <small class="block text-[11px] text-[var(--text-weak)]">
-                    {review().recipe.id} · {review().recipe.steps.length} step
-                    {review().recipe.steps.length === 1 ? "" : "s"} · schema valid
+                    {review().appMap.id} · {Object.keys(review().appMap.screens).length} screen
+                    {Object.keys(review().appMap.screens).length === 1 ? "" : "s"} ·{" "}
+                    {Object.keys(review().appMap.connections).length} connection
+                    {Object.keys(review().appMap.connections).length === 1 ? "" : "s"}
                   </small>
                 </div>
               </div>
               <details class="mx-4 my-3 rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-deep)] px-3 py-2">
                 <summary class="cursor-pointer text-[11px] text-[var(--text-base)]">
-                  Preview canonical YAML
+                  Preview portable YAML
                 </summary>
                 <pre class="mt-2 max-h-48 overflow-auto font-mono text-[11px]/[1.5] text-[var(--text-weak)]">
-                  {review().canonicalYaml}
+                  {review().yaml}
                 </pre>
               </details>
               <footer class="flex items-center justify-between gap-3 border-t border-[var(--v2-border-border-muted)] px-4 py-3">
                 <p class="m-0 max-w-[28ch] text-[11px]/[1.45] text-[var(--text-weak)]">
                   {review().exists
-                    ? "Replacing preserves the current definition in version history. Importing a copy creates a new map ID."
-                    : "Relay will store the canonical App Map definition in the project."}
+                    ? "Replace this map, or import a separate copy with the same screens and connections."
+                    : "Relay will add this portable App Map to the current project."}
                 </p>
                 <div class="flex shrink-0 flex-wrap justify-end gap-2">
                   <button

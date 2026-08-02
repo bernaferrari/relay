@@ -52,7 +52,6 @@ import {
   DEFAULT_TOUCH_BOUNDS,
   DevicePanelStatus,
   UncapturedStepPreview,
-  type DeviceBounds,
   type DevicePanelState,
 } from "./device-stage-previews";
 

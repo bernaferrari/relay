@@ -57,6 +57,7 @@ export function MapLibrary(props: {
   onOpenSettings: () => void;
 }) {
   let searchInput: HTMLInputElement | undefined;
+  let importInput: HTMLInputElement | undefined;
   const recorder = useRecorder();
   const [unfinishedOpen, setUnfinishedOpen] = createSignal(false);
   const [allUnfinishedVisible, setAllUnfinishedVisible] = createSignal(false);
@@ -260,6 +261,25 @@ export function MapLibrary(props: {
               size={13}
               class="opacity-65 transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/record:translate-x-px"
             />
+          </button>
+          <input
+            ref={(element) => (importInput = element)}
+            hidden
+            type="file"
+            accept=".yaml,.yml,application/yaml,text/yaml,text/plain"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!file) return;
+              void file.text().then(props.onImport);
+            }}
+          />
+          <button
+            type="button"
+            class="mb-1 flex min-h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-strong"
+            onClick={() => importInput?.click()}
+          >
+            <Icon name="upload" size={14} /> Import map
           </button>
         </Show>
         <button
