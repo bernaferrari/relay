@@ -16,6 +16,7 @@ export function updateAppMap(
   context: AppMapMutationContext,
 ): AppMap {
   const name = patch.name?.trim();
+  const description = patch.description?.trim();
   if (patch.name !== undefined && !name) appMapFail("invalid-map", "App Map name is required");
   return mutateAppMap(
     map,
@@ -27,6 +28,10 @@ export function updateAppMap(
     },
     (draft) => {
       if (name) draft.name = name;
+      if (patch.description !== undefined) {
+        if (description) draft.description = description;
+        else delete draft.description;
+      }
     },
   );
 }

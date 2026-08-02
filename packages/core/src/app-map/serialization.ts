@@ -162,6 +162,7 @@ export function serializeAppMap(value: AppMap): SerializedAppMap {
     organizationId: map.organizationId,
     projectId: map.projectId,
     name: map.name,
+    ...(map.description ? { description: map.description } : {}),
     revision: map.revision,
     screens: sortedEntities(map.screens).map(normalizedScreen),
     screenVariants: sortedEntities(map.screenVariants).map(normalizedVariant),
@@ -185,5 +186,7 @@ export function serializeAppMap(value: AppMap): SerializedAppMap {
     createdAt: map.createdAt,
     updatedAt: map.updatedAt,
   };
-  return canonicalPlain(document) as SerializedAppMap;
+  return Object.fromEntries(
+    Object.entries(document).map(([key, item]) => [key, canonicalPlain(item)]),
+  ) as SerializedAppMap;
 }

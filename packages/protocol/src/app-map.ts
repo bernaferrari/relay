@@ -60,7 +60,7 @@ export type Screen = AppMapEntity & {
   variantIds: string[];
 };
 
-export type AppMapPatch = { name?: string };
+export type AppMapPatch = { name?: string; description?: string | null };
 
 export type BaselineProvenance = {
   approvedAt: number;
@@ -305,6 +305,7 @@ export type AppMap = {
   organizationId: string;
   projectId: string;
   name: string;
+  description?: string;
   revision: number;
   screens: Record<string, Screen>;
   screenVariants: Record<string, ScreenVariant>;

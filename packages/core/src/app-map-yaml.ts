@@ -16,6 +16,7 @@ const APP_MAP_FIELDS = new Set([
   "organizationId",
   "projectId",
   "name",
+  "description",
   "revision",
   "screens",
   "screenVariants",

@@ -35,6 +35,7 @@ export {
   finiteTimestamp,
   identifier,
   objectValue,
+  optionalText,
   requiredText,
   safeInteger,
 } from "./validation-primitives.js";

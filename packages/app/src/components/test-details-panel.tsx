@@ -1,10 +1,8 @@
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { useServer } from "../context/server";
-import { useRecipeDraft } from "../context/recipe-draft";
 import { cn } from "../lib/cn";
 import { productIconButton, tabUnderline, tabUnderlineActive } from "../lib/ui";
 import { shellAsideDrawer, shellSteps, shellStepsBody } from "../lib/shell-layout";
-import { FlowParametersEditor } from "./flow-parameters-editor";
 import { Icon } from "./icon";
 
 type DetailsTab = "properties" | "source";
@@ -15,51 +13,98 @@ export function TestSettingsPanel(props: {
   presentation?: "drawer" | "floating";
 }) {
   const server = useServer();
-  const draft = useRecipeDraft();
+  const selectedMap = createMemo(() => server.selectedAppMap());
   const [tab, setTab] = createSignal<DetailsTab>("properties");
+  const [descriptionDraft, setDescriptionDraft] = createSignal("");
+  const [descriptionSaving, setDescriptionSaving] = createSignal(false);
+  const [descriptionMessage, setDescriptionMessage] = createSignal<string | null>(null);
   const [yamlSource, setYamlSource] = createSignal<string | null>(null);
   const [yamlDraft, setYamlDraft] = createSignal("");
   const [yamlEditing, setYamlEditing] = createSignal(false);
   const [yamlSaving, setYamlSaving] = createSignal(false);
+  const [yamlLoading, setYamlLoading] = createSignal(false);
+  const [yamlReload, setYamlReload] = createSignal(0);
   const [yamlMessage, setYamlMessage] = createSignal<{
     tone: "success" | "error";
     text: string;
   } | null>(null);
 
+  createEffect(() => {
+    const map = selectedMap();
+    setDescriptionDraft(map?.description ?? "");
+    setDescriptionMessage(null);
+  });
+
+  const saveDescription = async () => {
+    const map = selectedMap();
+    const description = descriptionDraft().trim();
+    if (!map || descriptionSaving() || description === (map.description ?? "")) return;
+    setDescriptionSaving(true);
+    setDescriptionMessage(null);
+    try {
+      await server.runAction("app-map.update", {
+        appMapId: map.id,
+        expectedRevision: map.revision,
+        patch: { description: description || null },
+      });
+      await server.refreshAppMaps();
+      setDescriptionMessage("Saved");
+    } catch (error) {
+      setDescriptionMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDescriptionSaving(false);
+    }
+  };
+
   let yamlRequest = 0;
   createEffect(() => {
-    const recipe = server.selectedRecipe();
-    const updatedAt = recipe?.updatedAt;
-    if (tab() !== "source" || !recipe) return;
+    const map = selectedMap();
+    const revision = map?.revision;
+    const reload = yamlReload();
+    if (tab() !== "source" || !map) return;
     const request = ++yamlRequest;
     setYamlSource(null);
     setYamlDraft("");
     setYamlEditing(false);
     setYamlMessage(null);
-    void server.loadRecipeYaml(recipe.id).then((yaml) => {
-      if (request === yamlRequest) {
-        setYamlSource(yaml);
-        setYamlDraft(yaml ?? "");
-      }
-    });
-    void updatedAt;
+    setYamlLoading(true);
+    void server
+      .runAction("app-map.export", { appMapId: map.id })
+      .then((result) => {
+        if (request !== yamlRequest) return;
+        setYamlSource(result.yaml);
+        setYamlDraft(result.yaml);
+      })
+      .catch((error: unknown) => {
+        if (request !== yamlRequest) return;
+        setYamlMessage({
+          tone: "error",
+          text: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        if (request === yamlRequest) setYamlLoading(false);
+      });
+    void revision;
+    void reload;
   });
 
   const saveYaml = async () => {
-    const recipe = server.selectedRecipe();
+    const map = selectedMap();
     const source = yamlDraft().trim();
-    if (!recipe || !source || yamlSaving()) return;
+    if (!map || !source || yamlSaving()) return;
     setYamlSaving(true);
     setYamlMessage(null);
     try {
-      const preview = await server.previewRecipeYaml(source);
-      if (preview.recipe.id !== recipe.id) {
+      const preview = await server.runAction("app-map.import", { yaml: source, dryRun: true });
+      if (preview.appMap.id !== map.id) {
         throw new Error("The map id cannot change here. Duplicate the map to create a new id.");
       }
-      const saved = await server.importRecipeYaml(source, "replace");
-      if (!saved) throw new Error("Relay could not save this YAML.");
-      setYamlSource(preview.canonicalYaml);
-      setYamlDraft(preview.canonicalYaml);
+      await server.runAction("app-map.import", { yaml: source, conflict: "replace" });
+      await server.refreshAppMaps();
+      const exported = await server.runAction("app-map.export", { appMapId: map.id });
+      setYamlSource(exported.yaml);
+      setYamlDraft(exported.yaml);
       setYamlEditing(false);
       setYamlMessage({ tone: "success", text: "Saved and normalized." });
     } catch (error) {
@@ -114,18 +159,38 @@ export function TestSettingsPanel(props: {
         <Show when={tab() === "properties"}>
           <div class="h-full overflow-y-auto divide-y divide-[var(--v2-border-border-muted)]">
             <section class="p-4">
-              <label class="grid gap-1.5">
-                <span class="text-[10.5px] font-medium text-[var(--text-base)]">Description</span>
+              <div class="grid gap-1.5">
+                <label
+                  for="app-map-description"
+                  class="text-[10.5px] font-medium text-[var(--text-base)]"
+                >
+                  Description
+                </label>
                 <textarea
+                  id="app-map-description"
                   class="min-h-[72px] w-full resize-none rounded-lg border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 py-2.5 text-[12px]/[1.45] text-[var(--text-strong)] outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-[var(--text-weak)] focus:border-[var(--v2-border-border-strong)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--text-base)_12%,transparent)]"
-                  value={draft.description()}
-                  placeholder="What this map verifies"
-                  onInput={(event) => draft.setDescription(event.currentTarget.value)}
+                  value={descriptionDraft()}
+                  placeholder="What does this map cover?"
+                  onInput={(event) => {
+                    setDescriptionDraft(event.currentTarget.value);
+                    setDescriptionMessage(null);
+                  }}
+                  onBlur={() => void saveDescription()}
                 />
-              </label>
-            </section>
-            <section class="p-4">
-              <FlowParametersEditor />
+                <span
+                  class={cn(
+                    "min-h-4 text-[10px]",
+                    descriptionMessage() && descriptionMessage() !== "Saved"
+                      ? "text-[var(--icon-critical-base)]"
+                      : "text-[var(--text-weak)]",
+                  )}
+                  role="status"
+                >
+                  {descriptionSaving()
+                    ? "Saving…"
+                    : (descriptionMessage() ?? "Saved automatically")}
+                </span>
+              </div>
             </section>
             <section class="p-3">
               <button
@@ -138,10 +203,10 @@ export function TestSettingsPanel(props: {
                 </span>
                 <span class="min-w-0 flex-1">
                   <strong class="block text-[11.5px] font-medium text-[var(--text-base)]">
-                    Workspace variables
+                    Variables & test data
                   </strong>
                   <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
-                    Reusable values written as {"{{variable_name}}"}
+                    Shared lists and private values multiply coverage
                   </small>
                 </span>
                 <Icon
@@ -158,7 +223,7 @@ export function TestSettingsPanel(props: {
           <div class="flex h-full min-h-0 flex-col overflow-hidden">
             <header class="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-[var(--v2-border-border-muted)] px-3">
               <span class="text-[11px] font-semibold tracking-[0.06em] text-[var(--text-weak)] uppercase">
-                Source file
+                Portable App Map YAML
               </span>
               <div class="flex items-center gap-1">
                 <Show when={!yamlEditing()}>
@@ -210,8 +275,22 @@ export function TestSettingsPanel(props: {
             <Show
               when={yamlSource()}
               fallback={
-                <div class="grid flex-1 place-items-center text-[12px] text-[var(--text-weak)]">
-                  Loading YAML…
+                <div class="grid flex-1 place-items-center p-6 text-center text-[12px] text-[var(--text-weak)]">
+                  <Show
+                    when={!yamlLoading() && yamlMessage()?.tone === "error"}
+                    fallback={<span>Preparing portable YAML…</span>}
+                  >
+                    <div class="grid max-w-60 justify-items-center gap-3">
+                      <span>{yamlMessage()?.text}</span>
+                      <button
+                        type="button"
+                        class="inline-flex h-8 items-center rounded-md border border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-layer-01)] px-3 font-medium text-[var(--text-base)] hover:bg-[var(--v2-background-bg-layer-02)]"
+                        onClick={() => setYamlReload((value) => value + 1)}
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  </Show>
                 </div>
               }
             >

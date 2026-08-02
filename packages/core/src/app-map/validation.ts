@@ -14,6 +14,7 @@ import {
   finiteTimestamp,
   identifier,
   objectValue,
+  optionalText,
   requiredText,
   safeInteger,
 } from "./validation-shapes.js";
@@ -277,6 +278,7 @@ export function validateAppMap(value: unknown): AppMap {
   identifier(input.organizationId, "App Map.organizationId");
   identifier(input.projectId, "App Map.projectId");
   requiredText(input.name, "App Map.name");
+  optionalText(input.description, "App Map.description");
   safeInteger(input.revision, "App Map.revision");
   finiteTimestamp(input.createdAt, "App Map.createdAt");
   finiteTimestamp(input.updatedAt, "App Map.updatedAt");

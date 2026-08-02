@@ -742,9 +742,13 @@ test("creates and attaches a Case Stack in one attributable revision", () => {
   assert.equal(attached.activity["apply-stack"]?.eventType, "case-stack.attached");
 });
 
-test("renames an App Map and stores finite collaborative screen positions", () => {
+test("updates App Map metadata and stores finite collaborative screen positions", () => {
   const input = mapFixture();
-  const renamed = updateAppMap(input, { name: "Storefront" }, context(input, "rename-map"));
+  const renamed = updateAppMap(
+    input,
+    { name: "Storefront", description: "The complete customer storefront" },
+    context(input, "rename-map"),
+  );
   const positioned = updateAppMapScreen(
     renamed,
     "start",
@@ -753,6 +757,7 @@ test("renames an App Map and stores finite collaborative screen positions", () =
   );
 
   assert.equal(renamed.name, "Storefront");
+  assert.equal(renamed.description, "The complete customer storefront");
   assert.equal(renamed.activity["rename-map"]?.eventType, "app-map.updated");
   assert.deepEqual(positioned.screens.start?.position, { x: 128, y: -64 });
   expectError("invalid-map", () =>
@@ -763,6 +768,12 @@ test("renames an App Map and stores finite collaborative screen positions", () =
       context(positioned, "bad-position", positioned.updatedAt + 1),
     ),
   );
+  const cleared = updateAppMap(
+    positioned,
+    { description: null },
+    context(positioned, "clear-description", positioned.updatedAt + 1),
+  );
+  assert.equal(cleared.description, undefined);
 });
 
 test("submits agent work as an attributable pending proposal", () => {
