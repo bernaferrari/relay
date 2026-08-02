@@ -13,13 +13,11 @@ import { useWorkbench } from "../context/workbench";
 import { RunSummary, friendlyError, readableFailure } from "./run-summary";
 import { Icon } from "./icon";
 import { StatusChip, jobStatusChip } from "./status-chip";
-import { ActionIconTrail } from "./action-icon-trail";
 import { EmptyState } from "./empty-state";
 import { cn } from "../lib/cn";
-import { fmtAgo, fmtDur, titleize } from "../lib/job";
+import { fmtAgo, fmtDur } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
 import { toast } from "../context/toast";
-import { presentTarget } from "../lib/target-presentation";
 import { nextRovingIndex } from "../lib/roving-focus";
 import {
   eyebrow,
@@ -27,19 +25,13 @@ import {
   productPrimary,
   productSecondary,
   productPage,
-  productStatus,
   tabUnderline,
   tabUnderlineActive,
 } from "../lib/ui";
 import { withRefreshFeedback } from "../lib/refresh-feedback";
-import { kindIcon, kindLabel } from "./step-list-metadata";
+import { kindIcon } from "./step-list-metadata";
 import { runFrameCanvasItems, type FrameCanvasItem } from "../lib/frame-canvas-presentation";
-import {
-  executionMoments,
-  executionStateLabel,
-  stepGlyph,
-  type ExecutionMomentState,
-} from "../lib/execution-moments";
+import { executionMoments, executionStateLabel } from "../lib/execution-moments";
 import { ExecutionTimeline } from "./execution-timeline";
 import { RunGraph } from "./run-graph";
 import { VisualDiffReview } from "./visual-diff-review";
@@ -62,12 +54,16 @@ import type {
   VisualReviewDecision,
 } from "@relay/protocol";
 import { appMapIdForJob, runStopHeadline } from "../lib/run-presentation";
+import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
 import {
   EvidenceList,
   RunLogsEvidence,
   RunNetworkEvidence,
   RunPerformanceEvidence,
 } from "./run-evidence-panels";
+import { RunBrowser } from "./run-browser";
+import { CompatibilityReportPanel } from "./compatibility-report-panel";
+import { RunRow, RunStepList } from "./run-list-surfaces";
 
 export function RunsWorkspace(props: {
   onOpenRecipe: (id: string) => void;
@@ -876,205 +872,6 @@ export function RunsWorkspace(props: {
   );
 }
 
-function RunBrowser(props: {
-  rows: JobInfo[];
-  selectedId: string | null;
-  onSelect: (job: JobInfo) => void;
-}) {
-  const server = useServer();
-  return (
-    <aside
-      class="flex min-h-0 flex-col border-r border-[var(--v2-border-border-muted)] bg-[var(--v2-background-bg-base)] max-[1180px]:hidden"
-      aria-label="Run browser"
-    >
-      <header class="flex min-h-14 shrink-0 items-center justify-between border-b border-[var(--v2-border-border-muted)] px-3.5">
-        <div>
-          <strong class="block text-[12.5px] font-semibold text-[var(--text-strong)]">Runs</strong>
-          <small class="text-[10px] text-[var(--text-weak)]">{props.rows.length} saved</small>
-        </div>
-        <span class="grid size-7 place-items-center rounded-lg bg-[var(--v2-background-bg-layer-01)] text-[var(--text-weak)]">
-          <Icon name="wave" size={14} />
-        </span>
-      </header>
-      <nav class="min-h-0 flex-1 overflow-y-auto p-2" aria-label="Saved runs">
-        <For each={props.rows}>
-          {(job) => {
-            const recipe = () => server.recipes().find((item) => item.id === job.action);
-            const status = () => jobStatusChip(job.status);
-            return (
-              <button
-                type="button"
-                class={cn(
-                  "mb-0.5 grid min-h-[58px] w-full grid-cols-[8px_minmax(0,1fr)] items-center gap-2 rounded-[9px] px-2.5 text-left outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-white/60",
-                  props.selectedId === job.id
-                    ? "bg-[var(--v2-background-bg-layer-02)]"
-                    : "hover:bg-[var(--v2-background-bg-layer-01)]",
-                )}
-                aria-current={props.selectedId === job.id ? "page" : undefined}
-                onClick={() => props.onSelect(job)}
-              >
-                <span
-                  class={cn(
-                    "size-1.5 rounded-full",
-                    status().tone === "pass"
-                      ? "bg-[var(--icon-success-base)]"
-                      : status().tone === "fail"
-                        ? "bg-[var(--icon-critical-base)]"
-                        : "bg-[var(--v2-background-bg-accent)]",
-                  )}
-                  aria-hidden="true"
-                />
-                <span class="min-w-0">
-                  <strong class="block truncate text-[11.5px] font-medium text-[var(--text-strong)]">
-                    {job.title ?? recipe()?.title ?? titleize(job.action)}
-                  </strong>
-                  <small class="mt-1 flex items-center gap-1.5 text-[9.5px] text-[var(--text-weak)]">
-                    <span>{status().label}</span>
-                    <span aria-hidden="true">·</span>
-                    <span class="font-mono tabular-nums">{fmtDur(job, server.clock()) || "—"}</span>
-                    <span aria-hidden="true">·</span>
-                    <span class="truncate">
-                      {fmtAgo(job.finishedAt ?? job.startedAt ?? job.queuedAt, server.clock()) ||
-                        "now"}
-                    </span>
-                  </small>
-                </span>
-              </button>
-            );
-          }}
-        </For>
-      </nav>
-    </aside>
-  );
-}
-
-function CompatibilityReportPanel(props: {
-  report: import("@relay/protocol").CompatibilityReport | null;
-  selectedProfileId: string;
-}) {
-  return (
-    <Show
-      when={props.report}
-      fallback={
-        <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-4 text-center text-[11px] text-[var(--text-weak)]">
-          Preparing the comparison…
-        </div>
-      }
-    >
-      {(report) => (
-        <div class="grid gap-3">
-          <header class="flex items-start justify-between gap-3">
-            <div>
-              <span class={eyebrow}>Compatibility matrix</span>
-              <strong class="mt-0.5 block text-[13px] text-[var(--text-strong)]">
-                {report().matrixName ?? "Target comparison"}
-              </strong>
-              <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
-                {report().profiles.length} target{report().profiles.length === 1 ? "" : "s"} ·{" "}
-                {report().total} evidence run{report().total === 1 ? "" : "s"}
-              </small>
-            </div>
-            <span class="shrink-0 rounded-full border border-[var(--v2-border-border-muted)] px-[7px] py-1 text-[9px] tracking-[0.08em] text-[var(--text-weak)] uppercase">
-              Same test setup
-            </span>
-          </header>
-          <div class="grid gap-2">
-            <For each={report().profiles}>
-              {(profile) => (
-                <article
-                  class={cn(
-                    "grid gap-2.5 rounded-[10px] border border-[var(--v2-border-border-muted)] bg-[color-mix(in_srgb,var(--v2-background-bg-layer-01)_55%,transparent)] p-3",
-                    profile.profile.id === props.selectedProfileId &&
-                      "border-border-interactive-base bg-surface-interactive-weak",
-                  )}
-                >
-                  <header class="flex items-start justify-between gap-3">
-                    <div>
-                      <strong class="block text-[13px] text-[var(--text-strong)]">
-                        {profile.profile.name}
-                      </strong>
-                      <small class="mt-0.5 block text-[10px] text-[var(--text-weak)]">
-                        {profile.profile.platform}
-                        {profile.profile.osVersion ? ` · ${profile.profile.osVersion}` : ""}
-                      </small>
-                    </div>
-                    <span class={productStatus(profile.passRate === 1 ? "ok" : "error")}>
-                      {profile.passRate == null
-                        ? "Pending"
-                        : `${Math.round(profile.passRate * 100)}%`}
-                    </span>
-                  </header>
-                  <div class="grid grid-cols-2 gap-2">
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--v2-background-bg-base)] p-2">
-                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
-                        Pass rate
-                      </b>
-                      <strong class="text-[12px] text-[var(--text-strong)]">
-                        {profile.passRate == null
-                          ? "No product verdict yet"
-                          : `${Math.round(profile.passRate * 100)}%`}
-                      </strong>
-                    </span>
-                    <span class="grid gap-0.5 rounded-[7px] bg-[var(--v2-background-bg-base)] p-2">
-                      <b class="text-[9px] font-medium tracking-[0.08em] text-[var(--text-weak)] uppercase">
-                        Median duration
-                      </b>
-                      <strong class="text-[12px] text-[var(--text-strong)]">
-                        {profile.medianDurationMs == null
-                          ? "—"
-                          : `${(profile.medianDurationMs / 1000).toFixed(1)}s`}
-                      </strong>
-                    </span>
-                  </div>
-                  <p class="m-0 text-[10px]/[1.45] text-[var(--text-base)]">
-                    {profile.passed} passed · {profile.productFailures} product ·{" "}
-                    {profile.harnessFailures} harness
-                    {profile.uncertain ? ` · ${profile.uncertain} uncertain` : ""}
-                    {profile.pending ? ` · ${profile.pending} pending` : ""}
-                  </p>
-                  <Show when={profile.baseline}>
-                    {(baseline) => (
-                      <footer class="border-t border-[var(--v2-border-border-muted)] pt-2 text-[10px]/[1.4] text-[var(--text-weak)]">
-                        Versus {baseline().total} earlier run{baseline().total === 1 ? "" : "s"}:{" "}
-                        {formatPassDelta(baseline().passRateDelta)} ·{" "}
-                        {formatDurationDelta(baseline().durationDeltaMs)}
-                      </footer>
-                    )}
-                  </Show>
-                </article>
-              )}
-            </For>
-          </div>
-        </div>
-      )}
-    </Show>
-  );
-}
-
-function formatPassDelta(value: number | null): string {
-  if (value == null) return "no pass-rate baseline";
-  const points = Math.round(value * 100);
-  return `${points > 0 ? "+" : ""}${points} pts`;
-}
-
-function formatDurationDelta(value: number | null): string {
-  if (value == null) return "no duration baseline";
-  const seconds = value / 1000;
-  return `${seconds > 0 ? "+" : ""}${seconds.toFixed(1)}s`;
-}
-
-function formatStepDuration(durationMs: number): string {
-  return durationMs < 1000 ? `${Math.round(durationMs)}ms` : `${(durationMs / 1000).toFixed(1)}s`;
-}
-
-function runStateDot(state: ExecutionMomentState): string {
-  if (state === "failed" || state === "cancelled") return "bg-[var(--icon-critical-base)]";
-  if (state === "planned") return "bg-[var(--v2-border-border-strong)]";
-  if (state === "running")
-    return "bg-[var(--v2-background-bg-accent)] shadow-[0_0_8px_var(--v2-background-bg-accent)]";
-  return "bg-[var(--icon-success-base)]";
-}
-
 type VideoArtifactData = {
   startedAt?: number;
   stoppedAt?: number;
@@ -1548,245 +1345,3 @@ function RunReplayStage(props: {
     </section>
   );
 }
-
-/** The supporting action list for a run report. Playback remains the primary
- * review surface; this list exists to explain and jump to a moment. */
-function RunStepList(props: {
-  job: JobInfo;
-  selectedIndex: number;
-  onSelect: (index: number) => void;
-}) {
-  const server = useServer();
-  const snapshot = () =>
-    props.job.recipeSnapshot ?? server.recipes().find((recipe) => recipe.id === props.job.action);
-  const nodes = createMemo(() =>
-    executionMoments({ recipe: snapshot(), job: props.job, recipes: server.recipes() }),
-  );
-  return (
-    <div class="grid content-start">
-      <div class="relative grid content-start before:absolute before:top-8 before:bottom-8 before:left-6 before:w-px before:bg-[var(--v2-border-border-strong)]">
-        <For
-          each={nodes()}
-          fallback={
-            <div class="rounded-[10px] border border-dashed border-[var(--v2-border-border-muted)] px-3 py-5 text-center text-[12px] text-[var(--text-weak)]">
-              No steps were recorded for this run.
-            </div>
-          }
-        >
-          {(node) => {
-            const active = () => props.selectedIndex === node.index;
-            const kind = () => snapshot()?.steps[node.index]?.kind;
-            return (
-              <button
-                type="button"
-                class={cn(
-                  "relative grid min-h-16 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-[background-color,transform] duration-150 active:scale-[0.99]",
-                  active()
-                    ? "bg-[color-mix(in_srgb,var(--v2-background-bg-accent)_11%,var(--v2-background-bg-base))]"
-                    : "hover:bg-[var(--v2-background-bg-layer-01)]",
-                  node.state === "planned" && !active() && "opacity-55",
-                )}
-                aria-current={active() ? "step" : undefined}
-                onClick={() => props.onSelect(node.index)}
-              >
-                {/* Square number badge — outlined in accent when this is the
-                    selected step, matching the "raised row + outlined badge"
-                    selection language used across the run report. */}
-                <span
-                  class={cn(
-                    "relative z-[1] grid size-8 place-items-center rounded-[9px] border bg-[var(--v2-background-bg-base)] font-mono text-[11px] font-semibold tabular-nums",
-                    active()
-                      ? "border-[var(--v2-background-bg-accent)] text-[var(--text-interactive-base)]"
-                      : node.state === "failed"
-                        ? "border-[var(--icon-critical-base)] text-[var(--icon-critical-base)]"
-                        : "border-[var(--v2-border-border-strong)] text-[var(--text-weak)]",
-                  )}
-                >
-                  {node.index + 1}
-                </span>
-                <span class="min-w-0 pr-2">
-                  <span class="flex min-w-0 items-center gap-1.5 text-[10px] font-medium text-text-weaker">
-                    <Icon name={kind() ? kindIcon(kind()!) : "bolt"} size={11} class="shrink-0" />
-                    <span class="shrink-0 tracking-[0.02em]">
-                      {kind() ? kindLabel(kind()!) : "Step"}
-                    </span>
-                    <Show when={node.durationMs}>
-                      <span class="shrink-0 text-text-weaker/70">·</span>
-                      <span class={cn(mono, "shrink-0 text-[10px]")}>
-                        {formatStepDuration(node.durationMs!)}
-                      </span>
-                    </Show>
-                    <Show when={node.actions.length > 0 ? node.actions : undefined}>
-                      {(actions) => (
-                        <>
-                          <span class="shrink-0 text-text-weaker/70">·</span>
-                          <ActionIconTrail glyphs={actions()} max={8} />
-                        </>
-                      )}
-                    </Show>
-                  </span>
-                  <strong class="mt-1 block truncate text-[13.5px]/[1.35] font-medium tracking-[-0.005em] text-text-strong">
-                    {node.title}
-                  </strong>
-                </span>
-                <span class="grid shrink-0 justify-items-end gap-1 text-text-weaker">
-                  <i class={cn("size-1.5 rounded-full", runStateDot(node.state))} />
-                </span>
-              </button>
-            );
-          }}
-        </For>
-      </div>
-    </div>
-  );
-}
-
-function RunRow(props: { job: JobInfo; selected: boolean; onOpen: () => void }) {
-  const server = useServer();
-  const recipe = () => server.recipes().find((item) => item.id === props.job.action);
-  const targetName = () => {
-    if (props.job.targetProfile?.name) return props.job.targetProfile.name;
-    const target = server.devices().find((device) => device.serial === props.job.serial);
-    // A finished run's device may no longer be connected — that's not a
-    // problem to report, so fall back to the recorded identifier as-is.
-    return target ? presentTarget(target).displayName : (props.job.serial ?? null);
-  };
-  const status = () =>
-    props.job.outcome === "passed"
-      ? "Passed"
-      : props.job.outcome === "product-failure"
-        ? "App issue"
-        : props.job.outcome === "harness-failure"
-          ? "Could not run"
-          : props.job.outcome === "uncertain"
-            ? "Needs review"
-            : props.job.status === "ok"
-              ? "Passed"
-              : props.job.status === "error"
-                ? "Needs attention"
-                : titleize(props.job.status);
-  const glyphSteps = () => (props.job.recipeSnapshot ?? recipe())?.steps ?? [];
-  const passed = () => props.job.status === "ok" || props.job.status === "healed";
-  const active = () => ["queued", "running", "paused"].includes(props.job.status);
-  /** Cheap frame-thumbnail strip: reuses whatever frame refs the row already
-   * carries (persisted runs resolve to static file URLs, live jobs may embed
-   * base64 directly) — no extra request per row. */
-  const frameThumbs = createMemo(() => {
-    const job = props.job;
-    const raw = [...(job.frames ?? []), ...(job.steps?.flatMap((step) => step.frames ?? []) ?? [])];
-    if (raw.length === 0) return [];
-    const seen = new Set<string>();
-    const persisted = Boolean(job.persisted || job.runDir);
-    const urls: string[] = [];
-    for (const frame of raw) {
-      const key = `${frame.path}|${frame.capturedAt}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const src = frame.base64
-        ? `data:${frame.mime || "image/png"};base64,${frame.base64}`
-        : persisted
-          ? server.frameUrlForPersisted(job as unknown as PersistedRun, frame)
-          : null;
-      if (src) urls.push(src);
-      if (urls.length >= 3) break;
-    }
-    return urls;
-  });
-  const rowLabel = () =>
-    [
-      props.job.title ?? recipe()?.title ?? titleize(props.job.action),
-      status(),
-      fmtDur(props.job, server.clock()),
-      fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "just now",
-    ]
-      .filter(Boolean)
-      .join(", ");
-  return (
-    <button
-      type="button"
-      class={cn(
-        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-[12px]/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-150 last:mb-0 hover:border-[var(--v2-border-border-strong)] hover:bg-[var(--v2-background-bg-layer-01)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
-        props.selected && "border-border-interactive-base bg-surface-base-active",
-      )}
-      aria-current={props.selected ? "true" : undefined}
-      aria-label={rowLabel()}
-      onClick={props.onOpen}
-    >
-      <span
-        class={cn(
-          "grid size-9 place-items-center rounded-[10px]",
-          passed() && "bg-surface-success-weak text-icon-success-base",
-          active() && "bg-surface-info-weak text-icon-info-base",
-          !passed() && !active() && "bg-surface-critical-weak text-icon-critical-base",
-        )}
-        aria-hidden="true"
-      >
-        <Icon name={passed() ? "check" : active() ? "play" : "alert"} size={16} />
-      </span>
-      <span class="min-w-0">
-        <strong class="block truncate text-[13px]/[1.3] font-[550] text-text-base">
-          {props.job.title ?? recipe()?.title ?? titleize(props.job.action)}
-        </strong>
-        <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-weaker">
-          <span
-            class={cn(
-              "font-medium",
-              passed() && "text-text-success-base",
-              !passed() && !active() && "text-text-critical-base",
-            )}
-          >
-            {status()}
-          </span>
-          <Show when={glyphSteps().length > 0}>
-            <span class="opacity-50">·</span>
-            <span class="text-[11px]">
-              {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
-            </span>
-            <span class="opacity-50">·</span>
-            <ActionIconTrail glyphs={glyphSteps().map((step) => stepGlyph(step.kind))} max={8} />
-          </Show>
-          <Show when={targetName()}>
-            <span class="opacity-50">·</span>
-            <span class="max-w-[220px] truncate">{targetName()}</span>
-          </Show>
-          <Show when={props.job.appVersion}>
-            <i class="font-mono text-[11px] not-italic">· build {props.job.appVersion}</i>
-          </Show>
-          <Show when={props.job.failureCategory}>
-            <i class="truncate text-[11px] not-italic text-icon-critical-base">
-              · {titleize(props.job.failureCategory!)}
-            </i>
-          </Show>
-        </span>
-        <Show when={frameThumbs().length > 0}>
-          <span class="mt-1.5 flex items-center gap-1" aria-hidden="true">
-            <For each={frameThumbs()}>
-              {(src) => (
-                <img
-                  src={src}
-                  alt=""
-                  class="h-8 w-[18px] shrink-0 rounded-[3px] border border-border-weak-base object-cover opacity-90"
-                />
-              )}
-            </For>
-          </span>
-        </Show>
-      </span>
-      <span class="grid justify-items-end gap-1.5">
-        <span class="font-mono text-[11px] tabular-nums text-text-base">
-          {fmtDur(props.job, server.clock()) || "—"}
-        </span>
-        <span class="inline-flex items-center gap-1.5 text-[10.5px] text-text-weaker">
-          <span class={cn(mono, "text-[10.5px]")}>
-            {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
-          </span>
-          <Icon name="chevron-right" size={13} />
-        </span>
-      </span>
-    </button>
-  );
-}
-
-/** Inputs make a recorded recipe an attachable reusable flow. The UI keeps the
- * declaration deliberately small: names are Git-visible, defaults are safe
- * data, and callers bind actual frozen values at the attachment point. */
