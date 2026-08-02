@@ -1938,6 +1938,11 @@ export function AppMapWorkspace(props: {
                   {(connection) => (
                     <ConnectionInspector
                       connection={connection()}
+                      actionCount={canonicalConnectionFor(connection())?.actions.reduce(
+                        (count, action) =>
+                          count + (action.kind === "recorded" ? action.steps.length : 1),
+                        0,
+                      )}
                       sourceTitle={titleFor(
                         tree().nodes.find((node) => node.id === connection().fromScreenId)!,
                       )}

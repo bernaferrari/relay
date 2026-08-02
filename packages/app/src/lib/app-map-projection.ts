@@ -220,15 +220,6 @@ export function mergeAppMapProjection(metadata: JourneyMetadata, appMap: AppMap)
         ...(connection.label ? { label: connection.label } : {}),
         state: connection.state === "ready" ? ("recorded" as const) : ("needs-recording" as const),
         kind: "forward" as const,
-        ...(connection.state === "ready"
-          ? {
-              review: {
-                status: "verified" as const,
-                updatedAt: connection.updatedAt,
-                verifiedAt: connection.updatedAt,
-              },
-            }
-          : {}),
         createdAt: connection.createdAt,
         updatedAt: connection.updatedAt,
       };

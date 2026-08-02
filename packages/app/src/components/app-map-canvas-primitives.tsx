@@ -434,6 +434,7 @@ export function ConnectionInspector(props: {
   connection: CanvasConnection;
   sourceTitle: string;
   targetTitle: string;
+  actionCount?: number;
   setup: {
     behaviors: Array<{ id: string; label: string; actionCount: number }>;
     onRecord: () => void;
@@ -455,11 +456,9 @@ export function ConnectionInspector(props: {
 }) {
   const pending = () => props.connection.state === "needs-recording";
   const [optionsOpen, setOptionsOpen] = createSignal(false);
-  const actionCount = () => props.connection.stepIds.length;
+  const actionCount = () => props.actionCount ?? props.connection.stepIds.length;
   const verified = () => props.connection.review?.status === "verified";
   const failed = () => props.connection.review?.status === "failed";
-  const statusLabel = () =>
-    pending() ? "Planned" : verified() ? "Verified" : failed() ? "Needs attention" : "Captured";
   const modeLabel = () =>
     props.connection.mode === "automatic"
       ? "Automatic"
@@ -485,7 +484,7 @@ export function ConnectionInspector(props: {
                     : "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]",
             )}
           >
-            {statusLabel()}
+            {connectionStatusLabel(props.connection)}
           </span>
           <button
             type="button"
@@ -724,4 +723,12 @@ export function checkedTargetsLabel(
   if (!targets?.length) return "No target evidence recorded";
   if (targets.length === 1) return `Checked on ${targets[0]!.targetName ?? targets[0]!.targetId}`;
   return `Checked on ${targets.length} targets`;
+}
+
+export function connectionStatusLabel(connection: CanvasConnection): string {
+  if (connection.state === "needs-recording") return "Planned";
+  if (connection.review?.status === "verified") return "Verified";
+  if (connection.review?.status === "failed") return "Needs attention";
+  if (connection.takeId || connection.videoTakeId) return "Captured";
+  return "Ready";
 }

@@ -97,7 +97,7 @@ test("does not erase agent-owned entities or emit unchanged canvas fields", () =
   assert.ok(projected.screens.agent);
 });
 
-test("projects approved canonical changes back into the human canvas", () => {
+test("projects canonical changes back without inventing verification evidence", () => {
   const projected = structuredClone(map);
   projected.revision = 4;
   projected.screens.start = {
@@ -154,6 +154,6 @@ test("projects approved canonical changes back into the human canvas", () => {
     projected,
   );
   assert.deepEqual(metadata.positions.home, { x: 360, y: 48 });
-  assert.equal(metadata.graph?.transitions[0]?.review?.status, "verified");
+  assert.equal(metadata.graph?.transitions[0]?.review, undefined);
   assert.equal(metadata.graph?.flows[0]?.screenId, "start");
 });
