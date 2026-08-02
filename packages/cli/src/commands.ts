@@ -297,6 +297,21 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("app-map.connection.remove", path("connect remove", ["appMapId", "connectionId"])),
   mapped("app-map.flow.save", path("flow save", ["appMapId", "flowId"])),
   mapped("app-map.flow.remove", path("flow remove", ["appMapId", "flowId"])),
+  mapped(
+    "app-map.flow.run",
+    path("flow run", ["appMapId", "flowId"], undefined, {
+      summary: "Run a saved App Map flow",
+      argumentHelp: [
+        { name: "appMapId", type: "string", description: "App Map identifier" },
+        { name: "flowId", type: "string", description: "Saved flow identifier" },
+      ],
+      inputHelp: [
+        { name: "serial", type: "string", description: "Device serial" },
+        { name: "platform", type: "android | ios", description: "Device platform" },
+      ],
+      examples: ['relay flow run checkout main --input \'{"serial":"emulator-5554"}\''],
+    }),
+  ),
   mapped("app-map.routine.save", path("routine save", ["appMapId", "routineId"])),
   mapped("app-map.routine.remove", path("routine remove", ["appMapId", "routineId"])),
   mapped("app-map.proposal.submit", path("proposal submit", ["appMapId"])),
@@ -751,7 +766,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped(
     "job.graph-path.start",
     path("job graph-path start"),
-    path("flow run", ["recipe", "flowName"], undefined, {
+    path("journey flow run", ["recipe", "flowName"], undefined, {
       summary: "Run a named path through an App Map",
       argumentHelp: [
         { name: "mapId", type: "string", description: "App Map identifier" },

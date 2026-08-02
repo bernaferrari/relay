@@ -273,11 +273,11 @@ test("resource commands and App Map aliases parse with explicit behavior", () =>
     commandPath: "activity list",
   });
 
-  const flow = parseCli(["flow", "run", "checkout", "Main"], {});
+  const flow = parseCli(["flow", "run", "checkout", "main"], {});
   assert.equal(flow.command, "invoke");
   if (flow.command === "invoke") {
-    assert.equal(flow.operationId, "job.graph-path.start");
-    assert.deepEqual(flow.input, { recipe: "checkout", flowName: "Main" });
+    assert.equal(flow.operationId, "app-map.flow.run");
+    assert.deepEqual(flow.input, { appMapId: "checkout", flowId: "main" });
   }
 
   const follow = parseCli(["activity", "follow", "--ndjson"], {});

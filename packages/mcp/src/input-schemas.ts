@@ -254,6 +254,17 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
       eventId: identifier("Optional idempotent activity event identifier").optional(),
     })
     .strict(),
+  "app-map.flow.run": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      flowId: identifier("Saved flow identifier"),
+      serial: identifier("Connected device serial").optional(),
+      platform: z.enum(["android", "ios"]).optional(),
+      targetKind: z.enum(["device", "browser"]).optional(),
+      browserTargetId: identifier("Managed browser target identifier").optional(),
+      variables: z.record(z.string(), z.string()).optional(),
+    })
+    .strict(),
   "app-map.routine.save": z
     .object({
       appMapId: identifier("App Map identifier"),

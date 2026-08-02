@@ -215,3 +215,101 @@ test("an agent turns observations into a proposal that a human must approve", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a saved App Map flow runs without a Journey projection", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-map-run-"));
+  const previous = process.env.GROK_DEVICE_STATE_DIR;
+  process.env.GROK_DEVICE_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:runner",
+      actorKind: "human",
+    });
+    await client.invoke("app-map.create", { appMapId: "store", name: "Store" });
+    const scoped = (id: string) => ({
+      id,
+      organizationId: "acme",
+      projectId: "mobile",
+      appMapId: "store",
+      createdAt: 100,
+      updatedAt: 100,
+    });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "store",
+      expectedRevision: 0,
+      input: {
+        screen: {
+          ...scoped("welcome"),
+          title: "Welcome",
+          identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+          variantIds: [],
+        },
+      },
+    });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "store",
+      expectedRevision: 1,
+      input: {
+        screen: {
+          ...scoped("home"),
+          title: "Home",
+          identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+          variantIds: [],
+        },
+      },
+    });
+    await client.invoke("app-map.connection.create", {
+      appMapId: "store",
+      expectedRevision: 2,
+      connection: {
+        ...scoped("continue"),
+        fromScreenId: "welcome",
+        destination: { kind: "screen", screenId: "home" },
+        state: "ready",
+        actions: [{ id: "tap-continue", kind: "tap", target: { label: "Continue" } }],
+      },
+    });
+    await client.invoke("app-map.flow.save", {
+      appMapId: "store",
+      flowId: "main",
+      expectedRevision: 3,
+      flow: {
+        ...scoped("main"),
+        name: "Main",
+        startScreenId: "welcome",
+        connectionIds: ["continue"],
+      },
+    });
+    await client.invoke("lease.create", {
+      poolId: "local",
+      deviceSerial: "virtual-target",
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const result = await client.invoke("app-map.flow.run", {
+      appMapId: "store",
+      flowId: "main",
+      serial: "virtual-target",
+      platform: "android",
+      targetKind: "device",
+    });
+    assert.equal(result.plan.appMapId, "store");
+    assert.equal(result.plan.appMapRevision, 4);
+    assert.equal(result.plan.flow.id, "main");
+    assert.deepEqual(
+      result.plan.recipes[result.plan.rootRecipeId]!.steps.map((step) => step.kind),
+      ["tap", "expect-screen"],
+    );
+    assert.equal((result.job as { projectId?: string }).projectId, "mobile");
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
+    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

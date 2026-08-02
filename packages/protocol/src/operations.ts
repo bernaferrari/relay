@@ -38,6 +38,7 @@ import {
 import type {
   AddScreenInput,
   AppMap,
+  AppMapCompiledFlow,
   AppMapPatch,
   Connection,
   ConnectionPatch,
@@ -412,6 +413,18 @@ type SpecificOperationMap = {
   "app-map.flow.remove": {
     input: { appMapId: string; flowId: string; expectedRevision: number; eventId?: string };
     output: { appMap: AppMap };
+  };
+  "app-map.flow.run": {
+    input: {
+      appMapId: string;
+      flowId: string;
+      serial?: string;
+      platform?: "android" | "ios";
+      targetKind?: "device" | "browser";
+      browserTargetId?: string;
+      variables?: Record<string, string>;
+    };
+    output: { job: OperationRecord; plan: AppMapCompiledFlow };
   };
   "app-map.routine.save": {
     input: {
@@ -929,6 +942,41 @@ const appMapCreateParser = objectParser<OperationInput<"app-map.create">>(
   (input) => {
     string(input.appMapId, "App Map id");
     string(input.name, "App Map name");
+  },
+);
+
+const appMapFlowRunParser = objectParser<OperationInput<"app-map.flow.run">>(
+  "App Map flow run input",
+  (input) => {
+    string(input.appMapId, "App Map flow run appMapId");
+    string(input.flowId, "App Map flow run flowId");
+    if (input.serial !== undefined) string(input.serial, "App Map flow run serial");
+    if (input.browserTargetId !== undefined) {
+      string(input.browserTargetId, "App Map flow run browserTargetId");
+    }
+    if (input.platform !== undefined && input.platform !== "android" && input.platform !== "ios") {
+      fail("App Map flow run platform", "must be android or ios");
+    }
+    if (
+      input.targetKind !== undefined &&
+      input.targetKind !== "device" &&
+      input.targetKind !== "browser"
+    ) {
+      fail("App Map flow run targetKind", "must be device or browser");
+    }
+    if (input.variables !== undefined) {
+      for (const [name, value] of Object.entries(record(input.variables, "App Map variables"))) {
+        string(value, `App Map variable ${name}`);
+      }
+    }
+  },
+);
+
+const appMapFlowRunOutputParser = objectParser<OperationOutput<"app-map.flow.run">>(
+  "App Map flow run response",
+  (input) => {
+    record(input.job, "App Map flow run job");
+    record(input.plan, "App Map flow run plan");
   },
 );
 
@@ -1651,6 +1699,15 @@ export const operationDefinitions = [
     category: "authoring",
     input: appMapMutationParser<"app-map.flow.save">("Flow save", "flow", ["flowId"]),
     output: appMapOutputParser,
+  }),
+  command("app-map.flow.run", "Run App Map flow", "POST", "/app-maps/:appMapId/flows/:flowId/run", {
+    category: "execution",
+    input: appMapFlowRunParser,
+    output: appMapFlowRunOutputParser,
+    targetCapabilities: ["tap", "type", "scroll", "screenshot"],
+    lease: "exclusive",
+    progress: true,
+    cancellable: true,
   }),
   command(
     "app-map.flow.remove",

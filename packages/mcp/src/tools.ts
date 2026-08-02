@@ -146,6 +146,7 @@ const executeSupport = new Set<OperationId>([
   "matrix.resolve",
   "run.list",
   "step.run",
+  "app-map.flow.run",
 ]);
 
 const reviewSupport = new Set<OperationId>([

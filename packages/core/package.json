@@ -38,7 +38,8 @@
     "./screen-identity": "./src/screen-identity.ts",
     "./journey-graph-compiler": "./src/journey-graph-compiler.ts",
     "./journey-aggregate": "./src/journey-aggregate.ts",
-    "./authoring-sessions": "./src/authoring-sessions.ts"
+    "./authoring-sessions": "./src/authoring-sessions.ts",
+    "./app-map-compiler": "./src/app-map-compiler.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

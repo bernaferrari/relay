@@ -561,26 +561,13 @@ export function AppMapWorkspace(props: {
     }),
   );
   const runJourneyGraph = () => {
-    const recipeId = server.selectedRecipeId();
-    const flow = graph().flows[0];
-    if (!recipeId || !flow) {
+    const appMap = activeAppMap();
+    const flow = appMap ? Object.values(appMap.flows)[0] : undefined;
+    if (!appMap || !flow) {
       toast("Add and verify a connection before running this flow", "info");
       return;
     }
-    const readiness = graphRunReadiness();
-    const transitionPath = readiness.transitionPath;
-    if (!readiness.ready || !transitionPath) {
-      toast(readiness.reason, "info");
-      return;
-    }
-    if (flow.targetSetId) {
-      void server.runCompatibilityMatrixRemote(recipeId, flow.targetSetId, 1, {
-        flowName: flow.name,
-        transitionPath,
-      });
-      return;
-    }
-    void server.runJourneyPathRemote(recipeId, flow.name, transitionPath);
+    void server.runAppMapFlowRemote(appMap.id, flow.id, flow.name);
   };
   const reusableBehaviors = createMemo(() =>
     server

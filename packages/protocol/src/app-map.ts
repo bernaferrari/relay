@@ -138,6 +138,46 @@ export type Flow = AppMapEntity & {
   connectionIds: string[];
 };
 
+export type AppMapCompiledStepProvenance = {
+  recipeId: string;
+  stepIndex: number;
+  stepId: string;
+  origin: "action" | "destination";
+  ownerKind: "connection" | "routine";
+  ownerId: string;
+  actionId?: string;
+};
+
+export type AppMapCompiledRecipe = {
+  id: string;
+  title: string;
+  description?: string;
+  parameters: RecipeParameter[];
+  steps: RecipeStep[];
+  stepProvenance: AppMapCompiledStepProvenance[];
+};
+
+export type AppMapCompiledConnection = {
+  connectionIndex: number;
+  connectionId: string;
+  fromScreenId: string;
+  destination: ConnectionDestination;
+  /** Half-open range in the root recipe: [start, end). */
+  compiledStepRange: readonly [start: number, end: number];
+};
+
+/** Immutable execution plan compiled from one exact App Map revision. */
+export type AppMapCompiledFlow = {
+  schemaVersion: 1;
+  appMapId: string;
+  appMapRevision: number;
+  flow: Pick<Flow, "id" | "name" | "startScreenId">;
+  rootRecipeId: string;
+  recipes: Record<string, AppMapCompiledRecipe>;
+  connections: AppMapCompiledConnection[];
+  terminal: ConnectionDestination | { kind: "screen"; screenId: string };
+};
+
 export type RunReference = AppMapEntity & {
   flowId?: string;
   appMapRevision: number;

@@ -4,6 +4,7 @@ import { toast } from "../context/toast";
 import type { CompatibilityReport, DeviceInfo, JobInfo, LogLine, RecipeInfo } from "./api-types";
 import type { ServerRequest } from "./server-matrix-remote";
 import {
+  enqueueAppMapFlow,
   enqueueJourneyGraphPath,
   enqueueMatrix,
   enqueueRecipe,
@@ -34,6 +35,41 @@ type RunControllerDependencies = {
 };
 
 export function createServerRunController(deps: RunControllerDependencies) {
+  async function runAppMapFlow(appMapId: string, flowId: string, title: string): Promise<void> {
+    if (deps.health() !== "online") {
+      toast("Relay isn’t connected — can’t run yet", "warning");
+      return;
+    }
+    const serial = deps.selectedDevice() ?? undefined;
+    if (!serial) {
+      toast("Choose a device before running this flow", "info");
+      return;
+    }
+    const targetPlatform =
+      deps.devices().find((device) => device.serial === serial)?.platform ?? "android";
+    try {
+      await deps.captureBeforeRun(`before · ${title}`, appMapId).catch(() => undefined);
+      const { job } = await enqueueAppMapFlow(deps.request, {
+        appMapId,
+        flowId,
+        serial,
+        ...(targetPlatform === "browser"
+          ? { targetKind: "browser" as const, browserTargetId: serial }
+          : { targetKind: "device" as const, platform: targetPlatform }),
+      });
+      deps.setSelectedJobId(job.id);
+      deps.setSelectedAction(appMapId);
+      deps.rememberJob(job);
+      toast(`Running ${title}`, "success");
+      void deps.refreshJobs();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deps.appendLog(message, "error");
+      toast(message, "warning");
+      deps.setError(message);
+    }
+  }
+
   async function runJourneyPath(
     id: string,
     flowName: string,
@@ -176,6 +212,7 @@ export function createServerRunController(deps: RunControllerDependencies) {
 
   return {
     runRecipe,
+    runAppMapFlow,
     runJourneyPath,
     runCompatibilityMatrix,
     loadCompatibilityReport,

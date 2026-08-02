@@ -41,6 +41,25 @@ export async function enqueueJourneyGraphPath(
   });
 }
 
+export async function enqueueAppMapFlow(
+  request: ServerRequest,
+  input: {
+    appMapId: string;
+    flowId: string;
+    serial?: string;
+    targetKind: "browser" | "device";
+    browserTargetId?: string;
+    platform?: "android" | "ios";
+    variables?: Record<string, string>;
+  },
+): Promise<{ job: JobInfo }> {
+  const { appMapId, flowId, ...body } = input;
+  return request<{ job: JobInfo }>(
+    `/app-maps/${encodeURIComponent(appMapId)}/flows/${encodeURIComponent(flowId)}/run`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
 export async function enqueueMatrix(
   request: ServerRequest,
   input: {

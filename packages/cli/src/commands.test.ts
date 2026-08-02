@@ -143,9 +143,9 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { appMapId: "checkout", connectionId: "continue" },
     ],
     [
-      ["flow", "run", "checkout", "Main"],
-      "job.graph-path.start",
-      { recipe: "checkout", flowName: "Main" },
+      ["flow", "run", "checkout", "main"],
+      "app-map.flow.run",
+      { appMapId: "checkout", flowId: "main" },
     ],
     [
       ["routine", "run", "login", "pixel-9"],

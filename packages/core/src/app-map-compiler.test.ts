@@ -1,0 +1,137 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { AppMap, AppMapEntity, Connection, Routine, Screen } from "@relay/protocol";
+import { AppMapCompileError, compileAppMapFlow } from "./app-map-compiler.js";
+
+const at = 1_000;
+const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
+
+function entity(id: string): AppMapEntity {
+  return { ...scope, id, createdAt: at, updatedAt: at };
+}
+
+function screen(id: string, title: string): Screen {
+  const fingerprint = id === "welcome" ? "a".repeat(64) : "b".repeat(64);
+  return {
+    ...entity(id),
+    title,
+    identity: { schemaVersion: 1, fingerprint },
+    variantIds: [],
+  };
+}
+
+function fixture(): AppMap {
+  const signIn: Routine = {
+    ...entity("sign-in"),
+    name: "Sign in",
+    parameters: [{ name: "email", required: true }],
+    actions: [{ id: "enter-email", kind: "text", text: "{{email}}" }],
+  };
+  const connection: Connection = {
+    ...entity("open-home"),
+    fromScreenId: "welcome",
+    destination: { kind: "screen", screenId: "home" },
+    state: "ready",
+    actions: [
+      {
+        id: "use-sign-in",
+        kind: "routine",
+        routineId: signIn.id,
+        bindings: { email: "{{account_email}}" },
+      },
+      { id: "continue", kind: "tap", target: { label: "Continue" } },
+    ],
+  };
+  return {
+    schemaVersion: 1,
+    id: scope.appMapId,
+    organizationId: scope.organizationId,
+    projectId: scope.projectId,
+    name: "Store",
+    revision: 7,
+    screens: {
+      welcome: screen("welcome", "Welcome"),
+      home: screen("home", "Home"),
+    },
+    screenVariants: {},
+    connections: { [connection.id]: connection },
+    routines: { [signIn.id]: signIn },
+    flows: {
+      checkout: {
+        ...entity("checkout"),
+        name: "Checkout",
+        startScreenId: "welcome",
+        connectionIds: [connection.id],
+      },
+    },
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+test("compiles an App Map flow into frozen runner recipes and destination verification", () => {
+  const plan = compileAppMapFlow(fixture(), "checkout");
+  const root = plan.recipes[plan.rootRecipeId]!;
+  const routineId = "app-map:map-1:routine:sign-in:r7";
+
+  assert.equal(plan.appMapRevision, 7);
+  assert.deepEqual(plan.flow, {
+    id: "checkout",
+    name: "Checkout",
+    startScreenId: "welcome",
+  });
+  assert.deepEqual(root.steps, [
+    {
+      id: "relay-action-use-sign-in",
+      kind: "module",
+      recipeId: routineId,
+      bindings: { email: "{{account_email}}" },
+    },
+    { id: "relay-action-continue", kind: "tap", target: { label: "Continue" } },
+    {
+      id: "relay-destination-open-home",
+      kind: "expect-screen",
+      screenId: "home",
+      screenTitle: "Home",
+      fingerprint: "b".repeat(64),
+    },
+  ]);
+  assert.deepEqual(plan.recipes[routineId]!.steps, [
+    { id: "relay-action-enter-email", kind: "type", text: "{{email}}" },
+  ]);
+  assert.deepEqual(plan.connections[0]!.compiledStepRange, [0, 3]);
+  assert.equal(root.stepProvenance[2]!.origin, "destination");
+});
+
+test("refuses to run drafts and unverifiable destinations", () => {
+  const draft = fixture();
+  draft.connections["open-home"]!.state = "draft";
+  assert.throws(
+    () => compileAppMapFlow(draft, "checkout"),
+    (error: unknown) => error instanceof AppMapCompileError && error.code === "draft-connection",
+  );
+
+  const missingIdentity = fixture();
+  delete missingIdentity.screens.home!.identity;
+  assert.throws(
+    () => compileAppMapFlow(missingIdentity, "checkout"),
+    (error: unknown) =>
+      error instanceof AppMapCompileError && error.code === "missing-screen-identity",
+  );
+});
+
+test("keeps passive transitions executable by verifying only their destination", () => {
+  const map = fixture();
+  map.connections["open-home"]!.actions = [
+    { id: "automatic", kind: "passive", reason: "automatic" },
+  ];
+  const plan = compileAppMapFlow(map, "checkout");
+  assert.deepEqual(
+    plan.recipes[plan.rootRecipeId]!.steps.map((step) => step.kind),
+    ["expect-screen"],
+  );
+});

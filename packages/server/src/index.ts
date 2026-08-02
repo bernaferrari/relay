@@ -179,6 +179,7 @@ import {
 import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
 import { handleActivityRoute, recordOperationActivity } from "./activity-routes.js";
 import { handleAppMapRoute } from "./app-map-routes.js";
+import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import {
   handleTargetRuntimeRoute,
   type TargetRuntimeRouteRuntime,
@@ -398,6 +399,8 @@ async function handleRequest(
     const operation = bindOperationRequest(req, res, method, pathname, url, scope);
     if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
     if (operation) await recordOperationActivity({ operation, pathname, scope });
+    if (await handleAppMapRunRoute({ method, pathname, request: req, response: res, scope }))
+      return;
     if (await handleAppMapRoute({ method, pathname, request: req, response: res, scope })) return;
     if (
       await handleTargetRuntimeRoute({

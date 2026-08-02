@@ -1812,6 +1812,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         .reverse();
     const {
       runRecipe: runRecipeRemote,
+      runAppMapFlow: runAppMapFlowRemote,
       runJourneyPath: runJourneyPathRemote,
       runCompatibilityMatrix: runCompatibilityMatrixRemote,
       loadCompatibilityReport,
@@ -2002,6 +2003,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       pollHealth,
       retryConnection,
       runRecipeRemote,
+      runAppMapFlowRemote,
       runJourneyPathRemote,
       runCompatibilityMatrixRemote,
       loadCompatibilityReport,
