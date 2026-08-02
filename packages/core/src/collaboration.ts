@@ -19,6 +19,7 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { commitJourneyAggregate, readJourneyAggregate } from "./journey-aggregate.js";
 import { currentOperationContext } from "./operation-context.js";
 import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
+import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
 
 type CollaborationState = {
@@ -549,6 +550,47 @@ export async function createAppMap(input: {
       resource: "app-map",
       resourceId: input.appMapId,
       revision: 0,
+    });
+    return validateAppMap(appMap);
+  });
+}
+
+export async function importAppMap(input: {
+  organizationId: string;
+  projectId: string;
+  appMap: AppMap;
+  conflict?: "reject" | "replace" | "copy";
+}): Promise<AppMap> {
+  return mutate((state) => {
+    const conflict = input.conflict ?? "reject";
+    const desiredId = input.appMap.id;
+    let appMapId = desiredId;
+    let key = appMapKey(input.projectId, appMapId);
+    if (state.appMaps[key]) {
+      if (conflict === "reject") throw new Error(`App Map ${desiredId} already exists`);
+      if (conflict === "copy") {
+        appMapId = `${desiredId}-copy`;
+        let suffix = 2;
+        while (state.appMaps[appMapKey(input.projectId, appMapId)]) {
+          appMapId = `${desiredId}-copy-${suffix++}`;
+        }
+        key = appMapKey(input.projectId, appMapId);
+      }
+    }
+    const existing = state.appMaps[key];
+    const appMap = rescopeAppMap(input.appMap, {
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      appMapId,
+    });
+    state.appMaps[key] = appMap;
+    emit({
+      type: existing ? "resource.updated" : "resource.created",
+      at: now(),
+      projectId: input.projectId,
+      resource: "app-map",
+      resourceId: appMapId,
+      revision: appMap.revision,
     });
     return validateAppMap(appMap);
   });

@@ -64,10 +64,8 @@ function fixtureResult(operationId: string): unknown {
         { id: projectId, name: "Relay app", organizationId: "org-a" },
       ],
     },
-    "journey.list": { journeys: [{ id: "journey-1", title: "Sign in" }] },
-    "journey.get": { journey: { id: "journey-1", title: "Sign in", steps: [] } },
-    "collection.list": { collections: [{ id: "collection-1", title: "Smoke" }] },
-    "collection.get": { collection: { id: "collection-1", title: "Smoke" } },
+    "app-map.list": { appMaps: [{ id: "map-1", name: "Sign in" }] },
+    "app-map.get": { appMap: { id: "map-1", name: "Sign in", screens: {} } },
     "run.list": { runs: [{ id: "run-1", status: "passed" }] },
     "run.get": { run: { id: "run-1", status: "passed", artifacts: [] } },
     "run.evidence.get": { evidence: { runId: "run-1", logs: [], network: [] } },
@@ -174,13 +172,11 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
     const uris = resources.map(({ uri }) => uri);
     for (const uri of [
       relayMcpResourceUris.project,
-      relayMcpResourceUris.journeys,
-      relayMcpResourceUris.collections,
+      relayMcpResourceUris.appMaps,
       relayMcpResourceUris.runs,
       relayMcpResourceUris.authoringSessions,
       relayMcpResourceUris.targets,
-      "relay://journeys/journey-1",
-      "relay://collections/collection-1",
+      "relay://app-maps/map-1",
       "relay://authoring-sessions/session-1",
       "relay://runs/run-1",
     ]) {
@@ -202,8 +198,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       [
         relayMcpResourceUris.run,
         relayMcpResourceUris.runEvidence,
-        relayMcpResourceUris.journey,
-        relayMcpResourceUris.collection,
+        relayMcpResourceUris.appMap,
         relayMcpResourceUris.authoringSession,
         relayMcpResourceUris.targetObservation,
       ],
@@ -234,15 +229,15 @@ test("reads the configured project and detail resources through Relay queries", 
       project: { id: projectId, name: "Relay app", organizationId: "org-a" },
     });
 
-    const journey = resourceContent(
-      await session.request("resources/read", { uri: "relay://journeys/journey-1" }),
+    const appMap = resourceContent(
+      await session.request("resources/read", { uri: "relay://app-maps/map-1" }),
     );
-    assert.deepEqual((JSON.parse(journey.text) as Record<string, unknown>).data, {
-      journey: { id: "journey-1", steps: [], title: "Sign in" },
+    assert.deepEqual((JSON.parse(appMap.text) as Record<string, unknown>).data, {
+      appMap: { id: "map-1", name: "Sign in", screens: {} },
     });
     assert.deepEqual(calls, [
       { operationId: "project.list", input: {} },
-      { operationId: "journey.get", input: { journeyId: "journey-1" } },
+      { operationId: "app-map.get", input: { appMapId: "map-1" } },
     ]);
   } finally {
     await session.close();
@@ -254,24 +249,24 @@ test("rejects missing and unsafe template resources before leaking query details
   const invoker: OperationInvoker = {
     async invoke(operationId) {
       calls.push(operationId);
-      if (operationId === "journey.get") throw new Error("private backend path");
+      if (operationId === "app-map.get") throw new Error("private backend path");
       return fixtureResult(operationId);
     },
   };
   const session = await connectMcp(invoker);
   try {
     const missing = await session.request("resources/read", {
-      uri: "relay://journeys/missing",
+      uri: "relay://app-maps/missing",
     });
     assert.ok(missing.error);
-    assert.equal(missing.error.data?.uri, "relay://journeys/missing");
+    assert.equal(missing.error.data?.uri, "relay://app-maps/missing");
     assert.doesNotMatch(missing.error.message, /private backend path/);
 
     const beforeUnsafe = calls.length;
     for (const uri of [
-      "relay://journeys/%2Fetc",
-      "relay://journeys/..%2Fsecret",
-      "relay://journeys/journey-1?escape=../secret",
+      "relay://app-maps/%2Fetc",
+      "relay://app-maps/..%2Fsecret",
+      "relay://app-maps/map-1?escape=../secret",
     ]) {
       const rejected = await session.request("resources/read", { uri });
       assert.ok(rejected.error, uri);
@@ -284,19 +279,19 @@ test("rejects missing and unsafe template resources before leaking query details
 
 test("bounds deterministic JSON with explicit truncation metadata", async () => {
   const huge = {
-    journeys: Array.from({ length: 200 }, (_, index) => ({
-      id: `journey-${index}`,
-      title: `Journey ${index}`,
+    appMaps: Array.from({ length: 200 }, (_, index) => ({
+      id: `map-${index}`,
+      name: `Map ${index}`,
       content: "x".repeat(1_000),
     })),
   };
-  const session = await connectMcp(fixtureInvoker({ "journey.list": huge }));
+  const session = await connectMcp(fixtureInvoker({ "app-map.list": huge }));
   try {
     const first = resourceContent(
-      await session.request("resources/read", { uri: relayMcpResourceUris.journeys }),
+      await session.request("resources/read", { uri: relayMcpResourceUris.appMaps }),
     );
     const second = resourceContent(
-      await session.request("resources/read", { uri: relayMcpResourceUris.journeys }),
+      await session.request("resources/read", { uri: relayMcpResourceUris.appMaps }),
     );
     assert.equal(first.text, second.text);
     assert.ok(Buffer.byteLength(first.text, "utf8") <= relayMcpResourceByteLimit);

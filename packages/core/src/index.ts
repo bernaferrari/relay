@@ -45,6 +45,7 @@ export * from "./device-setup.js";
 export * from "./ios-device-adapter.js";
 export * from "./matrix.js";
 export * from "./matrix-yaml.js";
+export * from "./app-map-yaml.js";
 export * from "./compatibility-report.js";
 export * from "./soak-report.js";
 export * from "./discovery.js";

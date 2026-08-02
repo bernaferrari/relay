@@ -296,7 +296,37 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: ["relay map duplicate checkout checkout-copy"],
     }),
   ),
-  mapped("app-map.remove", path("map remove", ["appMapId"])),
+  mapped(
+    "app-map.remove",
+    path("map remove", ["appMapId"]),
+    path("map delete", ["appMapId"], undefined, {
+      summary: "Delete an App Map",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+    }),
+  ),
+  mapped(
+    "app-map.export",
+    path("map export", ["appMapId"], undefined, {
+      summary: "Export deterministic App Map YAML",
+      argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
+      examples: ["relay map export checkout --json"],
+    }),
+  ),
+  mapped(
+    "app-map.import",
+    path("map import", [], undefined, {
+      summary: "Import an App Map",
+      inputHelp: [
+        { name: "yaml", type: "string", required: true, description: "Portable App Map YAML" },
+        { name: "dryRun", type: "boolean", description: "Validate without saving" },
+        {
+          name: "conflict",
+          type: "reject | replace | copy",
+          description: "How to handle an existing App Map",
+        },
+      ],
+    }),
+  ),
   mapped("app-map.update", path("map rename", ["appMapId"])),
   mapped("app-map.screen.add", path("screen add", ["appMapId"])),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
@@ -345,46 +375,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("journey.get", path("journey get", ["journeyId"])),
   mapped("journey.create", path("journey create")),
   mapped("journey.update", path("journey update", ["journeyId"])),
-  mapped(
-    "journey.delete",
-    path("journey delete", ["journeyId"]),
-    path("map delete", ["journeyId"], undefined, {
-      summary: "Delete an App Map",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-    }),
-  ),
-  mapped(
-    "journey.import",
-    path("journey import"),
-    path("map import", [], undefined, {
-      summary: "Import an App Map",
-      inputHelp: [
-        { name: "yaml", type: "string", required: true, description: "Portable map YAML" },
-        { name: "dryRun", type: "boolean", description: "Validate without saving" },
-        {
-          name: "conflict",
-          type: "reject | replace | copy",
-          description: "How to handle an existing map",
-        },
-      ],
-    }),
-  ),
-  mapped(
-    "journey.history.restore",
-    path("journey history restore", ["journeyId"]),
-    path("map restore", ["journeyId"], undefined, {
-      summary: "Restore an App Map revision",
-      argumentHelp: [{ name: "mapId", type: "string", description: "App Map identifier" }],
-      inputHelp: [
-        {
-          name: "updatedAt",
-          type: "number",
-          required: true,
-          description: "History timestamp to restore",
-        },
-      ],
-    }),
-  ),
+  mapped("journey.delete", path("journey delete", ["journeyId"])),
+  mapped("journey.import", path("journey import")),
+  mapped("journey.history.restore", path("journey history restore", ["journeyId"])),
   mapped("journey.evidence.save", path("journey evidence save", ["journeyId"])),
   mapped("journey.document.get", path("journey document get", ["journeyId"])),
   mapped("journey.document.update", path("journey document update", ["journeyId"])),

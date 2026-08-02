@@ -383,6 +383,18 @@ type SpecificOperationMap = {
     input: { sourceAppMapId: string; appMapId: string; name?: string };
     output: { appMap: AppMap };
   };
+  "app-map.export": {
+    input: { appMapId: string };
+    output: { appMap: AppMap; yaml: string; filename: string };
+  };
+  "app-map.import": {
+    input: {
+      yaml: string;
+      dryRun?: boolean;
+      conflict?: "reject" | "replace" | "copy";
+    };
+    output: { appMap: AppMap; imported: boolean };
+  };
   "app-map.update": {
     input: { appMapId: string; expectedRevision: number; eventId?: string; patch: AppMapPatch };
     output: { appMap: AppMap };
@@ -1021,6 +1033,41 @@ const appMapDuplicateParser = objectParser<OperationInput<"app-map.duplicate">>(
     string(input.sourceAppMapId, "Source App Map id");
     string(input.appMapId, "Duplicate App Map id");
     if (input.name !== undefined) string(input.name, "Duplicate App Map name");
+  },
+);
+
+const appMapImportParser = objectParser<OperationInput<"app-map.import">>(
+  "App Map import",
+  (input) => {
+    string(input.yaml, "App Map YAML");
+    if (input.dryRun !== undefined && typeof input.dryRun !== "boolean") {
+      fail("App Map import dryRun", "must be boolean");
+    }
+    if (
+      input.conflict !== undefined &&
+      input.conflict !== "reject" &&
+      input.conflict !== "replace" &&
+      input.conflict !== "copy"
+    ) {
+      fail("App Map import conflict", "must be reject, replace, or copy");
+    }
+  },
+);
+
+const appMapExportParser = objectParser<OperationOutput<"app-map.export">>(
+  "App Map export response",
+  (input) => {
+    record(input.appMap, "exported App Map");
+    string(input.yaml, "exported App Map YAML");
+    string(input.filename, "exported App Map filename");
+  },
+);
+
+const appMapImportOutputParser = objectParser<OperationOutput<"app-map.import">>(
+  "App Map import response",
+  (input) => {
+    record(input.appMap, "imported App Map");
+    if (typeof input.imported !== "boolean") fail("App Map imported", "must be boolean");
   },
 );
 
@@ -1771,6 +1818,16 @@ export const operationDefinitions = [
     category: "authoring",
     input: appMapDuplicateParser,
     output: appMapOutputParser,
+  }),
+  query("app-map.export", "Export App Map YAML", "/app-maps/:appMapId/export", {
+    category: "authoring",
+    input: appMapRefParser,
+    output: appMapExportParser,
+  }),
+  command("app-map.import", "Import App Map YAML", "POST", "/app-maps/import", {
+    category: "authoring",
+    input: appMapImportParser,
+    output: appMapImportOutputParser,
   }),
   command("app-map.update", "Update App Map", "PUT", "/app-maps/:appMapId", {
     category: "authoring",

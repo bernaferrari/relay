@@ -112,9 +112,6 @@ const authorSupport = new Set<OperationId>([
   "job.get",
   "run.list",
   "step.run",
-  "journey.list",
-  "journey.get",
-  "journey.document.get",
 ]);
 
 const executePrefixes = ["job."] as const;
@@ -139,9 +136,8 @@ const executeSupport = new Set<OperationId>([
   "lease.create",
   "lease.release",
   "action.run",
-  "collection.list",
-  "collection.get",
-  "collection.run",
+  "app-map.list",
+  "app-map.get",
   "matrix.list",
   "matrix.resolve",
   "run.list",
@@ -157,9 +153,6 @@ const reviewSupport = new Set<OperationId>([
   "lease.list",
   "lease.create",
   "lease.release",
-  "journey.list",
-  "journey.get",
-  "journey.document.get",
   "authoring.session.list",
   "authoring.session.get",
   "authoring.take.trim",

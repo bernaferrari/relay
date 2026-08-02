@@ -156,6 +156,46 @@ test("App Map operations are equivalent for human and agent actors", async () =>
   }
 });
 
+test("App Maps export and import through their canonical YAML contract", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-map-yaml-"));
+  const previous = process.env.GROK_DEVICE_STATE_DIR;
+  process.env.GROK_DEVICE_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await client.invoke("app-map.create", { appMapId: "checkout", name: "Checkout" });
+    const exported = await client.invoke("app-map.export", { appMapId: "checkout" });
+    assert.equal(exported.filename, "checkout.relay.map.yaml");
+    assert.match(exported.yaml, /schemaVersion: 1/u);
+
+    const dryRun = await client.invoke("app-map.import", {
+      yaml: exported.yaml,
+      dryRun: true,
+    });
+    assert.equal(dryRun.imported, false);
+
+    const copied = await client.invoke("app-map.import", {
+      yaml: exported.yaml,
+      conflict: "copy",
+    });
+    assert.equal(copied.imported, true);
+    assert.equal(copied.appMap.id, "checkout-copy");
+    assert.equal(copied.appMap.projectId, "mobile");
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.GROK_DEVICE_STATE_DIR;
+    else process.env.GROK_DEVICE_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("an agent turns observations into a proposal that a human must approve", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-observation-proposal-"));
   const previousState = process.env.GROK_DEVICE_STATE_DIR;

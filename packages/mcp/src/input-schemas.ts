@@ -187,6 +187,22 @@ const schemas: Partial<Record<OperationId, RelayOperationInputSchema>> = {
   "app-map.create": z
     .object({ appMapId: identifier("App Map identifier"), name: text("App Map name") })
     .strict(),
+  "app-map.duplicate": z
+    .object({
+      sourceAppMapId: identifier("Source App Map identifier"),
+      appMapId: identifier("New App Map identifier"),
+      name: text("Optional copy name").optional(),
+    })
+    .strict(),
+  "app-map.remove": z.object({ appMapId: identifier("App Map identifier") }).strict(),
+  "app-map.export": z.object({ appMapId: identifier("App Map identifier") }).strict(),
+  "app-map.import": z
+    .object({
+      yaml: text("Portable App Map YAML"),
+      dryRun: z.boolean().optional(),
+      conflict: z.enum(["reject", "replace", "copy"]).optional(),
+    })
+    .strict(),
   "app-map.screen.add": z
     .object({
       appMapId: identifier("App Map identifier"),

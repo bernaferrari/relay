@@ -15,10 +15,8 @@ export const relayMcpResourceMimeType = "application/json";
 
 export const relayMcpResourceUris = {
   project: "relay://project/current",
-  journeys: "relay://journeys",
-  journey: "relay://journeys/{journeyId}",
-  collections: "relay://collections",
-  collection: "relay://collections/{collectionId}",
+  appMaps: "relay://app-maps",
+  appMap: "relay://app-maps/{appMapId}",
   runs: "relay://runs",
   run: "relay://runs/{runId}",
   runEvidence: "relay://runs/{runId}/evidence",
@@ -344,18 +342,10 @@ export function registerRelayResources(
   );
   registerStaticResource(
     server,
-    "journeys",
-    "Relay Journeys",
-    relayMcpResourceUris.journeys,
-    (signal) => invokeRead(invoker, "journey.list", {}, signal),
-    scope,
-  );
-  registerStaticResource(
-    server,
-    "collections",
-    "Relay Collections",
-    relayMcpResourceUris.collections,
-    (signal) => invokeRead(invoker, "collection.list", {}, signal),
+    "app-maps",
+    "Relay App Maps",
+    relayMcpResourceUris.appMaps,
+    (signal) => invokeRead(invoker, "app-map.list", {}, signal),
     scope,
   );
   registerStaticResource(
@@ -384,67 +374,33 @@ export function registerRelayResources(
   );
 
   server.registerResource(
-    "journey",
-    new ResourceTemplate(relayMcpResourceUris.journey, {
+    "app-map",
+    new ResourceTemplate(relayMcpResourceUris.appMap, {
       list: async (context) =>
         resourceList(
           arrayField(
-            await invokeRead(invoker, "journey.list", {}, context.mcpReq.signal),
-            "journeys",
+            await invokeRead(invoker, "app-map.list", {}, context.mcpReq.signal),
+            "appMaps",
           ),
           "id",
-          "title",
-          (id) => `relay://journeys/${id}`,
+          "name",
+          (id) => `relay://app-maps/${id}`,
         ),
     }),
     {
-      title: "Relay Journey",
-      description: "One Journey in the configured Relay project.",
+      title: "Relay App Map",
+      description: "One canonical App Map in the configured Relay project.",
       mimeType: relayMcpResourceMimeType,
     },
     async (uri, variables, context) => {
-      const journeyId = variable(variables, "journeyId", uri);
+      const appMapId = variable(variables, "appMapId", uri);
       try {
         const result = await invoker.invoke(
-          "journey.get",
-          { journeyId },
+          "app-map.get",
+          { appMapId },
           { signal: context.mcpReq.signal },
         );
-        return readResult(uri, scope.projectId, "journey", result);
-      } catch {
-        throw new ResourceNotFoundError(uri.href);
-      }
-    },
-  );
-
-  server.registerResource(
-    "collection",
-    new ResourceTemplate(relayMcpResourceUris.collection, {
-      list: async (context) =>
-        resourceList(
-          arrayField(
-            await invokeRead(invoker, "collection.list", {}, context.mcpReq.signal),
-            "collections",
-          ),
-          "id",
-          "title",
-          (id) => `relay://collections/${id}`,
-        ),
-    }),
-    {
-      title: "Relay Collection",
-      description: "One Collection in the configured Relay project.",
-      mimeType: relayMcpResourceMimeType,
-    },
-    async (uri, variables, context) => {
-      const collectionId = variable(variables, "collectionId", uri);
-      try {
-        const result = await invoker.invoke(
-          "collection.get",
-          { collectionId },
-          { signal: context.mcpReq.signal },
-        );
-        return readResult(uri, scope.projectId, "collection", result);
+        return readResult(uri, scope.projectId, "app-map", result);
       } catch {
         throw new ResourceNotFoundError(uri.href);
       }

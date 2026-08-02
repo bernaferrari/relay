@@ -9,12 +9,16 @@ import {
   currentOperationContext,
   deleteAppMap,
   duplicateAppMap,
+  formatAppMapYaml,
+  importAppMap,
   listAppMaps,
   mutateStoredAppMap,
   now,
   proposalFromDiscovery,
   readAppMap,
   readDiscoverySession,
+  appMapYamlFilename,
+  parseAppMapYaml,
   rejectAppMapProposal,
   removeAppMapConnection,
   removeAppMapCaseStack,
@@ -103,6 +107,40 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     json(response, 200, { appMaps: await listAppMaps(scope.projectId) });
     return true;
   }
+  if (method === "POST" && pathname === "/app-maps/import") {
+    const body = (await parseJsonBody(request)) as OperationInput<"app-map.import">;
+    let parsed: AppMap;
+    try {
+      parsed = parseAppMapYaml(body.yaml, {
+        organizationId: scope.organizationId,
+        projectId: scope.projectId,
+      });
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : String(error), {
+        code: "invalid-map",
+        recovery: "Fix the reported YAML field and retry the import.",
+      });
+    }
+    if (body.dryRun) {
+      json(response, 200, { appMap: parsed, imported: false });
+      return true;
+    }
+    try {
+      const appMap = await importAppMap({
+        organizationId: scope.organizationId,
+        projectId: scope.projectId,
+        appMap: parsed,
+        conflict: body.conflict,
+      });
+      json(response, 201, { appMap, imported: true });
+    } catch (error) {
+      throw new HttpError(409, error instanceof Error ? error.message : String(error), {
+        code: "duplicate-id",
+        recovery: "Use conflict=replace or conflict=copy, then retry.",
+      });
+    }
+    return true;
+  }
   if (method === "POST" && pathname === "/app-maps") {
     const body = (await parseJsonBody(request)) as OperationInput<"app-map.create">;
     try {
@@ -143,6 +181,18 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
     const removed = await deleteAppMap(scope.projectId, mapRemove.appMapId!);
     if (!removed) throw new HttpError(404, `App Map ${mapRemove.appMapId} not found`);
     json(response, 200, { ok: true });
+    return true;
+  }
+
+  const mapExport = matchPath(pathname, "/app-maps/:appMapId/export");
+  if (method === "GET" && mapExport) {
+    const appMap = await readAppMap(scope.projectId, mapExport.appMapId!);
+    if (!appMap) throw new HttpError(404, `App Map ${mapExport.appMapId} not found`);
+    json(response, 200, {
+      appMap,
+      yaml: formatAppMapYaml(appMap),
+      filename: appMapYamlFilename(appMap.id),
+    });
     return true;
   }
 

@@ -110,7 +110,7 @@ test("lists the three curated Relay prompts with required scoped arguments", asy
           arguments: [
             { name: "projectId", required: true },
             { name: "targetId", required: true },
-            { name: "journeyId", required: true },
+            { name: "appMapId", required: true },
           ],
         },
         {
@@ -118,7 +118,7 @@ test("lists the three curated Relay prompts with required scoped arguments", asy
           arguments: [
             { name: "projectId", required: true },
             { name: "targetId", required: true },
-            { name: "journeyId", required: true },
+            { name: "appMapId", required: true },
             { name: "sessionId", required: true },
             { name: "connectionId", required: true },
           ],
@@ -128,7 +128,7 @@ test("lists the three curated Relay prompts with required scoped arguments", asy
           arguments: [
             { name: "projectId", required: true },
             { name: "targetId", required: true },
-            { name: "journeyId", required: true },
+            { name: "appMapId", required: true },
             { name: "sessionId", required: true },
             { name: "takeId", required: true },
           ],
@@ -145,11 +145,10 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
   const requests = [
     {
       name: relayMcpPromptNames.mapAppSafely,
-      arguments: { projectId, targetId: "target-1", journeyId: "journey-1" },
+      arguments: { projectId, targetId: "target-1", appMapId: "map-1" },
       expected: {
         description: relayMcpPrompts[0].description,
-        firstLine:
-          "Map the app safely for project project-a, Target target-1, and Journey journey-1.",
+        firstLine: "Map the app safely for project project-a, Target target-1, and App Map map-1.",
         headings: [
           "Safety contract:",
           "Observation phase (no mutation):",
@@ -162,14 +161,14 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
       arguments: {
         projectId,
         targetId: "target-1",
-        journeyId: "journey-1",
+        appMapId: "map-1",
         sessionId: "session-1",
         connectionId: "connection-1",
       },
       expected: {
         description: relayMcpPrompts[1].description,
         firstLine:
-          "Repair connection connection-1 in Journey journey-1, project project-a, using Target target-1 and Authoring Session session-1.",
+          "Repair connection connection-1 in App Map map-1, project project-a, using Target target-1 and Authoring Session session-1.",
         headings: [
           "Safety contract:",
           "Observation and diagnosis (no mutation):",
@@ -182,14 +181,14 @@ test("gets stable prompt snapshots with explicit Relay identities", async () => 
       arguments: {
         projectId,
         targetId: "target-1",
-        journeyId: "journey-1",
+        appMapId: "map-1",
         sessionId: "session-1",
         takeId: "take-1",
       },
       expected: {
         description: relayMcpPrompts[2].description,
         firstLine:
-          "Review Take take-1 in Authoring Session session-1 for Journey journey-1, Target target-1, project project-a.",
+          "Review Take take-1 in Authoring Session session-1 for App Map map-1, Target target-1, project project-a.",
         headings: [
           "Safety contract:",
           "Observation and review (no mutation):",
@@ -228,14 +227,14 @@ test("prompt snapshots preserve the observation, authority, and evidence safety 
   const requests = [
     {
       name: relayMcpPromptNames.mapAppSafely,
-      arguments: { projectId, targetId: "target-1", journeyId: "journey-1" },
+      arguments: { projectId, targetId: "target-1", appMapId: "map-1" },
     },
     {
       name: relayMcpPromptNames.repairFailedConnection,
       arguments: {
         projectId,
         targetId: "target-1",
-        journeyId: "journey-1",
+        appMapId: "map-1",
         sessionId: "session-1",
         connectionId: "connection-1",
       },
@@ -245,7 +244,7 @@ test("prompt snapshots preserve the observation, authority, and evidence safety 
       arguments: {
         projectId,
         targetId: "target-1",
-        journeyId: "journey-1",
+        appMapId: "map-1",
         sessionId: "session-1",
         takeId: "take-1",
       },
@@ -285,9 +284,9 @@ test("rejects missing, invalid, cross-project, and extra prompt arguments", asyn
   const session = await connectMcp();
   const invalidArguments = [
     { projectId, targetId: "target-1" },
-    { projectId, targetId: "../target", journeyId: "journey-1" },
-    { projectId: "project-b", targetId: "target-1", journeyId: "journey-1" },
-    { projectId, targetId: "target-1", journeyId: "journey-1", permission: "admin" },
+    { projectId, targetId: "../target", appMapId: "map-1" },
+    { projectId: "project-b", targetId: "target-1", appMapId: "map-1" },
+    { projectId, targetId: "target-1", appMapId: "map-1", permission: "admin" },
   ];
   try {
     for (const argumentsValue of invalidArguments) {
