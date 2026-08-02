@@ -7,6 +7,7 @@ import { RevisionConflict } from "@relay/protocol";
 import {
   createAppMap,
   deleteAppMap,
+  duplicateAppMap,
   leaseDevice,
   deleteCompatibilityMatrix,
   listCompatibilityMatrices,
@@ -70,6 +71,21 @@ test("App Maps persist normalized revisions and reject unsafe stored mutations",
     assert.equal(saved.activity["event-add-welcome"]?.actorKind, "agent");
     assert.equal((await readAppMap("mobile", "store"))?.revision, 1);
 
+    const copy = await duplicateAppMap({
+      organizationId: "acme",
+      projectId: "mobile",
+      sourceAppMapId: "store",
+      appMapId: "store-copy",
+      name: "Store copy",
+      at: 200,
+    });
+    assert.equal(copy.name, "Store copy");
+    assert.equal(copy.revision, 0);
+    assert.equal(copy.screens.welcome?.appMapId, "store-copy");
+    assert.equal(copy.screens.welcome?.createdAt, 200);
+    assert.deepEqual(copy.activity, {});
+    assert.equal(saved.screens.welcome?.appMapId, "store");
+
     await assert.rejects(
       mutateStoredAppMap("mobile", "store", (map) => ({ ...map, projectId: "other" })),
       /scope/u,
@@ -79,6 +95,7 @@ test("App Maps persist normalized revisions and reject unsafe stored mutations",
       /exactly one revision/u,
     );
     assert.equal(await deleteAppMap("mobile", "store"), true);
+    assert.equal(await deleteAppMap("mobile", "store-copy"), true);
     assert.equal(await readAppMap("mobile", "store"), null);
     assert.equal(await deleteAppMap("mobile", "store"), false);
   } finally {

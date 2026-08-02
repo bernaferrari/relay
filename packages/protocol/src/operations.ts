@@ -379,6 +379,10 @@ type SpecificOperationMap = {
     input: { appMapId: string; name: string };
     output: { appMap: AppMap };
   };
+  "app-map.duplicate": {
+    input: { sourceAppMapId: string; appMapId: string; name?: string };
+    output: { appMap: AppMap };
+  };
   "app-map.update": {
     input: { appMapId: string; expectedRevision: number; eventId?: string; patch: AppMapPatch };
     output: { appMap: AppMap };
@@ -1008,6 +1012,15 @@ const appMapCreateParser = objectParser<OperationInput<"app-map.create">>(
   (input) => {
     string(input.appMapId, "App Map id");
     string(input.name, "App Map name");
+  },
+);
+
+const appMapDuplicateParser = objectParser<OperationInput<"app-map.duplicate">>(
+  "App Map duplication",
+  (input) => {
+    string(input.sourceAppMapId, "Source App Map id");
+    string(input.appMapId, "Duplicate App Map id");
+    if (input.name !== undefined) string(input.name, "Duplicate App Map name");
   },
 );
 
@@ -1752,6 +1765,11 @@ export const operationDefinitions = [
   command("app-map.create", "Create App Map", "POST", "/app-maps", {
     category: "authoring",
     input: appMapCreateParser,
+    output: appMapOutputParser,
+  }),
+  command("app-map.duplicate", "Duplicate App Map", "POST", "/app-maps/:sourceAppMapId/duplicate", {
+    category: "authoring",
+    input: appMapDuplicateParser,
     output: appMapOutputParser,
   }),
   command("app-map.update", "Update App Map", "PUT", "/app-maps/:appMapId", {

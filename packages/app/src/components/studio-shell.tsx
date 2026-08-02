@@ -438,20 +438,34 @@ export function StudioShell(props: { onOpenSettings: (section?: SettingsSection)
     const appMap = selectedMap();
     const recipe = selectedRecipe();
     if (!appMap) return;
-    if (!recipe) return;
     // Copies of copies get "(copy 2)", never "… (copy) copy".
     const base = displayTitle(appMap.name).replace(/\s*\((copy)(?:\s+\d+)?\)\s*$/i, "");
     const titles = new Set(server.appMaps().map((item) => displayTitle(item.name)));
     let title = `${base} (copy)`;
     for (let index = 2; titles.has(title); index++) title = `${base} (copy ${index})`;
-    const saved = await server.saveRecipeRemote({
-      title,
-      description: recipe.description,
-      steps: draft.steps(),
-    });
-    if (saved) {
-      await server.createAppMap(saved.id, title);
-      server.setSelectedRecipeId(saved.id);
+    let duplicateId: string = crypto.randomUUID();
+    let recipeCopy: RecipeInfo | null = null;
+    try {
+      if (recipe) {
+        recipeCopy = await server.saveRecipeRemote({
+          title,
+          description: recipe.description,
+          steps: draft.steps(),
+        });
+        if (!recipeCopy) return;
+        duplicateId = recipeCopy.id;
+      }
+      await server.runAction("app-map.duplicate", {
+        sourceAppMapId: appMap.id,
+        appMapId: duplicateId,
+        name: title,
+      });
+      await server.refreshAppMaps();
+      server.setSelectedRecipeId(duplicateId);
+      toast(`Duplicated ${displayTitle(appMap.name)}`, "success");
+    } catch (error) {
+      if (recipeCopy) await server.deleteRecipeRemote(recipeCopy.id).catch(() => undefined);
+      toast(error instanceof Error ? error.message : String(error), "error");
     }
   }
 

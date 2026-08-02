@@ -8,6 +8,7 @@ import {
   createAppMap,
   currentOperationContext,
   deleteAppMap,
+  duplicateAppMap,
   listAppMaps,
   mutateStoredAppMap,
   now,
@@ -114,6 +115,25 @@ export async function handleAppMapRoute(input: AppMapRouteInput): Promise<boolea
       json(response, 201, { appMap });
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
+    }
+    return true;
+  }
+
+  const mapDuplicate = matchPath(pathname, "/app-maps/:sourceAppMapId/duplicate");
+  if (method === "POST" && mapDuplicate) {
+    const body = (await parseJsonBody(request)) as OperationInput<"app-map.duplicate">;
+    try {
+      const appMap = await duplicateAppMap({
+        organizationId: scope.organizationId,
+        projectId: scope.projectId,
+        sourceAppMapId: mapDuplicate.sourceAppMapId!,
+        appMapId: body.appMapId,
+        ...(body.name ? { name: body.name } : {}),
+      });
+      json(response, 201, { appMap });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new HttpError(message.endsWith("not found") ? 404 : 409, message);
     }
     return true;
   }

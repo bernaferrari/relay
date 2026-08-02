@@ -284,6 +284,18 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: ['relay map create checkout --input \'{"name":"Checkout"}\''],
     }),
   ),
+  mapped(
+    "app-map.duplicate",
+    path("map duplicate", ["sourceAppMapId", "appMapId"], undefined, {
+      summary: "Duplicate an App Map without copying run history",
+      argumentHelp: [
+        { name: "sourceAppMapId", type: "string", description: "Source App Map identifier" },
+        { name: "appMapId", type: "string", description: "New App Map identifier" },
+      ],
+      inputHelp: [{ name: "name", type: "string", description: "Optional copy name" }],
+      examples: ["relay map duplicate checkout checkout-copy"],
+    }),
+  ),
   mapped("app-map.remove", path("map remove", ["appMapId"])),
   mapped("app-map.update", path("map rename", ["appMapId"])),
   mapped("app-map.screen.add", path("screen add", ["appMapId"])),

@@ -77,6 +77,16 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     assert.equal(renamed.appMap.name, "Storefront");
     assert.equal(renamed.appMap.revision, 2);
 
+    const duplicated = await human.invoke("app-map.duplicate", {
+      sourceAppMapId: "store",
+      appMapId: "store-copy",
+      name: "Storefront copy",
+    });
+    assert.equal(duplicated.appMap.name, "Storefront copy");
+    assert.equal(duplicated.appMap.screens.welcome?.appMapId, "store-copy");
+    assert.equal(duplicated.appMap.revision, 0);
+    assert.deepEqual(duplicated.appMap.activity, {});
+
     const submitted = await agent.invoke("app-map.proposal.submit", {
       appMapId: "store",
       expectedRevision: 2,
@@ -129,6 +139,9 @@ test("App Map operations are equivalent for human and agent actors", async () =>
     );
 
     assert.deepEqual(await human.invoke("app-map.remove", { appMapId: "store" }), { ok: true });
+    assert.deepEqual(await human.invoke("app-map.remove", { appMapId: "store-copy" }), {
+      ok: true,
+    });
     await assert.rejects(human.invoke("app-map.get", { appMapId: "store" }), (error) => {
       assert.ok(error instanceof ApiError);
       assert.equal(error.status, 404);

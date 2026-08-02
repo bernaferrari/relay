@@ -554,6 +554,84 @@ export async function createAppMap(input: {
   });
 }
 
+function duplicateEntityRecord<
+  T extends { appMapId: string; createdAt: number; updatedAt: number },
+>(record: Record<string, T>, appMapId: string, at: number): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(record).map(([id, entity]) => [
+      id,
+      { ...entity, appMapId, createdAt: at, updatedAt: at },
+    ]),
+  );
+}
+
+/** Copies authoring intent without pretending the new map owns the source
+ * map's historical runs, proposals, or activity. Approved visual evidence is
+ * retained as manual provenance so it remains useful without dangling run
+ * references. */
+export async function duplicateAppMap(input: {
+  organizationId: string;
+  projectId: string;
+  sourceAppMapId: string;
+  appMapId: string;
+  name?: string;
+  at?: number;
+}): Promise<AppMap> {
+  return mutate((state) => {
+    const source = state.appMaps[appMapKey(input.projectId, input.sourceAppMapId)];
+    if (!source || source.organizationId !== input.organizationId) {
+      throw new Error(`App Map ${input.sourceAppMapId} not found`);
+    }
+    const key = appMapKey(input.projectId, input.appMapId);
+    if (state.appMaps[key]) throw new Error(`App Map ${input.appMapId} already exists`);
+    const at = input.at ?? now();
+    const screenVariants = duplicateEntityRecord(source.screenVariants, input.appMapId, at);
+    for (const variant of Object.values(screenVariants)) {
+      const baseline = variant.baseline;
+      if (!baseline) continue;
+      const evidenceIds =
+        baseline.source.kind === "run"
+          ? baseline.source.evidenceId
+            ? [baseline.source.evidenceId]
+            : variant.evidenceIds
+          : baseline.source.evidenceIds;
+      variant.baseline = evidenceIds.length
+        ? { ...baseline, source: { kind: "manual", evidenceIds: [...evidenceIds] } }
+        : undefined;
+    }
+    const appMap = validateAppMap({
+      ...source,
+      id: input.appMapId,
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      name: input.name?.trim() || `${source.name} (copy)`,
+      revision: 0,
+      screens: duplicateEntityRecord(source.screens, input.appMapId, at),
+      screenVariants,
+      connections: duplicateEntityRecord(source.connections, input.appMapId, at),
+      caseStacks: duplicateEntityRecord(source.caseStacks, input.appMapId, at),
+      routines: duplicateEntityRecord(source.routines, input.appMapId, at),
+      flows: duplicateEntityRecord(source.flows, input.appMapId, at),
+      runs: {},
+      targetResults: {},
+      proposals: {},
+      activity: {},
+      createdAt: at,
+      updatedAt: at,
+    });
+    state.appMaps[key] = appMap;
+    emit({
+      type: "resource.created",
+      at,
+      projectId: input.projectId,
+      resource: "app-map",
+      resourceId: input.appMapId,
+      revision: 0,
+    });
+    return validateAppMap(appMap);
+  });
+}
+
 export async function mutateStoredAppMap(
   projectId: string,
   appMapId: string,

@@ -109,6 +109,11 @@ test("path arguments merge into full operation input without hiding revision met
 });
 
 test("screen and connection commands use granular App Map operations", () => {
+  assert.deepEqual(resolveCommand(["map", "duplicate", "map-1", "map-2"]), {
+    operationId: "app-map.duplicate",
+    commandPath: "map duplicate",
+    input: { sourceAppMapId: "map-1", appMapId: "map-2" },
+  });
   assert.equal(resolveCommand(["screen", "list", "map-1"]).operationId, "app-map.get");
   assert.equal(
     resolveCommand(["connection", "update", "map-1", "connection-1"], {
