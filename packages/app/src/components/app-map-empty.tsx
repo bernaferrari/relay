@@ -233,5 +233,5 @@ export function EmptyAppMap(props: {
 }
 
 const emptyMapToolButton =
-  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.96] focus-visible:ring-1 focus-visible:ring-white/70 disabled:cursor-not-allowed disabled:opacity-30";
+  "canvas-tool-control grid h-10 min-w-10 place-items-center rounded-[9px] px-2 text-[var(--text-base)] outline-none transition-[background-color,color,transform] duration-150 hover:enabled:bg-[var(--v2-background-bg-layer-02)] hover:enabled:text-[var(--text-strong)] active:enabled:scale-[0.96] focus-visible:ring-2 focus-visible:ring-[var(--text-interactive-base)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--v2-background-bg-base)] disabled:cursor-not-allowed disabled:opacity-30";
 const emptyMapToolActive = "bg-[var(--product-accent-soft)] text-[var(--text-interactive-base)]";

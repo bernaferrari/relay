@@ -298,7 +298,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   ),
   mapped(
     "app-map.remove",
-    path("map remove", ["appMapId"]),
     path("map delete", ["appMapId"], undefined, {
       summary: "Delete an App Map",
       argumentHelp: [{ name: "appMapId", type: "string", description: "App Map identifier" }],
@@ -350,7 +349,6 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         'relay map update checkout --input \'{"expectedRevision":3,"patch":{"description":"Checkout coverage"}}\'',
       ],
     }),
-    path("map rename", ["appMapId"]),
   ),
   mapped("app-map.screen.add", path("screen add", ["appMapId"])),
   mapped("app-map.screen.update", path("screen update", ["appMapId", "screenId"])),
@@ -390,7 +388,9 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
   mapped("app-map.proposal.submit", path("proposal submit", ["appMapId"])),
   mapped(
     "app-map.observations.propose",
-    path("map propose-observations", ["appMapId", "sessionId"]),
+    path("proposal from-observations", ["appMapId", "sessionId"], undefined, {
+      summary: "Turn observed device paths into a reviewable proposal",
+    }),
   ),
   mapped("app-map.proposal.approve", path("proposal approve", ["appMapId", "proposalId"])),
   mapped("app-map.proposal.reject", path("proposal reject", ["appMapId", "proposalId"])),
