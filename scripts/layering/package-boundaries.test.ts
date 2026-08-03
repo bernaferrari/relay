@@ -3,12 +3,14 @@
 // so a rule that stopped matching would look exactly like a rule being obeyed.
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
   checkPackageBoundaries,
   checkPackageInternalSites,
   checkRootSites,
+  readNamedExports,
   readWorkspacePackages,
   rootExternalDependencyRanges,
   rootWorkspaceDependencyNames,
@@ -68,6 +70,55 @@ test('specifier sites carry 1-based lines for static and dynamic imports', () =>
     sites.map(({ specifier, line }) => `${line}:${specifier}`),
     ['1:./b.ts', '3:../c.ts'],
   );
+});
+
+test('readNamedExports collects re-export and direct-declaration forms, resolving aliases', () => {
+  const source = [
+    "export { a, b } from './x.ts';",
+    "export type { C, D } from './y.ts';",
+    "export { e as f } from './z.ts';",
+    "export type { g as h } from './z.ts';",
+    'export function i() {}',
+    'export const j = 1;',
+    'export type K = string;',
+    'export interface L {}',
+    "export {\n  m,\n  n,\n} from './multi.ts';",
+  ].join('\n');
+  assert.deepEqual(
+    readNamedExports(source),
+    ['D', 'C', 'K', 'L', 'a', 'b', 'f', 'h', 'i', 'j', 'm', 'n'].sort(),
+  );
+});
+
+test('readNamedExports never reports the original name behind an `as` alias', () => {
+  const source = "export { internalOnly as publicName } from './x.ts';";
+  const names = readNamedExports(source);
+  assert.deepEqual(names, ['publicName']);
+  assert.ok(!names.includes('internalOnly'));
+});
+
+test('readNamedExports resolves `export * as ns` to its one real bound name', () => {
+  // Unlike bare `export *`, this binds exactly one importable name (`ns`) —
+  // enumerable, not a widening blind spot.
+  const source = "export * as ns from './x.ts';";
+  assert.deepEqual(readNamedExports(source), ['ns']);
+});
+
+// #1555 review P1 (second pass, "the gate also ignores export-star
+// declarations, so it can miss future widening"): a facade pinned to an
+// exact named-export list must not silently accept a form that widens its
+// real surface with no enumerable name at all. These two forms throw instead
+// of contributing nothing to the list — plant-verified (temporarily reverted
+// to a no-op, confirmed both tests failed, restored) rather than merely
+// asserted.
+test('readNamedExports rejects a bare `export *` re-export', () => {
+  const source = "export { runAdReplay } from './step-loop.ts';\nexport * from './leak.ts';\n";
+  assert.throws(() => readNamedExports(source), /export \* from/);
+});
+
+test('readNamedExports rejects a default export', () => {
+  assert.throws(() => readNamedExports('export default function leak() {}'), /export default/);
+  assert.throws(() => readNamedExports('export default 42;'), /export default/);
 });
 
 test('double-quoted and re-export routes into packages are not invisible to R11', () => {
@@ -228,6 +279,65 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/contracts',
     '@agent-device/kernel',
   ]);
+  const adReplayPackage = packages.find((pkg) => pkg.name === '@agent-device/ad-replay');
+  assert.ok(adReplayPackage, 'ad-replay package must exist');
+  // Locks the "exports only `.`" boundary: the stage-A wide façade and the
+  // `./testing` subpath (the in-memory selector-port adapter, relocated to
+  // `src/__tests__/test-utils/`) are both gone as of P5 stage D — a future
+  // `./testing` (or any other) subpath widens this key list and fails the
+  // assertion.
+  assert.deepEqual([...adReplayPackage.exportTargets.keys()], ['@agent-device/ad-replay']);
+  assert.deepEqual([...adReplayPackage.workspaceDependencies].sort(), [
+    '@agent-device/ad-script',
+    '@agent-device/contracts',
+    '@agent-device/kernel',
+  ]);
+  // #1555 review P1 ("add the reviewer-required exact exported-symbol
+  // gate"; second pass, "enforce the accepted two-entrypoint facade"; the
+  // structural-quality review, "typed façade replaces the zero-type rule"):
+  // the exports-subpath assertion above only proves the package exposes one
+  // `.` entry point — it says nothing about what that entry point actually
+  // NAMES. This pins the exact symbol list `packages/ad-replay/src/index.ts`
+  // exports: the binding design's two VALUE entrypoints, `inspectAdReplay`
+  // and `runAdReplay` (never a third value), plus the neutral vocabulary
+  // their signatures are built from, named explicitly instead of every root
+  // consumer hand-deriving `Parameters<...>`/`ReturnType<...>` off them (the
+  // shim `src/daemon/ad-replay-facade-types.ts` used to centralize — since
+  // deleted). `formatReplaySuccessMessage` (presentation, not engine policy)
+  // stays out on purpose — it sits daemon-side beside its one caller. A
+  // stray export — intentional or not, including a form `readNamedExports`
+  // cannot enumerate a name for (`export *`, `export default` — see the
+  // rejection tests below) — must edit this list too, not just slip through
+  // the exports-subpath check.
+  assert.deepEqual(
+    readNamedExports(
+      fs.readFileSync(path.join(repoRoot, 'packages/ad-replay/src/index.ts'), 'utf8'),
+    ),
+    [
+      'AdReplayDispatchGuard',
+      'AdReplayDispatchOutcome',
+      'AdReplayGuardMismatchEvidence',
+      'AdReplayLandmarkMismatchEvidence',
+      'AdReplayManifest',
+      'AdReplayScrubValue',
+      'AdReplayStepFailure',
+      'AdReplayStepRuntime',
+      'AdReplayTargetBindingEvidence',
+      'AdReplayTargetClassification',
+      'AdReplayVarSources',
+      'AdReplayVerificationEntry',
+      'AdReplayVerifiedTargetGuard',
+      'ReplayRecordedTargetDisambiguation',
+      'ReplayRecordedTargetPolicy',
+      'ReplayRecordedTargetResolution',
+      'ReplaySelectorCandidateOptions',
+      'ReplaySelectorExpressionOutcome',
+      'ReplaySelectorGrammar',
+      'ReplaySelectorPort',
+      'inspectAdReplay',
+      'runAdReplay',
+    ],
+  );
   const providerWebDriverPackage = packages.find(
     (pkg) => pkg.name === '@agent-device/provider-webdriver',
   );
@@ -284,6 +394,10 @@ test('the real tree parses, declares, and passes R11', () => {
     'root must declare the ad-script workspace dependency',
   );
   assert.ok(
+    rootWorkspaceDependencyNames(repoRoot).has('@agent-device/ad-replay'),
+    'root must declare the ad-replay workspace dependency',
+  );
+  assert.ok(
     rootWorkspaceDependencyNames(repoRoot).has('@agent-device/provider-webdriver'),
     'root must declare the provider-webdriver workspace dependency',
   );
@@ -320,6 +434,9 @@ test('Node resolution enforces the exports map at runtime', () => {
     '@agent-device/ad-script/codec',
     '@agent-device/ad-script/internal/script.ts',
     '@agent-device/ad-script/src/index.ts',
+    '@agent-device/ad-replay/testing',
+    '@agent-device/ad-replay/internal/target-verification.ts',
+    '@agent-device/ad-replay/src/index.ts',
   ]) {
     assert.throws(
       () => import.meta.resolve(deep),
@@ -347,4 +464,6 @@ test('Node resolution enforces the exports map at runtime', () => {
   assert.ok(xmlResolved.endsWith('packages/xml/src/index.ts'), xmlResolved);
   const adScriptResolved = import.meta.resolve('@agent-device/ad-script');
   assert.ok(adScriptResolved.endsWith('packages/ad-script/src/index.ts'), adScriptResolved);
+  const adReplayResolved = import.meta.resolve('@agent-device/ad-replay');
+  assert.ok(adReplayResolved.endsWith('packages/ad-replay/src/index.ts'), adReplayResolved);
 });

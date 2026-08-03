@@ -1,4 +1,4 @@
-import { collectReplayScrubbableVarValues, type ReplayVarScope } from '../../replay/vars.ts';
+import type { AdReplayScrubValue, ReplaySelectorPort } from '@agent-device/ad-replay';
 import {
   summarizeSnapshotTimingSamples,
   type SnapshotDiagnosticsSummary,
@@ -23,7 +23,8 @@ export async function withReplayFailureDiagnostics(params: {
   sourceLine: number;
   artifactPaths: string[];
   snapshotDiagnosticSamples: SnapshotTimingSample[];
-  scope: ReplayVarScope;
+  /** The engine's own live `${VAR}` scrub list, as of this point in the run — never recomputed here from a second scope object. */
+  scrubVars: readonly AdReplayScrubValue[];
   req: DaemonRequest;
   sessionName: string;
   sessionStore: SessionStore;
@@ -32,6 +33,7 @@ export async function withReplayFailureDiagnostics(params: {
   logPath: string;
   planActions: SessionAction[];
   planDigest: string;
+  port: ReplaySelectorPort;
 }): Promise<DaemonResponse> {
   return await withReplayFailureContext({
     ...params,
@@ -48,7 +50,8 @@ async function withReplayFailureContext(params: {
   sourceLine: number;
   artifactPaths?: string[];
   snapshotDiagnostics?: SnapshotDiagnosticsSummary;
-  scope: ReplayVarScope;
+  /** The engine's own live `${VAR}` scrub list, as of this point in the run — never recomputed here from a second scope object. */
+  scrubVars: readonly AdReplayScrubValue[];
   req: DaemonRequest;
   sessionName: string;
   sessionStore: SessionStore;
@@ -57,6 +60,7 @@ async function withReplayFailureContext(params: {
   logPath: string;
   planActions: SessionAction[];
   planDigest: string;
+  port: ReplaySelectorPort;
 }): Promise<DaemonResponse> {
   const {
     response,
@@ -67,7 +71,7 @@ async function withReplayFailureContext(params: {
     sourceLine,
     artifactPaths = [],
     snapshotDiagnostics,
-    scope,
+    scrubVars,
     req,
     sessionName,
     sessionStore,
@@ -75,10 +79,10 @@ async function withReplayFailureContext(params: {
     logPath,
     planActions,
     planDigest,
+    port,
   } = params;
   if (response.ok) return response;
   const failureSource = readReplayFailureSource(response.error.details?.replaySource);
-  const scrubVars = collectReplayScrubbableVarValues(scope);
   const cause = hoistReplayFailureCauseDiagnosticMeta(response.error);
   const divergence = await buildReplayFailureDivergence({
     error: cause,
@@ -96,6 +100,7 @@ async function withReplayFailureContext(params: {
     planActions,
     planDigest,
     signal: getRequestSignal(req.meta?.requestId),
+    port,
   });
   return buildReplayDivergenceFailureResponse({
     error: cause,

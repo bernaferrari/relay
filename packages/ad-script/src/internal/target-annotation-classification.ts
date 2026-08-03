@@ -1,68 +1,23 @@
 /**
  * ADR 0012 decision 3: the record/replay-shared CLASSIFICATION core over
- * versioned `.ad` target-binding evidence — local-identity + ancestry-prefix
- * matching, and `classifyTargetBindingMatch`'s replay-time verification
- * paths 2-6. Inert in migration step 3: nothing enforces parsed evidence at
- * replay time until step 4.
+ * versioned `.ad` target-binding evidence — `classifyTargetBindingMatch`'s
+ * replay-time verification paths 2-6. Inert in migration step 3: nothing
+ * enforces parsed evidence at replay time until step 4.
  *
- * The comment-line SERDE half (wire type, canonical field order,
- * normalization, size caps, payload parsing/validation) moved to
- * `@agent-device/ad-script` (#1478 P5 scoping dossier, "the codec seam") —
- * this module imports the shared types from there rather than declaring them.
+ * #1555 review P1 ("complete the binding façade instead of documenting
+ * deviations"): this used to live in `@agent-device/ad-replay`'s
+ * `target-identity.ts`, reasoning that it was engine-owned policy rather
+ * than script vocabulary. In practice its only real consumers were the
+ * daemon's RECORD-time self-check (`src/daemon/session-target-evidence.ts`)
+ * and its REPLAY-time classification wrapper
+ * (`src/daemon/handlers/session-replay-target-classification.ts`) — both
+ * daemon files, neither reachable through `inspectAdReplay`/`runAdReplay`.
+ * It interprets `TargetAnnotationV1` evidence semantics shared beyond the
+ * engine (record-time AND replay-time both need the SAME verdict by
+ * construction), so it belongs alongside the rest of that shared `.ad`
+ * target-binding vocabulary in this package rather than behind a façade
+ * only one of its two callers could reach.
  */
-
-import type { TargetAncestryEntry, TargetAnnotationV1 } from '@agent-device/contracts/replay';
-
-// ---------------------------------------------------------------------------
-// Local identity + ancestry-prefix matching (decision 3 "Local identity" /
-// "Ancestry"). Pure over the small structural shapes above — no tree
-// dependency, so both the writer (over `SnapshotNode`-derived values) and a
-// future replay verifier can share it verbatim.
-// ---------------------------------------------------------------------------
-
-export type LocalIdentity = { id?: string; role: string; label?: string };
-
-/** The recorded annotation's identity tier as a bare `LocalIdentity` (drop-empty-keys form). */
-export function annotationLocalIdentity(
-  recorded: Pick<TargetAnnotationV1, 'id' | 'role' | 'label'>,
-): LocalIdentity {
-  return {
-    ...(recorded.id !== undefined ? { id: recorded.id } : {}),
-    role: recorded.role,
-    ...(recorded.label !== undefined ? { label: recorded.label } : {}),
-  };
-}
-
-/**
- * Decision 3 "Local identity": id match wins outright when the recording
- * carries one ("a recorded id never matches a node without that id"); with
- * no recorded id, role+label must both match (label absent on both sides
- * counts as equal; present on exactly one side is a mismatch).
- */
-export function matchesLocalIdentity(candidate: LocalIdentity, recorded: LocalIdentity): boolean {
-  if (recorded.id !== undefined) return candidate.id === recorded.id;
-  return candidate.role === recorded.role && candidate.label === recorded.label;
-}
-
-/**
- * Decision 3 "Ancestry": leaf-anchored prefix match. `observed` must be at
- * least as long as `recorded`; each recorded entry's role must match exactly
- * and, when the recorded entry carries a label, so must the observed one (an
- * absent recorded label is unconstrained).
- */
-export function matchesAncestryPrefix(
-  observed: readonly TargetAncestryEntry[],
-  recorded: readonly TargetAncestryEntry[],
-): boolean {
-  if (observed.length < recorded.length) return false;
-  for (const [index, entry] of recorded.entries()) {
-    const candidate = observed[index];
-    if (!candidate) return false;
-    if (candidate.role !== entry.role) return false;
-    if (entry.label !== undefined && candidate.label !== entry.label) return false;
-  }
-  return true;
-}
 
 // ---------------------------------------------------------------------------
 // Classification core (decision 3 "Replay-time verification", paths 2-6;

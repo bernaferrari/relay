@@ -8,7 +8,7 @@ import {
   resolveReplayAction,
   resolveReplayString,
 } from '../vars.ts';
-import { parseReplayScriptDetailed, readReplayScriptMetadata } from '@agent-device/ad-script';
+import { parseReplayScriptDetailed, readReplayScriptMetadata } from '../script.ts';
 import type { SessionAction } from '@agent-device/contracts/session';
 
 const LOC = { file: 'test.ad', line: 1 };
@@ -42,6 +42,33 @@ test('resolveReplayString throws on unresolved variable with file:line', () => {
       error.code === 'INVALID_ARGS' &&
       /Unresolved variable \$\{MISSING\} at a\.ad:7/.test(error.message),
   );
+});
+
+test('resolveReplayString passes unclosed and malformed interpolations through verbatim', () => {
+  const scope = buildReplayVarScope({});
+  const loc = { file: 'a.ad', line: 1 };
+  assert.equal(resolveReplayString('x${A:-y', scope, loc), 'x${A:-y');
+  assert.equal(resolveReplayString('${1bad}', scope, loc), '${1bad}');
+  assert.equal(resolveReplayString('${}', scope, loc), '${}');
+  assert.equal(resolveReplayString('\\${A}', scope, loc), '${A}');
+  // A backslash-newline kills only that candidate; a later one still resolves.
+  assert.equal(resolveReplayString('${A:-\\\n${B:-ok}', scope, loc), '${A:-\\\nok');
+});
+
+test('resolveReplayString stays linear on adversarial unclosed-fallback runs', () => {
+  // The retired regex form (`(?::-((?:[^}\\]|\\.)*))?`) rescanned to the end of
+  // the string for every `${A:-` prefix — 1,857 ms measured on this exact
+  // input. The scanner's abort-and-emit-verbatim path makes it one pass.
+  const scope = buildReplayVarScope({});
+  const loc = { file: 'a.ad', line: 1 };
+  const unclosed = '${A:-['.repeat(20_000);
+  let startedAt = Date.now();
+  assert.equal(resolveReplayString(unclosed, scope, loc), unclosed);
+  assert.ok(Date.now() - startedAt < 1000, 'unclosed-run resolution must be sub-second');
+  const newlineAborts = ('${Q:-' + 'x'.repeat(50) + '\\\n').repeat(3000);
+  startedAt = Date.now();
+  resolveReplayString(newlineAborts, scope, loc);
+  assert.ok(Date.now() - startedAt < 1000, 'newline-abort resolution must be sub-second');
 });
 
 test('resolveReplayString is case-sensitive', () => {
