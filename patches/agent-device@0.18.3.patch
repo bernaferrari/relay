@@ -1,28 +1,43 @@
+diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
+index ca87a188f98dcf142c40a2adaf9c512673a452bd..70a363c5615c1f23289a904c62dcb4f2c1b6d334 100644
+--- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
++++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+CommandExecution.swift
+@@ -832,6 +832,7 @@ extension RunnerTests {
+         return Response(ok: false, error: ErrorPayload(message: "Failed to encode screenshot as PNG"))
+       }
+       let fileName = "screenshot-\(Int(Date().timeIntervalSince1970 * 1000)).png"
++      cleanupStaleRunnerArtifacts(keeping: fileName)
+       let filePath = (NSTemporaryDirectory() as NSString).appendingPathComponent(fileName)
+       do {
+         try pngData.write(to: URL(fileURLWithPath: filePath))
 diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
-index 8c73d1c115411942aad34b64aa0110cda5b15818..b53e5720083a13ccf173a01b4a4a51174172befd 100644
+index 8c73d1c115411942aad34b64aa0110cda5b15818..20d1c0083acb264c26e5fae6fa4598c19514a7dd 100644
 --- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
 +++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests+Lifecycle.swift
-@@ -22,6 +22,9 @@ func runnerCGImage(from image: RunnerImage) -> CGImage? {
+@@ -22,6 +22,11 @@ func runnerCGImage(from image: RunnerImage) -> CGImage? {
  }
  
  extension RunnerTests {
 +  private static let managedRecordingPrefix = "agent-device-recording-"
 +  private static let managedRecordingSuffix = ".mp4"
++  private static let managedScreenshotPrefix = "screenshot-"
++  private static let managedScreenshotSuffix = ".png"
 +
    // MARK: - Recording
  
    func captureRunnerFrame() -> RunnerImage? {
-@@ -58,6 +61,55 @@ extension RunnerTests {
+@@ -58,6 +63,64 @@ extension RunnerTests {
      activeRecording = nil
    }
  
-+  /// Removes recordings owned by this runner from its temporary container.
++  /// Removes transport artifacts owned by this runner from its temporary container.
 +  ///
-+  /// Physical iOS recordings are copied to the host after `recordStop`. The files in the
-+  /// runner container are only transport artifacts, so keeping them after a session ends
-+  /// causes iOS to report unbounded Documents & Data usage. Cleanup is deliberately scoped
-+  /// to our timestamped MP4 names so unrelated XCTest temporary files are never touched.
-+  func cleanupStaleRunnerRecordings(keeping retainedFileName: String? = nil) {
++  /// Physical iOS screenshots and recordings are copied to the host after each command.
++  /// The files in the runner container are only transport artifacts, so keeping them after
++  /// a session ends causes iOS to report unbounded Documents & Data usage. Cleanup is
++  /// deliberately scoped to our timestamped PNG and MP4 names so unrelated XCTest
++  /// temporary files are never touched.
++  func cleanupStaleRunnerArtifacts(keeping retainedFileName: String? = nil) {
 +    let fileManager = FileManager.default
 +    let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
 +    let entries: [URL]
@@ -35,7 +50,7 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..b53e5720083a13ccf173a01b4a4a5117
 +      )
 +    } catch {
 +      NSLog(
-+        "AGENT_DEVICE_RUNNER_RECORD_CLEANUP_LIST_FAILED path=%@ error=%@",
++        "AGENT_DEVICE_RUNNER_ARTIFACT_CLEANUP_LIST_FAILED path=%@ error=%@",
 +        temporaryDirectory.path,
 +        String(describing: error)
 +      )
@@ -44,20 +59,28 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..b53e5720083a13ccf173a01b4a4a5117
 +
 +    for entry in entries {
 +      let fileName = entry.lastPathComponent
++      let isRegularFile =
++        (try? entry.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
++      let isManagedRecording =
++        fileName.hasPrefix(Self.managedRecordingPrefix)
++        && fileName.hasSuffix(Self.managedRecordingSuffix)
++      let isManagedScreenshot =
++        fileName.hasPrefix(Self.managedScreenshotPrefix)
++        && fileName.hasSuffix(Self.managedScreenshotSuffix)
 +      guard
++        isRegularFile,
 +        fileName != retainedFileName,
-+        fileName.hasPrefix(Self.managedRecordingPrefix),
-+        fileName.hasSuffix(Self.managedRecordingSuffix)
++        isManagedRecording || isManagedScreenshot
 +      else {
 +        continue
 +      }
 +
 +      do {
 +        try fileManager.removeItem(at: entry)
-+        NSLog("AGENT_DEVICE_RUNNER_RECORD_CLEANUP_REMOVED path=%@", entry.path)
++        NSLog("AGENT_DEVICE_RUNNER_ARTIFACT_CLEANUP_REMOVED path=%@", entry.path)
 +      } catch {
 +        NSLog(
-+          "AGENT_DEVICE_RUNNER_RECORD_CLEANUP_REMOVE_FAILED path=%@ error=%@",
++          "AGENT_DEVICE_RUNNER_ARTIFACT_CLEANUP_REMOVE_FAILED path=%@ error=%@",
 +          entry.path,
 +          String(describing: error)
 +        )
@@ -68,23 +91,23 @@ index 8c73d1c115411942aad34b64aa0110cda5b15818..b53e5720083a13ccf173a01b4a4a5117
    func resolveRecordingOutPath(_ requestedOutPath: String) -> String {
  #if os(macOS)
      if requestedOutPath.hasPrefix("/") {
-@@ -67,6 +119,7 @@ extension RunnerTests {
+@@ -67,6 +130,7 @@ extension RunnerTests {
      let fileName = URL(fileURLWithPath: requestedOutPath).lastPathComponent
      let fallbackName = "agent-device-recording-\(Int(Date().timeIntervalSince1970 * 1000)).mp4"
      let safeFileName = fileName.isEmpty ? fallbackName : fileName
-+    cleanupStaleRunnerRecordings(keeping: safeFileName)
++    cleanupStaleRunnerArtifacts(keeping: safeFileName)
      return (NSTemporaryDirectory() as NSString).appendingPathComponent(safeFileName)
    }
  
 diff --git a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
-index 4aa404a6b9a711aea54a539a8be75ad5c972d14e..243b5cbbfba03a6c8b1270271da77155fd81c553 100644
+index 4aa404a6b9a711aea54a539a8be75ad5c972d14e..94ec33fe759720b61214c38191145601db5d00f7 100644
 --- a/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
 +++ b/apple-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/RunnerTests.swift
 @@ -86,6 +86,7 @@ final class RunnerTests: XCTestCase {
  
    override func setUp() {
      continueAfterFailure = true
-+    cleanupStaleRunnerRecordings()
++    cleanupStaleRunnerArtifacts()
    }
  
    @MainActor
